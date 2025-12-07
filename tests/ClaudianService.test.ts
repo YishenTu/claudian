@@ -63,6 +63,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
+    getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
   } as any;
   return mockPlugin;
 }

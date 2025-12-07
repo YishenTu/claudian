@@ -16,14 +16,15 @@ src/
 ├── ClaudianSettings.ts  # Settings tab
 ├── systemPrompt.ts      # System prompt for Claude agent
 ├── types.ts             # Shared type definitions (StreamChunk, ToolCallInfo, etc.)
-├── utils.ts             # Utility functions (getVaultPath)
+├── utils.ts             # Utility functions (getVaultPath, env var parsing, model detection)
 └── ui/                  # Modular UI components
     ├── index.ts              # Barrel export for all UI components
     ├── ApprovalModal.ts      # Permission approval dialog (Modal)
     ├── InputToolbar.ts       # Model selector, thinking budget, permission toggle
     ├── FileContext.ts        # File attachments, @mentions, edited files tracking
     ├── ToolCallRenderer.ts   # Tool call UI rendering and status updates
-    └── ThinkingBlockRenderer.ts # Extended thinking block UI with timer
+    ├── ThinkingBlockRenderer.ts # Extended thinking block UI with timer
+    └── EnvSnippetManager.ts  # Environment variable snippet management
 ```
 
 ### UI Component Responsibilities
@@ -36,6 +37,7 @@ src/
 | `FileContext` | File attachment state, @mention dropdown, edited files indicator |
 | `ToolCallRenderer` | Tool call display with expand/collapse and status |
 | `ThinkingBlockRenderer` | Extended thinking blocks with live timer |
+| `EnvSnippetManager` | Environment variable snippet save/restore |
 
 ## Key Technologies
 
@@ -183,14 +185,18 @@ interface ClaudianSettings {
   enableBlocklist: boolean;      // Block dangerous commands
   blockedCommands: string[];     // Regex patterns to block
   showToolUse: boolean;          // Show file operations in chat
-  model: ClaudeModel;            // Selected Claude model
+  model: ClaudeModel;            // Selected Claude model (or custom model string)
+  lastDefaultModel?: ClaudeModel; // Last selected default model (for category switching)
+  lastCustomModel?: ClaudeModel;  // Last selected custom model (for category switching)
   thinkingBudget: ThinkingBudget; // Extended thinking token budget
   permissionMode: PermissionMode; // Yolo or Safe mode
   approvedActions: ApprovedAction[]; // Permanently approved actions
   excludedTags: string[];        // Tags that exclude files from auto-loading context
+  environmentVariables: string;  // Custom env vars in KEY=VALUE format (one per line)
+  envSnippets: EnvSnippet[];     // Saved environment variable configurations
 }
 
-type ClaudeModel = 'claude-haiku-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4-5';
+type ClaudeModel = string;  // Default models or custom model strings
 type ThinkingBudget = 'off' | 'low' | 'medium' | 'high';
 type PermissionMode = 'yolo' | 'normal';
 
@@ -200,15 +206,38 @@ interface ApprovedAction {
   approvedAt: number;   // Timestamp
   scope: 'session' | 'always'; // Session-only or permanent
 }
+
+interface EnvSnippet {
+  id: string;           // Unique identifier
+  name: string;         // Display name
+  description: string;  // Optional description
+  envVars: string;      // Environment variables content
+  createdAt: number;    // Creation timestamp
+  lastUsed?: number;    // Last usage timestamp
+}
 ```
 
 ## Model Selection
+
+### Default Claude Models
 
 | Model | Description | Default Thinking Budget |
 |-------|-------------|-------------------------|
 | `claude-haiku-4-5` | Fast and efficient (default) | Off |
 | `claude-sonnet-4-5` | Balanced performance | Low (4k tokens) |
 | `claude-opus-4-5` | Most capable | Medium (8k tokens) |
+
+### Custom Models via Environment Variables
+
+When custom models are configured via environment variables, the model selector shows **only custom models** (no default Claude models). This provides a clean separation between using Anthropic's API directly and using alternative providers.
+
+Custom models are detected from these environment variables (in priority order):
+1. `ANTHROPIC_MODEL` - Generic model setting (highest priority)
+2. `ANTHROPIC_DEFAULT_OPUS_MODEL` - Custom opus-tier model
+3. `ANTHROPIC_DEFAULT_SONNET_MODEL` - Custom sonnet-tier model
+4. `ANTHROPIC_DEFAULT_HAIKU_MODEL` - Custom haiku-tier model
+
+The plugin remembers the last selected model within each category (default vs custom) for seamless switching between configurations.
 
 ## Thinking Budget
 
@@ -242,6 +271,50 @@ tags: system
 - Files with excluded tags won't auto-attach when opened (before session starts)
 - Files with excluded tags won't auto-attach on new session creation
 - Users can still manually attach excluded files via `@` mention
+
+## Environment Variables
+
+Custom environment variables can be configured to use alternative API providers or customize Claude SDK behavior.
+
+**Configuration**: Settings → Claudian → Environment variables
+
+Enter variables in `KEY=VALUE` format (one per line). Supports comments (lines starting with `#`):
+
+```
+# Custom API provider
+ANTHROPIC_BASE_URL=https://api.moonshot.cn/anthrop
+ANTHROPIC_AUTH_TOKEN=your-token-here
+
+# Custom model
+ANTHROPIC_MODEL=kimi-k2-turbo
+```
+
+### Supported Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_MODEL` | Default model to use (highest priority) |
+| `ANTHROPIC_BASE_URL` | Custom API endpoint URL |
+| `ANTHROPIC_AUTH_TOKEN` | Authentication token |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Custom opus-tier model |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Custom sonnet-tier model |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Custom haiku-tier model |
+
+### Environment Snippets
+
+Save and restore environment variable configurations as named snippets for quick switching between providers.
+
+**Actions**:
+- **Save Current**: Save current environment variables as a new snippet
+- **Insert**: Replace environment variables with snippet content
+- **Edit**: Modify snippet name/description
+- **Delete**: Remove a saved snippet
+
+### Important Notes
+
+- **Plugin restart required**: After directly editing environment variables in settings, restart the plugin for changes to take effect
+- **No mixing**: When custom models are detected, only custom models appear in the model selector
+- **Snippets are instant**: Using "Insert" on a snippet applies immediately (no restart needed)
 
 ## Permission Modes
 
@@ -386,6 +459,26 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 - `.claudian-approved-item-pattern` - Pattern text
 - `.claudian-approved-item-date` - Approval date
 - `.claudian-approved-remove-btn` - Remove button
+
+### Environment Snippets (Settings)
+- `.claudian-env-snippets-container` - Main snippets container
+- `.claudian-snippet-header` - Header with title and save button
+- `.claudian-save-env-btn` - "Save Current" button
+- `.claudian-snippet-empty` - Empty state message
+- `.claudian-snippet-list` - List of saved snippets
+- `.claudian-snippet-item` - Individual snippet item
+- `.claudian-snippet-info` - Snippet name and description container
+- `.claudian-snippet-name` - Snippet name
+- `.claudian-snippet-description` - Snippet description
+- `.claudian-snippet-actions` - Action buttons container
+- `.claudian-restore-snippet-btn` - "Insert" button
+- `.claudian-edit-snippet-btn` - "Edit" button
+- `.claudian-delete-snippet-btn` - "Delete" button
+- `.claudian-env-snippet-modal` - Snippet create/edit modal
+- `.claudian-snippet-preview` - Environment preview in modal
+- `.claudian-env-preview` - Preformatted env vars display
+- `.claudian-snippet-buttons` - Modal button container
+- `.claudian-settings-env-textarea` - Environment variables textarea in settings
 
 ## Notes
 - when ask to generate a md file about the finding, implementation of your work, put the file in dev/

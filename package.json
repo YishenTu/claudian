@@ -1,6 +1,6 @@
 {
   "name": "claudian",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Claudian - Claude Code embedded in Obsidian sidebar",
   "main": "main.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "ai",
     "agent"
   ],
-  "author": "",
+  "author": "Yishen Tu",
   "license": "MIT",
   "devDependencies": {
     "@types/jest": "^30.0.0",

@@ -12,6 +12,11 @@ export {
 } from './InputToolbar';
 
 export {
+  EnvSnippetManager,
+  EnvSnippetModal,
+} from './EnvSnippetManager';
+
+export {
   FileContextManager,
   type FileContextCallbacks,
 } from './FileContext';

@@ -91,6 +91,7 @@ export function query({ prompt, options }: { prompt: string; options: Options })
     for (const msg of messages) {
       // Check for tool_use in assistant messages and run hooks
       if (msg.type === 'assistant' && msg.message?.content) {
+        let wasBlocked = false;
         for (const block of msg.message.content) {
           if (block.type === 'tool_use') {
             const hookResult = await runPreToolUseHooks(
@@ -112,10 +113,14 @@ export function query({ prompt, options }: { prompt: string; options: Options })
                 _blocked: true,
                 _blockReason: hookResult.reason,
               };
-              // Skip further processing of this message
-              continue;
+              wasBlocked = true;
+              break; // Exit inner loop since we already handled this message
             }
           }
+        }
+        // If the message was blocked, don't yield it again
+        if (wasBlocked) {
+          continue;
         }
       }
       yield msg;

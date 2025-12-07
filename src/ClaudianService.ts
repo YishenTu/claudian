@@ -5,7 +5,7 @@ import { query, type Options, type CanUseTool, type PermissionResult, type HookC
 import type ClaudianPlugin from './main';
 import { StreamChunk, ChatMessage, ToolCallInfo, SDKMessage, THINKING_BUDGETS, ApprovedAction } from './types';
 import { SYSTEM_PROMPT } from './systemPrompt';
-import { getVaultPath } from './utils';
+import { getVaultPath, parseEnvironmentVariables } from './utils';
 
 // Callback type for requesting user approval
 export type ApprovalCallback = (
@@ -234,12 +234,19 @@ export class ClaudianService {
     // Store vault path for restriction checks
     this.vaultPath = cwd;
 
+    // Parse custom environment variables from settings
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+
     const options: Options = {
       cwd,
       systemPrompt: SYSTEM_PROMPT,
       model: selectedModel,
       abortController: this.abortController ?? undefined,
       pathToClaudeCodeExecutable: this.resolvedClaudePath!,
+      env: {
+        ...process.env,     // Inherit current environment
+        ...customEnv,       // Override with user's custom variables
+      },
     };
 
     // Create hooks for security enforcement

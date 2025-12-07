@@ -7,6 +7,7 @@ import {
   StreamChunk,
   Conversation,
   ConversationMeta,
+  EnvSnippet,
 } from '../src/types';
 
 describe('types.ts', () => {
@@ -46,6 +47,22 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.blockedCommands.every((cmd) => cmd.trim().length > 0)).toBe(true);
       expect(new Set(DEFAULT_SETTINGS.blockedCommands).size).toBe(DEFAULT_SETTINGS.blockedCommands.length);
     });
+
+    it('should have environmentVariables as empty string by default', () => {
+      expect(DEFAULT_SETTINGS.environmentVariables).toBe('');
+    });
+
+    it('should have envSnippets as empty array by default', () => {
+      expect(DEFAULT_SETTINGS.envSnippets).toEqual([]);
+    });
+
+    it('should have lastDefaultModel set to claude-haiku-4-5 by default', () => {
+      expect(DEFAULT_SETTINGS.lastDefaultModel).toBe('claude-haiku-4-5');
+    });
+
+    it('should have lastCustomModel as empty string by default', () => {
+      expect(DEFAULT_SETTINGS.lastCustomModel).toBe('');
+    });
   });
 
   describe('ClaudianSettings type', () => {
@@ -58,12 +75,95 @@ describe('types.ts', () => {
         thinkingBudget: 'off',
         permissionMode: 'yolo',
         approvedActions: [],
+        excludedTags: [],
+        environmentVariables: '',
+        envSnippets: [],
       };
 
       expect(settings.enableBlocklist).toBe(false);
       expect(settings.blockedCommands).toEqual(['test']);
       expect(settings.showToolUse).toBe(false);
       expect(settings.model).toBe('claude-haiku-4-5');
+    });
+
+    it('should accept custom model strings', () => {
+      const settings: ClaudianSettings = {
+        enableBlocklist: true,
+        blockedCommands: [],
+        showToolUse: true,
+        model: 'anthropic/custom-model-v1',
+        thinkingBudget: 'medium',
+        permissionMode: 'normal',
+        approvedActions: [],
+        excludedTags: ['private'],
+        environmentVariables: 'API_KEY=test',
+        envSnippets: [],
+      };
+
+      expect(settings.model).toBe('anthropic/custom-model-v1');
+    });
+
+    it('should accept optional lastDefaultModel and lastCustomModel', () => {
+      const settings: ClaudianSettings = {
+        enableBlocklist: true,
+        blockedCommands: [],
+        showToolUse: true,
+        model: 'claude-sonnet-4-5',
+        lastDefaultModel: 'claude-opus-4-5',
+        lastCustomModel: 'custom/model',
+        thinkingBudget: 'high',
+        permissionMode: 'yolo',
+        approvedActions: [],
+        excludedTags: [],
+        environmentVariables: '',
+        envSnippets: [],
+      };
+
+      expect(settings.lastDefaultModel).toBe('claude-opus-4-5');
+      expect(settings.lastCustomModel).toBe('custom/model');
+    });
+  });
+
+  describe('EnvSnippet type', () => {
+    it('should store all required fields', () => {
+      const snippet: EnvSnippet = {
+        id: 'snippet-123',
+        name: 'Production Config',
+        description: 'Production environment variables',
+        envVars: 'API_KEY=prod-key\nDEBUG=false',
+        createdAt: 1700000000000,
+      };
+
+      expect(snippet.id).toBe('snippet-123');
+      expect(snippet.name).toBe('Production Config');
+      expect(snippet.description).toBe('Production environment variables');
+      expect(snippet.envVars).toContain('API_KEY=prod-key');
+      expect(snippet.createdAt).toBe(1700000000000);
+    });
+
+    it('should accept optional lastUsed field', () => {
+      const snippet: EnvSnippet = {
+        id: 'snippet-456',
+        name: 'Dev Config',
+        description: 'Development settings',
+        envVars: 'DEBUG=true',
+        createdAt: 1700000000000,
+        lastUsed: 1700000001000,
+      };
+
+      expect(snippet.lastUsed).toBe(1700000001000);
+    });
+
+    it('should allow empty description', () => {
+      const snippet: EnvSnippet = {
+        id: 'snippet-789',
+        name: 'Quick Config',
+        description: '',
+        envVars: 'KEY=value',
+        createdAt: Date.now(),
+      };
+
+      expect(snippet.description).toBe('');
     });
   });
 

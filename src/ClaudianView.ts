@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, MarkdownRenderer, setIcon } from 'obsidian';
 import type ClaudianPlugin from './main';
-import { VIEW_TYPE_CLAUDIAN, ChatMessage, StreamChunk, ToolCallInfo, ContentBlock, ClaudeModel, ThinkingBudget, DEFAULT_THINKING_BUDGET } from './types';
+import { VIEW_TYPE_CLAUDIAN, ChatMessage, StreamChunk, ToolCallInfo, ContentBlock, ClaudeModel, ThinkingBudget, DEFAULT_THINKING_BUDGET, DEFAULT_CLAUDE_MODELS } from './types';
 
 // Import UI components
 import {
@@ -190,11 +190,23 @@ export class ClaudianView extends ItemView {
         thinkingBudget: this.plugin.settings.thinkingBudget,
         permissionMode: this.plugin.settings.permissionMode,
       }),
+      getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
       onModelChange: async (model: ClaudeModel) => {
         this.plugin.settings.model = model;
-        this.plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
+
+        // Update thinking budget if it's a default Claude model
+        const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m: any) => m.value === model);
+        if (isDefaultModel) {
+          this.plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
+          this.plugin.settings.lastDefaultModel = model;
+        } else {
+          this.plugin.settings.lastCustomModel = model;
+        }
+
         await this.plugin.saveSettings();
         this.thinkingBudgetSelector?.updateDisplay();
+        this.modelSelector?.updateDisplay();
+        this.modelSelector?.renderOptions();
       },
       onThinkingBudgetChange: async (budget: ThinkingBudget) => {
         this.plugin.settings.thinkingBudget = budget;

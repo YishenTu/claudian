@@ -2,10 +2,11 @@
 
 export const VIEW_TYPE_CLAUDIAN = 'claudian-view';
 
-// Available Claude models
-export type ClaudeModel = 'claude-haiku-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4-5';
+// Available Claude models (base type can be any string for custom models)
+export type ClaudeModel = string;
 
-export const CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
+// Default Claude models
+export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
   { value: 'claude-haiku-4-5', label: 'Haiku', description: 'Fast and efficient' },
   { value: 'claude-sonnet-4-5', label: 'Sonnet', description: 'Balanced performance' },
   { value: 'claude-opus-4-5', label: 'Opus', description: 'Most capable' },
@@ -33,7 +34,7 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
 ];
 
 // Default thinking budget per model
-export const DEFAULT_THINKING_BUDGET: Record<ClaudeModel, ThinkingBudget> = {
+export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   'claude-haiku-4-5': 'off',
   'claude-sonnet-4-5': 'low',
   'claude-opus-4-5': 'medium',
@@ -44,10 +45,24 @@ export interface ClaudianSettings {
   blockedCommands: string[];
   showToolUse: boolean;
   model: ClaudeModel;
+  // Remember last selected models per category for smoother switching
+  lastDefaultModel?: ClaudeModel;
+  lastCustomModel?: ClaudeModel;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
   approvedActions: ApprovedAction[];
   excludedTags: string[];  // Tags that exclude files from auto-loading context
+  environmentVariables: string;  // Custom env vars in KEY=VALUE format (one per line)
+  envSnippets: EnvSnippet[];  // Saved environment variable configurations
+}
+
+export interface EnvSnippet {
+  id: string;
+  name: string;
+  description: string;
+  envVars: string;
+  createdAt: number;
+  lastUsed?: number;
 }
 
 export const DEFAULT_SETTINGS: ClaudianSettings = {
@@ -59,10 +74,14 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   ],
   showToolUse: true,
   model: 'claude-haiku-4-5',
+  lastDefaultModel: 'claude-haiku-4-5',
+  lastCustomModel: '',
   thinkingBudget: 'off',
   permissionMode: 'yolo',
   approvedActions: [],
   excludedTags: [],
+  environmentVariables: '',
+  envSnippets: [],
 };
 
 // Conversation persistence types

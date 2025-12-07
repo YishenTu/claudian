@@ -1,7 +1,7 @@
 {
   "id": "claudian",
   "name": "Claudian",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "minAppVersion": "1.0.0",
   "description": "Claudian - Claude Code embedded in Obsidian sidebar",
   "author": "",

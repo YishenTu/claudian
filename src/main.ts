@@ -1,14 +1,26 @@
-import { Plugin } from 'obsidian';
+import { Plugin, Notice } from 'obsidian';
 import { ClaudianView } from './ClaudianView';
 import { ClaudianService } from './ClaudianService';
 import { ClaudianSettingTab } from './ClaudianSettings';
-import { ClaudianSettings, DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN, Conversation, ConversationMeta } from './types';
+import {
+  ClaudianSettings,
+  DEFAULT_SETTINGS,
+  VIEW_TYPE_CLAUDIAN,
+  Conversation,
+  ConversationMeta,
+  DEFAULT_CLAUDE_MODELS,
+} from './types';
+import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils';
 
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   agentService: ClaudianService;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
+  // Runtime snapshot of env vars; only refreshed on plugin load (restart)
+  private runtimeEnvironmentVariables = '';
+  // Track if we've already notified about env var changes (to avoid spam)
+  private hasNotifiedEnvChange = false;
 
   async onload() {
     console.log('Loading Claudian plugin');
@@ -80,6 +92,10 @@ export default class ClaudianPlugin extends Plugin {
         !this.conversations.find(c => c.id === this.activeConversationId)) {
       this.activeConversationId = null;
     }
+
+    // Runtime env snapshot is fixed until plugin restart
+    this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
+    this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
   }
 
   async saveSettings() {
@@ -88,6 +104,67 @@ export default class ClaudianPlugin extends Plugin {
       conversations: this.conversations,
       activeConversationId: this.activeConversationId,
     });
+  }
+
+  async applyEnvironmentVariables(envText: string): Promise<void> {
+    this.settings.environmentVariables = envText;
+    await this.saveSettings();
+
+    // Notify user if env vars changed from runtime snapshot (only once per change)
+    if (envText !== this.runtimeEnvironmentVariables) {
+      if (!this.hasNotifiedEnvChange) {
+        new Notice('Environment variables changed. Restart the plugin for changes to take effect.');
+        this.hasNotifiedEnvChange = true;
+      }
+    } else {
+      // Reset notification flag when value matches runtime (no restart needed)
+      this.hasNotifiedEnvChange = false;
+    }
+  }
+
+  getActiveEnvironmentVariables(): string {
+    return this.runtimeEnvironmentVariables;
+  }
+
+  private getDefaultModelValues(): string[] {
+    return DEFAULT_CLAUDE_MODELS.map((m) => m.value);
+  }
+
+  private getPreferredCustomModel(envVars: Record<string, string>, customModels: { value: string }[]): string {
+    const envPreferred = getCurrentModelFromEnvironment(envVars);
+    if (envPreferred && customModels.some((m) => m.value === envPreferred)) {
+      return envPreferred;
+    }
+    return customModels[0].value;
+  }
+
+  private reconcileModelWithEnvironment(envText: string): void {
+    const envVars = parseEnvironmentVariables(envText || '');
+    const customModels = getModelsFromEnvironment(envVars);
+    const defaultModels = this.getDefaultModelValues();
+
+    if (customModels.length > 0) {
+      const available = customModels.map((m) => m.value);
+      const preferred =
+        (this.settings.lastCustomModel && available.includes(this.settings.lastCustomModel))
+          ? this.settings.lastCustomModel
+          : (available.includes(this.settings.model)
+            ? this.settings.model
+            : this.getPreferredCustomModel(envVars, customModels));
+
+      this.settings.model = preferred;
+      this.settings.lastCustomModel = preferred;
+    } else {
+      const preferred =
+        (this.settings.lastDefaultModel && defaultModels.includes(this.settings.lastDefaultModel))
+          ? this.settings.lastDefaultModel
+          : (defaultModels.includes(this.settings.model)
+            ? this.settings.model
+            : DEFAULT_CLAUDE_MODELS[0].value);
+
+      this.settings.model = preferred;
+      this.settings.lastDefaultModel = preferred;
+    }
   }
 
   /**

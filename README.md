@@ -11,7 +11,8 @@ An Obsidian plugin that embeds Claude Agent as a sidebar chat interface. Your va
 - **Excluded tags**: Prevent notes with specific tags from auto-loading as context
 - **Streaming responses**: See Claude's responses in real-time
 - **Extended thinking**: Watch Claude's reasoning process with live timer display
-- **Model selection**: Switch between Haiku, Sonnet, and Opus models
+- **Model selection**: Switch between Haiku, Sonnet, and Opus models (or custom models via environment variables)
+- **Custom environment variables**: Configure API providers, custom models, and SDK settings
 - **Thinking budget control**: Adjust thinking token budget (Off/Low/Medium/High)
 - **Tool call visualization**: Collapsible UI showing tool inputs and results (like Claude Code CLI)
 - **Chat history persistence**: Conversations saved across sessions with easy switching
@@ -89,6 +90,8 @@ npm run build
 - **Blocked commands**: Patterns to block (supports regex)
 - **Show tool usage**: Display file operations in chat
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `system`, `private`)
+- **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
+- **Environment snippets**: Save and restore environment variable configurations
 - **Permission mode**: Toggle Yolo (bypass prompts) or Safe (require approval)
 - **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
 
@@ -116,14 +119,15 @@ src/
 ├── ClaudianSettings.ts  # Settings tab
 ├── systemPrompt.ts      # System prompt for Claude
 ├── types.ts             # Type definitions
-├── utils.ts             # Utility functions
+├── utils.ts             # Utility functions (env var parsing, model detection)
 └── ui/                  # Modular UI components
     ├── index.ts              # Barrel export
     ├── ApprovalModal.ts      # Permission approval dialog
     ├── InputToolbar.ts       # Model/thinking/permission selectors
     ├── FileContext.ts        # File attachments & @mentions
     ├── ToolCallRenderer.ts   # Tool call display
-    └── ThinkingBlockRenderer.ts # Extended thinking UI
+    ├── ThinkingBlockRenderer.ts # Extended thinking UI
+    └── EnvSnippetManager.ts  # Environment variable snippets
 ```
 
 ## Roadmap
@@ -139,7 +143,7 @@ src/
 - [x] Permission modes (Yolo/Safe)
 - [x] Edited files indicator for Claude edits (border on attachments, "Edited:" chips, click-to-open, auto-dismiss)
 - [x] Modular UI architecture (extracted reusable components)
-- [ ] Chat history export
+- [x] Environment variables support with snippet management
 
 ## License
 

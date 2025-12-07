@@ -1230,3 +1230,206 @@
 .claudian-approved-remove-btn:hover {
   opacity: 0.9;
 }
+
+/* Environment Snippets Styles */
+.claudian-env-snippets-container {
+  margin-top: 16px;
+}
+
+.claudian-snippet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.claudian-snippet-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.claudian-save-env-btn {
+  padding: 6px 16px;
+  font-size: 13px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.claudian-save-env-btn:hover {
+  opacity: 0.9;
+}
+
+.claudian-snippet-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.claudian-snippet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.claudian-snippet-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.claudian-snippet-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-snippet-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-snippet-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.claudian-snippet-description {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.claudian-snippet-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.claudian-restore-snippet-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-restore-snippet-btn:hover {
+  opacity: 0.9;
+}
+
+.claudian-edit-snippet-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-edit-snippet-btn:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+.claudian-delete-snippet-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-delete-snippet-btn:hover {
+  opacity: 0.9;
+}
+
+/* Env Snippet Modal */
+.claudian-env-snippet-modal .modal-content {
+  max-width: 500px;
+  width: auto;
+  padding: 16px;
+}
+
+.claudian-env-snippet-modal h2 {
+  margin: 0 0 16px 0;
+}
+
+.claudian-env-snippet-modal .setting-item {
+  padding: 8px 0;
+  margin: 0;
+}
+
+.claudian-env-snippet-modal .setting-item-info {
+  margin-bottom: 4px;
+}
+
+.claudian-snippet-preview {
+  margin: 8px 0;
+  padding: 6px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.claudian-env-preview {
+  background: var(--background-primary);
+  padding: 6px;
+  border-radius: 4px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted);
+  max-height: 120px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.claudian-snippet-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.claudian-cancel-btn,
+.claudian-save-btn {
+  padding: 6px 16px;
+  font-size: 13px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-cancel-btn {
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.claudian-cancel-btn:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+.claudian-save-btn {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.claudian-save-btn:hover {
+  opacity: 0.9;
+}

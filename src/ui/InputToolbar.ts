@@ -3,10 +3,11 @@ import {
   ClaudeModel,
   ThinkingBudget,
   PermissionMode,
-  CLAUDE_MODELS,
+  DEFAULT_CLAUDE_MODELS,
   THINKING_BUDGETS,
   DEFAULT_THINKING_BUDGET,
 } from '../types';
+import { parseEnvironmentVariables, getModelsFromEnvironment } from '../utils';
 
 /**
  * Interface for settings access needed by toolbar components
@@ -25,6 +26,7 @@ export interface ToolbarCallbacks {
   onThinkingBudgetChange: (budget: ThinkingBudget) => Promise<void>;
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
+  getEnvironmentVariables?: () => string; // Optional: to get env vars for dynamic models
 }
 
 /**
@@ -42,6 +44,34 @@ export class ModelSelector {
     this.render();
   }
 
+  /**
+   * Get available models. If custom models are configured via environment variables,
+   * shows ONLY custom models. Otherwise shows default Claude models.
+   */
+  private getAvailableModels() {
+    let models: { value: string; label: string; description: string }[] = [];
+
+    // Check for custom models from environment
+    if (this.callbacks.getEnvironmentVariables) {
+      const envVarsStr = this.callbacks.getEnvironmentVariables();
+      const envVars = parseEnvironmentVariables(envVarsStr);
+      const customModels = getModelsFromEnvironment(envVars);
+
+      if (customModels.length > 0) {
+        // If custom models exist, use ONLY them - no Claude models at all
+        models = customModels;
+      } else {
+        // No custom models, use defaults
+        models = [...DEFAULT_CLAUDE_MODELS];
+      }
+    } else {
+      // No environment variables callback, use defaults
+      models = [...DEFAULT_CLAUDE_MODELS];
+    }
+
+    return models;
+  }
+
   private render() {
     this.container.empty();
 
@@ -57,29 +87,38 @@ export class ModelSelector {
   updateDisplay() {
     if (!this.buttonEl) return;
     const currentModel = this.callbacks.getSettings().model;
-    const modelInfo = CLAUDE_MODELS.find(m => m.value === currentModel);
+    const models = this.getAvailableModels();
+    const modelInfo = models.find(m => m.value === currentModel);
+
+    // If current model is not in the available models, default to the first one
+    const displayModel = modelInfo || models[0];
+
     this.buttonEl.empty();
 
     const labelEl = this.buttonEl.createSpan({ cls: 'claudian-model-label' });
-    labelEl.setText(modelInfo?.label || 'Haiku');
+    labelEl.setText(displayModel?.label || 'Unknown');
 
     const chevronEl = this.buttonEl.createSpan({ cls: 'claudian-model-chevron' });
     setIcon(chevronEl, 'chevron-up');
   }
 
-  private renderOptions() {
+  renderOptions() {
     if (!this.dropdownEl) return;
     this.dropdownEl.empty();
 
     const currentModel = this.callbacks.getSettings().model;
+    const models = this.getAvailableModels();
 
-    for (const model of CLAUDE_MODELS) {
+    for (const model of models) {
       const option = this.dropdownEl.createDiv({ cls: 'claudian-model-option' });
       if (model.value === currentModel) {
         option.addClass('selected');
       }
 
       option.createSpan({ text: model.label });
+      if (model.description) {
+        option.setAttribute('title', model.description);
+      }
 
       option.addEventListener('click', async (e) => {
         e.stopPropagation();

@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type ClaudianPlugin from './main';
 import { getVaultPath } from './utils';
+import { EnvSnippetManager } from './ui';
 
 export class ClaudianSettingTab extends PluginSettingTab {
   plugin: ClaudianPlugin;
@@ -81,6 +82,25 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.rows = 4;
         text.inputEl.cols = 30;
       });
+
+    new Setting(containerEl)
+      .setName('Environment variables')
+      .setDesc('Custom environment variables for Claude (KEY=VALUE format, one per line)')
+      .addTextArea((text) => {
+        text
+          .setPlaceholder('ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model')
+          .setValue(this.plugin.settings.environmentVariables)
+          .onChange(async (value) => {
+            await this.plugin.applyEnvironmentVariables(value);
+          });
+        text.inputEl.rows = 6;
+        text.inputEl.cols = 50;
+        text.inputEl.addClass('claudian-settings-env-textarea');
+      });
+
+    // Environment Snippets section
+    const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
+    new EnvSnippetManager(envSnippetsContainer, this.plugin);
 
     // Approved Actions section
     containerEl.createEl('h3', { text: 'Approved Actions' });
