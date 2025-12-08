@@ -488,6 +488,20 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 - `.claudian-thinking-label` - Timer label ("Thinking for Xs..." → "Thought for Xs")
 - `.claudian-thinking-content` - Collapsible thinking content (streams in real-time)
 
+### Todo List (TodoWrite)
+- `.claudian-todo-list` - Todo list container (expanded by default, click to collapse)
+- `.claudian-todo-header` - Clickable header with task count
+- `.claudian-todo-chevron` - Expand/collapse chevron icon
+- `.claudian-todo-icon` - List-checks icon
+- `.claudian-todo-label` - Label showing "Tasks (completed/total)"
+- `.claudian-todo-content` - Collapsible todo items container
+- `.claudian-todo-item` - Individual todo item row
+- `.claudian-todo-pending` - Pending task styling (muted, circle icon)
+- `.claudian-todo-in_progress` - In-progress task styling (accent color, spinning loader)
+- `.claudian-todo-completed` - Completed task styling (green checkmark, strikethrough)
+- `.claudian-todo-status-icon` - Status indicator icon (circle/loader/check)
+- `.claudian-todo-text` - Task description text
+
 ### Model Selector
 - `.claudian-input-toolbar` - Toolbar below input textarea
 - `.claudian-model-selector` - Model selector container

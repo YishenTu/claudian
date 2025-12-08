@@ -12,6 +12,7 @@ const TOOL_ICONS: Record<string, string> = {
   'Glob': 'folder-search',
   'Grep': 'search',
   'LS': 'list',
+  'TodoWrite': 'list-checks',
 };
 
 /**
@@ -49,6 +50,14 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       return `Grep: ${input.pattern || 'pattern'}`;
     case 'LS':
       return `LS: ${shortenPath(input.path as string) || '.'}`;
+    case 'TodoWrite': {
+      const todos = input.todos as Array<{ status: string }> | undefined;
+      if (todos && Array.isArray(todos)) {
+        const completed = todos.filter(t => t.status === 'completed').length;
+        return `Tasks (${completed}/${todos.length})`;
+      }
+      return 'Tasks';
+    }
     default:
       return name;
   }

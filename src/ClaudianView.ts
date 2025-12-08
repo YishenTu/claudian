@@ -25,6 +25,9 @@ import {
   cleanupThinkingBlock,
   renderStoredThinkingBlock,
   type ThinkingBlockState,
+  parseTodoInput,
+  renderTodoList,
+  renderStoredTodoList,
 } from './ui';
 
 export class ClaudianView extends ItemView {
@@ -498,7 +501,20 @@ export class ClaudianView extends ItemView {
         if (this.plugin.settings.showToolUse) {
           msg.contentBlocks = msg.contentBlocks || [];
           msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
-          renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements);
+
+          // Special rendering for TodoWrite
+          if (chunk.name === 'TodoWrite') {
+            const todos = parseTodoInput(chunk.input);
+            if (todos) {
+              const todoEl = renderTodoList(this.currentContentEl!, todos, true);
+              todoEl.dataset.toolId = chunk.id;
+              this.toolCallElements.set(chunk.id, todoEl);
+            } else {
+              renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements);
+            }
+          } else {
+            renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements);
+          }
         }
         break;
       }
@@ -850,7 +866,12 @@ export class ClaudianView extends ItemView {
           } else if (block.type === 'tool_use' && this.plugin.settings.showToolUse) {
             const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
             if (toolCall) {
-              renderStoredToolCall(contentEl, toolCall);
+              // Special rendering for TodoWrite
+              if (toolCall.name === 'TodoWrite') {
+                renderStoredTodoList(contentEl, toolCall.input);
+              } else {
+                renderStoredToolCall(contentEl, toolCall);
+              }
             }
           }
         }
@@ -862,7 +883,12 @@ export class ClaudianView extends ItemView {
         }
         if (msg.toolCalls && this.plugin.settings.showToolUse) {
           for (const toolCall of msg.toolCalls) {
-            renderStoredToolCall(contentEl, toolCall);
+            // Special rendering for TodoWrite
+            if (toolCall.name === 'TodoWrite') {
+              renderStoredTodoList(contentEl, toolCall.input);
+            } else {
+              renderStoredToolCall(contentEl, toolCall);
+            }
           }
         }
       }
