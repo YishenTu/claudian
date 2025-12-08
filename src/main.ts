@@ -321,4 +321,15 @@ export default class ClaudianPlugin extends Plugin {
       preview: this.getConversationPreview(c),
     }));
   }
+
+  /**
+   * Get the active Claudian view from workspace
+   */
+  getView(): ClaudianView | null {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
+    if (leaves.length > 0) {
+      return leaves[0].view as ClaudianView;
+    }
+    return null;
+  }
 }

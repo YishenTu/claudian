@@ -991,7 +991,7 @@ export class ClaudianService {
             tool_name: string;
             tool_input: Record<string, unknown>;
           };
-          await this.plugin.view?.fileContextManager?.markFileBeingEdited(
+          await this.plugin.getView()?.fileContextManager?.markFileBeingEdited(
             input.tool_name,
             input.tool_input
           );
@@ -1015,7 +1015,7 @@ export class ClaudianService {
             tool_result?: { is_error?: boolean };
           };
           const isError = input.tool_result?.is_error ?? false;
-          await this.plugin.view?.fileContextManager?.trackEditedFile(
+          await this.plugin.getView()?.fileContextManager?.trackEditedFile(
             input.tool_name,
             input.tool_input,
             isError
