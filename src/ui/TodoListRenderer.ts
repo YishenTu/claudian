@@ -36,7 +36,7 @@ function getStatusIcon(status: TodoItem['status']): string {
     case 'completed':
       return 'check-circle-2';
     case 'in_progress':
-      return 'loader';
+      return 'circle-dot';
     case 'pending':
     default:
       return 'circle';
@@ -68,9 +68,14 @@ export function renderTodoList(
   // Count completed vs total
   const completedCount = todos.filter(t => t.status === 'completed').length;
   const totalCount = todos.length;
+  const currentTask = todos.find(t => t.status === 'in_progress');
 
   const label = header.createDiv({ cls: 'claudian-todo-label' });
-  label.setText(`Tasks (${completedCount}/${totalCount})`);
+  if (currentTask) {
+    label.setText(`${currentTask.activeForm} (${completedCount}/${totalCount})`);
+  } else {
+    label.setText(`Tasks (${completedCount}/${totalCount})`);
+  }
 
   // Content (collapsible)
   const content = container.createDiv({ cls: 'claudian-todo-content' });
@@ -86,11 +91,6 @@ export function renderTodoList(
 
     const statusIcon = itemEl.createDiv({ cls: 'claudian-todo-status-icon' });
     setIcon(statusIcon, getStatusIcon(todo.status));
-
-    // Add spinner animation for in_progress
-    if (todo.status === 'in_progress') {
-      statusIcon.addClass('spinning');
-    }
 
     const text = itemEl.createDiv({ cls: 'claudian-todo-text' });
     // Show activeForm for in_progress, content otherwise

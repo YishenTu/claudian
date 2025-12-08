@@ -1665,14 +1665,6 @@
 
 .claudian-todo-list {
   margin: 8px 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-primary);
-  overflow: hidden;
-}
-
-.claudian-todo-list.expanded {
-  border-color: var(--interactive-accent);
 }
 
 .claudian-text-block + .claudian-todo-list {
@@ -1696,14 +1688,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 4px 0;
   cursor: pointer;
-  background: var(--background-secondary-alt);
-  transition: background 0.15s ease;
-}
-
-.claudian-todo-header:hover {
-  background: var(--background-modifier-hover);
 }
 
 .claudian-todo-chevron {
@@ -1739,9 +1725,7 @@
 
 /* Todo list content */
 .claudian-todo-content {
-  border-top: 1px solid var(--background-modifier-border);
-  padding: 8px 12px;
-  background: var(--background-primary-alt);
+  padding: 4px 0 4px 24px;
 }
 
 /* Individual todo item */
@@ -1799,11 +1783,6 @@
 .claudian-todo-completed .claudian-todo-text {
   color: var(--text-muted);
   text-decoration: line-through;
-}
-
-/* Spinner animation for in_progress */
-.claudian-todo-status-icon.spinning svg {
-  animation: spin 1s linear infinite;
 }
 
 .claudian-todo-text {

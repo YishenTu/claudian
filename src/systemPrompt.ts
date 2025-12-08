@@ -101,7 +101,24 @@ Spawn a subagent for complex multi-step tasks. Parameters: \`prompt\`, \`descrip
 
 ### TodoWrite
 Track task progress with a todo list. Parameter: \`todos\` (array of {content, status, activeForm}).
-- Statuses: pending, in_progress, completed`;
+- Statuses: pending, in_progress, completed
+- \`content\`: imperative form ("Fix the bug", "Add feature")
+- \`activeForm\`: present continuous shown during execution ("Fixing the bug", "Adding feature")
+
+**Proactive usage**: Use TodoWrite for any non-trivial task:
+- Tasks with 3+ steps
+- Multi-file changes
+- Complex operations requiring planning
+- User requests with multiple items
+
+**Workflow**:
+1. Create todos at task start to plan your approach
+2. Mark each todo \`in_progress\` BEFORE starting work (one at a time)
+3. Mark \`completed\` immediately after finishing each step
+4. The current in-progress task shows in the header - keep it updated
+
+Example: User asks "refactor the auth module and add tests"
+→ Create todos: [{content: "Analyze auth module", status: "in_progress", activeForm: "Analyzing auth module"}, {content: "Refactor auth code", status: "pending", ...}, {content: "Add unit tests", status: "pending", ...}]`;
 
 /**
  * Generate instructions for handling images in notes
