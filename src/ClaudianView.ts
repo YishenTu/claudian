@@ -894,16 +894,19 @@ export class ClaudianView extends ItemView {
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     _msg: ChatMessage
   ): boolean {
+    const isLinked = this.asyncSubagentManager.isLinkedAgentOutputTool(chunk.id);
+
     // Handle result via manager (finalizes subagent)
     // UI update happens via onAsyncSubagentStateChange callback
-    this.asyncSubagentManager.handleAgentOutputToolResult(
+    const handled = this.asyncSubagentManager.handleAgentOutputToolResult(
       chunk.id,
       chunk.content,
       chunk.isError || false
     );
 
-    // Treat as handled if any async subagent existed; manager will no-op otherwise
-    return this.asyncSubagentManager.hasActiveAsync();
+    // Only return true if this specific tool result was actually handled
+    // (not just if any async subagent exists - that would block all other tool results)
+    return isLinked || handled !== undefined;
   }
 
   /**

@@ -55,14 +55,40 @@ describe('AsyncSubagentManager', () => {
     manager.createAsyncSubagent('task-running', { description: 'Background', run_in_background: true });
     manager.handleTaskToolResult('task-running', JSON.stringify({ agent_id: 'agent-abc' }));
 
+    const toolCall: ToolCallInfo = {
+      id: 'output-not-ready',
+      name: 'AgentOutputTool',
+      input: { agent_id: 'agent-abc' },
+      status: 'running',
+      isExpanded: false,
+    };
+    manager.handleAgentOutputToolUse(toolCall);
+
     const stillRunning = manager.handleAgentOutputToolResult(
-      'output-1',
+      'output-not-ready',
       JSON.stringify({ retrieval_status: 'not_ready', agents: {} }),
       false
     );
 
-    expect(stillRunning).toBeUndefined();
+    expect(stillRunning?.asyncStatus).toBe('running');
     expect(manager.getByAgentId('agent-abc')?.asyncStatus).toBe('running');
+    expect(manager.hasActiveAsync()).toBe(true);
+  });
+
+  it('ignores unrelated tool_result when async subagent is active', () => {
+    const { manager } = createManager();
+
+    manager.createAsyncSubagent('task-standalone', { description: 'Background', run_in_background: true });
+    manager.handleTaskToolResult('task-standalone', JSON.stringify({ agent_id: 'agent-standalone' }));
+
+    const unrelated = manager.handleAgentOutputToolResult(
+      'non-agent-output',
+      'regular tool output',
+      false
+    );
+
+    expect(unrelated).toBeUndefined();
+    expect(manager.getByAgentId('agent-standalone')?.asyncStatus).toBe('running');
     expect(manager.hasActiveAsync()).toBe(true);
   });
 

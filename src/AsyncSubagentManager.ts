@@ -177,12 +177,6 @@ export class AsyncSubagentManager {
       }
     }
 
-    // Fallback: if exactly one active async subagent, assume it's for that one
-    if (!subagent && this.activeAsyncSubagents.size === 1) {
-      subagent = Array.from(this.activeAsyncSubagents.values())[0];
-      agentId = subagent.agentId || agentId;
-    }
-
     if (!subagent) {
       return undefined;
     }
@@ -209,7 +203,7 @@ export class AsyncSubagentManager {
       // Task not done yet - don't change state, just clear the tool mapping
       // so next AgentOutputTool call can be linked
       this.outputToolIdToAgentId.delete(toolId);
-      return undefined;
+      return subagent;
     }
 
     // Extract the actual result content from the response
