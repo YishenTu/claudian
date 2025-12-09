@@ -48,6 +48,8 @@ export interface ClaudianSettings {
   // Remember last selected models per category for smoother switching
   lastClaudeModel?: ClaudeModel;
   lastCustomModel?: ClaudeModel;
+  // Hash of env vars when model was last set (to detect env changes)
+  lastEnvHash?: string;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
   approvedActions: ApprovedAction[];
@@ -76,6 +78,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   model: 'claude-haiku-4-5',
   lastClaudeModel: 'claude-haiku-4-5',
   lastCustomModel: '',
+  lastEnvHash: '',
   thinkingBudget: 'off',
   permissionMode: 'yolo',
   approvedActions: [],

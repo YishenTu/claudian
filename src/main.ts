@@ -93,7 +93,12 @@ export default class ClaudianPlugin extends Plugin {
 
     // Runtime env snapshot is fixed until plugin restart
     this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
-    this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
+    const modelReset = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
+
+    // Persist hash change if model was reset
+    if (modelReset) {
+      await this.saveSettings();
+    }
   }
 
   async saveSettings() {
@@ -136,17 +141,54 @@ export default class ClaudianPlugin extends Plugin {
     return customModels[0].value;
   }
 
-  private reconcileModelWithEnvironment(envText: string): void {
+  /**
+   * Simple hash for env vars to detect changes.
+   * Only hashes model-related env vars for stability.
+   */
+  private computeEnvHash(envText: string): string {
+    const envVars = parseEnvironmentVariables(envText || '');
+    // Only hash model-related env vars
+    const modelKeys = [
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ];
+    const relevantPairs = modelKeys
+      .filter(key => envVars[key])
+      .map(key => `${key}=${envVars[key]}`)
+      .sort()
+      .join('|');
+    return relevantPairs;
+  }
+
+  /**
+   * Reconcile model with environment. Returns true if model was reset due to env change.
+   */
+  private reconcileModelWithEnvironment(envText: string): boolean {
+    const currentHash = this.computeEnvHash(envText);
+    const savedHash = this.settings.lastEnvHash || '';
+
+    // If env hasn't changed, keep the user's saved model
+    if (currentHash === savedHash) {
+      return false;
+    }
+
+    // Env changed - reset model to appropriate default
     const envVars = parseEnvironmentVariables(envText || '');
     const customModels = getModelsFromEnvironment(envVars);
 
     if (customModels.length > 0) {
-      // When switching to custom env: reset to priority order (ANTHROPIC_MODEL > opus > sonnet > haiku)
+      // Custom env: use priority order (ANTHROPIC_MODEL > opus > sonnet > haiku)
       this.settings.model = this.getPreferredCustomModel(envVars, customModels);
     } else {
-      // When clearing env vars: reset to default haiku
+      // No custom env: reset to haiku
       this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
     }
+
+    // Update the saved hash
+    this.settings.lastEnvHash = currentHash;
+    return true;
   }
 
   /**
