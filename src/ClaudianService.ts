@@ -461,6 +461,10 @@ export class ClaudianService {
    * - 'result' - final result
    */
   private *transformSDKMessage(message: SDKMessage): Generator<StreamChunk> {
+    // Capture parent_tool_use_id for subagent routing
+    // null = main agent, non-null = subagent context
+    const parentToolUseId = message.parent_tool_use_id ?? null;
+
     switch (message.type) {
       case 'system':
         // Capture session ID from init message
@@ -475,15 +479,16 @@ export class ClaudianService {
         if (message.message?.content && Array.isArray(message.message.content)) {
           for (const block of message.message.content) {
             if (block.type === 'thinking' && block.thinking) {
-              yield { type: 'thinking', content: block.thinking };
+              yield { type: 'thinking', content: block.thinking, parentToolUseId };
             } else if (block.type === 'text' && block.text) {
-              yield { type: 'text', content: block.text };
+              yield { type: 'text', content: block.text, parentToolUseId };
             } else if (block.type === 'tool_use') {
               yield {
                 type: 'tool_use',
                 id: block.id || `tool-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
                 name: block.name || 'unknown',
                 input: block.input || {},
+                parentToolUseId,
               };
             }
           }
@@ -508,6 +513,7 @@ export class ClaudianService {
               ? message.tool_use_result
               : JSON.stringify(message.tool_use_result, null, 2),
             isError: false,
+            parentToolUseId,
           };
         }
         // Also check message.message.content for tool_result blocks
@@ -521,6 +527,7 @@ export class ClaudianService {
                   ? block.content
                   : JSON.stringify(block.content, null, 2),
                 isError: block.is_error || false,
+                parentToolUseId,
               };
             }
           }
@@ -536,20 +543,21 @@ export class ClaudianService {
             id: event.content_block.id || `tool-${Date.now()}`,
             name: event.content_block.name || 'unknown',
             input: event.content_block.input || {},
+            parentToolUseId,
           };
         } else if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {
           if (event.content_block.thinking) {
-            yield { type: 'thinking', content: event.content_block.thinking };
+            yield { type: 'thinking', content: event.content_block.thinking, parentToolUseId };
           }
         } else if (event?.type === 'content_block_start' && event.content_block?.type === 'text') {
           if (event.content_block.text) {
-            yield { type: 'text', content: event.content_block.text };
+            yield { type: 'text', content: event.content_block.text, parentToolUseId };
           }
         } else if (event?.type === 'content_block_delta') {
           if (event.delta?.type === 'thinking_delta' && event.delta.thinking) {
-            yield { type: 'thinking', content: event.delta.thinking };
+            yield { type: 'thinking', content: event.delta.thinking, parentToolUseId };
           } else if (event.delta?.type === 'text_delta' && event.delta.text) {
-            yield { type: 'text', content: event.delta.text };
+            yield { type: 'text', content: event.delta.text, parentToolUseId };
           }
         }
         break;

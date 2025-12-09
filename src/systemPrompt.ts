@@ -98,6 +98,7 @@ Example: WebFetch url="https://example.com" prompt="Extract the main content"
 ### Task
 Spawn a subagent for complex multi-step tasks. Parameters: \`prompt\`, \`description\`, \`subagent_type\`.
 - Use for parallel or delegated work
+- **Always use sync mode**: Do NOT set \`run_in_background=true\`. Either omit the parameter or set it to \`false\`, unless instructed otherwise.
 
 ### TodoWrite
 Track task progress with a todo list. Parameter: \`todos\` (array of {content, status, activeForm}).

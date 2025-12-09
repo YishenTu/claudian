@@ -28,6 +28,12 @@ import {
   parseTodoInput,
   renderTodoList,
   renderStoredTodoList,
+  createSubagentBlock,
+  addSubagentToolCall,
+  updateSubagentToolResult,
+  finalizeSubagentBlock,
+  renderStoredSubagent,
+  type SubagentState,
 } from './ui';
 
 export class ClaudianView extends ItemView {
@@ -37,6 +43,9 @@ export class ClaudianView extends ItemView {
   private inputEl: HTMLTextAreaElement;
   private isStreaming = false;
   private toolCallElements: Map<string, HTMLElement> = new Map();
+
+  // Subagent tracking
+  private activeSubagents: Map<string, SubagentState> = new Map();
 
   // For maintaining stream order
   private currentContentEl: HTMLElement | null = null;
@@ -431,6 +440,9 @@ export class ClaudianView extends ItemView {
       this.finalizeCurrentThinkingBlock(assistantMsg);
       this.finalizeCurrentTextBlock(assistantMsg);
 
+      // Clean up any orphaned active subagents
+      this.activeSubagents.clear();
+
       // Auto-save after message completion
       await this.saveCurrentConversation();
     }
@@ -460,6 +472,13 @@ export class ClaudianView extends ItemView {
   }
 
   private async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage) {
+    // Route messages by parentToolUseId - if non-null, this chunk belongs to a subagent
+    if ('parentToolUseId' in chunk && chunk.parentToolUseId) {
+      await this.handleSubagentChunk(chunk, msg);
+      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+      return;
+    }
+
     // Hide thinking indicator when real content arrives
     if (chunk.type === 'text' || chunk.type === 'tool_use' || chunk.type === 'thinking') {
       this.hideThinkingIndicator();
@@ -489,6 +508,12 @@ export class ClaudianView extends ItemView {
           this.finalizeCurrentThinkingBlock(msg);
         }
         this.finalizeCurrentTextBlock(msg);
+
+        // Special handling for Task tool - create subagent block
+        if (chunk.name === 'Task') {
+          await this.handleTaskToolUse(chunk, msg);
+          break;
+        }
 
         const toolCall: ToolCallInfo = {
           id: chunk.id,
@@ -522,6 +547,13 @@ export class ClaudianView extends ItemView {
       }
 
       case 'tool_result': {
+        // Check if this is a Task tool result (subagent completion)
+        const subagentState = this.activeSubagents.get(chunk.id);
+        if (subagentState) {
+          this.finalizeSubagent(chunk, msg, subagentState);
+          break;
+        }
+
         const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
         const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
 
@@ -613,6 +645,119 @@ export class ClaudianView extends ItemView {
     }
 
     this.currentThinkingState = null;
+  }
+
+  // ============================================
+  // Subagent Handling
+  // ============================================
+
+  /**
+   * Handle Task tool_use by creating a subagent block
+   */
+  private async handleTaskToolUse(
+    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
+    msg: ChatMessage
+  ): Promise<void> {
+    if (!this.currentContentEl) return;
+
+    // Create subagent block
+    const state = createSubagentBlock(this.currentContentEl, chunk.id, chunk.input);
+    this.activeSubagents.set(chunk.id, state);
+
+    // Track in message for persistence
+    msg.subagents = msg.subagents || [];
+    msg.subagents.push(state.info);
+
+    // Add to content blocks
+    if (this.plugin.settings.showToolUse) {
+      msg.contentBlocks = msg.contentBlocks || [];
+      msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id });
+    }
+  }
+
+  /**
+   * Handle chunks from subagents - route to appropriate SubagentRenderer
+   */
+  private async handleSubagentChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
+    // Extract parentToolUseId from chunk (caller already verified it exists and is truthy)
+    if (!('parentToolUseId' in chunk) || !chunk.parentToolUseId) {
+      console.warn('handleSubagentChunk called without parentToolUseId');
+      return;
+    }
+    const parentToolUseId = chunk.parentToolUseId;
+    const subagentState = this.activeSubagents.get(parentToolUseId);
+
+    if (!subagentState) {
+      // Orphan subagent message - shouldn't happen for sync subagents
+      console.warn(`Received chunk for unknown subagent: ${parentToolUseId}`);
+      return;
+    }
+
+    switch (chunk.type) {
+      case 'tool_use': {
+        // Add nested tool to subagent
+        const toolCall: ToolCallInfo = {
+          id: chunk.id,
+          name: chunk.name,
+          input: chunk.input,
+          status: 'running',
+          isExpanded: false,
+        };
+        addSubagentToolCall(subagentState, toolCall);
+        break;
+      }
+
+      case 'tool_result': {
+        // Update nested tool in subagent
+        const toolCall = subagentState.info.toolCalls.find(tc => tc.id === chunk.id);
+        if (toolCall) {
+          const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
+          toolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
+          toolCall.result = chunk.content;
+          updateSubagentToolResult(subagentState, chunk.id, toolCall);
+
+          // Track edited files from subagent tool calls
+          this.fileContextManager?.trackEditedFile(
+            toolCall.name,
+            toolCall.input || {},
+            chunk.isError || isBlocked
+          );
+        }
+        break;
+      }
+
+      case 'text':
+      case 'thinking':
+        // Ignore text/thinking from subagents per requirements
+        break;
+    }
+  }
+
+  /**
+   * Finalize a subagent when its Task tool_result is received
+   */
+  private finalizeSubagent(
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
+    msg: ChatMessage,
+    state: SubagentState
+  ): void {
+    const isError = chunk.isError || false;
+    finalizeSubagentBlock(state, chunk.content, isError);
+
+    // Update in message for persistence
+    const subagentInfo = msg.subagents?.find(s => s.id === chunk.id);
+    if (subagentInfo) {
+      subagentInfo.status = isError ? 'error' : 'completed';
+      subagentInfo.result = chunk.content;
+    }
+
+    // Remove from active tracking
+    this.activeSubagents.delete(chunk.id);
+
+    // Show thinking indicator for next main agent response
+    if (this.currentContentEl) {
+      this.showThinkingIndicator(this.currentContentEl);
+    }
   }
 
   private addMessage(msg: ChatMessage): HTMLElement {
@@ -875,6 +1020,11 @@ export class ClaudianView extends ItemView {
                 renderStoredToolCall(contentEl, toolCall);
               }
             }
+          } else if (block.type === 'subagent' && this.plugin.settings.showToolUse) {
+            const subagent = msg.subagents?.find(s => s.id === block.subagentId);
+            if (subagent) {
+              renderStoredSubagent(contentEl, subagent);
+            }
           }
         }
       } else {
@@ -922,31 +1072,42 @@ export class ClaudianView extends ItemView {
     dropdownHeader.createSpan({ text: 'Conversations' });
 
     const list = this.historyDropdown.createDiv({ cls: 'claudian-history-list' });
-    const conversations = this.plugin.getConversationList()
-      .filter(conv => conv.id !== this.currentConversationId);
+    const allConversations = this.plugin.getConversationList();
 
-    if (conversations.length === 0) {
-      list.createDiv({ cls: 'claudian-history-empty', text: 'No other conversations' });
+    if (allConversations.length === 0) {
+      list.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
       return;
     }
 
+    // Sort: current session first, then by updatedAt descending
+    const conversations = [...allConversations].sort((a, b) => {
+      if (a.id === this.currentConversationId) return -1;
+      if (b.id === this.currentConversationId) return 1;
+      return b.updatedAt - a.updatedAt;
+    });
+
     for (const conv of conversations) {
-      const item = list.createDiv({ cls: 'claudian-history-item' });
+      const isCurrent = conv.id === this.currentConversationId;
+      const item = list.createDiv({
+        cls: `claudian-history-item${isCurrent ? ' active' : ''}`,
+      });
 
       const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-      setIcon(iconEl, 'message-square');
+      setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
 
       const content = item.createDiv({ cls: 'claudian-history-item-content' });
       content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
       content.createDiv({
         cls: 'claudian-history-item-date',
-        text: this.formatDate(conv.updatedAt),
+        text: isCurrent ? 'Current session' : this.formatDate(conv.updatedAt),
       });
 
-      content.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await this.onConversationSelect(conv.id);
-      });
+      if (!isCurrent) {
+        content.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await this.onConversationSelect(conv.id);
+        });
+      }
 
       const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
 

@@ -54,3 +54,12 @@ export {
   renderStoredTodoList,
   type TodoItem,
 } from './TodoListRenderer';
+
+export {
+  createSubagentBlock,
+  addSubagentToolCall,
+  updateSubagentToolResult,
+  finalizeSubagentBlock,
+  renderStoredSubagent,
+  type SubagentState,
+} from './SubagentRenderer';

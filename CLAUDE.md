@@ -25,6 +25,8 @@ src/
     ├── ImageContext.ts       # Image attachments, drag/drop, paste, path detection
     ├── ToolCallRenderer.ts   # Tool call UI rendering and status updates
     ├── ThinkingBlockRenderer.ts # Extended thinking block UI with timer
+    ├── TodoListRenderer.ts   # Todo list UI for TodoWrite tool
+    ├── SubagentRenderer.ts   # Subagent (Task tool) collapsible UI with nested tools
     └── EnvSnippetManager.ts  # Environment variable snippet management
 ```
 
@@ -39,6 +41,8 @@ src/
 | `ImageContext` | Image drag/drop, paste, path detection, preview display |
 | `ToolCallRenderer` | Tool call display with expand/collapse and status |
 | `ThinkingBlockRenderer` | Extended thinking blocks with live timer |
+| `TodoListRenderer` | Todo list display for TodoWrite tool calls |
+| `SubagentRenderer` | Subagent (Task tool) collapsible UI showing nested tool calls |
 | `EnvSnippetManager` | Environment variable snippet save/restore |
 
 ## Key Technologies
@@ -521,6 +525,27 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 - `.claudian-todo-completed` - Completed task styling (green checkmark, strikethrough)
 - `.claudian-todo-status-icon` - Status indicator icon (circle/loader/check)
 - `.claudian-todo-text` - Task description text
+
+### Subagent (Task Tool)
+- `.claudian-subagent-list` - Subagent container (expanded by default during streaming)
+- `.claudian-subagent-list.expanded` - Expanded state
+- `.claudian-subagent-list.done` - Completed state
+- `.claudian-subagent-list.error` - Error state
+- `.claudian-subagent-header` - Clickable header with subagent info
+- `.claudian-subagent-chevron` - Expand/collapse chevron icon
+- `.claudian-subagent-icon` - Bot icon
+- `.claudian-subagent-label` - Task description text
+- `.claudian-subagent-count` - Tool count badge ("N tool uses")
+- `.claudian-subagent-status` - Status indicator (spinner/check/x)
+- `.claudian-subagent-content` - Collapsible content area
+- `.claudian-subagent-branch` - Tree branch indicator (└─)
+- `.claudian-subagent-tool-item` - Current tool display container
+- `.claudian-subagent-tool-row` - Tool row (branch + label)
+- `.claudian-subagent-tool-text` - Tool name/label text
+- `.claudian-subagent-tool-result` - Nested result area
+- `.claudian-subagent-result-text` - Result text (max 2 lines)
+- `.claudian-subagent-done` - DONE/ERROR indicator row
+- `.claudian-subagent-done-text` - DONE/ERROR text
 
 ### Model Selector
 - `.claudian-input-toolbar` - Toolbar below input textarea

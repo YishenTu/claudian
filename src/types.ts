@@ -109,7 +109,8 @@ export interface ConversationMeta {
 export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; toolId: string }
-  | { type: 'thinking'; content: string; durationSeconds?: number };
+  | { type: 'thinking'; content: string; durationSeconds?: number }
+  | { type: 'subagent'; subagentId: string };
 
 // Supported image media types
 export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
@@ -135,6 +136,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
+  // Subagent (Task tool) tracking
+  subagents?: SubagentInfo[];
   // Ordered content blocks to preserve streaming order
   contentBlocks?: ContentBlock[];
   // File paths attached to this message via @ mention or auto-attach
@@ -153,12 +156,22 @@ export interface ToolCallInfo {
   isExpanded?: boolean;
 }
 
+// Subagent (Task tool) tracking
+export interface SubagentInfo {
+  id: string;                    // The Task tool_use_id
+  description: string;           // Task description (from input.description)
+  status: 'running' | 'completed' | 'error';
+  toolCalls: ToolCallInfo[];     // Nested tool calls from this subagent
+  isExpanded: boolean;
+  result?: string;               // Final result when completed
+}
+
 // Stream chunk types from Claude Agent SDK
 export type StreamChunk =
-  | { type: 'text'; content: string }
-  | { type: 'thinking'; content: string }
-  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result'; id: string; content: string; isError?: boolean }
+  | { type: 'text'; content: string; parentToolUseId?: string | null }
+  | { type: 'thinking'; content: string; parentToolUseId?: string | null }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown>; parentToolUseId?: string | null }
+  | { type: 'tool_result'; id: string; content: string; isError?: boolean; parentToolUseId?: string | null }
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
   | { type: 'done' };
