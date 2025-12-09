@@ -571,27 +571,6 @@ export function updateAsyncSubagentRunning(
 }
 
 /**
- * Update async subagent to awaiting_result state (SubagentStop hook fired)
- */
-export function updateAsyncSubagentAwaiting(state: AsyncSubagentState): void {
-  state.info.asyncStatus = 'awaiting_result';
-
-  setAsyncWrapperStatus(state.wrapperEl, 'running');
-  updateAsyncLabel(state, 'running');
-
-  // Update status text
-  state.statusTextEl.setText('Running');
-
-  // Update content
-  state.contentEl.empty();
-  const statusRow = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
-  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
-  textEl.setText('finished, awaiting result');
-}
-
-/**
  * Finalize async subagent with AgentOutputTool result
  */
 export function finalizeAsyncSubagent(

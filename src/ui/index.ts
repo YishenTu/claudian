@@ -69,7 +69,6 @@ export {
 export {
   createAsyncSubagentBlock,
   updateAsyncSubagentRunning,
-  updateAsyncSubagentAwaiting,
   finalizeAsyncSubagent,
   markAsyncSubagentOrphaned,
   renderStoredAsyncSubagent,

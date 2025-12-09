@@ -66,18 +66,6 @@ describe('AsyncSubagentManager', () => {
     expect(manager.hasActiveAsync()).toBe(true);
   });
 
-  it('transitions to awaiting_result after SubagentStop hook', () => {
-    const { manager, updates } = createManager();
-
-    manager.createAsyncSubagent('task-await', { description: 'Background', run_in_background: true });
-    manager.handleTaskToolResult('task-await', JSON.stringify({ agent_id: 'agent-await' }));
-
-    manager.handleSubagentStopHook('agent-await');
-
-    const last = updates[updates.length - 1];
-    expect(last.asyncStatus).toBe('awaiting_result');
-  });
-
   it('finalizes to completed when AgentOutputTool succeeds and extracts result', () => {
     const { manager, updates } = createManager();
 

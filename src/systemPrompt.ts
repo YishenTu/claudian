@@ -113,7 +113,7 @@ Spawn a subagent for complex multi-step tasks. Parameters: \`prompt\`, \`descrip
 - Runs in the background; no nested tool tracking.  
 - Returns immediately with \`agent_id\`.  
 - **You MUST retrieve the result** with AgentOutputTool before finishing.  
- - After spawning async, keep doing other work and poll with \`block=false\`; only use \`block=true\` when you have nothing else to do and are ready to wait.
+ - After spawning async, immediately check once with \`block=false\` to register status. While doing other work, keep polling with \`block=false\`. When you have no remaining work, call with \`block=true\` and wait to complete.
 
 ### AgentOutputTool
 Retrieve output from a background (async) Task. Parameters: \`agentId\`, \`block\`.
@@ -122,28 +122,30 @@ Retrieve output from a background (async) Task. Parameters: \`agentId\`, \`block
 
 **Async Task Workflow**:
 1. Launch async Task → get \`agent_id\` from result
-2. While you still have other tasks: check periodically with AgentOutputTool (block=false), then continue working
-3. When you have no other work: call AgentOutputTool with block=true and wait
-4. Once done, report the result to the user
+2. Immediately call AgentOutputTool \`block=false\` once to confirm status
+3. While doing other work: poll with AgentOutputTool \`block=false\` until it is ready
+4. When you have no other work: call AgentOutputTool \`block=true\` and wait
+5. Once done, report the result to the user
 
 **Example**:
 \`\`\`
 // 1. Launch background task
 Task prompt="search for X" run_in_background=true → returns {"agent_id": "abc123"}
 
-// 2. Check if done (block=false)
+// 2. Immediately check status (block=false)
 AgentOutputTool agentId="abc123" block=false
-// If still running, check again after a moment
-AgentOutputTool agentId="abc123" block=false
-// Repeat until result is ready while doing other work
 
-// 3. When no other work remains, wait for completion
+// 3. Continue other work and poll
+AgentOutputTool agentId="abc123" block=false
+AgentOutputTool agentId="abc123" block=false
+
+// 4. When no other work remains, wait
 AgentOutputTool agentId="abc123" block=true
 
-// 4. Report result to user
+// 5. Report result to user
 \`\`\`
 
-**Important**: Always retrieve async task results before ending your response. Check periodically until the task completes.
+**Important**: Never end your response without retrieving async task results. If not ready, keep polling with block=false; if idle, use block=true to finish.
 
 ### TodoWrite
 Track task progress with a todo list. Parameter: \`todos\` (array of {content, status, activeForm}).

@@ -124,7 +124,6 @@ export type SubagentMode = 'sync' | 'async';
 export type AsyncSubagentStatus =
   | 'pending'         // Task initiated, waiting for agent_id from tool_result
   | 'running'         // agent_id received, subagent is active in background
-  | 'awaiting_result' // SubagentStop hook fired, waiting for AgentOutputTool
   | 'completed'       // AgentOutputTool received with success
   | 'error'           // AgentOutputTool received with error
   | 'orphaned';       // Conversation ended before AgentOutputTool (auto-errored)

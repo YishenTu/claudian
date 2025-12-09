@@ -4,9 +4,8 @@
  * Async subagents (run_in_background=true) use a two-tool transaction model:
  * 1. Task tool_use → creates pending async subagent
  * 2. Task tool_result → extracts agent_id, transitions to running
- * 3. SubagentStop hook (optional) → transitions to awaiting_result
- * 4. AgentOutputTool tool_result → finalizes with completed/error
- * 5. Conversation end → orphans any active async subagents
+ * 3. AgentOutputTool tool_result → finalizes with completed/error
+ * 4. Conversation end → orphans any active async subagents
  */
 
 import {
@@ -136,28 +135,6 @@ export class AsyncSubagentManager {
   }
 
   /**
-   * Handle SubagentStop hook callback
-   * Transitions: running → awaiting_result
-   */
-  public handleSubagentStopHook(agentId: string): void {
-    const subagent = this.activeAsyncSubagents.get(agentId);
-    if (!subagent) {
-      // Could be a sync subagent or unknown
-      return;
-    }
-
-    if (subagent.asyncStatus !== 'running') {
-      console.warn(
-        `handleSubagentStopHook: Invalid transition ${subagent.asyncStatus} → awaiting_result`
-      );
-      return;
-    }
-
-    subagent.asyncStatus = 'awaiting_result';
-    this.onStateChange(subagent);
-  }
-
-  /**
    * Handle AgentOutputTool tool_use
    * Links the output tool to the async subagent for result routing
    */
@@ -181,7 +158,7 @@ export class AsyncSubagentManager {
 
   /**
    * Handle AgentOutputTool tool_result
-   * Transitions: {running, awaiting_result} → {completed, error} (only if task is done)
+   * Transitions: running → {completed, error} (only if task is done)
    */
   public handleAgentOutputToolResult(
     toolId: string,
@@ -216,7 +193,7 @@ export class AsyncSubagentManager {
       this.outputToolIdToAgentId.set(toolId, agentId);
     }
 
-    const validStates: AsyncSubagentStatus[] = ['running', 'awaiting_result'];
+    const validStates: AsyncSubagentStatus[] = ['running'];
     if (!validStates.includes(subagent.asyncStatus!)) {
       console.warn(
         `handleAgentOutputToolResult: Invalid transition ${subagent.asyncStatus} → final`
@@ -227,13 +204,6 @@ export class AsyncSubagentManager {
     // Check if the task is still running (block=false returns status, not result)
     // Common patterns for "still running": empty result, status indicators, etc.
     const stillRunning = this.isStillRunningResult(result, isError);
-
-    console.log('[AsyncSubagentManager] AgentOutputTool result:', {
-      agentId,
-      result: result.substring(0, 100),
-      isError,
-      stillRunning,
-    });
 
     if (stillRunning) {
       // Task not done yet - don't change state, just clear the tool mapping
@@ -268,11 +238,6 @@ export class AsyncSubagentManager {
    * - Completed: { "retrieval_status": "success", "agents": { "id": { "status": "completed", "result": "..." } } }
    */
   private isStillRunningResult(result: string, isError: boolean): boolean {
-    console.log('[AsyncSubagentManager] isStillRunningResult input:', {
-      result: result?.substring(0, 200),
-      isError,
-    });
-
     const trimmed = result?.trim() || '';
 
     // Attempt to unwrap common AgentOutputTool envelope: { type: 'text', text: 'json...' } or [ { ... } ]
@@ -295,30 +260,22 @@ export class AsyncSubagentManager {
 
     // If it's an error, task is done (with error)
     if (isError) {
-      console.log('[AsyncSubagentManager] isError=true, returning false (done)');
       return false;
     }
 
     // Empty/whitespace result - treat as done (avoid blocking forever on blank)
     if (!trimmed) {
-      console.log('[AsyncSubagentManager] Empty result, returning false (done)');
       return false;
     }
 
     // Try to parse as JSON
     try {
       const parsed = JSON.parse(payload);
-      console.log('[AsyncSubagentManager] Parsed JSON:', {
-        retrieval_status: parsed.retrieval_status,
-        agentsKeys: parsed.agents ? Object.keys(parsed.agents) : 'no agents field',
-      });
-
       const status = parsed.retrieval_status || parsed.status;
       const hasAgents = parsed.agents && Object.keys(parsed.agents).length > 0;
 
       // Explicit not-ready signals
       if (status === 'not_ready' || status === 'running' || status === 'pending') {
-        console.log('[AsyncSubagentManager] retrieval_status indicates not ready, returning true (still running)');
         return true;
       }
 
@@ -330,25 +287,18 @@ export class AsyncSubagentManager {
         const anyRunning = agentStatuses.some(s =>
           s === 'running' || s === 'pending' || s === 'not_ready'
         );
-        if (anyRunning) {
-          console.log('[AsyncSubagentManager] Agent status indicates running, returning true (still running)');
-          return true;
-        }
-        console.log('[AsyncSubagentManager] Agents present and not running, returning false (done)');
+        if (anyRunning) return true;
         return false;
       }
 
       // Explicit success
       if (status === 'success' || status === 'completed') {
-        console.log('[AsyncSubagentManager] retrieval_status success/completed, returning false (done)');
         return false;
       }
 
       // Unknown structure but non-empty -> assume done to avoid stuck UI
-      console.log('[AsyncSubagentManager] Unknown JSON format with data, returning false (done)');
       return false;
     } catch (e) {
-      console.log('[AsyncSubagentManager] JSON parse failed:', e);
     }
 
     // String matching fallback
@@ -356,12 +306,10 @@ export class AsyncSubagentManager {
 
     // Explicit not-ready phrases
     if (lowerResult.includes('not_ready') || lowerResult.includes('not ready')) {
-      console.log('[AsyncSubagentManager] Found not_ready indicator in string, returning true (still running)');
       return true;
     }
 
     // Default: assume done unless explicitly told otherwise
-    console.log('[AsyncSubagentManager] No not_ready indicator, returning false (done)');
     return false;
   }
 
@@ -423,7 +371,7 @@ export class AsyncSubagentManager {
 
   /**
    * Orphan all active async subagents (on conversation end)
-   * Transitions: {pending, running, awaiting_result} → orphaned
+   * Transitions: {pending, running} → orphaned
    */
   public orphanAllActive(): SubagentInfo[] {
     const orphaned: SubagentInfo[] = [];
@@ -440,10 +388,7 @@ export class AsyncSubagentManager {
 
     // Orphan active subagents
     for (const subagent of this.activeAsyncSubagents.values()) {
-      if (
-        subagent.asyncStatus === 'running' ||
-        subagent.asyncStatus === 'awaiting_result'
-      ) {
+      if (subagent.asyncStatus === 'running') {
         subagent.asyncStatus = 'orphaned';
         subagent.status = 'error';
         subagent.result = 'Conversation ended before task completed';
@@ -543,8 +488,6 @@ export class AsyncSubagentManager {
    * SDK returns JSON with agent_id field (snake_case)
    */
   private parseAgentId(result: string): string | null {
-    console.log('[AsyncSubagentManager] Parsing Task result:', result);
-
     // Try regex extraction first (works for both JSON and plain text)
     // Matches: "agent_id": "xxx", agent_id: xxx, agent_id=xxx, etc.
     const regexPatterns = [
@@ -558,7 +501,6 @@ export class AsyncSubagentManager {
     for (const pattern of regexPatterns) {
       const match = result.match(pattern);
       if (match && match[1]) {
-        console.log('[AsyncSubagentManager] Found agent_id via regex:', match[1]);
         return match[1];
       }
     }
@@ -566,31 +508,25 @@ export class AsyncSubagentManager {
     // Try parsing as JSON
     try {
       const parsed = JSON.parse(result);
-      console.log('[AsyncSubagentManager] Parsed JSON:', parsed);
-
       // Handle both snake_case (SDK standard) and camelCase
       const agentId = parsed.agent_id || parsed.agentId;
 
       if (typeof agentId === 'string' && agentId.length > 0) {
-        console.log('[AsyncSubagentManager] Found agent_id in JSON:', agentId);
         return agentId;
       }
 
       // Check if result is nested
       if (parsed.data?.agent_id) {
-        console.log('[AsyncSubagentManager] Found nested agent_id:', parsed.data.agent_id);
         return parsed.data.agent_id;
       }
 
       // Check for id field as fallback
       if (parsed.id && typeof parsed.id === 'string') {
-        console.log('[AsyncSubagentManager] Using id field as agent_id:', parsed.id);
         return parsed.id;
       }
 
       console.warn('[AsyncSubagentManager] No agent_id field in parsed result:', parsed);
     } catch {
-      console.log('[AsyncSubagentManager] Result is not JSON');
     }
 
     console.warn('[AsyncSubagentManager] Failed to extract agent_id from:', result);

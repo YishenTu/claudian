@@ -39,7 +39,6 @@ import {
   // Async subagent
   createAsyncSubagentBlock,
   updateAsyncSubagentRunning,
-  updateAsyncSubagentAwaiting,
   finalizeAsyncSubagent,
   markAsyncSubagentOrphaned,
   renderStoredAsyncSubagent,
@@ -937,10 +936,6 @@ export class ClaudianView extends ItemView {
     switch (subagent.asyncStatus) {
       case 'running':
         updateAsyncSubagentRunning(state, subagent.agentId || '');
-        break;
-
-      case 'awaiting_result':
-        updateAsyncSubagentAwaiting(state);
         break;
 
       case 'completed':
