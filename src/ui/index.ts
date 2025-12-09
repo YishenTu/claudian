@@ -55,6 +55,7 @@ export {
   type TodoItem,
 } from './TodoListRenderer';
 
+// Sync subagent exports
 export {
   createSubagentBlock,
   addSubagentToolCall,
@@ -62,4 +63,15 @@ export {
   finalizeSubagentBlock,
   renderStoredSubagent,
   type SubagentState,
+} from './SubagentRenderer';
+
+// Async subagent exports
+export {
+  createAsyncSubagentBlock,
+  updateAsyncSubagentRunning,
+  updateAsyncSubagentAwaiting,
+  finalizeAsyncSubagent,
+  markAsyncSubagentOrphaned,
+  renderStoredAsyncSubagent,
+  type AsyncSubagentState,
 } from './SubagentRenderer';

@@ -110,7 +110,21 @@ export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; toolId: string }
   | { type: 'thinking'; content: string; durationSeconds?: number }
-  | { type: 'subagent'; subagentId: string };
+  | { type: 'subagent'; subagentId: string; mode?: SubagentMode };
+
+// Subagent execution mode
+// - sync: Traditional nested subagent with tool tracking (parentToolUseId routing)
+// - async: Background subagent with no nested tool tracking (run_in_background=true)
+export type SubagentMode = 'sync' | 'async';
+
+// Async subagent lifecycle states
+export type AsyncSubagentStatus =
+  | 'pending'         // Task initiated, waiting for agent_id from tool_result
+  | 'running'         // agent_id received, subagent is active in background
+  | 'awaiting_result' // SubagentStop hook fired, waiting for AgentOutputTool
+  | 'completed'       // AgentOutputTool received with success
+  | 'error'           // AgentOutputTool received with error
+  | 'orphaned';       // Conversation ended before AgentOutputTool (auto-errored)
 
 // Supported image media types
 export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
@@ -156,14 +170,24 @@ export interface ToolCallInfo {
   isExpanded?: boolean;
 }
 
-// Subagent (Task tool) tracking
+// Subagent (Task tool) tracking - supports both sync and async modes
 export interface SubagentInfo {
   id: string;                    // The Task tool_use_id
   description: string;           // Task description (from input.description)
-  status: 'running' | 'completed' | 'error';
-  toolCalls: ToolCallInfo[];     // Nested tool calls from this subagent
+  mode?: SubagentMode;           // 'sync' (default) or 'async' (run_in_background=true)
   isExpanded: boolean;
   result?: string;               // Final result when completed
+
+  // Sync mode fields (mode === 'sync' or undefined)
+  status: 'running' | 'completed' | 'error';  // Sync status (3-state)
+  toolCalls: ToolCallInfo[];     // Nested tool calls from this subagent (sync only)
+
+  // Async mode fields (mode === 'async')
+  asyncStatus?: AsyncSubagentStatus;  // Async status (6-state lifecycle)
+  agentId?: string;              // Parsed from Task tool_result (snake_case from SDK)
+  outputToolId?: string;         // AgentOutputTool tool_use_id (for linking result)
+  startedAt?: number;            // Timestamp when agent_id received
+  completedAt?: number;          // Timestamp when AgentOutputTool received
 }
 
 // Stream chunk types from Claude Agent SDK

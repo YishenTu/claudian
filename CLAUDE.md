@@ -6,6 +6,9 @@ Claudian - An Obsidian plugin that embeds Claude Code as a sidebar chat interfac
 
 **Core Principle**: "Claude Code in a sidebar" - the full Claude Code experience embedded in Obsidian.
 
+**Highlights**
+- Sync + async Task subagent visualization (background Task/AgentOutputTool with non-blocking polling; running state is spinnerless, label revealed on completion/error).
+
 ## Architecture
 
 ```
@@ -17,6 +20,7 @@ src/
 ├── systemPrompt.ts      # System prompt and image handling instructions
 ├── types.ts             # Shared type definitions (StreamChunk, ToolCallInfo, etc.)
 ├── utils.ts             # Utility functions (getVaultPath, env var parsing, model detection)
+├── AsyncSubagentManager.ts # Async subagent state machine (Task → AgentOutputTool)
 └── ui/                  # Modular UI components
     ├── index.ts              # Barrel export for all UI components
     ├── ApprovalModal.ts      # Permission approval dialog (Modal)
@@ -42,7 +46,7 @@ src/
 | `ToolCallRenderer` | Tool call display with expand/collapse and status |
 | `ThinkingBlockRenderer` | Extended thinking blocks with live timer |
 | `TodoListRenderer` | Todo list display for TodoWrite tool calls |
-| `SubagentRenderer` | Subagent (Task tool) collapsible UI showing nested tool calls |
+| `SubagentRenderer` | Subagent (Task tool) UI for sync + async (nested tools vs. background polling, label shown on completion) |
 | `EnvSnippetManager` | Environment variable snippet save/restore |
 
 ## Key Technologies

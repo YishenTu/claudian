@@ -2036,3 +2036,65 @@
   color: var(--text-faint);
   font-weight: 500;
 }
+
+/* ============================================
+   Async Subagent (Task tool with run_in_background=true)
+   ============================================ */
+
+/* Status text display (e.g., "pending", "running agent_123", etc.) */
+.claudian-subagent-status-text {
+  font-size: 11px;
+  font-family: var(--font-monospace);
+  color: var(--text-muted);
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+/* Async-specific status styling */
+.claudian-subagent-list.async.pending .claudian-subagent-icon {
+  color: var(--text-muted);
+}
+
+.claudian-subagent-list.async.pending .claudian-subagent-status-text {
+  color: var(--text-muted);
+}
+
+.claudian-subagent-list.async.running .claudian-subagent-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-subagent-list.async.running .claudian-subagent-status-text {
+  color: var(--text-accent);
+}
+
+.claudian-subagent-list.async.awaiting .claudian-subagent-icon {
+  color: var(--color-yellow);
+}
+
+.claudian-subagent-list.async.awaiting .claudian-subagent-status-text {
+  color: var(--color-yellow);
+}
+
+.claudian-subagent-list.async.completed .claudian-subagent-icon {
+  color: var(--color-green);
+}
+
+.claudian-subagent-list.async.completed .claudian-subagent-status-text {
+  color: var(--color-green);
+}
+
+.claudian-subagent-list.async.error .claudian-subagent-icon {
+  color: var(--color-red);
+}
+
+.claudian-subagent-list.async.error .claudian-subagent-status-text {
+  color: var(--color-red);
+}
+
+.claudian-subagent-list.async.orphaned .claudian-subagent-icon {
+  color: var(--color-orange);
+}
+
+.claudian-subagent-list.async.orphaned .claudian-subagent-status-text {
+  color: var(--color-orange);
+}

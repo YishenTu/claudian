@@ -87,9 +87,8 @@ export function createSubagentBlock(
   const countEl = headerEl.createDiv({ cls: 'claudian-subagent-count' });
   countEl.setText('0 tool uses');
 
-  // Status indicator (spinner initially)
+  // Status indicator (icon updated on completion/error; empty while running)
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
-  statusEl.createSpan({ cls: 'claudian-spinner' });
 
   // Content (expanded by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
@@ -332,6 +331,370 @@ export function renderStoredSubagent(
         textEl.setText(truncateResult(lastTool.result));
       }
     }
+  }
+
+  // Toggle collapse on header click
+  headerEl.addEventListener('click', () => {
+    const expanded = wrapperEl.hasClass('expanded');
+    if (expanded) {
+      wrapperEl.removeClass('expanded');
+      setIcon(chevronEl, 'chevron-right');
+      contentEl.style.display = 'none';
+    } else {
+      wrapperEl.addClass('expanded');
+      setIcon(chevronEl, 'chevron-down');
+      contentEl.style.display = 'block';
+    }
+  });
+
+  return wrapperEl;
+}
+
+// ============================================================================
+// Async Subagent Rendering Functions
+// ============================================================================
+
+/**
+ * State for an async subagent block (simplified - no nested tool tracking)
+ */
+export interface AsyncSubagentState {
+  wrapperEl: HTMLElement;
+  contentEl: HTMLElement;
+  headerEl: HTMLElement;
+  labelEl: HTMLElement;
+  statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
+  statusEl: HTMLElement;
+  chevronEl: HTMLElement;
+  info: SubagentInfo;
+}
+
+function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
+  const classes = ['pending', 'running', 'awaiting', 'completed', 'error', 'orphaned', 'async'];
+  classes.forEach(cls => wrapperEl.removeClass(cls));
+  wrapperEl.addClass('async');
+  wrapperEl.addClass(status);
+}
+
+/**
+ * Normalize async status for display (collapse pending/awaiting to running)
+ */
+function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'completed' | 'error' | 'orphaned' {
+  if (asyncStatus === 'completed') return 'completed';
+  if (asyncStatus === 'error') return 'error';
+  if (asyncStatus === 'orphaned') return 'orphaned';
+  return 'running';
+}
+
+function getAsyncStatusText(asyncStatus: string | undefined): string {
+  const display = getAsyncDisplayStatus(asyncStatus);
+  if (display === 'completed') return 'Completed';
+  if (display === 'error') return 'Error';
+  if (display === 'orphaned') return 'Orphaned';
+  return 'Running';
+}
+
+function updateAsyncLabel(state: AsyncSubagentState, displayStatus: 'running' | 'completed' | 'error' | 'orphaned'): void {
+  // Only show label once finished (completed/error). Hide during running states.
+  if (displayStatus === 'completed' || displayStatus === 'error') {
+    state.labelEl.setText(truncateDescription(state.info.description));
+  } else {
+    state.labelEl.setText('');
+  }
+}
+
+/**
+ * Create an async subagent block for a background Task tool call
+ * Simpler than sync - no nested tool tracking, just status updates
+ */
+export function createAsyncSubagentBlock(
+  parentEl: HTMLElement,
+  taskToolId: string,
+  taskInput: Record<string, unknown>
+): AsyncSubagentState {
+  const description = (taskInput.description as string) || 'Background task';
+
+  const info: SubagentInfo = {
+    id: taskToolId,
+    description,
+    mode: 'async',
+    status: 'running',
+    toolCalls: [],
+    isExpanded: false, // Collapsed by default for async
+    asyncStatus: 'pending',
+  };
+
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
+  setAsyncWrapperStatus(wrapperEl, 'pending');
+  wrapperEl.dataset.asyncSubagentId = taskToolId;
+
+  // Header
+  const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
+
+  // Chevron
+  const chevronEl = headerEl.createDiv({ cls: 'claudian-subagent-chevron' });
+  setIcon(chevronEl, 'chevron-right'); // Collapsed by default
+
+  // Robot icon
+  const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
+  setIcon(iconEl, 'bot');
+
+  // Label (description)
+  const labelEl = headerEl.createDiv({ cls: 'claudian-subagent-label' });
+  labelEl.setText(''); // Hidden while running
+
+  // Status text (instead of tool count)
+  const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
+  statusTextEl.setText('Running');
+
+  // Status indicator (spinner initially)
+  const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
+
+  // Content (collapsed by default)
+  const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
+  contentEl.style.display = 'none';
+
+  // Initial content
+  const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
+  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
+  branchEl.setText('└─');
+  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
+  textEl.setText('run in background');
+
+  // Toggle collapse on header click
+  headerEl.addEventListener('click', () => {
+    info.isExpanded = !info.isExpanded;
+    if (info.isExpanded) {
+      wrapperEl.addClass('expanded');
+      setIcon(chevronEl, 'chevron-down');
+      contentEl.style.display = 'block';
+    } else {
+      wrapperEl.removeClass('expanded');
+      setIcon(chevronEl, 'chevron-right');
+      contentEl.style.display = 'none';
+    }
+  });
+
+  return {
+    wrapperEl,
+    contentEl,
+    headerEl,
+    labelEl,
+    statusTextEl,
+    statusEl,
+    chevronEl,
+    info,
+  };
+}
+
+/**
+ * Update async subagent to running state (agent_id received)
+ */
+export function updateAsyncSubagentRunning(
+  state: AsyncSubagentState,
+  agentId: string
+): void {
+  state.info.asyncStatus = 'running';
+  state.info.agentId = agentId;
+
+  setAsyncWrapperStatus(state.wrapperEl, 'running');
+  updateAsyncLabel(state, 'running');
+
+  // Update status text
+  state.statusTextEl.setText('Running');
+
+  // Update content
+  state.contentEl.empty();
+  const statusRow = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
+  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
+  branchEl.setText('└─');
+  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-agent-id' });
+  const shortId = agentId.length > 12 ? agentId.substring(0, 12) + '...' : agentId;
+  textEl.setText(`run in background (${shortId})`);
+}
+
+/**
+ * Update async subagent to awaiting_result state (SubagentStop hook fired)
+ */
+export function updateAsyncSubagentAwaiting(state: AsyncSubagentState): void {
+  state.info.asyncStatus = 'awaiting_result';
+
+  setAsyncWrapperStatus(state.wrapperEl, 'running');
+  updateAsyncLabel(state, 'running');
+
+  // Update status text
+  state.statusTextEl.setText('Running');
+
+  // Update content
+  state.contentEl.empty();
+  const statusRow = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
+  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
+  branchEl.setText('└─');
+  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
+  textEl.setText('finished, awaiting result');
+}
+
+/**
+ * Finalize async subagent with AgentOutputTool result
+ */
+export function finalizeAsyncSubagent(
+  state: AsyncSubagentState,
+  result: string,
+  isError: boolean
+): void {
+  state.info.asyncStatus = isError ? 'error' : 'completed';
+  state.info.status = isError ? 'error' : 'completed';
+  state.info.result = result;
+
+  setAsyncWrapperStatus(state.wrapperEl, isError ? 'error' : 'completed');
+  updateAsyncLabel(state, isError ? 'error' : 'completed');
+
+  // Update status text
+  state.statusTextEl.setText(isError ? 'Error' : 'Completed');
+
+  // Update status indicator
+  state.statusEl.className = 'claudian-subagent-status';
+  state.statusEl.addClass(`status-${isError ? 'error' : 'completed'}`);
+  state.statusEl.empty();
+  if (isError) {
+    setIcon(state.statusEl, 'x');
+  } else {
+    setIcon(state.statusEl, 'check');
+  }
+
+  // Update wrapper class
+  if (isError) {
+    state.wrapperEl.addClass('error');
+  } else {
+    state.wrapperEl.addClass('done');
+  }
+
+  // Show result in content
+  state.contentEl.empty();
+  const resultEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
+  const branchEl = resultEl.createDiv({ cls: 'claudian-subagent-branch' });
+  branchEl.setText('└─');
+  const textEl = resultEl.createDiv({ cls: 'claudian-subagent-done-text' });
+
+  if (isError && result) {
+    // Show truncated error message for debugging
+    const truncated = result.length > 80 ? result.substring(0, 80) + '...' : result;
+    textEl.setText(`ERROR: ${truncated}`);
+  } else {
+    textEl.setText(isError ? 'ERROR' : 'DONE');
+  }
+}
+
+/**
+ * Mark async subagent as orphaned (conversation ended before completion)
+ */
+export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
+  state.info.asyncStatus = 'orphaned';
+  state.info.status = 'error';
+  state.info.result = 'Conversation ended before task completed';
+
+  setAsyncWrapperStatus(state.wrapperEl, 'orphaned');
+  updateAsyncLabel(state, 'orphaned');
+
+  // Update status text
+  state.statusTextEl.setText('Orphaned');
+
+  // Update status indicator
+  state.statusEl.className = 'claudian-subagent-status status-error';
+  state.statusEl.empty();
+  setIcon(state.statusEl, 'alert-circle');
+
+  // Update wrapper class
+  state.wrapperEl.addClass('error');
+  state.wrapperEl.addClass('orphaned');
+
+  // Show orphaned message
+  state.contentEl.empty();
+  const orphanEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done claudian-async-orphaned' });
+  const branchEl = orphanEl.createDiv({ cls: 'claudian-subagent-branch' });
+  branchEl.setText('└─');
+  const textEl = orphanEl.createDiv({ cls: 'claudian-subagent-done-text' });
+  textEl.setText('⚠️ Task orphaned');
+}
+
+/**
+ * Render a stored async subagent from conversation history
+ * Collapsed by default
+ */
+export function renderStoredAsyncSubagent(
+  parentEl: HTMLElement,
+  subagent: SubagentInfo
+): HTMLElement {
+  const isExpanded = false; // Always collapsed for stored
+
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
+  const statusClass = getAsyncDisplayStatus(subagent.asyncStatus);
+  setAsyncWrapperStatus(wrapperEl, statusClass);
+
+  if (subagent.asyncStatus === 'completed') {
+    wrapperEl.addClass('done');
+  } else if (subagent.asyncStatus === 'error' || subagent.asyncStatus === 'orphaned') {
+    wrapperEl.addClass('error');
+  }
+  wrapperEl.dataset.asyncSubagentId = subagent.id;
+
+  // Header
+  const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
+
+  const chevronEl = headerEl.createDiv({ cls: 'claudian-subagent-chevron' });
+  setIcon(chevronEl, isExpanded ? 'chevron-down' : 'chevron-right');
+
+  const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
+  setIcon(iconEl, 'bot');
+
+  const labelEl = headerEl.createDiv({ cls: 'claudian-subagent-label' });
+  if (statusClass === 'completed' || statusClass === 'error') {
+    labelEl.setText(truncateDescription(subagent.description));
+  } else {
+    labelEl.setText('');
+  }
+
+  // Status text
+  const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
+  statusTextEl.setText(getAsyncStatusText(subagent.asyncStatus));
+
+  // Status indicator
+  const displayStatus = getAsyncDisplayStatus(subagent.asyncStatus);
+  const statusIconClass = (displayStatus === 'error' || displayStatus === 'orphaned')
+    ? 'status-error'
+    : (displayStatus === 'completed' ? 'status-completed' : 'status-running');
+  const statusEl = headerEl.createDiv({ cls: `claudian-subagent-status ${statusIconClass}` });
+
+  if (subagent.asyncStatus === 'completed') {
+    setIcon(statusEl, 'check');
+  } else if (subagent.asyncStatus === 'error' || subagent.asyncStatus === 'orphaned') {
+    setIcon(statusEl, subagent.asyncStatus === 'orphaned' ? 'alert-circle' : 'x');
+  }
+
+  // Content (collapsed by default)
+  const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
+  if (!isExpanded) {
+    contentEl.style.display = 'none';
+  }
+
+  // Show status-appropriate content
+  const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
+  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
+  branchEl.setText('└─');
+  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
+
+  if (subagent.asyncStatus === 'completed') {
+    textEl.setText('DONE');
+  } else if (subagent.asyncStatus === 'error') {
+    textEl.setText('ERROR');
+  } else if (subagent.asyncStatus === 'orphaned') {
+    textEl.setText('⚠️ Task orphaned');
+  } else if (subagent.agentId) {
+    const shortId = subagent.agentId.length > 12
+      ? subagent.agentId.substring(0, 12) + '...'
+      : subagent.agentId;
+    textEl.setText(`run in background (${shortId})`);
+  } else {
+    textEl.setText('run in background');
   }
 
   // Toggle collapse on header click

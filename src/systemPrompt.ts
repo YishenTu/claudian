@@ -96,9 +96,53 @@ Example: WebFetch url="https://example.com" prompt="Extract the main content"
 ## Task Management
 
 ### Task
-Spawn a subagent for complex multi-step tasks. Parameters: \`prompt\`, \`description\`, \`subagent_type\`.
-- Use for parallel or delegated work
-- **Always use sync mode**: Do NOT set \`run_in_background=true\`. Either omit the parameter or set it to \`false\`, unless instructed otherwise.
+Spawn a subagent for complex multi-step tasks. Parameters: \`prompt\`, \`description\`, \`subagent_type\`, \`run_in_background\`.
+
+**When to use subagents (sync or async)**  
+- The work can be parallelized (main + subagent or multiple subagents).  
+- You need a clean context window for the sub-task (preserve main context budget).  
+- You want to offload a contained task while the main agent continues other work.  
+
+**Sync mode (default)**  
+- Omit \`run_in_background\` or set to \`false\`. Default to sync unless the user explicitly asks for background or the task is clearly long-running.  
+- Runs inline; nested tool calls are tracked and displayed.  
+- Result is returned directly in the Task \`tool_result\`.  
+
+**Async mode** (\`run_in_background=true\`)  
+- Runs in the background; no nested tool tracking.  
+- Returns immediately with \`agent_id\`.  
+- **You MUST retrieve the result** with AgentOutputTool before finishing.  
+ - After spawning async, keep doing other work and poll with \`block=false\`; only use \`block=true\` when you have nothing else to do and are ready to wait.
+
+### AgentOutputTool
+Retrieve output from a background (async) Task. Parameters: \`agentId\`, \`block\`.
+- \`agentId\`: The agent ID returned from an async Task
+- \`block\`: Default to \`false\` to check status while continuing other work; use \`true\` **only when you have no remaining work and are ready to wait** for completion.
+
+**Async Task Workflow**:
+1. Launch async Task → get \`agent_id\` from result
+2. While you still have other tasks: check periodically with AgentOutputTool (block=false), then continue working
+3. When you have no other work: call AgentOutputTool with block=true and wait
+4. Once done, report the result to the user
+
+**Example**:
+\`\`\`
+// 1. Launch background task
+Task prompt="search for X" run_in_background=true → returns {"agent_id": "abc123"}
+
+// 2. Check if done (block=false)
+AgentOutputTool agentId="abc123" block=false
+// If still running, check again after a moment
+AgentOutputTool agentId="abc123" block=false
+// Repeat until result is ready while doing other work
+
+// 3. When no other work remains, wait for completion
+AgentOutputTool agentId="abc123" block=true
+
+// 4. Report result to user
+\`\`\`
+
+**Important**: Always retrieve async task results before ending your response. Check periodically until the task completes.
 
 ### TodoWrite
 Track task progress with a todo list. Parameter: \`todos\` (array of {content, status, activeForm}).

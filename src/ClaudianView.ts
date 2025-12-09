@@ -2,7 +2,8 @@ import { ItemView, WorkspaceLeaf, MarkdownRenderer, setIcon } from 'obsidian';
 import * as fs from 'fs';
 import * as path from 'path';
 import type ClaudianPlugin from './main';
-import { VIEW_TYPE_CLAUDIAN, ChatMessage, StreamChunk, ToolCallInfo, ContentBlock, ClaudeModel, ThinkingBudget, DEFAULT_THINKING_BUDGET, DEFAULT_CLAUDE_MODELS, ImageAttachment } from './types';
+import { VIEW_TYPE_CLAUDIAN, ChatMessage, StreamChunk, ToolCallInfo, ContentBlock, ClaudeModel, ThinkingBudget, DEFAULT_THINKING_BUDGET, DEFAULT_CLAUDE_MODELS, ImageAttachment, SubagentInfo } from './types';
+import { AsyncSubagentManager } from './AsyncSubagentManager';
 import { getVaultPath } from './utils';
 import { readCachedImageBase64 } from './imageCache';
 
@@ -28,12 +29,21 @@ import {
   parseTodoInput,
   renderTodoList,
   renderStoredTodoList,
+  // Sync subagent
   createSubagentBlock,
   addSubagentToolCall,
   updateSubagentToolResult,
   finalizeSubagentBlock,
   renderStoredSubagent,
   type SubagentState,
+  // Async subagent
+  createAsyncSubagentBlock,
+  updateAsyncSubagentRunning,
+  updateAsyncSubagentAwaiting,
+  finalizeAsyncSubagent,
+  markAsyncSubagentOrphaned,
+  renderStoredAsyncSubagent,
+  type AsyncSubagentState,
 } from './ui';
 
 export class ClaudianView extends ItemView {
@@ -44,8 +54,12 @@ export class ClaudianView extends ItemView {
   private isStreaming = false;
   private toolCallElements: Map<string, HTMLElement> = new Map();
 
-  // Subagent tracking
+  // Sync subagent tracking
   private activeSubagents: Map<string, SubagentState> = new Map();
+
+  // Async subagent tracking
+  private asyncSubagentManager: AsyncSubagentManager;
+  private asyncSubagentStates: Map<string, AsyncSubagentState> = new Map();
 
   // For maintaining stream order
   private currentContentEl: HTMLElement | null = null;
@@ -95,6 +109,11 @@ export class ClaudianView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
+
+    // Initialize async subagent manager with UI update callback
+    this.asyncSubagentManager = new AsyncSubagentManager(
+      this.onAsyncSubagentStateChange.bind(this)
+    );
   }
 
   getViewType(): string {
@@ -326,6 +345,9 @@ export class ClaudianView extends ItemView {
     this.plugin.agentService.setApprovalCallback(null);
     // Clean up file context manager (unregister vault event listeners)
     this.fileContextManager?.destroy();
+    // Orphan any active async subagents (view closing = conversation ending)
+    this.asyncSubagentManager.orphanAllActive();
+    this.asyncSubagentStates.clear();
     // Save current conversation before closing
     await this.saveCurrentConversation();
   }
@@ -440,8 +462,13 @@ export class ClaudianView extends ItemView {
       this.finalizeCurrentThinkingBlock(assistantMsg);
       this.finalizeCurrentTextBlock(assistantMsg);
 
-      // Clean up any orphaned active subagents
+      // Clean up any orphaned sync subagents (sync must complete within one turn)
       this.activeSubagents.clear();
+
+      // NOTE: Do NOT orphan async subagents here - they persist across message turns
+      // Async subagents are only orphaned when:
+      // 1. User creates a new conversation
+      // 2. View closes
 
       // Auto-save after message completion
       await this.saveCurrentConversation();
@@ -509,9 +536,20 @@ export class ClaudianView extends ItemView {
         }
         this.finalizeCurrentTextBlock(msg);
 
-        // Special handling for Task tool - create subagent block
+        // Special handling for Task tool - check sync vs async
         if (chunk.name === 'Task') {
-          await this.handleTaskToolUse(chunk, msg);
+          const isAsync = this.asyncSubagentManager.isAsyncTask(chunk.input);
+          if (isAsync) {
+            await this.handleAsyncTaskToolUse(chunk, msg);
+          } else {
+            await this.handleTaskToolUse(chunk, msg);
+          }
+          break;
+        }
+
+        // Special handling for AgentOutputTool - link to async subagent
+        if (chunk.name === 'AgentOutputTool') {
+          this.handleAgentOutputToolUse(chunk, msg);
           break;
         }
 
@@ -547,13 +585,32 @@ export class ClaudianView extends ItemView {
       }
 
       case 'tool_result': {
-        // Check if this is a Task tool result (subagent completion)
+        // Check if this is a sync subagent (Task tool) completion
         const subagentState = this.activeSubagents.get(chunk.id);
         if (subagentState) {
           this.finalizeSubagent(chunk, msg, subagentState);
           break;
         }
 
+        // Check if this is an async Task result (extracts agent_id)
+        if (this.handleAsyncTaskToolResult(chunk, msg)) {
+          // Show thinking indicator while waiting for AgentOutputTool
+          if (this.currentContentEl) {
+            this.showThinkingIndicator(this.currentContentEl);
+          }
+          break;
+        }
+
+        // Check if this is an AgentOutputTool result (finalizes async subagent)
+        if (this.handleAgentOutputToolResult(chunk, msg)) {
+          // Show thinking indicator for next main agent response
+          if (this.currentContentEl) {
+            this.showThinkingIndicator(this.currentContentEl);
+          }
+          break;
+        }
+
+        // Normal tool result handling
         const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
         const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
 
@@ -760,6 +817,174 @@ export class ClaudianView extends ItemView {
     }
   }
 
+  // ============================================
+  // Async Subagent Handling
+  // ============================================
+
+  /**
+   * Handle async Task tool_use (run_in_background=true)
+   */
+  private async handleAsyncTaskToolUse(
+    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
+    msg: ChatMessage
+  ): Promise<void> {
+    if (!this.currentContentEl) return;
+
+    // Create async subagent via manager
+    const subagentInfo = this.asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
+
+    // Create UI block
+    const state = createAsyncSubagentBlock(this.currentContentEl, chunk.id, chunk.input);
+    this.asyncSubagentStates.set(chunk.id, state);
+
+    // Track in message for persistence
+    msg.subagents = msg.subagents || [];
+    msg.subagents.push(subagentInfo);
+
+    // Add to content blocks
+    if (this.plugin.settings.showToolUse) {
+      msg.contentBlocks = msg.contentBlocks || [];
+      msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id, mode: 'async' });
+    }
+  }
+
+  /**
+   * Handle AgentOutputTool tool_use - link to async subagent (invisible, not rendered)
+   */
+  private handleAgentOutputToolUse(
+    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
+    _msg: ChatMessage
+  ): void {
+    // Create minimal tool call info for internal tracking only
+    const toolCall: ToolCallInfo = {
+      id: chunk.id,
+      name: chunk.name,
+      input: chunk.input,
+      status: 'running',
+      isExpanded: false,
+    };
+
+    // Link to async subagent via manager - this is the only thing we need
+    // AgentOutputTool is NOT rendered - its result will update the async subagent block
+    this.asyncSubagentManager.handleAgentOutputToolUse(toolCall);
+  }
+
+  /**
+   * Handle async Task tool_result - extract agent_id
+   */
+  private handleAsyncTaskToolResult(
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
+    _msg: ChatMessage
+  ): boolean {
+    // Check if this is a pending async subagent
+    if (!this.asyncSubagentManager.isPendingAsyncTask(chunk.id)) {
+      return false;
+    }
+
+    console.log('[ClaudianView] Async Task tool_result:', {
+      id: chunk.id,
+      content: chunk.content,
+      isError: chunk.isError,
+    });
+
+    // Handle result via manager (extracts agent_id, transitions state)
+    // Note: For async tasks, isError=true means the task failed to LAUNCH
+    // If the task launched but the work fails, that comes via AgentOutputTool
+    this.asyncSubagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError);
+
+    // Note: UI update happens via onAsyncSubagentStateChange callback
+    return true;
+  }
+
+  /**
+   * Handle AgentOutputTool tool_result - finalize async subagent
+   */
+  private handleAgentOutputToolResult(
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
+    _msg: ChatMessage
+  ): boolean {
+    // Handle result via manager (finalizes subagent)
+    // UI update happens via onAsyncSubagentStateChange callback
+    this.asyncSubagentManager.handleAgentOutputToolResult(
+      chunk.id,
+      chunk.content,
+      chunk.isError || false
+    );
+
+    // Treat as handled if any async subagent existed; manager will no-op otherwise
+    return this.asyncSubagentManager.hasActiveAsync();
+  }
+
+  /**
+   * Callback from AsyncSubagentManager when state changes
+   */
+  private onAsyncSubagentStateChange(subagent: SubagentInfo): void {
+    // Find UI state by subagent id
+    const state = this.asyncSubagentStates.get(subagent.id);
+    if (!state) {
+      // Try to find by agentId mapping (for running/completed states)
+      for (const [id, s] of this.asyncSubagentStates) {
+        if (s.info.agentId === subagent.agentId) {
+          this.updateAsyncSubagentUI(s, subagent);
+          return;
+        }
+      }
+      return;
+    }
+
+    this.updateAsyncSubagentUI(state, subagent);
+  }
+
+  /**
+   * Update async subagent UI based on state change
+   */
+  private updateAsyncSubagentUI(state: AsyncSubagentState, subagent: SubagentInfo): void {
+    // Sync state info
+    state.info = subagent;
+
+    switch (subagent.asyncStatus) {
+      case 'running':
+        updateAsyncSubagentRunning(state, subagent.agentId || '');
+        break;
+
+      case 'awaiting_result':
+        updateAsyncSubagentAwaiting(state);
+        break;
+
+      case 'completed':
+      case 'error':
+        finalizeAsyncSubagent(state, subagent.result || '', subagent.asyncStatus === 'error');
+        break;
+
+      case 'orphaned':
+        markAsyncSubagentOrphaned(state);
+        break;
+    }
+
+    // Update in message storage
+    this.updateSubagentInMessages(subagent);
+
+    // Auto-scroll
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /**
+   * Update subagent info in current message
+   */
+  private updateSubagentInMessages(subagent: SubagentInfo): void {
+    // Find the last assistant message with this subagent
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i];
+      if (msg.role === 'assistant' && msg.subagents) {
+        const idx = msg.subagents.findIndex(s => s.id === subagent.id);
+        if (idx !== -1) {
+          msg.subagents[idx] = subagent;
+          return;
+        }
+      }
+    }
+  }
+
   private addMessage(msg: ChatMessage): HTMLElement {
     this.messages.push(msg);
 
@@ -921,6 +1146,10 @@ export class ClaudianView extends ItemView {
       await this.saveCurrentConversation();
     }
 
+    // Orphan any active async subagents from previous conversation
+    this.asyncSubagentManager.orphanAllActive();
+    this.asyncSubagentStates.clear();
+
     const conversation = await this.plugin.createConversation();
 
     this.currentConversationId = conversation.id;
@@ -965,6 +1194,10 @@ export class ClaudianView extends ItemView {
     if (this.isStreaming) return;
 
     await this.saveCurrentConversation();
+
+    // Orphan any active async subagents from previous conversation
+    this.asyncSubagentManager.orphanAllActive();
+    this.asyncSubagentStates.clear();
 
     const conversation = await this.plugin.switchConversation(id);
     if (!conversation) return;
@@ -1043,7 +1276,13 @@ export class ClaudianView extends ItemView {
           } else if (block.type === 'subagent' && this.plugin.settings.showToolUse) {
             const subagent = msg.subagents?.find(s => s.id === block.subagentId);
             if (subagent) {
-              renderStoredSubagent(contentEl, subagent);
+              // Use mode from block or infer from subagent
+              const mode = block.mode || subagent.mode || 'sync';
+              if (mode === 'async') {
+                renderStoredAsyncSubagent(contentEl, subagent);
+              } else {
+                renderStoredSubagent(contentEl, subagent);
+              }
             }
           }
         }

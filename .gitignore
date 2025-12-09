@@ -82,7 +82,7 @@ data.json
 test-results/
 
 # Development files
-dev/
+dev/archive
 sandbox/
 
 # Lock files (uncomment based on package manager)

@@ -17,6 +17,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Thinking budget control**: Adjust thinking token budget (Off/Low/Medium/High)
 - **Tool call visualization**: Collapsible UI showing tool inputs and results (like Claude Code CLI)
 - **Subagent visualization**: Collapsible UI for Task tool calls showing nested tool usage with tree-style indentation
+- **Async subagent tracking**: Background Task/AgentOutputTool flow with periodic non-blocking checks, label revealed on completion/error, no spinner noise while running
 - **Chat history persistence**: Conversations saved across sessions with easy switching
 - **Session resume**: Continue previous conversations with full context
 - **Permission modes**: Yolo (no prompts) or Safe (per-action approval with memory)
@@ -189,7 +190,7 @@ src/
 - [x] Environment variables support with snippet management
 - [x] Image support (drag/drop, paste, path detection, embedded images)
 - [x] Subagent (Task tool) visualization with nested tool tracking
-- [ ] Async subagent support (run_in_background=true)
+- [x] Async subagent support (run_in_background=true)
 - [ ] Skills, Hooks, MCP and other advanced features
 
 ## License
