@@ -10,7 +10,7 @@
 import { query, type Options, type HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
 import type ClaudianPlugin from './main';
 import { THINKING_BUDGETS } from './types';
-import { getVaultPath, parseEnvironmentVariables } from './utils';
+import { getTodayDate, getVaultPath, parseEnvironmentVariables } from './utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -28,7 +28,10 @@ export interface InlineEditResult {
   error?: string;
 }
 
-const INLINE_EDIT_SYSTEM_PROMPT = `You are a text assistant embedded in Obsidian. You help users with their selected text - answering questions, making edits, or providing information.
+function getInlineEditSystemPrompt(): string {
+  return `Today is ${getTodayDate()}.
+
+You are a text assistant embedded in Obsidian. You help users with their selected text - answering questions, making edits, or providing information.
 
 # Input Format
 
@@ -44,10 +47,21 @@ You have access to read-only tools for gathering context:
 - Grep: Search for patterns across files
 - Glob: Find files by name pattern
 - LS: List directory contents
+- WebSearch: Search the web for information
+- WebFetch: Fetch and process web content
 
-Use these tools to understand context beyond the selected text. The note containing the selection itself often provides crucial background context.
+Proactively use Read to understand the note containing the selection - it often provides crucial background context. If the user mentions other files (e.g., @note.md), use Grep, Glob, or LS to locate them, then Read to understand their content. Use WebSearch or WebFetch when instructed or when external information would help.
 
 # Output Rules - CRITICAL
+
+ABSOLUTE RULE: Your text output must contain ONLY the final answer or replacement. NEVER output:
+- "I'll read the file..." / "Let me check..." / "I will..."
+- "I'm asked about..." / "The user wants..."
+- "Based on my analysis..." / "After reading..."
+- "Here's..." / "The answer is..."
+- ANY announcement of what you're about to do or did
+
+Use tools silently. Your text output = final result only.
 
 ## When Replacing the Selected Text
 
@@ -55,20 +69,14 @@ If the user wants to MODIFY or REPLACE the selected text, wrap the replacement i
 
 <replacement>your replacement text here</replacement>
 
-The content inside the tags should be ONLY the replacement text:
-- No preamble ("Here's...", "I'll...")
-- No explanation or narration
-- No markdown code blocks
+The content inside the tags should be ONLY the replacement text - no explanation.
 
 ## When Answering Questions or Providing Information
 
-If the user is asking a QUESTION about the text (not requesting a modification), respond normally WITHOUT <replacement> tags. Keep responses concise.
+If the user is asking a QUESTION, respond WITHOUT <replacement> tags. Output the answer directly.
 
-Examples of questions (no replacement needed):
-- "What does this code do?"
-- "Is this grammatically correct?"
-- "Explain this paragraph"
-- "What language is this?"
+WRONG: "I'll read the full context of this file to give you a better explanation. This is a guide about..."
+CORRECT: "This is a guide about..."
 
 ## When Clarification is Needed
 
@@ -108,9 +116,10 @@ CORRECT (asking for clarification):
 
 Then after user clarifies "river bank":
 <replacement>La orilla era empinada.</replacement>`;
+}
 
 // Read-only tools allowed for inline editing
-const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob', 'LS'] as const;
+const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch'] as const;
 
 export class InlineEditService {
   private plugin: ClaudianPlugin;
@@ -195,7 +204,7 @@ export class InlineEditService {
 
     const options: Options = {
       cwd: vaultPath,
-      systemPrompt: INLINE_EDIT_SYSTEM_PROMPT,
+      systemPrompt: getInlineEditSystemPrompt(),
       model: this.plugin.settings.model,
       abortController: this.abortController,
       pathToClaudeCodeExecutable: this.resolvedClaudePath,

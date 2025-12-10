@@ -18,8 +18,9 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 ## Requirements
 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed (the SDK uses it internally)
-- Obsidian v1.0.0+
-- Desktop only (macOS, Linux, Windows via WSL)
+- Obsidian v1.8.9+
+- Claude subscription/API or Custom model provider that supports anthropic API format (Kimi, GLM, DeepSeek, etc.)
+- Desktop only (support macOS, not tested on Linux or Windows)
 
 ## Installation
 
@@ -53,10 +54,11 @@ npm run build
 
 ## Usage
 
-1. Click the bot icon in the ribbon (left sidebar) to open Claudian
-2. Type your message and press Enter to send (Shift+Enter for newline)
-3. Claude can read, write, and edit files in your vault
-4. Click on tool call headers to expand and see inputs/results
+**Two modes:**
+1. Click the bot icon in the ribbon or CMD+P to open Claudian on sidebar
+2. Select text in any note and press hotkey to open inline edit
+
+Use it like Claude Code, ask it to read, write, edit, search, etc. to help you with your notes.
 
 ### File Context
 
@@ -68,48 +70,29 @@ npm run build
 
 ### Image Context
 
-Send images to Claude for analysis, description, or any vision-related task.
+Send images to Claude via drag-and-drop, paste (Cmd/Ctrl+V), or file path in your message.
 
-**Adding images:**
-- **Drag and drop**: Drag image files onto the input area
-- **Copy/paste**: Paste images from clipboard (Cmd/Ctrl+V)
-- **File path**: Include an image path in your message (auto-detected)
+**Supported:** JPEG, PNG, GIF, WebP (max 5MB)
 
-**Supported formats:** JPEG, PNG, GIF, WebP (max 5MB per image)
-
-**Path detection examples:**
-- Quoted: `"path/to/image.jpg"` or `'path/to/image.png'`
-- Relative: `./screenshots/error.png`
-- Vault-relative: `attachments/diagram.png`
-
-**Embedded images in notes:**
-When you configure a media folder in settings, Claude can read embedded images:
-```markdown
-![[screenshot.png]]  →  Claude reads from configured media folder
-```
-
-**External images:**
-Standard markdown images with URLs require download first (WebFetch doesn't support images):
-```markdown
-![diagram](https://example.com/arch.png)  →  Claude downloads with curl, then reads locally
-```
+**Embedded images:** Configure media folder in settings, then Claude can read `![[image.png]]` references.
 
 ### Inline Edit
 
-Edit selected text directly in your notes without opening the sidebar chat.
+Interact with selected text directly in your notes - ask questions or request edits - without opening the sidebar chat.
 
 1. **Select text** in any note
 2. **Press hotkey** (configure via Settings → Hotkeys → "Claudian: Inline edit")
-3. **Enter instructions** (e.g., "make concise", "fix grammar", "translate to French")
-4. **Review the diff** - word-level changes shown inline
-5. **Accept (Enter) or Reject (Esc)**
+3. **Enter request** - either a question ("what does this do?") or edit instruction ("fix grammar")
+4. **View response** - questions get conversational answers, edits show inline diff
+5. **For edits**: Accept (Enter) or Reject (Esc)
 
 **Features:**
-- **@ mentions**: Reference other notes for context
-- **Read-only tools**: Agent can read files for context but cannot modify them
+- **Questions & edits**: Ask about selected text or request modifications
+- **Multi-turn conversation**: Agent can ask clarifying questions
+- **Read-only tools**: Agent can read files and search the web for context
 - **Inline diff**: Precise word-level diff with red strikethrough (deletions) and green highlight (insertions)
 
-The inline edit agent has access to `Read`, `Grep`, `Glob`, and `LS` tools for gathering context, but write tools are blocked.
+The inline edit agent has access to `Read`, `Grep`, `Glob`, `LS`, `WebSearch`, and `WebFetch` tools for gathering context, but write tools are blocked.
 
 ### Example prompts
 
@@ -126,18 +109,12 @@ The inline edit agent has access to `Read`, `Grep`, `Glob`, and `LS` tools for g
 - **Enable command blocklist**: Block dangerous bash commands (default: on)
 - **Blocked commands**: Patterns to block (supports regex)
 - **Show tool usage**: Display file operations in chat
-- **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `system`, `private`)
+- **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
 - **Environment snippets**: Save and restore environment variable configurations
 - **Permission mode**: Toggle Yolo (bypass prompts) or Safe (require approval)
 - **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
-
-### Default blocklist
-
-- `rm -rf`
-- `chmod 777`
-- `chmod -R 777`
 
 ### Safety and permissions
 
@@ -146,6 +123,11 @@ The inline edit agent has access to `Read`, `Grep`, `Glob`, and `LS` tools for g
   - Safe mode shows an approval modal per tool call.
   - Bash approvals require an exact command match.
   - File tools allow exact or prefix path matches.
+- **Command blocklist**:
+  - `rm -rf`
+  - `chmod 777`
+  - `chmod -R 777`
+  - etc. 
 
 ## Privacy & Data Use
 
@@ -163,11 +145,11 @@ src/
 ├── ClaudianView.ts      # Sidebar chat UI, orchestrates components
 ├── ClaudianService.ts   # Claude Agent SDK wrapper
 ├── ClaudianSettings.ts  # Settings tab
-├── systemPrompt.ts      # System prompt and image handling instructions
+├── systemPrompt.ts      # System prompt
 ├── imageCache.ts        # Image caching utilities
 ├── types.ts             # Type definitions
-├── utils.ts             # Utility functions (env var parsing, model detection)
-├── InlineEditService.ts # Lightweight Claude service for inline editing (read-only tools)
+├── utils.ts             # Utility functions
+├── InlineEditService.ts # Lightweight Claude service for inline editing
 └── ui/                  # Modular UI components
     ├── index.ts              # Barrel export
     ├── ApprovalModal.ts      # Permission approval dialog
@@ -177,29 +159,28 @@ src/
     ├── ToolCallRenderer.ts   # Tool call display
     ├── ThinkingBlockRenderer.ts # Extended thinking UI
     ├── TodoListRenderer.ts   # Todo list UI for task tracking
-    ├── SubagentRenderer.ts   # Subagent (Task tool) UI with nested tools
+    ├── SubagentRenderer.ts   # Subagent UI component
     ├── EnvSnippetManager.ts  # Environment variable snippets
     └── InlineEditModal.ts    # Inline edit UI (CM6 decorations, diff view)
 ```
 
 ## Roadmap
 
-- [x] Session persistence within sessions (via SDK resume)
+- [x] Session persistence within sessions
 - [x] Chat history persistence across plugin restarts
 - [x] Conversation switching with history dropdown
 - [x] File context awareness (auto-attach + @ mention)
 - [x] Context menu: "Ask Claude about this file"
-- [x] Extended thinking display (collapsible thinking blocks with live timer)
-- [x] Model selection (Haiku, Sonnet, Opus)
-- [x] Thinking token budget adjustment (Off/Low/Medium/High)
+- [x] Extended thinking display
+- [x] Model selection
+- [x] Thinking token budget adjustment
 - [x] Permission modes (Yolo/Safe)
-- [x] Edited files indicator for Claude edits (border on attachments, "Edited:" chips, click-to-open, auto-dismiss)
-- [x] Modular UI architecture (extracted reusable components)
+- [x] Edited files indicator for Claude edits
 - [x] Environment variables support with snippet management
-- [x] Image support (drag/drop, paste, path detection, embedded images)
-- [x] Subagent (Task tool) visualization with nested tool tracking
-- [x] Async subagent support (run_in_background=true)
-- [x] Inline edit feature (read-only tools, word-level diff)
+- [x] Image support
+- [x] Subagent visualization with nested tool tracking
+- [x] Async subagent support
+- [x] Inline edit feature
 - [ ] Skills, Hooks, MCP and other advanced features
 - [ ] Diff view in chat panel
 

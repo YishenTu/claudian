@@ -2325,20 +2325,19 @@
 }
 
 .claudian-inline-diff-btn {
-  padding: 2px 4px;
+  padding: 4px 6px;
   border: none !important;
   background: none !important;
   box-shadow: none !important;
   outline: none !important;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
-  color: var(--text-muted);
 }
 
-.claudian-inline-diff-btn.reject:hover {
+.claudian-inline-diff-btn.reject {
   color: var(--color-red);
 }
 
-.claudian-inline-diff-btn.accept:hover {
+.claudian-inline-diff-btn.accept {
   color: var(--color-green);
 }

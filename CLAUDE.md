@@ -6,9 +6,6 @@ Claudian - An Obsidian plugin that embeds Claude Code as a sidebar chat interfac
 
 **Core Principle**: "Claude Code in a sidebar" - the full Claude Code experience embedded in Obsidian.
 
-**Highlights**
-- Sync + async Task subagent visualization (background Task/AgentOutputTool with non-blocking polling; running state is spinnerless, label revealed on completion/error).
-
 ## Architecture
 
 ```
@@ -456,6 +453,8 @@ The inline edit agent has access to **read-only tools only**:
 | `Grep` | Search for patterns across files |
 | `Glob` | Find files by name pattern |
 | `LS` | List directory contents |
+| `WebSearch` | Search the web for information |
+| `WebFetch` | Fetch and process web content |
 
 Write tools (`Write`, `Edit`, `Bash`, etc.) are blocked via `allowedTools` whitelist and a `PreToolUse` safety hook.
 
@@ -724,3 +723,5 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 
 ## Notes
 - when ask to generate a md file about the finding, implementation of your work, put the file in dev/
+- when ask to update docs, update development note in dev/ , CLAUDE.md and README.md
+

@@ -3,6 +3,8 @@
  * Edit this to customize Claude's behavior within the Obsidian vault
  */
 
+import { getTodayDate } from './utils';
+
 // Constants
 const TEMP_CACHE_DIR = '.claudian-cache/temp';
 
@@ -12,7 +14,10 @@ interface SystemPromptSettings {
   customPrompt?: string;
 }
 
-const BASE_SYSTEM_PROMPT = `You are Claudian, an AI assistant working inside an Obsidian vault. The current working directory is the user's vault root.
+function getBaseSystemPrompt(): string {
+  return `Today is ${getTodayDate()}.
+
+You are Claudian, an AI assistant working inside an Obsidian vault. The current working directory is the user's vault root.
 
 # Critical Path Rules
 
@@ -96,6 +101,7 @@ Use proactively for any task meeting these criteria to keep progress visible.
   {content: "Add unit tests", status: "pending", activeForm: "Adding unit tests"}
 ]
 \`\`\``;
+}
 
 /**
  * Generate instructions for handling images in notes
@@ -135,29 +141,11 @@ rm -f "$img_path"
 }
 
 /**
- * Get today's date in both readable and ISO format for unambiguous parsing
- */
-function getTodayDate(): string {
-  const now = new Date();
-  const readable = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-  const iso = now.toISOString().split('T')[0];
-  return `${readable} (${iso})`;
-}
-
-/**
  * Build the complete system prompt with settings
  */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
-  // Start with today's date for temporal awareness
-  let prompt = `Today is ${getTodayDate()}.\n\n`;
-
-  // Add base prompt
-  prompt += BASE_SYSTEM_PROMPT;
+  // Start with base prompt (includes today's date)
+  let prompt = getBaseSystemPrompt();
 
   // Add image handling instructions
   prompt += getImageInstructions(settings.mediaFolder || '');

@@ -1,5 +1,20 @@
 import type { App } from 'obsidian';
 
+/**
+ * Get today's date in both readable and ISO format for unambiguous parsing
+ */
+export function getTodayDate(): string {
+  const now = new Date();
+  const readable = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const iso = now.toISOString().split('T')[0];
+  return `${readable} (${iso})`;
+}
+
 export function getVaultPath(app: App): string | null {
   const adapter = app.vault.adapter;
   if ('basePath' in adapter) {
