@@ -574,6 +574,7 @@ describe('ClaudianView - Conversation boundaries', () => {
     const containerEl = createMockElement('div');
     const inputEl = createMockElement('textarea');
     inputEl.value = '';
+    (view as any).inputEl = inputEl;
     (view as any).fileContextManager = new FileContextManager(
       mockPlugin.app,
       containerEl,
@@ -1074,5 +1075,322 @@ describe('FileContextManager - Border indicator sync with @ mentions', () => {
     // Old path should not be edited, new path should be
     expect((fileContextManager as any).isFileEdited(oldPath)).toBe(false);
     expect((fileContextManager as any).isFileEdited(newPath)).toBe(true);
+  });
+});
+
+describe('FileContextManager - Attached Files Persistence', () => {
+  let fileContextManager: FileContextManager;
+  let mockPlugin: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPlugin = createMockPlugin();
+    fileContextManager = createFileContextManager(mockPlugin);
+  });
+
+  describe('setAttachedFiles', () => {
+    it('should set attached files from array', () => {
+      const files = ['notes/file1.md', 'notes/file2.md', 'docs/readme.md'];
+
+      fileContextManager.setAttachedFiles(files);
+
+      expect(fileContextManager.getAttachedFiles().size).toBe(3);
+      expect(fileContextManager.getAttachedFiles().has('notes/file1.md')).toBe(true);
+      expect(fileContextManager.getAttachedFiles().has('notes/file2.md')).toBe(true);
+      expect(fileContextManager.getAttachedFiles().has('docs/readme.md')).toBe(true);
+    });
+
+    it('should clear existing attached files before setting new ones', () => {
+      // First set some files
+      (fileContextManager as any).attachedFiles.add('old/file.md');
+
+      // Now set new files
+      fileContextManager.setAttachedFiles(['new/file.md']);
+
+      expect(fileContextManager.getAttachedFiles().size).toBe(1);
+      expect(fileContextManager.getAttachedFiles().has('old/file.md')).toBe(false);
+      expect(fileContextManager.getAttachedFiles().has('new/file.md')).toBe(true);
+    });
+
+    it('should also update lastSentFiles to prevent re-sending', () => {
+      const files = ['notes/file1.md', 'notes/file2.md'];
+
+      fileContextManager.setAttachedFiles(files);
+
+      // Files should be marked as "sent" so hasFilesChanged returns false
+      expect(fileContextManager.hasFilesChanged()).toBe(false);
+    });
+
+    it('should handle empty array', () => {
+      // Start with some files
+      (fileContextManager as any).attachedFiles.add('file.md');
+
+      fileContextManager.setAttachedFiles([]);
+
+      expect(fileContextManager.getAttachedFiles().size).toBe(0);
+    });
+  });
+
+  describe('hasFilesChanged', () => {
+    it('should return true when files have been added', () => {
+      (fileContextManager as any).attachedFiles.add('new-file.md');
+
+      expect(fileContextManager.hasFilesChanged()).toBe(true);
+    });
+
+    it('should return false when no files have changed', () => {
+      // Set and mark as sent
+      fileContextManager.setAttachedFiles(['file.md']);
+
+      expect(fileContextManager.hasFilesChanged()).toBe(false);
+    });
+
+    it('should return true when files have been removed', () => {
+      // Set files and mark as sent
+      fileContextManager.setAttachedFiles(['file1.md', 'file2.md']);
+      fileContextManager.markFilesSent();
+
+      // Remove one
+      (fileContextManager as any).attachedFiles.delete('file1.md');
+
+      expect(fileContextManager.hasFilesChanged()).toBe(true);
+    });
+
+    it('should return true when different files are attached', () => {
+      // Set files and mark as sent
+      fileContextManager.setAttachedFiles(['file1.md']);
+      fileContextManager.markFilesSent();
+
+      // Replace with different file
+      (fileContextManager as any).attachedFiles.clear();
+      (fileContextManager as any).attachedFiles.add('file2.md');
+
+      expect(fileContextManager.hasFilesChanged()).toBe(true);
+    });
+  });
+
+  describe('markFilesSent', () => {
+    it('should sync lastSentFiles with attachedFiles', () => {
+      (fileContextManager as any).attachedFiles.add('file1.md');
+      (fileContextManager as any).attachedFiles.add('file2.md');
+
+      fileContextManager.markFilesSent();
+
+      expect(fileContextManager.hasFilesChanged()).toBe(false);
+
+      // Adding a new file should show change
+      (fileContextManager as any).attachedFiles.add('file3.md');
+      expect(fileContextManager.hasFilesChanged()).toBe(true);
+    });
+  });
+});
+
+describe('FileContextManager - @ Mention Dropdown', () => {
+  let fileContextManager: FileContextManager;
+  let mockPlugin: any;
+  let inputEl: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPlugin = createMockPlugin();
+
+    // Create input element with mock methods
+    inputEl = createMockElement('textarea');
+    inputEl.value = '';
+    inputEl.selectionStart = 0;
+    inputEl.selectionEnd = 0;
+    inputEl.focus = jest.fn();  // Add focus method for selectMentionItem
+
+    const containerEl = createMockElement('div');
+
+    fileContextManager = new FileContextManager(
+      mockPlugin.app,
+      containerEl,
+      inputEl as any,
+      {
+        getExcludedTags: () => mockPlugin.settings.excludedTags,
+        onFileOpen: async () => {},
+      }
+    );
+  });
+
+  describe('handleInputChange - whitespace detection', () => {
+    it('should hide dropdown when text after @ contains space', () => {
+      inputEl.value = '@file ';
+      inputEl.selectionStart = 6;
+
+      fileContextManager.handleInputChange();
+
+      expect(fileContextManager.isMentionDropdownVisible()).toBe(false);
+    });
+
+    it('should hide dropdown when text after @ contains tab', () => {
+      inputEl.value = '@file\t';
+      inputEl.selectionStart = 6;
+
+      fileContextManager.handleInputChange();
+
+      expect(fileContextManager.isMentionDropdownVisible()).toBe(false);
+    });
+
+    it('should hide dropdown when text after @ contains newline', () => {
+      inputEl.value = '@file\nmore text';
+      inputEl.selectionStart = 6;
+
+      fileContextManager.handleInputChange();
+
+      expect(fileContextManager.isMentionDropdownVisible()).toBe(false);
+    });
+
+    it('should keep dropdown open when typing continuous text', () => {
+      // Mock the markdown files
+      mockPlugin.app.vault.getMarkdownFiles.mockReturnValue([
+        new TFile('notes/test.md'),
+      ]);
+
+      inputEl.value = '@test';
+      inputEl.selectionStart = 5;
+
+      fileContextManager.handleInputChange();
+
+      // Dropdown should be showing (or at least mentionStartIndex set)
+      expect((fileContextManager as any).mentionStartIndex).toBe(0);
+    });
+
+    it('should hide dropdown when @ is mid-word (not triggered)', () => {
+      inputEl.value = 'email@test';
+      inputEl.selectionStart = 10;
+
+      fileContextManager.handleInputChange();
+
+      expect(fileContextManager.isMentionDropdownVisible()).toBe(false);
+    });
+
+    it('should trigger dropdown when @ is at start', () => {
+      mockPlugin.app.vault.getMarkdownFiles.mockReturnValue([]);
+      inputEl.value = '@';
+      inputEl.selectionStart = 1;
+
+      fileContextManager.handleInputChange();
+
+      expect((fileContextManager as any).mentionStartIndex).toBe(0);
+    });
+
+    it('should trigger dropdown when @ follows whitespace', () => {
+      mockPlugin.app.vault.getMarkdownFiles.mockReturnValue([]);
+      inputEl.value = 'hello @';
+      inputEl.selectionStart = 7;
+
+      fileContextManager.handleInputChange();
+
+      expect((fileContextManager as any).mentionStartIndex).toBe(6);
+    });
+  });
+
+  describe('handleMentionKeydown', () => {
+    it('should return false when dropdown is not visible', () => {
+      const event = { key: 'Enter', preventDefault: jest.fn() } as any;
+
+      const handled = fileContextManager.handleMentionKeydown(event);
+
+      expect(handled).toBe(false);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('should handle Escape to close dropdown', () => {
+      // Make dropdown visible
+      (fileContextManager as any).mentionDropdown = createMockElement('div');
+      (fileContextManager as any).mentionDropdown.addClass('visible');
+
+      const event = { key: 'Escape', preventDefault: jest.fn() } as any;
+
+      const handled = fileContextManager.handleMentionKeydown(event);
+
+      expect(handled).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(fileContextManager.isMentionDropdownVisible()).toBe(false);
+    });
+
+    it('should handle ArrowDown navigation', () => {
+      (fileContextManager as any).mentionDropdown = createMockElement('div');
+      (fileContextManager as any).mentionDropdown.addClass('visible');
+      (fileContextManager as any).filteredFiles = [new TFile('a.md'), new TFile('b.md')];
+      (fileContextManager as any).selectedMentionIndex = 0;
+
+      const event = { key: 'ArrowDown', preventDefault: jest.fn() } as any;
+
+      const handled = fileContextManager.handleMentionKeydown(event);
+
+      expect(handled).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    it('should handle ArrowUp navigation', () => {
+      (fileContextManager as any).mentionDropdown = createMockElement('div');
+      (fileContextManager as any).mentionDropdown.addClass('visible');
+      (fileContextManager as any).filteredFiles = [new TFile('a.md'), new TFile('b.md')];
+      (fileContextManager as any).selectedMentionIndex = 1;
+
+      const event = { key: 'ArrowUp', preventDefault: jest.fn() } as any;
+
+      const handled = fileContextManager.handleMentionKeydown(event);
+
+      expect(handled).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    it('should handle Tab for selection', () => {
+      (fileContextManager as any).mentionDropdown = createMockElement('div');
+      (fileContextManager as any).mentionDropdown.addClass('visible');
+      (fileContextManager as any).filteredFiles = [new TFile('file.md')];
+
+      const event = { key: 'Tab', preventDefault: jest.fn() } as any;
+
+      const handled = fileContextManager.handleMentionKeydown(event);
+
+      expect(handled).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('FileContextManager - Session State', () => {
+  let fileContextManager: FileContextManager;
+  let mockPlugin: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPlugin = createMockPlugin();
+    fileContextManager = createFileContextManager(mockPlugin);
+  });
+
+  describe('session lifecycle', () => {
+    it('should start with session not started', () => {
+      expect(fileContextManager.isSessionStarted()).toBe(false);
+    });
+
+    it('should mark session as started', () => {
+      fileContextManager.startSession();
+
+      expect(fileContextManager.isSessionStarted()).toBe(true);
+    });
+
+    it('should reset session on new conversation', () => {
+      fileContextManager.startSession();
+      (fileContextManager as any).attachedFiles.add('file.md');
+
+      fileContextManager.resetForNewConversation();
+
+      expect(fileContextManager.isSessionStarted()).toBe(false);
+      expect(fileContextManager.getAttachedFiles().size).toBe(0);
+    });
+
+    it('should set session started based on message history', () => {
+      fileContextManager.resetForLoadedConversation(true);
+      expect(fileContextManager.isSessionStarted()).toBe(true);
+
+      fileContextManager.resetForLoadedConversation(false);
+      expect(fileContextManager.isSessionStarted()).toBe(false);
+    });
   });
 });
