@@ -68,10 +68,6 @@ export function renderTodoList(
   header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
   header.setAttribute('aria-label', `Task list - ${completedCount} of ${totalCount} completed - click to ${isExpanded ? 'collapse' : 'expand'}`);
 
-  const chevron = header.createDiv({ cls: 'claudian-todo-chevron' });
-  chevron.setAttribute('aria-hidden', 'true');
-  setIcon(chevron, isExpanded ? 'chevron-down' : 'chevron-right');
-
   const icon = header.createDiv({ cls: 'claudian-todo-icon' });
   icon.setAttribute('aria-hidden', 'true');
   setIcon(icon, 'list-checks');
@@ -109,12 +105,10 @@ export function renderTodoList(
     const expanded = container.hasClass('expanded');
     if (expanded) {
       container.removeClass('expanded');
-      setIcon(chevron, 'chevron-right');
       content.style.display = 'none';
       header.setAttribute('aria-expanded', 'false');
     } else {
       container.addClass('expanded');
-      setIcon(chevron, 'chevron-down');
       content.style.display = 'block';
       header.setAttribute('aria-expanded', 'true');
     }

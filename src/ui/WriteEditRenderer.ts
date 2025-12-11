@@ -27,7 +27,6 @@ export interface WriteEditState {
   labelEl: HTMLElement;
   statsEl: HTMLElement;
   statusEl: HTMLElement;
-  chevronEl: HTMLElement;
   toolCall: ToolCallInfo;
   isExpanded: boolean;
   diffLines?: DiffLine[];
@@ -78,11 +77,6 @@ export function createWriteEditBlock(
   headerEl.setAttribute('aria-expanded', 'true');
   headerEl.setAttribute('aria-label', `${toolName}: ${shortenPath(filePath)} - click to collapse`);
 
-  // Chevron
-  const chevronEl = headerEl.createDiv({ cls: 'claudian-write-edit-chevron' });
-  chevronEl.setAttribute('aria-hidden', 'true');
-  setIcon(chevronEl, 'chevron-down');
-
   // File icon
   const iconEl = headerEl.createDiv({ cls: 'claudian-write-edit-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -117,7 +111,6 @@ export function createWriteEditBlock(
     labelEl,
     statsEl,
     statusEl,
-    chevronEl,
     toolCall,
     isExpanded,
   };
@@ -126,12 +119,10 @@ export function createWriteEditBlock(
     state.isExpanded = !state.isExpanded;
     if (state.isExpanded) {
       wrapperEl.addClass('expanded');
-      setIcon(chevronEl, 'chevron-down');
       contentEl.style.display = 'block';
       headerEl.setAttribute('aria-expanded', 'true');
     } else {
       wrapperEl.removeClass('expanded');
-      setIcon(chevronEl, 'chevron-right');
       contentEl.style.display = 'none';
       headerEl.setAttribute('aria-expanded', 'false');
     }
@@ -262,11 +253,6 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   headerEl.setAttribute('role', 'button');
   headerEl.setAttribute('aria-expanded', 'false');
 
-  // Chevron
-  const chevronEl = headerEl.createDiv({ cls: 'claudian-write-edit-chevron' });
-  chevronEl.setAttribute('aria-hidden', 'true');
-  setIcon(chevronEl, 'chevron-right');
-
   // File icon
   const iconEl = headerEl.createDiv({ cls: 'claudian-write-edit-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -342,12 +328,10 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
     const expanded = wrapperEl.hasClass('expanded');
     if (expanded) {
       wrapperEl.removeClass('expanded');
-      setIcon(chevronEl, 'chevron-right');
       contentEl.style.display = 'none';
       headerEl.setAttribute('aria-expanded', 'false');
     } else {
       wrapperEl.addClass('expanded');
-      setIcon(chevronEl, 'chevron-down');
       contentEl.style.display = 'block';
       headerEl.setAttribute('aria-expanded', 'true');
     }

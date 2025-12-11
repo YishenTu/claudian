@@ -107,15 +107,84 @@ export function formatToolInput(name: string, input: Record<string, unknown>): s
 }
 
 /**
+ * Parse WebSearch result into structured data
+ */
+interface WebSearchLink {
+  title: string;
+  url: string;
+}
+
+function parseWebSearchResult(result: string): WebSearchLink[] | null {
+  const linksMatch = result.match(/Links:\s*(\[[\s\S]*\])/);
+  if (!linksMatch) return null;
+
+  try {
+    const links = JSON.parse(linksMatch[1]) as WebSearchLink[];
+    if (!Array.isArray(links) || links.length === 0) return null;
+    return links;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Render WebSearch result as DOM elements with proper hanging indent
+ */
+export function renderWebSearchResult(container: HTMLElement, result: string, maxItems = 3): boolean {
+  const links = parseWebSearchResult(result);
+  if (!links) return false;
+
+  container.empty();
+
+  const displayItems = links.slice(0, maxItems);
+  displayItems.forEach(link => {
+    const item = container.createSpan({ cls: 'claudian-tool-result-bullet' });
+    item.setText(`• ${link.title}`);
+  });
+
+  if (links.length > maxItems) {
+    const more = container.createSpan({ cls: 'claudian-tool-result-item' });
+    more.setText(`${links.length - maxItems} more results`);
+  }
+
+  return true;
+}
+
+/**
+ * Render generic result as DOM elements
+ * Strips line number prefixes (e.g., "1→") since we only show 3 lines
+ */
+export function renderResultLines(container: HTMLElement, result: string, maxLines = 3): void {
+  container.empty();
+
+  const lines = result.split('\n');
+  const displayLines = lines.slice(0, maxLines);
+
+  displayLines.forEach(line => {
+    // Strip line number prefix (e.g., "  1→" or "123→")
+    const stripped = line.replace(/^\s*\d+→/, '');
+    const item = container.createSpan({ cls: 'claudian-tool-result-item' });
+    item.setText(stripped);
+  });
+
+  if (lines.length > maxLines) {
+    const more = container.createSpan({ cls: 'claudian-tool-result-item' });
+    more.setText(`${lines.length - maxLines} more lines`);
+  }
+}
+
+/**
  * Truncate a result string for display
+ * Shows "xxx more lines" when exceeding maxLines
  */
 export function truncateResult(result: string, maxLines = 20, maxLength = 2000): string {
   if (result.length > maxLength) {
-    result = result.substring(0, maxLength) + '\n... (truncated)';
+    result = result.substring(0, maxLength);
   }
   const lines = result.split('\n');
   if (lines.length > maxLines) {
-    return lines.slice(0, maxLines).join('\n') + `\n... (${lines.length - maxLines} more lines)`;
+    const moreLines = lines.length - maxLines;
+    return lines.slice(0, maxLines).join('\n') + `\n${moreLines} more lines`;
   }
   return result;
 }
@@ -136,27 +205,24 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
 
 /**
  * Renders a tool call UI element (for streaming)
+ * Expanded by default, tree-branch style result
  */
 export function renderToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
   toolCallElements: Map<string, HTMLElement>
 ): HTMLElement {
-  const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
+  const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call expanded' });
   toolEl.dataset.toolId = toolCall.id;
   toolCallElements.set(toolCall.id, toolEl);
+  toolCall.isExpanded = true;
 
   // Header (clickable to expand/collapse)
   const header = toolEl.createDiv({ cls: 'claudian-tool-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', 'false');
-  header.setAttribute('aria-label', `${getToolLabel(toolCall.name, toolCall.input)} - click to expand details`);
-
-  // Chevron icon (decorative)
-  const chevron = header.createSpan({ cls: 'claudian-tool-chevron' });
-  chevron.setAttribute('aria-hidden', 'true');
-  setIcon(chevron, 'chevron-right');
+  header.setAttribute('aria-expanded', 'true');
+  header.setAttribute('aria-label', `${getToolLabel(toolCall.name, toolCall.input)} - click to collapse`);
 
   // Tool icon (decorative)
   const iconEl = header.createSpan({ cls: 'claudian-tool-icon' });
@@ -175,21 +241,15 @@ export function renderToolCall(
     statusEl.createSpan({ cls: 'claudian-spinner' });
   }
 
-  // Collapsible content
+  // Collapsible content (expanded by default)
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
-  content.style.display = 'none';
 
-  // Input parameters
-  const inputSection = content.createDiv({ cls: 'claudian-tool-input' });
-  inputSection.createDiv({ cls: 'claudian-tool-section-label', text: 'Input' });
-  const inputCode = inputSection.createEl('pre', { cls: 'claudian-tool-code' });
-  inputCode.setText(formatToolInput(toolCall.name, toolCall.input));
-
-  // Result placeholder
-  const resultSection = content.createDiv({ cls: 'claudian-tool-result' });
-  resultSection.createDiv({ cls: 'claudian-tool-section-label', text: 'Result' });
-  const resultCode = resultSection.createEl('pre', { cls: 'claudian-tool-code claudian-tool-result-code' });
-  resultCode.setText('Running...');
+  // Tree-branch result row
+  const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
+  const branch = resultRow.createSpan({ cls: 'claudian-tool-branch' });
+  branch.setText('└─');
+  const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
+  resultText.setText('Running...');
 
   // Toggle expand/collapse handler
   const toggleExpand = () => {
@@ -197,12 +257,10 @@ export function renderToolCall(
     if (toolCall.isExpanded) {
       content.style.display = 'block';
       toolEl.addClass('expanded');
-      setIcon(chevron, 'chevron-down');
       header.setAttribute('aria-expanded', 'true');
     } else {
       content.style.display = 'none';
       toolEl.removeClass('expanded');
-      setIcon(chevron, 'chevron-right');
       header.setAttribute('aria-expanded', 'false');
     }
   };
@@ -247,16 +305,23 @@ export function updateToolCallResult(
     }
   }
 
-  // Update result content
-  const resultCode = toolEl.querySelector('.claudian-tool-result-code');
-  if (resultCode && toolCall.result) {
-    const truncated = truncateResult(toolCall.result);
-    resultCode.setText(truncated);
+  // Update result text (max 3 lines)
+  const resultText = toolEl.querySelector('.claudian-tool-result-text') as HTMLElement;
+  if (resultText && toolCall.result) {
+    // Try special rendering for WebSearch, otherwise use generic line renderer
+    if (toolCall.name === 'WebSearch') {
+      if (!renderWebSearchResult(resultText, toolCall.result, 3)) {
+        renderResultLines(resultText, toolCall.result, 3);
+      }
+    } else {
+      renderResultLines(resultText, toolCall.result, 3);
+    }
   }
 }
 
 /**
  * Render a stored tool call (non-streaming, already completed)
+ * Collapsed by default for stored
  */
 export function renderStoredToolCall(parentEl: HTMLElement, toolCall: ToolCallInfo): HTMLElement {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
@@ -266,12 +331,7 @@ export function renderStoredToolCall(parentEl: HTMLElement, toolCall: ToolCallIn
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
   header.setAttribute('aria-expanded', 'false');
-  header.setAttribute('aria-label', `${getToolLabel(toolCall.name, toolCall.input)} - click to expand details`);
-
-  // Chevron icon (decorative)
-  const chevron = header.createSpan({ cls: 'claudian-tool-chevron' });
-  chevron.setAttribute('aria-hidden', 'true');
-  setIcon(chevron, 'chevron-right');
+  header.setAttribute('aria-label', `${getToolLabel(toolCall.name, toolCall.input)} - click to expand`);
 
   // Tool icon (decorative)
   const iconEl = header.createSpan({ cls: 'claudian-tool-icon' });
@@ -294,21 +354,27 @@ export function renderStoredToolCall(parentEl: HTMLElement, toolCall: ToolCallIn
     setIcon(statusEl, 'shield-off');
   }
 
-  // Collapsible content
+  // Collapsible content (collapsed by default for stored)
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
   content.style.display = 'none';
 
-  // Input parameters
-  const inputSection = content.createDiv({ cls: 'claudian-tool-input' });
-  inputSection.createDiv({ cls: 'claudian-tool-section-label', text: 'Input' });
-  const inputCode = inputSection.createEl('pre', { cls: 'claudian-tool-code' });
-  inputCode.setText(formatToolInput(toolCall.name, toolCall.input));
-
-  // Result
-  const resultSection = content.createDiv({ cls: 'claudian-tool-result' });
-  resultSection.createDiv({ cls: 'claudian-tool-section-label', text: 'Result' });
-  const resultCode = resultSection.createEl('pre', { cls: 'claudian-tool-code' });
-  resultCode.setText(toolCall.result ? truncateResult(toolCall.result) : 'No result');
+  // Tree-branch result row
+  const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
+  const branch = resultRow.createSpan({ cls: 'claudian-tool-branch' });
+  branch.setText('└─');
+  const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
+  if (toolCall.result) {
+    // Try special rendering for WebSearch, otherwise use generic line renderer
+    if (toolCall.name === 'WebSearch') {
+      if (!renderWebSearchResult(resultText, toolCall.result, 3)) {
+        renderResultLines(resultText, toolCall.result, 3);
+      }
+    } else {
+      renderResultLines(resultText, toolCall.result, 3);
+    }
+  } else {
+    resultText.setText('No result');
+  }
 
   // Toggle expand/collapse handler
   let isExpanded = false;
@@ -317,12 +383,10 @@ export function renderStoredToolCall(parentEl: HTMLElement, toolCall: ToolCallIn
     if (isExpanded) {
       content.style.display = 'block';
       toolEl.addClass('expanded');
-      setIcon(chevron, 'chevron-down');
       header.setAttribute('aria-expanded', 'true');
     } else {
       content.style.display = 'none';
       toolEl.removeClass('expanded');
-      setIcon(chevron, 'chevron-right');
       header.setAttribute('aria-expanded', 'false');
     }
   };

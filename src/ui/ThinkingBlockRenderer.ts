@@ -1,4 +1,3 @@
-import { setIcon } from 'obsidian';
 
 /**
  * Callback for rendering markdown content
@@ -24,53 +23,40 @@ export function createThinkingBlock(
   parentEl: HTMLElement,
   renderContent: RenderContentFn
 ): ThinkingBlockState {
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block' });
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block expanded' });
 
   // Header (clickable to expand/collapse)
   const header = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', 'false');
-  header.setAttribute('aria-label', 'Extended thinking - click to expand');
-
-  // Chevron icon (decorative)
-  const chevron = header.createSpan({ cls: 'claudian-thinking-chevron' });
-  chevron.setAttribute('aria-hidden', 'true');
-  setIcon(chevron, 'chevron-right');
-
-  // Brain icon (decorative)
-  const iconEl = header.createSpan({ cls: 'claudian-thinking-icon' });
-  iconEl.setAttribute('aria-hidden', 'true');
-  setIcon(iconEl, 'brain');
+  header.setAttribute('aria-expanded', 'true');
+  header.setAttribute('aria-label', 'Extended thinking - click to collapse');
 
   // Label with timer
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
   const startTime = Date.now();
-  labelEl.setText('Thinking for 0s...');
+  labelEl.setText('Thinking 0s...');
 
   // Start timer interval to update label every second
   const timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    labelEl.setText(`Thinking for ${elapsed}s...`);
+    labelEl.setText(`Thinking ${elapsed}s...`);
   }, 1000);
 
-  // Collapsible content (starts collapsed)
+  // Collapsible content (expanded by default while thinking)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
-  contentEl.style.display = 'none';
 
   // Toggle expand/collapse handler
-  let isExpanded = false;
+  let isExpanded = true;
   const toggleExpand = () => {
     isExpanded = !isExpanded;
     if (isExpanded) {
       contentEl.style.display = 'block';
       wrapperEl.addClass('expanded');
-      setIcon(chevron, 'chevron-down');
       header.setAttribute('aria-expanded', 'true');
     } else {
       contentEl.style.display = 'none';
       wrapperEl.removeClass('expanded');
-      setIcon(chevron, 'chevron-right');
       header.setAttribute('aria-expanded', 'false');
     }
   };
@@ -109,7 +95,7 @@ export async function appendThinkingContent(
 }
 
 /**
- * Finalize a thinking block (stop timer, update label)
+ * Finalize a thinking block (stop timer, update label, collapse)
  */
 export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Stop the timer
@@ -124,6 +110,14 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Update label to show final duration (without "...")
   state.labelEl.setText(`Thought for ${durationSeconds}s`);
 
+  // Collapse when done
+  state.contentEl.style.display = 'none';
+  state.wrapperEl.removeClass('expanded');
+  const header = state.wrapperEl.querySelector('.claudian-thinking-header');
+  if (header) {
+    header.setAttribute('aria-expanded', 'false');
+  }
+
   return durationSeconds;
 }
 
@@ -137,7 +131,7 @@ export function cleanupThinkingBlock(state: ThinkingBlockState | null) {
 }
 
 /**
- * Render a stored thinking block (non-streaming)
+ * Render a stored thinking block (non-streaming, collapsed by default)
  */
 export function renderStoredThinkingBlock(
   parentEl: HTMLElement,
@@ -153,16 +147,6 @@ export function renderStoredThinkingBlock(
   header.setAttribute('role', 'button');
   header.setAttribute('aria-expanded', 'false');
   header.setAttribute('aria-label', 'Extended thinking - click to expand');
-
-  // Chevron icon (decorative)
-  const chevron = header.createSpan({ cls: 'claudian-thinking-chevron' });
-  chevron.setAttribute('aria-hidden', 'true');
-  setIcon(chevron, 'chevron-right');
-
-  // Brain icon (decorative)
-  const iconEl = header.createSpan({ cls: 'claudian-thinking-icon' });
-  iconEl.setAttribute('aria-hidden', 'true');
-  setIcon(iconEl, 'brain');
 
   // Label with duration
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
@@ -181,12 +165,10 @@ export function renderStoredThinkingBlock(
     if (isExpanded) {
       contentEl.style.display = 'block';
       wrapperEl.addClass('expanded');
-      setIcon(chevron, 'chevron-down');
       header.setAttribute('aria-expanded', 'true');
     } else {
       contentEl.style.display = 'none';
       wrapperEl.removeClass('expanded');
-      setIcon(chevron, 'chevron-right');
       header.setAttribute('aria-expanded', 'false');
     }
   };

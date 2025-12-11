@@ -577,28 +577,26 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 ### Tool Calls
 - `.claudian-tool-call` - Tool call container (collapsible)
 - `.claudian-tool-header` - Clickable header with tool info
-- `.claudian-tool-chevron` - Expand/collapse chevron icon
 - `.claudian-tool-icon` - Tool type icon
 - `.claudian-tool-label` - Tool name and summary
 - `.claudian-tool-status` - Status indicator (running/completed/error)
 - `.claudian-spinner` - Loading spinner animation
 - `.claudian-tool-content` - Collapsible content area
-- `.claudian-tool-input` - Input parameters section
-- `.claudian-tool-result` - Result output section
-- `.claudian-tool-code` - Code/output display
+- `.claudian-tool-result-row` - Tree-branch result row container
+- `.claudian-tool-branch` - Tree branch indicator (└─)
+- `.claudian-tool-result-text` - Result text container
+- `.claudian-tool-result-item` - Individual result line
+- `.claudian-tool-result-bullet` - Bulleted result item (WebSearch)
 
 ### Extended Thinking
-- `.claudian-thinking-block` - Thinking block container (collapsible)
-- `.claudian-thinking-header` - Clickable header with brain icon
-- `.claudian-thinking-chevron` - Expand/collapse chevron icon
-- `.claudian-thinking-icon` - Brain icon
-- `.claudian-thinking-label` - Timer label ("Thinking for Xs..." → "Thought for Xs")
-- `.claudian-thinking-content` - Collapsible thinking content (streams in real-time)
+- `.claudian-thinking-block` - Thinking block container (expanded while streaming, collapsed when done)
+- `.claudian-thinking-header` - Clickable header
+- `.claudian-thinking-label` - Timer label ("Thinking Xs..." → "Thought for Xs", Claude orange)
+- `.claudian-thinking-content` - Tree-branch style content (border-left indicator)
 
 ### Todo List (TodoWrite)
 - `.claudian-todo-list` - Todo list container (expanded by default, click to collapse)
 - `.claudian-todo-header` - Clickable header with task count
-- `.claudian-todo-chevron` - Expand/collapse chevron icon
 - `.claudian-todo-icon` - List-checks icon
 - `.claudian-todo-label` - Label showing "Tasks (completed/total)"
 - `.claudian-todo-content` - Collapsible todo items container
@@ -615,7 +613,6 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 - `.claudian-subagent-list.done` - Completed state
 - `.claudian-subagent-list.error` - Error state
 - `.claudian-subagent-header` - Clickable header with subagent info
-- `.claudian-subagent-chevron` - Expand/collapse chevron icon
 - `.claudian-subagent-icon` - Bot icon
 - `.claudian-subagent-label` - Task description text
 - `.claudian-subagent-count` - Tool count badge ("N tool uses")

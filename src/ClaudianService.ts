@@ -1035,7 +1035,7 @@ export class ClaudianService {
             const rawPath = input.tool_input.file_path;
             const filePath = typeof rawPath === 'string' && rawPath ? rawPath : undefined;
 
-            if (filePath && this.vaultPath) {
+            if (filePath && this.vaultPath && toolUseId) {
               const fullPath = path.isAbsolute(filePath)
                 ? filePath
                 : path.join(this.vaultPath, filePath);
@@ -1087,7 +1087,7 @@ export class ClaudianService {
           const isError = input.tool_result?.is_error ?? false;
 
           // Compute diff for Write/Edit (if not error)
-          if (input.tool_name === 'Write' || input.tool_name === 'Edit') {
+          if ((input.tool_name === 'Write' || input.tool_name === 'Edit') && toolUseId) {
             const originalEntry = this.originalContents.get(toolUseId);
             const rawPath = input.tool_input.file_path;
             const filePath = typeof rawPath === 'string' && rawPath ? rawPath : originalEntry?.filePath;

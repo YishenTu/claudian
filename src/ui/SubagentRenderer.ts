@@ -12,7 +12,6 @@ export interface SubagentState {
   labelEl: HTMLElement;
   countEl: HTMLElement;
   statusEl: HTMLElement;
-  chevronEl: HTMLElement;
   info: SubagentInfo;
   currentToolEl: HTMLElement | null;
   currentResultEl: HTMLElement | null;
@@ -75,11 +74,6 @@ export function createSubagentBlock(
   headerEl.setAttribute('aria-expanded', 'true');
   headerEl.setAttribute('aria-label', `Subagent task: ${truncateDescription(description)} - click to collapse`);
 
-  // Chevron (decorative)
-  const chevronEl = headerEl.createDiv({ cls: 'claudian-subagent-chevron' });
-  chevronEl.setAttribute('aria-hidden', 'true');
-  setIcon(chevronEl, 'chevron-down'); // Expanded by default
-
   // Robot icon (decorative)
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -106,12 +100,10 @@ export function createSubagentBlock(
     info.isExpanded = !info.isExpanded;
     if (info.isExpanded) {
       wrapperEl.addClass('expanded');
-      setIcon(chevronEl, 'chevron-down');
       contentEl.style.display = 'block';
       headerEl.setAttribute('aria-expanded', 'true');
     } else {
       wrapperEl.removeClass('expanded');
-      setIcon(chevronEl, 'chevron-right');
       contentEl.style.display = 'none';
       headerEl.setAttribute('aria-expanded', 'false');
     }
@@ -135,7 +127,6 @@ export function createSubagentBlock(
     labelEl,
     countEl,
     statusEl,
-    chevronEl,
     info,
     currentToolEl: null,
     currentResultEl: null,
@@ -297,10 +288,6 @@ export function renderStoredSubagent(
   headerEl.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
   headerEl.setAttribute('aria-label', `Subagent task: ${truncateDescription(subagent.description)} - ${toolCount} tool uses - Status: ${subagent.status}`);
 
-  const chevronEl = headerEl.createDiv({ cls: 'claudian-subagent-chevron' });
-  chevronEl.setAttribute('aria-hidden', 'true');
-  setIcon(chevronEl, isExpanded ? 'chevron-down' : 'chevron-right');
-
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
   setIcon(iconEl, 'bot');
@@ -367,12 +354,10 @@ export function renderStoredSubagent(
     const expanded = wrapperEl.hasClass('expanded');
     if (expanded) {
       wrapperEl.removeClass('expanded');
-      setIcon(chevronEl, 'chevron-right');
       contentEl.style.display = 'none';
       headerEl.setAttribute('aria-expanded', 'false');
     } else {
       wrapperEl.addClass('expanded');
-      setIcon(chevronEl, 'chevron-down');
       contentEl.style.display = 'block';
       headerEl.setAttribute('aria-expanded', 'true');
     }
@@ -406,7 +391,6 @@ export interface AsyncSubagentState {
   labelEl: HTMLElement;
   statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
   statusEl: HTMLElement;
-  chevronEl: HTMLElement;
   info: SubagentInfo;
 }
 
@@ -472,11 +456,6 @@ export function createAsyncSubagentBlock(
   headerEl.setAttribute('aria-expanded', 'false');
   headerEl.setAttribute('aria-label', `Background task: ${description} - Status: running`);
 
-  // Chevron (decorative)
-  const chevronEl = headerEl.createDiv({ cls: 'claudian-subagent-chevron' });
-  chevronEl.setAttribute('aria-hidden', 'true');
-  setIcon(chevronEl, 'chevron-right'); // Collapsed by default
-
   // Robot icon (decorative)
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -510,12 +489,10 @@ export function createAsyncSubagentBlock(
     info.isExpanded = !info.isExpanded;
     if (info.isExpanded) {
       wrapperEl.addClass('expanded');
-      setIcon(chevronEl, 'chevron-down');
       contentEl.style.display = 'block';
       headerEl.setAttribute('aria-expanded', 'true');
     } else {
       wrapperEl.removeClass('expanded');
-      setIcon(chevronEl, 'chevron-right');
       contentEl.style.display = 'none';
       headerEl.setAttribute('aria-expanded', 'false');
     }
@@ -539,7 +516,6 @@ export function createAsyncSubagentBlock(
     labelEl,
     statusTextEl,
     statusEl,
-    chevronEl,
     info,
   };
 }
@@ -685,10 +661,6 @@ export function renderStoredAsyncSubagent(
   headerEl.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
   headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - Status: ${statusText}`);
 
-  const chevronEl = headerEl.createDiv({ cls: 'claudian-subagent-chevron' });
-  chevronEl.setAttribute('aria-hidden', 'true');
-  setIcon(chevronEl, isExpanded ? 'chevron-down' : 'chevron-right');
-
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
   setIcon(iconEl, 'bot');
@@ -746,12 +718,10 @@ export function renderStoredAsyncSubagent(
     const expanded = wrapperEl.hasClass('expanded');
     if (expanded) {
       wrapperEl.removeClass('expanded');
-      setIcon(chevronEl, 'chevron-right');
       contentEl.style.display = 'none';
       headerEl.setAttribute('aria-expanded', 'false');
     } else {
       wrapperEl.addClass('expanded');
-      setIcon(chevronEl, 'chevron-down');
       contentEl.style.display = 'block';
       headerEl.setAttribute('aria-expanded', 'true');
     }
