@@ -704,6 +704,7 @@ export class ClaudianService {
   private createVaultRestrictionHook(): HookCallbackMatcher {
     // Match all file-related tools
     const fileTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'LS', 'NotebookEdit', 'Bash'];
+    const editTools = ['Write', 'Edit', 'NotebookEdit'];
 
     return {
       hooks: [
@@ -741,6 +742,10 @@ export class ClaudianService {
           const filePath = this.getPathFromToolInput(toolName, input.tool_input);
 
           if (filePath && !this.isPathWithinVault(filePath)) {
+            // BUG FIX #5: Clean up edit state when blocking Write/Edit/NotebookEdit
+            if (editTools.includes(toolName)) {
+              this.plugin.getView()?.fileContextManager?.cancelFileEdit(toolName, input.tool_input);
+            }
             return {
               continue: false,
               hookSpecificOutput: {
@@ -863,6 +868,8 @@ export class ClaudianService {
 
       // If no approval callback is set, deny the action
       if (!this.approvalCallback) {
+        // BUG FIX #5: Clean up edit state when denying permission
+        this.plugin.getView()?.fileContextManager?.cancelFileEdit(toolName, input);
         return {
           behavior: 'deny',
           message: 'No approval handler available. Please enable Yolo mode or configure permissions.',
@@ -877,6 +884,8 @@ export class ClaudianService {
         const decision = await this.approvalCallback(toolName, input, description);
 
         if (decision === 'deny') {
+          // BUG FIX #5: Clean up edit state when user denies permission
+          this.plugin.getView()?.fileContextManager?.cancelFileEdit(toolName, input);
           return {
             behavior: 'deny',
             message: 'User denied this action.',
@@ -893,6 +902,8 @@ export class ClaudianService {
 
         return { behavior: 'allow', updatedInput: input };
       } catch (error) {
+        // BUG FIX #5: Clean up edit state when approval fails
+        this.plugin.getView()?.fileContextManager?.cancelFileEdit(toolName, input);
         return {
           behavior: 'deny',
           message: 'Approval request failed.',
@@ -1021,7 +1032,9 @@ export class ClaudianService {
 
           // Capture original content for diff (Write/Edit only, not NotebookEdit)
           if (input.tool_name === 'Write' || input.tool_name === 'Edit') {
-            const filePath = input.tool_input.file_path as string;
+            const rawPath = input.tool_input.file_path;
+            const filePath = typeof rawPath === 'string' && rawPath ? rawPath : undefined;
+
             if (filePath && this.vaultPath) {
               const fullPath = path.isAbsolute(filePath)
                 ? filePath
@@ -1076,7 +1089,8 @@ export class ClaudianService {
           // Compute diff for Write/Edit (if not error)
           if (input.tool_name === 'Write' || input.tool_name === 'Edit') {
             const originalEntry = this.originalContents.get(toolUseId);
-            const filePath = (input.tool_input.file_path as string) || originalEntry?.filePath;
+            const rawPath = input.tool_input.file_path;
+            const filePath = typeof rawPath === 'string' && rawPath ? rawPath : originalEntry?.filePath;
 
             if (!isError && filePath && this.vaultPath) {
               const fullPath = path.isAbsolute(filePath)

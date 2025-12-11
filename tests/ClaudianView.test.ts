@@ -808,6 +808,32 @@ describe('FileContextManager - File Hash Tracking', () => {
       await fileContextManager.trackEditedFile('Write', { file_path: filePath }, true);
       expect((fileContextManager as any).filesBeingEdited.has(filePath)).toBe(false);
     });
+
+    it('should refresh baseline on sequential edits', async () => {
+      const filePath = 'notes/sequence.md';
+      const computeSpy = jest
+        .spyOn(fileContextManager as any, 'computeFileHash')
+        .mockResolvedValueOnce('hash-original-1') // mark #1
+        .mockResolvedValueOnce('hash-post-1')     // track #1
+        .mockResolvedValueOnce('hash-original-2') // mark #2
+        .mockResolvedValueOnce('hash-post-2');    // track #2
+
+      await fileContextManager.markFileBeingEdited('Write', { file_path: filePath });
+      await fileContextManager.trackEditedFile('Write', { file_path: filePath }, false);
+
+      const firstState = (fileContextManager as any).editedFileHashes.get(filePath);
+      expect(firstState.originalHash).toBe('hash-original-1');
+      expect(firstState.postEditHash).toBe('hash-post-1');
+
+      await fileContextManager.markFileBeingEdited('Write', { file_path: filePath });
+      await fileContextManager.trackEditedFile('Write', { file_path: filePath }, false);
+
+      const secondState = (fileContextManager as any).editedFileHashes.get(filePath);
+      expect(secondState.originalHash).toBe('hash-original-2');
+      expect(secondState.postEditHash).toBe('hash-post-2');
+
+      computeSpy.mockRestore();
+    });
   });
 
   describe('File deletion handling', () => {
@@ -836,6 +862,23 @@ describe('FileContextManager - File Hash Tracking', () => {
       (fileContextManager as any).handleFileDeleted(filePath);
 
       expect((fileContextManager as any).editedFilesThisSession.size).toBe(0);
+    });
+  });
+
+  describe('cancelFileEdit', () => {
+    it('should clean up state when permission is denied', () => {
+      const filePath = 'notes/cancel.md';
+
+      (fileContextManager as any).filesBeingEdited.add(filePath);
+      (fileContextManager as any).editedFileHashes.set(filePath, {
+        originalHash: 'hash1',
+        postEditHash: '',
+      });
+
+      fileContextManager.cancelFileEdit('Write', { file_path: filePath });
+
+      expect((fileContextManager as any).filesBeingEdited.has(filePath)).toBe(false);
+      expect((fileContextManager as any).editedFileHashes.has(filePath)).toBe(false);
     });
   });
 

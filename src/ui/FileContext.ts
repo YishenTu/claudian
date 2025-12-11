@@ -207,12 +207,13 @@ export class FileContextManager {
     const path = this.normalizePathForVault(rawPath);
     if (!path) return;
 
+    const wasBeingEdited = this.filesBeingEdited.has(path);
     this.filesBeingEdited.add(path);
 
-    // Capture original hash BEFORE edit (only if not already tracked)
-    if (!this.editedFileHashes.has(path)) {
+    // BUG FIX #1: Always refresh baseline when a new edit sequence starts
+    // (even if we tracked this file earlier in the session)
+    if (!wasBeingEdited) {
       const originalHash = await this.computeFileHash(path);  // null if file doesn't exist
-      // Store placeholder - postEditHash will be set in trackEditedFile
       this.editedFileHashes.set(path, { originalHash, postEditHash: '' });
     }
   }
@@ -229,10 +230,9 @@ export class FileContextManager {
     const filePath = this.normalizePathForVault(rawPath);
     if (!filePath) return;
 
-    // Unmark as being edited
-    this.filesBeingEdited.delete(filePath);
-
     if (isError) {
+      // BUG FIX #4: Unmark AFTER error check to avoid race window
+      this.filesBeingEdited.delete(filePath);
       // Clean up hash state if edit failed and file wasn't previously tracked
       if (!this.editedFilesThisSession.has(filePath)) {
         this.editedFileHashes.delete(filePath);
@@ -240,9 +240,13 @@ export class FileContextManager {
       return;
     }
 
-    // Store post-edit hash
+    // BUG FIX #4: Compute hash BEFORE unmarking to prevent race with modify events
+    // Store post-edit hash while still marked as being edited
     const postEditHash = await this.computeFileHash(filePath);
     const existing = this.editedFileHashes.get(filePath);
+
+    // NOW unmark as being edited (after hash computation)
+    this.filesBeingEdited.delete(filePath);
 
     if (postEditHash) {
       // Check if content is back to original (net effect = no change)
@@ -266,6 +270,26 @@ export class FileContextManager {
     this.updateEditedFilesIndicator();
     // Re-render attachment chips to show edited border if file is attached
     this.updateFileIndicator();
+  }
+
+  /**
+   * BUG FIX #5: Clean up state for a file that was marked for editing but permission was denied
+   * Called when Safe mode denies a tool execution to prevent dirty state
+   */
+  cancelFileEdit(toolName: string, toolInput: Record<string, unknown>) {
+    if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) return;
+
+    const rawPath = (toolInput?.file_path as string) || (toolInput?.notebook_path as string);
+    const path = this.normalizePathForVault(rawPath);
+    if (!path) return;
+
+    // Remove from filesBeingEdited
+    this.filesBeingEdited.delete(path);
+
+    // Clean up hash state if file wasn't previously tracked as edited
+    if (!this.editedFilesThisSession.has(path)) {
+      this.editedFileHashes.delete(path);
+    }
   }
 
   /**
@@ -483,7 +507,13 @@ export class FileContextManager {
 
   private dismissEditedFile(path: string) {
     const normalizedPath = this.normalizePathForVault(path);
-    if (normalizedPath && this.editedFilesThisSession.has(normalizedPath)) {
+    if (!normalizedPath) return;
+
+    // BUG FIX #3: Don't dismiss if Claude is currently editing this file
+    // This prevents clearing hash state prematurely when user opens file during edit
+    if (this.filesBeingEdited.has(normalizedPath)) return;
+
+    if (this.editedFilesThisSession.has(normalizedPath)) {
       this.editedFilesThisSession.delete(normalizedPath);
       this.editedFileHashes.delete(normalizedPath);
       this.updateEditedFilesIndicator();
@@ -546,7 +576,21 @@ export class FileContextManager {
   private handleFileRenamed(oldPath: string, newPath: string) {
     const normalizedOld = this.normalizePathForVault(oldPath);
     const normalizedNew = this.normalizePathForVault(newPath);
-    if (normalizedOld && this.editedFilesThisSession.has(normalizedOld)) {
+    if (!normalizedOld) return;
+
+    let needsUpdate = false;
+
+    // BUG FIX #2: Also update attachedFiles when file is renamed
+    if (this.attachedFiles.has(normalizedOld)) {
+      this.attachedFiles.delete(normalizedOld);
+      if (normalizedNew) {
+        this.attachedFiles.add(normalizedNew);
+      }
+      needsUpdate = true;
+    }
+
+    // Update edited files tracking
+    if (this.editedFilesThisSession.has(normalizedOld)) {
       this.editedFilesThisSession.delete(normalizedOld);
       const hashState = this.editedFileHashes.get(normalizedOld);
       this.editedFileHashes.delete(normalizedOld);
@@ -555,6 +599,18 @@ export class FileContextManager {
         this.editedFilesThisSession.add(normalizedNew);
         if (hashState) this.editedFileHashes.set(normalizedNew, hashState);
       }
+      needsUpdate = true;
+    }
+
+    // Update filesBeingEdited if applicable
+    if (this.filesBeingEdited.has(normalizedOld)) {
+      this.filesBeingEdited.delete(normalizedOld);
+      if (normalizedNew) {
+        this.filesBeingEdited.add(normalizedNew);
+      }
+    }
+
+    if (needsUpdate) {
       this.updateEditedFilesIndicator();
       this.updateFileIndicator();
     }

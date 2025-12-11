@@ -64,6 +64,9 @@ function createMockPlugin(settings = {}) {
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    // Mock getView to return null (tests don't have real view)
+    // This allows optional chaining to work safely
+    getView: jest.fn().mockReturnValue(null),
   } as any;
   return mockPlugin;
 }
@@ -1057,7 +1060,26 @@ describe('ClaudianService', () => {
       expect(result.message).toBe('User denied this action.');
     });
 
+    it('should cancel file edit state when approval is denied', async () => {
+      const cancelFileEdit = jest.fn();
+      mockPlugin.getView = jest.fn().mockReturnValue({
+        fileContextManager: { cancelFileEdit },
+      });
+      const approvalCallback = jest.fn().mockResolvedValue('deny');
+      service.setApprovalCallback(approvalCallback);
+      const canUse = (service as any).createSafeModeCallback();
+
+      const result = await canUse('Write', { file_path: '/test/file.md' }, {});
+
+      expect(result.behavior).toBe('deny');
+      expect(cancelFileEdit).toHaveBeenCalledWith('Write', { file_path: '/test/file.md' });
+    });
+
     it('should deny and interrupt when approval flow errors', async () => {
+      const cancelFileEdit = jest.fn();
+      mockPlugin.getView = jest.fn().mockReturnValue({
+        fileContextManager: { cancelFileEdit },
+      });
       const approvalCallback = jest.fn().mockRejectedValue(new Error('boom'));
       service.setApprovalCallback(approvalCallback);
       const canUse = (service as any).createSafeModeCallback();
@@ -1067,6 +1089,7 @@ describe('ClaudianService', () => {
       expect(result.behavior).toBe('deny');
       expect(result.interrupt).toBe(true);
       expect(result.message).toBe('Approval request failed.');
+      expect(cancelFileEdit).toHaveBeenCalledWith('Read', { file_path: '/test/file.md' });
     });
   });
 
