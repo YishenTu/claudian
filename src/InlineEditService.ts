@@ -1,10 +1,8 @@
 /**
- * InlineEditService - Lightweight service for inline text editing with Claude
+ * Claudian - Inline edit service
  *
- * Unlike the full ClaudianService which supports agentic workflows with tool use,
- * this service is optimized for simple text transformations:
- * - Focused system prompt (edit text, return only the result)
- * - No conversation history
+ * Lightweight Claude query service for inline text editing.
+ * Uses read-only tools only and supports multi-turn clarification.
  */
 
 import { query, type Options, type HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
@@ -25,33 +23,28 @@ export interface InlineEditRequest {
 export interface InlineEditResult {
   success: boolean;
   editedText?: string;
-  clarification?: string;  // Agent asking for clarification
+  clarification?: string;
   error?: string;
 }
 
-// Read-only tools allowed for inline editing
 const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch'] as const;
 
+/** Service for inline text editing with Claude using read-only tools. */
 export class InlineEditService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
   private resolvedClaudePath: string | null = null;
-  private sessionId: string | null = null;  // For conversation continuity
+  private sessionId: string | null = null;
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
   }
 
-  /**
-   * Reset conversation state (call when starting a new edit)
-   */
+  /** Resets conversation state for a new edit session. */
   resetConversation(): void {
     this.sessionId = null;
   }
 
-  /**
-   * Find the claude CLI binary
-   */
   private findClaudeCLI(): string | null {
     const homeDir = os.homedir();
     const commonPaths = [
@@ -71,19 +64,14 @@ export class InlineEditService {
     return null;
   }
 
-  /**
-   * Edit text according to instructions (initial request)
-   */
+  /** Edits text according to instructions (initial request). */
   async editText(request: InlineEditRequest): Promise<InlineEditResult> {
-    // Reset session for new edit
     this.sessionId = null;
     const prompt = this.buildPrompt(request);
     return this.sendMessage(prompt);
   }
 
-  /**
-   * Continue conversation with a follow-up message
-   */
+  /** Continues conversation with a follow-up message. */
   async continueConversation(message: string): Promise<InlineEditResult> {
     if (!this.sessionId) {
       return { success: false, error: 'No active conversation to continue' };
@@ -91,9 +79,6 @@ export class InlineEditService {
     return this.sendMessage(message);
   }
 
-  /**
-   * Send a message (initial or follow-up)
-   */
   private async sendMessage(prompt: string): Promise<InlineEditResult> {
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
@@ -123,23 +108,18 @@ export class InlineEditService {
         ...process.env,
         ...customEnv,
       },
-      // Restrict to read-only tools
       allowedTools: [...READ_ONLY_TOOLS],
-      // Bypass permissions for allowed read-only tools
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      // Safety net: PreToolUse hook to block any write tools that slip through
       hooks: {
         PreToolUse: [this.createReadOnlyHook()],
       },
     };
 
-    // Resume session if continuing conversation
     if (this.sessionId) {
       options.resume = this.sessionId;
     }
 
-    // Enable thinking if configured
     const budgetSetting = this.plugin.settings.thinkingBudget;
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
     if (budgetConfig && budgetConfig.tokens > 0) {
@@ -156,19 +136,16 @@ export class InlineEditService {
           return { success: false, error: 'Cancelled' };
         }
 
-        // Capture session ID from init message
         if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
           this.sessionId = message.session_id;
         }
 
-        // Extract text from message
         const text = this.extractTextFromMessage(message);
         if (text) {
           responseText += text;
         }
       }
 
-      // Parse response for <replacement> tag
       return this.parseResponse(responseText);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -178,22 +155,17 @@ export class InlineEditService {
     }
   }
 
-  /**
-   * Parse response text for <replacement> tag
-   */
+  /** Parses response text for <replacement> tag. */
   private parseResponse(responseText: string): InlineEditResult {
-    // Check for <replacement> tag
     const match = responseText.match(/<replacement>([\s\S]*?)<\/replacement>/);
 
     if (match) {
-      // Found replacement text - will trigger diff view
       return {
         success: true,
         editedText: match[1],
       };
     }
 
-    // No replacement tag - treat as conversational response (answer or clarification)
     const trimmed = responseText.trim();
     if (trimmed) {
       return {
@@ -205,9 +177,6 @@ export class InlineEditService {
     return { success: false, error: 'Empty response' };
   }
 
-  /**
-   * Build the prompt for inline request
-   */
   private buildPrompt(request: InlineEditRequest): string {
     return [
       `File: ${request.notePath}`,
@@ -220,10 +189,7 @@ export class InlineEditService {
     ].join('\n');
   }
 
-  /**
-   * Create PreToolUse hook to enforce read-only mode
-   * Safety net in case allowedTools is bypassed (SDK bug #361)
-   */
+  /** Creates PreToolUse hook to enforce read-only mode. */
   private createReadOnlyHook(): HookCallbackMatcher {
     return {
       hooks: [
@@ -234,12 +200,10 @@ export class InlineEditService {
           };
           const toolName = input.tool_name;
 
-          // Allow only read-only tools
           if (READ_ONLY_TOOLS.includes(toolName as typeof READ_ONLY_TOOLS[number])) {
             return { continue: true };
           }
 
-          // Block all other tools
           return {
             continue: false,
             hookSpecificOutput: {
@@ -253,9 +217,6 @@ export class InlineEditService {
     };
   }
 
-  /**
-   * Extract text content from SDK message
-   */
   private extractTextFromMessage(message: any): string | null {
     if (message.type === 'assistant' && message.message?.content) {
       for (const block of message.message.content) {
@@ -278,9 +239,7 @@ export class InlineEditService {
     return null;
   }
 
-  /**
-   * Cancel the current edit operation
-   */
+  /** Cancels the current edit operation. */
   cancel(): void {
     if (this.abortController) {
       this.abortController.abort();

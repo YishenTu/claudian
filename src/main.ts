@@ -1,3 +1,10 @@
+/**
+ * Claudian - Obsidian plugin entry point
+ *
+ * Registers the sidebar chat view, settings tab, and commands.
+ * Manages conversation persistence and environment variable configuration.
+ */
+
 import { Plugin, Notice, MarkdownView, Editor } from 'obsidian';
 import { ClaudianView } from './ClaudianView';
 import { ClaudianService } from './ClaudianService';
@@ -14,34 +21,32 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
 import { deleteCachedImages } from './imageCache';
 import { InlineEditModal } from './ui/InlineEditModal';
 
+/**
+ * Main plugin class for Claudian.
+ * Handles plugin lifecycle, settings persistence, and conversation management.
+ */
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   agentService: ClaudianService;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
-  // Runtime snapshot of env vars; only refreshed on plugin load (restart)
   private runtimeEnvironmentVariables = '';
-  // Track if we've already notified about env var changes (to avoid spam)
   private hasNotifiedEnvChange = false;
 
   async onload() {
     await this.loadSettings();
 
-    // Initialize agent service
     this.agentService = new ClaudianService(this);
 
-    // Register the sidebar view
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
       (leaf) => new ClaudianView(leaf, this)
     );
 
-    // Add ribbon icon to open the view
     this.addRibbonIcon('bot', 'Open Claudian', () => {
       this.activateView();
     });
 
-    // Add command to open view
     this.addCommand({
       id: 'open-view',
       name: 'Open chat view',
@@ -50,7 +55,6 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
-    // Add inline edit command (Cmd+I / Ctrl+I)
     this.addCommand({
       id: 'inline-edit',
       name: 'Inline edit selected text',
@@ -63,8 +67,6 @@ export default class ClaudianPlugin extends Plugin {
         }
 
         const notePath = view.file?.path || 'unknown';
-
-        // Open inline edit modal
         const modal = new InlineEditModal(this.app, this, selectedText, notePath);
         const result = await modal.openAndWait();
 
@@ -74,7 +76,6 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
-    // Add settings tab
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
@@ -82,13 +83,12 @@ export default class ClaudianPlugin extends Plugin {
     this.agentService.cleanup();
   }
 
+  /** Opens the Claudian sidebar view, creating it if necessary. */
   async activateView() {
     const { workspace } = this.app;
-
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
 
     if (!leaf) {
-      // Get the right leaf (sidebar)
       const rightLeaf = workspace.getRightLeaf(false);
       if (rightLeaf) {
         await rightLeaf.setViewState({
@@ -104,28 +104,27 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
+  /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
     const data = await this.loadData() || {};
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     this.conversations = data.conversations || [];
     this.activeConversationId = data.activeConversationId || null;
 
-    // Validate active conversation still exists
     if (this.activeConversationId &&
         !this.conversations.find(c => c.id === this.activeConversationId)) {
       this.activeConversationId = null;
     }
 
-    // Runtime env snapshot is fixed until plugin restart
     this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
     const modelReset = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
 
-    // Persist hash change if model was reset
     if (modelReset) {
       await this.saveSettings();
     }
   }
 
+  /** Persists settings and conversations to storage. */
   async saveSettings() {
     await this.saveData({
       ...this.settings,
@@ -134,22 +133,22 @@ export default class ClaudianPlugin extends Plugin {
     });
   }
 
+  /** Updates and persists environment variables, notifying if restart is needed. */
   async applyEnvironmentVariables(envText: string): Promise<void> {
     this.settings.environmentVariables = envText;
     await this.saveSettings();
 
-    // Notify user if env vars changed from runtime snapshot (only once per change)
     if (envText !== this.runtimeEnvironmentVariables) {
       if (!this.hasNotifiedEnvChange) {
         new Notice('Environment variables changed. Restart the plugin for changes to take effect.');
         this.hasNotifiedEnvChange = true;
       }
     } else {
-      // Reset notification flag when value matches runtime (no restart needed)
       this.hasNotifiedEnvChange = false;
     }
   }
 
+  /** Returns the runtime environment variables (fixed at plugin load). */
   getActiveEnvironmentVariables(): string {
     return this.runtimeEnvironmentVariables;
   }
@@ -166,13 +165,9 @@ export default class ClaudianPlugin extends Plugin {
     return customModels[0].value;
   }
 
-  /**
-   * Simple hash for env vars to detect changes.
-   * Only hashes model-related env vars for stability.
-   */
+  /** Computes a hash of model-related environment variables for change detection. */
   private computeEnvHash(envText: string): string {
     const envVars = parseEnvironmentVariables(envText || '');
-    // Only hash model-related env vars
     const modelKeys = [
       'ANTHROPIC_MODEL',
       'ANTHROPIC_DEFAULT_OPUS_MODEL',
@@ -187,38 +182,29 @@ export default class ClaudianPlugin extends Plugin {
     return relevantPairs;
   }
 
-  /**
-   * Reconcile model with environment. Returns true if model was reset due to env change.
-   */
+  /** Reconciles model with environment. Returns true if model was reset. */
   private reconcileModelWithEnvironment(envText: string): boolean {
     const currentHash = this.computeEnvHash(envText);
     const savedHash = this.settings.lastEnvHash || '';
 
-    // If env hasn't changed, keep the user's saved model
     if (currentHash === savedHash) {
       return false;
     }
 
-    // Env changed - reset model to appropriate default
     const envVars = parseEnvironmentVariables(envText || '');
     const customModels = getModelsFromEnvironment(envVars);
 
     if (customModels.length > 0) {
-      // Custom env: use priority order (ANTHROPIC_MODEL > opus > sonnet > haiku)
       this.settings.model = this.getPreferredCustomModel(envVars, customModels);
     } else {
-      // No custom env: reset to haiku
       this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
     }
 
-    // Update the saved hash
     this.settings.lastEnvHash = currentHash;
     return true;
   }
 
-  /**
-   * Remove cached images associated with a conversation
-   */
+  /** Removes cached images associated with a conversation if not used elsewhere. */
   private cleanupConversationImages(conversation: Conversation): void {
     const cachePaths = new Set<string>();
 
@@ -233,7 +219,6 @@ export default class ClaudianPlugin extends Plugin {
 
     if (cachePaths.size === 0) return;
 
-    // Skip files still referenced by other conversations
     const inUseElsewhere = new Set<string>();
     for (const conv of this.conversations) {
       if (conv.id === conversation.id) continue;
@@ -253,16 +238,10 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /**
-   * Generate a unique conversation ID
-   */
   private generateConversationId(): string {
     return `conv-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 
-  /**
-   * Generate a default title with timestamp
-   */
   private generateDefaultTitle(): string {
     const now = new Date();
     return now.toLocaleString(undefined, {
@@ -273,18 +252,13 @@ export default class ClaudianPlugin extends Plugin {
     });
   }
 
-  /**
-   * Get preview text from a conversation
-   */
   private getConversationPreview(conv: Conversation): string {
     const firstUserMsg = conv.messages.find(m => m.role === 'user');
     if (!firstUserMsg) return 'New conversation';
     return firstUserMsg.content.substring(0, 50) + (firstUserMsg.content.length > 50 ? '...' : '');
   }
 
-  /**
-   * Create a new conversation and set it as active
-   */
+  /** Creates a new conversation and sets it as active. */
   async createConversation(): Promise<Conversation> {
     const conversation: Conversation = {
       id: this.generateConversationId(),
@@ -295,36 +269,27 @@ export default class ClaudianPlugin extends Plugin {
       messages: [],
     };
 
-    // Add to front of list
     this.conversations.unshift(conversation);
     this.activeConversationId = conversation.id;
-
-    // Reset agent service session
     this.agentService.resetSession();
 
     await this.saveSettings();
     return conversation;
   }
 
-  /**
-   * Switch to an existing conversation
-   */
+  /** Switches to an existing conversation by ID. */
   async switchConversation(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
 
     this.activeConversationId = id;
-
-    // Restore session ID to agent service
     this.agentService.setSessionId(conversation.sessionId);
 
     await this.saveSettings();
     return conversation;
   }
 
-  /**
-   * Delete a conversation
-   */
+  /** Deletes a conversation and switches to another if necessary. */
   async deleteConversation(id: string): Promise<void> {
     const index = this.conversations.findIndex(c => c.id === id);
     if (index === -1) return;
@@ -333,7 +298,6 @@ export default class ClaudianPlugin extends Plugin {
     this.cleanupConversationImages(conversation);
     this.conversations.splice(index, 1);
 
-    // If deleted active conversation, switch to newest or create new
     if (this.activeConversationId === id) {
       if (this.conversations.length > 0) {
         await this.switchConversation(this.conversations[0].id);
@@ -345,9 +309,7 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /**
-   * Rename a conversation
-   */
+  /** Renames a conversation. */
   async renameConversation(id: string, title: string): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return;
@@ -357,9 +319,7 @@ export default class ClaudianPlugin extends Plugin {
     await this.saveSettings();
   }
 
-  /**
-   * Update conversation (messages, sessionId, etc.)
-   */
+  /** Updates conversation properties (messages, sessionId, etc.). */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return;
@@ -368,16 +328,12 @@ export default class ClaudianPlugin extends Plugin {
     await this.saveSettings();
   }
 
-  /**
-   * Get current active conversation
-   */
+  /** Returns the current active conversation. */
   getActiveConversation(): Conversation | null {
     return this.conversations.find(c => c.id === this.activeConversationId) || null;
   }
 
-  /**
-   * Get conversation metadata list for dropdown
-   */
+  /** Returns conversation metadata list for the history dropdown. */
   getConversationList(): ConversationMeta[] {
     return this.conversations.map(c => ({
       id: c.id,
@@ -389,9 +345,7 @@ export default class ClaudianPlugin extends Plugin {
     }));
   }
 
-  /**
-   * Get the active Claudian view from workspace
-   */
+  /** Returns the active Claudian view from workspace, if open. */
   getView(): ClaudianView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     if (leaves.length > 0) {

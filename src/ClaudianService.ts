@@ -1,3 +1,10 @@
+/**
+ * Claudian - Claude Agent SDK wrapper
+ *
+ * Handles communication with Claude via the Agent SDK. Manages streaming,
+ * session persistence, permission modes, and security hooks.
+ */
+
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -17,9 +24,8 @@ import { buildSystemPrompt } from './systemPrompt';
 import { getVaultPath, parseEnvironmentVariables } from './utils';
 import { readCachedImageBase64 } from './imageCache';
 
-const MAX_DIFF_SIZE = 100 * 1024; // 100KB limit for diff computation
+const MAX_DIFF_SIZE = 100 * 1024;
 
-// Content block types for SDK message format
 interface TextContentBlock {
   type: 'text';
   text: string;
@@ -36,43 +42,29 @@ interface ImageContentBlock {
 
 type ContentBlock = TextContentBlock | ImageContentBlock;
 
-// Callback type for requesting user approval
 export type ApprovalCallback = (
   toolName: string,
   input: Record<string, unknown>,
   description: string
 ) => Promise<'allow' | 'allow-always' | 'deny'>;
 
+/** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
   private sessionId: string | null = null;
   private resolvedClaudePath: string | null = null;
-
-  // Approval callback for UI prompts (set by ClaudianView)
   private approvalCallback: ApprovalCallback | null = null;
-
-  // Session-scoped approved actions (cleared on session reset)
   private sessionApprovedActions: ApprovedAction[] = [];
-
-  // Vault path for restricting agent access
   private vaultPath: string | null = null;
-
-  // Original file content for diff computation (keyed by tool_use_id)
   private originalContents: Map<string, { filePath: string; content: string | null }> = new Map();
-
-  // Computed diff data waiting to be retrieved (keyed by tool_use_id)
   private pendingDiffData: Map<string, ToolDiffData> = new Map();
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
   }
 
-  /**
-   * Find the claude CLI binary by checking common installation locations
-   */
   private findClaudeCLI(): string | null {
-    // Common installation locations
     const homeDir = os.homedir();
     const commonPaths = [
       path.join(homeDir, '.claude', 'local', 'claude'),
@@ -91,21 +83,14 @@ export class ClaudianService {
     return null;
   }
 
-  /**
-   * Send a query to Claude and stream the response
-   * @param prompt The user's message
-   * @param images Optional images to include with the message
-   * @param conversationHistory Optional message history for session expiration recovery
-   */
+  /** Sends a query to Claude and streams the response. */
   async *query(prompt: string, images?: ImageAttachment[], conversationHistory?: ChatMessage[]): AsyncGenerator<StreamChunk> {
-    // Get vault path
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
       yield { type: 'error', content: 'Could not determine vault path' };
       return;
     }
 
-    // Find claude CLI - cache the result
     if (!this.resolvedClaudePath) {
       this.resolvedClaudePath = this.findClaudeCLI();
     }
@@ -115,7 +100,6 @@ export class ClaudianService {
       return;
     }
 
-    // Create abort controller for cancellation
     this.abortController = new AbortController();
 
     const hydratedImages = await this.hydrateImagesData(images, vaultPath);
@@ -123,15 +107,11 @@ export class ClaudianService {
     try {
       yield* this.queryViaSDK(prompt, vaultPath, hydratedImages);
     } catch (error) {
-      // Handle session expiration - rebuild context and retry
       if (this.isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionId = null;
 
-        // Rebuild context from history
         const historyContext = this.buildContextFromHistory(conversationHistory);
         const lastUserMessage = this.getLastUserMessage(conversationHistory);
-        // Strip context prefix before comparison to avoid false mismatch
-        // (prompt may have "Context files: [...]\n\n" prefix, but stored content doesn't)
         const actualPrompt = prompt.replace(/^Context files: \[.*?\]\n\n/, '');
         const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
         const fullPrompt = historyContext
@@ -140,7 +120,6 @@ export class ClaudianService {
             : historyContext
           : prompt;
 
-        // Retry without resume (note: images not included in retry for simplicity)
         const retryImages = await this.hydrateImagesData(lastUserMessage?.images, vaultPath);
 
         try {
@@ -159,9 +138,7 @@ export class ClaudianService {
     }
   }
 
-  /**
-   * Build conversation context from message history
-   */
+  /** Builds conversation context from message history for session recovery. */
   private buildContextFromHistory(messages: ChatMessage[]): string {
     const parts: string[] = [];
 
@@ -204,10 +181,7 @@ export class ClaudianService {
     return parts.join('\n\n');
   }
 
-  /**
-   * Check if an error is a session expiration error
-   * Only matches session-specific errors, not general "not found" or "invalid" errors
-   */
+  /** Checks if an error indicates session expiration. */
   private isSessionExpiredError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message.toLowerCase() : '';
     return msg.includes('session expired') ||
@@ -218,9 +192,6 @@ export class ClaudianService {
            (msg.includes('resume') && (msg.includes('failed') || msg.includes('error')));
   }
 
-  /**
-   * Get the last user message in a conversation history
-   */
   private getLastUserMessage(messages: ChatMessage[]): ChatMessage | undefined {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'user') {
@@ -230,9 +201,6 @@ export class ClaudianService {
     return undefined;
   }
 
-  /**
-   * Format a tool call line for inclusion in recovery context
-   */
   private formatToolCallForContext(toolCall: ToolCallInfo): string {
     const status = toolCall.status ?? 'completed';
     const base = `[Tool ${toolCall.name} status=${status}]`;
@@ -652,27 +620,17 @@ export class ClaudianService {
     this.resetSession();
   }
 
-  // ============================================
-  // Approval Memory Methods
-  // ============================================
-
-  /**
-   * Set the approval callback for UI prompts
-   */
+  /** Sets the approval callback for UI prompts. */
   setApprovalCallback(callback: ApprovalCallback | null) {
     this.approvalCallback = callback;
   }
 
-  /**
-   * Create PreToolUse hook to enforce blocklist
-   * This runs before EVERY tool execution, even in bypassPermissions mode
-   */
+  /** Creates PreToolUse hook to enforce the command blocklist. */
   private createBlocklistHook(): HookCallbackMatcher {
     return {
-      matcher: 'Bash',  // Only match Bash tool
+      matcher: 'Bash',
       hooks: [
         async (hookInput, toolUseID, options) => {
-          // hookInput is PreToolUseHookInput with tool_name and tool_input
           const input = hookInput as {
             tool_name: string;
             tool_input: { command?: string };
@@ -697,12 +655,8 @@ export class ClaudianService {
     };
   }
 
-  /**
-   * Create PreToolUse hook to restrict file access to vault only
-   * Checks Read, Write, Edit, Glob, Grep, LS tools for path violations
-   */
+  /** Creates PreToolUse hook to restrict file access to the vault. */
   private createVaultRestrictionHook(): HookCallbackMatcher {
-    // Match all file-related tools
     const fileTools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'LS', 'NotebookEdit', 'Bash'];
     const editTools = ['Write', 'Edit', 'NotebookEdit'];
 

@@ -1,3 +1,10 @@
+/**
+ * Claudian - Sidebar chat view
+ *
+ * Main chat interface for interacting with Claude. Handles message streaming,
+ * tool call rendering, conversation management, and file/image context.
+ */
+
 import { ItemView, WorkspaceLeaf, MarkdownRenderer, setIcon } from 'obsidian';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,7 +14,6 @@ import { AsyncSubagentManager } from './AsyncSubagentManager';
 import { getVaultPath } from './utils';
 import { readCachedImageBase64 } from './imageCache';
 
-// Import UI components
 import {
   ApprovalModal,
   createInputToolbar,
@@ -51,6 +57,7 @@ import {
   type WriteEditState,
 } from './ui';
 
+/** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {
   private plugin: ClaudianPlugin;
   private messages: ChatMessage[] = [];
@@ -58,43 +65,22 @@ export class ClaudianView extends ItemView {
   private inputEl: HTMLTextAreaElement;
   private isStreaming = false;
   private toolCallElements: Map<string, HTMLElement> = new Map();
-
-  // Sync subagent tracking
   private activeSubagents: Map<string, SubagentState> = new Map();
-
-  // Async subagent tracking
   private asyncSubagentManager: AsyncSubagentManager;
   private asyncSubagentStates: Map<string, AsyncSubagentState> = new Map();
-
-  // Write/Edit diff tracking
   private writeEditStates: Map<string, WriteEditState> = new Map();
-
-  // For maintaining stream order
   private currentContentEl: HTMLElement | null = null;
   private currentTextEl: HTMLElement | null = null;
   private currentTextContent: string = '';
-
-  // Thinking block tracking
   private currentThinkingState: ThinkingBlockState | null = null;
-
-  // Thinking indicator
   private thinkingEl: HTMLElement | null = null;
-
-  // Conversation history UI
   private currentConversationId: string | null = null;
   private historyDropdown: HTMLElement | null = null;
-
-  // File context manager
   public fileContextManager: FileContextManager | null = null;
-
-  // Image context manager
   private imageContextManager: ImageContextManager | null = null;
-
-  // Toolbar components
   private modelSelector: ModelSelector | null = null;
   private thinkingBudgetSelector: ThinkingBudgetSelector | null = null;
   private permissionToggle: PermissionToggle | null = null;
-
   private cancelRequested = false;
 
   private static readonly FLAVOR_TEXTS = [
@@ -117,8 +103,6 @@ export class ClaudianView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
-
-    // Initialize async subagent manager with UI update callback
     this.asyncSubagentManager = new AsyncSubagentManager(
       this.onAsyncSubagentStateChange.bind(this)
     );
@@ -141,13 +125,10 @@ export class ClaudianView extends ItemView {
     container.empty();
     container.addClass('claudian-container');
 
-    // Header
     const header = container.createDiv({ cls: 'claudian-header' });
 
-    // Left side: Logo + Title
     const titleContainer = header.createDiv({ cls: 'claudian-title' });
     const logoEl = titleContainer.createSpan({ cls: 'claudian-logo' });
-    // Create SVG logo using DOM API (avoid innerHTML per Obsidian guidelines)
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 100 100');
     svg.setAttribute('width', '18');
@@ -171,32 +152,25 @@ export class ClaudianView extends ItemView {
     logoEl.appendChild(svg);
     titleContainer.createEl('h4', { text: 'Claudian' });
 
-    // Right side: Header actions
     const headerActions = header.createDiv({ cls: 'claudian-header-actions' });
 
-    // History dropdown container
     const historyContainer = headerActions.createDiv({ cls: 'claudian-history-container' });
 
-    // Dropdown trigger (icon button)
     const trigger = historyContainer.createDiv({ cls: 'claudian-header-btn' });
     setIcon(trigger, 'history');
     trigger.setAttribute('aria-label', 'Chat history');
 
-    // Dropdown menu
     this.historyDropdown = historyContainer.createDiv({ cls: 'claudian-history-menu' });
 
-    // Toggle dropdown on trigger click
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
       this.toggleHistoryDropdown();
     });
 
-    // Close dropdown when clicking outside
     this.registerDomEvent(document, 'click', () => {
       this.historyDropdown?.removeClass('visible');
     });
 
-    // Document-level ESC handler for cancel streaming (works regardless of focus)
     this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.isStreaming) {
         e.preventDefault();
@@ -204,19 +178,15 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // New conversation button
     const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
     setIcon(newBtn, 'plus');
     newBtn.setAttribute('aria-label', 'New conversation');
     newBtn.addEventListener('click', () => this.createNewConversation());
 
-    // Messages area
     this.messagesEl = container.createDiv({ cls: 'claudian-messages' });
 
-    // Input area
     const inputContainerEl = container.createDiv({ cls: 'claudian-input-container' });
 
-    // Input box wrapper (contains textarea + toolbar)
     const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
 
     this.inputEl = inputWrapper.createEl('textarea', {
@@ -227,39 +197,31 @@ export class ClaudianView extends ItemView {
       },
     });
 
-    // Initialize file context manager (creates its own indicator elements in inputContainerEl)
     this.fileContextManager = new FileContextManager(
       this.plugin.app,
       inputContainerEl,
       this.inputEl,
       {
         getExcludedTags: () => this.plugin.settings.excludedTags,
-        onFileOpen: async (path) => {
-          // This callback is available if needed for additional file open handling
-        },
+        onFileOpen: async () => {},
       }
     );
 
-    // Initialize image context manager (creates its own preview elements in inputContainerEl)
     this.imageContextManager = new ImageContextManager(
       this.plugin.app,
       inputContainerEl,
       this.inputEl,
       {
-        onImagesChanged: () => {
-          // Images changed - could update UI state if needed
-        },
+        onImagesChanged: () => {},
         getMediaFolder: () => this.plugin.settings.mediaFolder,
       }
     );
 
-    // Keep file cache fresh
     this.registerEvent(this.plugin.app.vault.on('create', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('delete', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('rename', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('modify', () => this.fileContextManager?.markFilesCacheDirty()));
 
-    // Input toolbar (model selector + thinking budget + permission toggle)
     const inputToolbar = inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
     const toolbarComponents = createInputToolbar(inputToolbar, {
       getSettings: () => ({
@@ -271,7 +233,6 @@ export class ClaudianView extends ItemView {
       onModelChange: async (model: ClaudeModel) => {
         this.plugin.settings.model = model;
 
-        // Update thinking budget if it's a default Claude model
         const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m: any) => m.value === model);
         if (isDefaultModel) {
           this.plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
@@ -298,9 +259,7 @@ export class ClaudianView extends ItemView {
     this.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
     this.permissionToggle = toolbarComponents.permissionToggle;
 
-    // Event handlers
     this.inputEl.addEventListener('keydown', (e) => {
-      // Handle @ mention dropdown navigation
       if (this.fileContextManager?.handleMentionKeydown(e)) {
         return;
       }
@@ -317,17 +276,14 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Listen for @ mentions
     this.inputEl.addEventListener('input', () => this.fileContextManager?.handleInputChange());
 
-    // Close mention dropdown when clicking outside
     this.registerDomEvent(document, 'click', (e) => {
       if (!this.fileContextManager?.containsElement(e.target as Node) && e.target !== this.inputEl) {
         this.fileContextManager?.hideMentionDropdown();
       }
     });
 
-    // Listen for focus changes - update attachment before session starts
     this.registerEvent(
       this.plugin.app.workspace.on('file-open', (file) => {
         if (file) {
@@ -336,27 +292,19 @@ export class ClaudianView extends ItemView {
       })
     );
 
-    // Set up approval callback for permission prompts
     this.plugin.agentService.setApprovalCallback(this.handleApprovalRequest.bind(this));
 
-    // Load active conversation or create new
     await this.loadActiveConversation();
   }
 
   async onClose() {
-    // Clean up thinking indicator
     this.hideThinkingIndicator();
-    // Clean up thinking block timer
     cleanupThinkingBlock(this.currentThinkingState);
     this.currentThinkingState = null;
-    // Remove approval callback
     this.plugin.agentService.setApprovalCallback(null);
-    // Clean up file context manager (unregister vault event listeners)
     this.fileContextManager?.destroy();
-    // Orphan any active async subagents (view closing = conversation ending)
     this.asyncSubagentManager.orphanAllActive();
     this.asyncSubagentStates.clear();
-    // Save current conversation before closing
     await this.saveCurrentConversation();
   }
 
@@ -369,10 +317,8 @@ export class ClaudianView extends ItemView {
     this.isStreaming = true;
     this.cancelRequested = false;
 
-    // Mark session as started
     this.fileContextManager?.startSession();
 
-    // Check for image path in message and try to load it
     if (content && this.imageContextManager) {
       const result = await this.imageContextManager.handleImagePathInText(content);
       if (result.imageLoaded) {
@@ -380,19 +326,15 @@ export class ClaudianView extends ItemView {
       }
     }
 
-    // Get attached images
     const images = this.imageContextManager?.getAttachedImages() || [];
     const imagesForMessage = images.length > 0 ? [...images] : undefined;
 
-    // Clear images after collecting them
     this.imageContextManager?.clearImages();
 
-    // Check if attached files have changed since last message
     const attachedFiles = this.fileContextManager?.getAttachedFiles() || new Set();
     const currentFiles = Array.from(attachedFiles);
     const filesChanged = this.fileContextManager?.hasFilesChanged() ?? false;
 
-    // Build prompt - only include context if files changed
     let promptToSend = content;
     let contextFilesForMessage: string[] | undefined;
 
@@ -402,16 +344,13 @@ export class ClaudianView extends ItemView {
         promptToSend = `Context files: [${fileList}]\n\n${content}`;
         contextFilesForMessage = currentFiles;
       } else {
-        // Explicitly signal removal after a prior attachment
         promptToSend = `Context files: []\n\n${content}`;
         contextFilesForMessage = [];
       }
     }
 
-    // Mark files as sent
     this.fileContextManager?.markFilesSent();
 
-    // Add user message (display original content, send with context)
     const userMsg: ChatMessage = {
       id: this.generateId(),
       role: 'user',
@@ -422,13 +361,11 @@ export class ClaudianView extends ItemView {
     };
     this.addMessage(userMsg);
 
-    // Auto-generate title from first user message
     if (this.messages.length === 1 && this.currentConversationId) {
       const title = this.generateTitle(content);
       await this.plugin.renameConversation(this.currentConversationId, title);
     }
 
-    // Create assistant message placeholder
     const assistantMsg: ChatMessage = {
       id: this.generateId(),
       role: 'assistant',
@@ -440,17 +377,14 @@ export class ClaudianView extends ItemView {
     const msgEl = this.addMessage(assistantMsg);
     const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement;
 
-    // Reset streaming state
     this.toolCallElements.clear();
     this.currentContentEl = contentEl;
     this.currentTextEl = null;
     this.currentTextContent = '';
 
-    // Show thinking indicator
     this.showThinkingIndicator(contentEl);
 
     try {
-      // Pass conversation history for session expiration recovery
       for await (const chunk of this.plugin.agentService.query(promptToSend, imagesForMessage, this.messages)) {
         if (this.cancelRequested) {
           break;
@@ -466,19 +400,10 @@ export class ClaudianView extends ItemView {
       this.cancelRequested = false;
       this.currentContentEl = null;
 
-      // Finalize any remaining blocks
       this.finalizeCurrentThinkingBlock(assistantMsg);
       this.finalizeCurrentTextBlock(assistantMsg);
-
-      // Clean up any orphaned sync subagents (sync must complete within one turn)
       this.activeSubagents.clear();
 
-      // NOTE: Do NOT orphan async subagents here - they persist across message turns
-      // Async subagents are only orphaned when:
-      // 1. User creates a new conversation
-      // 2. View closes
-
-      // Auto-save after message completion
       await this.saveCurrentConversation();
     }
   }
@@ -507,21 +432,18 @@ export class ClaudianView extends ItemView {
   }
 
   private async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage) {
-    // Route messages by parentToolUseId - if non-null, this chunk belongs to a subagent
     if ('parentToolUseId' in chunk && chunk.parentToolUseId) {
       await this.handleSubagentChunk(chunk, msg);
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       return;
     }
 
-    // Hide thinking indicator when real content arrives
     if (chunk.type === 'text' || chunk.type === 'tool_use' || chunk.type === 'thinking') {
       this.hideThinkingIndicator();
     }
 
     switch (chunk.type) {
       case 'thinking':
-        // Finalize any current text block first
         if (this.currentTextEl) {
           this.finalizeCurrentTextBlock(msg);
         }
@@ -529,7 +451,6 @@ export class ClaudianView extends ItemView {
         break;
 
       case 'text':
-        // Finalize any current thinking block first
         if (this.currentThinkingState) {
           this.finalizeCurrentThinkingBlock(msg);
         }
@@ -538,13 +459,11 @@ export class ClaudianView extends ItemView {
         break;
 
       case 'tool_use': {
-        // Finalize current blocks before adding tool
         if (this.currentThinkingState) {
           this.finalizeCurrentThinkingBlock(msg);
         }
         this.finalizeCurrentTextBlock(msg);
 
-        // Special handling for Task tool - check sync vs async
         if (chunk.name === 'Task') {
           const isAsync = this.asyncSubagentManager.isAsyncTask(chunk.input);
           if (isAsync) {
@@ -555,7 +474,6 @@ export class ClaudianView extends ItemView {
           break;
         }
 
-        // Special handling for AgentOutputTool - link to async subagent
         if (chunk.name === 'AgentOutputTool') {
           this.handleAgentOutputToolUse(chunk, msg);
           break;
@@ -575,7 +493,6 @@ export class ClaudianView extends ItemView {
           msg.contentBlocks = msg.contentBlocks || [];
           msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
 
-          // Special rendering for TodoWrite
           if (chunk.name === 'TodoWrite') {
             const todos = parseTodoInput(chunk.input);
             if (todos) {
@@ -585,7 +502,6 @@ export class ClaudianView extends ItemView {
             } else {
               renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements);
             }
-          // Special rendering for Write/Edit with diff view
           } else if (chunk.name === 'Write' || chunk.name === 'Edit') {
             const state = createWriteEditBlock(this.currentContentEl!, toolCall);
             this.writeEditStates.set(chunk.id, state);
@@ -598,32 +514,26 @@ export class ClaudianView extends ItemView {
       }
 
       case 'tool_result': {
-        // Check if this is a sync subagent (Task tool) completion
         const subagentState = this.activeSubagents.get(chunk.id);
         if (subagentState) {
           this.finalizeSubagent(chunk, msg, subagentState);
           break;
         }
 
-        // Check if this is an async Task result (extracts agent_id)
         if (this.handleAsyncTaskToolResult(chunk, msg)) {
-          // Show thinking indicator while waiting for AgentOutputTool
           if (this.currentContentEl) {
             this.showThinkingIndicator(this.currentContentEl);
           }
           break;
         }
 
-        // Check if this is an AgentOutputTool result (finalizes async subagent)
         if (this.handleAgentOutputToolResult(chunk, msg)) {
-          // Show thinking indicator for next main agent response
           if (this.currentContentEl) {
             this.showThinkingIndicator(this.currentContentEl);
           }
           break;
         }
 
-        // Normal tool result handling
         const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
         const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
 
@@ -631,11 +541,9 @@ export class ClaudianView extends ItemView {
           existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
           existingToolCall.result = chunk.content;
 
-          // Special handling for Write/Edit - update with diff
           const writeEditState = this.writeEditStates.get(chunk.id);
           if (writeEditState && (existingToolCall.name === 'Write' || existingToolCall.name === 'Edit')) {
             if (!chunk.isError && !isBlocked) {
-              // Get diff data from service by tool_use_id
               const diffData = this.plugin.agentService.getDiffData(chunk.id);
               if (diffData) {
                 existingToolCall.diffData = diffData;
@@ -648,14 +556,12 @@ export class ClaudianView extends ItemView {
           }
         }
 
-        // Track edited files
         this.fileContextManager?.trackEditedFile(
           existingToolCall?.name,
           existingToolCall?.input || {},
           chunk.isError || isBlocked
         );
 
-        // Show thinking indicator again
         if (this.currentContentEl) {
           this.showThinkingIndicator(this.currentContentEl);
         }
@@ -674,7 +580,6 @@ export class ClaudianView extends ItemView {
         break;
     }
 
-    // Auto-scroll to bottom
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
@@ -729,39 +634,27 @@ export class ClaudianView extends ItemView {
     this.currentThinkingState = null;
   }
 
-  // ============================================
-  // Subagent Handling
-  // ============================================
-
-  /**
-   * Handle Task tool_use by creating a subagent block
-   */
+  /** Handles Task tool_use by creating a sync subagent block. */
   private async handleTaskToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): Promise<void> {
     if (!this.currentContentEl) return;
 
-    // Create subagent block
     const state = createSubagentBlock(this.currentContentEl, chunk.id, chunk.input);
     this.activeSubagents.set(chunk.id, state);
 
-    // Track in message for persistence
     msg.subagents = msg.subagents || [];
     msg.subagents.push(state.info);
 
-    // Add to content blocks
     if (this.plugin.settings.showToolUse) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id });
     }
   }
 
-  /**
-   * Handle chunks from subagents - route to appropriate SubagentRenderer
-   */
+  /** Routes chunks from subagents to the appropriate SubagentRenderer. */
   private async handleSubagentChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
-    // Extract parentToolUseId from chunk (caller already verified it exists and is truthy)
     if (!('parentToolUseId' in chunk) || !chunk.parentToolUseId) {
       return;
     }
@@ -769,13 +662,11 @@ export class ClaudianView extends ItemView {
     const subagentState = this.activeSubagents.get(parentToolUseId);
 
     if (!subagentState) {
-      // Orphan subagent message - shouldn't happen for sync subagents
       return;
     }
 
     switch (chunk.type) {
       case 'tool_use': {
-        // Add nested tool to subagent
         const toolCall: ToolCallInfo = {
           id: chunk.id,
           name: chunk.name,
@@ -788,7 +679,6 @@ export class ClaudianView extends ItemView {
       }
 
       case 'tool_result': {
-        // Update nested tool in subagent
         const toolCall = subagentState.info.toolCalls.find(tc => tc.id === chunk.id);
         if (toolCall) {
           const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
@@ -796,14 +686,12 @@ export class ClaudianView extends ItemView {
           toolCall.result = chunk.content;
           updateSubagentToolResult(subagentState, chunk.id, toolCall);
 
-          // Track edited files from subagent tool calls
           this.fileContextManager?.trackEditedFile(
             toolCall.name,
             toolCall.input || {},
             chunk.isError || isBlocked
           );
 
-          // Clear any pending diff data for subagent tool calls (not shown in main panel)
           this.plugin.agentService.getDiffData(chunk.id);
         }
         break;
@@ -811,14 +699,11 @@ export class ClaudianView extends ItemView {
 
       case 'text':
       case 'thinking':
-        // Ignore text/thinking from subagents per requirements
         break;
     }
   }
 
-  /**
-   * Finalize a subagent when its Task tool_result is received
-   */
+  /** Finalizes a sync subagent when its Task tool_result is received. */
   private finalizeSubagent(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     msg: ChatMessage,
@@ -827,61 +712,45 @@ export class ClaudianView extends ItemView {
     const isError = chunk.isError || false;
     finalizeSubagentBlock(state, chunk.content, isError);
 
-    // Update in message for persistence
     const subagentInfo = msg.subagents?.find(s => s.id === chunk.id);
     if (subagentInfo) {
       subagentInfo.status = isError ? 'error' : 'completed';
       subagentInfo.result = chunk.content;
     }
 
-    // Remove from active tracking
     this.activeSubagents.delete(chunk.id);
 
-    // Show thinking indicator for next main agent response
     if (this.currentContentEl) {
       this.showThinkingIndicator(this.currentContentEl);
     }
   }
 
-  // ============================================
-  // Async Subagent Handling
-  // ============================================
-
-  /**
-   * Handle async Task tool_use (run_in_background=true)
-   */
+  /** Handles async Task tool_use (run_in_background=true). */
   private async handleAsyncTaskToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): Promise<void> {
     if (!this.currentContentEl) return;
 
-    // Create async subagent via manager
     const subagentInfo = this.asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
 
-    // Create UI block
     const state = createAsyncSubagentBlock(this.currentContentEl, chunk.id, chunk.input);
     this.asyncSubagentStates.set(chunk.id, state);
 
-    // Track in message for persistence
     msg.subagents = msg.subagents || [];
     msg.subagents.push(subagentInfo);
 
-    // Add to content blocks
     if (this.plugin.settings.showToolUse) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id, mode: 'async' });
     }
   }
 
-  /**
-   * Handle AgentOutputTool tool_use - link to async subagent (invisible, not rendered)
-   */
+  /** Handles AgentOutputTool tool_use (invisible, links to async subagent). */
   private handleAgentOutputToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     _msg: ChatMessage
   ): void {
-    // Create minimal tool call info for internal tracking only
     const toolCall: ToolCallInfo = {
       id: chunk.id,
       name: chunk.name,
@@ -890,62 +759,42 @@ export class ClaudianView extends ItemView {
       isExpanded: false,
     };
 
-    // Link to async subagent via manager - this is the only thing we need
-    // AgentOutputTool is NOT rendered - its result will update the async subagent block
     this.asyncSubagentManager.handleAgentOutputToolUse(toolCall);
   }
 
-  /**
-   * Handle async Task tool_result - extract agent_id
-   */
+  /** Handles async Task tool_result to extract agent_id. */
   private handleAsyncTaskToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     _msg: ChatMessage
   ): boolean {
-    // Check if this is a pending async subagent
     if (!this.asyncSubagentManager.isPendingAsyncTask(chunk.id)) {
       return false;
     }
 
-    // Handle result via manager (extracts agent_id, transitions state)
-    // Note: For async tasks, isError=true means the task failed to LAUNCH
-    // If the task launched but the work fails, that comes via AgentOutputTool
     this.asyncSubagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError);
-
-    // Note: UI update happens via onAsyncSubagentStateChange callback
     return true;
   }
 
-  /**
-   * Handle AgentOutputTool tool_result - finalize async subagent
-   */
+  /** Handles AgentOutputTool result to finalize async subagent. */
   private handleAgentOutputToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     _msg: ChatMessage
   ): boolean {
     const isLinked = this.asyncSubagentManager.isLinkedAgentOutputTool(chunk.id);
 
-    // Handle result via manager (finalizes subagent)
-    // UI update happens via onAsyncSubagentStateChange callback
     const handled = this.asyncSubagentManager.handleAgentOutputToolResult(
       chunk.id,
       chunk.content,
       chunk.isError || false
     );
 
-    // Only return true if this specific tool result was actually handled
-    // (not just if any async subagent exists - that would block all other tool results)
     return isLinked || handled !== undefined;
   }
 
-  /**
-   * Callback from AsyncSubagentManager when state changes
-   */
+  /** Callback from AsyncSubagentManager when state changes. */
   private onAsyncSubagentStateChange(subagent: SubagentInfo): void {
-    // Find UI state by subagent id
     const state = this.asyncSubagentStates.get(subagent.id);
     if (!state) {
-      // Try to find by agentId mapping (for running/completed states)
       for (const [id, s] of this.asyncSubagentStates) {
         if (s.info.agentId === subagent.agentId) {
           this.updateAsyncSubagentUI(s, subagent);
@@ -958,11 +807,7 @@ export class ClaudianView extends ItemView {
     this.updateAsyncSubagentUI(state, subagent);
   }
 
-  /**
-   * Update async subagent UI based on state change
-   */
   private updateAsyncSubagentUI(state: AsyncSubagentState, subagent: SubagentInfo): void {
-    // Sync state info
     state.info = subagent;
 
     switch (subagent.asyncStatus) {
@@ -980,18 +825,12 @@ export class ClaudianView extends ItemView {
         break;
     }
 
-    // Update in message storage
     this.updateSubagentInMessages(subagent);
 
-    // Auto-scroll
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
-  /**
-   * Update subagent info in current message
-   */
   private updateSubagentInMessages(subagent: SubagentInfo): void {
-    // Find the last assistant message with this subagent
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msg = this.messages[i];
       if (msg.role === 'assistant' && msg.subagents) {
@@ -1007,7 +846,6 @@ export class ClaudianView extends ItemView {
   private addMessage(msg: ChatMessage): HTMLElement {
     this.messages.push(msg);
 
-    // For user messages with images, render images above the bubble
     if (msg.role === 'user' && msg.images && msg.images.length > 0) {
       this.renderMessageImages(this.messagesEl, msg.images);
     }
@@ -1019,7 +857,6 @@ export class ClaudianView extends ItemView {
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
 
     if (msg.role === 'user') {
-      // Render text content only (images are above)
       if (msg.content) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         this.renderContent(textEl, msg.content);
@@ -1154,10 +991,6 @@ export class ClaudianView extends ItemView {
     });
   }
 
-  // ============================================
-  // Conversation Management
-  // ============================================
-
   private async createNewConversation() {
     if (this.isStreaming) return;
 
@@ -1165,7 +998,6 @@ export class ClaudianView extends ItemView {
       await this.saveCurrentConversation();
     }
 
-    // Orphan any active async subagents from previous conversation
     this.asyncSubagentManager.orphanAllActive();
     this.asyncSubagentStates.clear();
 
@@ -1175,14 +1007,11 @@ export class ClaudianView extends ItemView {
     this.messages = [];
     this.messagesEl.empty();
 
-    // Clear input box
     this.inputEl.value = '';
 
-    // Reset file context
     this.fileContextManager?.resetForNewConversation();
     this.fileContextManager?.autoAttachActiveFile();
 
-    // Clear any attached images
     this.imageContextManager?.clearImages();
   }
 
@@ -1197,14 +1026,11 @@ export class ClaudianView extends ItemView {
     this.currentConversationId = conversation.id;
     this.messages = [...conversation.messages];
 
-    // Restore session ID
     this.plugin.agentService.setSessionId(conversation.sessionId);
 
-    // Reset file context
     const hasMessages = this.messages.length > 0;
     this.fileContextManager?.resetForLoadedConversation(hasMessages);
 
-    // Restore attached files from persisted state
     if (conversation.attachedFiles && conversation.attachedFiles.length > 0) {
       this.fileContextManager?.setAttachedFiles(conversation.attachedFiles);
     } else if (isNewConversation || !hasMessages) {
@@ -1220,7 +1046,6 @@ export class ClaudianView extends ItemView {
 
     await this.saveCurrentConversation();
 
-    // Orphan any active async subagents from previous conversation
     this.asyncSubagentManager.orphanAllActive();
     this.asyncSubagentStates.clear();
 
@@ -1230,13 +1055,10 @@ export class ClaudianView extends ItemView {
     this.currentConversationId = conversation.id;
     this.messages = [...conversation.messages];
 
-    // Clear input box
     this.inputEl.value = '';
 
-    // Reset file context
     this.fileContextManager?.resetForLoadedConversation(this.messages.length > 0);
 
-    // Restore attached files from persisted state
     if (conversation.attachedFiles && conversation.attachedFiles.length > 0) {
       this.fileContextManager?.setAttachedFiles(conversation.attachedFiles);
     }

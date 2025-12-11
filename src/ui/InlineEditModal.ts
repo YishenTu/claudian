@@ -410,9 +410,7 @@ class InlineEditController {
     }
   }
 
-  /**
-   * Show agent's clarification message
-   */
+  /** Show agent's clarification message. */
   private showAgentReply(message: string) {
     if (!this.agentReplyEl || !this.containerEl) return;
     this.agentReplyEl.style.display = 'block';
@@ -420,9 +418,7 @@ class InlineEditController {
     this.containerEl.classList.add('has-agent-reply');
   }
 
-  /**
-   * Handle error state
-   */
+  /** Handle error state. */
   private handleError(errorMessage: string) {
     if (!this.inputEl) return;
     this.inputEl.disabled = false;

@@ -1,17 +1,19 @@
+/**
+ * Claudian - Todo list renderer
+ *
+ * Renders TodoWrite tool calls as collapsible task lists.
+ */
+
 import { setIcon } from 'obsidian';
 
-/**
- * Todo item structure from TodoWrite tool
- */
+/** Todo item structure from TodoWrite tool. */
 export interface TodoItem {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
   activeForm: string;
 }
 
-/**
- * Parse todos from TodoWrite tool input
- */
+/** Parse todos from TodoWrite tool input. */
 export function parseTodoInput(input: Record<string, unknown>): TodoItem[] | null {
   if (!input.todos || !Array.isArray(input.todos)) {
     return null;
@@ -28,9 +30,7 @@ export function parseTodoInput(input: Record<string, unknown>): TodoItem[] | nul
   });
 }
 
-/**
- * Get status icon name for a todo item
- */
+/** Get status icon name for a todo item. */
 function getStatusIcon(status: TodoItem['status']): string {
   switch (status) {
     case 'completed':
@@ -43,9 +43,7 @@ function getStatusIcon(status: TodoItem['status']): string {
   }
 }
 
-/**
- * Render a TodoWrite tool call as a todo list
- */
+/** Render a TodoWrite tool call as a todo list. */
 export function renderTodoList(
   parentEl: HTMLElement,
   todos: TodoItem[],
@@ -128,9 +126,7 @@ export function renderTodoList(
   return container;
 }
 
-/**
- * Render a stored TodoWrite tool call (from conversation history)
- */
+/** Render a stored TodoWrite tool call (from conversation history). */
 export function renderStoredTodoList(
   parentEl: HTMLElement,
   input: Record<string, unknown>

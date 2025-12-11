@@ -1,3 +1,9 @@
+/**
+ * Claudian - Image context manager
+ *
+ * Manages image attachments via drag/drop, paste, and file path detection.
+ */
+
 import { App, setIcon, TFile } from 'obsidian';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -5,10 +11,8 @@ import { ImageAttachment, ImageMediaType } from '../types';
 import { getVaultPath } from '../utils';
 import { saveImageToCache } from '../imageCache';
 
-// Maximum image size (5MB for API)
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
-// Supported image extensions and their media types
 const IMAGE_EXTENSIONS: Record<string, ImageMediaType> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -17,32 +21,20 @@ const IMAGE_EXTENSIONS: Record<string, ImageMediaType> = {
   '.webp': 'image/webp',
 };
 
-/**
- * Callbacks for image context interactions
- */
+/** Callbacks for image context interactions. */
 export interface ImageContextCallbacks {
   onImagesChanged: () => void;
   getMediaFolder?: () => string;
 }
 
-/**
- * Manages image attachments:
- * - Drag and drop images
- * - Paste images from clipboard
- * - Add images by file path
- * - Image preview display
- */
+/** Manages image attachments via drag/drop, paste, and file path detection. */
 export class ImageContextManager {
   private app: App;
   private callbacks: ImageContextCallbacks;
-
-  // DOM elements
   private containerEl: HTMLElement;
   private imagePreviewEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private dropOverlay: HTMLElement | null = null;
-
-  // State
   private attachedImages: Map<string, ImageAttachment> = new Map();
 
   constructor(
@@ -56,48 +48,30 @@ export class ImageContextManager {
     this.inputEl = inputEl;
     this.callbacks = callbacks;
 
-    // Create image preview container (insert before file indicator if exists)
     const fileIndicator = this.containerEl.querySelector('.claudian-file-indicator');
     this.imagePreviewEl = this.containerEl.createDiv({ cls: 'claudian-image-preview' });
     if (fileIndicator) {
       this.containerEl.insertBefore(this.imagePreviewEl, fileIndicator);
     }
 
-    // Set up event handlers
     this.setupDragAndDrop();
     this.setupPasteHandler();
   }
 
-  // ============================================
-  // Public API
-  // ============================================
-
-  /**
-   * Get all attached images
-   */
   getAttachedImages(): ImageAttachment[] {
     return Array.from(this.attachedImages.values());
   }
 
-  /**
-   * Check if there are any attached images
-   */
   hasImages(): boolean {
     return this.attachedImages.size > 0;
   }
 
-  /**
-   * Clear all attached images
-   */
   clearImages() {
     this.attachedImages.clear();
     this.updateImagePreview();
   }
 
-  /**
-   * Add an image from a file path (supports vault-relative and absolute paths)
-   * Returns true if successful
-   */
+  /** Adds an image from a file path. Returns true if successful. */
   async addImageFromPath(imagePath: string): Promise<boolean> {
     try {
       const result = await this.loadImageFromPath(imagePath);
@@ -113,18 +87,11 @@ export class ImageContextManager {
     return false;
   }
 
-  /**
-   * Check if text contains an image path reference and extract it
-   * Supports patterns like: path/to/image.jpg, ./image.png, /abs/path/image.webp
-   */
+  /** Extracts an image path from text if present. */
   extractImagePath(text: string): string | null {
-    // Match common image path patterns
     const patterns = [
-      // Quoted paths: "path/to/image.jpg" or 'path/to/image.png'
       /["']((?:[^"']+\/)?[^"']+\.(?:jpe?g|png|gif|webp))["']/i,
-      // Unquoted paths with directory: path/to/image.jpg
       /((?:\.{0,2}\/)?(?:[^\s"'<>|:*?]+\/)+[^\s"'<>|:*?]+\.(?:jpe?g|png|gif|webp))/i,
-      // Simple filename: image.jpg (must be at word boundary)
       /\b([^\s"'<>|:*?\/]+\.(?:jpe?g|png|gif|webp))\b/i,
     ];
 
@@ -137,20 +104,15 @@ export class ImageContextManager {
     return null;
   }
 
-  /**
-   * Handle potential image path in message text
-   * Returns the cleaned text (with path removed if image was loaded)
-   */
+  /** Handles potential image path in message text. Returns cleaned text if image was loaded. */
   async handleImagePathInText(text: string): Promise<{ text: string; imageLoaded: boolean }> {
     const imagePath = this.extractImagePath(text);
     if (!imagePath) {
       return { text, imageLoaded: false };
     }
 
-    // Try to load the image
     const loaded = await this.addImageFromPath(imagePath);
     if (loaded) {
-      // Remove the path from text
       const cleanedText = text.replace(imagePath, '').replace(/["']\s*["']/g, '').trim();
       return { text: cleanedText, imageLoaded: true };
     }
@@ -158,16 +120,10 @@ export class ImageContextManager {
     return { text, imageLoaded: false };
   }
 
-  // ============================================
-  // Private: Drag and Drop
-  // ============================================
-
   private setupDragAndDrop() {
-    // Use the input wrapper as the drop zone
     const inputWrapper = this.containerEl.querySelector('.claudian-input-wrapper') as HTMLElement;
     if (!inputWrapper) return;
 
-    // Create drop overlay inside the input wrapper (using DOM API per Obsidian guidelines)
     this.dropOverlay = inputWrapper.createDiv({ cls: 'claudian-drop-overlay' });
     const dropContent = this.dropOverlay.createDiv({ cls: 'claudian-drop-content' });
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -204,7 +160,6 @@ export class ImageContextManager {
     e.preventDefault();
     e.stopPropagation();
 
-    // Check if dragging files
     if (e.dataTransfer?.types.includes('Files')) {
       this.dropOverlay?.addClass('visible');
     }
@@ -219,7 +174,6 @@ export class ImageContextManager {
     e.preventDefault();
     e.stopPropagation();
 
-    // Only hide if leaving the input wrapper entirely
     const inputWrapper = this.containerEl.querySelector('.claudian-input-wrapper');
     if (!inputWrapper) {
       this.dropOverlay?.removeClass('visible');
@@ -253,10 +207,6 @@ export class ImageContextManager {
     }
   }
 
-  // ============================================
-  // Private: Paste Handler
-  // ============================================
-
   private setupPasteHandler() {
     this.inputEl.addEventListener('paste', async (e) => {
       const items = e.clipboardData?.items;
@@ -270,15 +220,11 @@ export class ImageContextManager {
           if (file) {
             await this.addImageFromFile(file, 'paste');
           }
-          return; // Only handle first image
+          return;
         }
       }
     });
   }
-
-  // ============================================
-  // Private: Image Loading
-  // ============================================
 
   private isImageFile(file: File): boolean {
     return file.type.startsWith('image/') && this.getMediaType(file.name) !== null;
@@ -290,7 +236,6 @@ export class ImageContextManager {
   }
 
   private async addImageFromFile(file: File, source: 'paste' | 'drop'): Promise<boolean> {
-    // Check file size
     if (file.size > MAX_IMAGE_SIZE) {
       console.warn(`Image too large: ${file.size} bytes (max ${MAX_IMAGE_SIZE})`);
       return false;
@@ -334,7 +279,6 @@ export class ImageContextManager {
       return null;
     }
 
-    // Resolve the path
     let fullPath = imagePath;
     const vaultPath = getVaultPath(this.app);
     const mediaFolder = this.callbacks.getMediaFolder
@@ -355,9 +299,7 @@ export class ImageContextManager {
       }
     }
 
-    // Check if file exists
     if (!fs.existsSync(fullPath)) {
-      // Try as Obsidian vault file (original path and media folder path)
       const normalizedMediaFolder = mediaFolder
         ?.replace(/\\/g, '/')
         .replace(/^\/+|\/+$/g, '');
@@ -392,7 +334,6 @@ export class ImageContextManager {
       return null;
     }
 
-    // Read from filesystem
     const stats = fs.statSync(fullPath);
     if (stats.size > MAX_IMAGE_SIZE) {
       console.warn(`Image too large: ${stats.size} bytes`);
@@ -454,7 +395,6 @@ export class ImageContextManager {
   private renderImagePreview(id: string, image: ImageAttachment) {
     const previewEl = this.imagePreviewEl.createDiv({ cls: 'claudian-image-chip' });
 
-    // Thumbnail
     const thumbEl = previewEl.createDiv({ cls: 'claudian-image-thumb' });
     const imgEl = thumbEl.createEl('img', {
       attr: {
@@ -463,7 +403,6 @@ export class ImageContextManager {
       },
     });
 
-    // Image info
     const infoEl = previewEl.createDiv({ cls: 'claudian-image-info' });
     const nameEl = infoEl.createSpan({ cls: 'claudian-image-name' });
     nameEl.setText(this.truncateName(image.name, 20));
@@ -472,7 +411,6 @@ export class ImageContextManager {
     const sizeEl = infoEl.createSpan({ cls: 'claudian-image-size' });
     sizeEl.setText(this.formatSize(image.size));
 
-    // Remove button
     const removeEl = previewEl.createSpan({ cls: 'claudian-image-remove' });
     removeEl.setText('\u00D7');
     removeEl.setAttribute('aria-label', 'Remove image');
@@ -484,14 +422,12 @@ export class ImageContextManager {
       this.callbacks.onImagesChanged();
     });
 
-    // Click to view full size (optional)
     thumbEl.addEventListener('click', () => {
       this.showFullImage(image);
     });
   }
 
   private showFullImage(image: ImageAttachment) {
-    // Create modal overlay
     const overlay = document.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
 
@@ -511,7 +447,6 @@ export class ImageContextManager {
       if (e.target === overlay) close();
     });
 
-    // ESC to close
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         close();
@@ -520,10 +455,6 @@ export class ImageContextManager {
     };
     document.addEventListener('keydown', handleEsc);
   }
-
-  // ============================================
-  // Utility Methods
-  // ============================================
 
   private generateId(): string {
     return `img-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;

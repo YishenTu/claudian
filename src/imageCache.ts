@@ -1,3 +1,10 @@
+/**
+ * Claudian - Image cache management
+ *
+ * Handles caching of pasted/dropped images with content-addressed storage.
+ * Images are stored with SHA-256 hash filenames for deduplication.
+ */
+
 import { App } from 'obsidian';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,9 +14,7 @@ import { getVaultPath } from './utils';
 
 export const IMAGE_CACHE_DIR = '.claudian-cache/images';
 
-/**
- * Ensure cache directory exists and return absolute path
- */
+/** Ensures the cache directory exists and returns its absolute path. */
 export function ensureImageCacheDir(app: App): string | null {
   const vaultPath = getVaultPath(app);
   if (!vaultPath) return null;
@@ -18,10 +23,7 @@ export function ensureImageCacheDir(app: App): string | null {
   return cacheDir;
 }
 
-/**
- * Save image buffer to cache with content hash as filename
- * Returns relative and absolute paths
- */
+/** Saves an image buffer to cache with content-hash filename. Returns relative and absolute paths. */
 export function saveImageToCache(
   app: App,
   buffer: Buffer,
@@ -44,9 +46,7 @@ export function saveImageToCache(
   return { relPath, absPath };
 }
 
-/**
- * Read cached image as base64 string
- */
+/** Reads a cached image as base64 string, or null if not found. */
 export function readCachedImageBase64(app: App, relPath: string): string | null {
   const absPath = getCacheAbsolutePath(app, relPath);
   if (!absPath) return null;
@@ -58,9 +58,7 @@ export function readCachedImageBase64(app: App, relPath: string): string | null 
   }
 }
 
-/**
- * Delete cached images given relative paths (silently ignore missing)
- */
+/** Deletes cached images by relative paths (silently ignores missing files). */
 export function deleteCachedImages(app: App, relPaths: string[]) {
   const seen = new Set<string>();
   for (const relPath of relPaths) {
@@ -73,15 +71,13 @@ export function deleteCachedImages(app: App, relPaths: string[]) {
       try {
         fs.unlinkSync(absPath);
       } catch {
-        // best-effort cleanup
+        // Ignore cleanup errors
       }
     }
   }
 }
 
-/**
- * Resolve cache relative path to absolute (null if outside cache or vault unavailable)
- */
+/** Resolves a cache-relative path to absolute, validating it stays within cache. */
 export function getCacheAbsolutePath(app: App, relPath: string): string | null {
   const vaultPath = getVaultPath(app);
   if (!vaultPath) return null;

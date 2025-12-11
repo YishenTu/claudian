@@ -1,61 +1,45 @@
+/**
+ * Claudian - File context manager
+ *
+ * Manages attached files indicator, edited files tracking, and @ mention dropdown.
+ */
+
 import { App, TFile, setIcon, EventRef } from 'obsidian';
 import { createHash } from 'crypto';
 import { getVaultPath } from '../utils';
 
-/**
- * Hash state for tracking file content changes
- */
 interface FileHashState {
-  originalHash: string | null;  // Content before Claude's first edit (null if new file)
-  postEditHash: string;         // Content after Claude's last edit
+  originalHash: string | null;
+  postEditHash: string;
 }
 
-/**
- * Callbacks for file context interactions
- */
+/** Callbacks for file context interactions. */
 export interface FileContextCallbacks {
   getExcludedTags: () => string[];
   onFileOpen: (path: string) => Promise<void>;
 }
 
-/**
- * Manages file context UI components:
- * - Attached files indicator
- * - Edited files indicator
- * - @ mention dropdown
- */
+/** Manages file context UI: attached files, edited files, and @ mention dropdown. */
 export class FileContextManager {
   private app: App;
   private callbacks: FileContextCallbacks;
-
-  // DOM elements
   private containerEl: HTMLElement;
   private fileIndicatorEl: HTMLElement;
   private editedFilesIndicatorEl: HTMLElement;
   private mentionDropdown: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement;
-
-  // State
   private attachedFiles: Set<string> = new Set();
   private lastSentFiles: Set<string> = new Set();
   private editedFilesThisSession: Set<string> = new Set();
   private sessionStarted = false;
-
-  // Hash tracking for edited files
   private editedFileHashes: Map<string, FileHashState> = new Map();
   private filesBeingEdited: Set<string> = new Set();
-
-  // Vault event listeners
   private deleteEventRef: EventRef | null = null;
   private renameEventRef: EventRef | null = null;
   private modifyEventRef: EventRef | null = null;
-
-  // Mention dropdown state
   private mentionStartIndex = -1;
   private selectedMentionIndex = 0;
   private filteredFiles: TFile[] = [];
-
-  // File cache
   private cachedMarkdownFiles: TFile[] = [];
   private filesCacheDirty = true;
 
@@ -70,7 +54,6 @@ export class FileContextManager {
     this.inputEl = inputEl;
     this.callbacks = callbacks;
 
-    // Create indicator elements (insert before existing content to stay above input)
     const firstChild = this.containerEl.firstChild;
     this.editedFilesIndicatorEl = this.containerEl.createDiv({ cls: 'claudian-edited-files-indicator' });
     this.fileIndicatorEl = this.containerEl.createDiv({ cls: 'claudian-file-indicator' });
@@ -79,7 +62,6 @@ export class FileContextManager {
       this.containerEl.insertBefore(this.fileIndicatorEl, firstChild);
     }
 
-    // Register vault event listeners for file deletion/rename/modify detection
     this.deleteEventRef = this.app.vault.on('delete', (file) => {
       if (file instanceof TFile) this.handleFileDeleted(file.path);
     });
@@ -93,20 +75,12 @@ export class FileContextManager {
     });
   }
 
-  // ============================================
-  // Public API
-  // ============================================
-
-  /**
-   * Get the set of currently attached files
-   */
+  /** Returns the set of currently attached files. */
   getAttachedFiles(): Set<string> {
     return this.attachedFiles;
   }
 
-  /**
-   * Check if attached files have changed since last sent
-   */
+  /** Checks if attached files have changed since last sent. */
   hasFilesChanged(): boolean {
     const currentFiles = Array.from(this.attachedFiles);
     if (currentFiles.length !== this.lastSentFiles.size) return true;
@@ -116,30 +90,20 @@ export class FileContextManager {
     return false;
   }
 
-  /**
-   * Mark files as sent (call after sending a message)
-   */
+  /** Marks files as sent (call after sending a message). */
   markFilesSent() {
     this.lastSentFiles = new Set(this.attachedFiles);
   }
 
-  /**
-   * Check if session has started
-   */
   isSessionStarted(): boolean {
     return this.sessionStarted;
   }
 
-  /**
-   * Mark session as started
-   */
   startSession() {
     this.sessionStarted = true;
   }
 
-  /**
-   * Reset for a new conversation
-   */
+  /** Resets state for a new conversation. */
   resetForNewConversation() {
     this.sessionStarted = false;
     this.lastSentFiles.clear();
@@ -147,9 +111,7 @@ export class FileContextManager {
     this.clearEditedFiles();
   }
 
-  /**
-   * Reset for loading an existing conversation
-   */
+  /** Resets state for loading an existing conversation. */
   resetForLoadedConversation(hasMessages: boolean) {
     this.lastSentFiles.clear();
     this.attachedFiles.clear();
@@ -157,22 +119,17 @@ export class FileContextManager {
     this.clearEditedFiles();
   }
 
-  /**
-   * Set attached files (for restoring persisted state)
-   */
+  /** Sets attached files (for restoring persisted state). */
   setAttachedFiles(files: string[]) {
     this.attachedFiles.clear();
     for (const file of files) {
       this.attachedFiles.add(file);
     }
-    // Also mark them as "sent" so they won't re-send context on next message
     this.lastSentFiles = new Set(this.attachedFiles);
     this.updateFileIndicator();
   }
 
-  /**
-   * Auto-attach currently focused file (for new sessions)
-   */
+  /** Auto-attaches the currently focused file (for new sessions). */
   autoAttachActiveFile() {
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile && !this.hasExcludedTag(activeFile)) {
@@ -184,19 +141,15 @@ export class FileContextManager {
     this.updateFileIndicator();
   }
 
-  /**
-   * Handle file open event
-   */
+  /** Handles file open event. */
   handleFileOpen(file: TFile) {
     const normalizedPath = this.normalizePathForVault(file.path);
     if (!normalizedPath) return;
 
-    // Dismiss edited indicator when file is focused
     if (this.isFileEdited(normalizedPath)) {
       this.dismissEditedFile(normalizedPath);
     }
 
-    // Update attachment before session starts (skip if file has excluded tags)
     if (!this.sessionStarted) {
       this.attachedFiles.clear();
       if (!this.hasExcludedTag(file)) {
@@ -205,14 +158,10 @@ export class FileContextManager {
       this.updateFileIndicator();
     }
 
-    // Notify callbacks
     this.callbacks.onFileOpen(normalizedPath);
   }
 
-  /**
-   * Mark a file as being edited (called from PreToolUse hook)
-   * Captures original hash before Claude edits the file
-   */
+  /** Marks a file as being edited (called from PreToolUse hook). */
   async markFileBeingEdited(toolName: string, toolInput: Record<string, unknown>) {
     if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) return;
 
@@ -223,48 +172,35 @@ export class FileContextManager {
     const wasBeingEdited = this.filesBeingEdited.has(path);
     this.filesBeingEdited.add(path);
 
-    // BUG FIX #1: Always refresh baseline when a new edit sequence starts
-    // (even if we tracked this file earlier in the session)
     if (!wasBeingEdited) {
-      const originalHash = await this.computeFileHash(path);  // null if file doesn't exist
+      const originalHash = await this.computeFileHash(path);
       this.editedFileHashes.set(path, { originalHash, postEditHash: '' });
     }
   }
 
-  /**
-   * Track a file as edited (called from PostToolUse hook)
-   */
+  /** Tracks a file as edited (called from PostToolUse hook). */
   async trackEditedFile(toolName: string | undefined, toolInput: Record<string, unknown> | undefined, isError: boolean) {
-    // Only track Write, Edit, NotebookEdit tools
     if (!toolName || !['Write', 'Edit', 'NotebookEdit'].includes(toolName)) return;
 
-    // Extract file path from tool input
     const rawPath = (toolInput?.file_path as string) || (toolInput?.notebook_path as string);
     const filePath = this.normalizePathForVault(rawPath);
     if (!filePath) return;
 
     if (isError) {
-      // BUG FIX #4: Unmark AFTER error check to avoid race window
       this.filesBeingEdited.delete(filePath);
-      // Clean up hash state if edit failed and file wasn't previously tracked
       if (!this.editedFilesThisSession.has(filePath)) {
         this.editedFileHashes.delete(filePath);
       }
       return;
     }
 
-    // BUG FIX #4: Compute hash BEFORE unmarking to prevent race with modify events
-    // Store post-edit hash while still marked as being edited
     const postEditHash = await this.computeFileHash(filePath);
     const existing = this.editedFileHashes.get(filePath);
 
-    // NOW unmark as being edited (after hash computation)
     this.filesBeingEdited.delete(filePath);
 
     if (postEditHash) {
-      // Check if content is back to original (net effect = no change)
       if (existing?.originalHash && postEditHash === existing.originalHash) {
-        // File reverted to original - remove tracking
         this.editedFilesThisSession.delete(filePath);
         this.editedFileHashes.delete(filePath);
         this.updateEditedFilesIndicator();
@@ -272,7 +208,6 @@ export class FileContextManager {
         return;
       }
 
-      // Update post-edit hash
       this.editedFileHashes.set(filePath, {
         originalHash: existing?.originalHash ?? null,
         postEditHash
@@ -281,14 +216,10 @@ export class FileContextManager {
 
     this.editedFilesThisSession.add(filePath);
     this.updateEditedFilesIndicator();
-    // Re-render attachment chips to show edited border if file is attached
     this.updateFileIndicator();
   }
 
-  /**
-   * BUG FIX #5: Clean up state for a file that was marked for editing but permission was denied
-   * Called when Safe mode denies a tool execution to prevent dirty state
-   */
+  /** Cleans up state for a file when permission was denied. */
   cancelFileEdit(toolName: string, toolInput: Record<string, unknown>) {
     if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) return;
 
@@ -296,30 +227,22 @@ export class FileContextManager {
     const path = this.normalizePathForVault(rawPath);
     if (!path) return;
 
-    // Remove from filesBeingEdited
     this.filesBeingEdited.delete(path);
 
-    // Clean up hash state if file wasn't previously tracked as edited
     if (!this.editedFilesThisSession.has(path)) {
       this.editedFileHashes.delete(path);
     }
   }
 
-  /**
-   * Mark files cache as dirty (call on vault changes)
-   */
   markFilesCacheDirty() {
     this.filesCacheDirty = true;
   }
 
-  /**
-   * Handle input changes to detect @ mentions
-   */
+  /** Handles input changes to detect @ mentions. */
   handleInputChange() {
     const text = this.inputEl.value;
     const cursorPos = this.inputEl.selectionStart || 0;
 
-    // Find the last @ before cursor
     const textBeforeCursor = text.substring(0, cursorPos);
     const lastAtIndex = textBeforeCursor.lastIndexOf('@');
 
@@ -328,19 +251,14 @@ export class FileContextManager {
       return;
     }
 
-    // Check if @ is at start or after whitespace (valid trigger)
     const charBeforeAt = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
     if (!/\s/.test(charBeforeAt) && lastAtIndex !== 0) {
       this.hideMentionDropdown();
       return;
     }
 
-    // Extract search text after @
     const searchText = textBeforeCursor.substring(lastAtIndex + 1);
 
-    // Check if search text contains whitespace (completed mention)
-    // After selecting a file, the text becomes "@filename " - any whitespace
-    // after the @ means the mention is complete and user has moved on
     if (/\s/.test(searchText)) {
       this.hideMentionDropdown();
       return;
@@ -350,10 +268,7 @@ export class FileContextManager {
     this.showMentionDropdown(searchText);
   }
 
-  /**
-   * Handle keyboard navigation in mention dropdown
-   * Returns true if the event was handled
-   */
+  /** Handles keyboard navigation in mention dropdown. Returns true if handled. */
   handleMentionKeydown(e: KeyboardEvent): boolean {
     if (!this.mentionDropdown?.hasClass('visible')) {
       return false;
@@ -382,48 +297,30 @@ export class FileContextManager {
     return false;
   }
 
-  /**
-   * Check if mention dropdown is visible
-   */
   isMentionDropdownVisible(): boolean {
     return this.mentionDropdown?.hasClass('visible') ?? false;
   }
 
-  /**
-   * Hide mention dropdown (e.g., on click outside)
-   */
   hideMentionDropdown() {
     this.mentionDropdown?.removeClass('visible');
     this.mentionStartIndex = -1;
   }
 
-  /**
-   * Check if dropdown contains the given element
-   */
   containsElement(el: Node): boolean {
     return this.mentionDropdown?.contains(el) ?? false;
   }
 
-  /**
-   * Clean up event listeners (call on view close)
-   */
+  /** Cleans up event listeners (call on view close). */
   destroy() {
     if (this.deleteEventRef) this.app.vault.offref(this.deleteEventRef);
     if (this.renameEventRef) this.app.vault.offref(this.renameEventRef);
     if (this.modifyEventRef) this.app.vault.offref(this.modifyEventRef);
   }
 
-  // ============================================
-  // Path Normalization
-  // ============================================
-
-  /**
-   * Normalize a file path to be vault-relative with forward slashes
-   */
+  /** Normalizes a file path to be vault-relative with forward slashes. */
   normalizePathForVault(rawPath: string | undefined | null): string | null {
     if (!rawPath) return null;
 
-    // Normalize separators first
     const unixPath = rawPath.replace(/\\/g, '/');
     const vaultPath = getVaultPath(this.app);
 
@@ -439,10 +336,6 @@ export class FileContextManager {
 
     return unixPath.replace(/^\/+/, '');
   }
-
-  // ============================================
-  // Private: File Indicator
-  // ============================================
 
   private updateFileIndicator() {
     this.fileIndicatorEl.empty();
@@ -477,17 +370,15 @@ export class FileContextManager {
     const iconEl = chipEl.createSpan({ cls: 'claudian-file-chip-icon' });
     setIcon(iconEl, 'file-text');
 
-    // Extract filename from path
     const filename = path.split('/').pop() || path;
     const nameEl = chipEl.createSpan({ cls: 'claudian-file-chip-name' });
     nameEl.setText(filename);
-    nameEl.setAttribute('title', path); // Show full path on hover
+    nameEl.setAttribute('title', path);
 
     const removeEl = chipEl.createSpan({ cls: 'claudian-file-chip-remove' });
-    removeEl.setText('\u00D7'); // × symbol
+    removeEl.setText('\u00D7');
     removeEl.setAttribute('aria-label', 'Remove');
 
-    // Click chip to open file (but not remove button)
     chipEl.addEventListener('click', async (e) => {
       if ((e.target as HTMLElement).closest('.claudian-file-chip-remove')) return;
       await this.openFileFromChip(path);
@@ -509,10 +400,6 @@ export class FileContextManager {
     }
   }
 
-  // ============================================
-  // Private: Edited Files
-  // ============================================
-
   private clearEditedFiles() {
     this.editedFilesThisSession.clear();
     this.editedFileHashes.clear();
@@ -524,8 +411,6 @@ export class FileContextManager {
     const normalizedPath = this.normalizePathForVault(path);
     if (!normalizedPath) return;
 
-    // BUG FIX #3: Don't dismiss if Claude is currently editing this file
-    // This prevents clearing hash state prematurely when user opens file during edit
     if (this.filesBeingEdited.has(normalizedPath)) return;
 
     if (this.editedFilesThisSession.has(normalizedPath)) {
@@ -542,10 +427,6 @@ export class FileContextManager {
     return this.editedFilesThisSession.has(normalizedPath);
   }
 
-  /**
-   * Compute a strong hash of file content for change detection
-   * Uses SHA-256 over the full content
-   */
   private async computeFileHash(path: string): Promise<string | null> {
     try {
       const file = this.app.vault.getAbstractFileByPath(path);
@@ -553,13 +434,10 @@ export class FileContextManager {
       const content = await this.app.vault.read(file);
       return await this.computeContentHash(content);
     } catch {
-      return null;  // File doesn't exist
+      return null;
     }
   }
 
-  /**
-   * Hash full content with SHA-256 (WebCrypto when available, Node crypto fallback)
-   */
   private async computeContentHash(content: string): Promise<string> {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
       const encoded = new TextEncoder().encode(content);
@@ -571,9 +449,6 @@ export class FileContextManager {
     return createHash('sha256').update(content, 'utf8').digest('hex');
   }
 
-  /**
-   * Handle file deletion - remove from tracking
-   */
   private handleFileDeleted(path: string) {
     const normalized = this.normalizePathForVault(path);
     if (normalized && this.editedFilesThisSession.has(normalized)) {
@@ -585,9 +460,6 @@ export class FileContextManager {
     }
   }
 
-  /**
-   * Handle file rename - update path in tracking
-   */
   private handleFileRenamed(oldPath: string, newPath: string) {
     const normalizedOld = this.normalizePathForVault(oldPath);
     const normalizedNew = this.normalizePathForVault(newPath);
@@ -595,7 +467,6 @@ export class FileContextManager {
 
     let needsUpdate = false;
 
-    // BUG FIX #2: Also update attachedFiles when file is renamed
     if (this.attachedFiles.has(normalizedOld)) {
       this.attachedFiles.delete(normalizedOld);
       if (normalizedNew) {
@@ -604,7 +475,6 @@ export class FileContextManager {
       needsUpdate = true;
     }
 
-    // Update edited files tracking
     if (this.editedFilesThisSession.has(normalizedOld)) {
       this.editedFilesThisSession.delete(normalizedOld);
       const hashState = this.editedFileHashes.get(normalizedOld);
@@ -617,7 +487,6 @@ export class FileContextManager {
       needsUpdate = true;
     }
 
-    // Update filesBeingEdited if applicable
     if (this.filesBeingEdited.has(normalizedOld)) {
       this.filesBeingEdited.delete(normalizedOld);
       if (normalizedNew) {
@@ -631,17 +500,12 @@ export class FileContextManager {
     }
   }
 
-  /**
-   * Handle file modification - check if content reverted to original
-   */
   private async handleFileModified(file: TFile) {
     const normalized = this.normalizePathForVault(file.path);
     if (!normalized) return;
 
-    // Ignore if Claude is currently editing this file
     if (this.filesBeingEdited.has(normalized)) return;
 
-    // Ignore if not a tracked edited file
     if (!this.editedFilesThisSession.has(normalized)) return;
 
     const hashState = this.editedFileHashes.get(normalized);
@@ -650,10 +514,7 @@ export class FileContextManager {
     const currentHash = await this.computeFileHash(normalized);
     if (!currentHash) return;
 
-    // Only remove chip if content reverted to ORIGINAL
-    // This avoids race condition with Claude's subsequent edits
     if (hashState.originalHash && currentHash === hashState.originalHash) {
-      // Content reverted to original - remove tracking
       this.editedFilesThisSession.delete(normalized);
       this.editedFileHashes.delete(normalized);
       this.updateEditedFilesIndicator();
@@ -679,11 +540,9 @@ export class FileContextManager {
 
     this.editedFilesIndicatorEl.style.display = 'flex';
 
-    // Add label
     const label = this.editedFilesIndicatorEl.createSpan({ cls: 'claudian-edited-label' });
     label.setText('Edited:');
 
-    // Render chips for non-attached edited files
     for (const path of this.getNonAttachedEditedFiles()) {
       this.renderEditedFileChip(path);
     }
@@ -695,21 +554,15 @@ export class FileContextManager {
     const iconEl = chipEl.createSpan({ cls: 'claudian-file-chip-icon' });
     setIcon(iconEl, 'file-text');
 
-    // Extract filename from path
     const filename = path.split('/').pop() || path;
     const nameEl = chipEl.createSpan({ cls: 'claudian-file-chip-name' });
     nameEl.setText(filename);
     nameEl.setAttribute('title', path);
 
-    // Click to open
     chipEl.addEventListener('click', async () => {
       await this.openFileFromChip(path);
     });
   }
-
-  // ============================================
-  // Private: @ Mention Dropdown
-  // ============================================
 
   private getCachedMarkdownFiles(): TFile[] {
     if (this.filesCacheDirty || this.cachedMarkdownFiles.length === 0) {
@@ -726,10 +579,8 @@ export class FileContextManager {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return false;
 
-    // Collect all tags from the file
     const fileTags: string[] = [];
 
-    // Frontmatter tags (cache.frontmatter?.tags)
     if (cache.frontmatter?.tags) {
       const fmTags = cache.frontmatter.tags;
       if (Array.isArray(fmTags)) {
@@ -739,20 +590,16 @@ export class FileContextManager {
       }
     }
 
-    // Inline tags (cache.tags)
     if (cache.tags) {
       fileTags.push(...cache.tags.map(t => t.tag.replace(/^#/, '')));
     }
 
-    // Check if any file tag matches an excluded tag
     return fileTags.some(tag => excludedTags.includes(tag));
   }
 
   private showMentionDropdown(searchText: string) {
-    // Get all markdown files (cached)
     const allFiles = this.getCachedMarkdownFiles();
 
-    // Filter by search text
     const searchLower = searchText.toLowerCase();
     this.filteredFiles = allFiles
       .filter(file => {
@@ -761,15 +608,13 @@ export class FileContextManager {
         return pathLower.includes(searchLower) || nameLower.includes(searchLower);
       })
       .sort((a, b) => {
-        // Prioritize name matches over path matches
         const aNameMatch = a.name.toLowerCase().startsWith(searchLower);
         const bNameMatch = b.name.toLowerCase().startsWith(searchLower);
         if (aNameMatch && !bNameMatch) return -1;
         if (!aNameMatch && bNameMatch) return 1;
-        // Then sort by modification time (recent first)
         return b.stat.mtime - a.stat.mtime;
       })
-      .slice(0, 10); // Limit to 10 results
+      .slice(0, 10);
 
     this.selectedMentionIndex = 0;
     this.renderMentionDropdown();
@@ -839,13 +684,11 @@ export class FileContextManager {
     const selectedFile = this.filteredFiles[this.selectedMentionIndex];
     if (!selectedFile) return;
 
-    // Add to attached files
     const normalizedPath = this.normalizePathForVault(selectedFile.path);
     if (normalizedPath) {
       this.attachedFiles.add(normalizedPath);
     }
 
-    // Replace @search text with @filename in input
     const text = this.inputEl.value;
     const beforeAt = text.substring(0, this.mentionStartIndex);
     const afterCursor = text.substring(this.inputEl.selectionStart || 0);

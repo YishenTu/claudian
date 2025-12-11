@@ -1,31 +1,36 @@
-// Type definitions for Claudian plugin
+/**
+ * Claudian - Type definitions
+ *
+ * Shared types for settings, conversations, messages, and SDK integration.
+ */
 
 export const VIEW_TYPE_CLAUDIAN = 'claudian-view';
 
-// Available Claude models (base type can be any string for custom models)
+/** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
-// Default Claude models
+/** Default Claude model options. */
 export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
   { value: 'claude-haiku-4-5', label: 'Haiku', description: 'Fast and efficient' },
   { value: 'claude-sonnet-4-5', label: 'Sonnet', description: 'Balanced performance' },
   { value: 'claude-opus-4-5', label: 'Opus', description: 'Most capable' },
 ];
 
-// Thinking budget options
+/** Extended thinking token budget levels. */
 export type ThinkingBudget = 'off' | 'low' | 'medium' | 'high';
 
-// Permission mode type
+/** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'normal';
 
-// Approved action structure (for memory system)
+/** Permanently approved tool action pattern. */
 export interface ApprovedAction {
-  toolName: string;           // e.g., 'Bash', 'Write', 'Edit'
-  pattern: string;            // Command/path pattern that was approved
-  approvedAt: number;         // Timestamp
-  scope: 'session' | 'always'; // Session-only or permanent
+  toolName: string;
+  pattern: string;
+  approvedAt: number;
+  scope: 'session' | 'always';
 }
 
+/** Thinking budget configuration with token counts. */
 export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: number }[] = [
   { value: 'off', label: 'Off', tokens: 0 },
   { value: 'low', label: 'Low', tokens: 4000 },
@@ -33,33 +38,33 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
   { value: 'high', label: 'High', tokens: 16000 },
 ];
 
-// Default thinking budget per model
+/** Default thinking budget per model tier. */
 export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   'claude-haiku-4-5': 'off',
   'claude-sonnet-4-5': 'low',
   'claude-opus-4-5': 'medium',
 };
 
+/** Plugin settings persisted to disk. */
 export interface ClaudianSettings {
   enableBlocklist: boolean;
   blockedCommands: string[];
   showToolUse: boolean;
   model: ClaudeModel;
-  // Remember last selected models per category for smoother switching
   lastClaudeModel?: ClaudeModel;
   lastCustomModel?: ClaudeModel;
-  // Hash of env vars when model was last set (to detect env changes)
   lastEnvHash?: string;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
   approvedActions: ApprovedAction[];
-  excludedTags: string[];  // Tags that exclude files from auto-loading context
-  mediaFolder: string;  // Folder for attachments/media (e.g., "- attachments"), empty for root
-  environmentVariables: string;  // Custom env vars in KEY=VALUE format (one per line)
-  envSnippets: EnvSnippet[];  // Saved environment variable configurations
-  systemPrompt: string;  // Custom system prompt appended to default
+  excludedTags: string[];
+  mediaFolder: string;
+  environmentVariables: string;
+  envSnippets: EnvSnippet[];
+  systemPrompt: string;
 }
 
+/** Saved environment variable configuration. */
 export interface EnvSnippet {
   id: string;
   name: string;
@@ -89,7 +94,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   systemPrompt: '',
 };
 
-// Conversation persistence types
+/** Persisted conversation with messages and session state. */
 export interface Conversation {
   id: string;
   title: string;
@@ -97,9 +102,10 @@ export interface Conversation {
   updatedAt: number;
   sessionId: string | null;
   messages: ChatMessage[];
-  attachedFiles?: string[];  // Persisted file context (@ mentions)
+  attachedFiles?: string[];
 }
 
+/** Lightweight conversation metadata for the history dropdown. */
 export interface ConversationMeta {
   id: string;
   title: string;
@@ -109,61 +115,55 @@ export interface ConversationMeta {
   preview: string;
 }
 
-// Content block for tracking order of text and tool calls
+/** Content block for preserving streaming order in messages. */
 export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; toolId: string }
   | { type: 'thinking'; content: string; durationSeconds?: number }
   | { type: 'subagent'; subagentId: string; mode?: SubagentMode };
 
-// Subagent execution mode
-// - sync: Traditional nested subagent with tool tracking (parentToolUseId routing)
-// - async: Background subagent with no nested tool tracking (run_in_background=true)
+/** Subagent execution mode: sync (nested tools) or async (background). */
 export type SubagentMode = 'sync' | 'async';
 
-// Async subagent lifecycle states
+/** Async subagent lifecycle states. */
 export type AsyncSubagentStatus =
-  | 'pending'         // Task initiated, waiting for agent_id from tool_result
-  | 'running'         // agent_id received, subagent is active in background
-  | 'completed'       // AgentOutputTool received with success
-  | 'error'           // AgentOutputTool received with error
-  | 'orphaned';       // Conversation ended before AgentOutputTool (auto-errored)
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'error'
+  | 'orphaned';
 
-// Supported image media types
+/** Supported image media types for attachments. */
 export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
-// Image attachment for sending to Claude
+/** Image attachment metadata. */
 export interface ImageAttachment {
   id: string;
-  name: string;           // Original filename or generated name
+  name: string;
   mediaType: ImageMediaType;
-  data?: string;          // Base64-encoded image data (not persisted)
-  cachePath?: string;     // Cached file path relative to vault (e.g., .claudian-cache/images/abc.jpg)
-  filePath?: string;      // Original file path (relative to vault or absolute)
-  width?: number;         // Image dimensions (if known)
+  data?: string;
+  cachePath?: string;
+  filePath?: string;
+  width?: number;
   height?: number;
-  size: number;           // File size in bytes
-  source: 'file' | 'paste' | 'drop';  // How the image was added
+  size: number;
+  source: 'file' | 'paste' | 'drop';
 }
 
-// Message types for the chat UI
+/** Chat message with content, tool calls, and attachments. */
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
-  // Subagent (Task tool) tracking
   subagents?: SubagentInfo[];
-  // Ordered content blocks to preserve streaming order
   contentBlocks?: ContentBlock[];
-  // File paths attached to this message via @ mention or auto-attach
   contextFiles?: string[];
-  // Images attached to this message
   images?: ImageAttachment[];
 }
 
-// Enhanced tool call tracking with status and result
+/** Tool call tracking with status and result. */
 export interface ToolCallInfo {
   id: string;
   name: string;
@@ -171,10 +171,10 @@ export interface ToolCallInfo {
   status: 'running' | 'completed' | 'error' | 'blocked';
   result?: string;
   isExpanded?: boolean;
-  // Diff data for Write/Edit tools (captured before/after content)
   diffData?: ToolDiffData;
 }
 
+/** Diff data for Write/Edit tool operations. */
 export interface ToolDiffData {
   originalContent?: string;
   newContent?: string;
@@ -182,27 +182,23 @@ export interface ToolDiffData {
   skippedReason?: 'too_large' | 'unavailable';
 }
 
-// Subagent (Task tool) tracking - supports both sync and async modes
+/** Subagent (Task tool) tracking for sync and async modes. */
 export interface SubagentInfo {
-  id: string;                    // The Task tool_use_id
-  description: string;           // Task description (from input.description)
-  mode?: SubagentMode;           // 'sync' (default) or 'async' (run_in_background=true)
+  id: string;
+  description: string;
+  mode?: SubagentMode;
   isExpanded: boolean;
-  result?: string;               // Final result when completed
-
-  // Sync mode fields (mode === 'sync' or undefined)
-  status: 'running' | 'completed' | 'error';  // Sync status (3-state)
-  toolCalls: ToolCallInfo[];     // Nested tool calls from this subagent (sync only)
-
-  // Async mode fields (mode === 'async')
-  asyncStatus?: AsyncSubagentStatus;  // Async status (6-state lifecycle)
-  agentId?: string;              // Parsed from Task tool_result (snake_case from SDK)
-  outputToolId?: string;         // AgentOutputTool tool_use_id (for linking result)
-  startedAt?: number;            // Timestamp when agent_id received
-  completedAt?: number;          // Timestamp when AgentOutputTool received
+  result?: string;
+  status: 'running' | 'completed' | 'error';
+  toolCalls: ToolCallInfo[];
+  asyncStatus?: AsyncSubagentStatus;
+  agentId?: string;
+  outputToolId?: string;
+  startedAt?: number;
+  completedAt?: number;
 }
 
-// Stream chunk types from Claude Agent SDK
+/** Normalized stream chunk from the Claude Agent SDK. */
 export type StreamChunk =
   | { type: 'text'; content: string; parentToolUseId?: string | null }
   | { type: 'thinking'; content: string; parentToolUseId?: string | null }
@@ -212,11 +208,11 @@ export type StreamChunk =
   | { type: 'blocked'; content: string }
   | { type: 'done' };
 
-// SDK Message Types (for type safety in message handling)
+/** SDK content block structure. */
 export interface SDKContentBlock {
   type: 'text' | 'tool_use' | 'tool_result' | 'thinking';
   text?: string;
-  thinking?: string;  // Extended thinking content
+  thinking?: string;
   id?: string;
   name?: string;
   input?: Record<string, unknown>;
@@ -225,13 +221,15 @@ export interface SDKContentBlock {
   is_error?: boolean;
 }
 
+/** SDK message content wrapper. */
 export interface SDKMessageContent {
   content?: SDKContentBlock[];
 }
 
+/** SDK stream event structure. */
 export interface SDKStreamEvent {
   type: 'content_block_start' | 'content_block_delta';
-  index?: number;  // Content block index for correlating deltas
+  index?: number;
   content_block?: SDKContentBlock;
   delta?: {
     type: 'text_delta' | 'thinking_delta';
@@ -240,6 +238,7 @@ export interface SDKStreamEvent {
   };
 }
 
+/** SDK message structure from the Claude Agent SDK. */
 export interface SDKMessage {
   type: 'system' | 'assistant' | 'user' | 'stream_event' | 'result' | 'error' | 'tool_progress' | 'auth_status';
   subtype?: 'init' | 'compact_boundary' | 'status' | 'hook_response' | string;
@@ -249,11 +248,9 @@ export interface SDKMessage {
   parent_tool_use_id?: string | null;
   event?: SDKStreamEvent;
   error?: string;
-  // tool_progress fields
   tool_use_id?: string;
   tool_name?: string;
   elapsed_time_seconds?: number;
-  // auth_status fields
   isAuthenticating?: boolean;
   output?: string[];
 }

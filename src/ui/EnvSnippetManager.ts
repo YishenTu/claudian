@@ -1,10 +1,14 @@
+/**
+ * Claudian - Environment snippet manager
+ *
+ * Manages saving and restoring environment variable configurations.
+ */
+
 import { App, Modal, Setting, Notice } from 'obsidian';
 import type ClaudianPlugin from '../main';
 import type { EnvSnippet } from '../types';
 
-/**
- * Modal for creating/editing environment variable snippets
- */
+/** Modal for creating/editing environment variable snippets. */
 export class EnvSnippetModal extends Modal {
   plugin: ClaudianPlugin;
   snippet: EnvSnippet | null;
@@ -114,9 +118,7 @@ export class EnvSnippetModal extends Modal {
   }
 }
 
-/**
- * Component for managing environment variable snippets
- */
+/** Component for managing environment variable snippets. */
 export class EnvSnippetManager {
   private containerEl: HTMLElement;
   private plugin: ClaudianPlugin;

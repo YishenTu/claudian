@@ -1,7 +1,14 @@
+/**
+ * Claudian - Settings tab
+ *
+ * Plugin settings UI for hotkeys, customization, safety, and environment variables.
+ */
+
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type ClaudianPlugin from './main';
 import { EnvSnippetManager } from './ui';
 
+/** Plugin settings tab displayed in Obsidian's settings pane. */
 export class ClaudianSettingTab extends PluginSettingTab {
   plugin: ClaudianPlugin;
 

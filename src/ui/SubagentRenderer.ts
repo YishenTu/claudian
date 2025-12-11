@@ -1,10 +1,14 @@
+/**
+ * Claudian - Subagent renderer
+ *
+ * Renders sync and async subagent blocks with nested tool tracking.
+ */
+
 import { setIcon } from 'obsidian';
 import { SubagentInfo, ToolCallInfo } from '../types';
 import { getToolLabel } from './ToolCallRenderer';
 
-/**
- * State for a streaming subagent block
- */
+/** State for a streaming subagent block. */
 export interface SubagentState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
@@ -17,25 +21,19 @@ export interface SubagentState {
   currentResultEl: HTMLElement | null;
 }
 
-/**
- * Extract the description from Task tool input
- */
+/** Extract the description from Task tool input. */
 function extractTaskDescription(input: Record<string, unknown>): string {
   // Task tool has 'description' (short) and 'prompt' (detailed)
   return (input.description as string) || 'Subagent task';
 }
 
-/**
- * Truncate description for display in header
- */
+/** Truncate description for display in header. */
 function truncateDescription(description: string, maxLength = 40): string {
   if (description.length <= maxLength) return description;
   return description.substring(0, maxLength) + '...';
 }
 
-/**
- * Truncate result to max 2 lines
- */
+/** Truncate result to max 2 lines. */
 function truncateResult(result: string): string {
   const lines = result.split('\n').filter(line => line.trim());
   if (lines.length <= 2) {
@@ -45,10 +43,7 @@ function truncateResult(result: string): string {
 }
 
 
-/**
- * Create a subagent block for a Task tool call (streaming)
- * Follows TodoListRenderer pattern - expanded by default
- */
+/** Create a subagent block for a Task tool call (streaming). Expanded by default. */
 export function createSubagentBlock(
   parentEl: HTMLElement,
   taskToolId: string,
@@ -133,10 +128,7 @@ export function createSubagentBlock(
   };
 }
 
-/**
- * Add a tool call to a subagent's content area
- * Only shows the current tool (replaces previous)
- */
+/** Add a tool call to a subagent's content area. Only shows current tool. */
 export function addSubagentToolCall(
   state: SubagentState,
   toolCall: ToolCallInfo
@@ -170,9 +162,7 @@ export function addSubagentToolCall(
   labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
 }
 
-/**
- * Update a nested tool call with its result
- */
+/** Update a nested tool call with its result. */
 export function updateSubagentToolResult(
   state: SubagentState,
   toolId: string,
@@ -210,9 +200,7 @@ export function updateSubagentToolResult(
   // Note: Don't revert label to description here - wait for next tool or finalize
 }
 
-/**
- * Finalize a subagent when its Task tool_result is received
- */
+/** Finalize a subagent when its Task tool_result is received. */
 export function finalizeSubagentBlock(
   state: SubagentState,
   result: string,
@@ -257,10 +245,7 @@ export function finalizeSubagentBlock(
   textEl.setText(isError ? 'ERROR' : 'DONE');
 }
 
-/**
- * Render a stored subagent from conversation history
- * Collapsed by default (like stored todos)
- */
+/** Render a stored subagent from conversation history. Collapsed by default. */
 export function renderStoredSubagent(
   parentEl: HTMLElement,
   subagent: SubagentInfo
@@ -377,13 +362,7 @@ export function renderStoredSubagent(
   return wrapperEl;
 }
 
-// ============================================================================
-// Async Subagent Rendering Functions
-// ============================================================================
-
-/**
- * State for an async subagent block (simplified - no nested tool tracking)
- */
+/** State for an async subagent block. */
 export interface AsyncSubagentState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
@@ -401,9 +380,7 @@ function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
   wrapperEl.addClass(status);
 }
 
-/**
- * Normalize async status for display (collapse pending/awaiting to running)
- */
+/** Normalize async status for display. */
 function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'completed' | 'error' | 'orphaned' {
   if (asyncStatus === 'completed') return 'completed';
   if (asyncStatus === 'error') return 'error';
@@ -424,10 +401,7 @@ function updateAsyncLabel(state: AsyncSubagentState, _displayStatus: 'running' |
   state.labelEl.setText(truncateDescription(state.info.description));
 }
 
-/**
- * Create an async subagent block for a background Task tool call
- * Simpler than sync - no nested tool tracking, just status updates
- */
+/** Create an async subagent block for a background Task tool call. */
 export function createAsyncSubagentBlock(
   parentEl: HTMLElement,
   taskToolId: string,
@@ -520,9 +494,7 @@ export function createAsyncSubagentBlock(
   };
 }
 
-/**
- * Update async subagent to running state (agent_id received)
- */
+/** Update async subagent to running state (agent_id received). */
 export function updateAsyncSubagentRunning(
   state: AsyncSubagentState,
   agentId: string
@@ -546,9 +518,7 @@ export function updateAsyncSubagentRunning(
   textEl.setText(`run in background (${shortId})`);
 }
 
-/**
- * Finalize async subagent with AgentOutputTool result
- */
+/** Finalize async subagent with AgentOutputTool result. */
 export function finalizeAsyncSubagent(
   state: AsyncSubagentState,
   result: string,
@@ -597,9 +567,7 @@ export function finalizeAsyncSubagent(
   }
 }
 
-/**
- * Mark async subagent as orphaned (conversation ended before completion)
- */
+/** Mark async subagent as orphaned (conversation ended before completion). */
 export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   state.info.asyncStatus = 'orphaned';
   state.info.status = 'error';
@@ -629,10 +597,7 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   textEl.setText('⚠️ Task orphaned');
 }
 
-/**
- * Render a stored async subagent from conversation history
- * Collapsed by default
- */
+/** Render a stored async subagent from conversation history. Collapsed by default. */
 export function renderStoredAsyncSubagent(
   parentEl: HTMLElement,
   subagent: SubagentInfo

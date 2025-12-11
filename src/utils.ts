@@ -1,8 +1,12 @@
+/**
+ * Claudian - Utility functions
+ *
+ * Helper functions for vault operations, date formatting, and environment parsing.
+ */
+
 import type { App } from 'obsidian';
 
-/**
- * Get today's date in both readable and ISO format for unambiguous parsing
- */
+/** Returns today's date in readable and ISO format for the system prompt. */
 export function getTodayDate(): string {
   const now = new Date();
   const readable = now.toLocaleDateString('en-US', {
@@ -15,6 +19,7 @@ export function getTodayDate(): string {
   return `${readable} (${iso})`;
 }
 
+/** Returns the vault's absolute file path, or null if unavailable. */
 export function getVaultPath(app: App): string | null {
   const adapter = app.vault.adapter;
   if ('basePath' in adapter) {
@@ -23,15 +28,11 @@ export function getVaultPath(app: App): string | null {
   return null;
 }
 
-/**
- * Parse environment variables from KEY=VALUE format (one per line).
- * Supports comments (lines starting with #) and empty lines.
- */
+/** Parses KEY=VALUE environment variables from text. Supports comments (#) and empty lines. */
 export function parseEnvironmentVariables(input: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of input.split('\n')) {
     const trimmed = line.trim();
-    // Skip empty lines and comments
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eqIndex = trimmed.indexOf('=');
     if (eqIndex > 0) {
@@ -45,15 +46,10 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
   return result;
 }
 
-/**
- * Extract model information from environment variables.
- * Looks for ANTHROPIC_MODEL and ANTHROPIC_DEFAULT_*_MODEL patterns.
- * Deduplicates models with the same value.
- */
+/** Extracts model options from ANTHROPIC_* environment variables, deduplicated by value. */
 export function getModelsFromEnvironment(envVars: Record<string, string>): { value: string; label: string; description: string }[] {
   const modelMap = new Map<string, { types: string[]; label: string }>();
 
-  // Explicit priority order: model > opus > sonnet > haiku
   const modelEnvEntries: { type: string; envKey: string }[] = [
     { type: 'model', envKey: 'ANTHROPIC_MODEL' },
     { type: 'opus', envKey: 'ANTHROPIC_DEFAULT_OPUS_MODEL' },
@@ -61,28 +57,21 @@ export function getModelsFromEnvironment(envVars: Record<string, string>): { val
     { type: 'haiku', envKey: 'ANTHROPIC_DEFAULT_HAIKU_MODEL' },
   ];
 
-  // Check for custom models in environment variables
   for (const { type, envKey } of modelEnvEntries) {
     const modelValue = envVars[envKey];
     if (modelValue) {
-      // Create a clean label from the model value
       const label = modelValue.includes('/')
         ? modelValue.split('/').pop() || modelValue
         : modelValue.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
       if (!modelMap.has(modelValue)) {
-        modelMap.set(modelValue, {
-          types: [type],
-          label: label
-        });
+        modelMap.set(modelValue, { types: [type], label });
       } else {
-        // Add this type to the existing model's types
         modelMap.get(modelValue)!.types.push(type);
       }
     }
   }
 
-  // Convert map to array, sorting by priority
   const models: { value: string; label: string; description: string }[] = [];
   const typePriority = { 'model': 4, 'opus': 3, 'sonnet': 2, 'haiku': 1 };
 
@@ -93,7 +82,6 @@ export function getModelsFromEnvironment(envVars: Record<string, string>): { val
   });
 
   for (const [modelValue, info] of sortedEntries) {
-    // Sort types by priority for description
     const sortedTypes = info.types.sort((a, b) =>
       (typePriority[b as keyof typeof typePriority] || 0) -
       (typePriority[a as keyof typeof typePriority] || 0)
@@ -109,12 +97,8 @@ export function getModelsFromEnvironment(envVars: Record<string, string>): { val
   return models;
 }
 
-/**
- * Get the current model from environment variables.
- * Checks if there's a custom model set and returns it, otherwise null.
- */
+/** Returns the highest-priority custom model from environment variables, or null. */
 export function getCurrentModelFromEnvironment(envVars: Record<string, string>): string | null {
-  // Priority order: ANTHROPIC_MODEL > opus > sonnet > haiku
   if (envVars.ANTHROPIC_MODEL) {
     return envVars.ANTHROPIC_MODEL;
   }

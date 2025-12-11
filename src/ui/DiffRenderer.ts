@@ -23,9 +23,7 @@ export interface DiffStats {
   removed: number;
 }
 
-/**
- * Compute line-based diff between two texts using LCS algorithm
- */
+/** Compute line-based diff between two texts using LCS algorithm. */
 export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
@@ -84,9 +82,7 @@ export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
   return result;
 }
 
-/**
- * Count lines added and removed
- */
+/** Count lines added and removed. */
 export function countLineChanges(diffLines: DiffLine[]): DiffStats {
   let added = 0;
   let removed = 0;
@@ -99,10 +95,7 @@ export function countLineChanges(diffLines: DiffLine[]): DiffStats {
   return { added, removed };
 }
 
-/**
- * Split diff into hunks with context lines
- * Only shows regions with changes plus surrounding context
- */
+/** Split diff into hunks with context lines. */
 export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHunk[] {
   if (diffLines.length === 0) return [];
 
@@ -155,9 +148,7 @@ export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHun
   return hunks;
 }
 
-/**
- * Escape HTML special characters
- */
+/** Escape HTML special characters. */
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -166,10 +157,7 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Render diff content to a container element
- * Shows hunks with "..." separator between them
- */
+/** Render diff content to a container element. */
 export function renderDiffContent(
   containerEl: HTMLElement,
   diffLines: DiffLine[],
@@ -211,9 +199,7 @@ export function renderDiffContent(
   });
 }
 
-/**
- * Convert diff lines to HTML string (for simpler rendering)
- */
+/** Convert diff lines to HTML string. */
 export function diffLinesToHtml(diffLines: DiffLine[], contextLines = 3): string {
   const hunks = splitIntoHunks(diffLines, contextLines);
 
@@ -247,9 +233,7 @@ export function diffLinesToHtml(diffLines: DiffLine[], contextLines = 3): string
   return parts.join('');
 }
 
-/**
- * Check if content appears to be binary
- */
+/** Check if content appears to be binary. */
 export function isBinaryContent(content: string): boolean {
   // Check for null bytes or high ratio of non-printable characters
   const nonPrintable = content.match(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g);

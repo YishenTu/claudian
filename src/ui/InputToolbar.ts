@@ -1,3 +1,7 @@
+/**
+ * Claudian - Input toolbar components (model selector, thinking budget, permission toggle).
+ */
+
 import { setIcon } from 'obsidian';
 import {
   ClaudeModel,
@@ -9,29 +13,23 @@ import {
 } from '../types';
 import { parseEnvironmentVariables, getModelsFromEnvironment } from '../utils';
 
-/**
- * Interface for settings access needed by toolbar components
- */
+/** Settings access interface for toolbar components. */
 export interface ToolbarSettings {
   model: ClaudeModel;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
 }
 
-/**
- * Callback interface for toolbar changes
- */
+/** Callback interface for toolbar changes. */
 export interface ToolbarCallbacks {
   onModelChange: (model: ClaudeModel) => Promise<void>;
   onThinkingBudgetChange: (budget: ThinkingBudget) => Promise<void>;
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
-  getEnvironmentVariables?: () => string; // Optional: to get env vars for dynamic models
+  getEnvironmentVariables?: () => string;
 }
 
-/**
- * Model selector component
- */
+/** Model selector dropdown component. */
 export class ModelSelector {
   private container: HTMLElement;
   private buttonEl: HTMLElement | null = null;
@@ -44,28 +42,21 @@ export class ModelSelector {
     this.render();
   }
 
-  /**
-   * Get available models. If custom models are configured via environment variables,
-   * shows ONLY custom models. Otherwise shows default Claude models.
-   */
+  /** Returns available models (custom from env vars, or defaults). */
   private getAvailableModels() {
     let models: { value: string; label: string; description: string }[] = [];
 
-    // Check for custom models from environment
     if (this.callbacks.getEnvironmentVariables) {
       const envVarsStr = this.callbacks.getEnvironmentVariables();
       const envVars = parseEnvironmentVariables(envVarsStr);
       const customModels = getModelsFromEnvironment(envVars);
 
       if (customModels.length > 0) {
-        // If custom models exist, use ONLY them - no Claude models at all
         models = customModels;
       } else {
-        // No custom models, use defaults
         models = [...DEFAULT_CLAUDE_MODELS];
       }
     } else {
-      // No environment variables callback, use defaults
       models = [...DEFAULT_CLAUDE_MODELS];
     }
 
@@ -75,11 +66,9 @@ export class ModelSelector {
   private render() {
     this.container.empty();
 
-    // Current model button (dropdown shows on hover via CSS)
     this.buttonEl = this.container.createDiv({ cls: 'claudian-model-btn' });
     this.updateDisplay();
 
-    // Dropdown menu (shown on hover via CSS)
     this.dropdownEl = this.container.createDiv({ cls: 'claudian-model-dropdown' });
     this.renderOptions();
   }
@@ -90,7 +79,6 @@ export class ModelSelector {
     const models = this.getAvailableModels();
     const modelInfo = models.find(m => m.value === currentModel);
 
-    // If current model is not in the available models, default to the first one
     const displayModel = modelInfo || models[0];
 
     this.buttonEl.empty();
@@ -109,7 +97,6 @@ export class ModelSelector {
     const currentModel = this.callbacks.getSettings().model;
     const models = this.getAvailableModels();
 
-    // Reverse order so haiku (first) is closest to trigger at bottom
     for (const model of [...models].reverse()) {
       const option = this.dropdownEl.createDiv({ cls: 'claudian-model-option' });
       if (model.value === currentModel) {
@@ -131,9 +118,7 @@ export class ModelSelector {
   }
 }
 
-/**
- * Thinking budget selector component
- */
+/** Thinking budget selector component. */
 export class ThinkingBudgetSelector {
   private container: HTMLElement;
   private gearsEl: HTMLElement | null = null;
@@ -148,11 +133,9 @@ export class ThinkingBudgetSelector {
   private render() {
     this.container.empty();
 
-    // Label
     const labelEl = this.container.createSpan({ cls: 'claudian-thinking-label-text' });
     labelEl.setText('Thinking:');
 
-    // Gear buttons container (expandable on hover)
     this.gearsEl = this.container.createDiv({ cls: 'claudian-thinking-gears' });
     this.renderGears();
   }
@@ -164,14 +147,11 @@ export class ThinkingBudgetSelector {
     const currentBudget = this.callbacks.getSettings().thinkingBudget;
     const currentBudgetInfo = THINKING_BUDGETS.find(b => b.value === currentBudget);
 
-    // Current selection (visible when collapsed)
     const currentEl = this.gearsEl.createDiv({ cls: 'claudian-thinking-current' });
     currentEl.setText(currentBudgetInfo?.label || 'Off');
 
-    // All options (visible when expanded)
     const optionsEl = this.gearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
-    // Reverse order so "low" is closest to trigger at bottom
     for (const budget of [...THINKING_BUDGETS].reverse()) {
       const gearEl = optionsEl.createDiv({ cls: 'claudian-thinking-gear' });
       gearEl.setText(budget.label);
@@ -194,9 +174,7 @@ export class ThinkingBudgetSelector {
   }
 }
 
-/**
- * Permission mode toggle component
- */
+/** Permission mode toggle (Yolo/Safe). */
 export class PermissionToggle {
   private container: HTMLElement;
   private toggleEl: HTMLElement | null = null;
@@ -212,16 +190,11 @@ export class PermissionToggle {
   private render() {
     this.container.empty();
 
-    // Label
     this.labelEl = this.container.createSpan({ cls: 'claudian-permission-label' });
-
-    // Toggle switch
     this.toggleEl = this.container.createDiv({ cls: 'claudian-toggle-switch' });
 
-    // Update display
     this.updateDisplay();
 
-    // Toggle on click
     this.toggleEl.addEventListener('click', () => this.toggle());
   }
 
@@ -230,14 +203,12 @@ export class PermissionToggle {
 
     const isYolo = this.callbacks.getSettings().permissionMode === 'yolo';
 
-    // Update toggle state
     if (isYolo) {
       this.toggleEl.addClass('active');
     } else {
       this.toggleEl.removeClass('active');
     }
 
-    // Update label
     this.labelEl.setText(isYolo ? 'Yolo' : 'Safe');
   }
 
@@ -249,9 +220,7 @@ export class PermissionToggle {
   }
 }
 
-/**
- * Factory function to create all toolbar components
- */
+/** Factory function to create all toolbar components. */
 export function createInputToolbar(
   parentEl: HTMLElement,
   callbacks: ToolbarCallbacks

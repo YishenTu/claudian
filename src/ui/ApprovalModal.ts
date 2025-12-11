@@ -1,10 +1,12 @@
+/**
+ * Claudian - Approval modal for Safe mode tool permission prompts.
+ */
+
 import { Modal, setIcon } from 'obsidian';
 
 export type ApprovalDecision = 'allow' | 'allow-always' | 'deny';
 
-/**
- * Modal for approving tool actions
- */
+/** Modal dialog for approving tool actions in Safe mode. */
 export class ApprovalModal extends Modal {
   private toolName: string;
   private input: Record<string, unknown>;
@@ -31,7 +33,6 @@ export class ApprovalModal extends Modal {
     contentEl.addClass('claudian-approval-modal');
     this.setTitle('Permission required');
 
-    // Tool info
     const infoEl = contentEl.createDiv({ cls: 'claudian-approval-info' });
 
     const toolEl = infoEl.createDiv({ cls: 'claudian-approval-tool' });
@@ -40,17 +41,14 @@ export class ApprovalModal extends Modal {
     setIcon(iconEl, this.getToolIcon(this.toolName));
     toolEl.createSpan({ text: this.toolName, cls: 'claudian-approval-tool-name' });
 
-    // Description
     const descEl = contentEl.createDiv({ cls: 'claudian-approval-desc' });
     descEl.setText(this.description);
 
-    // Details (collapsible)
     const detailsEl = contentEl.createEl('details', { cls: 'claudian-approval-details' });
     detailsEl.createEl('summary', { text: 'Show details' });
     const codeEl = detailsEl.createEl('pre', { cls: 'claudian-approval-code' });
     codeEl.setText(JSON.stringify(this.input, null, 2));
 
-    // Buttons
     const buttonsEl = contentEl.createDiv({ cls: 'claudian-approval-buttons' });
 
     const denyBtn = buttonsEl.createEl('button', {
@@ -74,7 +72,6 @@ export class ApprovalModal extends Modal {
     });
     alwaysBtn.addEventListener('click', () => this.handleDecision('allow-always'));
 
-    // Focus first button for keyboard accessibility
     denyBtn.focus();
   }
 
@@ -100,7 +97,6 @@ export class ApprovalModal extends Modal {
   }
 
   onClose() {
-    // If closed without decision, treat as deny
     if (!this.resolved) {
       this.resolved = true;
       this.resolve('deny');

@@ -1,14 +1,14 @@
 /**
- * System prompt for the Claude Agent SDK
- * Edit this to customize Claude's behavior within the Obsidian vault
+ * Claudian - System prompt generation
+ *
+ * Builds the system prompt for the Claude Agent SDK including
+ * Obsidian-specific instructions, tool guidance, and image handling.
  */
 
 import { getTodayDate } from './utils';
 
-// Constants
 const TEMP_CACHE_DIR = '.claudian-cache/temp';
 
-// Type definitions
 interface SystemPromptSettings {
   mediaFolder?: string;
   customPrompt?: string;
@@ -103,10 +103,7 @@ Use proactively for any task meeting these criteria to keep progress visible.
 \`\`\``;
 }
 
-/**
- * Generate instructions for handling images in notes
- * Covers both local embedded images (![[image.jpg]]) and external URLs (![alt](url))
- */
+/** Generates instructions for handling embedded images in notes. */
 function getImageInstructions(mediaFolder: string): string {
   const folder = mediaFolder.trim();
   const mediaPath = folder ? './' + folder : '.';
@@ -140,10 +137,7 @@ rm -f "$img_path"
 **Important**: Always delete temp files even if read fails. Remove the specific file with \`rm -f "$img_path"\`; if unsure, clean the cache with \`rm ${cacheDir}/img_*.png\`.`;
 }
 
-/**
- * System prompt for inline text editing
- * Optimized for simple text transformations with read-only tool access
- */
+/** Returns the system prompt for inline text editing (read-only tools). */
 export function getInlineEditSystemPrompt(): string {
   return `Today is ${getTodayDate()}.
 
@@ -234,17 +228,11 @@ Then after user clarifies "river bank":
 <replacement>La orilla era empinada.</replacement>`;
 }
 
-/**
- * Build the complete system prompt with settings
- */
+/** Builds the complete system prompt with optional custom settings. */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
-  // Start with base prompt (includes today's date)
   let prompt = getBaseSystemPrompt();
-
-  // Add image handling instructions
   prompt += getImageInstructions(settings.mediaFolder || '');
 
-  // Append custom system prompt if provided
   if (settings.customPrompt?.trim()) {
     prompt += '\n\n# Custom Instructions\n\n' + settings.customPrompt.trim();
   }

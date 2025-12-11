@@ -17,9 +17,7 @@ import {
   DiffLine,
 } from './DiffRenderer';
 
-/**
- * State for a streaming Write/Edit block
- */
+/** State for a streaming Write/Edit block. */
 export interface WriteEditState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
@@ -32,9 +30,7 @@ export interface WriteEditState {
   diffLines?: DiffLine[];
 }
 
-/**
- * Shorten file path for display
- */
+/** Shorten file path for display. */
 function shortenPath(filePath: string, maxLength = 40): string {
   if (!filePath) return 'file';
   if (filePath.length <= maxLength) return filePath;
@@ -56,9 +52,7 @@ function shortenPath(filePath: string, maxLength = 40): string {
   return `${firstDir}/.../${filename}`;
 }
 
-/**
- * Create a Write/Edit block during streaming (expanded by default)
- */
+/** Create a Write/Edit block during streaming (expanded by default). */
 export function createWriteEditBlock(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo
@@ -139,9 +133,7 @@ export function createWriteEditBlock(
   return state;
 }
 
-/**
- * Update Write/Edit block with diff data
- */
+/** Update Write/Edit block with diff data. */
 export function updateWriteEditWithDiff(state: WriteEditState, diffData: ToolDiffData): void {
   state.statsEl.empty();
   state.contentEl.empty();
@@ -199,9 +191,7 @@ export function updateWriteEditWithDiff(state: WriteEditState, diffData: ToolDif
   renderDiffContent(diffEl, diffLines);
 }
 
-/**
- * Finalize Write/Edit block (update status icon)
- */
+/** Finalize Write/Edit block (update status icon). */
 export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean): void {
   // Update status icon - only show icon on error
   state.statusEl.className = 'claudian-write-edit-status';
@@ -229,10 +219,7 @@ export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean):
   }
 }
 
-/**
- * Render a stored Write/Edit block from conversation history
- * Collapsed by default
- */
+/** Render a stored Write/Edit block from conversation history. Collapsed by default. */
 export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallInfo): HTMLElement {
   const filePath = (toolCall.input.file_path as string) || 'file';
   const toolName = toolCall.name;

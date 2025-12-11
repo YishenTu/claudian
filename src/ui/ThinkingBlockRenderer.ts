@@ -1,12 +1,13 @@
-
 /**
- * Callback for rendering markdown content
+ * Claudian - Thinking block renderer
+ *
+ * Renders extended thinking blocks with live timer and expand/collapse.
  */
+
+/** Callback for rendering markdown content. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
-/**
- * State for a streaming thinking block
- */
+/** State for a streaming thinking block. */
 export interface ThinkingBlockState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
@@ -16,9 +17,7 @@ export interface ThinkingBlockState {
   timerInterval: ReturnType<typeof setInterval> | null;
 }
 
-/**
- * Create a streaming thinking block
- */
+/** Create a streaming thinking block. */
 export function createThinkingBlock(
   parentEl: HTMLElement,
   renderContent: RenderContentFn
@@ -82,9 +81,7 @@ export function createThinkingBlock(
   };
 }
 
-/**
- * Append content to a streaming thinking block
- */
+/** Append content to a streaming thinking block. */
 export async function appendThinkingContent(
   state: ThinkingBlockState,
   content: string,
@@ -94,9 +91,7 @@ export async function appendThinkingContent(
   await renderContent(state.contentEl, state.content);
 }
 
-/**
- * Finalize a thinking block (stop timer, update label, collapse)
- */
+/** Finalize a thinking block (stop timer, update label, collapse). */
 export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Stop the timer
   if (state.timerInterval) {
@@ -121,18 +116,14 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   return durationSeconds;
 }
 
-/**
- * Clean up a thinking block state (call on view close)
- */
+/** Clean up a thinking block state (call on view close). */
 export function cleanupThinkingBlock(state: ThinkingBlockState | null) {
   if (state?.timerInterval) {
     clearInterval(state.timerInterval);
   }
 }
 
-/**
- * Render a stored thinking block (non-streaming, collapsed by default)
- */
+/** Render a stored thinking block (non-streaming, collapsed by default). */
 export function renderStoredThinkingBlock(
   parentEl: HTMLElement,
   content: string,

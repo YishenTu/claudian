@@ -1,9 +1,12 @@
+/**
+ * Claudian - Tool call renderer
+ *
+ * Renders tool call UI elements with expand/collapse and status indicators.
+ */
+
 import { setIcon } from 'obsidian';
 import { ToolCallInfo } from '../types';
 
-/**
- * Tool icon mapping
- */
 const TOOL_ICONS: Record<string, string> = {
   'Read': 'file-text',
   'Write': 'edit-3',
@@ -17,23 +20,17 @@ const TOOL_ICONS: Record<string, string> = {
   'WebFetch': 'download',
 };
 
-/**
- * Get the appropriate icon for a tool
- */
+/** Get the appropriate icon for a tool. */
 export function getToolIcon(toolName: string): string {
   return TOOL_ICONS[toolName] || 'wrench';
 }
 
-/**
- * Set the tool icon on an element
- */
+/** Set the tool icon on an element. */
 export function setToolIcon(el: HTMLElement, name: string) {
   setIcon(el, getToolIcon(name));
 }
 
-/**
- * Generate a human-readable label for a tool call
- */
+/** Generate a human-readable label for a tool call. */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case 'Read':
@@ -73,9 +70,7 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
   }
 }
 
-/**
- * Shorten a file path for display
- */
+/** Shorten a file path for display. */
 function shortenPath(path: string | undefined): string {
   if (!path) return '';
   const parts = path.split('/');
@@ -83,9 +78,7 @@ function shortenPath(path: string | undefined): string {
   return '.../' + parts.slice(-2).join('/');
 }
 
-/**
- * Format tool input for display
- */
+/** Format tool input for display. */
 export function formatToolInput(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case 'Read':
@@ -106,9 +99,6 @@ export function formatToolInput(name: string, input: Record<string, unknown>): s
   }
 }
 
-/**
- * Parse WebSearch result into structured data
- */
 interface WebSearchLink {
   title: string;
   url: string;
@@ -127,9 +117,7 @@ function parseWebSearchResult(result: string): WebSearchLink[] | null {
   }
 }
 
-/**
- * Render WebSearch result as DOM elements with proper hanging indent
- */
+/** Render WebSearch result as DOM elements. */
 export function renderWebSearchResult(container: HTMLElement, result: string, maxItems = 3): boolean {
   const links = parseWebSearchResult(result);
   if (!links) return false;
@@ -150,10 +138,7 @@ export function renderWebSearchResult(container: HTMLElement, result: string, ma
   return true;
 }
 
-/**
- * Render generic result as DOM elements
- * Strips line number prefixes (e.g., "1→") since we only show 3 lines
- */
+/** Render generic result as DOM elements. Strips line number prefixes. */
 export function renderResultLines(container: HTMLElement, result: string, maxLines = 3): void {
   container.empty();
 
@@ -173,10 +158,7 @@ export function renderResultLines(container: HTMLElement, result: string, maxLin
   }
 }
 
-/**
- * Truncate a result string for display
- * Shows "xxx more lines" when exceeding maxLines
- */
+/** Truncate a result string for display. */
 export function truncateResult(result: string, maxLines = 20, maxLength = 2000): string {
   if (result.length > maxLength) {
     result = result.substring(0, maxLength);
@@ -189,9 +171,7 @@ export function truncateResult(result: string, maxLines = 20, maxLength = 2000):
   return result;
 }
 
-/**
- * Check if a tool result indicates a blocked action
- */
+/** Check if a tool result indicates a blocked action. */
 export function isBlockedToolResult(content: string, isError?: boolean): boolean {
   const lower = content.toLowerCase();
   if (lower.includes('blocked by blocklist')) return true;
@@ -203,10 +183,7 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
   return false;
 }
 
-/**
- * Renders a tool call UI element (for streaming)
- * Expanded by default, tree-branch style result
- */
+/** Renders a tool call UI element (for streaming). Expanded by default. */
 export function renderToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
@@ -279,9 +256,7 @@ export function renderToolCall(
   return toolEl;
 }
 
-/**
- * Update a tool call element with result
- */
+/** Update a tool call element with result. */
 export function updateToolCallResult(
   toolId: string,
   toolCall: ToolCallInfo,
@@ -319,10 +294,7 @@ export function updateToolCallResult(
   }
 }
 
-/**
- * Render a stored tool call (non-streaming, already completed)
- * Collapsed by default for stored
- */
+/** Render a stored tool call (non-streaming). Collapsed by default. */
 export function renderStoredToolCall(parentEl: HTMLElement, toolCall: ToolCallInfo): HTMLElement {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
 

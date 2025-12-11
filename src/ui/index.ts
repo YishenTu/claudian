@@ -1,4 +1,4 @@
-// UI Components barrel export
+/** Claudian UI components - barrel export. */
 
 export { ApprovalModal, type ApprovalDecision } from './ApprovalModal';
 
@@ -55,7 +55,6 @@ export {
   type TodoItem,
 } from './TodoListRenderer';
 
-// Sync subagent exports
 export {
   createSubagentBlock,
   addSubagentToolCall,
@@ -65,7 +64,6 @@ export {
   type SubagentState,
 } from './SubagentRenderer';
 
-// Async subagent exports
 export {
   createAsyncSubagentBlock,
   updateAsyncSubagentRunning,
@@ -75,13 +73,11 @@ export {
   type AsyncSubagentState,
 } from './SubagentRenderer';
 
-// Inline edit modal
 export {
   InlineEditModal,
   type InlineEditDecision,
 } from './InlineEditModal';
 
-// Diff utilities
 export {
   computeLineDiff,
   countLineChanges,
@@ -94,7 +90,6 @@ export {
   type DiffStats,
 } from './DiffRenderer';
 
-// Write/Edit diff renderer
 export {
   createWriteEditBlock,
   updateWriteEditWithDiff,
