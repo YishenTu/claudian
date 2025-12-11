@@ -80,3 +80,25 @@ export {
   InlineEditModal,
   type InlineEditDecision,
 } from './InlineEditModal';
+
+// Diff utilities
+export {
+  computeLineDiff,
+  countLineChanges,
+  splitIntoHunks,
+  renderDiffContent,
+  diffLinesToHtml,
+  isBinaryContent,
+  type DiffLine,
+  type DiffHunk,
+  type DiffStats,
+} from './DiffRenderer';
+
+// Write/Edit diff renderer
+export {
+  createWriteEditBlock,
+  updateWriteEditWithDiff,
+  finalizeWriteEditBlock,
+  renderStoredWriteEdit,
+  type WriteEditState,
+} from './WriteEditRenderer';

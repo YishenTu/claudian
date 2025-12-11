@@ -170,6 +170,15 @@ export interface ToolCallInfo {
   status: 'running' | 'completed' | 'error' | 'blocked';
   result?: string;
   isExpanded?: boolean;
+  // Diff data for Write/Edit tools (captured before/after content)
+  diffData?: ToolDiffData;
+}
+
+export interface ToolDiffData {
+  originalContent?: string;
+  newContent?: string;
+  filePath: string;
+  skippedReason?: 'too_large' | 'unavailable';
 }
 
 // Subagent (Task tool) tracking - supports both sync and async modes

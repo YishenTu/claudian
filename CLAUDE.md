@@ -19,6 +19,8 @@ src/
 ├── utils.ts             # Utility functions (getVaultPath, env var parsing, model detection)
 ├── AsyncSubagentManager.ts # Async subagent state machine (Task → AgentOutputTool)
 ├── InlineEditService.ts # Lightweight Claude query service for inline text editing
+├── ui/DiffRenderer.ts   # Diff utilities (LCS, hunking, render helpers)
+├── ui/WriteEditRenderer.ts # Subagent-style Write/Edit diff blocks
 └── ui/                  # Modular UI components
     ├── index.ts              # Barrel export for all UI components
     ├── ApprovalModal.ts      # Permission approval dialog (Modal)
@@ -46,6 +48,8 @@ src/
 | `ThinkingBlockRenderer` | Extended thinking blocks with live timer |
 | `TodoListRenderer` | Todo list display for TodoWrite tool calls |
 | `SubagentRenderer` | Subagent (Task tool) UI for sync + async (nested tools vs. background polling, label shown on completion) |
+| `WriteEditRenderer` | Collapsible Write/Edit blocks with inline diff |
+| `DiffRenderer` | Line diff computation and rendering helpers |
 | `EnvSnippetManager` | Environment variable snippet save/restore |
 | `InlineEditModal` | Inline text editing with instruction input, @mentions, and inline diff preview |
 
@@ -152,6 +156,11 @@ finalizeThinkingBlock(thinkingState);
 - Post-tool hook records post-edit hash and marks files as edited.
 - Obsidian vault events (`delete`, `rename`, `modify`) remove or update indicators when files are deleted, renamed, or reverted to the original SHA-256 hash.
 - Opening an edited file dismisses the indicator and clears hash state so the next edit re-baselines.
+
+### Write/Edit Diff View (chat panel)
+- Pre/Post ToolUse hooks capture original/new content keyed by `tool_use_id` (100KB cap both directions; larger or unreadable files recorded with `skippedReason`).
+- Diff data is consumed once by `ClaudianView` using the matching tool id; subagent tool diffs are dropped from the main panel.
+- Rendering uses `WriteEditRenderer` + `DiffRenderer` to show hunked inline diffs, with fallbacks for binary/too large/unavailable content and error states.
 
 ## SDK Message Types
 
@@ -724,4 +733,3 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 ## Notes
 - when ask to generate a md file about the finding, implementation of your work, put the file in dev/
 - when ask to update docs, update development note in dev/ , CLAUDE.md and README.md
-

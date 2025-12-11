@@ -3,10 +3,21 @@ import * as path from 'path';
 import * as os from 'os';
 import { query, type Options, type CanUseTool, type PermissionResult, type HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
 import type ClaudianPlugin from './main';
-import { StreamChunk, ChatMessage, ToolCallInfo, SDKMessage, THINKING_BUDGETS, ApprovedAction, ImageAttachment } from './types';
+import {
+  StreamChunk,
+  ChatMessage,
+  ToolCallInfo,
+  SDKMessage,
+  THINKING_BUDGETS,
+  ApprovedAction,
+  ImageAttachment,
+  ToolDiffData,
+} from './types';
 import { buildSystemPrompt } from './systemPrompt';
 import { getVaultPath, parseEnvironmentVariables } from './utils';
 import { readCachedImageBase64 } from './imageCache';
+
+const MAX_DIFF_SIZE = 100 * 1024; // 100KB limit for diff computation
 
 // Content block types for SDK message format
 interface TextContentBlock {
@@ -46,6 +57,12 @@ export class ClaudianService {
 
   // Vault path for restricting agent access
   private vaultPath: string | null = null;
+
+  // Original file content for diff computation (keyed by tool_use_id)
+  private originalContents: Map<string, { filePath: string; content: string | null }> = new Map();
+
+  // Computed diff data waiting to be retrieved (keyed by tool_use_id)
+  private pendingDiffData: Map<string, ToolDiffData> = new Map();
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
@@ -609,6 +626,8 @@ export class ClaudianService {
     this.sessionId = null;
     // Clear session-scoped approved actions
     this.sessionApprovedActions = [];
+    // Clear diff-related state
+    this.clearDiffState();
   }
 
   /**
@@ -988,17 +1007,47 @@ export class ClaudianService {
   }
 
   /**
-   * Create PreToolUse hook to capture original file hash before editing
+   * Create PreToolUse hook to capture original file hash and content before editing
    */
   private createFileHashPreHook(): HookCallbackMatcher {
     return {
       matcher: 'Write|Edit|NotebookEdit',
       hooks: [
-        async (hookInput) => {
+        async (hookInput, toolUseId) => {
           const input = hookInput as {
             tool_name: string;
             tool_input: Record<string, unknown>;
           };
+
+          // Capture original content for diff (Write/Edit only, not NotebookEdit)
+          if (input.tool_name === 'Write' || input.tool_name === 'Edit') {
+            const filePath = input.tool_input.file_path as string;
+            if (filePath && this.vaultPath) {
+              const fullPath = path.isAbsolute(filePath)
+                ? filePath
+                : path.join(this.vaultPath, filePath);
+              try {
+                // Read original content (null if file doesn't exist)
+                if (fs.existsSync(fullPath)) {
+                  const stats = fs.statSync(fullPath);
+                  // Limit to 100KB to prevent memory issues
+                  if (stats.size <= MAX_DIFF_SIZE) {
+                    const content = fs.readFileSync(fullPath, 'utf-8');
+                    this.originalContents.set(toolUseId, { filePath, content });
+                  } else {
+                    // File too large for diff
+                    this.originalContents.set(toolUseId, { filePath, content: null });
+                  }
+                } else {
+                  // New file
+                  this.originalContents.set(toolUseId, { filePath, content: '' });
+                }
+              } catch {
+                this.originalContents.set(toolUseId, { filePath, content: null });
+              }
+            }
+          }
+
           await this.plugin.getView()?.fileContextManager?.markFileBeingEdited(
             input.tool_name,
             input.tool_input
@@ -1010,19 +1059,66 @@ export class ClaudianService {
   }
 
   /**
-   * Create PostToolUse hook to store post-edit hash after tool completion
+   * Create PostToolUse hook to store post-edit hash and compute diff after tool completion
    */
   private createFileHashPostHook(): HookCallbackMatcher {
     return {
       matcher: 'Write|Edit|NotebookEdit',
       hooks: [
-        async (hookInput) => {
+        async (hookInput, toolUseId) => {
           const input = hookInput as {
             tool_name: string;
             tool_input: Record<string, unknown>;
             tool_result?: { is_error?: boolean };
           };
           const isError = input.tool_result?.is_error ?? false;
+
+          // Compute diff for Write/Edit (if not error)
+          if (input.tool_name === 'Write' || input.tool_name === 'Edit') {
+            const originalEntry = this.originalContents.get(toolUseId);
+            const filePath = (input.tool_input.file_path as string) || originalEntry?.filePath;
+
+            if (!isError && filePath && this.vaultPath) {
+              const fullPath = path.isAbsolute(filePath)
+                ? filePath
+                : path.join(this.vaultPath, filePath);
+
+              let diffData: ToolDiffData | undefined;
+
+              // If original was too large/unavailable, propagate skip reason
+              if (originalEntry?.content === null) {
+                diffData = { filePath, skippedReason: 'too_large' };
+              } else {
+                try {
+                  if (fs.existsSync(fullPath)) {
+                    const stats = fs.statSync(fullPath);
+                    if (stats.size <= MAX_DIFF_SIZE) {
+                      const newContent = fs.readFileSync(fullPath, 'utf-8');
+                      if (originalEntry && originalEntry.content !== undefined) {
+                        diffData = { filePath, originalContent: originalEntry.content, newContent };
+                      } else {
+                        diffData = { filePath, skippedReason: 'unavailable' };
+                      }
+                    } else {
+                      diffData = { filePath, skippedReason: 'too_large' };
+                    }
+                  } else {
+                    diffData = { filePath, skippedReason: 'unavailable' };
+                  }
+                } catch {
+                  diffData = { filePath, skippedReason: 'unavailable' };
+                }
+              }
+
+              if (diffData) {
+                this.pendingDiffData.set(toolUseId, diffData);
+              }
+            }
+
+            // Clean up original content map regardless of success/error
+            this.originalContents.delete(toolUseId);
+          }
+
           await this.plugin.getView()?.fileContextManager?.trackEditedFile(
             input.tool_name,
             input.tool_input,
@@ -1032,5 +1128,24 @@ export class ClaudianService {
         },
       ],
     };
+  }
+
+  /**
+   * Get pending diff data for a tool_use_id (and remove it from pending)
+   */
+  getDiffData(toolUseId: string): ToolDiffData | undefined {
+    const data = this.pendingDiffData.get(toolUseId);
+    if (data) {
+      this.pendingDiffData.delete(toolUseId);
+    }
+    return data;
+  }
+
+  /**
+   * Clear all diff-related state (call on session reset)
+   */
+  clearDiffState(): void {
+    this.originalContents.clear();
+    this.pendingDiffData.clear();
   }
 }

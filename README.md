@@ -9,6 +9,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
 - **Inline Edit**: Edit selected text directly in notes with word-level diff preview and read-only tool access for context.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
+- **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
 - **Transparent Tooling**: Visualize tool calls, subagent activity, and track asynchronous subagent operations with detailed UI feedback.
 - **Persistent Sessions**: Save and resume conversations with full context across sessions.
@@ -181,8 +182,8 @@ src/
 - [x] Subagent visualization with nested tool tracking
 - [x] Async subagent support
 - [x] Inline edit feature
+- [x] Diff view in chat panel
 - [ ] Skills, Hooks, MCP and other advanced features
-- [ ] Diff view in chat panel
 
 ## License
 

@@ -43,6 +43,12 @@ import {
   markAsyncSubagentOrphaned,
   renderStoredAsyncSubagent,
   type AsyncSubagentState,
+  // Write/Edit diff renderer
+  createWriteEditBlock,
+  updateWriteEditWithDiff,
+  finalizeWriteEditBlock,
+  renderStoredWriteEdit,
+  type WriteEditState,
 } from './ui';
 
 export class ClaudianView extends ItemView {
@@ -59,6 +65,9 @@ export class ClaudianView extends ItemView {
   // Async subagent tracking
   private asyncSubagentManager: AsyncSubagentManager;
   private asyncSubagentStates: Map<string, AsyncSubagentState> = new Map();
+
+  // Write/Edit diff tracking
+  private writeEditStates: Map<string, WriteEditState> = new Map();
 
   // For maintaining stream order
   private currentContentEl: HTMLElement | null = null;
@@ -576,6 +585,11 @@ export class ClaudianView extends ItemView {
             } else {
               renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements);
             }
+          // Special rendering for Write/Edit with diff view
+          } else if (chunk.name === 'Write' || chunk.name === 'Edit') {
+            const state = createWriteEditBlock(this.currentContentEl!, toolCall);
+            this.writeEditStates.set(chunk.id, state);
+            this.toolCallElements.set(chunk.id, state.wrapperEl);
           } else {
             renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements);
           }
@@ -617,7 +631,19 @@ export class ClaudianView extends ItemView {
           existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
           existingToolCall.result = chunk.content;
 
-          if (this.plugin.settings.showToolUse) {
+          // Special handling for Write/Edit - update with diff
+          const writeEditState = this.writeEditStates.get(chunk.id);
+          if (writeEditState && (existingToolCall.name === 'Write' || existingToolCall.name === 'Edit')) {
+            if (!chunk.isError && !isBlocked) {
+              // Get diff data from service by tool_use_id
+              const diffData = this.plugin.agentService.getDiffData(chunk.id);
+              if (diffData) {
+                existingToolCall.diffData = diffData;
+                updateWriteEditWithDiff(writeEditState, diffData);
+              }
+            }
+            finalizeWriteEditBlock(writeEditState, chunk.isError || isBlocked);
+          } else if (this.plugin.settings.showToolUse) {
             updateToolCallResult(chunk.id, existingToolCall, this.toolCallElements);
           }
         }
@@ -776,6 +802,9 @@ export class ClaudianView extends ItemView {
             toolCall.input || {},
             chunk.isError || isBlocked
           );
+
+          // Clear any pending diff data for subagent tool calls (not shown in main panel)
+          this.plugin.agentService.getDiffData(chunk.id);
         }
         break;
       }
@@ -1259,6 +1288,9 @@ export class ClaudianView extends ItemView {
               // Special rendering for TodoWrite
               if (toolCall.name === 'TodoWrite') {
                 renderStoredTodoList(contentEl, toolCall.input);
+              // Special rendering for Write/Edit with diff
+              } else if (toolCall.name === 'Write' || toolCall.name === 'Edit') {
+                renderStoredWriteEdit(contentEl, toolCall);
               } else {
                 renderStoredToolCall(contentEl, toolCall);
               }
@@ -1287,6 +1319,9 @@ export class ClaudianView extends ItemView {
             // Special rendering for TodoWrite
             if (toolCall.name === 'TodoWrite') {
               renderStoredTodoList(contentEl, toolCall.input);
+            // Special rendering for Write/Edit with diff
+            } else if (toolCall.name === 'Write' || toolCall.name === 'Edit') {
+              renderStoredWriteEdit(contentEl, toolCall);
             } else {
               renderStoredToolCall(contentEl, toolCall);
             }
