@@ -7,7 +7,6 @@ import {
   updateWriteEditWithDiff,
   finalizeWriteEditBlock,
   renderStoredWriteEdit,
-  WriteEditState,
 } from '../src/ui/WriteEditRenderer';
 import { ToolCallInfo, ToolDiffData } from '../src/types';
 
@@ -181,7 +180,7 @@ describe('WriteEditRenderer', () => {
       expect(state.wrapperEl.hasClass('expanded')).toBe(true);
 
       // Trigger click
-      const clickHandlers = state.headerEl._eventListeners.get('click') || [];
+      const clickHandlers = (state.headerEl as any)._eventListeners.get('click') || [];
       expect(clickHandlers.length).toBeGreaterThan(0);
       clickHandlers[0]();
 
@@ -236,6 +235,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: 'line1\nline2',
         newContent: 'line1\nline2\nline3',
       };
@@ -243,7 +243,7 @@ describe('WriteEditRenderer', () => {
       updateWriteEditWithDiff(state, diffData);
 
       // Should show +1 for added line
-      expect(state.statsEl._children.length).toBeGreaterThan(0);
+      expect((state.statsEl as any)._children.length).toBeGreaterThan(0);
     });
 
     it('should display "Diff skipped: file too large" for too_large', () => {
@@ -252,6 +252,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         skippedReason: 'too_large',
       };
 
@@ -268,6 +269,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         skippedReason: 'unavailable',
       };
 
@@ -283,6 +285,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: undefined,
         newContent: undefined,
       };
@@ -299,6 +302,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: 'normal text',
         newContent: 'binary\x00content',
       };
@@ -315,6 +319,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: 'old',
         newContent: 'new',
       };
@@ -331,6 +336,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: 'old1\nold2',
         newContent: 'new1',
       };
@@ -338,7 +344,7 @@ describe('WriteEditRenderer', () => {
       updateWriteEditWithDiff(state, diffData);
 
       // Should have stats children
-      expect(state.statsEl._children.length).toBeGreaterThan(0);
+      expect((state.statsEl as any)._children.length).toBeGreaterThan(0);
     });
   });
 
@@ -350,6 +356,7 @@ describe('WriteEditRenderer', () => {
 
       // Add diff data first
       updateWriteEditWithDiff(state, {
+        filePath: 'test.md',
         originalContent: 'old',
         newContent: 'new',
       });
@@ -390,7 +397,7 @@ describe('WriteEditRenderer', () => {
       finalizeWriteEditBlock(state, false);
 
       expect(state.statusEl.hasClass('status-running')).toBe(false);
-      expect(state.statusEl._children.length).toBe(0);
+      expect((state.statusEl as any)._children.length).toBe(0);
     });
   });
 
@@ -436,6 +443,7 @@ describe('WriteEditRenderer', () => {
       const toolCall = createToolCall({
         status: 'completed',
         diffData: {
+          filePath: 'test.md',
           originalContent: 'old line',
           newContent: 'new line\nanother line',
         },
@@ -451,7 +459,7 @@ describe('WriteEditRenderer', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall({
         status: 'completed',
-        diffData: { skippedReason: 'too_large' },
+        diffData: { filePath: 'test.md', skippedReason: 'too_large' },
       });
 
       const block = renderStoredWriteEdit(parentEl, toolCall);
@@ -481,7 +489,7 @@ describe('WriteEditRenderer', () => {
       expect(block.hasClass('expanded')).toBe(false);
 
       // Find header and trigger click
-      const header = block._children.find((c: any) =>
+      const header = (block as any)._children.find((c: any) =>
         c.hasClass('claudian-write-edit-header')
       );
       expect(header).toBeDefined();
@@ -507,7 +515,7 @@ describe('WriteEditRenderer', () => {
       const toolCall = createToolCall({ status: 'completed' });
 
       const block = renderStoredWriteEdit(parentEl, toolCall);
-      const header = block._children.find((c: any) =>
+      const header = (block as any)._children.find((c: any) =>
         c.hasClass('claudian-write-edit-header')
       );
 
@@ -569,6 +577,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: '',
         newContent: 'new content\nline 2',
       };
@@ -586,6 +595,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: 'content',
         newContent: '',
       };
@@ -603,6 +613,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
+        filePath: 'test.md',
         originalContent: 'line1\nold\nline3',
         newContent: 'line1\nnew1\nnew2\nline3',
       };

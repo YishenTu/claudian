@@ -568,7 +568,7 @@ describe('ClaudianService', () => {
       ];
 
       const chunks: any[] = [];
-      for await (const chunk of service.query('new message', history)) {
+      for await (const chunk of service.query('new message', undefined, history)) {
         chunks.push(chunk);
       }
 
@@ -1215,13 +1215,13 @@ describe('ClaudianService', () => {
       service.setSessionId('stale-session');
       const prompts: string[] = [];
 
-      jest.spyOn(service as any, 'queryViaSDK').mockImplementation(async function* (prompt: string) {
+      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (prompt: string) {
         prompts.push(prompt);
         if (prompts.length === 1) {
           throw new Error('Session expired');
         }
         yield { type: 'text', content: 'Recovered' };
-      });
+      }) as any);
 
       const history = [
         { id: 'msg-1', role: 'user' as const, content: 'First question', timestamp: Date.now() },
@@ -1231,7 +1231,7 @@ describe('ClaudianService', () => {
           content: 'Answer',
           timestamp: Date.now(),
           toolCalls: [
-            { id: 'tool-1', name: 'Read', input: { file_path: '/test/vault/path/file.md' }, status: 'completed', result: 'file content' },
+            { id: 'tool-1', name: 'Read', input: { file_path: '/test/vault/path/file.md' }, status: 'completed' as const, result: 'file content' },
           ],
         },
         { id: 'msg-3', role: 'user' as const, content: 'Follow up', timestamp: Date.now(), contextFiles: ['note.md'] },
@@ -1384,7 +1384,7 @@ describe('ClaudianService', () => {
       ];
 
       expect(toolChunks[0]).toEqual(expect.objectContaining({ type: 'tool_use', id: 't1', name: 'Read' }));
-      expect(textChunks.map((c) => c.content).join('')).toBe('hello world');
+      expect(textChunks.map((c: any) => c.content).join('')).toBe('hello world');
     });
   });
 

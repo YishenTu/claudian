@@ -8,6 +8,11 @@ import { createHash } from 'crypto';
 import { ClaudianView } from '../src/ClaudianView';
 import { FileContextManager } from '../src/ui/FileContext';
 
+// Helper to create TFile with path (mock accepts path argument, but TS types don't)
+function createTFile(path: string): TFile {
+  return new (TFile as any)(path);
+}
+
 // Helper to create a mock plugin
 function createMockPlugin(settingsOverrides = {}) {
   // Track registered event handlers for vault events
@@ -417,7 +422,7 @@ describe('FileContextManager - File Chip Click Handlers', () => {
   describe('Opening files on chip click', () => {
     it('should open file in new tab when chip is clicked', async () => {
       const filePath = 'notes/test.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
 
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
@@ -605,7 +610,7 @@ describe('FileContextManager - Excluded Tags', () => {
   describe('hasExcludedTag', () => {
     it('should return false when excludedTags is empty', () => {
       mockPlugin.settings.excludedTags = [];
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -614,7 +619,7 @@ describe('FileContextManager - Excluded Tags', () => {
 
     it('should return false when file has no cache', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue(null);
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -623,7 +628,7 @@ describe('FileContextManager - Excluded Tags', () => {
 
     it('should return false when file has no tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({});
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -634,7 +639,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: ['system', 'notes'] },
       });
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -645,7 +650,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: 'system' },
       });
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -656,7 +661,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         tags: [{ tag: '#system', position: { start: { line: 5 } } }],
       });
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -667,7 +672,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: ['#system'] },
       });
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -679,7 +684,7 @@ describe('FileContextManager - Excluded Tags', () => {
         frontmatter: { tags: ['notes', 'journal'] },
         tags: [{ tag: '#todo' }],
       });
-      const file = new TFile('notes/test.md');
+      const file = createTFile('notes/test.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -690,7 +695,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: ['private'] },  // 'private' is in excludedTags
       });
-      const file = new TFile('notes/secret.md');
+      const file = createTFile('notes/secret.md');
 
       const result = (fileContextManager as any).hasExcludedTag(file);
 
@@ -703,7 +708,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: ['system'] },
       });
-      const file = new TFile('notes/system-file.md');
+      const file = createTFile('notes/system-file.md');
 
       // Simulate the check that happens during file-open
       const hasExcluded = (fileContextManager as any).hasExcludedTag(file);
@@ -716,7 +721,7 @@ describe('FileContextManager - Excluded Tags', () => {
       mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: ['notes'] },
       });
-      const file = new TFile('notes/normal-file.md');
+      const file = createTFile('notes/normal-file.md');
 
       const hasExcluded = (fileContextManager as any).hasExcludedTag(file);
 
@@ -739,7 +744,7 @@ describe('FileContextManager - File Hash Tracking', () => {
   describe('markFileBeingEdited', () => {
     it('should mark file as being edited and capture original hash', async () => {
       const filePath = 'notes/test.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
       mockPlugin.app.vault.read.mockResolvedValue('original content');
 
@@ -773,7 +778,7 @@ describe('FileContextManager - File Hash Tracking', () => {
   describe('trackEditedFile with hash tracking', () => {
     it('should store post-edit hash after successful edit', async () => {
       const filePath = 'notes/test.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
       mockPlugin.app.vault.read
         .mockResolvedValueOnce('original content')  // For markFileBeingEdited
@@ -788,7 +793,7 @@ describe('FileContextManager - File Hash Tracking', () => {
 
     it('should remove tracking if content reverts to original', async () => {
       const filePath = 'notes/test.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
       // Same content for both reads = revert to original
       mockPlugin.app.vault.read.mockResolvedValue('same content');
@@ -849,7 +854,7 @@ describe('FileContextManager - File Hash Tracking', () => {
       });
 
       // Trigger delete event
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       (fileContextManager as any).handleFileDeleted(filePath);
 
       expect((fileContextManager as any).editedFilesThisSession.has(filePath)).toBe(false);
@@ -908,7 +913,7 @@ describe('FileContextManager - File Hash Tracking', () => {
   describe('File revert detection', () => {
     it('should remove chip when content reverts to original', async () => {
       const filePath = 'notes/reverted.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
       // Setup: file was edited
@@ -928,7 +933,7 @@ describe('FileContextManager - File Hash Tracking', () => {
 
     it('should keep chip when content differs from both original and edit', async () => {
       const filePath = 'notes/modified.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
       // Setup: file was edited
@@ -949,7 +954,7 @@ describe('FileContextManager - File Hash Tracking', () => {
 
     it('should keep chip when only middle content changes with same length and boundaries', async () => {
       const filePath = 'notes/boundary-change.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
       const originalContent = 'A'.repeat(100) + '1234567890' + 'B'.repeat(100);
@@ -970,7 +975,7 @@ describe('FileContextManager - File Hash Tracking', () => {
 
     it('should ignore modify events while file is being edited', async () => {
       const filePath = 'notes/being-edited.md';
-      const mockFile = new TFile(filePath);
+      const mockFile = createTFile(filePath);
       mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
       // Setup: file is being edited by Claude
@@ -1245,7 +1250,7 @@ describe('FileContextManager - @ Mention Dropdown', () => {
     it('should keep dropdown open when typing continuous text', () => {
       // Mock the markdown files
       mockPlugin.app.vault.getMarkdownFiles.mockReturnValue([
-        new TFile('notes/test.md'),
+        createTFile('notes/test.md'),
       ]);
 
       inputEl.value = '@test';
@@ -1314,7 +1319,7 @@ describe('FileContextManager - @ Mention Dropdown', () => {
     it('should handle ArrowDown navigation', () => {
       (fileContextManager as any).mentionDropdown = createMockElement('div');
       (fileContextManager as any).mentionDropdown.addClass('visible');
-      (fileContextManager as any).filteredFiles = [new TFile('a.md'), new TFile('b.md')];
+      (fileContextManager as any).filteredFiles = [createTFile('a.md'), createTFile('b.md')];
       (fileContextManager as any).selectedMentionIndex = 0;
 
       const event = { key: 'ArrowDown', preventDefault: jest.fn() } as any;
@@ -1328,7 +1333,7 @@ describe('FileContextManager - @ Mention Dropdown', () => {
     it('should handle ArrowUp navigation', () => {
       (fileContextManager as any).mentionDropdown = createMockElement('div');
       (fileContextManager as any).mentionDropdown.addClass('visible');
-      (fileContextManager as any).filteredFiles = [new TFile('a.md'), new TFile('b.md')];
+      (fileContextManager as any).filteredFiles = [createTFile('a.md'), createTFile('b.md')];
       (fileContextManager as any).selectedMentionIndex = 1;
 
       const event = { key: 'ArrowUp', preventDefault: jest.fn() } as any;
@@ -1342,7 +1347,7 @@ describe('FileContextManager - @ Mention Dropdown', () => {
     it('should handle Tab for selection', () => {
       (fileContextManager as any).mentionDropdown = createMockElement('div');
       (fileContextManager as any).mentionDropdown.addClass('visible');
-      (fileContextManager as any).filteredFiles = [new TFile('file.md')];
+      (fileContextManager as any).filteredFiles = [createTFile('file.md')];
 
       const event = { key: 'Tab', preventDefault: jest.fn() } as any;
 

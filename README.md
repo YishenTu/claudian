@@ -9,7 +9,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Full Agentic Capabilities**: Leverage Claude Code's power to read, write, and edit files, and execute bash commands, all within your Obsidian vault.
 - **Context-Aware**: Automatically attach the focused note, mention files with `@`, and exclude notes by tag for precise context management.
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
-- **Inline Edit**: Edit selected text directly in notes with word-level diff preview and read-only tool access for context.
+- **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
@@ -83,24 +83,11 @@ Send images to Claude via drag-and-drop, paste (Cmd/Ctrl+V), or file path in you
 
 Interact with text directly in your notes - ask questions, request edits, or insert new content - without opening the sidebar chat.
 
-**Two modes:**
-- **Selection mode**: Select text, then press hotkey to edit or ask about the selection
-- **Cursor mode**: Place cursor (no selection), then press hotkey to insert content at cursor position
-
-**How to use:**
-1. **Select text** or **place cursor** in any note
-2. **Press hotkey** (configure via Settings → Hotkeys → "Claudian: Inline edit")
-3. **Enter request** - question, edit instruction, or insert request
-4. **View response** - questions get answers, edits/insertions show inline diff preview
-5. **Accept (Enter) or Reject (Esc)**
-
 **Features:**
 - **Selection & cursor modes**: Edit selected text or insert at cursor position
 - **Multi-turn conversation**: Agent can ask clarifying questions
 - **Read-only tools**: Agent can read files and search the web for context
 - **Inline diff**: Word-level diff with red strikethrough (deletions) and green highlight (insertions)
-
-The inline edit agent has access to `Read`, `Grep`, `Glob`, `LS`, `WebSearch`, and `WebFetch` tools for gathering context, but write tools are blocked.
 
 ### Example prompts
 
@@ -119,10 +106,10 @@ The inline edit agent has access to `Read`, `Grep`, `Glob`, `LS`, `WebSearch`, a
 - **Show tool usage**: Display file operations in chat
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
-- **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
-- **Environment snippets**: Save and restore environment variable configurations
 - **Permission mode**: Toggle Yolo (bypass prompts) or Safe (require approval)
 - **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
+- **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
+- **Environment snippets**: Save and restore environment variable configurations
 
 ### Safety and permissions
 
@@ -191,7 +178,6 @@ src/
 - [x] Inline edit feature
 - [x] Diff view in chat panel
 - [x] Cursor position awareness in inline edit
-- [ ] Selection/cursor awareness in main agent
 - [ ] `#` to saved in customization prompt
 - [ ] Enhance robustness of permissions setting 
 - [ ] Skills, Hooks, MCP and other advanced features

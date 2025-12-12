@@ -144,27 +144,12 @@ describe('types.ts', () => {
         name: 'Production Config',
         description: 'Production environment variables',
         envVars: 'API_KEY=prod-key\nDEBUG=false',
-        createdAt: 1700000000000,
       };
 
       expect(snippet.id).toBe('snippet-123');
       expect(snippet.name).toBe('Production Config');
       expect(snippet.description).toBe('Production environment variables');
       expect(snippet.envVars).toContain('API_KEY=prod-key');
-      expect(snippet.createdAt).toBe(1700000000000);
-    });
-
-    it('should accept optional lastUsed field', () => {
-      const snippet: EnvSnippet = {
-        id: 'snippet-456',
-        name: 'Dev Config',
-        description: 'Development settings',
-        envVars: 'DEBUG=true',
-        createdAt: 1700000000000,
-        lastUsed: 1700000001000,
-      };
-
-      expect(snippet.lastUsed).toBe(1700000001000);
     });
 
     it('should allow empty description', () => {
@@ -173,7 +158,6 @@ describe('types.ts', () => {
         name: 'Quick Config',
         description: '',
         envVars: 'KEY=value',
-        createdAt: Date.now(),
       };
 
       expect(snippet.description).toBe('');

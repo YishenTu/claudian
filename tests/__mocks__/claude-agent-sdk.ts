@@ -15,6 +15,7 @@ export interface Options {
   pathToClaudeCodeExecutable?: string;
   resume?: string;
   maxThinkingTokens?: number;
+  canUseTool?: CanUseTool;
   hooks?: {
     PreToolUse?: HookCallbackMatcher[];
   };
@@ -84,7 +85,7 @@ async function runPreToolUseHooks(
 }
 
 // Mock query function that returns an async generator
-export function query({ prompt, options }: { prompt: string; options: Options }): AsyncGenerator<any> & { interrupt: () => Promise<void> } {
+export function query({ prompt: _prompt, options }: { prompt: string; options: Options }): AsyncGenerator<any> & { interrupt: () => Promise<void> } {
   const messages = customMockMessages || mockMessages;
   lastOptions = options;
 
@@ -128,7 +129,7 @@ export function query({ prompt, options }: { prompt: string; options: Options })
     }
   };
 
-  const gen = generator() as AsyncGenerator<any> & { interrupt: () => Promise<void> };
+  const gen = generator() as AsyncGenerator<any> & { interrupt: jest.Mock };
   gen.interrupt = jest.fn().mockResolvedValue(undefined);
   lastResponse = gen;
 
