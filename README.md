@@ -177,7 +177,7 @@ src/
 - [x] Extended thinking display
 - [x] Model selection
 - [x] Thinking token budget adjustment
-- [x] Permission modes (Yolo/Safe)
+- [x] Permission modes (YOLO/Safe)
 - [x] Edited files indicator for Claude edits
 - [x] Environment variables support with snippet management
 - [x] Image support
@@ -185,6 +185,10 @@ src/
 - [x] Async subagent support
 - [x] Inline edit feature
 - [x] Diff view in chat panel
+- [ ] Cursor postion awareness 
+- [ ] Selected or cursor position awareness in main agnet
+- [ ] `#` to saved in customization prompt
+- [ ] Enhance robustness of permissions setting 
 - [ ] Skills, Hooks, MCP and other advanced features
 
 ## License
