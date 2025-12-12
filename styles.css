@@ -321,15 +321,33 @@
   margin-bottom: 0;
 }
 
+/* Code block wrapper - contains pre + button outside scroll area */
+.claudian-code-wrapper {
+  position: relative;
+  margin: 8px 0;
+}
+
 /* Code blocks in chat messages */
+.claudian-code-wrapper pre,
 .claudian-message-content pre {
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   padding: 8px 12px;
   border-radius: 6px;
   overflow-x: auto;
+  margin: 0;
+}
+
+/* Code blocks without language - wrap content */
+.claudian-code-wrapper:not(.has-language) pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: hidden;
+}
+
+/* Unwrapped pre still needs margin */
+.claudian-message-content > pre {
   margin: 8px 0;
-  position: relative;
 }
 
 .claudian-message-content code {
@@ -337,8 +355,8 @@
   font-size: 13px;
 }
 
-/* Clickable language label - acts as copy button */
-.claudian-code-lang-label {
+/* Clickable language label - positioned outside scroll area */
+.claudian-code-wrapper .claudian-code-lang-label {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -353,18 +371,18 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 
-.claudian-code-lang-label:hover {
+.claudian-code-wrapper .claudian-code-lang-label:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
 
 /* Hide default copy button when language label exists */
-.claudian-message-content pre.has-language .copy-code-button {
+.claudian-code-wrapper.has-language .copy-code-button {
   display: none;
 }
 
-/* Copy button - for code blocks without language */
-.claudian-message-content .copy-code-button {
+/* Copy button - positioned outside scroll area */
+.claudian-code-wrapper .copy-code-button {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -381,17 +399,17 @@
 }
 
 /* If copy button uses an icon (svg) */
-.claudian-message-content .copy-code-button svg {
+.claudian-code-wrapper .copy-code-button svg {
   width: 14px;
   height: 14px;
 }
 
-/* Show copy button on hover (only for blocks without language) */
-.claudian-message-content pre:not(.has-language):hover .copy-code-button {
+/* Show copy button on hover */
+.claudian-code-wrapper:not(.has-language):hover .copy-code-button {
   opacity: 1;
 }
 
-.claudian-message-content .copy-code-button:hover {
+.claudian-code-wrapper .copy-code-button:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
@@ -586,12 +604,14 @@
   margin-bottom: 0;
 }
 
-.claudian-thinking-content pre {
-  background: var(--background-secondary);
+/* Thinking content code blocks - inherits from wrapper, adjust spacing */
+.claudian-thinking-content .claudian-code-wrapper {
+  margin: 8px 0;
+}
+
+.claudian-thinking-content .claudian-code-wrapper pre {
   padding: 8px 10px;
   border-radius: 4px;
-  margin: 8px 0;
-  overflow-x: auto;
 }
 
 .claudian-thinking-content code {

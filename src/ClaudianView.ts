@@ -973,23 +973,39 @@ export class ClaudianView extends ItemView {
     el.empty();
     await MarkdownRenderer.renderMarkdown(markdown, el, '', this);
 
-    // Add clickable language label to code blocks
-    el.querySelectorAll('pre > code[class*="language-"]').forEach((code) => {
-      const pre = code.parentElement;
-      if (pre) {
+    // Wrap pre elements and move buttons outside scroll area
+    el.querySelectorAll('pre').forEach((pre) => {
+      // Skip if already wrapped
+      if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
+
+      // Create wrapper
+      const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
+      pre.parentElement?.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      // Check for language class and add label
+      const code = pre.querySelector('code[class*="language-"]');
+      if (code) {
         const match = code.className.match(/language-(\w+)/);
         if (match) {
-          pre.classList.add('has-language');
-          const label = pre.createEl('span', {
+          wrapper.classList.add('has-language');
+          const label = createEl('span', {
             cls: 'claudian-code-lang-label',
             text: match[1],
           });
+          wrapper.appendChild(label);
           label.addEventListener('click', async () => {
             await navigator.clipboard.writeText(code.textContent || '');
             label.setText('copied!');
             setTimeout(() => label.setText(match[1]), 1500);
           });
         }
+      }
+
+      // Move Obsidian's copy button outside pre into wrapper
+      const copyBtn = pre.querySelector('.copy-code-button');
+      if (copyBtn) {
+        wrapper.appendChild(copyBtn);
       }
     });
   }
