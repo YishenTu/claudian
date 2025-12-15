@@ -114,3 +114,18 @@ export {
   SlashCommandSettings,
   SlashCommandModal,
 } from './SlashCommandSettings';
+
+export {
+  InstructionModeManager,
+  type InstructionModeCallbacks,
+  type InstructionModeState,
+} from './InstructionModeManager';
+
+export {
+  InstructionModal,
+  InstructionConfirmModal,
+  InstructionClarificationModal,
+  type InstructionDecision,
+  type InstructionModalCallbacks,
+  type ClarificationSubmitCallback,
+} from './InstructionConfirmModal';

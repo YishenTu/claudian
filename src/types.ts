@@ -86,6 +86,14 @@ export interface SlashCommand {
   content: string;             // Prompt template with placeholders
 }
 
+/** Result from instruction refinement agent query. */
+export interface InstructionRefineResult {
+  success: boolean;
+  refinedInstruction?: string;  // The refined instruction text
+  clarification?: string;       // Agent's clarifying question (if any)
+  error?: string;               // Error message (if failed)
+}
+
 export const DEFAULT_SETTINGS: ClaudianSettings = {
   enableBlocklist: true,
   blockedCommands: [

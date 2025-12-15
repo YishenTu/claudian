@@ -166,6 +166,26 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
   return result;
 }
 
+/** Appends a Markdown snippet to an existing prompt with sensible spacing. */
+export function appendMarkdownSnippet(existingPrompt: string, snippet: string): string {
+  const trimmedSnippet = snippet.trim();
+  if (!trimmedSnippet) {
+    return existingPrompt;
+  }
+
+  if (!existingPrompt.trim()) {
+    return trimmedSnippet;
+  }
+
+  const separator = existingPrompt.endsWith('\n\n')
+    ? ''
+    : existingPrompt.endsWith('\n')
+      ? '\n'
+      : '\n\n';
+
+  return existingPrompt + separator + trimmedSnippet;
+}
+
 /**
  * Checks if a bash command should be blocked by user-defined patterns.
  * Patterns are treated as case-insensitive regex; invalid regex falls back to substring match.

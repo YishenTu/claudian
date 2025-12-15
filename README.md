@@ -11,6 +11,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
 - **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
+- **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input, with review/edit in a modal.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
@@ -101,6 +102,17 @@ Define commands in Settings → Claudian → Slash Commands, then type `/` in th
 
 The UI displays the original `/command ...`, while the expanded prompt is what gets sent and stored in history.
 
+### Instruction Mode (`#`)
+
+Use `#` at the start of the chat input to add a refined instruction to Settings → Custom system prompt.
+
+1. Type `#` (or `# `) at the start of your message to enter instruction mode
+2. Type your instruction and press Enter
+3. A modal opens immediately (loading → clarification or confirmation)
+4. Review the refined snippet, optionally edit it, then Accept to save
+
+Accepted content is appended to the custom system prompt as-is. The agent decides the best Markdown format (single bullet, multiple bullets, or a small section).
+
 ### Example prompts
 
 - "List all notes in this vault"
@@ -119,6 +131,7 @@ The UI displays the original `/command ...`, while the expanded prompt is what g
 - **Show tool usage**: Display file operations in chat
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
+- **Custom system prompt**: Additional instructions appended to the default system prompt (Instruction Mode `#` saves here)
 - **Permission mode**: Toggle YOLO (bypass prompts) or Safe (require approval)
 - **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
 - **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
@@ -164,6 +177,7 @@ src/
 ├── types.ts             # Type definitions
 ├── utils.ts             # Utility functions
 ├── InlineEditService.ts # Lightweight Claude service for inline editing
+├── InstructionRefineService.ts # Lightweight Claude service for refining # instructions
 └── ui/                  # Modular UI components
     ├── index.ts              # Barrel export
     ├── ApprovalModal.ts      # Permission approval dialog
@@ -178,7 +192,9 @@ src/
     ├── TodoListRenderer.ts   # Todo list UI for task tracking
     ├── SubagentRenderer.ts   # Subagent UI component
     ├── EnvSnippetManager.ts  # Environment variable snippets
-    └── InlineEditModal.ts    # Inline edit UI (CM6 decorations, diff view)
+    ├── InlineEditModal.ts    # Inline edit UI (CM6 decorations, diff view)
+    ├── InstructionModeManager.ts # # instruction mode detection and UI state
+    └── InstructionConfirmModal.ts # Unified instruction modal (loading/clarification/confirmation)
 ```
 
 ## Roadmap
@@ -201,7 +217,7 @@ src/
 - [x] Diff view in chat panel
 - [x] Cursor position awareness in inline edit
 - [x] Slash commands
-- [ ] `#` to saved in customization prompt
+- [x] Instruction mode (`#`) to save in custom system prompt
 - [ ] Skills, Hooks, MCP and other advanced features
 
 ## License

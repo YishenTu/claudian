@@ -11,7 +11,7 @@ import * as path from 'path';
 import type ClaudianPlugin from './main';
 import { VIEW_TYPE_CLAUDIAN, ChatMessage, StreamChunk, ToolCallInfo, ContentBlock, ClaudeModel, ThinkingBudget, DEFAULT_THINKING_BUDGET, DEFAULT_CLAUDE_MODELS, ImageAttachment, SubagentInfo } from './types';
 import { AsyncSubagentManager } from './AsyncSubagentManager';
-import { getVaultPath, isCommandBlocked } from './utils';
+import { getVaultPath, isCommandBlocked, appendMarkdownSnippet } from './utils';
 import { readCachedImageBase64 } from './imageCache';
 
 import {
@@ -58,7 +58,11 @@ import {
   // Slash commands
   SlashCommandManager,
   SlashCommandDropdown,
+  // Instruction mode
+  InstructionModeManager,
+  InstructionModal,
 } from './ui';
+import { InstructionRefineService } from './InstructionRefineService';
 
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {
@@ -86,6 +90,9 @@ export class ClaudianView extends ItemView {
   private permissionToggle: PermissionToggle | null = null;
   private slashCommandManager: SlashCommandManager | null = null;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
+  private instructionModeManager: InstructionModeManager | null = null;
+  private instructionRefineService: InstructionRefineService | null = null;
+  private inputWrapper: HTMLElement | null = null;
   private cancelRequested = false;
 
   private static readonly FLAVOR_TEXTS = [
@@ -192,9 +199,9 @@ export class ClaudianView extends ItemView {
 
     const inputContainerEl = container.createDiv({ cls: 'claudian-input-container' });
 
-    const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
+    this.inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
 
-    this.inputEl = inputWrapper.createEl('textarea', {
+    this.inputEl = this.inputWrapper.createEl('textarea', {
       cls: 'claudian-input',
       attr: {
         placeholder: 'Ask Claudian anything...\n\n(Enter to send, Shift+Enter for newline)',
@@ -241,12 +248,22 @@ export class ClaudianView extends ItemView {
       );
     }
 
+    // Initialize instruction mode manager and refine service
+    this.instructionRefineService = new InstructionRefineService(this.plugin);
+    this.instructionModeManager = new InstructionModeManager(
+      this.inputEl,
+      {
+        onSubmit: (rawInstruction) => this.handleInstructionSubmit(rawInstruction),
+        getInputWrapper: () => this.inputWrapper,
+      }
+    );
+
     this.registerEvent(this.plugin.app.vault.on('create', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('delete', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('rename', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('modify', () => this.fileContextManager?.markFilesCacheDirty()));
 
-    const inputToolbar = inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
+    const inputToolbar = this.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
     const toolbarComponents = createInputToolbar(inputToolbar, {
       getSettings: () => ({
         model: this.plugin.settings.model,
@@ -284,7 +301,12 @@ export class ClaudianView extends ItemView {
     this.permissionToggle = toolbarComponents.permissionToggle;
 
     this.inputEl.addEventListener('keydown', (e) => {
-      // Check slash command dropdown first
+      // Check instruction mode first (# at start)
+      if (this.instructionModeManager?.handleKeydown(e)) {
+        return;
+      }
+
+      // Check slash command dropdown
       if (this.slashCommandDropdown?.handleKeydown(e)) {
         return;
       }
@@ -305,7 +327,10 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    this.inputEl.addEventListener('input', () => this.fileContextManager?.handleInputChange());
+    this.inputEl.addEventListener('input', () => {
+      this.fileContextManager?.handleInputChange();
+      this.instructionModeManager?.handleInputChange();
+    });
 
     this.registerDomEvent(document, 'click', (e) => {
       if (!this.fileContextManager?.containsElement(e.target as Node) && e.target !== this.inputEl) {
@@ -335,6 +360,10 @@ export class ClaudianView extends ItemView {
     this.slashCommandDropdown?.destroy();
     this.slashCommandDropdown = null;
     this.slashCommandManager = null;
+    this.instructionModeManager?.destroy();
+    this.instructionModeManager = null;
+    this.instructionRefineService?.cancel();
+    this.instructionRefineService = null;
     this.asyncSubagentManager.orphanAllActive();
     this.asyncSubagentStates.clear();
     await this.saveCurrentConversation();
@@ -490,6 +519,104 @@ export class ClaudianView extends ItemView {
       this.activeSubagents.clear();
 
       await this.saveCurrentConversation();
+    }
+  }
+
+  /** Handles instruction mode submission - opens modal immediately and refines. */
+  private async handleInstructionSubmit(rawInstruction: string): Promise<void> {
+    if (!this.instructionRefineService) return;
+
+    const existingPrompt = this.plugin.settings.systemPrompt;
+    let modal: InstructionModal | null = null;
+    let wasCancelled = false;
+
+    try {
+      // Open modal immediately in loading state
+      modal = new InstructionModal(
+        this.plugin.app,
+        rawInstruction,
+        {
+          onAccept: async (finalInstruction) => {
+            // Append to system prompt
+            const currentPrompt = this.plugin.settings.systemPrompt;
+            this.plugin.settings.systemPrompt = appendMarkdownSnippet(currentPrompt, finalInstruction);
+            await this.plugin.saveSettings();
+
+            new Notice('Instruction added to custom system prompt');
+            this.instructionModeManager?.clear();
+          },
+          onReject: () => {
+            wasCancelled = true;
+            this.instructionRefineService?.cancel();
+            this.instructionModeManager?.clear();
+          },
+          onClarificationSubmit: async (response) => {
+            // Continue conversation with user's response
+            const result = await this.instructionRefineService!.continueConversation(response);
+
+            if (wasCancelled) {
+              return;
+            }
+
+            if (!result.success) {
+              if (result.error === 'Cancelled') {
+                return;
+              }
+              new Notice(result.error || 'Failed to process response');
+              modal?.showError(result.error || 'Failed to process response');
+              return;
+            }
+
+            if (result.clarification) {
+              // Another clarification needed
+              modal?.showClarification(result.clarification);
+            } else if (result.refinedInstruction) {
+              // Got final instruction
+              modal?.showConfirmation(result.refinedInstruction);
+            }
+          }
+        }
+      );
+      modal.open();
+
+      // Start refining (modal shows loading state)
+      this.instructionRefineService.resetConversation();
+      const result = await this.instructionRefineService.refineInstruction(
+        rawInstruction,
+        existingPrompt
+      );
+
+      if (wasCancelled) {
+        return;
+      }
+
+      if (!result.success) {
+        if (result.error === 'Cancelled') {
+          this.instructionModeManager?.clear();
+          return;
+        }
+        new Notice(result.error || 'Failed to refine instruction');
+        modal.showError(result.error || 'Failed to refine instruction');
+        this.instructionModeManager?.clear();
+        return;
+      }
+
+      if (result.clarification) {
+        // Agent needs clarification
+        modal.showClarification(result.clarification);
+      } else if (result.refinedInstruction) {
+        // Got final instruction - show confirmation
+        modal.showConfirmation(result.refinedInstruction);
+      } else {
+        new Notice('No instruction received');
+        modal.showError('No instruction received');
+        this.instructionModeManager?.clear();
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      new Notice(`Error: ${errorMsg}`);
+      modal?.showError(errorMsg);
+      this.instructionModeManager?.clear();
     }
   }
 

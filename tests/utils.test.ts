@@ -6,6 +6,7 @@ import {
   findClaudeCLIPath,
   isPathWithinVault,
   isPathInAllowedExportPaths,
+  appendMarkdownSnippet,
 } from '../src/utils';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -175,6 +176,34 @@ describe('utils.ts', () => {
       expect(result).toEqual({
         MESSAGE: 'Hello World',
       });
+    });
+  });
+
+  describe('appendMarkdownSnippet', () => {
+    it('should append snippet as-is when existing prompt is empty', () => {
+      expect(appendMarkdownSnippet('', '  - Test  ')).toBe('- Test');
+    });
+
+    it('should append snippet with a blank line separator by default', () => {
+      const existing = '## Existing\n\n- A';
+      const snippet = '## New\n\n- B';
+      expect(appendMarkdownSnippet(existing, snippet)).toBe('## Existing\n\n- A\n\n## New\n\n- B');
+    });
+
+    it('should ensure a blank line separation when existing ends with a newline', () => {
+      const existing = '## Existing\n';
+      const snippet = '- B';
+      expect(appendMarkdownSnippet(existing, snippet)).toBe('## Existing\n\n- B');
+    });
+
+    it('should not add extra spacing when existing ends with a blank line', () => {
+      const existing = '## Existing\n\n';
+      const snippet = '- B';
+      expect(appendMarkdownSnippet(existing, snippet)).toBe('## Existing\n\n- B');
+    });
+
+    it('should return existing prompt unchanged when snippet is empty', () => {
+      expect(appendMarkdownSnippet('## Existing', '   ')).toBe('## Existing');
     });
   });
 

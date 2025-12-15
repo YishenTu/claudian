@@ -19,6 +19,7 @@ src/
 ├── utils.ts             # Utility functions (getVaultPath, env var parsing, model detection)
 ├── AsyncSubagentManager.ts # Async subagent state machine (Task → AgentOutputTool)
 ├── InlineEditService.ts # Lightweight Claude query service for inline text editing
+├── InstructionRefineService.ts # Lightweight Claude query service for refining # instructions
 ├── ui/DiffRenderer.ts   # Diff utilities (LCS, hunking, render helpers)
 ├── ui/WriteEditRenderer.ts # Subagent-style Write/Edit diff blocks
 └── ui/                  # Modular UI components
@@ -36,7 +37,9 @@ src/
     ├── SubagentRenderer.ts   # Subagent (Task tool) collapsible UI with nested tools
     ├── EnvSnippetManager.ts  # Environment variable snippet management
     ├── InlineEditModal.ts    # Inline edit modal with diff preview
-    └── inlineEditUtils.ts    # Pure utility functions (normalizeInsertionText, escapeHtml)
+    ├── inlineEditUtils.ts    # Pure utility functions (normalizeInsertionText, escapeHtml)
+    ├── InstructionModeManager.ts # # instruction mode detection and UI state
+    └── InstructionConfirmModal.ts # Unified instruction modal (loading/clarification/confirmation)
 ```
 
 ### UI Component Responsibilities
@@ -59,6 +62,8 @@ src/
 | `DiffRenderer` | Line diff computation and rendering helpers |
 | `EnvSnippetManager` | Environment variable snippet save/restore |
 | `InlineEditModal` | Inline text editing with instruction input, @mentions, and inline diff preview |
+| `InstructionModeManager` | `#` instruction mode detection, light blue border indicator, keyboard handling |
+| `InstructionConfirmModal` | Unified modal for loading/clarification/confirmation and accepting refined instructions |
 
 ## Key Technologies
 
@@ -465,6 +470,53 @@ Or drag an image and type:
 What's wrong with this error screenshot?
 ```
 
+## Instruction Mode (`#`)
+
+Add custom instructions to the system prompt via the chat input using `#` as a trigger.
+
+### How to Use
+
+1. Type `#` (or `# `) at the start of your message - this enters instruction mode
+2. The `#` is removed and you can type your instruction directly
+3. Press Enter - a modal opens immediately in a loading state
+4. The agent refines your instruction (may ask clarifying questions)
+5. Review the refined snippet, optionally edit it, then Accept to save
+
+### Visual Indicators
+
+When `#` mode is active:
+- Input box shows a **light blue border**
+- Placeholder changes to "# Save in custom system prompt"
+
+### What Happens
+
+1. Your raw instruction is sent to Claude for refinement
+2. Claude produces a clear, specific, and actionable snippet (may include multiple bullets or a small section)
+3. You review and can edit the refined snippet before saving
+4. Accepted content is appended to the custom system prompt in settings
+
+### Example
+
+```
+Type: #
+(Mode activates, # is removed, placeholder shows "# Save in custom system prompt", blue border appears)
+
+Type: typescript for code
+(Press Enter)
+
+Refined: - Always use TypeScript when providing code examples. Include proper type annotations and interfaces.
+(Accept/Edit/Reject modal appears)
+```
+
+### Notes
+
+- Instructions are stored in Settings → Custom system prompt
+- Accepted content is appended as a Markdown snippet (saved as-is)
+- You can manually edit or delete instructions in settings
+- If Claude needs clarification, it will ask before producing the final instruction
+- Cancel aborts the active refinement request
+- The saved instruction always reflects the latest edited value (even after switching back to Preview)
+
 ## Inline Edit
 
 Interact with text directly in your notes - ask questions, request edits, or insert new content - without using the sidebar chat.
@@ -806,6 +858,23 @@ Permanently approved actions are stored and can be managed in Settings → Appro
 - `.claudian-image-modal-overlay` - Full-size image modal backdrop
 - `.claudian-image-modal` - Full-size image modal container
 - `.claudian-image-modal-close` - Modal close button
+
+### Instruction Mode
+- `.claudian-input-instruction-mode` - Input wrapper with light blue border when `#` mode active
+- `.claudian-instruction-modal` - Unified instruction modal (loading/clarification/confirmation)
+- `.claudian-instruction-section` - Modal section container
+- `.claudian-instruction-label` - Section label text
+- `.claudian-instruction-original` - Original user input display
+- `.claudian-instruction-refined` - Refined instruction display
+- `.claudian-instruction-clarification` - Agent clarification message
+- `.claudian-instruction-edit-container` - Edit textarea container
+- `.claudian-instruction-edit-textarea` - Instruction edit textarea
+- `.claudian-instruction-response-textarea` - Clarification response textarea
+- `.claudian-instruction-buttons` - Button container
+- `.claudian-instruction-btn` - Base button class
+- `.claudian-instruction-reject-btn` - Reject button
+- `.claudian-instruction-edit-btn` - Edit button
+- `.claudian-instruction-accept-btn` - Accept button
 
 ### Inline Edit (CM6 Widget)
 - `.claudian-inline-selection` - Selection highlight (uses `--text-selection`)
