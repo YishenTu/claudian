@@ -97,3 +97,20 @@ export {
   renderStoredWriteEdit,
   type WriteEditState,
 } from './WriteEditRenderer';
+
+export {
+  SlashCommandManager,
+  type ExpansionResult,
+  type DetectedCommand,
+} from './SlashCommandManager';
+
+export {
+  SlashCommandDropdown,
+  type SlashCommandDropdownCallbacks,
+  type SlashCommandDropdownOptions,
+} from './SlashCommandDropdown';
+
+export {
+  SlashCommandSettings,
+  SlashCommandModal,
+} from './SlashCommandSettings';

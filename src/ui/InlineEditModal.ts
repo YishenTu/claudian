@@ -6,11 +6,15 @@
  * - Diff replaces the selected text visually (like VS Code/Cursor)
  */
 
-import { App, Editor, MarkdownView } from 'obsidian';
+import { App, Editor, MarkdownView, Notice } from 'obsidian';
 import { InlineEditService, type InlineEditMode, type CursorContext } from '../InlineEditService';
 import type ClaudianPlugin from '../main';
+import { getVaultPath, isCommandBlocked } from '../utils';
 
 import { normalizeInsertionText, escapeHtml } from './inlineEditUtils';
+import { ApprovalModal } from './ApprovalModal';
+import { SlashCommandManager } from './SlashCommandManager';
+import { SlashCommandDropdown } from './SlashCommandDropdown';
 
 export type InlineEditContext =
   | { mode: 'selection'; selectedText: string }
@@ -265,6 +269,8 @@ class InlineEditController {
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
   private selectionListener: ((e: Event) => void) | null = null;
   private isConversing = false;  // True when agent asked clarification
+  private slashCommandManager: SlashCommandManager | null = null;
+  private slashCommandDropdown: SlashCommandDropdown | null = null;
 
   constructor(
     private app: App,
@@ -402,6 +408,26 @@ class InlineEditController {
     this.spinnerEl.style.display = 'none';
     inputWrap.appendChild(this.spinnerEl);
 
+    // Initialize slash command manager and dropdown with fixed positioning
+    const vaultPath = getVaultPath(this.app);
+    if (vaultPath) {
+      this.slashCommandManager = new SlashCommandManager(this.app, vaultPath);
+      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
+
+      this.slashCommandDropdown = new SlashCommandDropdown(
+        document.body, // Use body for fixed positioning
+        this.inputEl,
+        {
+          onSelect: () => {
+            // Command selected, ready for arguments
+          },
+          onHide: () => {},
+          getCommands: () => this.plugin.settings.slashCommands,
+        },
+        { fixed: true }
+      );
+    }
+
     // Events
     this.inputEl.addEventListener('keydown', (e) => this.handleKeydown(e));
 
@@ -411,8 +437,42 @@ class InlineEditController {
 
   private async generate() {
     if (!this.inputEl || !this.spinnerEl) return;
-    const userMessage = this.inputEl.value.trim();
+    let userMessage = this.inputEl.value.trim();
     if (!userMessage) return;
+
+    // Expand slash command if detected
+    if (this.slashCommandManager) {
+      // Refresh commands from settings to pick up any changes
+      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
+      const detected = this.slashCommandManager.detectCommand(userMessage);
+      if (detected) {
+        const cmd = this.plugin.settings.slashCommands.find(
+          c => c.name.toLowerCase() === detected.commandName.toLowerCase()
+        );
+        if (cmd) {
+          const expansion = await this.slashCommandManager.expandCommand(cmd, detected.args, {
+            bash: {
+              enabled: true,
+              shouldBlockCommand: (bashCommand) =>
+                isCommandBlocked(
+                  bashCommand,
+                  this.plugin.settings.blockedCommands,
+                  this.plugin.settings.enableBlocklist
+                ),
+              requestApproval:
+                this.plugin.settings.permissionMode === 'normal'
+                  ? (bashCommand) => this.requestInlineBashApproval(bashCommand)
+                  : undefined,
+            },
+          });
+          userMessage = expansion.expandedPrompt;
+
+          if (expansion.errors.length > 0) {
+            new Notice(formatSlashCommandWarnings(expansion.errors));
+          }
+        }
+      }
+    }
 
     // Remove selection listeners during generation
     this.removeSelectionListeners();
@@ -594,6 +654,11 @@ class InlineEditController {
     if (this.escHandler) {
       document.removeEventListener('keydown', this.escHandler);
     }
+    // Clean up slash command dropdown
+    this.slashCommandDropdown?.destroy();
+    this.slashCommandDropdown = null;
+    this.slashCommandManager = null;
+
     if (activeController === this) {
       activeController = null;
     }
@@ -603,9 +668,36 @@ class InlineEditController {
   }
 
   private handleKeydown(e: KeyboardEvent) {
+    // Check slash command dropdown first
+    if (this.slashCommandDropdown?.handleKeydown(e)) {
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       this.generate();
     }
   }
+
+  private async requestInlineBashApproval(command: string): Promise<boolean> {
+    const description = `Execute inline bash command:\n${command}`;
+    return new Promise((resolve) => {
+      const modal = new ApprovalModal(
+        this.app,
+        'Bash',
+        { command },
+        description,
+        (decision) => resolve(decision === 'allow' || decision === 'allow-always'),
+        { showAlwaysAllow: false, title: 'Inline bash execution' }
+      );
+      modal.open();
+    });
+  }
+}
+
+function formatSlashCommandWarnings(errors: string[]): string {
+  const maxItems = 3;
+  const head = errors.slice(0, maxItems);
+  const more = errors.length > maxItems ? `\n...and ${errors.length - maxItems} more` : '';
+  return `Slash command expansion warnings:\n- ${head.join('\n- ')}${more}`;
 }

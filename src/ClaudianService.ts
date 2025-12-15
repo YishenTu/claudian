@@ -21,7 +21,7 @@ import {
   ToolDiffData,
 } from './types';
 import { buildSystemPrompt } from './systemPrompt';
-import { getVaultPath, parseEnvironmentVariables, findClaudeCLIPath, isPathWithinVault as isPathWithinVaultUtil, isPathInAllowedExportPaths } from './utils';
+import { getVaultPath, parseEnvironmentVariables, findClaudeCLIPath, isPathWithinVault as isPathWithinVaultUtil, isPathInAllowedExportPaths, isCommandBlocked } from './utils';
 import { readCachedImageBase64 } from './imageCache';
 
 const MAX_DIFF_SIZE = 100 * 1024;
@@ -48,11 +48,19 @@ export type ApprovalCallback = (
   description: string
 ) => Promise<'allow' | 'allow-always' | 'deny'>;
 
+/** Options for query execution with optional overrides. */
+export interface QueryOptions {
+  allowedTools?: string[];
+  model?: string;
+}
+
 /** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
   private sessionId: string | null = null;
+  private sessionModel: string | null = null;
+  private pendingSessionModel: string | null = null;
   private wasInterrupted = false;
   private resolvedClaudePath: string | null = null;
   private approvalCallback: ApprovalCallback | null = null;
@@ -70,7 +78,7 @@ export class ClaudianService {
   }
 
   /** Sends a query to Claude and streams the response. */
-  async *query(prompt: string, images?: ImageAttachment[], conversationHistory?: ChatMessage[]): AsyncGenerator<StreamChunk> {
+  async *query(prompt: string, images?: ImageAttachment[], conversationHistory?: ChatMessage[], queryOptions?: QueryOptions): AsyncGenerator<StreamChunk> {
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
       yield { type: 'error', content: 'Could not determine vault path' };
@@ -98,14 +106,36 @@ export class ClaudianService {
         queryPrompt = `${historyContext}\n\nUser: ${prompt}`;
       }
       this.sessionId = null; // Force fresh session
+      this.sessionModel = null;
       this.wasInterrupted = false;
     }
 
+    // If a command overrides the model, avoid resuming a potentially incompatible session.
+    const requestedModel = queryOptions?.model || this.plugin.settings.model;
+    const activeSessionModel = this.sessionModel ?? this.plugin.settings.model;
+    if (this.sessionId && requestedModel !== activeSessionModel) {
+      if (conversationHistory && conversationHistory.length > 0) {
+        const historyContext = this.buildContextFromHistory(conversationHistory);
+        const lastUserMessage = this.getLastUserMessage(conversationHistory);
+        const actualPrompt = prompt.replace(/^Context files: \[.*?\]\n\n/, '');
+        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
+        queryPrompt = historyContext
+          ? shouldAppendPrompt
+            ? `${historyContext}\n\nUser: ${prompt}`
+            : historyContext
+          : prompt;
+      }
+
+      this.sessionId = null;
+      this.sessionModel = null;
+    }
+
     try {
-      yield* this.queryViaSDK(queryPrompt, vaultPath, hydratedImages);
+      yield* this.queryViaSDK(queryPrompt, vaultPath, hydratedImages, queryOptions);
     } catch (error) {
       if (this.isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionId = null;
+        this.sessionModel = null;
 
         const historyContext = this.buildContextFromHistory(conversationHistory);
         const lastUserMessage = this.getLastUserMessage(conversationHistory);
@@ -120,7 +150,7 @@ export class ClaudianService {
         const retryImages = await this.hydrateImagesData(lastUserMessage?.images, vaultPath);
 
         try {
-          yield* this.queryViaSDK(fullPrompt, vaultPath, retryImages);
+          yield* this.queryViaSDK(fullPrompt, vaultPath, retryImages, queryOptions);
         } catch (retryError) {
           const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
           yield { type: 'error', content: msg };
@@ -336,9 +366,12 @@ export class ClaudianService {
     return messageGenerator();
   }
 
-  private async *queryViaSDK(prompt: string, cwd: string, images?: ImageAttachment[]): AsyncGenerator<StreamChunk> {
-    const selectedModel = this.plugin.settings.model;
+  private async *queryViaSDK(prompt: string, cwd: string, images?: ImageAttachment[], queryOptions?: QueryOptions): AsyncGenerator<StreamChunk> {
+    // Use model from queryOptions if provided, otherwise use settings
+    const selectedModel = queryOptions?.model || this.plugin.settings.model;
     const permissionMode = this.plugin.settings.permissionMode;
+
+    this.pendingSessionModel = selectedModel;
 
     // Store vault path for restriction checks
     this.vaultPath = cwd;
@@ -404,6 +437,11 @@ export class ClaudianService {
       options.maxThinkingTokens = budgetConfig.tokens;
     }
 
+    // Apply allowedTools restriction if specified by slash command
+    if (queryOptions?.allowedTools && queryOptions.allowedTools.length > 0) {
+      options.allowedTools = queryOptions.allowedTools;
+    }
+
     // Resume previous session if we have a session ID
     if (this.sessionId) {
       options.resume = this.sessionId;
@@ -427,6 +465,8 @@ export class ClaudianService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', content: msg };
+    } finally {
+      this.pendingSessionModel = null;
     }
 
     yield { type: 'done' };
@@ -454,6 +494,8 @@ export class ClaudianService {
         // Capture session ID from init message
         if (message.subtype === 'init' && message.session_id) {
           this.sessionId = message.session_id;
+          this.sessionModel = this.pendingSessionModel;
+          this.pendingSessionModel = null;
         }
         // Don't yield system messages to the UI
         break;
@@ -562,18 +604,7 @@ export class ClaudianService {
    * Check if a bash command should be blocked
    */
   private shouldBlockCommand(command: string): boolean {
-    if (!this.plugin.settings.enableBlocklist) {
-      return false;
-    }
-
-    return this.plugin.settings.blockedCommands.some(pattern => {
-      try {
-        return new RegExp(pattern, 'i').test(command);
-      } catch {
-        // Invalid regex, try simple includes
-        return command.toLowerCase().includes(pattern.toLowerCase());
-      }
-    });
+    return isCommandBlocked(command, this.plugin.settings.blockedCommands, this.plugin.settings.enableBlocklist);
   }
 
   /**
@@ -592,6 +623,8 @@ export class ClaudianService {
    */
   resetSession() {
     this.sessionId = null;
+    this.sessionModel = null;
+    this.pendingSessionModel = null;
     this.wasInterrupted = false;
     // Clear session-scoped approved actions
     this.sessionApprovedActions = [];
@@ -611,6 +644,7 @@ export class ClaudianService {
    */
   setSessionId(id: string | null): void {
     this.sessionId = id;
+    this.sessionModel = id ? this.plugin.settings.model : null;
   }
 
   /**

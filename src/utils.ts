@@ -166,6 +166,24 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
   return result;
 }
 
+/**
+ * Checks if a bash command should be blocked by user-defined patterns.
+ * Patterns are treated as case-insensitive regex; invalid regex falls back to substring match.
+ */
+export function isCommandBlocked(command: string, patterns: string[], enableBlocklist: boolean): boolean {
+  if (!enableBlocklist) {
+    return false;
+  }
+
+  return patterns.some((pattern) => {
+    try {
+      return new RegExp(pattern, 'i').test(command);
+    } catch {
+      return command.toLowerCase().includes(pattern.toLowerCase());
+    }
+  });
+}
+
 /** Extracts model options from ANTHROPIC_* environment variables, deduplicated by value. */
 export function getModelsFromEnvironment(envVars: Record<string, string>): { value: string; label: string; description: string }[] {
   const modelMap = new Map<string, { types: string[]; label: string }>();

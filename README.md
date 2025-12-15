@@ -10,6 +10,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Context-Aware**: Automatically attach the focused note, mention files with `@`, and exclude notes by tag for precise context management.
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
 - **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
+- **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
@@ -89,6 +90,17 @@ Interact with text directly in your notes - ask questions, request edits, or ins
 - **Read-only tools**: Agent can read files and search the web for context
 - **Inline diff**: Word-level diff with red strikethrough (deletions) and green highlight (insertions)
 
+### Slash Commands
+
+Define commands in Settings → Claudian → Slash Commands, then type `/` in the chat input or inline edit input to select a command.
+
+- **Invocation**: `/commandName arguments...`
+- **Placeholders**: `$ARGUMENTS`, `$1`, `$2`, ... (basic quoted args supported)
+- **File references**: `@path/to/file.md`, `@"path with spaces.md"`, `@'path with spaces.md'`
+- **Inline bash**: `` !`command` `` substitutes with command output (see safety notes below)
+
+The UI displays the original `/command ...`, while the expanded prompt is what gets sent and stored in history.
+
 ### Example prompts
 
 - "List all notes in this vault"
@@ -109,6 +121,7 @@ Interact with text directly in your notes - ask questions, request edits, or ins
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Permission mode**: Toggle YOLO (bypass prompts) or Safe (require approval)
 - **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
+- **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
 - **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
 - **Environment snippets**: Save and restore environment variable configurations
 
@@ -120,6 +133,10 @@ Interact with text directly in your notes - ask questions, request edits, or ins
   - Safe mode shows an approval modal per tool call.
   - Bash approvals require an exact command match.
   - File tools allow exact or prefix path matches.
+- **Inline bash in slash commands**:
+  - In Safe mode, each `` !`command` `` substitution prompts for approval.
+  - The command blocklist also applies.
+  - Inline-bash prompts are "Allow once" only (no permanent approval).
 - **Command blocklist**:
   - `rm -rf`
   - `chmod 777`
@@ -153,6 +170,9 @@ src/
     ├── InputToolbar.ts       # Model/thinking/permission selectors
     ├── FileContext.ts        # File attachments & @mentions
     ├── ImageContext.ts       # Image drag/drop, paste, path detection
+    ├── SlashCommandManager.ts # Slash command detection and expansion
+    ├── SlashCommandDropdown.ts # Slash command dropdown UI
+    ├── SlashCommandSettings.ts # Slash command settings UI
     ├── ToolCallRenderer.ts   # Tool call display
     ├── ThinkingBlockRenderer.ts # Extended thinking UI
     ├── TodoListRenderer.ts   # Todo list UI for task tracking
@@ -180,6 +200,7 @@ src/
 - [x] Inline edit feature
 - [x] Diff view in chat panel
 - [x] Cursor position awareness in inline edit
+- [x] Slash commands
 - [ ] `#` to saved in customization prompt
 - [ ] Skills, Hooks, MCP and other advanced features
 

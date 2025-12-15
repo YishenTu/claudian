@@ -6,30 +6,38 @@ import { Modal, setIcon } from 'obsidian';
 
 export type ApprovalDecision = 'allow' | 'allow-always' | 'deny';
 
+export interface ApprovalModalOptions {
+  showAlwaysAllow?: boolean;
+  title?: string;
+}
+
 /** Modal dialog for approving tool actions in Safe mode. */
 export class ApprovalModal extends Modal {
   private toolName: string;
   private description: string;
   private resolve: (value: ApprovalDecision) => void;
   private resolved = false;
+  private options: ApprovalModalOptions;
 
   constructor(
     app: import('obsidian').App,
     toolName: string,
     _input: Record<string, unknown>,
     description: string,
-    resolve: (value: ApprovalDecision) => void
+    resolve: (value: ApprovalDecision) => void,
+    options: ApprovalModalOptions = {}
   ) {
     super(app);
     this.toolName = toolName;
     this.description = description;
     this.resolve = resolve;
+    this.options = options;
   }
 
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('claudian-approval-modal');
-    this.setTitle('Permission required');
+    this.setTitle(this.options.title ?? 'Permission required');
 
     const infoEl = contentEl.createDiv({ cls: 'claudian-approval-info' });
 
@@ -58,12 +66,14 @@ export class ApprovalModal extends Modal {
     });
     allowBtn.addEventListener('click', () => this.handleDecision('allow'));
 
-    const alwaysBtn = buttonsEl.createEl('button', {
-      text: 'Always allow',
-      cls: 'claudian-approval-btn claudian-always-btn',
-      attr: { 'aria-label': `Always allow ${this.toolName} actions` }
-    });
-    alwaysBtn.addEventListener('click', () => this.handleDecision('allow-always'));
+    if (this.options.showAlwaysAllow ?? true) {
+      const alwaysBtn = buttonsEl.createEl('button', {
+        text: 'Always allow',
+        cls: 'claudian-approval-btn claudian-always-btn',
+        attr: { 'aria-label': `Always allow ${this.toolName} actions` }
+      });
+      alwaysBtn.addEventListener('click', () => this.handleDecision('allow-always'));
+    }
 
     denyBtn.focus();
   }

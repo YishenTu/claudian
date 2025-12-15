@@ -5,13 +5,13 @@
  * tool call rendering, conversation management, and file/image context.
  */
 
-import { ItemView, WorkspaceLeaf, MarkdownRenderer, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, MarkdownRenderer, setIcon, Notice } from 'obsidian';
 import * as fs from 'fs';
 import * as path from 'path';
 import type ClaudianPlugin from './main';
 import { VIEW_TYPE_CLAUDIAN, ChatMessage, StreamChunk, ToolCallInfo, ContentBlock, ClaudeModel, ThinkingBudget, DEFAULT_THINKING_BUDGET, DEFAULT_CLAUDE_MODELS, ImageAttachment, SubagentInfo } from './types';
 import { AsyncSubagentManager } from './AsyncSubagentManager';
-import { getVaultPath } from './utils';
+import { getVaultPath, isCommandBlocked } from './utils';
 import { readCachedImageBase64 } from './imageCache';
 
 import {
@@ -55,6 +55,9 @@ import {
   finalizeWriteEditBlock,
   renderStoredWriteEdit,
   type WriteEditState,
+  // Slash commands
+  SlashCommandManager,
+  SlashCommandDropdown,
 } from './ui';
 
 /** Main sidebar chat view for interacting with Claude. */
@@ -81,6 +84,8 @@ export class ClaudianView extends ItemView {
   private modelSelector: ModelSelector | null = null;
   private thinkingBudgetSelector: ThinkingBudgetSelector | null = null;
   private permissionToggle: PermissionToggle | null = null;
+  private slashCommandManager: SlashCommandManager | null = null;
+  private slashCommandDropdown: SlashCommandDropdown | null = null;
   private cancelRequested = false;
 
   private static readonly FLAVOR_TEXTS = [
@@ -217,6 +222,25 @@ export class ClaudianView extends ItemView {
       }
     );
 
+    // Initialize slash command manager and dropdown
+    const vaultPath = getVaultPath(this.plugin.app);
+    if (vaultPath) {
+      this.slashCommandManager = new SlashCommandManager(this.plugin.app, vaultPath);
+      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
+
+      this.slashCommandDropdown = new SlashCommandDropdown(
+        inputContainerEl,
+        this.inputEl,
+        {
+          onSelect: () => {
+            // Command selected, cursor is now after "/commandName "
+          },
+          onHide: () => {},
+          getCommands: () => this.plugin.settings.slashCommands,
+        }
+      );
+    }
+
     this.registerEvent(this.plugin.app.vault.on('create', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('delete', () => this.fileContextManager?.markFilesCacheDirty()));
     this.registerEvent(this.plugin.app.vault.on('rename', () => this.fileContextManager?.markFilesCacheDirty()));
@@ -260,6 +284,11 @@ export class ClaudianView extends ItemView {
     this.permissionToggle = toolbarComponents.permissionToggle;
 
     this.inputEl.addEventListener('keydown', (e) => {
+      // Check slash command dropdown first
+      if (this.slashCommandDropdown?.handleKeydown(e)) {
+        return;
+      }
+
       if (this.fileContextManager?.handleMentionKeydown(e)) {
         return;
       }
@@ -303,6 +332,9 @@ export class ClaudianView extends ItemView {
     this.currentThinkingState = null;
     this.plugin.agentService.setApprovalCallback(null);
     this.fileContextManager?.destroy();
+    this.slashCommandDropdown?.destroy();
+    this.slashCommandDropdown = null;
+    this.slashCommandManager = null;
     this.asyncSubagentManager.orphanAllActive();
     this.asyncSubagentStates.clear();
     await this.saveCurrentConversation();
@@ -318,6 +350,53 @@ export class ClaudianView extends ItemView {
     this.cancelRequested = false;
 
     this.fileContextManager?.startSession();
+
+    // Check for slash command and expand it
+    // displayContent: what user sees in chat (e.g., "/tests")
+    // content: what gets sent to agent (expanded prompt)
+    let displayContent = content;
+    let queryOptions: { allowedTools?: string[]; model?: string } | undefined;
+    if (content && this.slashCommandManager) {
+      // Refresh commands from settings to pick up any changes
+      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
+      const detected = this.slashCommandManager.detectCommand(content);
+      if (detected) {
+        const cmd = this.plugin.settings.slashCommands.find(
+          c => c.name.toLowerCase() === detected.commandName.toLowerCase()
+        );
+        if (cmd) {
+          const result = await this.slashCommandManager.expandCommand(cmd, detected.args, {
+            bash: {
+              enabled: true,
+              shouldBlockCommand: (bashCommand) =>
+                isCommandBlocked(
+                  bashCommand,
+                  this.plugin.settings.blockedCommands,
+                  this.plugin.settings.enableBlocklist
+                ),
+              requestApproval:
+                this.plugin.settings.permissionMode === 'normal'
+                  ? (bashCommand) => this.requestInlineBashApproval(bashCommand)
+                  : undefined,
+            },
+          });
+          // Keep displayContent as original "/command args", update content to expanded
+          content = result.expandedPrompt;
+
+          if (result.errors.length > 0) {
+            new Notice(formatSlashCommandWarnings(result.errors));
+          }
+
+          // Set query options if command has overrides
+          if (result.allowedTools || result.model) {
+            queryOptions = {
+              allowedTools: result.allowedTools,
+              model: result.model,
+            };
+          }
+        }
+      }
+    }
 
     if (content && this.imageContextManager) {
       const result = await this.imageContextManager.handleImagePathInText(content);
@@ -354,7 +433,8 @@ export class ClaudianView extends ItemView {
     const userMsg: ChatMessage = {
       id: this.generateId(),
       role: 'user',
-      content,
+      content,  // Store expanded prompt in history
+      displayContent: displayContent !== content ? displayContent : undefined,  // Only set if different (e.g., "/tests")
       timestamp: Date.now(),
       contextFiles: contextFilesForMessage,
       images: imagesForMessage,
@@ -362,7 +442,7 @@ export class ClaudianView extends ItemView {
     this.addMessage(userMsg);
 
     if (this.messages.length === 1 && this.currentConversationId) {
-      const title = this.generateTitle(content);
+      const title = this.generateTitle(displayContent);  // Use original "/tests" for title
       await this.plugin.renameConversation(this.currentConversationId, title);
     }
 
@@ -386,7 +466,7 @@ export class ClaudianView extends ItemView {
 
     let wasInterrupted = false;
     try {
-      for await (const chunk of this.plugin.agentService.query(promptToSend, imagesForMessage, this.messages)) {
+      for await (const chunk of this.plugin.agentService.query(promptToSend, imagesForMessage, this.messages, queryOptions)) {
         if (this.cancelRequested) {
           wasInterrupted = true;
           break;
@@ -862,9 +942,11 @@ export class ClaudianView extends ItemView {
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
 
     if (msg.role === 'user') {
-      if (msg.content) {
+      // Use displayContent for UI (e.g., "/tests"), fall back to content
+      const textToShow = msg.displayContent ?? msg.content;
+      if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
-        this.renderContent(textEl, msg.content);
+        this.renderContent(textEl, textToShow);
       }
     }
 
@@ -1128,10 +1210,11 @@ export class ClaudianView extends ItemView {
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
 
     if (msg.role === 'user') {
-      // Render text content only (images are above)
-      if (msg.content) {
+      // Use displayContent for UI (e.g., "/tests"), fall back to content
+      const textToShow = msg.displayContent ?? msg.content;
+      if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
-        this.renderContent(textEl, msg.content);
+        this.renderContent(textEl, textToShow);
       }
     } else if (msg.role === 'assistant') {
       if (msg.contentBlocks && msg.contentBlocks.length > 0) {
@@ -1362,4 +1445,26 @@ export class ClaudianView extends ItemView {
       modal.open();
     });
   }
+
+  private async requestInlineBashApproval(command: string): Promise<boolean> {
+    const description = `Execute inline bash command:\n${command}`;
+    return new Promise((resolve) => {
+      const modal = new ApprovalModal(
+        this.plugin.app,
+        'Bash',
+        { command },
+        description,
+        (decision) => resolve(decision === 'allow' || decision === 'allow-always'),
+        { showAlwaysAllow: false, title: 'Inline bash execution' }
+      );
+      modal.open();
+    });
+  }
+}
+
+function formatSlashCommandWarnings(errors: string[]): string {
+  const maxItems = 3;
+  const head = errors.slice(0, maxItems);
+  const more = errors.length > maxItems ? `\n...and ${errors.length - maxItems} more` : '';
+  return `Slash command expansion warnings:\n- ${head.join('\n- ')}${more}`;
 }

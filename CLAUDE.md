@@ -27,6 +27,9 @@ src/
     ├── InputToolbar.ts       # Model selector, thinking budget, permission toggle
     ├── FileContext.ts        # File attachments, @mentions, edited files tracking
     ├── ImageContext.ts       # Image attachments, drag/drop, paste, path detection
+    ├── SlashCommandManager.ts # Slash command detection and expansion
+    ├── SlashCommandDropdown.ts # Slash command dropdown UI
+    ├── SlashCommandSettings.ts # Slash command settings UI
     ├── ToolCallRenderer.ts   # Tool call UI rendering and status updates
     ├── ThinkingBlockRenderer.ts # Extended thinking block UI with timer
     ├── TodoListRenderer.ts   # Todo list UI for TodoWrite tool
@@ -45,6 +48,9 @@ src/
 | `InputToolbar` | Model/thinking/permission selectors below textarea |
 | `FileContext` | File attachment state, @mention dropdown, edited files indicator with hash-based revert/delete detection |
 | `ImageContext` | Image drag/drop, paste, path detection, preview display |
+| `SlashCommandManager` | Slash command detection, frontmatter parsing, and prompt expansion |
+| `SlashCommandDropdown` | `/` dropdown UI with keyboard navigation (chat + inline edit) |
+| `SlashCommandSettings` | Settings UI for creating/editing/importing/exporting slash commands |
 | `ToolCallRenderer` | Tool call display with expand/collapse and status |
 | `ThinkingBlockRenderer` | Extended thinking blocks with live timer |
 | `TodoListRenderer` | Todo list display for TodoWrite tool calls |
@@ -85,7 +91,8 @@ const options: Options = {
   permissionMode: 'bypassPermissions',
   allowDangerouslySkipPermissions: true,
   model: settings.model,  // 'claude-haiku-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4-5'
-  // All SDK tools are available by default (no allowedTools restriction)
+  // By default all SDK tools are available; optionally set `allowedTools` to restrict.
+  // allowedTools: ['Read', 'Write'],
   abortController: this.abortController,
   pathToClaudeCodeExecutable: '/path/to/claude',
   resume: sessionId, // Optional: resume previous session
@@ -152,6 +159,14 @@ await appendThinkingContent(thinkingState, content, renderContentFn);
 finalizeThinkingBlock(thinkingState);
 ```
 
+### Slash Commands (Prompt Expansion)
+
+- Slash commands are expanded by `SlashCommandManager` and integrated into both `ClaudianView` (chat) and `InlineEditModal` (inline edit).
+- Expansion supports YAML frontmatter metadata, `$ARGUMENTS`/`$N` placeholders, `@file` references, and inline bash `` !`command` `` substitutions.
+- Expansion order is placeholders → inline bash → file references, which prevents executing bash that appears inside referenced file content.
+- Command-level overrides map to `QueryOptions` (`model`, `allowedTools`). If a command requests a different model than the active session model, the service drops `resume` and rebuilds the prompt from message history.
+- User messages can preserve the original `/command ...` for display via `ChatMessage.displayContent`, while storing the expanded prompt in `ChatMessage.content`.
+
 ### Edited File Tracking (revert/delete aware)
 - Pre-tool hook captures the original file hash before Write/Edit/NotebookEdit.
 - Post-tool hook records post-edit hash and marks files as edited.
@@ -185,7 +200,7 @@ finalizeThinkingBlock(thinkingState);
 
 ## Available Tools
 
-All Claude Agent SDK tools are available (no `allowedTools` restriction):
+By default, all Claude Agent SDK tools are available. Some flows restrict tools via an `allowedTools` whitelist (e.g., Inline Edit and slash commands).
 
 | Category | Tool | Description |
 |----------|------|-------------|
@@ -208,19 +223,39 @@ All Claude Agent SDK tools are available (no `allowedTools` restriction):
 
 ```typescript
 interface ClaudianSettings {
-  enableBlocklist: boolean;      // Block dangerous commands
-  blockedCommands: string[];     // Regex patterns to block
-  showToolUse: boolean;          // Show file operations in chat
-  model: ClaudeModel;            // Selected Claude model (or custom model string)
-  lastClaudeModel?: ClaudeModel; // Last selected default model (for category switching)
-  lastCustomModel?: ClaudeModel;  // Last selected custom model (for category switching)
-  thinkingBudget: ThinkingBudget; // Extended thinking token budget
-  permissionMode: PermissionMode; // YOLO or Safe mode
+  enableBlocklist: boolean;          // Block dangerous commands
+  blockedCommands: string[];         // Regex patterns to block
+  showToolUse: boolean;              // Show file operations in chat
+  toolCallExpandedByDefault: boolean; // Expand tool calls by default
+  model: ClaudeModel;                // Selected model (or custom model string)
+  lastClaudeModel?: ClaudeModel;     // Last selected default model
+  lastCustomModel?: ClaudeModel;     // Last selected custom model
+  lastEnvHash?: string;              // Hash of active env vars (for model list reconciliation)
+  thinkingBudget: ThinkingBudget;    // Extended thinking token budget
+  permissionMode: PermissionMode;    // YOLO or Safe mode
   approvedActions: ApprovedAction[]; // Permanently approved actions
-  excludedTags: string[];        // Tags that exclude files from auto-loading context
-  environmentVariables: string;  // Custom env vars in KEY=VALUE format (one per line)
-  envSnippets: EnvSnippet[];     // Saved environment variable configurations
-  allowedExportPaths: string[];  // Paths outside vault where files can be exported
+  excludedTags: string[];            // Tags that exclude files from auto-loading context
+  mediaFolder: string;               // Attachment folder for embedded image references
+  environmentVariables: string;      // Custom env vars in KEY=VALUE format
+  envSnippets: EnvSnippet[];         // Saved environment variable configurations
+  systemPrompt: string;              // Custom system prompt appended to default
+  allowedExportPaths: string[];      // Paths outside vault where files can be exported
+  slashCommands: SlashCommand[];     // Custom /commands
+}
+
+interface SlashCommand {
+  id: string;
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  allowedTools?: string[];
+  model?: ClaudeModel;
+  content: string;
+}
+
+interface ChatMessage {
+  content: string;          // Stored/sent content (expanded prompt)
+  displayContent?: string;  // UI-only content (e.g., "/review src/main.ts")
 }
 
 type ClaudeModel = string;  // Default models or custom model strings
@@ -239,8 +274,6 @@ interface EnvSnippet {
   name: string;         // Display name
   description: string;  // Optional description
   envVars: string;      // Environment variables content
-  createdAt: number;    // Creation timestamp
-  lastUsed?: number;    // Last usage timestamp
 }
 ```
 

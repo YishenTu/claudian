@@ -6,7 +6,7 @@
 
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type ClaudianPlugin from './main';
-import { EnvSnippetManager } from './ui';
+import { EnvSnippetManager, SlashCommandSettings } from './ui';
 
 /** Plugin settings tab displayed in Obsidian's settings pane. */
 export class ClaudianSettingTab extends PluginSettingTab {
@@ -138,6 +138,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
       });
+
+    // Slash Commands section
+    new Setting(containerEl).setName('Slash Commands').setHeading();
+
+    const slashCommandsDesc = containerEl.createDiv({ cls: 'claudian-slash-settings-desc' });
+    slashCommandsDesc.createEl('p', {
+      text: 'Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output.',
+      cls: 'setting-item-description',
+    });
+
+    const slashCommandsContainer = containerEl.createDiv({ cls: 'claudian-slash-commands-container' });
+    new SlashCommandSettings(slashCommandsContainer, this.plugin);
 
     // Safety section
     new Setting(containerEl).setName('Safety').setHeading();

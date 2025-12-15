@@ -86,6 +86,7 @@ describe('types.ts', () => {
         envSnippets: [],
         systemPrompt: '',
         allowedExportPaths: [],
+        slashCommands: [],
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -110,6 +111,7 @@ describe('types.ts', () => {
         envSnippets: [],
         systemPrompt: '',
         allowedExportPaths: [],
+        slashCommands: [],
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -133,6 +135,7 @@ describe('types.ts', () => {
         envSnippets: [],
         systemPrompt: '',
         allowedExportPaths: [],
+        slashCommands: [],
       };
 
       expect(settings.lastClaudeModel).toBe('claude-opus-4-5');

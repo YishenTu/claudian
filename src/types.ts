@@ -64,6 +64,7 @@ export interface ClaudianSettings {
   envSnippets: EnvSnippet[];
   systemPrompt: string;
   allowedExportPaths: string[];
+  slashCommands: SlashCommand[];
 }
 
 /** Saved environment variable configuration. */
@@ -72,6 +73,17 @@ export interface EnvSnippet {
   name: string;
   description: string;
   envVars: string;
+}
+
+/** Slash command configuration with Claude Code compatibility. */
+export interface SlashCommand {
+  id: string;
+  name: string;                // Command name used after / (e.g., "review-code")
+  description?: string;        // Optional description shown in dropdown
+  argumentHint?: string;       // Placeholder text for arguments (e.g., "[file] [focus]")
+  allowedTools?: string[];     // Restrict tools when command is used
+  model?: ClaudeModel;         // Override model for this command
+  content: string;             // Prompt template with placeholders
 }
 
 export const DEFAULT_SETTINGS: ClaudianSettings = {
@@ -96,6 +108,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   envSnippets: [],
   systemPrompt: '',
   allowedExportPaths: ['~/Desktop', '~/Downloads'],
+  slashCommands: [],
 };
 
 /** Persisted conversation with messages and session state. */
@@ -159,6 +172,8 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  /** Display-only content (e.g., "/tests" when content is the expanded prompt). */
+  displayContent?: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
   subagents?: SubagentInfo[];
