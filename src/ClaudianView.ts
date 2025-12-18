@@ -619,19 +619,17 @@ export class ClaudianView extends ItemView {
   }
 
   private showThinkingIndicator(parentEl: HTMLElement) {
-    if (this.thinkingEl) return;
+    if (this.thinkingEl) {
+      // Re-append to ensure it's at the bottom
+      parentEl.appendChild(this.thinkingEl);
+      return;
+    }
 
     this.thinkingEl = parentEl.createDiv({ cls: 'claudian-thinking' });
     const texts = ClaudianView.FLAVOR_TEXTS;
     const randomText = texts[Math.floor(Math.random() * texts.length)];
-    this.thinkingEl.setText(randomText);
-  }
-
-  private hideThinkingIndicator() {
-    if (this.thinkingEl) {
-      this.thinkingEl.remove();
-      this.thinkingEl = null;
-    }
+    this.thinkingEl.createSpan({ text: randomText });
+    this.thinkingEl.createSpan({ text: ' (esc to interrupt)', cls: 'claudian-thinking-hint' });
   }
 
   private cancelStreaming() {
@@ -648,10 +646,6 @@ export class ClaudianView extends ItemView {
       return;
     }
 
-    if (chunk.type === 'text' || chunk.type === 'tool_use' || chunk.type === 'thinking') {
-      this.hideThinkingIndicator();
-    }
-
     switch (chunk.type) {
       case 'thinking':
         if (this.currentTextEl) {
@@ -666,6 +660,9 @@ export class ClaudianView extends ItemView {
         }
         msg.content += chunk.content;
         await this.appendText(chunk.content);
+        if (this.currentContentEl) {
+          this.showThinkingIndicator(this.currentContentEl);
+        }
         break;
 
       case 'tool_use': {
@@ -719,6 +716,9 @@ export class ClaudianView extends ItemView {
           } else {
             renderToolCall(this.currentContentEl!, toolCall, this.toolCallElements, this.plugin.settings.toolCallExpandedByDefault);
           }
+        }
+        if (this.currentContentEl) {
+          this.showThinkingIndicator(this.currentContentEl);
         }
         break;
       }
@@ -817,6 +817,7 @@ export class ClaudianView extends ItemView {
   private async appendThinking(content: string, msg: ChatMessage) {
     if (!this.currentContentEl) return;
 
+    this.hideThinkingIndicator();
     if (!this.currentThinkingState) {
       this.currentThinkingState = createThinkingBlock(
         this.currentContentEl,
@@ -831,6 +832,9 @@ export class ClaudianView extends ItemView {
     if (!this.currentThinkingState) return;
 
     const durationSeconds = finalizeThinkingBlock(this.currentThinkingState);
+    if (this.currentContentEl) {
+      this.showThinkingIndicator(this.currentContentEl);
+    }
 
     if (msg && this.currentThinkingState.content) {
       msg.contentBlocks = msg.contentBlocks || [];
@@ -861,6 +865,10 @@ export class ClaudianView extends ItemView {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id });
     }
+
+    if (this.currentContentEl) {
+      this.showThinkingIndicator(this.currentContentEl);
+    }
   }
 
   /** Routes chunks from subagents to the appropriate SubagentRenderer. */
@@ -885,6 +893,9 @@ export class ClaudianView extends ItemView {
           isExpanded: false,
         };
         addSubagentToolCall(subagentState, toolCall);
+        if (this.currentContentEl) {
+          this.showThinkingIndicator(this.currentContentEl);
+        }
         break;
       }
 
@@ -953,6 +964,10 @@ export class ClaudianView extends ItemView {
     if (this.plugin.settings.showToolUse) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id, mode: 'async' });
+    }
+
+    if (this.currentContentEl) {
+      this.showThinkingIndicator(this.currentContentEl);
     }
   }
 
@@ -1641,5 +1656,12 @@ export class ClaudianView extends ItemView {
       );
       modal.open();
     });
+  }
+
+  private hideThinkingIndicator() {
+    if (this.thinkingEl) {
+      this.thinkingEl.remove();
+      this.thinkingEl = null;
+    }
   }
 }

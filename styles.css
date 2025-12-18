@@ -315,6 +315,11 @@
   animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
+.claudian-thinking-hint {
+  color: var(--text-muted);
+  font-style: normal;
+}
+
 @keyframes thinking-pulse {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
