@@ -178,6 +178,46 @@ describe('utils.ts', () => {
         MESSAGE: 'Hello World',
       });
     });
+
+    it('should strip surrounding double quotes from values', () => {
+      const input = 'URL="https://api.example.com"\nKEY="secret-key"';
+      const result = parseEnvironmentVariables(input);
+
+      expect(result).toEqual({
+        URL: 'https://api.example.com',
+        KEY: 'secret-key',
+      });
+    });
+
+    it('should strip surrounding single quotes from values', () => {
+      const input = "URL='https://api.example.com'\nKEY='secret-key'";
+      const result = parseEnvironmentVariables(input);
+
+      expect(result).toEqual({
+        URL: 'https://api.example.com',
+        KEY: 'secret-key',
+      });
+    });
+
+    it('should not strip mismatched quotes', () => {
+      const input = 'VAL1="not-closed\nVAL2=\'also-not-closed\nVAL3="mixed\'';
+      const result = parseEnvironmentVariables(input);
+
+      expect(result).toEqual({
+        VAL1: '"not-closed',
+        VAL2: "'also-not-closed",
+        VAL3: '"mixed\'',
+      });
+    });
+
+    it('should preserve quotes inside values', () => {
+      const input = 'JSON={"key": "value"}';
+      const result = parseEnvironmentVariables(input);
+
+      expect(result).toEqual({
+        JSON: '{"key": "value"}',
+      });
+    });
   });
 
   describe('appendMarkdownSnippet', () => {
@@ -269,9 +309,9 @@ describe('utils.ts', () => {
       expect(result[0].label).toBe('trailing-slash/');
     });
 
-    it('should sort models by priority (model > opus > sonnet > haiku)', () => {
+    it('should sort models by priority (model > haiku > sonnet > opus)', () => {
       const envVars = {
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
         ANTHROPIC_MODEL: 'main-model',
         ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
       };
@@ -279,7 +319,7 @@ describe('utils.ts', () => {
 
       expect(result[0].value).toBe('main-model');
       expect(result[1].value).toBe('sonnet-model');
-      expect(result[2].value).toBe('haiku-model');
+      expect(result[2].value).toBe('opus-model');
     });
   });
 
@@ -294,20 +334,20 @@ describe('utils.ts', () => {
       expect(result).toBe('main-model');
     });
 
-    it('should return ANTHROPIC_DEFAULT_OPUS_MODEL if ANTHROPIC_MODEL not set', () => {
+    it('should return ANTHROPIC_DEFAULT_HAIKU_MODEL if ANTHROPIC_MODEL not set', () => {
       const envVars = {
-        ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
         ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
       };
       const result = getCurrentModelFromEnvironment(envVars);
 
-      expect(result).toBe('opus-model');
+      expect(result).toBe('haiku-model');
     });
 
     it('should return ANTHROPIC_DEFAULT_SONNET_MODEL if higher priority not set', () => {
       const envVars = {
         ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
       };
       const result = getCurrentModelFromEnvironment(envVars);
 

@@ -20,7 +20,7 @@ import { InstructionRefineService } from '../src/services/InstructionRefineServi
 function createMockPlugin(settings = {}) {
   return {
     settings: {
-      model: 'claude-sonnet-4-5',
+      model: 'sonnet',
       thinkingBudget: 'off',
       systemPrompt: '',
       ...settings,

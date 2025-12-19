@@ -41,7 +41,7 @@ describe('SlashCommandManager', () => {
         '---\r',
         'description: "Desc"\r',
         "argument-hint: '<file>'\r",
-        'model: claude-sonnet-4-5\r',
+        'model: sonnet\r',
         'allowed-tools:\r',
         '  - Read\r',
         '  - "Write"\r',
@@ -53,7 +53,7 @@ describe('SlashCommandManager', () => {
       const parsed = parseSlashCommandContent(content);
       expect(parsed.description).toBe('Desc');
       expect(parsed.argumentHint).toBe('<file>');
-      expect(parsed.model).toBe('claude-sonnet-4-5');
+      expect(parsed.model).toBe('sonnet');
       expect(parsed.allowedTools).toEqual(['Read', 'Write']);
       expect(parsed.promptContent.trim()).toBe('Hello');
     });

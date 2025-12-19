@@ -14,7 +14,7 @@ function createMockPlugin(vaultPath: string) {
       showToolUse: true,
       approvedActions: [],
       permissionMode: 'yolo',
-      model: 'claude-haiku-4-5',
+      model: 'haiku',
       thinkingBudget: 'off',
       mediaFolder: '',
     },

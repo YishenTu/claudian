@@ -7,9 +7,9 @@ export type ClaudeModel = string;
 
 /** Default Claude model options. */
 export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
-  { value: 'claude-haiku-4-5', label: 'Haiku', description: 'Fast and efficient' },
-  { value: 'claude-sonnet-4-5', label: 'Sonnet', description: 'Balanced performance' },
-  { value: 'claude-opus-4-5', label: 'Opus', description: 'Most capable' },
+  { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
+  { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },
+  { value: 'opus', label: 'Opus', description: 'Most capable' },
 ];
 
 /** Extended thinking token budget levels. */
@@ -25,7 +25,7 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
 
 /** Default thinking budget per model tier. */
 export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
-  'claude-haiku-4-5': 'off',
-  'claude-sonnet-4-5': 'low',
-  'claude-opus-4-5': 'medium',
+  'haiku': 'off',
+  'sonnet': 'low',
+  'opus': 'medium',
 };

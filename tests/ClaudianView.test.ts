@@ -24,7 +24,7 @@ function createMockPlugin(settingsOverrides = {}) {
       enableBlocklist: true,
       blockedCommands: [],
       showToolUse: true,
-      model: 'claude-haiku-4-5',
+      model: 'haiku',
       thinkingBudget: 'off',
       permissionMode: 'yolo',
       approvedActions: [],

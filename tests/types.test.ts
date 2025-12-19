@@ -55,8 +55,8 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.envSnippets).toEqual([]);
     });
 
-    it('should have lastClaudeModel set to claude-haiku-4-5 by default', () => {
-      expect(DEFAULT_SETTINGS.lastClaudeModel).toBe('claude-haiku-4-5');
+    it('should have lastClaudeModel set to haiku by default', () => {
+      expect(DEFAULT_SETTINGS.lastClaudeModel).toBe('haiku');
     });
 
     it('should have lastCustomModel as empty string by default', () => {
@@ -75,7 +75,7 @@ describe('types.ts', () => {
         blockedCommands: ['test'],
         showToolUse: false,
         toolCallExpandedByDefault: true,
-        model: 'claude-haiku-4-5',
+        model: 'haiku',
         thinkingBudget: 'off',
         permissionMode: 'yolo',
         approvedActions: [],
@@ -91,7 +91,7 @@ describe('types.ts', () => {
       expect(settings.enableBlocklist).toBe(false);
       expect(settings.blockedCommands).toEqual(['test']);
       expect(settings.showToolUse).toBe(false);
-      expect(settings.model).toBe('claude-haiku-4-5');
+      expect(settings.model).toBe('haiku');
     });
 
     it('should accept custom model strings', () => {
@@ -122,8 +122,8 @@ describe('types.ts', () => {
         blockedCommands: [],
         showToolUse: true,
         toolCallExpandedByDefault: false,
-        model: 'claude-sonnet-4-5',
-        lastClaudeModel: 'claude-opus-4-5',
+        model: 'sonnet',
+        lastClaudeModel: 'opus',
         lastCustomModel: 'custom/model',
         thinkingBudget: 'high',
         permissionMode: 'yolo',
@@ -137,7 +137,7 @@ describe('types.ts', () => {
         slashCommands: [],
       };
 
-      expect(settings.lastClaudeModel).toBe('claude-opus-4-5');
+      expect(settings.lastClaudeModel).toBe('opus');
       expect(settings.lastCustomModel).toBe('custom/model');
     });
   });
