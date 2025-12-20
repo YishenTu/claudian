@@ -29,6 +29,17 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 
 ## Installation
 
+### From GitHub Release (recommended)
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/YishenTu/claudian/releases/latest)
+2. Create a folder called `claudian` in your vault's plugins folder:
+   ```
+   /path/to/vault/.obsidian/plugins/claudian/
+   ```
+3. Copy the downloaded files into the `claudian` folder
+4. Enable the plugin in Obsidian:
+   - Settings → Community plugins → Enable "Claudian"
+
 ### From source (development)
 
 1. Clone this repository into your vault's plugins folder:
