@@ -12,6 +12,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
 - **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input, with review/edit in a modal.
+- **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
@@ -120,6 +121,15 @@ Use `#` at the start of the chat input to add a refined instruction to Settings 
 4. Review the refined snippet, optionally edit it, then Accept to save
 
 Accepted content is appended to the custom system prompt as-is. The agent decides the best Markdown format (single bullet, multiple bullets, or a small section).
+
+### Skills
+
+Extend Claudian with reusable capability modules. Skills are `SKILL.md` files with YAML frontmatter that Claude discovers and invokes automatically based on context.
+
+- **User skills**: `~/.claude/skills/{name}/SKILL.md` (all vaults)
+- **Project skills**: `{vault}/.claude/skills/{name}/SKILL.md` (vault-specific)
+
+Compatible with [Claude Code's skill format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview). Ask "What skills are available?" to list discovered skills.
 
 ### Example prompts
 
@@ -251,7 +261,8 @@ src/
 - [x] Cursor position awareness in inline edit
 - [x] Slash commands
 - [x] Instruction mode (`#`) to save in custom system prompt
-- [ ] Skills, Hooks, MCP and other advanced features
+- [x] Skills support (Claude Code compatible)
+- [ ] Hooks, MCP and other advanced features
 
 ## License
 

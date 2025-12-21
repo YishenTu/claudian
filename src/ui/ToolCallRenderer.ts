@@ -52,6 +52,10 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       }
       return 'Tasks';
     }
+    case 'Skill': {
+      const skillName = (input.skill as string) || 'skill';
+      return `Skill: ${skillName}`;
+    }
     default:
       return name;
   }

@@ -388,6 +388,7 @@ export class ClaudianService {
       model: selectedModel,
       abortController: this.abortController ?? undefined,
       pathToClaudeCodeExecutable: this.resolvedClaudePath!,
+      settingSources: ['user', 'project'],
       env: {
         ...process.env,
         ...customEnv,
@@ -455,8 +456,9 @@ export class ClaudianService {
     }
 
     // Apply allowedTools restriction if specified by slash command
+    // Include 'Skill' tool to maintain skill availability
     if (queryOptions?.allowedTools && queryOptions.allowedTools.length > 0) {
-      options.allowedTools = queryOptions.allowedTools;
+      options.allowedTools = [...queryOptions.allowedTools, 'Skill'];
     }
 
     // Resume previous session if we have a session ID

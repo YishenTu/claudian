@@ -20,6 +20,7 @@ import {
   TOOL_NOTEBOOK_EDIT,
   TOOL_READ,
   TOOL_READ_MCP_RESOURCE,
+  TOOL_SKILL,
   TOOL_TASK,
   TOOL_TODO_WRITE,
   TOOL_WEB_FETCH,
@@ -48,6 +49,7 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_WEB_SEARCH]: 'globe',
   [TOOL_WEB_FETCH]: 'download',
   [TOOL_AGENT_OUTPUT]: 'bot',
+  [TOOL_SKILL]: 'zap',
 };
 
 export function getToolIcon(toolName: string): string {

@@ -148,20 +148,20 @@ describe('AsyncSubagentManager', () => {
     expect(manager.hasActiveAsync()).toBe(false);
   });
 
-  it('warns and ignores Task results for unknown tasks', () => {
+  it('ignores Task results for unknown tasks', () => {
     const { manager } = createManager();
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
+    // Should not throw when handling result for unknown task
     manager.handleTaskToolResult('missing-task', 'agent_id: x');
 
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
+    // Task should not be tracked
+    expect(manager.getByTaskId('missing-task')).toBeUndefined();
   });
 
-  it('warns when AgentOutputTool is missing agentId', () => {
+  it('ignores AgentOutputTool when missing agentId', () => {
     const { manager } = createManager();
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
+    // Should not throw when agentId is missing
     manager.handleAgentOutputToolUse({
       id: 'output-1',
       name: 'AgentOutputTool',
@@ -170,14 +170,14 @@ describe('AsyncSubagentManager', () => {
       isExpanded: false,
     });
 
-    expect(warnSpy).toHaveBeenCalledWith('AgentOutputTool called without agentId');
-    warnSpy.mockRestore();
+    // Tool should not be linked
+    expect(manager.isLinkedAgentOutputTool('output-1')).toBe(false);
   });
 
-  it('warns when AgentOutputTool references unknown agent', () => {
+  it('ignores AgentOutputTool when referencing unknown agent', () => {
     const { manager } = createManager();
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
+    // Should not throw when agent is unknown
     manager.handleAgentOutputToolUse({
       id: 'output-unknown',
       name: 'AgentOutputTool',
@@ -186,13 +186,12 @@ describe('AsyncSubagentManager', () => {
       isExpanded: false,
     });
 
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
+    // Tool should not be linked since agent doesn't exist
+    expect(manager.isLinkedAgentOutputTool('output-unknown')).toBe(false);
   });
 
   it('returns undefined on invalid AgentOutputTool state transition', () => {
     const { manager } = createManager();
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     manager.createAsyncSubagent('task-done', { description: 'Background', run_in_background: true });
     manager.handleTaskToolResult('task-done', JSON.stringify({ agent_id: 'agent-done' }));
 
@@ -210,8 +209,6 @@ describe('AsyncSubagentManager', () => {
 
     const res = manager.handleAgentOutputToolResult('output-any', '{"retrieval_status":"success"}', false);
     expect(res).toBeUndefined();
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
   });
 
   it('treats plain text not_ready as still running', () => {
@@ -328,10 +325,8 @@ describe('AsyncSubagentManager', () => {
     expect((manager as any).parseAgentId('{"agent\\u005fid":"escaped"}')).toBe('escaped');
     expect((manager as any).parseAgentId('{"data": {"agent\\u005fid": "nested2"}}')).toBe('nested2');
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // Returns null when no agent_id found
     expect((manager as any).parseAgentId('{"foo": "bar"}')).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
   });
 
   it('clears all state', () => {

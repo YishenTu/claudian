@@ -110,6 +110,7 @@ await MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, component
 | Shell | `Bash`, `BashOutput`, `KillShell` |
 | Web | `WebSearch`, `WebFetch` |
 | Task | `Task`, `TodoWrite` |
+| Skills | `Skill` |
 
 ## Settings
 
@@ -161,6 +162,12 @@ Select text or place cursor + hotkey → edit/insert without sidebar chat.
 - Read-only tools: `Read`, `Grep`, `Glob`, `LS`, `WebSearch`, `WebFetch`
 - Selection mode: `<replacement>` tags
 - Cursor mode: `<insertion>` tags
+
+### Skills
+Reusable capability modules that Claude discovers and invokes automatically based on context.
+- **User skills**: `~/.claude/skills/{name}/SKILL.md` (all vaults)
+- **Project skills**: `{vault}/.claude/skills/{name}/SKILL.md` (vault-specific)
+- Compatible with [Claude Code skill format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
 
 ## Security
 
