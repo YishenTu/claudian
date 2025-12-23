@@ -392,7 +392,9 @@ export class ClaudianView extends ItemView {
         return;
       }
 
-      if (e.key === 'Enter' && !e.shiftKey) {
+      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+      // When composing, Enter confirms the character input, not sends the message
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         this.sendMessage();
       }

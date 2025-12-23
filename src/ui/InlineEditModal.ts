@@ -677,7 +677,8 @@ class InlineEditController {
       return;
     }
 
-    if (e.key === 'Enter') {
+    // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+    if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
       this.generate();
     }
