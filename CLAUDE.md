@@ -157,6 +157,14 @@ Configure `mediaFolder` setting so agent can read `![[image.jpg]]` embeds.
 ### Instruction Mode (`#`)
 Type `#` at start → refine instruction → accept to append to system prompt.
 
+### Selection Awareness
+Main chat agent is aware of editor selection:
+- Polls editor selection every 250ms
+- Shows "X lines selected" indicator in input area
+- Preserves visual highlight when focus moves to input (CM6 decoration)
+- Selection sent as `<editor_selection>` XML tag in prompt
+- System prompt "## Editor Selection" section conditionally included
+
 ### Inline Edit
 Select text or place cursor + hotkey → edit/insert without sidebar chat.
 - Read-only tools: `Read`, `Grep`, `Glob`, `LS`, `WebSearch`, `WebFetch`
@@ -196,6 +204,7 @@ All classes use `.claudian-` prefix. Key patterns:
 | File context | `-file-chip`, `-mention-dropdown` |
 | Images | `-image-preview`, `-image-chip`, `-drop-overlay` |
 | Inline edit | `-inline-input`, `-inline-diff-replace`, `-diff-del`, `-diff-ins` |
+| Selection | `-selection-indicator`, `-selection-highlight` |
 | Modals | `-approval-modal`, `-instruction-modal` |
 
 ## Development Notes

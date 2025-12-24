@@ -10,12 +10,14 @@ import type { App, Editor} from 'obsidian';
 import { MarkdownView, Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../main';
-import { type CursorContext,type InlineEditMode, InlineEditService } from '../services/InlineEditService';
+import { type InlineEditMode, InlineEditService } from '../services/InlineEditService';
 import { TOOL_BASH } from '../tools/toolNames';
+import type { CursorContext } from '../utils';
 import { getVaultPath, isCommandBlocked } from '../utils';
 import { ApprovalModal } from './ApprovalModal';
 import { formatSlashCommandWarnings } from './formatSlashCommandWarnings';
 import { escapeHtml,normalizeInsertionText } from './inlineEditUtils';
+import { hideSelectionHighlight, showSelectionHighlight } from './SelectionHighlight';
 import { SlashCommandDropdown } from './SlashCommandDropdown';
 import { SlashCommandManager } from './SlashCommandManager';
 
@@ -126,12 +128,6 @@ const inlineEditField = StateField.define<DecorationSet>({
           block: !isInbetween,
           side: isInbetween ? 1 : -1,
         }));
-        // Highlight selection (skip for cursor modes where selFrom === selTo)
-        if (e.value.selFrom !== e.value.selTo) {
-          builder.add(e.value.selFrom, e.value.selTo, Decoration.mark({
-            class: 'claudian-inline-selection',
-          }));
-        }
         deco = builder.finish();
       } else if (e.is(showDiff)) {
         const builder = new RangeSetBuilder<Decoration>();
@@ -267,6 +263,7 @@ class InlineEditController {
   private selFrom: number;
   private selTo: number;
   private selectedText: string;
+  private startLine: number = 0; // 1-indexed
   private mode: InlineEditMode;
   private cursorContext: CursorContext | null = null;
   private inlineEditService: InlineEditService;
@@ -316,6 +313,7 @@ class InlineEditController {
       this.selFrom = fromLine.from + from.ch;
       this.selTo = toLine.from + to.ch;
       this.selectedText = this.editor.getSelection() || this.selectedText;
+      this.startLine = from.line + 1; // 1-indexed
     }
   }
 
@@ -359,6 +357,15 @@ class InlineEditController {
         isInbetween,
       }),
     });
+    this.updateSelectionHighlight();
+  }
+
+  private updateSelectionHighlight(): void {
+    if (this.mode === 'selection' && this.selFrom !== this.selTo) {
+      showSelectionHighlight(this.editorView, this.selFrom, this.selTo);
+    } else {
+      hideSelectionHighlight(this.editorView);
+    }
   }
 
   private attachSelectionListeners() {
@@ -498,11 +505,14 @@ class InlineEditController {
           cursorContext: this.cursorContext as CursorContext,
         });
       } else {
+        const lineCount = this.selectedText.split('\n').length;
         result = await this.inlineEditService.editText({
           mode: 'selection',
           instruction: userMessage,
           notePath: this.notePath,
           selectedText: this.selectedText,
+          startLine: this.startLine,
+          lineCount,
         });
       }
     }
@@ -557,6 +567,8 @@ class InlineEditController {
   private showDiffInPlace() {
     if (this.editedText === null) return;
 
+    hideSelectionHighlight(this.editorView);
+
     const diffOps = computeDiff(this.selectedText, this.editedText);
     const diffHtml = diffToHtml(diffOps);
 
@@ -586,6 +598,8 @@ class InlineEditController {
   /** Show insertion preview (all green, no deletions) for cursor mode. */
   private showInsertionInPlace() {
     if (this.insertedText === null) return;
+
+    hideSelectionHighlight(this.editorView);
 
     // Trim leading/trailing newlines to avoid extra blank lines
     const trimmedText = normalizeInsertionText(this.insertedText);
@@ -638,7 +652,8 @@ class InlineEditController {
   }
 
   reject() {
-    this.cleanup();
+    this.cleanup({ keepSelectionHighlight: true });
+    this.restoreSelectionHighlight();
     this.resolve({ decision: 'reject' });
   }
 
@@ -650,7 +665,7 @@ class InlineEditController {
     }
   }
 
-  private cleanup() {
+  private cleanup(options?: { keepSelectionHighlight?: boolean }) {
     this.inlineEditService.cancel();
     this.inlineEditService.resetConversation();
     this.isConversing = false;
@@ -669,6 +684,16 @@ class InlineEditController {
     this.editorView.dispatch({
       effects: hideInlineEdit.of(null),
     });
+    if (!options?.keepSelectionHighlight) {
+      hideSelectionHighlight(this.editorView);
+    }
+  }
+
+  private restoreSelectionHighlight(): void {
+    if (this.mode !== 'selection' || this.selFrom === this.selTo) {
+      return;
+    }
+    showSelectionHighlight(this.editorView, this.selFrom, this.selTo);
   }
 
   private handleKeydown(e: KeyboardEvent) {

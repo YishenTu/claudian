@@ -18,8 +18,9 @@ jest.mock('fs');
 
 // Now import after all mocks are set up
 import type { InlineEditRequest } from '../src/services/InlineEditService';
-import { buildCursorContext, InlineEditService } from '../src/services/InlineEditService';
+import { InlineEditService } from '../src/services/InlineEditService';
 import { getPathFromToolInput } from '../src/tools/toolInput';
+import { buildCursorContext } from '../src/utils';
 
 // Create a mock plugin
 function createMockPlugin(settings = {}) {
@@ -162,10 +163,12 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildPrompt(request);
 
-      expect(prompt).toContain('File: notes/test.md');
-      expect(prompt).toContain('---');
+      expect(prompt).toContain('<editor_selection path="notes/test.md">');
       expect(prompt).toContain('Hello world');
-      expect(prompt).toContain('Request: Fix the greeting');
+      expect(prompt).toContain('</editor_selection>');
+      expect(prompt).toContain('<query>');
+      expect(prompt).toContain('Fix the greeting');
+      expect(prompt).toContain('</query>');
     });
 
     it('should preserve selected text with newlines', () => {
@@ -191,8 +194,10 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildPrompt(request);
 
-      expect(prompt).toContain('File: empty.md');
-      expect(prompt).toContain('Request: Add content');
+      expect(prompt).toContain('<editor_selection path="empty.md">');
+      expect(prompt).toContain('<query>');
+      expect(prompt).toContain('Add content');
+      expect(prompt).toContain('</query>');
     });
   });
 
@@ -837,9 +842,12 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildCursorPrompt(request);
 
-      expect(prompt).toContain('File: notes/test.md');
+      expect(prompt).toContain('<editor_cursor path="notes/test.md" line="6">');
       expect(prompt).toContain('The quick brown | jumps over #inline');
-      expect(prompt).toContain('Request: add missing word');
+      expect(prompt).toContain('</editor_cursor>');
+      expect(prompt).toContain('<query>');
+      expect(prompt).toContain('add missing word');
+      expect(prompt).toContain('</query>');
     });
 
     it('should build inbetween cursor prompt with surrounding context', () => {
@@ -858,11 +866,14 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildCursorPrompt(request);
 
-      expect(prompt).toContain('File: docs/readme.md');
+      expect(prompt).toContain('<editor_cursor path="docs/readme.md" line="4">');
       expect(prompt).toContain('# Introduction');
       expect(prompt).toContain('| #inbetween');
       expect(prompt).toContain('## Features');
-      expect(prompt).toContain('Request: add a new section');
+      expect(prompt).toContain('</editor_cursor>');
+      expect(prompt).toContain('<query>');
+      expect(prompt).toContain('add a new section');
+      expect(prompt).toContain('</query>');
     });
 
     it('should handle inbetween with no content before cursor', () => {

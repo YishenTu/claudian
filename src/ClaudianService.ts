@@ -376,11 +376,13 @@ export class ClaudianService {
     const queryPrompt = this.buildPromptWithImages(prompt, images);
 
     // Build system prompt with settings
+    const hasEditorContext = prompt.includes('<editor_selection');
     const systemPrompt = buildSystemPrompt({
       mediaFolder: this.plugin.settings.mediaFolder,
       customPrompt: this.plugin.settings.systemPrompt,
       allowedExportPaths: this.plugin.settings.allowedExportPaths,
       vaultPath: cwd,
+      hasEditorContext,
     });
 
     const options: Options = {

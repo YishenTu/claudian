@@ -7,7 +7,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 ## Features
 
 - **Full Agentic Capabilities**: Leverage Claude Code's power to read, write, and edit files, and execute bash commands, all within your Obsidian vault.
-- **Context-Aware**: Automatically attach the focused note, mention files with `@`, and exclude notes by tag for precise context management.
+- **Context-Aware**: Automatically attach the focused note, mention files with `@`, exclude notes by tag, and include editor selection as context for precise context management.
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
 - **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
@@ -83,6 +83,15 @@ Use it like Claude Code, ask it to read, write, edit, search, etc. to help you w
 - **@ mention**: Type `@` anywhere to search and attach files from your vault
 - **Excluded tags**: Notes with tags listed in Settings → Excluded tags won't auto-attach (but can still be manually attached via `@`)
 - Files are sent as context with your message; Claude will read them to understand your question
+
+### Selection Context
+
+Select text in any note, then click the chat input - your selection is automatically included as context.
+
+- **Visual indicator**: "X lines selected" badge appears in the input area
+- **Preserved highlight**: Selection stays visually highlighted even after clicking input
+- **Automatic inclusion**: Selected text is sent with your message as `<editor_selection>` context
+- **Persistent context**: Selection stays active until cleared or replaced
 
 ### Image Context
 
@@ -237,7 +246,8 @@ src/
     ├── EnvSnippetManager.ts  # Environment variable snippets
     ├── InlineEditModal.ts    # Inline edit UI (CM6 decorations, diff view)
     ├── InstructionModeManager.ts # # instruction mode detection and UI state
-    └── InstructionConfirmModal.ts # Unified instruction modal
+    ├── InstructionConfirmModal.ts # Unified instruction modal
+    └── SelectionHighlight.ts # Shared CM6 selection highlight (chat + inline edit)
 ```
 
 ## Roadmap
@@ -262,6 +272,7 @@ src/
 - [x] Slash commands
 - [x] Instruction mode (`#`) to save in custom system prompt
 - [x] Skills support (Claude Code compatible)
+- [x] Selection awareness in main chat (visual indicator + context)
 - [ ] Hooks, MCP and other advanced features
 
 ## License

@@ -1338,7 +1338,8 @@ describe('ClaudianService', () => {
       // Now test the standalone function directly
       const context = buildContextFromHistory(messages);
 
-      expect(context).toContain('Context files: [notes/file.md]');
+      expect(context).toContain('<context_files>');
+      expect(context).toContain('notes/file.md');
     });
 
     it('should truncate long tool results', () => {
@@ -1399,7 +1400,8 @@ describe('ClaudianService', () => {
       expect(prompts[0]).toBe('Follow up');
       expect(prompts[1]).toContain('User: First question');
       expect(prompts[1]).toContain('Assistant: Answer');
-      expect(prompts[1]).toContain('Context files: [note.md]');
+      expect(prompts[1]).toContain('<context_files>');
+      expect(prompts[1]).toContain('note.md');
       expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
       expect(service.getSessionId()).toBeNull();
     });

@@ -107,6 +107,7 @@ export {
 
 // Note: getToolIcon is exported from src/tools/index.ts instead
 export { formatSlashCommandWarnings } from './formatSlashCommandWarnings';
+export { hideSelectionHighlight, showSelectionHighlight } from './SelectionHighlight';
 export {
   createWriteEditBlock,
   finalizeWriteEditBlock,

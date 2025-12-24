@@ -1459,6 +1459,7 @@ describe('ClaudianView - Message Queue', () => {
       expect((view as any).queuedMessage).toEqual({
         content: 'queued message',
         images: undefined,
+        editorContext: null,
       });
       expect((view as any).inputEl.value).toBe('');
     });
@@ -1475,6 +1476,7 @@ describe('ClaudianView - Message Queue', () => {
       expect((view as any).queuedMessage).toEqual({
         content: 'queued with images',
         images: mockImages,
+        editorContext: null,
       });
       expect((view as any).imageContextManager.clearImages).toHaveBeenCalled();
     });

@@ -14,6 +14,7 @@ export interface SystemPromptSettings {
   customPrompt?: string;
   allowedExportPaths?: string[];
   vaultPath?: string;
+  hasEditorContext?: boolean;
 }
 
 function getBaseSystemPrompt(vaultPath?: string): string {
@@ -33,14 +34,22 @@ A leading slash ("/") or absolute path will FAIL. Always use paths relative to t
 
 Export exception: You may write files outside the vault ONLY to configured export paths (write-only). Export destinations may use ~ or absolute paths.
 
-## Context Files
+## User Message Format
 
-User messages may include a "Context files:" prefix listing files the user wants to reference:
-- Format: \`Context files: [path/to/file1.md, path/to/file2.md]\`
-- These are files the user has explicitly attached to provide context
-- Read these files to understand what the user is asking about
-- The context prefix only appears when files have changed since the last message
-- An empty list means the user removed previously attached files: "Context files: []" should clear any prior file context
+User messages use XML tags for structured context:
+
+\`\`\`xml
+<context_files>
+path/to/file1.md, path/to/file2.md
+</context_files>
+
+<query>
+User's question or request here
+</query>
+\`\`\`
+
+- \`<context_files>\`: Files the user attached for context. Read these to understand what they're asking about. Only appears when files changed since last message.
+- \`<query>\`: The user's actual question or request.
 
 ## Obsidian Context
 
@@ -129,6 +138,24 @@ Reusable capability modules that provide specialized functionality. Use the \`Sk
 Skills are discovered automatically and listed in the system context. Invoke a skill when its description matches the user's request.`;
 }
 
+/** Returns editor context instructions (only included when selection exists). */
+function getEditorContextInstructions(): string {
+  return `
+
+## Editor Selection
+
+User messages may include an \`<editor_selection>\` tag showing text the user selected:
+
+\`\`\`xml
+<editor_selection path="path/to/file.md">
+selected text here
+possibly multiple lines
+</editor_selection>
+\`\`\`
+
+**When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
+}
+
 function getExportInstructions(allowedExportPaths: string[]): string {
   if (!allowedExportPaths || allowedExportPaths.length === 0) {
     return '';
@@ -200,6 +227,11 @@ rm -f "$img_path"
 /** Builds the complete system prompt with optional custom settings. */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   let prompt = getBaseSystemPrompt(settings.vaultPath);
+
+  if (settings.hasEditorContext) {
+    prompt += getEditorContextInstructions();
+  }
+
   prompt += getImageInstructions(settings.mediaFolder || '');
   prompt += getExportInstructions(settings.allowedExportPaths || []);
 

@@ -830,6 +830,22 @@
   background: var(--background-primary);
 }
 
+/* Selection indicator (shown when text is selected in editor) */
+.claudian-selection-indicator {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  color: #7abaff;
+  font-size: 11px;
+  opacity: 0.9;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1;
+  background: var(--background-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 .claudian-input {
   width: 100%;
   min-height: 60px;
@@ -2165,11 +2181,13 @@
    Inline Edit (CM6 decorations)
    ============================================ */
 
-/* Selection highlight when input is open */
-.cm-line .claudian-inline-selection,
-.claudian-inline-selection {
+/* Selection highlight (shared by inline edit and chat) */
+.cm-line .claudian-selection-highlight,
+.claudian-selection-highlight {
   background: var(--text-selection) !important;
   border-radius: 2px;
+  padding: 3px 0;
+  margin: -3px 0;
 }
 
 /* CM6 widget container - ensure transparent background */

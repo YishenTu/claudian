@@ -5,8 +5,9 @@
  * tool call rendering, conversation management, and file/image context.
  */
 
+import type { EditorView } from '@codemirror/view';
 import type { WorkspaceLeaf } from 'obsidian';
-import { ItemView, MarkdownRenderer, Notice, setIcon } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Notice, setIcon } from 'obsidian';
 
 import { getImageAttachmentDataUri } from './images/imageLoader';
 import type ClaudianPlugin from './main';
@@ -29,6 +30,8 @@ import {
 import type { AsyncSubagentState, ModelSelector, PermissionToggle, SubagentState, ThinkingBlockState, ThinkingBudgetSelector, WriteEditState } from './ui';
 import {
   formatSlashCommandWarnings,
+  hideSelectionHighlight,
+  showSelectionHighlight,
 } from './ui';
 import {
   addSubagentToolCall,
@@ -66,7 +69,7 @@ import {
   updateToolCallResult,
   updateWriteEditWithDiff,
 } from './ui';
-import { appendMarkdownSnippet, getVaultPath, isCommandBlocked, prependContextFiles } from './utils';
+import { appendMarkdownSnippet, type EditorSelectionContext, getVaultPath, isCommandBlocked, prependContextFiles, prependEditorContext } from './utils';
 
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {
@@ -99,8 +102,23 @@ export class ClaudianView extends ItemView {
   private inputWrapper: HTMLElement | null = null;
   private cancelRequested = false;
   private welcomeEl: HTMLElement | null = null;
-  private queuedMessage: { content: string; images?: ImageAttachment[] } | null = null;
+  private queuedMessage: {
+    content: string;
+    images?: ImageAttachment[];
+    editorContext: EditorSelectionContext | null;
+  } | null = null;
   private queueIndicatorEl: HTMLElement | null = null;
+  private selectionIndicatorEl: HTMLElement | null = null;
+  private storedSelection: {
+    notePath: string;
+    selectedText: string;
+    lineCount: number;
+    startLine: number;
+    from: number;
+    to: number;
+    editorView: EditorView;
+  } | null = null;
+  private selectionPollInterval: ReturnType<typeof setInterval> | null = null;
 
   private static readonly FLAVOR_TEXTS = [
     // Classic
@@ -271,6 +289,10 @@ export class ClaudianView extends ItemView {
 
     this.inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
 
+    // Selection indicator (top-right of input wrapper)
+    this.selectionIndicatorEl = this.inputWrapper.createDiv({ cls: 'claudian-selection-indicator' });
+    this.selectionIndicatorEl.style.display = 'none';
+
     this.inputEl = this.inputWrapper.createEl('textarea', {
       cls: 'claudian-input',
       attr: {
@@ -406,6 +428,11 @@ export class ClaudianView extends ItemView {
       this.instructionModeManager?.handleInputChange();
     });
 
+    // Show selection highlight when input is focused
+    this.inputEl.addEventListener('focus', () => {
+      this.showStoredSelectionHighlight();
+    });
+
     this.registerDomEvent(document, 'click', (e) => {
       if (!this.fileContextManager?.containsElement(e.target as Node) && e.target !== this.inputEl) {
         this.fileContextManager?.hideMentionDropdown();
@@ -422,10 +449,20 @@ export class ClaudianView extends ItemView {
 
     this.plugin.agentService.setApprovalCallback(this.handleApprovalRequest.bind(this));
 
+    // Poll for editor selection changes to update indicator
+    this.selectionPollInterval = setInterval(() => {
+      this.pollEditorSelection();
+    }, 250);
+
     await this.loadActiveConversation();
   }
 
   async onClose() {
+    if (this.selectionPollInterval) {
+      clearInterval(this.selectionPollInterval);
+      this.selectionPollInterval = null;
+    }
+    this.clearStoredSelection();
     this.hideThinkingIndicator();
     cleanupThinkingBlock(this.currentThinkingState);
     this.currentThinkingState = null;
@@ -444,7 +481,7 @@ export class ClaudianView extends ItemView {
     await this.saveCurrentConversation();
   }
 
-  private async sendMessage() {
+  private async sendMessage(options?: { editorContextOverride?: EditorSelectionContext | null }): Promise<void> {
     let content = this.inputEl.value.trim();
     const hasImages = this.imageContextManager?.hasImages() ?? false;
     if (!content && !hasImages) return;
@@ -452,6 +489,7 @@ export class ClaudianView extends ItemView {
     // If agent is working, queue the message instead of dropping it
     if (this.isStreaming) {
       const images = hasImages ? [...(this.imageContextManager?.getAttachedImages() || [])] : undefined;
+      const editorContext = this.getStoredSelectionContext();
 
       // Append to existing queued message if any
       if (this.queuedMessage) {
@@ -460,8 +498,9 @@ export class ClaudianView extends ItemView {
         if (images && images.length > 0) {
           this.queuedMessage.images = [...(this.queuedMessage.images || []), ...images];
         }
+        this.queuedMessage.editorContext = editorContext;
       } else {
-        this.queuedMessage = { content, images };
+        this.queuedMessage = { content, images, editorContext };
       }
 
       this.inputEl.value = '';
@@ -544,11 +583,22 @@ export class ClaudianView extends ItemView {
     const currentFiles = Array.from(attachedFiles);
     const filesChanged = this.fileContextManager?.hasFilesChanged() ?? false;
 
-    let promptToSend = content;
+    const editorContextOverride = options?.editorContextOverride;
+    const editorContext = editorContextOverride !== undefined
+      ? editorContextOverride
+      : this.getStoredSelectionContext();
+
+    // Wrap query in XML tag
+    let promptToSend = `<query>\n${content}\n</query>`;
     let contextFilesForMessage: string[] | undefined;
 
+    // Prepend editor context if available
+    if (editorContext) {
+      promptToSend = prependEditorContext(promptToSend, editorContext);
+    }
+
     if (filesChanged) {
-      promptToSend = prependContextFiles(content, currentFiles);
+      promptToSend = prependContextFiles(promptToSend, currentFiles);
       contextFilesForMessage = currentFiles;
     }
 
@@ -653,7 +703,7 @@ export class ClaudianView extends ItemView {
   private processQueuedMessage(): void {
     if (!this.queuedMessage) return;
 
-    const { content, images } = this.queuedMessage;
+    const { content, images, editorContext } = this.queuedMessage;
     this.queuedMessage = null;
     this.updateQueueIndicator();
 
@@ -664,7 +714,7 @@ export class ClaudianView extends ItemView {
     }
 
     // Use setTimeout to ensure the UI updates before sending
-    setTimeout(() => this.sendMessage(), 0);
+    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext }), 0);
   }
 
   /** Handles instruction mode submission - opens modal immediately and refines. */
@@ -1732,6 +1782,97 @@ export class ClaudianView extends ItemView {
 
   private generateId(): string {
     return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  /** Polls editor selection and updates stored selection (called by interval). */
+  private pollEditorSelection(): void {
+    const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return;
+
+    const editor = view.editor;
+    const editorView = (editor as any).cm as EditorView;
+    if (!editorView) return;
+
+    const selectedText = editor.getSelection();
+
+    if (selectedText.trim()) {
+      // Get selection range
+      const fromPos = editor.getCursor('from');
+      const toPos = editor.getCursor('to');
+      const from = editor.posToOffset(fromPos);
+      const to = editor.posToOffset(toPos);
+      const startLine = fromPos.line + 1; // 1-indexed for display
+
+      const notePath = view.file?.path || 'unknown';
+      const lineCount = selectedText.split('\n').length;
+      const sameRange = this.storedSelection
+        && this.storedSelection.editorView === editorView
+        && this.storedSelection.from === from
+        && this.storedSelection.to === to
+        && this.storedSelection.notePath === notePath;
+      const sameText = sameRange && this.storedSelection?.selectedText === selectedText;
+      const sameLineCount = sameRange && this.storedSelection?.lineCount === lineCount;
+      const sameStartLine = sameRange && this.storedSelection?.startLine === startLine;
+
+      if (!sameRange || !sameText || !sameLineCount || !sameStartLine) {
+        if (this.storedSelection && !sameRange) {
+          this.clearStoredSelectionHighlight();
+        }
+        this.storedSelection = { notePath, selectedText, lineCount, startLine, from, to, editorView };
+        this.updateSelectionIndicator();
+      }
+    } else if (document.activeElement !== this.inputEl) {
+      // No selection AND input not focused = user cleared selection in editor
+      this.clearStoredSelectionHighlight();
+      this.storedSelection = null;
+      this.updateSelectionIndicator();
+    }
+    // If no selection but input IS focused, keep storedSelection (user clicked input)
+  }
+
+  /** Shows the selection highlight in the editor using shared utility. */
+  private showStoredSelectionHighlight(): void {
+    if (!this.storedSelection) return;
+    const { from, to, editorView } = this.storedSelection;
+    showSelectionHighlight(editorView, from, to);
+  }
+
+  /** Clears the selection highlight from the editor using shared utility. */
+  private clearStoredSelectionHighlight(): void {
+    if (!this.storedSelection) return;
+    hideSelectionHighlight(this.storedSelection.editorView);
+  }
+
+  /** Updates selection indicator based on stored selection (matches system prompt logic). */
+  private updateSelectionIndicator(): void {
+    if (!this.selectionIndicatorEl) return;
+
+    if (this.storedSelection) {
+      const lineText = this.storedSelection.lineCount === 1 ? 'line' : 'lines';
+      this.selectionIndicatorEl.textContent = `${this.storedSelection.lineCount} ${lineText} selected`;
+      this.selectionIndicatorEl.style.display = 'block';
+    } else {
+      this.selectionIndicatorEl.style.display = 'none';
+    }
+  }
+
+  /** Returns stored selection as EditorSelectionContext, or null if none. */
+  private getStoredSelectionContext(): EditorSelectionContext | null {
+    if (!this.storedSelection) return null;
+    return {
+      notePath: this.storedSelection.notePath,
+      mode: 'selection',
+      selectedText: this.storedSelection.selectedText,
+      lineCount: this.storedSelection.lineCount,
+      startLine: this.storedSelection.startLine,
+    };
+  }
+
+  /** Clears the stored selection and highlight. */
+  private clearStoredSelection(): void {
+    this.clearStoredSelectionHighlight();
+    this.storedSelection = null;
+    this.updateSelectionIndicator();
   }
 
   private getGreeting(): string {

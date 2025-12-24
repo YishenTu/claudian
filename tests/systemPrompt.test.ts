@@ -28,7 +28,7 @@ describe('systemPrompt', () => {
       expect(prompt).toContain('Mocked Date');
       expect(prompt).toContain('Claudian');
       expect(prompt).toContain('# Critical Path Rules');
-      expect(prompt).toContain('# Context Files');
+      expect(prompt).toContain('# User Message Format');
     });
 
     it('should include allowed export paths instructions when configured', () => {

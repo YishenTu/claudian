@@ -12,7 +12,6 @@ import { ClaudianService } from './ClaudianService';
 import { ClaudianSettingTab } from './ClaudianSettings';
 import { ClaudianView } from './ClaudianView';
 import { deleteCachedImages } from './images/imageCache';
-import { buildCursorContext } from './services/InlineEditService';
 import type {
   ClaudianSettings,
   Conversation,
@@ -23,6 +22,7 @@ import {
   VIEW_TYPE_CLAUDIAN,
 } from './types';
 import { type InlineEditContext,InlineEditModal } from './ui/InlineEditModal';
+import { buildCursorContext } from './utils';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils';
 
 /**
