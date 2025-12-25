@@ -12,7 +12,7 @@ function createMockPlugin(vaultPath: string) {
       enableBlocklist: true,
       blockedCommands: [],
       showToolUse: true,
-      approvedActions: [],
+      permissions: [],
       permissionMode: 'yolo',
       model: 'haiku',
       thinkingBudget: 'off',

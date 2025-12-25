@@ -223,15 +223,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
       cls: 'setting-item-description',
     });
 
-    const approvedActions = this.plugin.settings.approvedActions;
+    const permissions = this.plugin.settings.permissions;
 
-    if (approvedActions.length === 0) {
+    if (permissions.length === 0) {
       const emptyEl = containerEl.createDiv({ cls: 'claudian-approved-empty' });
       emptyEl.setText('No approved actions yet. When you click "Always Allow" in the approval dialog, actions will appear here.');
     } else {
       const listEl = containerEl.createDiv({ cls: 'claudian-approved-list' });
 
-      for (const action of approvedActions) {
+      for (const action of permissions) {
         const itemEl = listEl.createDiv({ cls: 'claudian-approved-item' });
 
         const infoEl = itemEl.createDiv({ cls: 'claudian-approved-item-info' });
@@ -250,8 +250,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
           cls: 'claudian-approved-remove-btn',
         });
         removeBtn.addEventListener('click', async () => {
-          this.plugin.settings.approvedActions =
-            this.plugin.settings.approvedActions.filter((a) => a !== action);
+          this.plugin.settings.permissions =
+            this.plugin.settings.permissions.filter((a) => a !== action);
           await this.plugin.saveSettings();
           this.display(); // Refresh
         });
@@ -266,7 +266,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             .setButtonText('Clear all')
             .setWarning()
             .onClick(async () => {
-              this.plugin.settings.approvedActions = [];
+              this.plugin.settings.permissions = [];
               await this.plugin.saveSettings();
               this.display(); // Refresh
             })

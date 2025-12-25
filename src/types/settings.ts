@@ -7,13 +7,16 @@ import type { ClaudeModel, ThinkingBudget } from './models';
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'normal';
 
-/** Permanently approved tool action pattern. */
-export interface ApprovedAction {
+/** Permanently approved tool permission (like Claude Code). */
+export interface Permission {
   toolName: string;
   pattern: string;
   approvedAt: number;
   scope: 'session' | 'always';
 }
+
+/** @deprecated Use Permission instead */
+export type ApprovedAction = Permission;
 
 /** Saved environment variable configuration. */
 export interface EnvSnippet {
@@ -47,7 +50,7 @@ export interface ClaudianSettings {
   lastEnvHash?: string;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
-  approvedActions: ApprovedAction[];
+  permissions: Permission[];
   excludedTags: string[];
   mediaFolder: string;
   environmentVariables: string;
@@ -75,7 +78,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   lastEnvHash: '',
   thinkingBudget: 'off',
   permissionMode: 'yolo',
-  approvedActions: [],
+  permissions: [],
   excludedTags: [],
   mediaFolder: '',
   environmentVariables: '',

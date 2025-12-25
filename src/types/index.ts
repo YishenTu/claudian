@@ -35,11 +35,12 @@ export {
 
 // Settings types
 export {
-  type ApprovedAction,
+  type ApprovedAction, // @deprecated - use Permission
   type ClaudianSettings,
   DEFAULT_SETTINGS,
   type EnvSnippet,
   type InstructionRefineResult,
+  type Permission,
   type PermissionMode,
   type SlashCommand,
 } from './settings';

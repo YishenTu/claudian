@@ -94,7 +94,10 @@ export class SlashCommandModal extends Modal {
         placeholder: 'Review this code for:\n$ARGUMENTS\n\n@$1',
       },
     });
-    contentArea.value = this.existingCmd?.content || '';
+    const initialContent = this.existingCmd
+      ? parseSlashCommandContent(this.existingCmd.content).promptContent
+      : '';
+    contentArea.value = initialContent;
 
     // Button container
     const buttonContainer = contentEl.createDiv({ cls: 'claudian-slash-modal-buttons' });
@@ -122,13 +125,13 @@ export class SlashCommandModal extends Modal {
         return;
       }
 
-      // Validate name (alphanumeric, hyphens, underscores only)
-      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-        new Notice('Command name can only contain letters, numbers, hyphens, and underscores');
+      // Validate name (alphanumeric, hyphens, underscores, slashes only for nested commands)
+      if (!/^[a-zA-Z0-9_/-]+$/.test(name)) {
+        new Notice('Command name can only contain letters, numbers, hyphens, underscores, and slashes');
         return;
       }
 
-      // Check for duplicate names (excluding current command if editing)
+      // Check for duplicate names in current in-memory commands (excluding current command if editing)
       const existing = this.plugin.settings.slashCommands.find(
         c => c.name.toLowerCase() === name.toLowerCase() &&
              c.id !== this.existingCmd?.id
@@ -139,6 +142,7 @@ export class SlashCommandModal extends Modal {
       }
 
       const parsed = parseSlashCommandContent(content);
+      const promptContent = parsed.promptContent;
 
       const cmd: SlashCommand = {
         id: this.existingCmd?.id || `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
@@ -151,7 +155,7 @@ export class SlashCommandModal extends Modal {
           : parsed.allowedTools && parsed.allowedTools.length > 0
             ? parsed.allowedTools
             : undefined,
-        content,
+        content: promptContent,
       };
 
       this.onSave(cmd);
@@ -281,26 +285,36 @@ export class SlashCommandSettings {
   }
 
   private async saveCommand(cmd: SlashCommand, existing: SlashCommand | null): Promise<void> {
-    if (existing) {
-      const index = this.plugin.settings.slashCommands.findIndex(c => c.id === existing.id);
-      if (index !== -1) {
-        this.plugin.settings.slashCommands[index] = cmd;
-      }
-    } else {
-      this.plugin.settings.slashCommands.push(cmd);
+    // Save new file first (safer: if this fails, old file still exists)
+    await this.plugin.storage.commands.save(cmd);
+
+    // Delete old file only after successful save (if name changed)
+    if (existing && existing.name !== cmd.name) {
+      await this.plugin.storage.commands.delete(existing.id);
     }
-    await this.plugin.saveSettings();
+
+    // Reload commands from storage
+    await this.reloadCommands();
+
     this.render();
     new Notice(`Slash command "/${cmd.name}" ${existing ? 'updated' : 'created'}`);
   }
 
   private async deleteCommand(cmd: SlashCommand): Promise<void> {
-    this.plugin.settings.slashCommands = this.plugin.settings.slashCommands.filter(
-      c => c.id !== cmd.id
-    );
-    await this.plugin.saveSettings();
+    // Delete from file storage
+    await this.plugin.storage.commands.delete(cmd.id);
+
+    // Reload commands from storage
+    await this.reloadCommands();
+
     this.render();
     new Notice(`Slash command "/${cmd.name}" deleted`);
+  }
+
+  /** Reload commands from storage and update in-memory settings. */
+  private async reloadCommands(): Promise<void> {
+    const commands = await this.plugin.storage.commands.loadAll();
+    this.plugin.settings.slashCommands = commands;
   }
 
   private exportCommands(): void {
@@ -337,6 +351,10 @@ export class SlashCommandSettings {
           throw new Error('Invalid format: expected an array');
         }
 
+        // Reload current commands to check for duplicates
+        const existingCommands = await this.plugin.storage.commands.loadAll();
+        const existingNames = new Set(existingCommands.map(c => c.name.toLowerCase()));
+
         let imported = 0;
         for (const cmd of commands) {
           // Validate required fields
@@ -348,8 +366,8 @@ export class SlashCommandSettings {
             continue;
           }
 
-          // Validate name (alphanumeric, hyphens, underscores only)
-          if (!/^[a-zA-Z0-9_-]+$/.test(cmd.name)) {
+          // Validate name (alphanumeric, hyphens, underscores, slashes only)
+          if (!/^[a-zA-Z0-9_/-]+$/.test(cmd.name)) {
             continue;
           }
 
@@ -384,21 +402,23 @@ export class SlashCommandSettings {
           cmd.argumentHint = cmd.argumentHint || parsed.argumentHint;
           cmd.model = cmd.model || parsed.model;
           cmd.allowedTools = cmd.allowedTools || parsed.allowedTools;
+          cmd.content = parsed.promptContent;
 
           // Check for duplicate names
-          const existing = this.plugin.settings.slashCommands.find(
-            c => c.name.toLowerCase() === cmd.name.toLowerCase()
-          );
-          if (existing) {
+          if (existingNames.has(cmd.name.toLowerCase())) {
             // Skip duplicates
             continue;
           }
 
-          this.plugin.settings.slashCommands.push(cmd);
+          // Save to file storage
+          await this.plugin.storage.commands.save(cmd);
+          existingNames.add(cmd.name.toLowerCase());
           imported++;
         }
 
-        await this.plugin.saveSettings();
+        // Reload commands from storage
+        await this.reloadCommands();
+
         this.render();
         new Notice(`Imported ${imported} slash command(s)`);
       } catch {

@@ -1670,10 +1670,8 @@ export class ClaudianView extends ItemView {
       return;
     }
 
-    // Sort: current session first, then by lastResponseAt (fallback to createdAt) descending
+    // Sort by lastResponseAt (fallback to createdAt) descending
     const conversations = [...allConversations].sort((a, b) => {
-      if (a.id === this.currentConversationId) return -1;
-      if (b.id === this.currentConversationId) return 1;
       return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
     });
 

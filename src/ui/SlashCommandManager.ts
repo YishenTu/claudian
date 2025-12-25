@@ -197,8 +197,9 @@ export class SlashCommandManager {
     if (!trimmed.startsWith('/')) return null;
 
     // Extract command name (everything after / until first whitespace)
+    // Allows nested paths like /code/review
     // Use [\s\S]* instead of .* with s flag for ES5 compatibility
-    const match = trimmed.match(/^\/([a-zA-Z0-9_-]+)(?:\s+([\s\S]*))?$/);
+    const match = trimmed.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
     if (!match) return null;
 
     const commandName = match[1];

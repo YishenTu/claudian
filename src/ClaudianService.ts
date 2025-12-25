@@ -210,12 +210,12 @@ export class ClaudianService {
 
     // Initialize approval manager with access to persistent approvals
     this.approvalManager = new ApprovalManager(
-      () => this.plugin.settings.approvedActions
+      () => this.plugin.settings.permissions
     );
 
     // Set up persistence callback for permanent approvals
     this.approvalManager.setPersistCallback(async (action: ApprovedAction) => {
-      this.plugin.settings.approvedActions.push(action);
+      this.plugin.settings.permissions.push(action);
       await this.plugin.saveSettings();
     });
   }

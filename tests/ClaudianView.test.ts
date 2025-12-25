@@ -27,7 +27,7 @@ function createMockPlugin(settingsOverrides = {}) {
       model: 'haiku',
       thinkingBudget: 'off',
       permissionMode: 'yolo',
-      approvedActions: [],
+      permissions: [],
       excludedTags: [],
       ...settingsOverrides,
     },

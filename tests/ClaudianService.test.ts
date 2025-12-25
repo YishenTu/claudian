@@ -68,7 +68,7 @@ function createMockPlugin(settings = {}) {
         '> /dev/sd',
       ],
       showToolUse: true,
-      approvedActions: [],
+      permissions: [],
       permissionMode: 'yolo',
       ...settings,
     },
@@ -1170,7 +1170,7 @@ describe('ClaudianService', () => {
       // Reset plugin settings
       mockPlugin = createMockPlugin({
         permissionMode: 'normal',
-        approvedActions: [],
+        permissions: [],
       });
       service = new ClaudianService(mockPlugin);
     });
@@ -1196,13 +1196,13 @@ describe('ClaudianService', () => {
     it('should store permanent approved actions in settings', async () => {
       await (service as any).approvalManager.approveAction('Read', { file_path: '/test/file.md' }, 'always');
 
-      expect(mockPlugin.settings.approvedActions.length).toBe(1);
-      expect(mockPlugin.settings.approvedActions[0].toolName).toBe('Read');
-      expect(mockPlugin.settings.approvedActions[0].pattern).toBe('/test/file.md');
+      expect(mockPlugin.settings.permissions.length).toBe(1);
+      expect(mockPlugin.settings.permissions[0].toolName).toBe('Read');
+      expect(mockPlugin.settings.permissions[0].pattern).toBe('/test/file.md');
     });
 
     it('should recognize permanently approved actions', async () => {
-      mockPlugin.settings.approvedActions = [
+      mockPlugin.settings.permissions = [
         { toolName: 'Read', pattern: '/test/file.md', approvedAt: Date.now(), scope: 'always' },
       ];
 
@@ -1221,7 +1221,7 @@ describe('ClaudianService', () => {
     });
 
     it('should match file paths with prefix', async () => {
-      mockPlugin.settings.approvedActions = [
+      mockPlugin.settings.permissions = [
         { toolName: 'Read', pattern: '/test/vault/', approvedAt: Date.now(), scope: 'always' },
       ];
 
@@ -1233,7 +1233,7 @@ describe('ClaudianService', () => {
     });
 
     it('should not match non-segment prefixes for file paths', () => {
-      mockPlugin.settings.approvedActions = [
+      mockPlugin.settings.permissions = [
         { toolName: 'Read', pattern: '/test/vault/notes', approvedAt: Date.now(), scope: 'always' },
       ];
 
@@ -1301,7 +1301,7 @@ describe('ClaudianService', () => {
       const result = await canUse('Read', { file_path: '/test/file.md' }, {});
 
       expect(result.behavior).toBe('allow');
-      expect(mockPlugin.settings.approvedActions.some((a: any) => a.toolName === 'Read' && a.pattern === '/test/file.md')).toBe(true);
+      expect(mockPlugin.settings.permissions.some((a: any) => a.toolName === 'Read' && a.pattern === '/test/file.md')).toBe(true);
       expect(saveSpy).toHaveBeenCalled();
     });
 
@@ -1789,7 +1789,7 @@ describe('ClaudianService', () => {
     });
 
     it('allows pre-approved actions in safe mode callback', async () => {
-      mockPlugin = createMockPlugin({ permissionMode: 'normal', approvedActions: [
+      mockPlugin = createMockPlugin({ permissionMode: 'normal', permissions: [
         { toolName: 'Read', pattern: '/test/file.md', approvedAt: Date.now(), scope: 'always' },
       ] });
       service = new ClaudianService(mockPlugin);

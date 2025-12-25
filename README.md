@@ -198,7 +198,13 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
 ## Privacy & Data Use
 
 - **Outbound scope**: Content sent to Claude/custom APIs includes your input, attached files/snippets, images (base64), and model-issued tool calls plus summarized outputs. Default provider is Anthropic; if `ANTHROPIC_BASE_URL` is set, traffic goes to that endpoint.
-- **Local storage**: Settings, chat history, approved actions, and environment variable snippets are stored in `.obsidian/plugins/claudian`. Image cache is written to `.claudian-cache/images`; you can clear it when deleting conversations or uninstalling the plugin.
+- **Local storage**: Data is stored in a distributed format (like Claude Code):
+  - `vault/.claude/settings.json` - User settings and permissions (shareable)
+  - `vault/.claude/commands/*.md` - Slash commands as Markdown files
+  - `vault/.claude/sessions/*.jsonl` - Chat sessions (one file per conversation)
+  - `.obsidian/plugins/claudian/data.json` - Machine state (active conversation, model tracking)
+  - `.claudian-cache/images/` - Image cache (SHA-256 deduplicated)
+- **Migration**: Existing users are automatically migrated from the old single-file format on first load. Migration will be removed in v2.0.
 - **Commands & file access**: The plugin can read/write files and execute Bash commands within the vault directory; Safe mode approvals and the blocklist apply, and paths are constrained to the vault via `realpath`.
 - **User controls**: You can edit the blocked-command list, switch Safe/YOLO modes, clear history, delete caches, and remove API keys; disabling the plugin stops all remote calls.
 - **Telemetry**: No additional telemetry or third-party tracking. Data retention/compliance follows the terms of your configured API provider.
@@ -237,6 +243,12 @@ src/
 ├── images/              # Image handling
 │   ├── imageCache.ts         # Image caching with SHA-256 deduplication
 │   └── imageLoader.ts        # Image loading utilities
+├── storage/             # Distributed storage system
+│   ├── StorageService.ts     # Main coordinator, migration logic
+│   ├── SettingsStorage.ts    # .claude/settings.json handling
+│   ├── SlashCommandStorage.ts # .claude/commands/*.md handling
+│   ├── SessionStorage.ts     # .claude/sessions/*.jsonl handling
+│   └── VaultFileAdapter.ts   # Obsidian Vault API wrapper
 ├── types/               # Type definitions (modular)
 │   ├── models.ts, settings.ts, chat.ts, tools.ts, sdk.ts
 │   └── index.ts              # Barrel export
@@ -286,6 +298,7 @@ src/
 - [x] Skills support (Claude Code compatible)
 - [x] Selection awareness in main chat (visual indicator + context)
 - [x] Context paths for read-only access to external directories
+- [x] Distributed storage (settings, commands, sessions as separate files)
 - [ ] Hooks, MCP and other advanced features
 
 ## License

@@ -23,6 +23,7 @@ src/
 ├── security/            # Approval, blocklist, path validation
 ├── tools/               # Tool constants and utilities
 ├── images/              # Image caching and loading
+├── storage/             # Distributed storage system
 ├── types/               # Type definitions
 └── ui/                  # All UI components
 ```
@@ -35,6 +36,7 @@ src/
 | `security/` | Approval, blocklist, path validation |
 | `tools/` | Tool names, icons, input parsing |
 | `images/` | Image caching with SHA-256 dedup |
+| `storage/` | Settings, commands, sessions storage (Claude Code pattern) |
 | `services/` | Agent services and subagent state |
 | `types/` | Type definitions |
 | `ui/` | All UI components |
@@ -123,7 +125,7 @@ interface ClaudianSettings {
   blockedCommands: string[];
   showToolUse: boolean;
   toolCallExpandedByDefault: boolean;
-  approvedActions: ApprovedAction[];
+  permissions: Permission[];         // Tool approvals (like Claude Code)
   excludedTags: string[];            // Tags to exclude from auto-context
   mediaFolder: string;               // Attachment folder for ![[images]]
   environmentVariables: string;      // KEY=VALUE format
@@ -131,9 +133,34 @@ interface ClaudianSettings {
   systemPrompt: string;
   allowedExportPaths: string[];      // Write-only paths outside vault
   allowedContextPaths: string[];     // Read-only paths outside vault
-  slashCommands: SlashCommand[];
+  slashCommands: SlashCommand[];     // Loaded from .claude/commands/*.md
 }
 ```
+
+## Storage System
+
+Distributed storage mimicking Claude Code patterns:
+
+```
+vault/.claude/
+├── settings.json              # User settings + permissions (shareable)
+├── commands/                  # Slash commands as Markdown
+│   └── {name}.md              # YAML frontmatter + prompt content
+└── sessions/                  # Chat sessions as JSONL
+    └── {conv-id}.jsonl        # Meta line + message lines
+
+.obsidian/plugins/claudian/
+└── data.json                  # Machine state only
+```
+
+| File | Contents |
+|------|----------|
+| `settings.json` | All settings including `permissions` (like Claude Code) |
+| `commands/*.md` | Slash commands with YAML frontmatter |
+| `sessions/*.jsonl` | Conversations (meta + messages per line) |
+| `data.json` | `activeConversationId`, `lastEnvHash`, model tracking |
+
+**Command ID encoding**: `-` → `-_`, `/` → `--` (reversible, no collisions)
 
 ## Models & Thinking
 

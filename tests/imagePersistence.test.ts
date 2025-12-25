@@ -12,7 +12,7 @@ function createMockPlugin() {
       model: 'haiku',
       thinkingBudget: 'off',
       permissionMode: 'yolo',
-      approvedActions: [],
+      permissions: [],
       excludedTags: [],
       mediaFolder: '',
     },

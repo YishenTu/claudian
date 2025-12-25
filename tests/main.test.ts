@@ -20,6 +20,14 @@ describe('ClaudianPlugin', () => {
       vault: {
         adapter: {
           basePath: '/test/vault',
+          exists: jest.fn().mockResolvedValue(false),
+          read: jest.fn().mockResolvedValue(''),
+          write: jest.fn().mockResolvedValue(undefined),
+          remove: jest.fn().mockResolvedValue(undefined),
+          mkdir: jest.fn().mockResolvedValue(undefined),
+          list: jest.fn().mockResolvedValue({ files: [], folders: [] }),
+          stat: jest.fn().mockResolvedValue(null),
+          rename: jest.fn().mockResolvedValue(undefined),
         },
       },
       workspace: {
@@ -147,9 +155,18 @@ describe('ClaudianPlugin', () => {
 
   describe('loadSettings', () => {
     it('should merge saved data with defaults', async () => {
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        enableBlocklist: false,
-        showToolUse: false,
+      // Mock settings file exists with custom values
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claude/settings.json';
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claude/settings.json') {
+          return JSON.stringify({
+            enableBlocklist: false,
+            showToolUse: false,
+          });
+        }
+        return '';
       });
 
       await plugin.loadSettings();
@@ -161,6 +178,8 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should use defaults when no saved data', async () => {
+      // No settings file exists
+      mockApp.vault.adapter.exists.mockResolvedValue(false);
       (plugin.loadData as jest.Mock).mockResolvedValue(null);
 
       await plugin.loadSettings();
@@ -169,6 +188,8 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should use defaults when loadData returns empty object', async () => {
+      // No settings file exists
+      mockApp.vault.adapter.exists.mockResolvedValue(false);
       (plugin.loadData as jest.Mock).mockResolvedValue({});
 
       await plugin.loadSettings();
@@ -177,9 +198,18 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should reconcile model from environment and persist when changed', async () => {
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        environmentVariables: 'ANTHROPIC_MODEL=custom-model',
-        lastEnvHash: '',
+      // Mock settings file with environment variables
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claude/settings.json';
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claude/settings.json') {
+          return JSON.stringify({
+            environmentVariables: 'ANTHROPIC_MODEL=custom-model',
+            lastEnvHash: '',
+          });
+        }
+        return '';
       });
 
       const saveSpy = jest.spyOn(plugin, 'saveSettings');
@@ -191,7 +221,7 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('saveSettings', () => {
-    it('should call saveData with settings and conversations', async () => {
+    it('should save settings to file and minimal data to data.json', async () => {
       await plugin.onload();
 
       plugin.settings.enableBlocklist = false;
@@ -199,16 +229,20 @@ describe('ClaudianPlugin', () => {
 
       await plugin.saveSettings();
 
-      expect((plugin.saveData as jest.Mock)).toHaveBeenCalledWith(
-        expect.objectContaining({
-          enableBlocklist: false,
-          showToolUse: false,
-          conversations: expect.any(Array),
-        })
+      // Settings should be written to .claude/settings.json via vault adapter
+      expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
+        '.claude/settings.json',
+        expect.stringContaining('"enableBlocklist": false')
       );
-      // Also verify the structure includes activeConversationId (can be null or string)
+
+      // Plugin state should be saved to data.json (machine-specific only)
       const savedData = (plugin.saveData as jest.Mock).mock.calls[0][0];
       expect(savedData).toHaveProperty('activeConversationId');
+      expect(savedData).toHaveProperty('lastEnvHash');
+      expect(savedData).toHaveProperty('lastClaudeModel');
+      expect(savedData).toHaveProperty('lastCustomModel');
+      // permissions is now in settings.json, not data.json
+      expect(savedData).not.toHaveProperty('permissions');
     });
   });
 
@@ -519,21 +553,38 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('loadSettings with conversations', () => {
-    it('should load saved conversations', async () => {
-      const savedConversations = [
-        {
-          id: 'conv-saved-1',
-          title: 'Saved Chat',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          sessionId: 'saved-session',
-          messages: [],
-        },
-      ];
+    it('should load saved conversations from JSONL files', async () => {
+      const timestamp = Date.now();
+      const sessionJsonl = JSON.stringify({
+        type: 'meta',
+        id: 'conv-saved-1',
+        title: 'Saved Chat',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        sessionId: 'saved-session',
+      });
 
+      // Mock session file exists
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.jsonl';
+      });
+      mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
+        if (path === '.claude/sessions') {
+          return { files: ['.claude/sessions/conv-saved-1.jsonl'], folders: [] };
+        }
+        return { files: [], folders: [] };
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claude/sessions/conv-saved-1.jsonl') {
+          return sessionJsonl;
+        }
+        return '';
+      });
+
+      // Mock minimal data.json with activeConversationId
       (plugin.loadData as jest.Mock).mockResolvedValue({
-        conversations: savedConversations,
         activeConversationId: 'conv-saved-1',
+        migrationVersion: 2,
       });
 
       await plugin.loadSettings();
@@ -544,9 +595,13 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should handle invalid activeConversationId', async () => {
+      // No sessions exist
+      mockApp.vault.adapter.exists.mockResolvedValue(false);
+      mockApp.vault.adapter.list.mockResolvedValue({ files: [], folders: [] });
+
       (plugin.loadData as jest.Mock).mockResolvedValue({
-        conversations: [],
         activeConversationId: 'non-existent',
+        migrationVersion: 2,
       });
 
       await plugin.loadSettings();

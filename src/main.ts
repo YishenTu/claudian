@@ -12,6 +12,7 @@ import { ClaudianService } from './ClaudianService';
 import { ClaudianSettingTab } from './ClaudianSettings';
 import { ClaudianView } from './ClaudianView';
 import { deleteCachedImages } from './images/imageCache';
+import { StorageService } from './storage';
 import type {
   ClaudianSettings,
   Conversation,
@@ -32,6 +33,7 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   agentService: ClaudianService;
+  storage: StorageService;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
   private runtimeEnvironmentVariables = '';
@@ -121,28 +123,51 @@ export default class ClaudianPlugin extends Plugin {
 
   /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
-    const data = await this.loadData() || {};
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-    this.conversations = data.conversations || [];
-    this.activeConversationId = data.activeConversationId || null;
+    // Initialize storage service (handles migration if needed)
+    this.storage = new StorageService(this);
+    const { settings, state } = await this.storage.initialize();
 
+    // Load slash commands from files
+    const slashCommands = await this.storage.commands.loadAll();
+
+    // Merge settings with defaults, state fields, and slashCommands
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...settings,
+      // State fields from data.json
+      lastEnvHash: state.lastEnvHash,
+      lastClaudeModel: state.lastClaudeModel,
+      lastCustomModel: state.lastCustomModel,
+      slashCommands,
+    };
+
+    // Load all conversations from session files
+    this.conversations = await this.storage.sessions.loadAllConversations();
+    this.activeConversationId = state.activeConversationId;
+
+    // Validate active conversation exists
     if (this.activeConversationId &&
         !this.conversations.find(c => c.id === this.activeConversationId)) {
       this.activeConversationId = null;
     }
 
-    const backfilled = this.backfillConversationResponseTimestamps();
+    const backfilledConversations = this.backfillConversationResponseTimestamps();
 
     this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
     const modelReset = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
 
-    if (modelReset || backfilled) {
+    if (modelReset) {
       await this.saveSettings();
+    }
+
+    // Persist backfilled conversations to their session files
+    for (const conv of backfilledConversations) {
+      await this.storage.sessions.saveConversation(conv);
     }
   }
 
-  private backfillConversationResponseTimestamps(): boolean {
-    let updated = false;
+  private backfillConversationResponseTimestamps(): Conversation[] {
+    const updated: Conversation[] = [];
     for (const conv of this.conversations) {
       if (conv.lastResponseAt != null) continue;
       if (!conv.messages || conv.messages.length === 0) continue;
@@ -151,7 +176,7 @@ export default class ClaudianPlugin extends Plugin {
         const msg = conv.messages[i];
         if (msg.role === 'assistant') {
           conv.lastResponseAt = msg.timestamp;
-          updated = true;
+          updated.push(conv);
           break;
         }
       }
@@ -159,12 +184,24 @@ export default class ClaudianPlugin extends Plugin {
     return updated;
   }
 
-  /** Persists settings and conversations to storage. */
+  /** Persists settings to storage. */
   async saveSettings() {
-    await this.saveData({
-      ...this.settings,
-      conversations: this.conversations,
+    // Save settings (excluding state fields and slashCommands)
+    const {
+      slashCommands: _,
+      lastEnvHash: __,
+      lastClaudeModel: ___,
+      lastCustomModel: ____,
+      ...settingsToSave
+    } = this.settings;
+    await this.storage.settings.save(settingsToSave);
+
+    // Save state fields to data.json
+    await this.storage.saveState({
       activeConversationId: this.activeConversationId,
+      lastEnvHash: this.settings.lastEnvHash || '',
+      lastClaudeModel: this.settings.lastClaudeModel || 'haiku',
+      lastCustomModel: this.settings.lastCustomModel || '',
     });
   }
 
@@ -308,7 +345,10 @@ export default class ClaudianPlugin extends Plugin {
     this.activeConversationId = conversation.id;
     this.agentService.resetSession();
 
-    await this.saveSettings();
+    // Save new conversation to session file
+    await this.storage.sessions.saveConversation(conversation);
+    await this.storage.updateState({ activeConversationId: this.activeConversationId });
+
     return conversation;
   }
 
@@ -320,7 +360,7 @@ export default class ClaudianPlugin extends Plugin {
     this.activeConversationId = id;
     this.agentService.setSessionId(conversation.sessionId);
 
-    await this.saveSettings();
+    await this.storage.updateState({ activeConversationId: this.activeConversationId });
     return conversation;
   }
 
@@ -333,14 +373,15 @@ export default class ClaudianPlugin extends Plugin {
     this.cleanupConversationImages(conversation);
     this.conversations.splice(index, 1);
 
+    // Delete the session file
+    await this.storage.sessions.deleteConversation(id);
+
     if (this.activeConversationId === id) {
       if (this.conversations.length > 0) {
         await this.switchConversation(this.conversations[0].id);
       } else {
         await this.createConversation();
       }
-    } else {
-      await this.saveSettings();
     }
   }
 
@@ -351,7 +392,7 @@ export default class ClaudianPlugin extends Plugin {
 
     conversation.title = title.trim() || this.generateDefaultTitle();
     conversation.updatedAt = Date.now();
-    await this.saveSettings();
+    await this.storage.sessions.saveConversation(conversation);
   }
 
   /** Updates conversation properties (messages, sessionId, etc.). */
@@ -360,7 +401,7 @@ export default class ClaudianPlugin extends Plugin {
     if (!conversation) return;
 
     Object.assign(conversation, updates, { updatedAt: Date.now() });
-    await this.saveSettings();
+    await this.storage.sessions.saveConversation(conversation);
   }
 
   /** Returns the current active conversation. */
