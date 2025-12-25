@@ -23,7 +23,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed (the SDK uses it internally)
+- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (the SDK uses it internally)
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports anthropic API format (Openrouter, Kimi, GLM, DeepSeek, etc.)
 - Desktop only (support macOS, not tested on Linux or Windows)
@@ -148,7 +148,7 @@ Extend Claudian with reusable capability modules. Skills are `SKILL.md` files wi
 - **User skills**: `~/.claude/skills/{name}/SKILL.md` (all vaults)
 - **Project skills**: `{vault}/.claude/skills/{name}/SKILL.md` (vault-specific)
 
-Compatible with [Claude Code's skill format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview). Ask "What skills are available?" to list discovered skills.
+Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview). Ask "What skills are available?" to list discovered skills.
 
 ### Example prompts
 
@@ -295,4 +295,4 @@ Licensed under the [MIT License](LICENSE).
 ## Acknowledgments
 
 - [Obsidian](https://obsidian.md) for the plugin API
-- [Anthropic](https://anthropic.com) for Claude and the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
+- [Anthropic](https://anthropic.com) for Claude and the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
