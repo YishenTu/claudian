@@ -150,7 +150,8 @@ export class SessionStorage {
   /** Load only metadata from a session file (first line). */
   private async loadMetaOnly(filePath: string): Promise<ConversationMeta | null> {
     const content = await this.adapter.read(filePath);
-    const firstLine = content.split('\n')[0];
+    // Handle both Unix (LF) and Windows (CRLF) line endings
+    const firstLine = content.split(/\r?\n/)[0];
 
     if (!firstLine) return null;
 
@@ -159,7 +160,7 @@ export class SessionStorage {
       if (record.type !== 'meta') return null;
 
       // Count messages by counting remaining lines
-      const lines = content.split('\n').filter(l => l.trim());
+      const lines = content.split(/\r?\n/).filter(l => l.trim());
       const messageCount = lines.length - 1;
 
       // Get preview from first user message
@@ -193,7 +194,8 @@ export class SessionStorage {
 
   /** Parse JSONL content into a Conversation object. */
   private parseJSONL(content: string): Conversation | null {
-    const lines = content.split('\n').filter(l => l.trim());
+    // Handle both Unix (LF) and Windows (CRLF) line endings
+    const lines = content.split(/\r?\n/).filter(l => l.trim());
     if (lines.length === 0) return null;
 
     let meta: SessionMetaRecord | null = null;

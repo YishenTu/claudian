@@ -214,9 +214,25 @@ Reusable capability modules that Claude discovers and invokes automatically base
 
 **Restrictions (both modes)**:
 - Vault-only file access by default (symlink-safe via `realpath`)
-- Blocked commands: `rm -rf`, `chmod 777`, `chmod -R 777`
+- Blocked commands: Platform-detected defaults
+  - Unix: `rm -rf`, `chmod 777`, `chmod -R 777`
+  - Windows: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart`
 - Export paths: Write-only to configured paths (default: `~/Desktop`, `~/Downloads`)
 - Context paths: Read-only access to configured paths outside vault (folder icon in input toolbar)
+
+## Cross-Platform Support
+
+The plugin supports macOS, Linux, and Windows:
+
+| Feature | Unix | Windows |
+|---------|------|---------|
+| Home paths | `~/path` | `~/path`, `~\path` |
+| Env vars | `$VAR`, `${VAR}` | `%VAR%`, `$VAR`, `${VAR}` |
+| Path separators | `/` | `/`, `\` (normalized internally) |
+| CLI detection | `/usr/local/bin`, `~/.local/bin`, etc. | `%LOCALAPPDATA%\Claude`, `%APPDATA%\npm`, etc. |
+| Blocked commands | Unix commands | Windows commands |
+
+Environment variable expansion is case-insensitive on Windows.
 
 ## CSS Classes
 

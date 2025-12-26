@@ -26,7 +26,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (the SDK uses it internally)
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports anthropic API format (Openrouter, Kimi, GLM, DeepSeek, etc.)
-- Desktop only (support macOS, not tested on Linux or Windows)
+- Desktop only (macOS, Linux, Windows)
 
 ## Installation
 
@@ -164,7 +164,7 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
 
 - **Enable command blocklist**: Block dangerous bash commands (default: on)
 - **Blocked commands**: Patterns to block (supports regex)
-- **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`)
+- **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`). Supports `~`, `$VAR`, `${VAR}`, and `%VAR%` (Windows).
 - **Context paths**: Directories outside the vault that Claude can read for additional context (click folder icon in input toolbar)
 - **Show tool usage**: Display file operations in chat
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
@@ -189,11 +189,9 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
   - In Safe mode, each `` !`command` `` substitution prompts for approval.
   - The command blocklist also applies.
   - Inline-bash prompts are "Allow once" only (no permanent approval).
-- **Command blocklist**:
-  - `rm -rf`
-  - `chmod 777`
-  - `chmod -R 777`
-  - etc. 
+- **Command blocklist** (platform-detected):
+  - Unix: `rm -rf`, `chmod 777`, `chmod -R 777`
+  - Windows: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart` 
 
 ## Privacy & Data Use
 
@@ -215,10 +213,10 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
 src/
 ├── main.ts              # Plugin entry point
 ├── ClaudianView.ts      # Sidebar chat UI, orchestrates components
-├── ClaudianService.ts   # Claude Agent SDK wrapper (includes session & diff management)
+├── ClaudianService.ts   # Claude Agent SDK wrapper 
 ├── ClaudianSettings.ts  # Settings tab
-├── types.ts             # Type definitions (re-exports from types/)
-├── utils.ts             # Utilities (vault, env, context files, session recovery)
+├── types.ts             # Type definitions
+├── utils.ts             # Utilities 
 ├── services/            # Claude-facing services and subagent state
 │   ├── InlineEditService.ts # Lightweight Claude service for inline editing
 │   ├── InstructionRefineService.ts # Lightweight Claude service for refining # instructions
@@ -268,10 +266,10 @@ src/
     ├── DiffRenderer.ts       # Diff computation and rendering
     ├── WriteEditRenderer.ts  # Write/Edit diff blocks
     ├── EnvSnippetManager.ts  # Environment variable snippets
-    ├── InlineEditModal.ts    # Inline edit UI (CM6 decorations, diff view)
+    ├── InlineEditModal.ts    # Inline edit UI 
     ├── InstructionModeManager.ts # # instruction mode detection and UI state
     ├── InstructionConfirmModal.ts # Unified instruction modal
-    └── SelectionHighlight.ts # Shared CM6 selection highlight (chat + inline edit)
+    └── SelectionHighlight.ts # Shared CM6 selection highlight 
 ```
 
 ## Roadmap

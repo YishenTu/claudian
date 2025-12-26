@@ -4,6 +4,27 @@
 
 import type { ClaudeModel, ThinkingBudget } from './models';
 
+/** Platform-specific blocked commands (Unix). */
+const UNIX_BLOCKED_COMMANDS = [
+  'rm -rf',
+  'chmod 777',
+  'chmod -R 777',
+];
+
+/** Platform-specific blocked commands (Windows). */
+const WINDOWS_BLOCKED_COMMANDS = [
+  'del /s /q',
+  'rd /s /q',
+  'rmdir /s /q',
+  'format',
+  'diskpart',
+];
+
+/** Get platform-appropriate default blocked commands. */
+export function getDefaultBlockedCommands(): string[] {
+  return process.platform === 'win32' ? WINDOWS_BLOCKED_COMMANDS : UNIX_BLOCKED_COMMANDS;
+}
+
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'normal';
 
@@ -65,11 +86,7 @@ export interface ClaudianSettings {
 export const DEFAULT_SETTINGS: ClaudianSettings = {
   userName: '',
   enableBlocklist: true,
-  blockedCommands: [
-    'rm -rf',
-    'chmod 777',
-    'chmod -R 777',
-  ],
+  blockedCommands: getDefaultBlockedCommands(),
   showToolUse: true,
   toolCallExpandedByDefault: false,
   model: 'haiku',

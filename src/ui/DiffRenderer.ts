@@ -25,8 +25,9 @@ export interface DiffStats {
 
 /** Compute line-based diff between two texts using LCS algorithm. */
 export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
+  // Normalize line endings for cross-platform compatibility
+  const oldLines = oldText.replace(/\r\n/g, '\n').split('\n');
+  const newLines = newText.replace(/\r\n/g, '\n').split('\n');
   const m = oldLines.length;
   const n = newLines.length;
 

@@ -36,11 +36,13 @@ export interface WriteEditState {
 /** Shorten file path for display. */
 function shortenPath(filePath: string, maxLength = 40): string {
   if (!filePath) return 'file';
-  if (filePath.length <= maxLength) return filePath;
+  // Normalize path separators for cross-platform support
+  const normalized = filePath.replace(/\\/g, '/');
+  if (normalized.length <= maxLength) return normalized;
 
-  const parts = filePath.split('/');
+  const parts = normalized.split('/');
   if (parts.length <= 2) {
-    return '...' + filePath.slice(-maxLength + 3);
+    return '...' + normalized.slice(-maxLength + 3);
   }
 
   // Show first dir + ... + filename

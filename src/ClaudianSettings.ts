@@ -116,7 +116,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.excludedTags.join('\n'))
           .onChange(async (value) => {
             this.plugin.settings.excludedTags = value
-              .split('\n')
+              .split(/\r?\n/)  // Handle both Unix (LF) and Windows (CRLF) line endings
               .map((s) => s.trim().replace(/^#/, ''))  // Remove leading # if present
               .filter((s) => s.length > 0);
             await this.plugin.saveSettings();
@@ -185,12 +185,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName('Blocked commands')
       .setDesc('Patterns to block (one per line). Supports regex.')
       .addTextArea((text) => {
+        // Platform-aware placeholder
+        const placeholder = process.platform === 'win32'
+          ? 'del /s /q\nrd /s /q\nformat'
+          : 'rm -rf\nchmod 777\nmkfs';
         text
-          .setPlaceholder('rm -rf\nchmod 777\nmkfs')
+          .setPlaceholder(placeholder)
           .setValue(this.plugin.settings.blockedCommands.join('\n'))
           .onChange(async (value) => {
             this.plugin.settings.blockedCommands = value
-              .split('\n')
+              .split(/\r?\n/)  // Handle both Unix (LF) and Windows (CRLF) line endings
               .map((s) => s.trim())
               .filter((s) => s.length > 0);
             await this.plugin.saveSettings();
@@ -203,12 +207,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName('Allowed export paths')
       .setDesc('Paths outside the vault where files can be exported (one per line). Supports ~ for home directory.')
       .addTextArea((text) => {
+        // Platform-aware placeholder
+        const placeholder = process.platform === 'win32'
+          ? '~/Desktop\n~/Downloads\n%TEMP%'
+          : '~/Desktop\n~/Downloads\n/tmp';
         text
-          .setPlaceholder('~/Desktop\n~/Downloads\n/tmp')
+          .setPlaceholder(placeholder)
           .setValue(this.plugin.settings.allowedExportPaths.join('\n'))
           .onChange(async (value) => {
             this.plugin.settings.allowedExportPaths = value
-              .split('\n')
+              .split(/\r?\n/)  // Handle both Unix (LF) and Windows (CRLF) line endings
               .map((s) => s.trim())
               .filter((s) => s.length > 0);
             await this.plugin.saveSettings();

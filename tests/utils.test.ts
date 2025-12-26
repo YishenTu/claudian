@@ -4,6 +4,7 @@ import * as path from 'path';
 
 import {
   appendMarkdownSnippet,
+  expandHomePath,
   findClaudeCLIPath,
   getCurrentModelFromEnvironment,
   getModelsFromEnvironment,
@@ -218,6 +219,40 @@ describe('utils.ts', () => {
       expect(result).toEqual({
         JSON: '{"key": "value"}',
       });
+    });
+  });
+
+  describe('expandHomePath', () => {
+    const envKey = 'CLAUDIAN_TEST_PATH';
+    const envValue = path.join(os.tmpdir(), 'claudian-env');
+    let originalValue: string | undefined;
+
+    beforeEach(() => {
+      originalValue = process.env[envKey];
+      process.env[envKey] = envValue;
+    });
+
+    afterEach(() => {
+      if (originalValue === undefined) {
+        delete process.env[envKey];
+      } else {
+        process.env[envKey] = originalValue;
+      }
+    });
+
+    it('should expand percent-style environment variables', () => {
+      expect(expandHomePath(`%${envKey}%`)).toBe(envValue);
+    });
+
+    it('should expand dollar-style environment variables', () => {
+      const braceStyle = '${' + envKey + '}';
+      expect(expandHomePath(`$${envKey}`)).toBe(envValue);
+      expect(expandHomePath(braceStyle)).toBe(envValue);
+    });
+
+    it('should leave unknown environment variables untouched', () => {
+      expect(expandHomePath('%CLAUDIAN_MISSING_VAR%')).toBe('%CLAUDIAN_MISSING_VAR%');
+      expect(expandHomePath('$CLAUDIAN_MISSING_VAR')).toBe('$CLAUDIAN_MISSING_VAR');
     });
   });
 

@@ -505,7 +505,7 @@ class InlineEditController {
           cursorContext: this.cursorContext as CursorContext,
         });
       } else {
-        const lineCount = this.selectedText.split('\n').length;
+        const lineCount = this.selectedText.split(/\r?\n/).length;
         result = await this.inlineEditService.editText({
           mode: 'selection',
           instruction: userMessage,

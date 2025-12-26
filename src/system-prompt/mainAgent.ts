@@ -205,7 +205,9 @@ function getContextPathInstructions(allowedContextPaths: string[]): string {
   // Extract folder name as alias (last segment of path)
   const formattedPaths = uniquePaths
     .map((p) => {
-      const segments = p.replace(/\/+$/, '').split('/');
+      // Normalize path separators for cross-platform support
+      const normalized = p.replace(/\\/g, '/').replace(/\/+$/, '');
+      const segments = normalized.split('/');
       const folderName = segments[segments.length - 1] || p;
       return `- \`${folderName}\` → ${p}`;
     })

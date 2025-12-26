@@ -36,7 +36,7 @@ function truncateDescription(description: string, maxLength = 40): string {
 
 /** Truncate result to max 2 lines. */
 function truncateResult(result: string): string {
-  const lines = result.split('\n').filter(line => line.trim());
+  const lines = result.split(/\r?\n/).filter(line => line.trim());
   if (lines.length <= 2) {
     return lines.join('\n');
   }

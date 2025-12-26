@@ -1809,7 +1809,7 @@ export class ClaudianView extends ItemView {
       const startLine = fromPos.line + 1; // 1-indexed for display
 
       const notePath = view.file?.path || 'unknown';
-      const lineCount = selectedText.split('\n').length;
+      const lineCount = selectedText.split(/\r?\n/).length;
       const sameRange = this.storedSelection
         && this.storedSelection.editorView === editorView
         && this.storedSelection.from === from

@@ -38,16 +38,103 @@ export function getVaultPath(app: App): string | null {
   return null;
 }
 
+/**
+ * Checks if a path starts with home directory notation (~/path or ~\path).
+ * Supports both Unix-style (~/) and Windows-style (~\) home directory notation.
+ */
+export function startsWithHomePath(p: string): boolean {
+  return p.startsWith('~/') || p.startsWith('~\\') || p === '~';
+}
+
+function getEnvValue(key: string): string | undefined {
+  const hasKey = (name: string) => Object.prototype.hasOwnProperty.call(process.env, name);
+
+  if (hasKey(key)) {
+    return process.env[key];
+  }
+
+  if (process.platform !== 'win32') {
+    return undefined;
+  }
+
+  const upper = key.toUpperCase();
+  if (hasKey(upper)) {
+    return process.env[upper];
+  }
+
+  const lower = key.toLowerCase();
+  if (hasKey(lower)) {
+    return process.env[lower];
+  }
+
+  const matchKey = Object.keys(process.env).find((name) => name.toLowerCase() === key.toLowerCase());
+  return matchKey ? process.env[matchKey] : undefined;
+}
+
+function expandEnvironmentVariables(value: string): string {
+  if (!value.includes('%') && !value.includes('$')) {
+    return value;
+  }
+
+  let expanded = value;
+
+  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (match, name) => {
+    const envValue = getEnvValue(name);
+    return envValue !== undefined ? envValue : match;
+  });
+
+  expanded = expanded.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name1, name2) => {
+    const key = name1 ?? name2;
+    if (!key) return match;
+    const envValue = getEnvValue(key);
+    return envValue !== undefined ? envValue : match;
+  });
+
+  return expanded;
+}
+
+/**
+ * Expands home directory notation to absolute path.
+ * Handles both ~/path and ~\path formats.
+ */
+export function expandHomePath(p: string): string {
+  const expanded = expandEnvironmentVariables(p);
+  if (expanded === '~') {
+    return os.homedir();
+  }
+  if (expanded.startsWith('~/')) {
+    return path.join(os.homedir(), expanded.slice(2));
+  }
+  if (expanded.startsWith('~\\')) {
+    return path.join(os.homedir(), expanded.slice(2));
+  }
+  return expanded;
+}
+
 /** Finds Claude Code CLI executable in common install locations. */
 export function findClaudeCLIPath(): string | null {
   const homeDir = os.homedir();
-  const commonPaths = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-  ];
+  const isWindows = process.platform === 'win32';
+
+  // Platform-specific search paths
+  const commonPaths: string[] = isWindows
+    ? [
+        // Windows paths
+        path.join(homeDir, '.claude', 'local', 'claude.exe'),
+        path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
+        path.join(homeDir, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
+        path.join(homeDir, '.local', 'bin', 'claude.exe'),
+      ]
+    : [
+        // Unix/macOS paths
+        path.join(homeDir, '.claude', 'local', 'claude'),
+        path.join(homeDir, '.local', 'bin', 'claude'),
+        '/usr/local/bin/claude',
+        '/opt/homebrew/bin/claude',
+        path.join(homeDir, 'bin', 'claude'),
+      ];
 
   for (const p of commonPaths) {
     if (fs.existsSync(p)) {
@@ -102,9 +189,7 @@ function resolveRealPath(p: string): string {
 export function isPathWithinVault(candidatePath: string, vaultPath: string): boolean {
   const vaultReal = resolveRealPath(vaultPath);
 
-  const expandedPath = candidatePath.startsWith('~/')
-    ? path.join(os.homedir(), candidatePath.slice(2))
-    : candidatePath;
+  const expandedPath = expandHomePath(candidatePath);
 
   const absCandidate = path.isAbsolute(expandedPath)
     ? expandedPath
@@ -126,9 +211,7 @@ export function isPathInAllowedExportPaths(
   }
 
   // Expand and resolve the candidate path
-  const expandedCandidate = candidatePath.startsWith('~/')
-    ? path.join(os.homedir(), candidatePath.slice(2))
-    : candidatePath;
+  const expandedCandidate = expandHomePath(candidatePath);
 
   const absCandidate = path.isAbsolute(expandedCandidate)
     ? expandedCandidate
@@ -138,9 +221,7 @@ export function isPathInAllowedExportPaths(
 
   // Check if candidate is within any allowed export path
   for (const exportPath of allowedExportPaths) {
-    const expandedExport = exportPath.startsWith('~/')
-      ? path.join(os.homedir(), exportPath.slice(2))
-      : exportPath;
+    const expandedExport = expandHomePath(exportPath);
 
     const resolvedExport = resolveRealPath(expandedExport);
 
@@ -167,9 +248,7 @@ export function isPathInAllowedContextPaths(
   }
 
   // Expand and resolve the candidate path
-  const expandedCandidate = candidatePath.startsWith('~/')
-    ? path.join(os.homedir(), candidatePath.slice(2))
-    : candidatePath;
+  const expandedCandidate = expandHomePath(candidatePath);
 
   const absCandidate = path.isAbsolute(expandedCandidate)
     ? expandedCandidate
@@ -179,9 +258,7 @@ export function isPathInAllowedContextPaths(
 
   // Check if candidate is within any allowed context path
   for (const contextPath of allowedContextPaths) {
-    const expandedContext = contextPath.startsWith('~/')
-      ? path.join(os.homedir(), contextPath.slice(2))
-      : contextPath;
+    const expandedContext = expandHomePath(contextPath);
 
     const resolvedContext = resolveRealPath(expandedContext);
 
@@ -213,9 +290,7 @@ export function getPathAccessType(
 
   const vaultReal = resolveRealPath(vaultPath);
 
-  const expandedCandidate = candidatePath.startsWith('~/')
-    ? path.join(os.homedir(), candidatePath.slice(2))
-    : candidatePath;
+  const expandedCandidate = expandHomePath(candidatePath);
 
   const absCandidate = path.isAbsolute(expandedCandidate)
     ? expandedCandidate
@@ -232,9 +307,7 @@ export function getPathAccessType(
   const addRoot = (rawPath: string, kind: 'context' | 'export') => {
     const trimmed = rawPath.trim();
     if (!trimmed) return;
-    const expanded = trimmed.startsWith('~/')
-      ? path.join(os.homedir(), trimmed.slice(2))
-      : trimmed;
+    const expanded = expandHomePath(trimmed);
     const resolved = resolveRealPath(expanded);
     const existing = roots.get(resolved) ?? { context: false, export: false };
     existing[kind] = true;
@@ -271,7 +344,8 @@ export function getPathAccessType(
 /** Parses KEY=VALUE environment variables from text. Supports comments (#) and empty lines. */
 export function parseEnvironmentVariables(input: string): Record<string, string> {
   const result: Record<string, string> = {};
-  for (const line of input.split('\n')) {
+  // Handle both Unix (LF) and Windows (CRLF) line endings
+  for (const line of input.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eqIndex = trimmed.indexOf('=');

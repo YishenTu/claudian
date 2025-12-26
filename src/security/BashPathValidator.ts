@@ -123,7 +123,7 @@ export function cleanPathToken(raw: string): string | null {
   }
 
   if (!token) return null;
-  if (token === '.' || token === '/') return null;
+  if (token === '.' || token === '/' || token === '\\') return null;
   return token;
 }
 
@@ -131,16 +131,29 @@ export function cleanPathToken(raw: string): string | null {
 export function isPathLikeToken(token: string): boolean {
   const cleaned = token.trim();
   if (!cleaned) return false;
-  if (cleaned === '.' || cleaned === '/' || cleaned === '--') return false;
+  if (cleaned === '.' || cleaned === '/' || cleaned === '\\' || cleaned === '--') return false;
+
+  const isWindows = process.platform === 'win32';
 
   return (
+    // Home directory paths (Unix and Windows style)
+    cleaned === '~' ||
     cleaned.startsWith('~/') ||
+    (isWindows && cleaned.startsWith('~\\')) ||
+    // Relative paths
     cleaned.startsWith('./') ||
     cleaned.startsWith('../') ||
-    cleaned.startsWith('..') ||
+    cleaned === '..' ||
+    (isWindows && (cleaned.startsWith('.\\') || cleaned.startsWith('..\\'))) ||
+    // Absolute paths (Unix)
     cleaned.startsWith('/') ||
+    // Absolute paths (Windows drive letters)
+    (isWindows && /^[A-Za-z]:[\\/]/.test(cleaned)) ||
+    // Absolute paths (Windows UNC)
+    (isWindows && (cleaned.startsWith('\\\\') || cleaned.startsWith('//'))) ||
+    // Contains path separators
     cleaned.includes('/') ||
-    cleaned.includes('\\')
+    (isWindows && cleaned.includes('\\'))
   );
 }
 

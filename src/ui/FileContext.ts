@@ -365,9 +365,9 @@ export class FileContextManager {
 
     this.fileIndicatorEl.style.display = 'flex';
 
-    for (const path of this.attachedFiles) {
-      this.renderFileChip(path, () => {
-        this.attachedFiles.delete(path);
+    for (const filePath of this.attachedFiles) {
+      this.renderFileChip(filePath, () => {
+        this.attachedFiles.delete(filePath);
         this.updateFileIndicator();
       });
     }
@@ -377,21 +377,23 @@ export class FileContextManager {
     this.callbacks.onChipsChanged?.();
   }
 
-  private renderFileChip(path: string, onRemove: () => void) {
+  private renderFileChip(filePath: string, onRemove: () => void) {
     const chipEl = this.fileIndicatorEl.createDiv({ cls: 'claudian-file-chip' });
 
     // Add edited class if file was edited this session
-    if (this.isFileEdited(path)) {
+    if (this.isFileEdited(filePath)) {
       chipEl.addClass('claudian-file-chip-edited');
     }
 
     const iconEl = chipEl.createSpan({ cls: 'claudian-file-chip-icon' });
     setIcon(iconEl, 'file-text');
 
-    const filename = path.split('/').pop() || path;
+    // Normalize path separators and extract filename
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const filename = normalizedPath.split('/').pop() || filePath;
     const nameEl = chipEl.createSpan({ cls: 'claudian-file-chip-name' });
     nameEl.setText(filename);
-    nameEl.setAttribute('title', path);
+    nameEl.setAttribute('title', filePath);
 
     const removeEl = chipEl.createSpan({ cls: 'claudian-file-chip-remove' });
     removeEl.setText('\u00D7');
@@ -399,7 +401,7 @@ export class FileContextManager {
 
     chipEl.addEventListener('click', async (e) => {
       if ((e.target as HTMLElement).closest('.claudian-file-chip-remove')) return;
-      await this.openFileFromChip(path);
+      await this.openFileFromChip(filePath);
     });
 
     removeEl.addEventListener('click', (e) => {
@@ -621,19 +623,21 @@ export class FileContextManager {
     }
   }
 
-  private renderEditedFileChip(path: string) {
+  private renderEditedFileChip(filePath: string) {
     const chipEl = this.editedFilesIndicatorEl.createDiv({ cls: 'claudian-file-chip claudian-file-chip-edited' });
 
     const iconEl = chipEl.createSpan({ cls: 'claudian-file-chip-icon' });
     setIcon(iconEl, 'file-text');
 
-    const filename = path.split('/').pop() || path;
+    // Normalize path separators and extract filename
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const filename = normalizedPath.split('/').pop() || filePath;
     const nameEl = chipEl.createSpan({ cls: 'claudian-file-chip-name' });
     nameEl.setText(filename);
-    nameEl.setAttribute('title', path);
+    nameEl.setAttribute('title', filePath);
 
     chipEl.addEventListener('click', async () => {
-      await this.openFileFromChip(path);
+      await this.openFileFromChip(filePath);
     });
   }
 

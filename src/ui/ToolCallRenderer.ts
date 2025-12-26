@@ -62,10 +62,12 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
 }
 
 /** Shorten a file path for display. */
-function shortenPath(path: string | undefined): string {
-  if (!path) return '';
-  const parts = path.split('/');
-  if (parts.length <= 3) return path;
+function shortenPath(filePath: string | undefined): string {
+  if (!filePath) return '';
+  // Normalize path separators for cross-platform support
+  const normalized = filePath.replace(/\\/g, '/');
+  const parts = normalized.split('/');
+  if (parts.length <= 3) return normalized;
   return '.../' + parts.slice(-2).join('/');
 }
 
@@ -132,7 +134,7 @@ export function renderWebSearchResult(container: HTMLElement, result: string, ma
 /** Render Read tool result showing line count. */
 export function renderReadResult(container: HTMLElement, result: string): void {
   container.empty();
-  const lines = result.split('\n').filter(line => line.trim() !== '');
+  const lines = result.split(/\r?\n/).filter(line => line.trim() !== '');
   const item = container.createSpan({ cls: 'claudian-tool-result-item' });
   item.setText(`${lines.length} lines read`);
 }
@@ -141,7 +143,7 @@ export function renderReadResult(container: HTMLElement, result: string): void {
 export function renderResultLines(container: HTMLElement, result: string, maxLines = 3): void {
   container.empty();
 
-  const lines = result.split('\n');
+  const lines = result.split(/\r?\n/);
   const displayLines = lines.slice(0, maxLines);
 
   displayLines.forEach(line => {
@@ -162,7 +164,7 @@ export function truncateResult(result: string, maxLines = 20, maxLength = 2000):
   if (result.length > maxLength) {
     result = result.substring(0, maxLength);
   }
-  const lines = result.split('\n');
+  const lines = result.split(/\r?\n/);
   if (lines.length > maxLines) {
     const moreLines = lines.length - maxLines;
     return lines.slice(0, maxLines).join('\n') + `\n${moreLines} more lines`;
