@@ -39,9 +39,14 @@ export {
   type ClaudianSettings,
   DEFAULT_SETTINGS,
   type EnvSnippet,
+  getBashToolBlockedCommands,
+  getCurrentPlatformBlockedCommands,
+  getCurrentPlatformKey,
+  getDefaultBlockedCommands,
   type InstructionRefineResult,
   type Permission,
   type PermissionMode,
+  type PlatformBlockedCommands,
   type SlashCommand,
 } from './settings';
 

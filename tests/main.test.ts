@@ -177,6 +177,26 @@ describe('ClaudianPlugin', () => {
       expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
     });
 
+    it('should normalize blockedCommands when stored value is partial', async () => {
+      // Mock settings file exists with partial blockedCommands
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claude/settings.json';
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claude/settings.json') {
+          return JSON.stringify({
+            blockedCommands: { unix: ['rm -rf', '  '] },
+          });
+        }
+        return '';
+      });
+
+      await plugin.loadSettings();
+
+      expect(plugin.settings.blockedCommands.unix).toEqual(['rm -rf']);
+      expect(plugin.settings.blockedCommands.windows).toEqual(DEFAULT_SETTINGS.blockedCommands.windows);
+    });
+
     it('should use defaults when no saved data', async () => {
       // No settings file exists
       mockApp.vault.adapter.exists.mockResolvedValue(false);

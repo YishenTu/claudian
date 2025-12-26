@@ -12,6 +12,14 @@ import {
 
 // Mock fs module
 jest.mock('fs');
+jest.mock('../src/types', () => {
+  const actual = jest.requireActual('../src/types');
+  return {
+    __esModule: true,
+    ...actual,
+    getCurrentPlatformBlockedCommands: (commands: { unix: string[] }) => commands.unix,
+  };
+});
 
 // Now import after all mocks are set up
 import { ClaudianService } from '../src/ClaudianService';
@@ -58,15 +66,21 @@ function createMockPlugin(settings = {}) {
   const mockPlugin = {
     settings: {
       enableBlocklist: true,
-      blockedCommands: [
-        'rm -rf',
-        'rm -r /',
-        'chmod 777',
-        'chmod -R 777',
-        'mkfs',
-        'dd if=',
-        '> /dev/sd',
-      ],
+      blockedCommands: {
+        unix: [
+          'rm -rf',
+          'rm -r /',
+          'chmod 777',
+          'chmod -R 777',
+          'mkfs',
+          'dd if=',
+          '> /dev/sd',
+        ],
+        windows: [
+          'Remove-Item -Recurse -Force',
+          'Format-Volume',
+        ],
+      },
       showToolUse: true,
       permissions: [],
       permissionMode: 'yolo',
@@ -524,7 +538,7 @@ describe('ClaudianService', () => {
   describe('regex pattern matching in blocklist', () => {
     it('should handle regex patterns in blocklist', async () => {
       mockPlugin = createMockPlugin({
-        blockedCommands: ['rm\\s+-rf', 'chmod\\s+7{3}'],
+        blockedCommands: { unix: ['rm\\s+-rf', 'chmod\\s+7{3}'], windows: [] },
       });
       service = new ClaudianService(mockPlugin);
 
@@ -547,7 +561,7 @@ describe('ClaudianService', () => {
 
     it('should fallback to includes for invalid regex', async () => {
       mockPlugin = createMockPlugin({
-        blockedCommands: ['[invalid regex'],
+        blockedCommands: { unix: ['[invalid regex'], windows: [] },
       });
       service = new ClaudianService(mockPlugin);
 

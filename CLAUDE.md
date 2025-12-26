@@ -122,7 +122,7 @@ interface ClaudianSettings {
   thinkingBudget: 'off' | 'low' | 'medium' | 'high';  // 0 | 4k | 8k | 16k tokens
   permissionMode: 'yolo' | 'normal';
   enableBlocklist: boolean;
-  blockedCommands: string[];
+  blockedCommands: { unix: string[], windows: string[] };  // Platform-keyed blocklist
   showToolUse: boolean;
   toolCallExpandedByDefault: boolean;
   permissions: Permission[];         // Tool approvals (like Claude Code)
@@ -258,7 +258,7 @@ All classes use `.claudian-` prefix. Key patterns:
 
 - Test Driven Development
 - Generated docs go in `dev/`
-- Run typecheck, `npm run lint`, `npm run build`, `npm run test` before committing
+- Run `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test` after editing
 
 ## Dependencies
 

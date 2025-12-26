@@ -8,6 +8,7 @@ import type { App} from 'obsidian';
 import { PluginSettingTab, Setting } from 'obsidian';
 
 import type ClaudianPlugin from './main';
+import { getCurrentPlatformKey } from './types';
 import { EnvSnippetManager, SlashCommandSettings } from './ui';
 
 /** Plugin settings tab displayed in Obsidian's settings pane. */
@@ -181,19 +182,22 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    const platformKey = getCurrentPlatformKey();
+    const platformLabel = platformKey === 'windows' ? 'Windows' : 'Unix';
+
     new Setting(containerEl)
-      .setName('Blocked commands')
-      .setDesc('Patterns to block (one per line). Supports regex.')
+      .setName(`Blocked commands (${platformLabel})`)
+      .setDesc(`Patterns to block on ${platformLabel} (one per line). Supports regex. Each platform has its own list.`)
       .addTextArea((text) => {
-        // Platform-aware placeholder (Windows shows both CMD and PowerShell)
-        const placeholder = process.platform === 'win32'
+        // Platform-aware placeholder
+        const placeholder = platformKey === 'windows'
           ? 'del /s /q\nrd /s /q\nRemove-Item -Recurse -Force'
           : 'rm -rf\nchmod 777\nmkfs';
         text
           .setPlaceholder(placeholder)
-          .setValue(this.plugin.settings.blockedCommands.join('\n'))
+          .setValue(this.plugin.settings.blockedCommands[platformKey].join('\n'))
           .onChange(async (value) => {
-            this.plugin.settings.blockedCommands = value
+            this.plugin.settings.blockedCommands[platformKey] = value
               .split(/\r?\n/)  // Handle both Unix (LF) and Windows (CRLF) line endings
               .map((s) => s.trim())
               .filter((s) => s.length > 0);

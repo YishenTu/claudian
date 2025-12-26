@@ -25,26 +25,37 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.showToolUse).toBe(true);
     });
 
-    it('should have default blocked commands', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands).toBeInstanceOf(Array);
-      expect(DEFAULT_SETTINGS.blockedCommands.length).toBeGreaterThan(0);
+    it('should have default blocked commands as platform-keyed object', () => {
+      expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('unix');
+      expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('windows');
+      expect(DEFAULT_SETTINGS.blockedCommands.unix).toBeInstanceOf(Array);
+      expect(DEFAULT_SETTINGS.blockedCommands.windows).toBeInstanceOf(Array);
+      expect(DEFAULT_SETTINGS.blockedCommands.unix.length).toBeGreaterThan(0);
+      expect(DEFAULT_SETTINGS.blockedCommands.windows.length).toBeGreaterThan(0);
     });
 
-    it('should block rm -rf by default', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands).toContain('rm -rf');
+    it('should block rm -rf by default on Unix', () => {
+      expect(DEFAULT_SETTINGS.blockedCommands.unix).toContain('rm -rf');
     });
 
-    it('should block chmod 777 by default', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands).toContain('chmod 777');
+    it('should block chmod 777 by default on Unix', () => {
+      expect(DEFAULT_SETTINGS.blockedCommands.unix).toContain('chmod 777');
     });
 
-    it('should block chmod -R 777 by default', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands).toContain('chmod -R 777');
+    it('should block chmod -R 777 by default on Unix', () => {
+      expect(DEFAULT_SETTINGS.blockedCommands.unix).toContain('chmod -R 777');
+    });
+
+    it('should block dangerous commands on Windows', () => {
+      expect(DEFAULT_SETTINGS.blockedCommands.windows).toContain('Remove-Item -Recurse -Force');
+      expect(DEFAULT_SETTINGS.blockedCommands.windows).toContain('Format-Volume');
     });
 
     it('should only contain non-empty default blocked commands', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands.every((cmd) => cmd.trim().length > 0)).toBe(true);
-      expect(new Set(DEFAULT_SETTINGS.blockedCommands).size).toBe(DEFAULT_SETTINGS.blockedCommands.length);
+      expect(DEFAULT_SETTINGS.blockedCommands.unix.every((cmd) => cmd.trim().length > 0)).toBe(true);
+      expect(new Set(DEFAULT_SETTINGS.blockedCommands.unix).size).toBe(DEFAULT_SETTINGS.blockedCommands.unix.length);
+      expect(DEFAULT_SETTINGS.blockedCommands.windows.every((cmd) => cmd.trim().length > 0)).toBe(true);
+      expect(new Set(DEFAULT_SETTINGS.blockedCommands.windows).size).toBe(DEFAULT_SETTINGS.blockedCommands.windows.length);
     });
 
     it('should have environmentVariables as empty string by default', () => {
@@ -72,7 +83,7 @@ describe('types.ts', () => {
     it('should be assignable with valid settings', () => {
       const settings: ClaudianSettings = {
         enableBlocklist: false,
-        blockedCommands: ['test'],
+        blockedCommands: { unix: ['test'], windows: ['test-win'] },
         showToolUse: false,
         toolCallExpandedByDefault: true,
         model: 'haiku',
@@ -89,7 +100,7 @@ describe('types.ts', () => {
       };
 
       expect(settings.enableBlocklist).toBe(false);
-      expect(settings.blockedCommands).toEqual(['test']);
+      expect(settings.blockedCommands).toEqual({ unix: ['test'], windows: ['test-win'] });
       expect(settings.showToolUse).toBe(false);
       expect(settings.model).toBe('haiku');
     });
@@ -97,7 +108,7 @@ describe('types.ts', () => {
     it('should accept custom model strings', () => {
       const settings: ClaudianSettings = {
         enableBlocklist: true,
-        blockedCommands: [],
+        blockedCommands: { unix: [], windows: [] },
         showToolUse: true,
         toolCallExpandedByDefault: true,
         model: 'anthropic/custom-model-v1',
@@ -119,7 +130,7 @@ describe('types.ts', () => {
     it('should accept optional lastClaudeModel and lastCustomModel', () => {
       const settings: ClaudianSettings = {
         enableBlocklist: true,
-        blockedCommands: [],
+        blockedCommands: { unix: [], windows: [] },
         showToolUse: true,
         toolCallExpandedByDefault: false,
         model: 'sonnet',

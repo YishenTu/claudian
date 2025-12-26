@@ -11,11 +11,12 @@ import { findBashCommandPathViolation } from '../security/BashPathValidator';
 import { isCommandBlocked } from '../security/BlocklistChecker';
 import { getPathFromToolInput } from '../tools/toolInput';
 import { isEditTool, isFileTool, TOOL_BASH } from '../tools/toolNames';
+import { getBashToolBlockedCommands, type PlatformBlockedCommands } from '../types';
 import type { PathAccessType } from '../utils';
 
 /** Context for blocklist checking. */
 export interface BlocklistContext {
-  blockedCommands: string[];
+  blockedCommands: PlatformBlockedCommands;
   enableBlocklist: boolean;
 }
 
@@ -40,7 +41,8 @@ export function createBlocklistHook(getContext: () => BlocklistContext): HookCal
         const command = input.tool_input?.command || '';
         const context = getContext();
 
-        if (isCommandBlocked(command, context.blockedCommands, context.enableBlocklist)) {
+        const bashToolCommands = getBashToolBlockedCommands(context.blockedCommands);
+        if (isCommandBlocked(command, bashToolCommands, context.enableBlocklist)) {
           return {
             continue: false,
             hookSpecificOutput: {

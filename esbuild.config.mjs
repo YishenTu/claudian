@@ -47,6 +47,7 @@ const copyToObsidian = {
 const context = await esbuild.context({
   entryPoints: ['src/main.ts'],
   bundle: true,
+  plugins: [copyToObsidian],
   external: [
     'obsidian',
     'electron',

@@ -20,6 +20,7 @@ import {
   type Conversation,
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_THINKING_BUDGET,
+  getCurrentPlatformBlockedCommands,
   type ImageAttachment,
   type StreamChunk,
   type SubagentInfo,
@@ -547,7 +548,7 @@ export class ClaudianView extends ItemView {
               shouldBlockCommand: (bashCommand) =>
                 isCommandBlocked(
                   bashCommand,
-                  this.plugin.settings.blockedCommands,
+                  getCurrentPlatformBlockedCommands(this.plugin.settings.blockedCommands),
                   this.plugin.settings.enableBlocklist
                 ),
               requestApproval:

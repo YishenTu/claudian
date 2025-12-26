@@ -8,8 +8,8 @@
  * Machine-specific state (lastEnvHash, model tracking) stays in Obsidian's data.json.
  */
 
-import type { ClaudianSettings } from '../types';
-import { DEFAULT_SETTINGS } from '../types';
+import type { ClaudianSettings, PlatformBlockedCommands } from '../types';
+import { DEFAULT_SETTINGS, getDefaultBlockedCommands } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Fields that are machine-specific state or loaded separately. */
@@ -25,6 +25,30 @@ export type StoredSettings = Omit<ClaudianSettings, StateFields>;
 /** Path to settings file relative to vault root. */
 export const SETTINGS_PATH = '.claude/settings.json';
 
+function normalizeCommandList(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function normalizeBlockedCommands(value: unknown): PlatformBlockedCommands {
+  const defaults = getDefaultBlockedCommands();
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return defaults;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return {
+    unix: normalizeCommandList(candidate.unix, defaults.unix),
+    windows: normalizeCommandList(candidate.windows, defaults.windows),
+  };
+}
+
 export class SettingsStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
@@ -36,8 +60,14 @@ export class SettingsStorage {
       }
 
       const content = await this.adapter.read(SETTINGS_PATH);
-      const stored = JSON.parse(content) as Partial<StoredSettings>;
-      return { ...this.getDefaults(), ...stored };
+      const stored = JSON.parse(content) as Record<string, unknown>;
+      const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
+
+      return {
+        ...this.getDefaults(),
+        ...stored,
+        blockedCommands,
+      } as StoredSettings;
     } catch (error) {
       console.error('[Claudian] Failed to load settings:', error);
       return this.getDefaults();

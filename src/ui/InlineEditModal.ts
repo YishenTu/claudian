@@ -12,6 +12,7 @@ import { MarkdownView, Notice } from 'obsidian';
 import type ClaudianPlugin from '../main';
 import { type InlineEditMode, InlineEditService } from '../services/InlineEditService';
 import { TOOL_BASH } from '../tools/toolNames';
+import { getCurrentPlatformBlockedCommands } from '../types';
 import type { CursorContext } from '../utils';
 import { getVaultPath, isCommandBlocked } from '../utils';
 import { ApprovalModal } from './ApprovalModal';
@@ -467,7 +468,7 @@ class InlineEditController {
               shouldBlockCommand: (bashCommand) =>
                 isCommandBlocked(
                   bashCommand,
-                  this.plugin.settings.blockedCommands,
+                  getCurrentPlatformBlockedCommands(this.plugin.settings.blockedCommands),
                   this.plugin.settings.enableBlocklist
                 ),
               requestApproval:

@@ -27,9 +27,38 @@ const WINDOWS_BLOCKED_COMMANDS = [
   'Clear-Disk',
 ];
 
-/** Get platform-appropriate default blocked commands. */
-export function getDefaultBlockedCommands(): string[] {
-  return process.platform === 'win32' ? WINDOWS_BLOCKED_COMMANDS : UNIX_BLOCKED_COMMANDS;
+/** Platform-keyed blocked commands structure. */
+export interface PlatformBlockedCommands {
+  unix: string[];
+  windows: string[];
+}
+
+/** Get default blocked commands for all platforms. */
+export function getDefaultBlockedCommands(): PlatformBlockedCommands {
+  return {
+    unix: [...UNIX_BLOCKED_COMMANDS],
+    windows: [...WINDOWS_BLOCKED_COMMANDS],
+  };
+}
+
+/** Get the current platform key ('unix' or 'windows'). */
+export function getCurrentPlatformKey(): keyof PlatformBlockedCommands {
+  return process.platform === 'win32' ? 'windows' : 'unix';
+}
+
+/** Get blocked commands for the current platform. */
+export function getCurrentPlatformBlockedCommands(commands: PlatformBlockedCommands): string[] {
+  return commands[getCurrentPlatformKey()];
+}
+
+/**
+ * Get blocked commands for the Bash tool.
+ *
+ * On Windows, the Bash tool runs in a Git Bash/MSYS2 environment,
+ * so use Unix blocklist patterns.
+ */
+export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): string[] {
+  return process.platform === 'win32' ? commands.unix : getCurrentPlatformBlockedCommands(commands);
 }
 
 /** Permission mode for tool execution. */
@@ -69,7 +98,7 @@ export interface SlashCommand {
 export interface ClaudianSettings {
   userName: string;
   enableBlocklist: boolean;
-  blockedCommands: string[];
+  blockedCommands: PlatformBlockedCommands;
   showToolUse: boolean;
   toolCallExpandedByDefault: boolean;
   model: ClaudeModel;
