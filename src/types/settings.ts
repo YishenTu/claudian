@@ -11,13 +11,20 @@ const UNIX_BLOCKED_COMMANDS = [
   'chmod -R 777',
 ];
 
-/** Platform-specific blocked commands (Windows). */
+/** Platform-specific blocked commands (Windows - both CMD and PowerShell). */
 const WINDOWS_BLOCKED_COMMANDS = [
+  // CMD commands
   'del /s /q',
   'rd /s /q',
   'rmdir /s /q',
   'format',
   'diskpart',
+  // PowerShell commands
+  'Remove-Item -Recurse -Force',
+  'Remove-Item -r -fo',
+  'rm -r -fo',
+  'Format-Volume',
+  'Clear-Disk',
 ];
 
 /** Get platform-appropriate default blocked commands. */

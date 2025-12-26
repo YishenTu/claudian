@@ -216,7 +216,8 @@ Reusable capability modules that Claude discovers and invokes automatically base
 - Vault-only file access by default (symlink-safe via `realpath`)
 - Blocked commands: Platform-detected defaults
   - Unix: `rm -rf`, `chmod 777`, `chmod -R 777`
-  - Windows: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart`
+  - Windows CMD: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart`
+  - Windows PowerShell: `Remove-Item -Recurse -Force`, `Format-Volume`, `Clear-Disk`
 - Export paths: Write-only to configured paths (default: `~/Desktop`, `~/Downloads`)
 - Context paths: Read-only access to configured paths outside vault (folder icon in input toolbar)
 

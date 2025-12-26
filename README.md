@@ -26,7 +26,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (the SDK uses it internally)
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports anthropic API format (Openrouter, Kimi, GLM, DeepSeek, etc.)
-- Desktop only (macOS, Linux, Windows)
+- Desktop only (macOS, Linux, Windows, not thoroughly tested on Windows and Linux)
 
 ## Installation
 
@@ -191,7 +191,8 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
   - Inline-bash prompts are "Allow once" only (no permanent approval).
 - **Command blocklist** (platform-detected):
   - Unix: `rm -rf`, `chmod 777`, `chmod -R 777`
-  - Windows: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart` 
+  - Windows CMD: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart`
+  - Windows PowerShell: `Remove-Item -Recurse -Force`, `Format-Volume`, `Clear-Disk` 
 
 ## Privacy & Data Use
 

@@ -185,9 +185,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName('Blocked commands')
       .setDesc('Patterns to block (one per line). Supports regex.')
       .addTextArea((text) => {
-        // Platform-aware placeholder
+        // Platform-aware placeholder (Windows shows both CMD and PowerShell)
         const placeholder = process.platform === 'win32'
-          ? 'del /s /q\nrd /s /q\nformat'
+          ? 'del /s /q\nrd /s /q\nRemove-Item -Recurse -Force'
           : 'rm -rf\nchmod 777\nmkfs';
         text
           .setPlaceholder(placeholder)
