@@ -26,7 +26,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (the SDK uses it internally)
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports anthropic API format (Openrouter, Kimi, GLM, DeepSeek, etc.)
-- Desktop only (macOS, Linux, Windows, not thoroughly tested on Windows and Linux)
+- Desktop only (macOS, Linux, Windows)
 
 ## Installation
 
@@ -298,6 +298,7 @@ src/
 - [x] Selection awareness in main chat (visual indicator + context)
 - [x] Context paths for read-only access to external directories
 - [x] Distributed storage (settings, commands, sessions as separate files)
+- [x] Windows platform support (MSYS paths, PowerShell blocklist, env vars)
 - [ ] Hooks, MCP and other advanced features
 
 ## License

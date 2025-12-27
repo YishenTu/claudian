@@ -217,7 +217,8 @@ Reusable capability modules that Claude discovers and invokes automatically base
 - Blocked commands: Platform-detected defaults
   - Unix: `rm -rf`, `chmod 777`, `chmod -R 777`
   - Windows CMD: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart`
-  - Windows PowerShell: `Remove-Item -Recurse -Force`, `Format-Volume`, `Clear-Disk`
+  - Windows PowerShell: `Remove-Item` variants, `ri`/`rm`/`del`/`erase` aliases with `-Recurse`/`-Force`, `Format-Volume`, `Clear-Disk`, `Initialize-Disk`, `Remove-Partition`
+  - On Windows, both Unix and Windows blocklists are merged (Git Bash can invoke both)
 - Export paths: Write-only to configured paths (default: `~/Desktop`, `~/Downloads`)
 - Context paths: Read-only access to configured paths outside vault (folder icon in input toolbar)
 
@@ -231,7 +232,8 @@ The plugin supports macOS, Linux, and Windows:
 | Env vars | `$VAR`, `${VAR}` | `%VAR%`, `$VAR`, `${VAR}` |
 | Path separators | `/` | `/`, `\` (normalized internally) |
 | CLI detection | `/usr/local/bin`, `~/.local/bin`, etc. | `%LOCALAPPDATA%\Claude`, `%APPDATA%\npm`, etc. |
-| Blocked commands | Unix commands | Windows commands |
+| Blocked commands | Unix commands | Unix + Windows commands (merged) |
+| MSYS paths | N/A | `/c/Users/...` → `C:\Users\...` |
 
 Environment variable expansion is case-insensitive on Windows.
 

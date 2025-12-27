@@ -202,8 +202,11 @@ function resolveRealPath(p: string): string {
 /**
  * Translates MSYS/Git Bash paths to Windows paths.
  * E.g., /c/Users/... → C:\Users\...
+ *
+ * This must be called BEFORE path.resolve() or path.isAbsolute() checks,
+ * as those functions don't recognize MSYS-style drive paths.
  */
-function translateMsysPath(value: string): string {
+export function translateMsysPath(value: string): string {
   if (process.platform !== 'win32') {
     return value;
   }
@@ -218,6 +221,18 @@ function translateMsysPath(value: string): string {
   }
 
   return value;
+}
+
+/**
+ * Normalizes a path for cross-platform use before resolution.
+ * Handles MSYS path translation and home directory expansion.
+ * Call this before path.resolve() or path.isAbsolute() checks.
+ */
+function normalizePathBeforeResolution(p: string): string {
+  // First expand environment variables and home path
+  const expanded = expandHomePath(p);
+  // Then translate MSYS paths on Windows (must happen before path.resolve)
+  return translateMsysPath(expanded);
 }
 
 function normalizeWindowsPathPrefix(value: string): string {
@@ -256,11 +271,12 @@ function normalizePathForComparison(value: string): string {
 export function isPathWithinVault(candidatePath: string, vaultPath: string): boolean {
   const vaultReal = normalizePathForComparison(resolveRealPath(vaultPath));
 
-  const expandedPath = expandHomePath(candidatePath);
+  // Normalize before resolution to handle MSYS paths on Windows
+  const normalizedPath = normalizePathBeforeResolution(candidatePath);
 
-  const absCandidate = path.isAbsolute(expandedPath)
-    ? expandedPath
-    : path.resolve(vaultPath, expandedPath);
+  const absCandidate = path.isAbsolute(normalizedPath)
+    ? normalizedPath
+    : path.resolve(vaultPath, normalizedPath);
 
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
@@ -277,20 +293,20 @@ export function isPathInAllowedExportPaths(
     return false;
   }
 
-  // Expand and resolve the candidate path
-  const expandedCandidate = expandHomePath(candidatePath);
+  // Normalize before resolution to handle MSYS paths on Windows
+  const normalizedCandidate = normalizePathBeforeResolution(candidatePath);
 
-  const absCandidate = path.isAbsolute(expandedCandidate)
-    ? expandedCandidate
-    : path.resolve(vaultPath, expandedCandidate);
+  const absCandidate = path.isAbsolute(normalizedCandidate)
+    ? normalizedCandidate
+    : path.resolve(vaultPath, normalizedCandidate);
 
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   // Check if candidate is within any allowed export path
   for (const exportPath of allowedExportPaths) {
-    const expandedExport = expandHomePath(exportPath);
+    const normalizedExport = normalizePathBeforeResolution(exportPath);
 
-    const resolvedExport = normalizePathForComparison(resolveRealPath(expandedExport));
+    const resolvedExport = normalizePathForComparison(resolveRealPath(normalizedExport));
 
     // Check if candidate equals or is within the export path
     if (
@@ -314,20 +330,20 @@ export function isPathInAllowedContextPaths(
     return false;
   }
 
-  // Expand and resolve the candidate path
-  const expandedCandidate = expandHomePath(candidatePath);
+  // Normalize before resolution to handle MSYS paths on Windows
+  const normalizedCandidate = normalizePathBeforeResolution(candidatePath);
 
-  const absCandidate = path.isAbsolute(expandedCandidate)
-    ? expandedCandidate
-    : path.resolve(vaultPath, expandedCandidate);
+  const absCandidate = path.isAbsolute(normalizedCandidate)
+    ? normalizedCandidate
+    : path.resolve(vaultPath, normalizedCandidate);
 
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   // Check if candidate is within any allowed context path
   for (const contextPath of allowedContextPaths) {
-    const expandedContext = expandHomePath(contextPath);
+    const normalizedContext = normalizePathBeforeResolution(contextPath);
 
-    const resolvedContext = normalizePathForComparison(resolveRealPath(expandedContext));
+    const resolvedContext = normalizePathForComparison(resolveRealPath(normalizedContext));
 
     // Check if candidate equals or is within the context path
     if (
@@ -357,11 +373,12 @@ export function getPathAccessType(
 
   const vaultReal = normalizePathForComparison(resolveRealPath(vaultPath));
 
-  const expandedCandidate = expandHomePath(candidatePath);
+  // Normalize before resolution to handle MSYS paths on Windows
+  const normalizedCandidate = normalizePathBeforeResolution(candidatePath);
 
-  const absCandidate = path.isAbsolute(expandedCandidate)
-    ? expandedCandidate
-    : path.resolve(vaultPath, expandedCandidate);
+  const absCandidate = path.isAbsolute(normalizedCandidate)
+    ? normalizedCandidate
+    : path.resolve(vaultPath, normalizedCandidate);
 
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
@@ -374,8 +391,9 @@ export function getPathAccessType(
   const addRoot = (rawPath: string, kind: 'context' | 'export') => {
     const trimmed = rawPath.trim();
     if (!trimmed) return;
-    const expanded = expandHomePath(trimmed);
-    const resolved = normalizePathForComparison(resolveRealPath(expanded));
+    // Normalize before resolution to handle MSYS paths on Windows
+    const normalized = normalizePathBeforeResolution(trimmed);
+    const resolved = normalizePathForComparison(resolveRealPath(normalized));
     const existing = roots.get(resolved) ?? { context: false, export: false };
     existing[kind] = true;
     roots.set(resolved, existing);

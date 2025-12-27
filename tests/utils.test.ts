@@ -13,6 +13,7 @@ import {
   isPathInAllowedExportPaths,
   isPathWithinVault,
   parseEnvironmentVariables,
+  translateMsysPath,
 } from '../src/utils';
 
 describe('utils.ts', () => {
@@ -567,6 +568,101 @@ describe('utils.ts', () => {
       (fs.realpathSync as any).native = realpathSpy;
 
       expect(isPathWithinVault('export/newfile.txt', '/vault')).toBe(false);
+    });
+  });
+
+  describe('translateMsysPath', () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    describe('on Windows', () => {
+      beforeEach(() => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+      });
+
+      it('should translate MSYS drive paths to Windows paths', () => {
+        expect(translateMsysPath('/c/Users/test')).toBe('C:\\Users\\test');
+        expect(translateMsysPath('/d/Projects/vault')).toBe('D:\\Projects\\vault');
+      });
+
+      it('should handle uppercase drive letters', () => {
+        expect(translateMsysPath('/C/Users/test')).toBe('C:\\Users\\test');
+      });
+
+      it('should handle root drive paths', () => {
+        expect(translateMsysPath('/c')).toBe('C:');
+        expect(translateMsysPath('/c/')).toBe('C:\\');
+      });
+
+      it('should not translate non-MSYS absolute paths', () => {
+        expect(translateMsysPath('/home/user')).toBe('/home/user');
+        expect(translateMsysPath('/tmp/file.txt')).toBe('/tmp/file.txt');
+      });
+
+      it('should not translate Windows native paths', () => {
+        expect(translateMsysPath('C:\\Users\\test')).toBe('C:\\Users\\test');
+      });
+
+      it('should not translate relative paths', () => {
+        expect(translateMsysPath('./file.txt')).toBe('./file.txt');
+        expect(translateMsysPath('../parent/file.txt')).toBe('../parent/file.txt');
+      });
+    });
+
+    describe('on Unix', () => {
+      beforeEach(() => {
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+      });
+
+      it('should not translate any paths', () => {
+        expect(translateMsysPath('/c/Users/test')).toBe('/c/Users/test');
+        expect(translateMsysPath('/home/user')).toBe('/home/user');
+      });
+    });
+  });
+
+  describe('Windows path handling', () => {
+    // Note: Full integration tests for Windows path validation require running on Windows
+    // because Node's `path` module behavior is determined at module load time.
+    // These tests verify the translateMsysPath function which is platform-mockable.
+
+    describe('translateMsysPath behavior', () => {
+      const originalPlatform = process.platform;
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      });
+
+      it('translates MSYS paths to Windows paths when platform is win32', () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+
+        expect(translateMsysPath('/c/Users/test')).toBe('C:\\Users\\test');
+        expect(translateMsysPath('/d/Projects/vault')).toBe('D:\\Projects\\vault');
+        expect(translateMsysPath('/c')).toBe('C:');
+        expect(translateMsysPath('/c/')).toBe('C:\\');
+      });
+
+      it('does not translate non-MSYS paths on Windows', () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+
+        // Multi-letter paths after / are not MSYS drive paths
+        expect(translateMsysPath('/home/user')).toBe('/home/user');
+        expect(translateMsysPath('/tmp/file')).toBe('/tmp/file');
+        // Already Windows paths
+        expect(translateMsysPath('C:\\Users')).toBe('C:\\Users');
+        // Relative paths
+        expect(translateMsysPath('./file')).toBe('./file');
+      });
+
+      it('does not translate any paths on non-Windows', () => {
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+        expect(translateMsysPath('/c/Users/test')).toBe('/c/Users/test');
+        expect(translateMsysPath('/home/user')).toBe('/home/user');
+      });
     });
   });
 });

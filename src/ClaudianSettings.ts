@@ -183,14 +183,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     const platformKey = getCurrentPlatformKey();
-    const platformLabel = platformKey === 'windows' ? 'Windows' : 'Unix';
+    const isWindows = platformKey === 'windows';
+    const platformLabel = isWindows ? 'Windows' : 'Unix';
 
     new Setting(containerEl)
       .setName(`Blocked commands (${platformLabel})`)
-      .setDesc(`Patterns to block on ${platformLabel} (one per line). Supports regex. Each platform has its own list.`)
+      .setDesc(`Patterns to block on ${platformLabel} (one per line). Supports regex.`)
       .addTextArea((text) => {
         // Platform-aware placeholder
-        const placeholder = platformKey === 'windows'
+        const placeholder = isWindows
           ? 'del /s /q\nrd /s /q\nRemove-Item -Recurse -Force'
           : 'rm -rf\nchmod 777\nmkfs';
         text
@@ -206,6 +207,27 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.rows = 6;
         text.inputEl.cols = 40;
       });
+
+    // On Windows, show Unix blocklist too since Git Bash can run Unix commands
+    if (isWindows) {
+      new Setting(containerEl)
+        .setName('Blocked commands (Unix/Git Bash)')
+        .setDesc('Unix patterns also blocked on Windows because Git Bash can invoke them.')
+        .addTextArea((text) => {
+          text
+            .setPlaceholder('rm -rf\nchmod 777\nmkfs')
+            .setValue(this.plugin.settings.blockedCommands.unix.join('\n'))
+            .onChange(async (value) => {
+              this.plugin.settings.blockedCommands.unix = value
+                .split(/\r?\n/)
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+              await this.plugin.saveSettings();
+            });
+          text.inputEl.rows = 4;
+          text.inputEl.cols = 40;
+        });
+    }
 
     new Setting(containerEl)
       .setName('Allowed export paths')

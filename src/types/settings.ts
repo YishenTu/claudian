@@ -19,12 +19,33 @@ const WINDOWS_BLOCKED_COMMANDS = [
   'rmdir /s /q',
   'format',
   'diskpart',
-  // PowerShell commands
+  // PowerShell Remove-Item variants (full and abbreviated flags)
   'Remove-Item -Recurse -Force',
+  'Remove-Item -Force -Recurse',
   'Remove-Item -r -fo',
+  'Remove-Item -fo -r',
+  'Remove-Item -Recurse',
+  'Remove-Item -r',
+  // PowerShell aliases for Remove-Item
+  'ri -Recurse',
+  'ri -r',
+  'ri -Force',
+  'ri -fo',
   'rm -r -fo',
+  'rm -Recurse',
+  'rm -Force',
+  'del -Recurse',
+  'del -Force',
+  'erase -Recurse',
+  'erase -Force',
+  // PowerShell directory removal aliases
+  'rd -Recurse',
+  'rmdir -Recurse',
+  // Dangerous disk/volume commands
   'Format-Volume',
   'Clear-Disk',
+  'Initialize-Disk',
+  'Remove-Partition',
 ];
 
 /** Platform-keyed blocked commands structure. */
