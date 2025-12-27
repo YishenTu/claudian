@@ -38,7 +38,16 @@ function normalizeCommandList(value: unknown, fallback: string[]): string[] {
 
 function normalizeBlockedCommands(value: unknown): PlatformBlockedCommands {
   const defaults = getDefaultBlockedCommands();
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+
+  // Migrate old string[] format to new platform-keyed structure
+  if (Array.isArray(value)) {
+    return {
+      unix: normalizeCommandList(value, defaults.unix),
+      windows: [...defaults.windows],
+    };
+  }
+
+  if (!value || typeof value !== 'object') {
     return defaults;
   }
 

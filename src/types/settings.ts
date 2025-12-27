@@ -54,11 +54,15 @@ export function getCurrentPlatformBlockedCommands(commands: PlatformBlockedComma
 /**
  * Get blocked commands for the Bash tool.
  *
- * On Windows, the Bash tool runs in a Git Bash/MSYS2 environment,
- * so use Unix blocklist patterns.
+ * On Windows, the Bash tool runs in a Git Bash/MSYS2 environment but can still
+ * invoke Windows commands (e.g., via `cmd /c` or `powershell`), so both Unix
+ * and Windows blocklist patterns are merged.
  */
 export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): string[] {
-  return process.platform === 'win32' ? commands.unix : getCurrentPlatformBlockedCommands(commands);
+  if (process.platform === 'win32') {
+    return Array.from(new Set([...commands.unix, ...commands.windows]));
+  }
+  return getCurrentPlatformBlockedCommands(commands);
 }
 
 /** Permission mode for tool execution. */
