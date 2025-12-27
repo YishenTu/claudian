@@ -614,6 +614,60 @@ describe('ClaudianPlugin', () => {
       expect(active?.title).toBe('Saved Chat');
     });
 
+    it('should clear session IDs when provider base URL changes', async () => {
+      const timestamp = Date.now();
+      const sessionJsonl = JSON.stringify({
+        type: 'meta',
+        id: 'conv-saved-1',
+        title: 'Saved Chat',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        sessionId: 'saved-session',
+      });
+
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claude/settings.json' ||
+          path === '.claude/sessions' ||
+          path === '.claude/sessions/conv-saved-1.jsonl';
+      });
+      mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
+        if (path === '.claude/sessions') {
+          return { files: ['.claude/sessions/conv-saved-1.jsonl'], folders: [] };
+        }
+        return { files: [], folders: [] };
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claude/settings.json') {
+          return JSON.stringify({
+            environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
+          });
+        }
+        if (path === '.claude/sessions/conv-saved-1.jsonl') {
+          return sessionJsonl;
+        }
+        return '';
+      });
+
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        activeConversationId: 'conv-saved-1',
+        lastEnvHash: 'old-hash',
+        migrationVersion: 2,
+      });
+
+      await plugin.loadSettings();
+
+      const active = plugin.getActiveConversation();
+      expect(active?.sessionId).toBeNull();
+
+      const sessionWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+        ([path]) => path === '.claude/sessions/conv-saved-1.jsonl'
+      );
+      expect(sessionWrite).toBeDefined();
+      const metaLine = (sessionWrite?.[1] as string).split(/\r?\n/)[0];
+      const meta = JSON.parse(metaLine);
+      expect(meta.sessionId).toBeNull();
+    });
+
     it('should handle invalid activeConversationId', async () => {
       // No sessions exist
       mockApp.vault.adapter.exists.mockResolvedValue(false);

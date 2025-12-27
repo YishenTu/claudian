@@ -622,6 +622,32 @@ describe('ClaudianService', () => {
 
       expect(chunks.some((c) => c.type === 'text')).toBe(true);
     });
+
+    it('should rebuild history when session is missing but history exists', async () => {
+      (service as any).resolvedClaudePath = '/mock/claude';
+      const prompts: string[] = [];
+
+      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (prompt: string) {
+        prompts.push(prompt);
+        yield { type: 'text', content: 'ok' };
+      }) as any);
+
+      const history = [
+        { id: 'msg-1', role: 'user' as const, content: 'Previous message', timestamp: Date.now() },
+        { id: 'msg-2', role: 'assistant' as const, content: 'Previous response', timestamp: Date.now() },
+      ];
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('New message', undefined, history)) {
+        chunks.push(chunk);
+      }
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain('User: Previous message');
+      expect(prompts[0]).toContain('Assistant: Previous response');
+      expect(prompts[0]).toContain('User: New message');
+      expect(chunks.some((c) => c.type === 'text')).toBe(true);
+    });
   });
 
   describe('session restoration', () => {

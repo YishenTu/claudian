@@ -263,7 +263,14 @@ export class ClaudianService {
 
     // If a command overrides the model, avoid resuming a potentially incompatible session.
     const requestedModel = queryOptions?.model || this.plugin.settings.model;
-    if (this.sessionManager.needsSessionReset(requestedModel, this.plugin.settings.model)) {
+    const needsModelReset = this.sessionManager.needsSessionReset(requestedModel, this.plugin.settings.model);
+
+    // Also rebuild history if no session exists but we have conversation history
+    // (e.g., after provider change cleared the sessionId).
+    const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
+      conversationHistory && conversationHistory.length > 0;
+
+    if (needsModelReset || noSessionButHasHistory) {
       if (conversationHistory && conversationHistory.length > 0) {
         const historyContext = buildContextFromHistory(conversationHistory);
         const lastUserMessage = getLastUserMessage(conversationHistory);

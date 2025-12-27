@@ -154,14 +154,15 @@ export default class ClaudianPlugin extends Plugin {
     const backfilledConversations = this.backfillConversationResponseTimestamps();
 
     this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
-    const modelReset = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
 
-    if (modelReset) {
+    if (changed) {
       await this.saveSettings();
     }
 
-    // Persist backfilled conversations to their session files
-    for (const conv of backfilledConversations) {
+    // Persist backfilled and invalidated conversations to their session files
+    const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
+    for (const conv of conversationsToSave) {
       await this.storage.sessions.saveConversation(conv);
     }
   }
@@ -237,7 +238,7 @@ export default class ClaudianPlugin extends Plugin {
     return customModels[0].value;
   }
 
-  /** Computes a hash of model-related environment variables for change detection. */
+  /** Computes a hash of model and provider base URL environment variables for change detection. */
   private computeEnvHash(envText: string): string {
     const envVars = parseEnvironmentVariables(envText || '');
     const modelKeys = [
@@ -246,7 +247,11 @@ export default class ClaudianPlugin extends Plugin {
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
       'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     ];
-    const relevantPairs = modelKeys
+    const providerKeys = [
+      'ANTHROPIC_BASE_URL',
+    ];
+    const allKeys = [...modelKeys, ...providerKeys];
+    const relevantPairs = allKeys
       .filter(key => envVars[key])
       .map(key => `${key}=${envVars[key]}`)
       .sort()
@@ -254,13 +259,36 @@ export default class ClaudianPlugin extends Plugin {
     return relevantPairs;
   }
 
-  /** Reconciles model with environment. Returns true if model was reset. */
-  private reconcileModelWithEnvironment(envText: string): boolean {
+  /**
+   * Reconciles model with environment.
+   * Returns { changed, invalidatedConversations } where changed indicates if
+   * settings were modified (requiring save), and invalidatedConversations lists
+   * conversations that had their sessionId cleared (also requiring save).
+   */
+  private reconcileModelWithEnvironment(envText: string): {
+    changed: boolean;
+    invalidatedConversations: Conversation[];
+  } {
     const currentHash = this.computeEnvHash(envText);
     const savedHash = this.settings.lastEnvHash || '';
 
     if (currentHash === savedHash) {
-      return false;
+      return { changed: false, invalidatedConversations: [] };
+    }
+
+    // Hash changed - model or provider may have changed.
+    // Invalidate session so next query rebuilds full context from history.
+    // Note: agentService may not exist yet during initial plugin load.
+    this.agentService?.resetSession();
+
+    // Clear sessionId from all conversations since they belong to the old provider.
+    // Sessions are provider-specific (contain signed thinking blocks, etc.).
+    const invalidatedConversations: Conversation[] = [];
+    for (const conv of this.conversations) {
+      if (conv.sessionId) {
+        conv.sessionId = null;
+        invalidatedConversations.push(conv);
+      }
     }
 
     const envVars = parseEnvironmentVariables(envText || '');
@@ -273,7 +301,7 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     this.settings.lastEnvHash = currentHash;
-    return true;
+    return { changed: true, invalidatedConversations };
   }
 
   /** Removes cached images associated with a conversation if not used elsewhere. */
