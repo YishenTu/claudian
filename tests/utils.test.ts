@@ -250,18 +250,16 @@ describe('utils.ts', () => {
       expect(expandHomePath(braceStyle)).toBe(envValue);
     });
 
-    it('should expand Windows-specific environment variable formats on Windows', () => {
-      const isWindows = process.platform === 'win32';
+    it('should handle Windows-specific environment variable formats based on platform', () => {
       const powerShellStyle = `$env:${envKey}`;
       const cmdStyle = `!${envKey}!`;
 
-      if (isWindows) {
-        expect(expandHomePath(powerShellStyle)).toBe(envValue);
-        expect(expandHomePath(cmdStyle)).toBe(envValue);
-      } else {
-        expect(expandHomePath(powerShellStyle)).toBe(powerShellStyle);
-        expect(expandHomePath(cmdStyle)).toBe(cmdStyle);
-      }
+      // On Windows: expanded; on Unix: unchanged
+      const expectedPowerShell = process.platform === 'win32' ? envValue : powerShellStyle;
+      const expectedCmd = process.platform === 'win32' ? envValue : cmdStyle;
+
+      expect(expandHomePath(powerShellStyle)).toBe(expectedPowerShell);
+      expect(expandHomePath(cmdStyle)).toBe(expectedCmd);
     });
 
     it('should leave unknown environment variables untouched', () => {

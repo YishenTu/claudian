@@ -72,7 +72,7 @@ function getEnvValue(key: string): string | undefined {
 }
 
 function expandEnvironmentVariables(value: string): string {
-  if (!value.includes('%') && !value.includes('$')) {
+  if (!value.includes('%') && !value.includes('$') && !value.includes('!')) {
     return value;
   }
 
@@ -215,8 +215,16 @@ function normalizeWindowsPathPrefix(value: string): string {
 }
 
 function normalizePathForComparison(value: string): string {
-  const normalized = normalizeWindowsPathPrefix(path.normalize(value));
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
+  try {
+    const normalized = normalizeWindowsPathPrefix(path.normalize(value));
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  } catch {
+    // Fallback to input if normalization fails
+    return process.platform === 'win32' ? value.toLowerCase() : value;
+  }
 }
 
 /** Checks whether a candidate path is within the vault. */
