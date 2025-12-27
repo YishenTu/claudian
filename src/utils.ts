@@ -76,12 +76,25 @@ function expandEnvironmentVariables(value: string): string {
     return value;
   }
 
+  const isWindows = process.platform === 'win32';
   let expanded = value;
 
   expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (match, name) => {
     const envValue = getEnvValue(name);
     return envValue !== undefined ? envValue : match;
   });
+
+  if (isWindows) {
+    expanded = expanded.replace(/!([A-Za-z_][A-Za-z0-9_]*)!/g, (match, name) => {
+      const envValue = getEnvValue(name);
+      return envValue !== undefined ? envValue : match;
+    });
+
+    expanded = expanded.replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/gi, (match, name) => {
+      const envValue = getEnvValue(name);
+      return envValue !== undefined ? envValue : match;
+    });
+  }
 
   expanded = expanded.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name1, name2) => {
     const key = name1 ?? name2;
@@ -185,9 +198,30 @@ function resolveRealPath(p: string): string {
   }
 }
 
+function normalizeWindowsPathPrefix(value: string): string {
+  if (process.platform !== 'win32') {
+    return value;
+  }
+
+  if (value.startsWith('\\\\?\\UNC\\')) {
+    return `\\\\${value.slice('\\\\?\\UNC\\'.length)}`;
+  }
+
+  if (value.startsWith('\\\\?\\')) {
+    return value.slice('\\\\?\\'.length);
+  }
+
+  return value;
+}
+
+function normalizePathForComparison(value: string): string {
+  const normalized = normalizeWindowsPathPrefix(path.normalize(value));
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
 /** Checks whether a candidate path is within the vault. */
 export function isPathWithinVault(candidatePath: string, vaultPath: string): boolean {
-  const vaultReal = resolveRealPath(vaultPath);
+  const vaultReal = normalizePathForComparison(resolveRealPath(vaultPath));
 
   const expandedPath = expandHomePath(candidatePath);
 
@@ -195,7 +229,7 @@ export function isPathWithinVault(candidatePath: string, vaultPath: string): boo
     ? expandedPath
     : path.resolve(vaultPath, expandedPath);
 
-  const resolvedCandidate = resolveRealPath(absCandidate);
+  const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   return resolvedCandidate === vaultReal || resolvedCandidate.startsWith(vaultReal + path.sep);
 }
@@ -217,13 +251,13 @@ export function isPathInAllowedExportPaths(
     ? expandedCandidate
     : path.resolve(vaultPath, expandedCandidate);
 
-  const resolvedCandidate = resolveRealPath(absCandidate);
+  const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   // Check if candidate is within any allowed export path
   for (const exportPath of allowedExportPaths) {
     const expandedExport = expandHomePath(exportPath);
 
-    const resolvedExport = resolveRealPath(expandedExport);
+    const resolvedExport = normalizePathForComparison(resolveRealPath(expandedExport));
 
     // Check if candidate equals or is within the export path
     if (
@@ -254,13 +288,13 @@ export function isPathInAllowedContextPaths(
     ? expandedCandidate
     : path.resolve(vaultPath, expandedCandidate);
 
-  const resolvedCandidate = resolveRealPath(absCandidate);
+  const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   // Check if candidate is within any allowed context path
   for (const contextPath of allowedContextPaths) {
     const expandedContext = expandHomePath(contextPath);
 
-    const resolvedContext = resolveRealPath(expandedContext);
+    const resolvedContext = normalizePathForComparison(resolveRealPath(expandedContext));
 
     // Check if candidate equals or is within the context path
     if (
@@ -288,7 +322,7 @@ export function getPathAccessType(
 ): PathAccessType {
   if (!candidatePath) return 'none';
 
-  const vaultReal = resolveRealPath(vaultPath);
+  const vaultReal = normalizePathForComparison(resolveRealPath(vaultPath));
 
   const expandedCandidate = expandHomePath(candidatePath);
 
@@ -296,7 +330,7 @@ export function getPathAccessType(
     ? expandedCandidate
     : path.resolve(vaultPath, expandedCandidate);
 
-  const resolvedCandidate = resolveRealPath(absCandidate);
+  const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   if (resolvedCandidate === vaultReal || resolvedCandidate.startsWith(vaultReal + path.sep)) {
     return 'vault';
@@ -308,7 +342,7 @@ export function getPathAccessType(
     const trimmed = rawPath.trim();
     if (!trimmed) return;
     const expanded = expandHomePath(trimmed);
-    const resolved = resolveRealPath(expanded);
+    const resolved = normalizePathForComparison(resolveRealPath(expanded));
     const existing = roots.get(resolved) ?? { context: false, export: false };
     existing[kind] = true;
     roots.set(resolved, existing);

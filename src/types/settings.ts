@@ -58,7 +58,10 @@ export function getCurrentPlatformBlockedCommands(commands: PlatformBlockedComma
  * so use Unix blocklist patterns.
  */
 export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): string[] {
-  return process.platform === 'win32' ? commands.unix : getCurrentPlatformBlockedCommands(commands);
+  if (process.platform === 'win32') {
+    return Array.from(new Set([...commands.unix, ...commands.windows]));
+  }
+  return getCurrentPlatformBlockedCommands(commands);
 }
 
 /** Permission mode for tool execution. */

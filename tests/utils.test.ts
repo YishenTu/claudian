@@ -250,6 +250,20 @@ describe('utils.ts', () => {
       expect(expandHomePath(braceStyle)).toBe(envValue);
     });
 
+    it('should expand Windows-specific environment variable formats on Windows', () => {
+      const isWindows = process.platform === 'win32';
+      const powerShellStyle = `$env:${envKey}`;
+      const cmdStyle = `!${envKey}!`;
+
+      if (isWindows) {
+        expect(expandHomePath(powerShellStyle)).toBe(envValue);
+        expect(expandHomePath(cmdStyle)).toBe(envValue);
+      } else {
+        expect(expandHomePath(powerShellStyle)).toBe(powerShellStyle);
+        expect(expandHomePath(cmdStyle)).toBe(cmdStyle);
+      }
+    });
+
     it('should leave unknown environment variables untouched', () => {
       expect(expandHomePath('%CLAUDIAN_MISSING_VAR%')).toBe('%CLAUDIAN_MISSING_VAR%');
       expect(expandHomePath('$CLAUDIAN_MISSING_VAR')).toBe('$CLAUDIAN_MISSING_VAR');
