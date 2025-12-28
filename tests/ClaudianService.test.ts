@@ -1321,7 +1321,7 @@ describe('ClaudianService', () => {
     });
 
     it('should deny when no approval callback is set', async () => {
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
 
       const result = await canUse('Bash', { command: 'ls' }, {});
 
@@ -1332,7 +1332,7 @@ describe('ClaudianService', () => {
     it('should allow and cache session approvals when user allows', async () => {
       const approvalCallback = jest.fn().mockResolvedValue('allow');
       service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
 
       const result = await canUse('Bash', { command: 'ls -la' }, {});
 
@@ -1346,7 +1346,7 @@ describe('ClaudianService', () => {
     it('should persist always-allow approvals and save settings', async () => {
       const approvalCallback = jest.fn().mockResolvedValue('allow-always');
       service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
       const saveSpy = jest.spyOn(mockPlugin, 'saveSettings');
 
       const result = await canUse('Read', { file_path: '/test/file.md' }, {});
@@ -1359,7 +1359,7 @@ describe('ClaudianService', () => {
     it('should deny when user rejects approval', async () => {
       const approvalCallback = jest.fn().mockResolvedValue('deny');
       service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
 
       const result = await canUse('Bash', { command: 'rm -rf /' }, {});
 
@@ -1376,7 +1376,7 @@ describe('ClaudianService', () => {
       });
       const approvalCallback = jest.fn().mockResolvedValue('deny');
       service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
 
       const result = await canUse('Write', { file_path: '/test/file.md' }, {});
 
@@ -1393,7 +1393,7 @@ describe('ClaudianService', () => {
       });
       const approvalCallback = jest.fn().mockRejectedValue(new Error('boom'));
       service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
 
       const result = await canUse('Read', { file_path: '/test/file.md' }, {});
 
@@ -1845,7 +1845,7 @@ describe('ClaudianService', () => {
       ] });
       service = new ClaudianService(mockPlugin, createMockMcpManager());
 
-      const canUse = (service as any).createSafeModeCallback();
+      const canUse = (service as any).createUnifiedToolCallback('normal');
       const res = await canUse('Read', { file_path: '/test/file.md' }, {});
       expect(res.behavior).toBe('allow');
     });

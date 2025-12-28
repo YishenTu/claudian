@@ -260,9 +260,9 @@ src/
 │   ├── mcp/                     # MCP @-mention detection and connection testing
 │   └── settings/                # Settings tab (ClaudianSettings)
 ├── ui/                          # UI components
-│   ├── components/              # Input toolbar, file/image context, dropdowns
+│   ├── components/              # Input toolbar, file/image context, dropdowns, AskUserQuestion panel
 │   ├── modals/                  # Approval, inline edit, instruction, MCP modals
-│   ├── renderers/               # Thinking blocks, tool calls, diffs, subagents
+│   ├── renderers/               # Thinking blocks, tool calls, diffs, subagents, AskUserQuestion
 │   └── settings/                # Env snippets, MCP settings, slash commands
 ├── utils/                       # Modular utility functions
 └── style/                       # Modular CSS (→ styles.css)
@@ -295,6 +295,8 @@ src/
 - [x] Distributed storage (settings, commands, sessions as separate files)
 - [x] Windows platform support (MSYS paths, PowerShell blocklist, env vars)
 - [x] MCP (Model Context Protocol) server support with context-saving mode
+- [ ] Plan mode
+- [ ] Context window display
 - [ ] Hooks and other advanced features
 
 ## License

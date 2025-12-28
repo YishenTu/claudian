@@ -5,6 +5,7 @@
  * Tool result tracking and UI rendering are tested through integration tests.
  */
 
+import { TOOL_ASK_USER_QUESTION } from '../src/core/tools/toolNames';
 import type { ChatMessage } from '../src/core/types';
 import { StreamController, type StreamControllerDeps } from '../src/features/chat/controllers/StreamController';
 import { ChatState } from '../src/features/chat/state/ChatState';
@@ -69,6 +70,10 @@ function createMockElement() {
 function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockElement();
+  const agentService = {
+    getAskUserQuestionAnswers: jest.fn().mockReturnValue(undefined),
+    getDiffData: jest.fn().mockReturnValue(undefined),
+  };
   const fileContextManager = {
     markFileBeingEdited: jest.fn(),
     trackEditedFile: jest.fn(),
@@ -89,6 +94,7 @@ function createMockDeps(): StreamControllerDeps {
           },
         },
       },
+      agentService,
     } as any,
     state,
     renderer: {
@@ -240,6 +246,47 @@ describe('StreamController - Text Content', () => {
         { file_path: 'notes/test.md' },
         false
       );
+    });
+
+    it('should persist AskUserQuestion answers when tool rendering is disabled', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockElement();
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_use',
+          id: 'tool-ask-1',
+          name: TOOL_ASK_USER_QUESTION,
+          input: {
+            questions: [
+              {
+                question: 'Which option?',
+                header: 'Q1',
+                multiSelect: false,
+                options: [
+                  { label: 'A', description: '' },
+                  { label: 'B', description: '' },
+                ],
+              },
+            ],
+          },
+        },
+        msg
+      );
+
+      const agentService = (deps.plugin as any).agentService;
+      agentService.getAskUserQuestionAnswers.mockReturnValue({ 'Which option?': 'A' });
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'tool-ask-1', content: 'ok' },
+        msg
+      );
+
+      expect(agentService.getAskUserQuestionAnswers).toHaveBeenCalledWith('tool-ask-1');
+      expect(msg.toolCalls![0].status).toBe('completed');
+      expect(msg.toolCalls![0].input).toMatchObject({
+        answers: { 'Which option?': 'A' },
+      });
     });
   });
 });

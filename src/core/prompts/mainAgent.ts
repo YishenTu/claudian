@@ -61,7 +61,7 @@ User's question or request here
 
 ## Tools
 
-Standard tools (Read, Write, Edit, Glob, Grep, LS, Bash, WebSearch, WebFetch, Skills) work as expected. NotebookEdit handles .ipynb cells. Use BashOutput/KillShell to manage background Bash processes.
+Standard tools (Read, Write, Edit, Glob, Grep, LS, Bash, WebSearch, WebFetch, Skills, AskUserQuestion) work as expected. NotebookEdit handles .ipynb cells. Use BashOutput/KillShell to manage background Bash processes. AskUserQuestion prompts the user for clarification when needed.
 
 **Key vault-specific notes:**
 - Read can view images (PNG, JPG, GIF, WebP) for visual analysis

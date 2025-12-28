@@ -255,20 +255,42 @@ export class StreamController {
       return;
     }
 
-    // Check if it's an AskUserQuestion result
+    const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     const askQuestionState = state.askUserQuestionStates.get(chunk.id);
-    if (askQuestionState) {
-      const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
+
+    // Check if it's an AskUserQuestion result
+    if (existingToolCall?.name === TOOL_ASK_USER_QUESTION || askQuestionState) {
+      const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
       if (existingToolCall) {
-        const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
         existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
         existingToolCall.result = chunk.content;
-
-        // Parse answers from the tool input (they were added by the hook)
-        const parsed = parseAskUserQuestionInput(existingToolCall.input);
-        finalizeAskUserQuestionBlock(askQuestionState, parsed?.answers, chunk.isError || isBlocked);
       }
-      state.askUserQuestionStates.delete(chunk.id);
+
+      // Get answers from stored map (set by ClaudianService callback)
+      const storedAnswers = plugin.agentService.getAskUserQuestionAnswers(chunk.id);
+      const parsed = existingToolCall ? parseAskUserQuestionInput(existingToolCall.input) : null;
+
+      // Use stored answers, or fall back to parsed from input
+      const answers = storedAnswers || parsed?.answers;
+
+      // Store answers back into input for session persistence
+      if (existingToolCall && answers) {
+        existingToolCall.input = { ...existingToolCall.input, answers };
+      }
+
+      if (askQuestionState && existingToolCall) {
+        finalizeAskUserQuestionBlock(
+          askQuestionState,
+          answers,
+          chunk.isError || isBlocked,
+          parsed?.questions
+        );
+      }
+
+      if (askQuestionState) {
+        state.askUserQuestionStates.delete(chunk.id);
+      }
+
       if (state.currentContentEl) {
         this.showThinkingIndicator(state.currentContentEl);
       }
@@ -276,7 +298,6 @@ export class StreamController {
     }
 
     // Regular tool result
-    const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
 
     if (existingToolCall) {

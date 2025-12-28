@@ -30,11 +30,15 @@ import {
   ApprovalManager,
   getActionDescription,
 } from '../security';
+import { TOOL_ASK_USER_QUESTION } from '../tools/toolNames';
 import type {
   ApprovedAction,
+  AskUserQuestionCallback,
+  AskUserQuestionInput,
   ChatMessage,
   ClaudeModel,
   ImageAttachment,
+  PermissionMode,
   StreamChunk,
   ToolDiffData,
 } from '../types';
@@ -195,6 +199,7 @@ export class ClaudianService {
   private abortController: AbortController | null = null;
   private resolvedClaudePath: string | null = null;
   private approvalCallback: ApprovalCallback | null = null;
+  private askUserQuestionCallback: AskUserQuestionCallback | null = null;
   private fileEditTracker: FileEditTracker | null = null;
   private vaultPath: string | null = null;
 
@@ -203,6 +208,9 @@ export class ClaudianService {
   private approvalManager: ApprovalManager;
   private diffStore = new DiffStore();
   private mcpManager: McpServerManager;
+
+  // Store AskUserQuestion answers by tool_use_id
+  private askUserQuestionAnswers = new Map<string, Record<string, string | string[]>>();
 
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -463,20 +471,18 @@ export class ClaudianService {
     );
 
     // Apply permission mode
+    // Always use canUseTool for AskUserQuestion support in both modes
+    options.canUseTool = this.createUnifiedToolCallback(permissionMode);
+    options.hooks = {
+      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
+      PostToolUse: [fileHashPostHook],
+    };
+
     if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
       options.allowDangerouslySkipPermissions = true;
-      options.hooks = {
-        PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
-        PostToolUse: [fileHashPostHook],
-      };
     } else {
       options.permissionMode = 'default';
-      options.canUseTool = this.createSafeModeCallback();
-      options.hooks = {
-        PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
-        PostToolUse: [fileHashPostHook],
-      };
     }
 
     // Enable extended thinking based on thinking budget setting
@@ -561,6 +567,11 @@ export class ClaudianService {
     this.approvalCallback = callback;
   }
 
+  /** Sets the AskUserQuestion callback for interactive questions. */
+  setAskUserQuestionCallback(callback: AskUserQuestionCallback | null) {
+    this.askUserQuestionCallback = callback;
+  }
+
   /** Sets the file edit tracker for syncing edit state with the UI. */
   setFileEditTracker(tracker: FileEditTracker | null) {
     this.fileEditTracker = tracker;
@@ -587,56 +598,131 @@ export class ClaudianService {
   }
 
   /**
-   * Create callback for Safe mode - check approved actions, then prompt user.
+   * Create unified callback that handles both YOLO and normal modes.
+   * AskUserQuestion always prompts user regardless of mode.
    */
-  private createSafeModeCallback(): CanUseTool {
-    return async (toolName, input): Promise<PermissionResult> => {
-      // Check if action is pre-approved
-      if (this.approvalManager.isActionApproved(toolName, input)) {
+  private createUnifiedToolCallback(mode: PermissionMode): CanUseTool {
+    return async (toolName, input, context): Promise<PermissionResult> => {
+      // Special handling for AskUserQuestion - always prompt user
+      if (toolName === TOOL_ASK_USER_QUESTION) {
+        return this.handleAskUserQuestionTool(input, context?.toolUseID);
+      }
+
+      // YOLO mode: auto-approve everything else
+      if (mode === 'yolo') {
         return { behavior: 'allow', updatedInput: input };
       }
 
-      // If no approval callback is set, deny the action
-      if (!this.approvalCallback) {
-        this.fileEditTracker?.cancelFileEdit(toolName, input);
-        return {
-          behavior: 'deny',
-          message: 'No approval handler available. Please enable YOLO mode or configure permissions.',
-        };
-      }
-
-      // Generate description for the user
-      const description = getActionDescription(toolName, input);
-
-      // Request approval from the user
-      try {
-        const decision = await this.approvalCallback(toolName, input, description);
-
-        if (decision === 'deny') {
-          this.fileEditTracker?.cancelFileEdit(toolName, input);
-          return {
-            behavior: 'deny',
-            message: 'User denied this action.',
-            interrupt: false,
-          };
-        }
-
-        // Approve the action and potentially save to memory
-        if (decision === 'allow-always') {
-          await this.approvalManager.approveAction(toolName, input, 'always');
-        } else if (decision === 'allow') {
-          await this.approvalManager.approveAction(toolName, input, 'session');
-        }
-
-        return { behavior: 'allow', updatedInput: input };
-      } catch {
-        this.fileEditTracker?.cancelFileEdit(toolName, input);
-        return {
-          behavior: 'deny',
-          message: 'Approval request failed.',
-          interrupt: true,
-        };
-      }
+      // Normal mode: use approval flow
+      return this.handleNormalModeApproval(toolName, input);
     };
+  }
+
+  /**
+   * Handle AskUserQuestion tool - shows panel and returns answers.
+   */
+  private async handleAskUserQuestionTool(
+    input: Record<string, unknown>,
+    toolUseId?: string
+  ): Promise<PermissionResult> {
+    if (!this.askUserQuestionCallback) {
+      return {
+        behavior: 'deny',
+        message: 'No question handler available.',
+      };
+    }
+
+    try {
+      const answers = await this.askUserQuestionCallback(input as unknown as AskUserQuestionInput);
+
+      if (answers === null) {
+        return {
+          behavior: 'deny',
+          message: 'User cancelled the question.',
+          interrupt: false,
+        };
+      }
+
+      // Store answers for later retrieval by StreamController
+      if (toolUseId) {
+        this.askUserQuestionAnswers.set(toolUseId, answers);
+      }
+
+      // Return updated input with answers
+      return {
+        behavior: 'allow',
+        updatedInput: { ...input, answers },
+      };
+    } catch {
+      return {
+        behavior: 'deny',
+        message: 'Failed to get user response.',
+        interrupt: true,
+      };
+    }
+  }
+
+  /** Get stored AskUserQuestion answers for a tool_use_id. */
+  getAskUserQuestionAnswers(toolUseId: string): Record<string, string | string[]> | undefined {
+    const answers = this.askUserQuestionAnswers.get(toolUseId);
+    if (answers) {
+      this.askUserQuestionAnswers.delete(toolUseId);
+    }
+    return answers;
+  }
+
+  /**
+   * Handle normal mode approval - check approved actions, then prompt user.
+   */
+  private async handleNormalModeApproval(
+    toolName: string,
+    input: Record<string, unknown>
+  ): Promise<PermissionResult> {
+    // Check if action is pre-approved
+    if (this.approvalManager.isActionApproved(toolName, input)) {
+      return { behavior: 'allow', updatedInput: input };
+    }
+
+    // If no approval callback is set, deny the action
+    if (!this.approvalCallback) {
+      this.fileEditTracker?.cancelFileEdit(toolName, input);
+      return {
+        behavior: 'deny',
+        message: 'No approval handler available. Please enable YOLO mode or configure permissions.',
+      };
+    }
+
+    // Generate description for the user
+    const description = getActionDescription(toolName, input);
+
+    // Request approval from the user
+    try {
+      const decision = await this.approvalCallback(toolName, input, description);
+
+      if (decision === 'deny') {
+        this.fileEditTracker?.cancelFileEdit(toolName, input);
+        return {
+          behavior: 'deny',
+          message: 'User denied this action.',
+          interrupt: false,
+        };
+      }
+
+      // Approve the action and potentially save to memory
+      if (decision === 'allow-always') {
+        await this.approvalManager.approveAction(toolName, input, 'always');
+      } else if (decision === 'allow') {
+        await this.approvalManager.approveAction(toolName, input, 'session');
+      }
+
+      return { behavior: 'allow', updatedInput: input };
+    } catch {
+      this.fileEditTracker?.cancelFileEdit(toolName, input);
+      return {
+        behavior: 'deny',
+        message: 'Approval request failed.',
+        interrupt: true,
+      };
+    }
   }
 }

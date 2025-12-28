@@ -14,12 +14,12 @@ import { getBashToolBlockedCommands } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
   ApprovalModal,
-  AskUserQuestionModal,
   type FileContextManager,
   type ImageContextManager,
   InstructionModal,
   type InstructionModeManager,
   type McpServerSelector,
+  showAskUserQuestionPanel,
   type SlashCommandManager,
 } from '../../../ui';
 import { prependContextFiles } from '../../../utils/context';
@@ -473,12 +473,17 @@ export class InputController {
     });
   }
 
-  /** Handles AskUserQuestion tool calls by showing a modal. */
-  async handleAskUserQuestion(input: AskUserQuestionInput): Promise<Record<string, string> | null> {
+  /** Handles AskUserQuestion tool calls by showing a floating panel. */
+  async handleAskUserQuestion(input: AskUserQuestionInput): Promise<Record<string, string | string[]> | null> {
     const { plugin } = this.deps;
-    return new Promise((resolve) => {
-      const modal = new AskUserQuestionModal(plugin.app, input, resolve);
-      modal.open();
-    });
+
+    // Get the container element (the claudian view container)
+    const messagesEl = this.deps.getMessagesEl();
+    const containerEl = messagesEl.parentElement;
+    if (!containerEl) {
+      return null;
+    }
+
+    return showAskUserQuestionPanel(plugin.app, containerEl, input);
   }
 }

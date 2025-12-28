@@ -63,9 +63,9 @@ src/
 | | `inline-edit/` | Inline edit service |
 | | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
 | | `settings/` | Settings tab UI |
-| **ui** | `components/` | Input toolbar, file/image context, slash command dropdown |
+| **ui** | `components/` | Input toolbar, file/image context, slash command dropdown, AskUserQuestion panel |
 | | `modals/` | Approval, inline edit, instruction, MCP modals |
-| | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs |
+| | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs, AskUserQuestion |
 | | `settings/` | Env snippets, MCP settings, slash command settings |
 | **utils** | | Modular utilities: date, path, env, context, editor, session, markdown, mcp, slashCommand |
 | **style** | | Modular CSS (built into root `styles.css`) |
@@ -284,7 +284,7 @@ CSS is modularized in `src/style/` and built into root `styles.css`:
 ```
 src/style/
 ├── base/           # container, animations (@keyframes)
-├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input
+├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input, ask-user-question
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, context-path, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands
 ├── modals/         # approval, instruction, mcp-modal
@@ -312,6 +312,7 @@ All classes use `.claudian-` prefix. Key patterns:
 | Context paths | `-context-path-selector`, `-context-path-icon`, `-context-path-dropdown` |
 | MCP | `-mcp-selector`, `-mcp-selector-icon`, `-mcp-selector-dropdown`, `-mcp-item` |
 | MCP Settings | `-mcp-header`, `-mcp-list`, `-mcp-status`, `-mcp-test-modal` |
+| AskUserQuestion | `-ask-panel`, `-ask-question-block`, `-ask-question-tree`, `-ask-question-q`, `-ask-question-a` |
 | Modals | `-approval-modal`, `-instruction-modal`, `-mcp-modal` |
 
 ## Development Notes

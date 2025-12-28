@@ -1,6 +1,12 @@
 /** Claudian UI components - barrel export. */
 
 export {
+  AskUserQuestionPanel,
+  type AskUserQuestionPanelOptions,
+  type AskUserQuestionPanelResult,
+  showAskUserQuestionPanel,
+} from './AskUserQuestionPanel';
+export {
   type FileContextCallbacks,
   FileContextManager,
 } from './FileContext';

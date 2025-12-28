@@ -75,3 +75,11 @@ export {
   type McpStdioServerConfig,
   type ParsedMcpConfig,
 } from './mcp';
+
+// AskUserQuestion types
+export {
+  type AskUserQuestionCallback,
+  type AskUserQuestionInput,
+  type AskUserQuestionOption,
+  type AskUserQuestionQuestion,
+} from './askUserQuestion';
