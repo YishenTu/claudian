@@ -167,6 +167,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const slashCommandsContainer = containerEl.createDiv({ cls: 'claudian-slash-commands-container' });
     new SlashCommandSettings(slashCommandsContainer, this.plugin);
 
+    // MCP Servers section
+    new Setting(containerEl).setName('MCP Servers').setHeading();
+
+    const mcpDesc = containerEl.createDiv({ cls: 'claudian-mcp-settings-desc' });
+    mcpDesc.createEl('p', {
+      text: 'Configure Model Context Protocol servers to extend Claude\'s capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate.',
+      cls: 'setting-item-description',
+    });
+
+    const mcpContainer = containerEl.createDiv({ cls: 'claudian-mcp-container' });
+    new McpSettingsManager(mcpContainer, this.plugin);
+
     // Safety section
     new Setting(containerEl).setName('Safety').setHeading();
 
@@ -328,17 +340,5 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Environment Snippets subsection
     const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
     new EnvSnippetManager(envSnippetsContainer, this.plugin);
-
-    // MCP Servers section
-    new Setting(containerEl).setName('MCP Servers').setHeading();
-
-    const mcpDesc = containerEl.createDiv({ cls: 'claudian-mcp-settings-desc' });
-    mcpDesc.createEl('p', {
-      text: 'Configure Model Context Protocol servers to extend Claude\'s capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate.',
-      cls: 'setting-item-description',
-    });
-
-    const mcpContainer = containerEl.createDiv({ cls: 'claudian-mcp-container' });
-    new McpSettingsManager(mcpContainer, this.plugin);
   }
 }

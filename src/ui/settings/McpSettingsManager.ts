@@ -42,9 +42,10 @@ export class McpSettingsManager {
     // Add button with dropdown
     const addContainer = headerEl.createDiv({ cls: 'claudian-mcp-add-container' });
     const addBtn = addContainer.createEl('button', {
-      text: 'Add',
-      cls: 'claudian-add-mcp-btn',
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Add' },
     });
+    setIcon(addBtn, 'plus');
 
     const dropdown = addContainer.createDiv({ cls: 'claudian-mcp-add-dropdown' });
 

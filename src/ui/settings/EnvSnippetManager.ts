@@ -5,7 +5,7 @@
  */
 
 import type { App} from 'obsidian';
-import { Modal, Notice,Setting } from 'obsidian';
+import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { EnvSnippet } from '../../core/types';
 import type ClaudianPlugin from '../../main';
@@ -136,9 +136,10 @@ export class EnvSnippetManager {
     headerEl.createSpan({ text: 'Snippets', cls: 'claudian-snippet-label' });
 
     const saveBtn = headerEl.createEl('button', {
-      text: 'Save Current',
-      cls: 'claudian-save-env-btn'
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Save current' },
     });
+    setIcon(saveBtn, 'plus');
     saveBtn.addEventListener('click', () => this.saveCurrentEnv());
 
     const snippets = this.plugin.settings.envSnippets;
@@ -171,27 +172,30 @@ export class EnvSnippetManager {
 
       // Restore button
       const restoreBtn = actionsEl.createEl('button', {
-        text: 'Insert',
-        cls: 'claudian-restore-snippet-btn'
+        cls: 'claudian-settings-action-btn',
+        attr: { 'aria-label': 'Insert' },
       });
+      setIcon(restoreBtn, 'clipboard-paste');
       restoreBtn.addEventListener('click', async () => {
         await this.insertSnippet(snippet);
       });
 
       // Edit button
       const editBtn = actionsEl.createEl('button', {
-        text: 'Edit',
-        cls: 'claudian-edit-snippet-btn'
+        cls: 'claudian-settings-action-btn',
+        attr: { 'aria-label': 'Edit' },
       });
+      setIcon(editBtn, 'pencil');
       editBtn.addEventListener('click', () => {
         this.editSnippet(snippet);
       });
 
       // Delete button
       const deleteBtn = actionsEl.createEl('button', {
-        text: 'Delete',
-        cls: 'claudian-delete-snippet-btn'
+        cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
+        attr: { 'aria-label': 'Delete' },
       });
+      setIcon(deleteBtn, 'trash-2');
       deleteBtn.addEventListener('click', async () => {
         if (confirm(`Delete environment snippet "${snippet.name}"?`)) {
           await this.deleteSnippet(snippet);

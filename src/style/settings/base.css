@@ -22,6 +22,43 @@
   color: var(--text-normal);
 }
 
+/* Custom section descriptions - align with items */
+.claudian-slash-settings-desc,
+.claudian-mcp-settings-desc,
+.claudian-approved-desc {
+  padding: 0 12px;
+}
+
+/* Unified icon action buttons for settings */
+.claudian-settings-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-settings-action-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-settings-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-settings-delete-btn:hover {
+  color: var(--text-error);
+}
+
 /* Media folder input width */
 .claudian-settings-media-input {
   width: 200px;

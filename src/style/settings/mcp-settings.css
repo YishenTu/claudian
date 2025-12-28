@@ -12,11 +12,13 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  padding: 0 12px;
 }
 
 .claudian-mcp-label {
-  font-weight: 600;
-  font-size: 14px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
 }
 
 .claudian-mcp-add-container {
@@ -143,8 +145,7 @@
 }
 
 .claudian-mcp-name {
-  font-weight: 500;
-  font-size: 13px;
+  font-weight: 600;
 }
 
 .claudian-mcp-type-badge {

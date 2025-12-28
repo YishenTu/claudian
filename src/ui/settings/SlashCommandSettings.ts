@@ -5,7 +5,7 @@
  */
 
 import type { App} from 'obsidian';
-import { Modal, Notice,Setting } from 'obsidian';
+import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { SlashCommand } from '../../core/types';
 import type ClaudianPlugin from '../../main';
@@ -198,21 +198,24 @@ export class SlashCommandSettings {
     const actionsEl = headerEl.createDiv({ cls: 'claudian-slash-header-actions' });
 
     const importBtn = actionsEl.createEl('button', {
-      text: 'Import',
-      cls: 'claudian-import-btn',
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Import' },
     });
+    setIcon(importBtn, 'download');
     importBtn.addEventListener('click', () => this.importCommands());
 
     const exportBtn = actionsEl.createEl('button', {
-      text: 'Export',
-      cls: 'claudian-export-btn',
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Export' },
     });
+    setIcon(exportBtn, 'upload');
     exportBtn.addEventListener('click', () => this.exportCommands());
 
     const addBtn = actionsEl.createEl('button', {
-      text: 'Add',
-      cls: 'claudian-add-slash-btn',
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Add' },
     });
+    setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.openCommandModal(null));
 
     const commands = this.plugin.settings.slashCommands;
@@ -250,23 +253,20 @@ export class SlashCommandSettings {
       descEl.setText(cmd.description);
     }
 
-    // Preview of content (truncated)
-    const previewText = cmd.content.replace(/^---[\s\S]*?---\r?\n?/, '').trim(); // Remove frontmatter
-    const previewEl = infoEl.createDiv({ cls: 'claudian-slash-item-preview' });
-    previewEl.setText(previewText.substring(0, 80) + (previewText.length > 80 ? '...' : ''));
-
     const actionsEl = itemEl.createDiv({ cls: 'claudian-slash-item-actions' });
 
     const editBtn = actionsEl.createEl('button', {
-      text: 'Edit',
-      cls: 'claudian-edit-slash-btn',
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Edit' },
     });
+    setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => this.openCommandModal(cmd));
 
     const deleteBtn = actionsEl.createEl('button', {
-      text: 'Delete',
-      cls: 'claudian-delete-slash-btn',
+      cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
+      attr: { 'aria-label': 'Delete' },
     });
+    setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', async () => {
       await this.deleteCommand(cmd);
     });

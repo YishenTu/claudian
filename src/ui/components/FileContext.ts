@@ -773,6 +773,9 @@ export class FileContextManager {
       })
       .slice(0, 10 - this.filteredMentionItems.length);
 
+    // Track where files start (after MCP servers)
+    const firstFileIndex = this.filteredMentionItems.length;
+
     // Add file items to mention items
     for (const file of this.filteredFiles) {
       this.filteredMentionItems.push({
@@ -782,7 +785,8 @@ export class FileContextManager {
       });
     }
 
-    this.selectedMentionIndex = 0;
+    // Default selection to first file if available, otherwise first item
+    this.selectedMentionIndex = this.filteredFiles.length > 0 ? firstFileIndex : 0;
     this.renderMentionDropdown();
   }
 

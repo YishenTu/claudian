@@ -9,6 +9,7 @@
   align-items: center;
   margin-bottom: 12px;
   margin-top: 16px;
+  padding: 0 12px;
 }
 
 .claudian-snippet-label {
@@ -80,8 +81,9 @@
 
 .claudian-snippet-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   margin-left: 16px;
+  flex-shrink: 0;
 }
 
 .claudian-restore-snippet-btn {

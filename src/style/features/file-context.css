@@ -77,10 +77,6 @@
 }
 
 /* MCP items in @-mention dropdown */
-.claudian-mention-item.mcp-server {
-  background: var(--background-modifier-hover);
-}
-
 .claudian-mention-item.mcp-server .claudian-mention-icon {
   color: var(--interactive-accent);
 }
@@ -94,6 +90,7 @@
 }
 
 .claudian-mention-name {
+  font-size: 13px;
   font-weight: 500;
   color: var(--interactive-accent);
 }
