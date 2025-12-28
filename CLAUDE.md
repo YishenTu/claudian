@@ -8,38 +8,60 @@ Claudian - An Obsidian plugin that embeds Claude Code as a sidebar chat interfac
 
 ```
 src/
-├── main.ts              # Plugin entry point
-├── ClaudianView.ts      # Sidebar chat UI (ItemView)
-├── ClaudianService.ts   # Claude Agent SDK wrapper
-├── ClaudianSettings.ts  # Settings tab
-├── utils/               # Modular utility functions
-├── services/            # Agent services and subagent state
-├── system-prompt/       # System prompts for different agents
-├── sdk/                 # SDK message transformation
-├── hooks/               # PreToolUse/PostToolUse hooks
-├── security/            # Approval, blocklist, path validation
-├── tools/               # Tool constants and utilities
-├── images/              # Image caching and loading
-├── storage/             # Distributed storage system
-├── types/               # Type definitions
-├── ui/                  # All UI components
-└── style/               # Modular CSS (→ styles.css)
+├── main.ts                      # Plugin entry point
+├── core/                        # Core infrastructure (no feature dependencies)
+│   ├── agent/                   # Claude Agent SDK wrapper
+│   │   └── ClaudianService.ts
+│   ├── hooks/                   # PreToolUse/PostToolUse hooks
+│   ├── images/                  # Image caching and loading
+│   ├── mcp/                     # MCP server config management
+│   │   └── McpServerManager.ts
+│   ├── prompts/                 # System prompts for agents
+│   ├── sdk/                     # SDK message transformation
+│   ├── security/                # Approval, blocklist, path validation
+│   ├── storage/                 # Distributed storage system
+│   ├── tools/                   # Tool constants and utilities
+│   └── types/                   # Type definitions
+├── features/                    # Feature modules
+│   ├── chat/                    # Main chat interface
+│   │   ├── ClaudianView.ts
+│   │   └── services/            # Chat-specific services
+│   ├── inline-edit/             # Inline edit feature
+│   ├── mcp/                     # MCP @-mention detection and UI helpers
+│   │   ├── McpService.ts
+│   │   └── McpTester.ts
+│   └── settings/                # Settings tab
+├── ui/                          # UI components
+│   ├── components/              # Reusable UI components
+│   ├── modals/                  # Modal dialogs
+│   ├── renderers/               # Content renderers
+│   └── settings/                # Settings UI components
+├── utils/                       # Modular utility functions
+└── style/                       # Modular CSS (→ styles.css)
 ```
 
-| Folder | Purpose |
-|--------|---------|
-| `utils/` | Modular utilities: date, path, env, context, editor, session, markdown, mcp |
-| `system-prompt/` | System prompts (main agent, inline edit, instruction refine) |
-| `sdk/` | SDK message transformation |
-| `hooks/` | Security and diff tracking hooks |
-| `security/` | Approval, blocklist, path validation |
-| `tools/` | Tool names, icons, input parsing |
-| `images/` | Image caching with SHA-256 dedup |
-| `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
-| `services/` | Agent services, subagent state, MCP management |
-| `types/` | Type definitions (includes MCP types) |
-| `ui/` | All UI components (includes MCP settings/selector) |
-| `style/` | Modular CSS (built into root `styles.css`) |
+| Layer | Folder | Purpose |
+|-------|--------|---------|
+| **core** | `agent/` | Claude Agent SDK wrapper (ClaudianService) |
+| | `hooks/` | Security and diff tracking hooks |
+| | `images/` | Image caching with SHA-256 dedup |
+| | `mcp/` | MCP server config loading and filtering (McpServerManager) |
+| | `prompts/` | System prompts (main agent, inline edit, instruction refine) |
+| | `sdk/` | SDK message transformation |
+| | `security/` | Approval, blocklist, path validation |
+| | `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
+| | `tools/` | Tool names, icons, input parsing |
+| | `types/` | Type definitions (includes MCP types) |
+| **features** | `chat/` | Main chat view and subagent state |
+| | `inline-edit/` | Inline edit service |
+| | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
+| | `settings/` | Settings tab UI |
+| **ui** | `components/` | Input toolbar, file/image context, slash command dropdown |
+| | `modals/` | Approval, inline edit, instruction, MCP modals |
+| | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs |
+| | `settings/` | Env snippets, MCP settings, slash command settings |
+| **utils** | | Modular utilities: date, path, env, context, editor, session, markdown, mcp, slashCommand |
+| **style** | | Modular CSS (built into root `styles.css`) |
 
 ## Commands
 

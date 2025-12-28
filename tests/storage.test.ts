@@ -4,8 +4,8 @@
  * Tests for SessionStorage (JSONL), SlashCommandStorage, and StorageService (migration).
  */
 
-import type { ChatMessage, Conversation, SlashCommand } from '../src/types';
-import { parseSlashCommandContent } from '../src/ui/SlashCommandManager';
+import type { ChatMessage, Conversation, SlashCommand } from '../src/core/types';
+import { parseSlashCommandContent } from '../src/utils/slashCommand';
 
 // ============================================================================
 // SessionStorage Tests (JSONL format)

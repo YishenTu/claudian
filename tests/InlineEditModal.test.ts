@@ -6,7 +6,7 @@
  * Consider extracting these to a shared module for direct testing.
  */
 
-import { escapeHtml,normalizeInsertionText } from '../src/ui/inlineEditUtils';
+import { escapeHtml,normalizeInsertionText } from '../src/utils/inlineEdit';
 
 // Copy of the diff algorithm from InlineEditModal for testing
 interface DiffOp {

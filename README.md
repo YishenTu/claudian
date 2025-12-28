@@ -242,22 +242,30 @@ Enable per-server to hide tools from agent unless explicitly needed:
 
 ```
 src/
-├── main.ts              # Plugin entry point
-├── ClaudianView.ts      # Sidebar chat UI, orchestrates components
-├── ClaudianService.ts   # Claude Agent SDK wrapper
-├── ClaudianSettings.ts  # Settings tab
-├── utils/               # Modular utility functions
-├── services/            # Claude-facing services and subagent state
-├── system-prompt/       # System prompts for different agents
-├── sdk/                 # SDK integration
-├── hooks/               # SDK PreToolUse/PostToolUse hooks
-├── security/            # Security utilities
-├── tools/               # Tool utilities
-├── images/              # Image handling
-├── storage/             # Distributed storage system
-├── types/               # Type definitions (modular)
-├── ui/                  # Modular UI components
-└── style/               # Modular CSS (→ styles.css)
+├── main.ts                      # Plugin entry point
+├── core/                        # Core infrastructure
+│   ├── agent/                   # Claude Agent SDK wrapper (ClaudianService)
+│   ├── hooks/                   # PreToolUse/PostToolUse hooks
+│   ├── images/                  # Image caching and loading
+│   ├── mcp/                     # MCP server config management (McpServerManager)
+│   ├── prompts/                 # System prompts for agents
+│   ├── sdk/                     # SDK message transformation
+│   ├── security/                # Approval, blocklist, path validation
+│   ├── storage/                 # Distributed storage system
+│   ├── tools/                   # Tool constants and utilities
+│   └── types/                   # Type definitions
+├── features/                    # Feature modules
+│   ├── chat/                    # Main chat view (ClaudianView) and services
+│   ├── inline-edit/             # Inline edit service
+│   ├── mcp/                     # MCP @-mention detection and connection testing
+│   └── settings/                # Settings tab (ClaudianSettings)
+├── ui/                          # UI components
+│   ├── components/              # Input toolbar, file/image context, dropdowns
+│   ├── modals/                  # Approval, inline edit, instruction, MCP modals
+│   ├── renderers/               # Thinking blocks, tool calls, diffs, subagents
+│   └── settings/                # Env snippets, MCP settings, slash commands
+├── utils/                       # Modular utility functions
+└── style/                       # Modular CSS (→ styles.css)
 ```
 
 ## Roadmap

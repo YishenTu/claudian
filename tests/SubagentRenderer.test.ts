@@ -5,7 +5,7 @@ import {
   finalizeAsyncSubagent,
   markAsyncSubagentOrphaned,
   updateAsyncSubagentRunning,
-} from '../src/ui/SubagentRenderer';
+} from '../src/ui/renderers/SubagentRenderer';
 
 interface MockElement {
   children: MockElement[];

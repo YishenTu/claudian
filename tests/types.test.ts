@@ -4,10 +4,10 @@ import type {
   Conversation,
   ConversationMeta,
   EnvSnippet,  StreamChunk,
-  ToolCallInfo} from '../src/types';
+  ToolCallInfo} from '../src/core/types';
 import {
   DEFAULT_SETTINGS,
-  VIEW_TYPE_CLAUDIAN} from '../src/types';
+  VIEW_TYPE_CLAUDIAN} from '../src/core/types';
 
 describe('types.ts', () => {
   describe('VIEW_TYPE_CLAUDIAN', () => {

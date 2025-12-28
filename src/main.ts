@@ -8,21 +8,22 @@
 import type { Editor,MarkdownView } from 'obsidian';
 import { Notice,Plugin } from 'obsidian';
 
-import { ClaudianService } from './ClaudianService';
-import { ClaudianSettingTab } from './ClaudianSettings';
-import { ClaudianView } from './ClaudianView';
-import { deleteCachedImages } from './images/imageCache';
-import { StorageService } from './storage';
+import { ClaudianService } from './core/agent/ClaudianService';
+import { deleteCachedImages } from './core/images/imageCache';
+import { StorageService } from './core/storage';
 import type {
   ClaudianSettings,
   Conversation,
-  ConversationMeta} from './types';
+  ConversationMeta} from './core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   VIEW_TYPE_CLAUDIAN,
-} from './types';
-import { type InlineEditContext,InlineEditModal } from './ui/InlineEditModal';
+} from './core/types';
+import { ClaudianView } from './features/chat/ClaudianView';
+import { McpService } from './features/mcp/McpService';
+import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
+import { type InlineEditContext, InlineEditModal } from './ui/modals/InlineEditModal';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 
@@ -33,6 +34,7 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   agentService: ClaudianService;
+  mcpService: McpService;
   storage: StorageService;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
@@ -42,10 +44,12 @@ export default class ClaudianPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    this.agentService = new ClaudianService(this);
+    // Initialize MCP service first (creates McpServerManager internally)
+    this.mcpService = new McpService(this);
+    await this.mcpService.loadServers();
 
-    // Load MCP server configurations
-    await this.agentService.loadMcpServers();
+    // Initialize agent service with the MCP manager
+    this.agentService = new ClaudianService(this, this.mcpService.getManager());
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,

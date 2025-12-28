@@ -2,14 +2,14 @@
  * Tests for DiffRenderer - Diff utilities for Write/Edit tool visualization
  */
 
-import type { DiffLine } from '../src/ui/DiffRenderer';
+import type { DiffLine } from '../src/ui/renderers/DiffRenderer';
 import {
   computeLineDiff,
   countLineChanges,
   diffLinesToHtml,
   isBinaryContent,
   splitIntoHunks,
-} from '../src/ui/DiffRenderer';
+} from '../src/ui/renderers/DiffRenderer';
 
 describe('DiffRenderer', () => {
   describe('computeLineDiff', () => {

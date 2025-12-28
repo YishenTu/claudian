@@ -2,13 +2,13 @@
  * Tests for WriteEditRenderer - Write/Edit tool UI with diff view
  */
 
-import type { ToolCallInfo, ToolDiffData } from '../src/types';
+import type { ToolCallInfo, ToolDiffData } from '../src/core/types';
 import {
   createWriteEditBlock,
   finalizeWriteEditBlock,
   renderStoredWriteEdit,
   updateWriteEditWithDiff,
-} from '../src/ui/WriteEditRenderer';
+} from '../src/ui/renderers/WriteEditRenderer';
 
 // Create mock HTML element with Obsidian-like methods
 function createMockElement(tag = 'div'): any {

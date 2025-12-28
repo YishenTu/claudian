@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { saveImageToCache } from '../src/images/imageCache';
-import { hydrateImagesData } from '../src/images/imageLoader';
-import type { ImageAttachment } from '../src/types';
+import { saveImageToCache } from '../src/core/images/imageCache';
+import { hydrateImagesData } from '../src/core/images/imageLoader';
+import type { ImageAttachment } from '../src/core/types';
 
 function createMockPlugin(vaultPath: string) {
   return {

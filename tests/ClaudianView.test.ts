@@ -6,8 +6,8 @@
 import { createHash } from 'crypto';
 import { TFile, WorkspaceLeaf } from 'obsidian';
 
-import { ClaudianView } from '../src/ClaudianView';
-import { FileContextManager } from '../src/ui/FileContext';
+import { ClaudianView } from '../src/features/chat/ClaudianView';
+import { FileContextManager } from '../src/ui/components/FileContext';
 
 // Helper to create TFile with path (mock accepts path argument, but TS types don't)
 function createTFile(path: string): TFile {

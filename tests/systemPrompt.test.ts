@@ -2,8 +2,8 @@ jest.mock('../src/utils/date', () => ({
   getTodayDate: () => 'Mocked Date',
 }));
 
-import { getInlineEditSystemPrompt } from '../src/system-prompt/inlineEdit';
-import { buildSystemPrompt } from '../src/system-prompt/mainAgent';
+import { getInlineEditSystemPrompt } from '../src/core/prompts/inlineEdit';
+import { buildSystemPrompt } from '../src/core/prompts/mainAgent';
 
 describe('systemPrompt', () => {
   describe('buildSystemPrompt', () => {

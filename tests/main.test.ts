@@ -1,5 +1,5 @@
-import * as imageCache from '../src/images/imageCache';
-import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '../src/types';
+import * as imageCache from '../src/core/images/imageCache';
+import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '../src/core/types';
 
 // Mock fs for ClaudianService
 jest.mock('fs');

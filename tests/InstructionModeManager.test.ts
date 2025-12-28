@@ -1,4 +1,4 @@
-import { InstructionModeManager } from '../src/ui/InstructionModeManager';
+import { InstructionModeManager } from '../src/ui/components/InstructionModeManager';
 
 function createWrapper() {
   return {

@@ -1,0 +1,69 @@
+/**
+ * McpServerManager - Core MCP server configuration management.
+ *
+ * Infrastructure layer for loading and filtering MCP server configurations.
+ * No UI or @-mention logic - those belong in features/mcp/.
+ */
+
+import type { ClaudianMcpServer, McpServerConfig } from '../types';
+
+/** Storage interface for loading MCP servers. */
+export interface McpStorageAdapter {
+  load(): Promise<ClaudianMcpServer[]>;
+}
+
+/** Manages MCP server configurations. */
+export class McpServerManager {
+  private servers: ClaudianMcpServer[] = [];
+  private storage: McpStorageAdapter;
+
+  constructor(storage: McpStorageAdapter) {
+    this.storage = storage;
+  }
+
+  /** Load servers from storage. */
+  async loadServers(): Promise<void> {
+    this.servers = await this.storage.load();
+  }
+
+  /** Get all loaded servers. */
+  getServers(): ClaudianMcpServer[] {
+    return this.servers;
+  }
+
+  /** Get enabled servers count. */
+  getEnabledCount(): number {
+    return this.servers.filter((s) => s.enabled).length;
+  }
+
+  /**
+   * Get servers to include in SDK options.
+   *
+   * A server is included if:
+   * - It is enabled AND
+   * - Either context-saving is disabled OR the server is @-mentioned
+   *
+   * @param mentionedNames Set of server names that were @-mentioned in the prompt
+   */
+  getActiveServers(mentionedNames: Set<string>): Record<string, McpServerConfig> {
+    const result: Record<string, McpServerConfig> = {};
+
+    for (const server of this.servers) {
+      if (!server.enabled) continue;
+
+      // If context-saving is enabled, only include if @-mentioned
+      if (server.contextSaving && !mentionedNames.has(server.name)) {
+        continue;
+      }
+
+      result[server.name] = server.config;
+    }
+
+    return result;
+  }
+
+  /** Check if any MCP servers are configured. */
+  hasServers(): boolean {
+    return this.servers.length > 0;
+  }
+}

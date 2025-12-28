@@ -1,7 +1,7 @@
 import { WorkspaceLeaf } from 'obsidian';
 
-import { ClaudianView } from '../src/ClaudianView';
-import type { ChatMessage, ImageAttachment } from '../src/types';
+import type { ChatMessage, ImageAttachment } from '../src/core/types';
+import { ClaudianView } from '../src/features/chat/ClaudianView';
 
 function createMockPlugin() {
   return {

@@ -12,8 +12,8 @@ import {
 
 // Mock fs module
 jest.mock('fs');
-jest.mock('../src/types', () => {
-  const actual = jest.requireActual('../src/types');
+jest.mock('../src/core/types', () => {
+  const actual = jest.requireActual('../src/core/types');
   return {
     __esModule: true,
     ...actual,
@@ -22,15 +22,15 @@ jest.mock('../src/types', () => {
 });
 
 // Now import after all mocks are set up
-import { ClaudianService } from '../src/ClaudianService';
-import { createFileHashPostHook, createFileHashPreHook, type DiffContentEntry } from '../src/hooks/DiffTrackingHooks';
-import { createVaultRestrictionHook } from '../src/hooks/SecurityHooks';
-import { hydrateImagesData, readImageAttachmentBase64, resolveImageFilePath } from '../src/images/imageLoader';
-import { transformSDKMessage } from '../src/sdk/MessageTransformer';
-import { getActionDescription, getActionPattern } from '../src/security/ApprovalManager';
-import { extractPathCandidates } from '../src/security/BashPathValidator';
-import { getPathFromToolInput } from '../src/tools/toolInput';
-import type { ToolDiffData } from '../src/types';
+import { ClaudianService } from '../src/core/agent/ClaudianService';
+import { createFileHashPostHook, createFileHashPreHook, type DiffContentEntry } from '../src/core/hooks/DiffTrackingHooks';
+import { createVaultRestrictionHook } from '../src/core/hooks/SecurityHooks';
+import { hydrateImagesData, readImageAttachmentBase64, resolveImageFilePath } from '../src/core/images/imageLoader';
+import { transformSDKMessage } from '../src/core/sdk/MessageTransformer';
+import { getActionDescription, getActionPattern } from '../src/core/security/ApprovalManager';
+import { extractPathCandidates } from '../src/core/security/BashPathValidator';
+import { getPathFromToolInput } from '../src/core/tools/toolInput';
+import type { ToolDiffData } from '../src/core/types';
 import {
   buildContextFromHistory,
   formatToolCallForContext,
@@ -59,6 +59,17 @@ function createUserWithToolResult(content: string, parentToolUseId = 'tool-123')
     tool_use_result: content,
     message: { content: [] },
   };
+}
+
+// Create a mock MCP server manager
+function createMockMcpManager() {
+  return {
+    loadServers: jest.fn().mockResolvedValue(undefined),
+    getServers: jest.fn().mockReturnValue([]),
+    getEnabledCount: jest.fn().mockReturnValue(0),
+    getActiveServers: jest.fn().mockReturnValue({}),
+    hasServers: jest.fn().mockReturnValue(false),
+  } as any;
 }
 
 // Create a mock plugin
@@ -110,7 +121,7 @@ describe('ClaudianService', () => {
     jest.clearAllMocks();
     resetMockMessages();
     mockPlugin = createMockPlugin();
-    service = new ClaudianService(mockPlugin);
+    service = new ClaudianService(mockPlugin, createMockMcpManager());
   });
 
   describe('shouldBlockCommand', () => {
@@ -175,7 +186,7 @@ describe('ClaudianService', () => {
 
     it('should not block commands when blocklist is disabled', async () => {
       mockPlugin = createMockPlugin({ enableBlocklist: false });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
 
@@ -521,7 +532,7 @@ describe('ClaudianService', () => {
           },
         },
       };
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       const chunks: any[] = [];
       for await (const chunk of service.query('hello')) {
@@ -540,7 +551,7 @@ describe('ClaudianService', () => {
       mockPlugin = createMockPlugin({
         blockedCommands: { unix: ['rm\\s+-rf', 'chmod\\s+7{3}'], windows: [] },
       });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
 
@@ -563,7 +574,7 @@ describe('ClaudianService', () => {
       mockPlugin = createMockPlugin({
         blockedCommands: { unix: ['[invalid regex'], windows: [] },
       });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
 
@@ -1212,7 +1223,7 @@ describe('ClaudianService', () => {
         permissionMode: 'normal',
         permissions: [],
       });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
     });
 
     it('should store session-scoped approved actions', async () => {
@@ -1306,7 +1317,7 @@ describe('ClaudianService', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       mockPlugin = createMockPlugin({ permissionMode: 'normal' });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
     });
 
     it('should deny when no approval callback is set', async () => {
@@ -1554,7 +1565,7 @@ describe('ClaudianService', () => {
     });
 
     it('should hydrate images using existing data, cache, and file paths', async () => {
-      const imageCache = await import('../src/images/imageCache');
+      const imageCache = await import('../src/core/images/imageCache');
       jest.spyOn(imageCache, 'readCachedImageBase64').mockReturnValue('CACHE');
 
       (fs.existsSync as jest.Mock).mockImplementation((p: any) => p === '/test/vault/path/c.png');
@@ -1581,7 +1592,7 @@ describe('ClaudianService', () => {
 
     it('should set yolo mode options', async () => {
       mockPlugin = createMockPlugin({ permissionMode: 'yolo', thinkingBudget: 'off' });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
       (service as any).resolvedClaudePath = '/mock/claude';
 
       setMockMessages([
@@ -1602,7 +1613,7 @@ describe('ClaudianService', () => {
 
     it('should set safe mode, resume, and thinking tokens', async () => {
       mockPlugin = createMockPlugin({ permissionMode: 'normal', thinkingBudget: 'high' });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
       (service as any).resolvedClaudePath = '/mock/claude';
       service.setSessionId('resume-id');
 
@@ -1672,7 +1683,7 @@ describe('ClaudianService', () => {
       (fs.readFileSync as jest.Mock).mockReset();
 
       mockPlugin = createMockPlugin({ permissionMode: 'yolo' });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
       service.setFileEditTracker({
         cancelFileEdit: jest.fn(),
         markFileBeingEdited: jest.fn().mockResolvedValue(undefined),
@@ -1832,7 +1843,7 @@ describe('ClaudianService', () => {
       mockPlugin = createMockPlugin({ permissionMode: 'normal', permissions: [
         { toolName: 'Read', pattern: '/test/file.md', approvedAt: Date.now(), scope: 'always' },
       ] });
-      service = new ClaudianService(mockPlugin);
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       const canUse = (service as any).createSafeModeCallback();
       const res = await canUse('Read', { file_path: '/test/file.md' }, {});

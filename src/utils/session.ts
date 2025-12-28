@@ -4,7 +4,7 @@
  * Session recovery and history reconstruction.
  */
 
-import type { ChatMessage, ToolCallInfo } from '../types';
+import type { ChatMessage, ToolCallInfo } from '../core/types';
 import { formatContextFilesLine } from './context';
 
 // ============================================

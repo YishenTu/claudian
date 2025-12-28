@@ -1,5 +1,5 @@
-import { AsyncSubagentManager } from '../src/services/AsyncSubagentManager';
-import type { SubagentInfo, ToolCallInfo } from '../src/types';
+import type { SubagentInfo, ToolCallInfo } from '../src/core/types';
+import { AsyncSubagentManager } from '../src/features/chat/services/AsyncSubagentManager';
 
 const createManager = () => {
   const updates: SubagentInfo[] = [];

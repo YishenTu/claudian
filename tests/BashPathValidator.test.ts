@@ -1,4 +1,4 @@
-import { isPathLikeToken } from '../src/security/BashPathValidator';
+import { isPathLikeToken } from '../src/core/security/BashPathValidator';
 
 describe('BashPathValidator', () => {
   const isWindows = process.platform === 'win32';

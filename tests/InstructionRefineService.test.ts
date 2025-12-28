@@ -15,7 +15,7 @@ import {
 jest.mock('fs');
 
 // Import after mocks are set up
-import { InstructionRefineService } from '../src/services/InstructionRefineService';
+import { InstructionRefineService } from '../src/features/chat/services/InstructionRefineService';
 
 function createMockPlugin(settings = {}) {
   return {

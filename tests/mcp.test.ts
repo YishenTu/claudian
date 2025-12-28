@@ -9,22 +9,22 @@ import { EventEmitter } from 'events';
 import * as http from 'http';
 import { ReadableStream } from 'stream/web';
 
-import { McpService } from '../src/services/McpService';
-import { testMcpServer } from '../src/services/McpTester';
-import { MCP_CONFIG_PATH, McpStorage } from '../src/storage/McpStorage';
+import { MCP_CONFIG_PATH, McpStorage } from '../src/core/storage/McpStorage';
 import type {
   ClaudianMcpServer,
   McpHttpServerConfig,
   McpServerConfig,
   McpSSEServerConfig,
   McpStdioServerConfig,
-} from '../src/types/mcp';
+} from '../src/core/types/mcp';
 import {
   DEFAULT_MCP_SERVER,
   getMcpServerType,
   inferMcpServerType,
   isValidMcpServerConfig,
-} from '../src/types/mcp';
+} from '../src/core/types/mcp';
+import { McpService } from '../src/features/mcp/McpService';
+import { testMcpServer } from '../src/features/mcp/McpTester';
 import {
   consumeSseStream,
   extractMcpMentions,
@@ -1067,8 +1067,16 @@ describe('McpTester', () => {
 
 describe('McpService', () => {
   function createService(servers: ClaudianMcpServer[]): McpService {
-    const service = new McpService({} as any);
-    (service as any).servers = servers;
+    const mockPlugin = {
+      storage: {
+        mcp: {
+          load: jest.fn().mockResolvedValue(servers),
+        },
+      },
+    } as any;
+    const service = new McpService(mockPlugin);
+    // Directly set the manager's servers for testing
+    (service as any).manager.servers = servers;
     return service;
   }
 
