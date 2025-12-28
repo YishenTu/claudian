@@ -1,7 +1,7 @@
 {
   "id": "claudian",
   "name": "Claudian",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "minAppVersion": "1.0.0",
   "description": "Embed Claude AI as a sidebar chat with full agentic capabilities for file operations and bash commands.",
   "author": "Yishen Tu",
