@@ -16,6 +16,7 @@
 @import "./components/subagent.css";
 @import "./components/ask-user-question.css";
 @import "./components/input.css";
+@import "./components/context-footer.css";
 
 /* Toolbar */
 @import "./toolbar/model-selector.css";

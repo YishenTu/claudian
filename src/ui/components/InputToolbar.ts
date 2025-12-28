@@ -8,7 +8,8 @@ import type {
   ClaudeModel,
   ClaudianMcpServer,
   PermissionMode,
-  ThinkingBudget} from '../../core/types';
+  ThinkingBudget,
+  UsageInfo} from '../../core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
   THINKING_BUDGETS
@@ -587,6 +588,94 @@ export class McpServerSelector {
   }
 }
 
+/** Context usage meter component (240° arc gauge). */
+export class ContextUsageMeter {
+  private container: HTMLElement;
+  private fillPath: SVGPathElement | null = null;
+  private percentEl: HTMLElement | null = null;
+  private circumference: number = 0;
+
+  constructor(parentEl: HTMLElement) {
+    this.container = parentEl.createDiv({ cls: 'claudian-context-meter' });
+    this.render();
+    // Initially hidden
+    this.container.style.display = 'none';
+  }
+
+  private render() {
+    const size = 16;
+    const strokeWidth = 2;
+    const radius = (size - strokeWidth) / 2;
+    const cx = size / 2;
+    const cy = size / 2;
+
+    // 240° arc: from 150° to 390° (upper-left through bottom to upper-right)
+    const startAngle = 150;
+    const endAngle = 390;
+    const arcDegrees = endAngle - startAngle;
+    const arcRadians = (arcDegrees * Math.PI) / 180;
+    this.circumference = radius * arcRadians;
+
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+    const x1 = cx + radius * Math.cos(startRad);
+    const y1 = cy + radius * Math.sin(startRad);
+    const x2 = cx + radius * Math.cos(endRad);
+    const y2 = cy + radius * Math.sin(endRad);
+
+    const gaugeEl = this.container.createDiv({ cls: 'claudian-context-meter-gauge' });
+    gaugeEl.innerHTML = `
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <path class="claudian-meter-bg"
+          d="M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2}"
+          fill="none" stroke-width="${strokeWidth}" stroke-linecap="round"/>
+        <path class="claudian-meter-fill"
+          d="M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2}"
+          fill="none" stroke-width="${strokeWidth}" stroke-linecap="round"
+          stroke-dasharray="${this.circumference}" stroke-dashoffset="${this.circumference}"/>
+      </svg>
+    `;
+    this.fillPath = gaugeEl.querySelector('.claudian-meter-fill');
+
+    this.percentEl = this.container.createSpan({ cls: 'claudian-context-meter-percent' });
+  }
+
+  update(usage: UsageInfo | null): void {
+    if (!usage) {
+      this.container.style.display = 'none';
+      return;
+    }
+    this.container.style.display = 'flex';
+    const fillLength = (usage.percentage / 100) * this.circumference;
+    if (this.fillPath) {
+      this.fillPath.style.strokeDashoffset = String(this.circumference - fillLength);
+    }
+
+    if (this.percentEl) {
+      this.percentEl.setText(`${usage.percentage}%`);
+    }
+
+    // Toggle warning class for > 80%
+    if (usage.percentage > 80) {
+      this.container.addClass('warning');
+    } else {
+      this.container.removeClass('warning');
+    }
+
+    // Set tooltip with detailed usage
+    const tooltip = `${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
+    this.container.setAttribute('data-tooltip', tooltip);
+  }
+
+  /** Format token count (e.g., 45000 -> "45k", 200000 -> "200k") */
+  private formatTokens(tokens: number): string {
+    if (tokens >= 1000) {
+      return `${Math.round(tokens / 1000)}k`;
+    }
+    return String(tokens);
+  }
+}
+
 /** Factory function to create all toolbar components. */
 export function createInputToolbar(
   parentEl: HTMLElement,
@@ -594,15 +683,17 @@ export function createInputToolbar(
 ): {
   modelSelector: ModelSelector;
   thinkingBudgetSelector: ThinkingBudgetSelector;
+  contextUsageMeter: ContextUsageMeter;
   contextPathSelector: ContextPathSelector;
   mcpServerSelector: McpServerSelector;
   permissionToggle: PermissionToggle;
 } {
   const modelSelector = new ModelSelector(parentEl, callbacks);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
+  const contextUsageMeter = new ContextUsageMeter(parentEl);
   const contextPathSelector = new ContextPathSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
 
-  return { modelSelector, thinkingBudgetSelector, contextPathSelector, mcpServerSelector, permissionToggle };
+  return { modelSelector, thinkingBudgetSelector, contextUsageMeter, contextPathSelector, mcpServerSelector, permissionToggle };
 }

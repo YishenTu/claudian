@@ -63,7 +63,7 @@ src/
 | | `inline-edit/` | Inline edit service |
 | | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
 | | `settings/` | Settings tab UI |
-| **ui** | `components/` | Input toolbar, file/image context, slash command dropdown, AskUserQuestion panel |
+| **ui** | `components/` | Input toolbar (with context meter), file/image context, slash command dropdown, AskUserQuestion panel |
 | | `modals/` | Approval, inline edit, instruction, MCP modals |
 | | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs, AskUserQuestion |
 | | `settings/` | Env snippets, MCP settings, slash command settings |
@@ -245,6 +245,14 @@ Extend Claude with external tools and data sources via MCP servers.
 - **UI**: Settings page for add/edit/delete, connection tester, toolbar selector with glow effect
 - **@-mention**: Type `@server-name` to enable context-saving servers in a message
 
+### Context Window Usage
+240° arc gauge showing context usage in the input toolbar.
+- **Location**: Between thinking selector and folder icon
+- **Data**: `contextTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens`
+- **Tooltip**: Hover shows "45k / 200k" (tokens used / context window)
+- **Persistence**: Saved to session JSONL, restored on conversation switch
+- **Updates**: After each completed agent response (from SDK `result` message)
+
 ## Security
 
 | Mode | Description |
@@ -284,7 +292,7 @@ CSS is modularized in `src/style/` and built into root `styles.css`:
 ```
 src/style/
 ├── base/           # container, animations (@keyframes)
-├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input, ask-user-question
+├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input, ask-user-question, context-footer (meter)
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, context-path, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands
 ├── modals/         # approval, instruction, mcp-modal
@@ -310,6 +318,7 @@ All classes use `.claudian-` prefix. Key patterns:
 | Inline edit | `-inline-input`, `-inline-diff-replace`, `-diff-del`, `-diff-ins` |
 | Selection | `-selection-indicator`, `-selection-highlight` |
 | Context paths | `-context-path-selector`, `-context-path-icon`, `-context-path-dropdown` |
+| Context meter | `-context-meter`, `-context-meter-gauge`, `-context-meter-percent`, `-meter-bg`, `-meter-fill` |
 | MCP | `-mcp-selector`, `-mcp-selector-icon`, `-mcp-selector-dropdown`, `-mcp-item` |
 | MCP Settings | `-mcp-header`, `-mcp-list`, `-mcp-status`, `-mcp-test-modal` |
 | AskUserQuestion | `-ask-panel`, `-ask-question-block`, `-ask-question-tree`, `-ask-question-q`, `-ask-question-a` |

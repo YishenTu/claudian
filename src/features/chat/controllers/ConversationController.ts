@@ -70,6 +70,7 @@ export class ConversationController {
 
     state.currentConversationId = conversation.id;
     state.clearMessages();
+    state.usage = null;
 
     const messagesEl = this.deps.getMessagesEl();
     messagesEl.empty();
@@ -105,6 +106,7 @@ export class ConversationController {
 
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
+    state.usage = conversation.usage ?? null;
 
     plugin.agentService.setSessionId(conversation.sessionId);
 
@@ -145,6 +147,7 @@ export class ConversationController {
 
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
+    state.usage = conversation.usage ?? null;
 
     this.deps.getInputEl().value = '';
     this.deps.clearQueuedMessage();
@@ -181,6 +184,7 @@ export class ConversationController {
       messages: state.getPersistedMessages(),
       sessionId: sessionId,
       attachedFiles: attachedFiles,
+      usage: state.usage ?? undefined,
     };
 
     if (updateLastResponse) {

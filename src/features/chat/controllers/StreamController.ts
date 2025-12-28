@@ -140,6 +140,10 @@ export class StreamController {
 
       case 'done':
         break;
+
+      case 'usage':
+        state.usage = chunk.usage;
+        break;
     }
 
     this.scrollToBottom();

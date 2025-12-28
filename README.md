@@ -16,7 +16,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
-- **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
+- **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget. Monitor context window usage with a real-time gauge.
 - **Transparent Tooling**: Visualize tool calls, subagent activity, and track asynchronous subagent operations with detailed UI feedback.
 - **Persistent Sessions**: Save and resume conversations with full context across sessions.
 - **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
@@ -174,9 +174,19 @@ Enable per-server to hide tools from agent unless explicitly needed:
 
 **Toolbar Selector:**
 - Plug icon appears next to folder icon when MCP servers are configured
-- Glows purple when at least one server is enabled
+- Glows when at least one server is enabled (Claude brand color)
 - Shows badge with count when multiple servers enabled
 - Click to toggle servers on/off for current session
+
+### Context Window Usage
+
+Monitor your context usage with a 240° arc gauge in the input toolbar.
+
+- **Location**: Between thinking selector and folder icon
+- **Display**: Arc gauge + percentage (e.g., "26%")
+- **Tooltip**: Hover to see detailed usage (e.g., "45k / 200k")
+- **Persistence**: Usage is saved per conversation and restored on switch/reload
+- **Updates**: Refreshes after each completed agent response
 
 ### Example prompts
 
@@ -295,8 +305,8 @@ src/
 - [x] Distributed storage (settings, commands, sessions as separate files)
 - [x] Windows platform support (MSYS paths, PowerShell blocklist, env vars)
 - [x] MCP (Model Context Protocol) server support with context-saving mode
+- [x] Context window usage display
 - [ ] Plan mode
-- [ ] Context window display
 - [ ] Hooks and other advanced features
 
 ## License

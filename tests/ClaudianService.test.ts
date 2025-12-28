@@ -26,7 +26,7 @@ import { ClaudianService } from '../src/core/agent/ClaudianService';
 import { createFileHashPostHook, createFileHashPreHook, type DiffContentEntry } from '../src/core/hooks/DiffTrackingHooks';
 import { createVaultRestrictionHook } from '../src/core/hooks/SecurityHooks';
 import { hydrateImagesData, readImageAttachmentBase64, resolveImageFilePath } from '../src/core/images/imageLoader';
-import { transformSDKMessage } from '../src/core/sdk/MessageTransformer';
+import { transformSDKMessage } from '../src/core/sdk';
 import { getActionDescription, getActionPattern } from '../src/core/security/ApprovalManager';
 import { extractPathCandidates } from '../src/core/security/BashPathValidator';
 import { getPathFromToolInput } from '../src/core/tools/toolInput';
@@ -1673,6 +1673,104 @@ describe('ClaudianService', () => {
 
       expect(toolChunks[0]).toEqual(expect.objectContaining({ type: 'tool_use', id: 't1', name: 'Read' }));
       expect(textChunks.map((c: any) => c.content).join('')).toBe('hello world');
+    });
+
+    it('should emit usage chunk with computed tokens and clamped percentage', () => {
+      const sdkMessage: any = {
+        type: 'result',
+        model: 'model-a',
+        modelUsage: {
+          'model-a': {
+            inputTokens: 50,
+            cacheCreationInputTokens: 25,
+            cacheReadInputTokens: 25,
+            contextWindow: 80,
+          },
+        },
+      };
+
+      const chunks = Array.from(transformSDKMessage(sdkMessage));
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual(expect.objectContaining({ type: 'usage' }));
+
+      const usage = (chunks[0] as any).usage;
+      expect(usage).toEqual(expect.objectContaining({
+        model: 'model-a',
+        inputTokens: 50,
+        cacheCreationInputTokens: 25,
+        cacheReadInputTokens: 25,
+        contextTokens: 100,
+        contextWindow: 80,
+        percentage: 100,
+      }));
+    });
+
+    it('should prefer message model when selecting usage entry', () => {
+      const sdkMessage: any = {
+        type: 'result',
+        model: 'model-a',
+        modelUsage: {
+          'model-a': {
+            inputTokens: 10,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 100,
+          },
+          'model-b': {
+            inputTokens: 200,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 2000,
+          },
+        },
+      };
+
+      const chunks = Array.from(transformSDKMessage(sdkMessage));
+      expect(chunks).toHaveLength(1);
+      expect((chunks[0] as any).usage.model).toBe('model-a');
+      expect((chunks[0] as any).usage.contextTokens).toBe(10);
+    });
+
+    it('should select highest usage entry when message model is missing', () => {
+      const sdkMessage: any = {
+        type: 'result',
+        modelUsage: {
+          'model-a': {
+            inputTokens: 10,
+            cacheCreationInputTokens: 10,
+            cacheReadInputTokens: 0,
+            contextWindow: 100,
+          },
+          'model-b': {
+            inputTokens: 30,
+            cacheCreationInputTokens: 10,
+            cacheReadInputTokens: 10,
+            contextWindow: 200,
+          },
+        },
+      };
+
+      const chunks = Array.from(transformSDKMessage(sdkMessage));
+      expect(chunks).toHaveLength(1);
+      expect((chunks[0] as any).usage.model).toBe('model-b');
+      expect((chunks[0] as any).usage.contextTokens).toBe(50);
+    });
+
+    it('should skip usage chunk when contextWindow is missing or zero', () => {
+      const sdkMessage: any = {
+        type: 'result',
+        modelUsage: {
+          'model-a': {
+            inputTokens: 10,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 0,
+          },
+        },
+      };
+
+      const chunks = Array.from(transformSDKMessage(sdkMessage));
+      expect(chunks).toHaveLength(0);
     });
   });
 

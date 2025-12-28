@@ -13,6 +13,7 @@ export {
   type ImageAttachment,
   type ImageMediaType,
   type StreamChunk,
+  type UsageInfo,
   VIEW_TYPE_CLAUDIAN,
 } from './chat';
 
@@ -27,6 +28,7 @@ export {
 
 // SDK types
 export {
+  type ModelUsageInfo,
   type SDKContentBlock,
   type SDKMessage,
   type SDKMessageContent,

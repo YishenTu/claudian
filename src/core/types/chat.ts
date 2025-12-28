@@ -57,6 +57,8 @@ export interface Conversation {
   sessionId: string | null;
   messages: ChatMessage[];
   attachedFiles?: string[];
+  /** Context window usage information. */
+  usage?: UsageInfo;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -79,4 +81,16 @@ export type StreamChunk =
   | { type: 'tool_result'; id: string; content: string; isError?: boolean; parentToolUseId?: string | null }
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
-  | { type: 'done' };
+  | { type: 'done' }
+  | { type: 'usage'; usage: UsageInfo };
+
+/** Context window usage information. */
+export interface UsageInfo {
+  model?: string;
+  inputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  contextWindow: number;
+  contextTokens: number;
+  percentage: number;
+}

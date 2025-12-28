@@ -5,6 +5,7 @@
  * pattern established by AsyncSubagentManager.
  */
 
+import type { UsageInfo } from '../../../core/types';
 import type {
   AskUserQuestionState,
   AsyncSubagentState,
@@ -36,6 +37,7 @@ function createInitialState(): ChatStateData {
     asyncSubagentStates: new Map(),
     writeEditStates: new Map(),
     askUserQuestionStates: new Map(),
+    usage: null,
   };
 }
 
@@ -200,6 +202,19 @@ export class ChatState {
   }
 
   // ============================================
+  // Usage State
+  // ============================================
+
+  get usage(): UsageInfo | null {
+    return this.state.usage;
+  }
+
+  set usage(value: UsageInfo | null) {
+    this.state.usage = value;
+    this.callbacks.onUsageChanged?.(value);
+  }
+
+  // ============================================
   // Reset Methods
   // ============================================
 
@@ -228,6 +243,7 @@ export class ChatState {
     this.resetStreamingState();
     this.clearMaps();
     this.state.queuedMessage = null;
+    this.usage = null;
   }
 
   /** Gets persisted messages (strips image data). */

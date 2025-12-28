@@ -25,7 +25,7 @@ import {
 import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
 import { buildSystemPrompt } from '../prompts/mainAgent';
-import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk/MessageTransformer';
+import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
   ApprovalManager,
   getActionDescription,

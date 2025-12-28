@@ -32,7 +32,7 @@
 }
 
 .claudian-mcp-selector-icon.active {
-  color: #7c3aed;
+  color: #D97757;
   opacity: 1;
   animation: mcp-glow 2s ease-in-out infinite;
 }
@@ -48,7 +48,7 @@
   right: 0;
   font-size: 9px;
   font-weight: 600;
-  color: #7c3aed;
+  color: #D97757;
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
@@ -116,7 +116,7 @@
 }
 
 .claudian-mcp-selector-item.enabled {
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(217, 119, 87, 0.1);
 }
 
 .claudian-mcp-selector-item.disabled {
@@ -131,12 +131,12 @@
   height: 16px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 3px;
-  color: #7c3aed;
+  color: #D97757;
 }
 
 .claudian-mcp-selector-item.enabled .claudian-mcp-selector-check {
-  background: rgba(124, 58, 237, 0.2);
-  border-color: #7c3aed;
+  background: rgba(217, 119, 87, 0.2);
+  border-color: #D97757;
 }
 
 .claudian-mcp-selector-check svg {
@@ -165,8 +165,8 @@
   font-weight: 600;
   padding: 1px 4px;
   border-radius: 3px;
-  background: rgba(124, 58, 237, 0.2);
-  color: #7c3aed;
+  background: rgba(217, 119, 87, 0.2);
+  color: #D97757;
 }
 
 .claudian-mcp-selector-disabled-badge {

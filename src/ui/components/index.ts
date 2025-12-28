@@ -16,6 +16,7 @@ export {
 } from './ImageContext';
 export {
   ContextPathSelector,
+  ContextUsageMeter,
   createInputToolbar,
   McpServerSelector,
   ModelSelector,

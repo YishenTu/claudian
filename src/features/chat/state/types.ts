@@ -9,6 +9,7 @@ import type {
   ImageAttachment,
   SubagentInfo,
   ToolCallInfo,
+  UsageInfo,
 } from '../../../core/types';
 import type {
   AskUserQuestionState,
@@ -66,6 +67,9 @@ export interface ChatStateData {
   asyncSubagentStates: Map<string, AsyncSubagentState>;
   writeEditStates: Map<string, WriteEditState>;
   askUserQuestionStates: Map<string, AskUserQuestionState>;
+
+  // Context window usage
+  usage: UsageInfo | null;
 }
 
 /** Callbacks for ChatState changes. */
@@ -73,6 +77,7 @@ export interface ChatStateCallbacks {
   onMessagesChanged?: () => void;
   onStreamingStateChanged?: (isStreaming: boolean) => void;
   onConversationChanged?: (id: string | null) => void;
+  onUsageChanged?: (usage: UsageInfo | null) => void;
 }
 
 /** Options for query execution. */
@@ -94,5 +99,6 @@ export type {
   SubagentState,
   ThinkingBlockState,
   ToolCallInfo,
+  UsageInfo,
   WriteEditState,
 };

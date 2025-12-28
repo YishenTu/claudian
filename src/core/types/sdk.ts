@@ -32,6 +32,14 @@ export interface SDKStreamEvent {
   };
 }
 
+/** Model usage information from SDK. */
+export interface ModelUsageInfo {
+  inputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+  contextWindow?: number;
+}
+
 /** SDK message structure from the Claude Agent SDK. */
 export interface SDKMessage {
   type: 'system' | 'assistant' | 'user' | 'stream_event' | 'result' | 'error' | 'tool_progress' | 'auth_status';
@@ -47,4 +55,8 @@ export interface SDKMessage {
   elapsed_time_seconds?: number;
   isAuthenticating?: boolean;
   output?: string[];
+  /** Usage info by model name. */
+  modelUsage?: Record<string, ModelUsageInfo>;
+  /** Model name for the message. */
+  model?: string;
 }

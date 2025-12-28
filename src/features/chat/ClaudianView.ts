@@ -14,6 +14,7 @@ import type ClaudianPlugin from '../../main';
 import {
   cleanupThinkingBlock,
   type ContextPathSelector,
+  type ContextUsageMeter,
   createInputToolbar,
   FileContextManager,
   ImageContextManager,
@@ -78,11 +79,14 @@ export class ClaudianView extends ItemView {
   private slashCommandManager: SlashCommandManager | null = null;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private instructionModeManager: InstructionModeManager | null = null;
+  private contextUsageMeter: ContextUsageMeter | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.state = new ChatState();
+    this.state = new ChatState({
+      onUsageChanged: (usage) => this.contextUsageMeter?.update(usage),
+    });
     this.asyncSubagentManager = new AsyncSubagentManager(
       (subagent) => this.streamController?.onAsyncSubagentStateChange(subagent)
     );
@@ -323,6 +327,7 @@ export class ClaudianView extends ItemView {
 
     this.modelSelector = toolbarComponents.modelSelector;
     this.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
+    this.contextUsageMeter = toolbarComponents.contextUsageMeter;
     this.contextPathSelector = toolbarComponents.contextPathSelector;
     this.mcpServerSelector = toolbarComponents.mcpServerSelector;
     this.permissionToggle = toolbarComponents.permissionToggle;

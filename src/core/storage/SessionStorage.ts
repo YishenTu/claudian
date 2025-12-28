@@ -17,6 +17,7 @@ import type {
   Conversation,
   ConversationMeta,
   ImageAttachment,
+  UsageInfo,
 } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
@@ -33,6 +34,7 @@ interface SessionMetaRecord {
   lastResponseAt?: number;
   sessionId: string | null;
   attachedFiles?: string[];
+  usage?: UsageInfo;
 }
 
 /** Message record stored as subsequent lines. */
@@ -226,6 +228,7 @@ export class SessionStorage {
       sessionId: meta.sessionId,
       messages,
       attachedFiles: meta.attachedFiles,
+      usage: meta.usage,
     };
   }
 
@@ -243,6 +246,7 @@ export class SessionStorage {
       lastResponseAt: conversation.lastResponseAt,
       sessionId: conversation.sessionId,
       attachedFiles: conversation.attachedFiles,
+      usage: conversation.usage,
     };
     lines.push(JSON.stringify(meta));
 

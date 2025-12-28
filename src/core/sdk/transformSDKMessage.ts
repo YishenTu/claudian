@@ -13,16 +13,9 @@
  * - 'error' - error messages
  */
 
-import type { SDKMessage,StreamChunk } from '../types';
-
-/** Event emitted when a session is initialized */
-export interface SessionInitEvent {
-  type: 'session_init';
-  sessionId: string;
-}
-
-/** Union type for all events that can be yielded by the transformer */
-export type TransformEvent = StreamChunk | SessionInitEvent;
+import type { SDKMessage, UsageInfo } from '../types';
+import { selectModelUsage } from './selectModelUsage';
+import type { TransformEvent } from './types';
 
 /**
  * Transform SDK message to StreamChunk format.
@@ -135,9 +128,33 @@ export function* transformSDKMessage(message: SDKMessage): Generator<TransformEv
       break;
     }
 
-    case 'result':
-      // Final result - no text to extract, result is a string summary
+    case 'result': {
+      // Extract usage info from result message
+      const usageByModel = message.modelUsage;
+      if (usageByModel) {
+        const selected = selectModelUsage(usageByModel, message.model);
+        if (selected && selected.usage.contextWindow && selected.usage.contextWindow > 0) {
+          const { modelName, usage } = selected;
+          const inputTokens = usage.inputTokens ?? 0;
+          const cacheCreationInputTokens = usage.cacheCreationInputTokens ?? 0;
+          const cacheReadInputTokens = usage.cacheReadInputTokens ?? 0;
+          const contextTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+          const percentage = Math.min(100, Math.max(0, Math.round((contextTokens / usage.contextWindow!) * 100)));
+
+          const usageInfo: UsageInfo = {
+            model: modelName,
+            inputTokens,
+            cacheCreationInputTokens,
+            cacheReadInputTokens,
+            contextWindow: usage.contextWindow!,
+            contextTokens,
+            percentage,
+          };
+          yield { type: 'usage', usage: usageInfo };
+        }
+      }
       break;
+    }
 
     case 'error':
       if (message.error) {
@@ -145,18 +162,4 @@ export function* transformSDKMessage(message: SDKMessage): Generator<TransformEv
       }
       break;
   }
-}
-
-/**
- * Type guard to check if an event is a session init event
- */
-export function isSessionInitEvent(event: TransformEvent): event is SessionInitEvent {
-  return event.type === 'session_init';
-}
-
-/**
- * Type guard to check if an event is a stream chunk
- */
-export function isStreamChunk(event: TransformEvent): event is StreamChunk {
-  return event.type !== 'session_init';
 }
