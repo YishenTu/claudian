@@ -1,0 +1,107 @@
+/* @ Mention dropdown */
+.claudian-mention-dropdown {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--background-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.claudian-mention-dropdown.visible {
+  display: block;
+}
+
+.claudian-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.claudian-mention-item:hover,
+.claudian-mention-item.selected {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-mention-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-mention-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-mention-path {
+  font-size: 13px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-mention-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Scrollbar for mention dropdown */
+.claudian-mention-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.claudian-mention-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claudian-mention-dropdown::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+}
+
+/* MCP items in @-mention dropdown */
+.claudian-mention-item.mcp-server {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-mention-item.mcp-server .claudian-mention-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-mention-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.claudian-mention-name {
+  font-weight: 500;
+  color: var(--interactive-accent);
+}
+
+.claudian-mention-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,125 @@
+/* Messages area */
+.claudian-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Welcome message - claude.ai style */
+.claudian-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+  min-height: 200px;
+}
+
+.claudian-welcome-greeting {
+  font-family: 'Copernicus', 'Tiempos Headline', 'Tiempos', Georgia, 'Times New Roman', serif;
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--text-muted);
+  letter-spacing: -0.01em;
+}
+
+/* Individual messages */
+.claudian-message {
+  padding: 10px 14px;
+  border-radius: 8px;
+  max-width: 95%;
+  word-wrap: break-word;
+}
+
+.claudian-message-user {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-on-accent);
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+/* Text selection in user messages - visible highlight */
+.claudian-message-user ::selection {
+  background: rgba(255, 255, 255, 0.35);
+  color: inherit;
+}
+
+.claudian-message-user ::-moz-selection {
+  background: rgba(255, 255, 255, 0.35);
+  color: inherit;
+}
+
+.claudian-message-assistant {
+  background: transparent;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  border-bottom-left-radius: 4px;
+  text-align: left;
+}
+
+/* Message content */
+.claudian-message-content {
+  line-height: 1.5;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Interrupted message */
+.claudian-interrupted {
+  color: #d45d5d;
+}
+
+.claudian-interrupted-hint {
+  color: var(--text-muted);
+}
+
+/* Text blocks within message content */
+.claudian-text-block {
+  margin: 0;
+}
+
+.claudian-text-block+.claudian-tool-call {
+  margin-top: 8px;
+}
+
+.claudian-tool-call+.claudian-text-block {
+  margin-top: 8px;
+}
+
+.claudian-message-content p {
+  margin: 0 0 8px 0;
+}
+
+.claudian-message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.claudian-message-content ul,
+.claudian-message-content ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+/* Scrollbar styling */
+.claudian-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.claudian-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claudian-messages::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+}
+
+.claudian-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--background-modifier-border-hover);
+}

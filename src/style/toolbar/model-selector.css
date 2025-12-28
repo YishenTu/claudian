@@ -1,0 +1,75 @@
+/* Model selector */
+.claudian-model-selector {
+  position: relative;
+}
+
+.claudian-model-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.claudian-model-label {
+  font-weight: 500;
+}
+
+.claudian-model-chevron {
+  display: flex;
+  align-items: center;
+}
+
+.claudian-model-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-model-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  width: max-content;
+  padding: 4px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.claudian-model-selector:hover .claudian-model-dropdown {
+  opacity: 1;
+  visibility: visible;
+}
+
+.claudian-model-option {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-radius: 3px;
+  transition: background 0.1s ease, color 0.1s ease;
+  white-space: nowrap;
+}
+
+.claudian-model-option:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-model-option.selected {
+  background: rgba(217, 119, 87, 0.15);
+  color: #D97757;
+  font-weight: 500;
+}

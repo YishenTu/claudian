@@ -1,0 +1,76 @@
+/* Thinking budget selector */
+.claudian-thinking-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+}
+
+.claudian-thinking-label-text {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.claudian-thinking-gears {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+/* Current selection (visible when collapsed) */
+.claudian-thinking-current {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #D97757;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 3px;
+  white-space: nowrap;
+  background: transparent;
+}
+
+/* Options container - expands vertically upward */
+.claudian-thinking-options {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 4px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+/* Expand on hover */
+.claudian-thinking-gears:hover .claudian-thinking-options {
+  opacity: 1;
+  visibility: visible;
+}
+
+.claudian-thinking-gear {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.1s ease, color 0.1s ease;
+  white-space: nowrap;
+}
+
+.claudian-thinking-gear:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-thinking-gear.selected {
+  background: rgba(217, 119, 87, 0.15);
+  color: #D97757;
+  font-weight: 500;
+}

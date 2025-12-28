@@ -1,0 +1,92 @@
+/* Code block wrapper - contains pre + button outside scroll area */
+.claudian-code-wrapper {
+  position: relative;
+  margin: 8px 0;
+}
+
+/* Code blocks in chat messages */
+.claudian-code-wrapper pre,
+.claudian-message-content pre {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0;
+}
+
+/* Code blocks without language - wrap content */
+.claudian-code-wrapper:not(.has-language) pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: hidden;
+}
+
+/* Unwrapped pre still needs margin */
+.claudian-message-content>pre {
+  margin: 8px 0;
+}
+
+.claudian-message-content code {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+}
+
+/* Clickable language label - positioned outside scroll area */
+.claudian-code-wrapper .claudian-code-lang-label {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: var(--font-monospace);
+  color: var(--text-faint);
+  background: var(--background-primary);
+  border-radius: 3px;
+  cursor: pointer;
+  z-index: 2;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.claudian-code-wrapper .claudian-code-lang-label:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+/* Hide default copy button when language label exists */
+.claudian-code-wrapper.has-language .copy-code-button {
+  display: none;
+}
+
+/* Copy button - positioned outside scroll area */
+.claudian-code-wrapper .copy-code-button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--background-primary);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  border-radius: 3px;
+  z-index: 2;
+}
+
+/* If copy button uses an icon (svg) */
+.claudian-code-wrapper .copy-code-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Show copy button on hover */
+.claudian-code-wrapper:not(.has-language):hover .copy-code-button {
+  opacity: 1;
+}
+
+.claudian-code-wrapper .copy-code-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}

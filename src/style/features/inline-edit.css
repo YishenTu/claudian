@@ -1,0 +1,140 @@
+/* Inline Edit (CM6 decorations) */
+
+/* Selection highlight (shared by inline edit and chat) */
+.cm-line .claudian-selection-highlight,
+.claudian-selection-highlight {
+  background: var(--text-selection) !important;
+  border-radius: 2px;
+  padding: 3px 0;
+  margin: -3px 0;
+}
+
+/* CM6 widget container - ensure transparent background */
+.cm-widgetBuffer,
+.cm-line:has(.claudian-inline-input-container) {
+  background: transparent !important;
+}
+
+/* Input container - fully transparent */
+.claudian-inline-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2px 0;
+  background: transparent !important;
+}
+
+/* Input wrapper - contains input and spinner */
+.claudian-inline-input-wrap {
+  flex: 1;
+  position: relative;
+  background: transparent !important;
+  overflow: visible;
+}
+
+/* Input - fully transparent */
+.claudian-inline-input {
+  width: 100%;
+  padding: 4px 30px 4px 8px;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: var(--background-modifier-border) !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--text-normal);
+  font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif) !important;
+  font-size: var(--font-ui-small, 13px) !important;
+}
+
+.claudian-inline-input:focus,
+.claudian-inline-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.claudian-inline-input::placeholder {
+  color: var(--text-faint);
+}
+
+.claudian-inline-input:disabled {
+  opacity: 0.6;
+}
+
+/* Spinner - inside input box on right */
+.claudian-inline-spinner {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: #D97757;
+  border-radius: 50%;
+  box-sizing: border-box;
+  animation: claudian-inline-spin 0.8s linear infinite;
+}
+
+/* Agent reply - shown when agent asks clarifying question */
+.claudian-inline-agent-reply {
+  padding: 8px;
+  margin-bottom: 4px;
+  background: transparent;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--background-modifier-border);
+  border-radius: 8px;
+  font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif);
+  font-size: var(--font-ui-small, 13px);
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Inline Diff - replaces selection in place */
+.claudian-inline-diff-replace {
+  /* Inherit all font properties from document */
+  font-size: inherit;
+  font-family: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+}
+
+/* Deleted text - red strikethrough */
+.claudian-diff-del {
+  background: rgba(255, 80, 80, 0.2);
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+/* Inserted text - green background */
+.claudian-diff-ins {
+  background: rgba(80, 200, 80, 0.2);
+}
+
+/* Accept/Reject buttons inline with diff */
+.claudian-inline-diff-buttons {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 6px;
+  background: none !important;
+}
+
+.claudian-inline-diff-btn {
+  padding: 4px 6px;
+  border: none !important;
+  background: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.claudian-inline-diff-btn.reject {
+  color: var(--color-red);
+}
+
+.claudian-inline-diff-btn.accept {
+  color: var(--color-green);
+}

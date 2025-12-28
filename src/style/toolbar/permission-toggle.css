@@ -1,0 +1,50 @@
+/* Permission Mode Toggle */
+.claudian-permission-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.claudian-permission-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 28px;
+}
+
+.claudian-toggle-switch {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--background-modifier-border);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.claudian-toggle-switch::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.claudian-toggle-switch:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-toggle-switch.active {
+  background: rgba(217, 119, 87, 0.3);
+}
+
+.claudian-toggle-switch.active::after {
+  transform: translateX(14px);
+  background: #D97757;
+}

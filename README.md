@@ -247,73 +247,17 @@ src/
 ├── ClaudianService.ts   # Claude Agent SDK wrapper
 ├── ClaudianSettings.ts  # Settings tab
 ├── utils/               # Modular utility functions
-│   ├── date.ts          # Date formatting for system prompts
-│   ├── path.ts          # Path resolution, validation, access control
-│   ├── env.ts           # Environment variable parsing, model config
-│   ├── context.ts       # Context file formatting
-│   ├── editor.ts        # Editor/cursor context for inline editing
-│   ├── session.ts       # Session recovery, history reconstruction
-│   ├── markdown.ts      # Markdown utilities
-│   └── mcp.ts           # MCP utilities (SSE, JSON-RPC)
 ├── services/            # Claude-facing services and subagent state
-│   ├── InlineEditService.ts # Lightweight Claude service for inline editing
-│   ├── InstructionRefineService.ts # Lightweight Claude service for refining # instructions
-│   ├── AsyncSubagentManager.ts # Async subagent state machine
-│   ├── McpService.ts    # MCP server management and @-mention detection
-│   └── McpTester.ts     # MCP server connection testing
 ├── system-prompt/       # System prompts for different agents
-│   ├── mainAgent.ts          # Main chat system prompt
-│   ├── inlineEdit.ts         # Inline edit system prompt
-│   └── instructionRefine.ts  # Instruction refinement system prompt
 ├── sdk/                 # SDK integration
-│   └── MessageTransformer.ts # SDK message transformation
 ├── hooks/               # SDK PreToolUse/PostToolUse hooks
-│   ├── SecurityHooks.ts      # Blocklist and vault restriction hooks
-│   └── DiffTrackingHooks.ts  # File content capture for diff view
 ├── security/            # Security utilities
-│   ├── ApprovalManager.ts    # Tool approval management
-│   ├── BlocklistChecker.ts   # Command blocklist checking
-│   └── BashPathValidator.ts  # Bash command path validation
 ├── tools/               # Tool utilities
-│   ├── toolNames.ts          # Tool name constants
-│   ├── toolIcons.ts          # Tool icon mapping
-│   └── toolInput.ts          # Tool input parsing
 ├── images/              # Image handling
-│   ├── imageCache.ts         # Image caching with SHA-256 deduplication
-│   └── imageLoader.ts        # Image loading utilities
 ├── storage/             # Distributed storage system
-│   ├── StorageService.ts     # Main coordinator, migration logic
-│   ├── SettingsStorage.ts    # .claude/settings.json handling
-│   ├── SlashCommandStorage.ts # .claude/commands/*.md handling
-│   ├── SessionStorage.ts     # .claude/sessions/*.jsonl handling
-│   ├── McpStorage.ts         # .claude/mcp.json handling
-│   └── VaultFileAdapter.ts   # Obsidian Vault API wrapper
 ├── types/               # Type definitions (modular)
-│   ├── models.ts, settings.ts, chat.ts, tools.ts, sdk.ts
-│   └── index.ts              # Barrel export
-└── ui/                  # Modular UI components
-    ├── index.ts              # Barrel export
-    ├── ApprovalModal.ts      # Permission approval dialog
-    ├── InputToolbar.ts       # Model/thinking/permission selectors
-    ├── FileContext.ts        # File attachments & @mentions
-    ├── ImageContext.ts       # Image drag/drop, paste, path detection
-    ├── SlashCommandManager.ts # Slash command detection and expansion
-    ├── SlashCommandDropdown.ts # Slash command dropdown UI
-    ├── SlashCommandSettings.ts # Slash command settings UI
-    ├── ToolCallRenderer.ts   # Tool call display
-    ├── ThinkingBlockRenderer.ts # Extended thinking UI
-    ├── TodoListRenderer.ts   # Todo list UI for task tracking
-    ├── SubagentRenderer.ts   # Subagent UI component
-    ├── DiffRenderer.ts       # Diff computation and rendering
-    ├── WriteEditRenderer.ts  # Write/Edit diff blocks
-    ├── EnvSnippetManager.ts  # Environment variable snippets
-    ├── InlineEditModal.ts    # Inline edit UI
-    ├── InstructionModeManager.ts # # instruction mode detection and UI state
-    ├── InstructionConfirmModal.ts # Unified instruction modal
-    ├── SelectionHighlight.ts # Shared CM6 selection highlight
-    ├── McpServerModal.ts    # MCP server add/edit modal
-    ├── McpSettingsManager.ts # MCP servers settings list
-    └── McpTestModal.ts      # MCP connection test results
+├── ui/                  # Modular UI components
+└── style/               # Modular CSS (→ styles.css)
 ```
 
 ## Roadmap

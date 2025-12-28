@@ -13,20 +13,7 @@ src/
 ├── ClaudianService.ts   # Claude Agent SDK wrapper
 ├── ClaudianSettings.ts  # Settings tab
 ├── utils/               # Modular utility functions
-│   ├── date.ts          # Date formatting
-│   ├── path.ts          # Path resolution, validation, access control
-│   ├── env.ts           # Environment variable parsing, model config
-│   ├── context.ts       # Context file formatting
-│   ├── editor.ts        # Editor/cursor context
-│   ├── session.ts       # Session recovery, history reconstruction
-│   ├── markdown.ts      # Markdown utilities
-│   └── mcp.ts           # MCP utilities (SSE, JSON-RPC)
 ├── services/            # Agent services and subagent state
-│   ├── AsyncSubagentManager.ts # Async subagent state machine
-│   ├── InlineEditService.ts # Inline text editing service
-│   ├── InstructionRefineService.ts # Instruction refinement service
-│   ├── McpService.ts    # MCP server management
-│   └── McpTester.ts     # MCP connection testing
 ├── system-prompt/       # System prompts for different agents
 ├── sdk/                 # SDK message transformation
 ├── hooks/               # PreToolUse/PostToolUse hooks
@@ -35,7 +22,8 @@ src/
 ├── images/              # Image caching and loading
 ├── storage/             # Distributed storage system
 ├── types/               # Type definitions
-└── ui/                  # All UI components
+├── ui/                  # All UI components
+└── style/               # Modular CSS (→ styles.css)
 ```
 
 | Folder | Purpose |
@@ -51,14 +39,16 @@ src/
 | `services/` | Agent services, subagent state, MCP management |
 | `types/` | Type definitions (includes MCP types) |
 | `ui/` | All UI components (includes MCP settings/selector) |
+| `style/` | Modular CSS (built into root `styles.css`) |
 
 ## Commands
 
 ```bash
-npm run dev      # Development (watch mode)
-npm run build    # Production build
-npm run lint     # Lint code
-npm run test     # Run tests
+npm run dev       # Development (watch mode)
+npm run build     # Production build
+npm run typecheck # Type check
+npm run lint      # Lint code
+npm run test      # Run tests
 ```
 
 ## Key Patterns
@@ -258,7 +248,23 @@ The plugin supports macOS, Linux, and Windows:
 
 Environment variable expansion is case-insensitive on Windows.
 
-## CSS Classes
+## CSS Structure
+
+CSS is modularized in `src/style/` and built into root `styles.css`:
+
+```
+src/style/
+├── base/           # container, animations (@keyframes)
+├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input
+├── toolbar/        # model-selector, thinking-selector, permission-toggle, context-path, mcp-selector
+├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands
+├── modals/         # approval, instruction, mcp-modal
+├── settings/       # base, approved-actions, env-snippets, slash-settings, mcp-settings
+├── accessibility.css
+└── index.css       # Build order (@import list)
+```
+
+When adding new CSS modules, register them in `src/style/index.css` via `@import` or the build will omit them.
 
 All classes use `.claudian-` prefix. Key patterns:
 
@@ -284,8 +290,3 @@ All classes use `.claudian-` prefix. Key patterns:
 - Test Driven Development
 - Generated docs go in `dev/`
 - Run `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test` after editing
-
-## Dependencies
-
-- Claude Code CLI (SDK uses internally)
-- Obsidian v1.0.0+

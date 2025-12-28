@@ -1,0 +1,95 @@
+/* Accessibility - Focus Visible Styles */
+
+/* Collapsible headers - keyboard focus indicators */
+.claudian-tool-header:focus-visible,
+.claudian-thinking-header:focus-visible,
+.claudian-todo-header:focus-visible,
+.claudian-subagent-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Header buttons focus indicators */
+.claudian-header-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Action buttons in history dropdown */
+.claudian-action-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* History items focus indicator */
+.claudian-history-item-content:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+/* Approval modal buttons */
+.claudian-approval-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Toggle switch focus indicator */
+.claudian-toggle-switch:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Model selector button */
+.claudian-model-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Thinking budget selector */
+.claudian-thinking-current:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* File chips focus indicator */
+.claudian-file-chip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Image chips focus indicator */
+.claudian-image-chip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Remove buttons focus indicator */
+.claudian-file-chip-remove:focus-visible,
+.claudian-image-remove:focus-visible,
+.claudian-image-modal-close:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Settings buttons */
+.claudian-approved-remove-btn:focus-visible,
+.claudian-save-env-btn:focus-visible,
+.claudian-restore-snippet-btn:focus-visible,
+.claudian-edit-snippet-btn:focus-visible,
+.claudian-delete-snippet-btn:focus-visible,
+.claudian-cancel-btn:focus-visible,
+.claudian-save-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Code language label (copy button) */
+.claudian-code-lang-label:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}

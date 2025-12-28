@@ -1,0 +1,47 @@
+/* CSS module order. scripts/build-css.mjs reads these @import lines. */
+/* Add new modules here to include them in the build. */
+
+/* Base */
+@import "./base/container.css";
+@import "./base/animations.css";
+
+/* Components */
+@import "./components/header.css";
+@import "./components/history.css";
+@import "./components/messages.css";
+@import "./components/code.css";
+@import "./components/thinking.css";
+@import "./components/toolcalls.css";
+@import "./components/todo.css";
+@import "./components/subagent.css";
+@import "./components/input.css";
+
+/* Toolbar */
+@import "./toolbar/model-selector.css";
+@import "./toolbar/thinking-selector.css";
+@import "./toolbar/permission-toggle.css";
+@import "./toolbar/context-path.css";
+@import "./toolbar/mcp-selector.css";
+
+/* Features */
+@import "./features/file-context.css";
+@import "./features/image-context.css";
+@import "./features/image-modal.css";
+@import "./features/inline-edit.css";
+@import "./features/diff.css";
+@import "./features/slash-commands.css";
+
+/* Modals */
+@import "./modals/approval.css";
+@import "./modals/instruction.css";
+@import "./modals/mcp-modal.css";
+
+/* Settings */
+@import "./settings/base.css";
+@import "./settings/approved-actions.css";
+@import "./settings/env-snippets.css";
+@import "./settings/slash-settings.css";
+@import "./settings/mcp-settings.css";
+
+/* Accessibility */
+@import "./accessibility.css";

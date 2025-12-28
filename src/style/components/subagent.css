@@ -1,0 +1,203 @@
+/* Subagent List (Task tool) - follows TodoList pattern */
+.claudian-subagent-list {
+  margin: 8px 0;
+}
+
+.claudian-text-block+.claudian-subagent-list {
+  margin-top: 8px;
+}
+
+.claudian-subagent-list+.claudian-text-block {
+  margin-top: 8px;
+}
+
+.claudian-tool-call+.claudian-subagent-list {
+  margin-top: 8px;
+}
+
+.claudian-subagent-list+.claudian-tool-call {
+  margin-top: 8px;
+}
+
+/* Subagent header */
+.claudian-subagent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.claudian-subagent-icon {
+  display: flex;
+  align-items: center;
+  color: var(--interactive-accent);
+  flex-shrink: 0;
+}
+
+.claudian-subagent-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-subagent-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.claudian-subagent-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-subagent-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.claudian-subagent-status svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-subagent-status.status-running {
+  color: var(--text-accent);
+}
+
+.claudian-subagent-status.status-completed {
+  color: var(--color-green);
+}
+
+.claudian-subagent-status.status-error {
+  color: var(--color-red);
+}
+
+/* Subagent content */
+.claudian-subagent-content {
+  padding: 4px 0 4px 24px;
+}
+
+/* Tree branch indicator */
+.claudian-subagent-branch {
+  font-family: monospace;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+/* Individual tool item container */
+.claudian-subagent-tool-item {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0;
+}
+
+/* Tool row (branch + label) */
+.claudian-subagent-tool-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.claudian-subagent-tool-text {
+  font-size: 13px;
+  line-height: 1.4;
+  flex: 1;
+  color: var(--text-normal);
+}
+
+/* Tool result area nested under tool (max 2 lines) */
+.claudian-subagent-tool-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 2px 0 0 20px;
+}
+
+.claudian-subagent-result-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex: 1;
+  white-space: pre-wrap;
+  overflow: hidden;
+  max-height: 2.8em;
+}
+
+/* DONE indicator */
+.claudian-subagent-done {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.claudian-subagent-done-text {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+/* Async Subagent (Task tool with run_in_background=true) */
+
+/* Status text display (e.g., "pending", "running agent_123", etc.) */
+.claudian-subagent-status-text {
+  font-size: 11px;
+  font-family: var(--font-monospace);
+  color: var(--text-muted);
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+/* Async-specific status styling */
+.claudian-subagent-list.async.pending .claudian-subagent-icon {
+  color: var(--text-muted);
+}
+
+.claudian-subagent-list.async.pending .claudian-subagent-status-text {
+  color: var(--text-muted);
+}
+
+.claudian-subagent-list.async.running .claudian-subagent-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-subagent-list.async.running .claudian-subagent-status-text {
+  color: var(--text-accent);
+}
+
+.claudian-subagent-list.async.awaiting .claudian-subagent-icon {
+  color: var(--color-yellow);
+}
+
+.claudian-subagent-list.async.awaiting .claudian-subagent-status-text {
+  color: var(--color-yellow);
+}
+
+.claudian-subagent-list.async.completed .claudian-subagent-icon {
+  color: var(--color-green);
+}
+
+.claudian-subagent-list.async.completed .claudian-subagent-status-text {
+  color: var(--color-green);
+}
+
+.claudian-subagent-list.async.error .claudian-subagent-icon {
+  color: var(--color-red);
+}
+
+.claudian-subagent-list.async.error .claudian-subagent-status-text {
+  color: var(--color-red);
+}
+
+.claudian-subagent-list.async.orphaned .claudian-subagent-icon {
+  color: var(--color-orange);
+}
+
+.claudian-subagent-list.async.orphaned .claudian-subagent-status-text {
+  color: var(--color-orange);
+}

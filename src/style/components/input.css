@@ -1,0 +1,168 @@
+/* Input area */
+.claudian-input-container {
+  position: relative;
+  padding: 12px 0 0 0;
+}
+
+/* Input wrapper (border container) */
+.claudian-input-wrapper {
+  position: relative;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+}
+
+/* Selection indicator (shown when text is selected in editor) */
+.claudian-selection-indicator {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  color: #7abaff;
+  font-size: 11px;
+  opacity: 0.9;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1;
+  background: var(--background-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.claudian-input {
+  width: 100%;
+  min-height: 60px;
+  max-height: 200px;
+  resize: none;
+  padding: 10px;
+  border: none !important;
+  border-radius: 6px;
+  background: transparent !important;
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: none !important;
+}
+
+.claudian-input:hover,
+.claudian-input:focus {
+  outline: none !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.claudian-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Input toolbar */
+.claudian-input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 6px 6px 6px;
+}
+
+/* File indicator (attached files) */
+.claudian-file-indicator {
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+
+.claudian-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  font-size: 12px;
+  max-width: 200px;
+  cursor: pointer;
+}
+
+.claudian-file-chip-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-file-chip-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-file-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+.claudian-file-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-file-chip-remove:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-file-chip:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Edited file indicator - border highlight */
+.claudian-file-chip.claudian-file-chip-edited {
+  border: 1.5px solid var(--interactive-accent);
+}
+
+/* Edited files indicator section (non-attached edited files) */
+.claudian-edited-files-indicator {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+
+.claudian-edited-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+/* Message Queue Indicator (shown below flavor text in thinking indicator) */
+.claudian-queue-indicator {
+  display: none;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: normal;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Light blue border when instruction mode is active */
+.claudian-input-instruction-mode {
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 1px #60a5fa;
+}

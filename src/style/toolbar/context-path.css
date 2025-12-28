@@ -1,0 +1,149 @@
+/* Context Path Selector */
+.claudian-context-path-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.claudian-context-path-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.claudian-context-path-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+
+.claudian-context-path-icon-wrapper:hover .claudian-context-path-icon {
+  background: var(--background-modifier-hover);
+  opacity: 0.8;
+}
+
+.claudian-context-path-icon.active {
+  color: #D97757;
+  opacity: 1;
+  animation: context-path-glow 2s ease-in-out infinite;
+}
+
+.claudian-context-path-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-context-path-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 9px;
+  font-weight: 600;
+  color: #D97757;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.claudian-context-path-badge.visible {
+  opacity: 1;
+}
+
+.claudian-context-path-dropdown {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+  margin-bottom: 4px;
+  min-width: 260px;
+  max-width: 320px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: 100;
+}
+
+.claudian-context-path-selector:hover .claudian-context-path-dropdown {
+  opacity: 1;
+  visibility: visible;
+}
+
+.claudian-context-path-header {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-context-path-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.claudian-context-path-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.claudian-context-path-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 8px;
+  border-bottom: 1px solid var(--background-modifier-border-focus);
+}
+
+.claudian-context-path-item:last-child {
+  border-bottom: none;
+}
+
+.claudian-context-path-text {
+  flex: 1;
+  font-size: 12px;
+  font-family: var(--font-monospace);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-context-path-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: all 0.15s ease;
+}
+
+.claudian-context-path-remove:hover {
+  background: rgba(220, 53, 69, 0.15);
+  color: #dc3545;
+  opacity: 1;
+}
+
+.claudian-context-path-remove svg {
+  width: 14px;
+  height: 14px;
+}

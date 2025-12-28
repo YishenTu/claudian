@@ -1,0 +1,85 @@
+/* Thinking indicator */
+.claudian-thinking {
+  color: #D97757;
+  font-style: italic;
+  padding: 4px 0;
+  text-align: left;
+  animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+.claudian-thinking-hint {
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+/* Thinking block (extended thinking) */
+.claudian-thinking-block {
+  margin: 8px 0;
+}
+
+.claudian-text-block+.claudian-thinking-block {
+  margin-top: 8px;
+}
+
+.claudian-thinking-block+.claudian-text-block {
+  margin-top: 8px;
+}
+
+.claudian-thinking-block+.claudian-tool-call {
+  margin-top: 8px;
+}
+
+.claudian-tool-call+.claudian-thinking-block {
+  margin-top: 8px;
+}
+
+/* Thinking block header - transparent */
+.claudian-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.claudian-thinking-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #D97757;
+}
+
+/* Thinking block content - tree-branch style */
+.claudian-thinking-content {
+  padding: 4px 0 4px 24px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: 400px;
+  overflow-y: auto;
+  border-left: 2px solid var(--background-modifier-border);
+  margin-left: 7px;
+}
+
+.claudian-thinking-content p {
+  margin: 0 0 8px 0;
+}
+
+.claudian-thinking-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Thinking content code blocks - inherits from wrapper, adjust spacing */
+.claudian-thinking-content .claudian-code-wrapper {
+  margin: 8px 0;
+}
+
+.claudian-thinking-content .claudian-code-wrapper pre {
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+
+.claudian-thinking-content code {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}

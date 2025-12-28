@@ -1,0 +1,188 @@
+/* Write/Edit Diff Block - Subagent style */
+.claudian-write-edit-block {
+  margin: 4px 0;
+  background: transparent;
+}
+
+.claudian-text-block+.claudian-write-edit-block {
+  margin-top: 8px;
+}
+
+.claudian-write-edit-block+.claudian-text-block {
+  margin-top: 8px;
+}
+
+.claudian-write-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+}
+
+.claudian-write-edit-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-accent);
+  flex-shrink: 0;
+}
+
+.claudian-write-edit-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-write-edit-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-write-edit-stats {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.claudian-write-edit-stats .added {
+  color: var(--color-green);
+}
+
+.claudian-write-edit-stats .removed {
+  color: var(--color-red);
+  margin-left: 4px;
+}
+
+.claudian-write-edit-status {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Hide empty status on successful completion so stats align to right edge */
+.claudian-write-edit-block.done .claudian-write-edit-status:empty {
+  display: none;
+}
+
+.claudian-write-edit-status svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-write-edit-status.status-running .claudian-spinner {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-write-edit-status.status-completed {
+  color: var(--color-green);
+}
+
+.claudian-write-edit-status.status-error,
+.claudian-write-edit-status.status-blocked {
+  color: var(--color-red);
+}
+
+.claudian-write-edit-content {
+  padding: 0;
+  background: transparent;
+}
+
+.claudian-write-edit-diff-row {
+  display: flex;
+}
+
+.claudian-write-edit-diff {
+  flex: 1;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  background: transparent;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.claudian-write-edit-loading,
+.claudian-write-edit-binary,
+.claudian-write-edit-error,
+.claudian-write-edit-done-text {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.claudian-write-edit-error {
+  color: var(--color-red);
+}
+
+/* Diff line styling */
+.claudian-diff-hunk {
+  margin-bottom: 4px;
+}
+
+.claudian-diff-line {
+  display: flex;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.claudian-diff-prefix {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.claudian-diff-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Diff colors - NO strikethrough for Write/Edit blocks */
+.claudian-diff-equal {
+  color: var(--text-muted);
+}
+
+.claudian-diff-delete {
+  background: rgba(255, 80, 80, 0.25);
+  color: var(--text-normal);
+}
+
+.claudian-diff-delete .claudian-diff-prefix {
+  color: var(--color-red);
+}
+
+.claudian-diff-insert {
+  background: rgba(80, 200, 80, 0.25);
+  color: var(--text-normal);
+}
+
+.claudian-diff-insert .claudian-diff-prefix {
+  color: var(--color-green);
+}
+
+/* Hunk separator */
+.claudian-diff-separator {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 4px 0;
+  font-style: italic;
+  border-top: 1px dashed var(--background-modifier-border);
+  border-bottom: 1px dashed var(--background-modifier-border);
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+.claudian-diff-no-changes {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px;
+}

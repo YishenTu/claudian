@@ -1,0 +1,85 @@
+/* Slash Command Dropdown */
+.claudian-slash-dropdown {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--background-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.claudian-slash-dropdown.visible {
+  display: block;
+}
+
+/* Fixed positioning for inline editor */
+.claudian-slash-dropdown-fixed {
+  position: fixed;
+  z-index: 10001;
+}
+
+.claudian-slash-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-slash-item:last-child {
+  border-bottom: none;
+}
+
+.claudian-slash-item:hover,
+.claudian-slash-item.selected {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-slash-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+}
+
+.claudian-slash-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-style: italic;
+}
+
+.claudian-slash-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.claudian-slash-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Scrollbar */
+.claudian-slash-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.claudian-slash-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claudian-slash-dropdown::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+}

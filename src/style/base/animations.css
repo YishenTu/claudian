@@ -1,0 +1,67 @@
+/* Thinking pulse animation */
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Spinner rotation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Context path icon glow */
+@keyframes context-path-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(217, 119, 87, 0.4));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 6px rgba(217, 119, 87, 0.8));
+  }
+}
+
+/* MCP selector icon glow */
+@keyframes mcp-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(124, 58, 237, 0.4));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.9));
+  }
+}
+
+/* Inline edit spinner */
+@keyframes claudian-inline-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Instruction modal spinner */
+@keyframes claudian-instruction-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* MCP test spinner */
+@keyframes claudian-mcp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

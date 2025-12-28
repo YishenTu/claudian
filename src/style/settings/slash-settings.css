@@ -1,0 +1,187 @@
+/* Slash Command Settings */
+.claudian-slash-settings-desc {
+  margin-bottom: 8px;
+}
+
+.claudian-slash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  margin-top: 8px;
+}
+
+.claudian-slash-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.claudian-slash-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.claudian-add-slash-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-add-slash-btn:hover {
+  opacity: 0.9;
+}
+
+.claudian-export-btn,
+.claudian-import-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-export-btn:hover,
+.claudian-import-btn:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+.claudian-slash-empty-state {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.claudian-slash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.claudian-slash-item-settings {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.claudian-slash-item-settings:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-slash-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-slash-item-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.claudian-slash-item-name {
+  font-weight: 600;
+  font-family: var(--font-monospace);
+  color: var(--text-normal);
+}
+
+.claudian-slash-item-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.claudian-slash-item-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.claudian-slash-item-preview {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-slash-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+  flex-shrink: 0;
+}
+
+.claudian-edit-slash-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-edit-slash-btn:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+.claudian-delete-slash-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.claudian-delete-slash-btn:hover {
+  opacity: 0.9;
+}
+
+/* Slash Command Modal */
+.claudian-slash-modal .modal-content {
+  max-width: 600px;
+  width: auto;
+}
+
+.claudian-slash-content-area {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  resize: vertical;
+  margin-top: 8px;
+}
+
+.claudian-slash-content-area:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.claudian-slash-modal-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
