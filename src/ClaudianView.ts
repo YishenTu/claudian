@@ -28,7 +28,7 @@ import {
   type ToolCallInfo,
   VIEW_TYPE_CLAUDIAN,
 } from './types';
-import type { AsyncSubagentState, ContextPathSelector, ModelSelector, PermissionToggle, SubagentState, ThinkingBlockState, ThinkingBudgetSelector, WriteEditState } from './ui';
+import type { AsyncSubagentState, ContextPathSelector, McpServerSelector, ModelSelector, PermissionToggle, SubagentState, ThinkingBlockState, ThinkingBudgetSelector, WriteEditState } from './ui';
 import {
   formatSlashCommandWarnings,
   hideSelectionHighlight,
@@ -96,6 +96,7 @@ export class ClaudianView extends ItemView {
   private modelSelector: ModelSelector | null = null;
   private thinkingBudgetSelector: ThinkingBudgetSelector | null = null;
   private contextPathSelector: ContextPathSelector | null = null;
+  private mcpServerSelector: McpServerSelector | null = null;
   private permissionToggle: PermissionToggle | null = null;
   private slashCommandManager: SlashCommandManager | null = null;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
@@ -314,6 +315,11 @@ export class ClaudianView extends ItemView {
       }
     );
     this.plugin.agentService.setFileEditTracker(this.fileContextManager);
+    this.fileContextManager.setMcpService(this.plugin.agentService.getMcpService());
+    // Connect MCP @-mention detection to McpServerSelector
+    this.fileContextManager.setOnMcpMentionChange((servers) => {
+      this.mcpServerSelector?.addMentionedServers(servers);
+    });
 
     this.imageContextManager = new ImageContextManager(
       this.plugin.app,
@@ -400,7 +406,12 @@ export class ClaudianView extends ItemView {
     this.modelSelector = toolbarComponents.modelSelector;
     this.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
     this.contextPathSelector = toolbarComponents.contextPathSelector;
+    this.mcpServerSelector = toolbarComponents.mcpServerSelector;
     this.permissionToggle = toolbarComponents.permissionToggle;
+
+    // Wire MCP service to McpServerSelector
+    const mcpService = this.plugin.agentService.getMcpService();
+    this.mcpServerSelector.setMcpService(mcpService);
 
     this.inputEl.addEventListener('keydown', (e) => {
       // Check instruction mode first (# at start)
@@ -532,7 +543,7 @@ export class ClaudianView extends ItemView {
     // displayContent: what user sees in chat (e.g., "/tests")
     // content: what gets sent to agent (expanded prompt)
     const displayContent = content;
-    let queryOptions: { allowedTools?: string[]; model?: string } | undefined;
+    let queryOptions: { allowedTools?: string[]; model?: string; enabledMcpServers?: Set<string> } | undefined;
     if (content && this.slashCommandManager) {
       // Refresh commands from settings to pick up any changes
       this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
@@ -645,6 +656,15 @@ export class ClaudianView extends ItemView {
     this.currentTextContent = '';
 
     this.showThinkingIndicator(contentEl);
+
+    // Add enabled MCP servers from selector to query options
+    const enabledMcpServers = this.mcpServerSelector?.getEnabledServers();
+    if (enabledMcpServers && enabledMcpServers.size > 0) {
+      queryOptions = {
+        ...queryOptions,
+        enabledMcpServers,
+      };
+    }
 
     let wasInterrupted = false;
     try {
@@ -1460,6 +1480,7 @@ export class ClaudianView extends ItemView {
     this.fileContextManager?.autoAttachActiveFile();
 
     this.imageContextManager?.clearImages();
+    this.mcpServerSelector?.clearEnabled();
     this.clearQueuedMessage();
   }
 

@@ -4,15 +4,17 @@
 
 import { setIcon } from 'obsidian';
 
+import type { McpService } from '../services/McpService';
 import type {
   ClaudeModel,
+  ClaudianMcpServer,
   PermissionMode,
   ThinkingBudget} from '../types';
 import {
   DEFAULT_CLAUDE_MODELS,
   THINKING_BUDGETS
 } from '../types';
-import { getModelsFromEnvironment,parseEnvironmentVariables } from '../utils';
+import { getModelsFromEnvironment, parseEnvironmentVariables } from '../utils/env';
 
 /** Settings access interface for toolbar components. */
 export interface ToolbarSettings {
@@ -362,6 +364,229 @@ export class ContextPathSelector {
   }
 }
 
+/** MCP server selector component (plug icon). */
+export class McpServerSelector {
+  private container: HTMLElement;
+  private iconEl: HTMLElement | null = null;
+  private badgeEl: HTMLElement | null = null;
+  private dropdownEl: HTMLElement | null = null;
+  private mcpService: McpService | null = null;
+  private enabledServers: Set<string> = new Set();
+  private onChangeCallback: ((enabled: Set<string>) => void) | null = null;
+
+  constructor(parentEl: HTMLElement) {
+    this.container = parentEl.createDiv({ cls: 'claudian-mcp-selector' });
+    this.render();
+  }
+
+  /** Set the MCP service for fetching server list. */
+  setMcpService(service: McpService | null): void {
+    this.mcpService = service;
+    this.pruneEnabledServers();
+    this.updateDisplay();
+    this.renderDropdown();
+  }
+
+  /** Set callback for when enabled servers change. */
+  setOnChange(callback: (enabled: Set<string>) => void): void {
+    this.onChangeCallback = callback;
+  }
+
+  /** Get currently enabled servers (via click or @-mention). */
+  getEnabledServers(): Set<string> {
+    return new Set(this.enabledServers);
+  }
+
+  /** Add servers from @-mentions. */
+  addMentionedServers(names: Set<string>): void {
+    let changed = false;
+    for (const name of names) {
+      if (!this.enabledServers.has(name)) {
+        this.enabledServers.add(name);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.updateDisplay();
+      this.renderDropdown();
+    }
+  }
+
+  /** Clear enabled servers (call on new conversation). */
+  clearEnabled(): void {
+    this.enabledServers.clear();
+    this.updateDisplay();
+    this.renderDropdown();
+  }
+
+  private pruneEnabledServers(): void {
+    if (!this.mcpService) return;
+    const activeNames = new Set(this.mcpService.getServers().filter((s) => s.enabled).map((s) => s.name));
+    let changed = false;
+    for (const name of this.enabledServers) {
+      if (!activeNames.has(name)) {
+        this.enabledServers.delete(name);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.onChangeCallback?.(this.enabledServers);
+    }
+  }
+
+  private render() {
+    this.container.empty();
+
+    const iconWrapper = this.container.createDiv({ cls: 'claudian-mcp-selector-icon-wrapper' });
+
+    this.iconEl = iconWrapper.createDiv({ cls: 'claudian-mcp-selector-icon' });
+    setIcon(this.iconEl, 'plug');
+
+    this.badgeEl = iconWrapper.createDiv({ cls: 'claudian-mcp-selector-badge' });
+
+    this.updateDisplay();
+
+    // Click to toggle dropdown
+    iconWrapper.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleDropdown();
+    });
+
+    this.dropdownEl = this.container.createDiv({ cls: 'claudian-mcp-selector-dropdown' });
+    this.renderDropdown();
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      if (!this.container.contains(e.target as Node)) {
+        this.dropdownEl?.removeClass('visible');
+      }
+    });
+  }
+
+  private toggleDropdown() {
+    if (this.dropdownEl?.hasClass('visible')) {
+      this.dropdownEl.removeClass('visible');
+    } else {
+      this.renderDropdown();
+      this.dropdownEl?.addClass('visible');
+    }
+  }
+
+  private renderDropdown() {
+    if (!this.dropdownEl) return;
+    this.pruneEnabledServers();
+    this.dropdownEl.empty();
+
+    // Header
+    const headerEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-header' });
+    headerEl.setText('MCP Servers');
+
+    // Server list
+    const listEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-list' });
+
+    const servers = this.mcpService?.getServers() || [];
+
+    if (servers.length === 0) {
+      const emptyEl = listEl.createDiv({ cls: 'claudian-mcp-selector-empty' });
+      emptyEl.setText('No MCP servers configured');
+      return;
+    }
+
+    for (const server of servers) {
+      this.renderServerItem(listEl, server);
+    }
+  }
+
+  private renderServerItem(listEl: HTMLElement, server: ClaudianMcpServer) {
+    const itemEl = listEl.createDiv({ cls: 'claudian-mcp-selector-item' });
+
+    const isEnabled = this.enabledServers.has(server.name);
+    if (isEnabled) {
+      itemEl.addClass('enabled');
+    }
+    if (!server.enabled) {
+      itemEl.addClass('disabled');
+    }
+
+    // Checkbox
+    const checkEl = itemEl.createDiv({ cls: 'claudian-mcp-selector-check' });
+    if (isEnabled) {
+      setIcon(checkEl, 'check');
+    }
+
+    // Info
+    const infoEl = itemEl.createDiv({ cls: 'claudian-mcp-selector-item-info' });
+
+    const nameEl = infoEl.createSpan({ cls: 'claudian-mcp-selector-item-name' });
+    nameEl.setText(server.name);
+
+    // Badges
+    if (server.contextSaving) {
+      const csEl = infoEl.createSpan({ cls: 'claudian-mcp-selector-cs-badge' });
+      csEl.setText('@');
+      csEl.setAttribute('title', 'Context-saving: can also enable via @' + server.name);
+    }
+
+    if (!server.enabled) {
+      const disabledEl = infoEl.createSpan({ cls: 'claudian-mcp-selector-disabled-badge' });
+      disabledEl.setText('disabled');
+    }
+
+    // Click to toggle
+    if (server.enabled) {
+      itemEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleServer(server.name);
+      });
+    } else {
+      itemEl.setAttribute('title', 'Enable this server in settings to use it');
+    }
+  }
+
+  private toggleServer(name: string) {
+    if (this.enabledServers.has(name)) {
+      this.enabledServers.delete(name);
+    } else {
+      this.enabledServers.add(name);
+    }
+    this.updateDisplay();
+    this.renderDropdown();
+    this.onChangeCallback?.(this.enabledServers);
+  }
+
+  updateDisplay() {
+    this.pruneEnabledServers();
+    if (!this.iconEl || !this.badgeEl) return;
+
+    const count = this.enabledServers.size;
+    const hasServers = (this.mcpService?.getServers().length || 0) > 0;
+
+    // Show/hide container based on whether there are servers
+    if (!hasServers) {
+      this.container.style.display = 'none';
+      return;
+    }
+    this.container.style.display = '';
+
+    if (count > 0) {
+      this.iconEl.addClass('active');
+      this.iconEl.setAttribute('title', `${count} MCP server${count > 1 ? 's' : ''} enabled (click to manage)`);
+
+      // Show badge only when more than 1
+      if (count > 1) {
+        this.badgeEl.setText(String(count));
+        this.badgeEl.addClass('visible');
+      } else {
+        this.badgeEl.removeClass('visible');
+      }
+    } else {
+      this.iconEl.removeClass('active');
+      this.iconEl.setAttribute('title', 'MCP servers (click to enable)');
+      this.badgeEl.removeClass('visible');
+    }
+  }
+}
+
 /** Factory function to create all toolbar components. */
 export function createInputToolbar(
   parentEl: HTMLElement,
@@ -370,12 +595,14 @@ export function createInputToolbar(
   modelSelector: ModelSelector;
   thinkingBudgetSelector: ThinkingBudgetSelector;
   contextPathSelector: ContextPathSelector;
+  mcpServerSelector: McpServerSelector;
   permissionToggle: PermissionToggle;
 } {
   const modelSelector = new ModelSelector(parentEl, callbacks);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
   const contextPathSelector = new ContextPathSelector(parentEl, callbacks);
+  const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
 
-  return { modelSelector, thinkingBudgetSelector, contextPathSelector, permissionToggle };
+  return { modelSelector, thinkingBudgetSelector, contextPathSelector, mcpServerSelector, permissionToggle };
 }

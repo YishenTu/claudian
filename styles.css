@@ -1279,6 +1279,197 @@
 }
 
 
+/* MCP Server Selector */
+.claudian-mcp-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.claudian-mcp-selector-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.claudian-mcp-selector-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+
+.claudian-mcp-selector-icon-wrapper:hover .claudian-mcp-selector-icon {
+  background: var(--background-modifier-hover);
+  opacity: 0.8;
+}
+
+.claudian-mcp-selector-icon.active {
+  color: #7c3aed;
+  opacity: 1;
+  animation: mcp-glow 2s ease-in-out infinite;
+}
+
+@keyframes mcp-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(124, 58, 237, 0.4));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.9));
+  }
+}
+
+.claudian-mcp-selector-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-mcp-selector-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 9px;
+  font-weight: 600;
+  color: #7c3aed;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.claudian-mcp-selector-badge.visible {
+  opacity: 1;
+}
+
+.claudian-mcp-selector-dropdown {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+  margin-bottom: 4px;
+  min-width: 200px;
+  max-width: 280px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: 100;
+}
+
+.claudian-mcp-selector-dropdown.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.claudian-mcp-selector-header {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-mcp-selector-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.claudian-mcp-selector-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.claudian-mcp-selector-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.claudian-mcp-selector-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-mcp-selector-item.enabled {
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.claudian-mcp-selector-item.disabled {
+  opacity: 0.5;
+}
+
+.claudian-mcp-selector-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
+  color: #7c3aed;
+}
+
+.claudian-mcp-selector-item.enabled .claudian-mcp-selector-check {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: #7c3aed;
+}
+
+.claudian-mcp-selector-check svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-mcp-selector-item-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.claudian-mcp-selector-item-name {
+  font-size: 12px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-mcp-selector-cs-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(124, 58, 237, 0.2);
+  color: #7c3aed;
+}
+
+.claudian-mcp-selector-disabled-badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(220, 53, 69, 0.15);
+  color: #dc3545;
+}
+
+
 /* ============================================
    Approval Modal
    ============================================ */
@@ -3191,4 +3382,460 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ========================================
+   MCP Server Settings
+   ======================================== */
+
+.claudian-mcp-settings-desc {
+  margin-bottom: 12px;
+}
+
+.claudian-mcp-container {
+  margin-top: 8px;
+}
+
+.claudian-mcp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.claudian-mcp-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.claudian-mcp-add-container {
+  position: relative;
+}
+
+.claudian-add-mcp-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+}
+
+.claudian-add-mcp-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.claudian-mcp-add-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 180px;
+  background-color: var(--modal-background, var(--background-primary));
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.claudian-mcp-add-dropdown.is-visible {
+  display: block;
+}
+
+.claudian-mcp-add-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.claudian-mcp-add-option:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-mcp-add-option-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.claudian-mcp-add-option-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-mcp-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.claudian-mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.claudian-mcp-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.claudian-mcp-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-mcp-item-disabled {
+  opacity: 0.6;
+}
+
+.claudian-mcp-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.claudian-mcp-status-enabled {
+  background: var(--color-green);
+}
+
+.claudian-mcp-status-disabled {
+  background: var(--text-muted);
+}
+
+.claudian-mcp-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-mcp-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.claudian-mcp-name {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.claudian-mcp-type-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.claudian-mcp-context-saving-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.claudian-mcp-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-mcp-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.claudian-mcp-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-mcp-action-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-mcp-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-mcp-delete-btn:hover {
+  color: var(--text-error);
+}
+
+/* MCP Server Modal */
+.claudian-mcp-modal .modal-content {
+  width: 480px;
+  max-width: 90vw;
+}
+
+.claudian-mcp-type-fields {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.claudian-mcp-type-fields .setting-item {
+  padding: 8px 0;
+  border-top: none;
+}
+
+.claudian-mcp-type-fields .setting-item:first-child {
+  padding-top: 0;
+}
+
+.claudian-mcp-cmd-setting,
+.claudian-mcp-env-setting {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.claudian-mcp-cmd-setting .setting-item-control,
+.claudian-mcp-env-setting .setting-item-control {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.claudian-mcp-cmd-textarea,
+.claudian-mcp-env-textarea {
+  width: 100%;
+  min-height: 50px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.claudian-mcp-cmd-textarea:focus,
+.claudian-mcp-env-textarea:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.claudian-mcp-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* MCP items in @-mention dropdown */
+.claudian-mention-item.mcp-server {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-mention-item.mcp-server .claudian-mention-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-mention-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.claudian-mention-name {
+  font-weight: 500;
+  color: var(--interactive-accent);
+}
+
+.claudian-mention-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* MCP Test Modal */
+.claudian-mcp-test-modal {
+  width: 500px;
+  max-width: 90vw;
+}
+
+.claudian-mcp-test-modal .modal-content {
+  padding: 0 20px 20px 20px;
+}
+
+.claudian-mcp-test-modal .modal-title {
+  padding: 20px 20px 12px 20px;
+  margin: 0 -20px;
+}
+
+.claudian-mcp-test-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  color: var(--text-muted);
+}
+
+.claudian-mcp-test-spinner {
+  width: 20px;
+  height: 20px;
+  animation: claudian-mcp-spin 1s linear infinite;
+}
+
+.claudian-mcp-test-spinner svg {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes claudian-mcp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.claudian-mcp-test-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.claudian-mcp-test-icon {
+  display: flex;
+  align-items: center;
+}
+
+.claudian-mcp-test-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.claudian-mcp-test-icon.success {
+  color: var(--color-green);
+}
+
+.claudian-mcp-test-icon.error {
+  color: var(--text-error);
+}
+
+.claudian-mcp-test-text {
+  font-weight: 500;
+}
+
+.claudian-mcp-test-error {
+  padding: 10px 12px;
+  background: rgba(var(--color-red-rgb), 0.1);
+  border: 1px solid var(--text-error);
+  border-radius: 6px;
+  color: var(--text-error);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.claudian-mcp-test-tools {
+  margin-bottom: 16px;
+}
+
+.claudian-mcp-test-tools-header {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.claudian-mcp-test-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.claudian-mcp-test-tool {
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.claudian-mcp-test-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.claudian-mcp-test-tool-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.claudian-mcp-test-tool-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-mcp-test-tool-name {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.claudian-mcp-test-tool-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.claudian-mcp-test-no-tools {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.claudian-mcp-test-buttons {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
 }

@@ -13,6 +13,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
 - **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input, with review/edit in a modal.
 - **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
+- **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
@@ -150,6 +151,33 @@ Extend Claudian with reusable capability modules. Skills are `SKILL.md` files wi
 
 Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview). Ask "What skills are available?" to list discovered skills.
 
+### MCP (Model Context Protocol)
+
+Extend Claude with external tools and data sources via MCP servers. Claudian supports all MCP server types and stores configurations in Claude Code-compatible format.
+
+**Server Types:**
+- **stdio**: Local command-line servers (e.g., `docker exec`, `npx`, `python -m`)
+- **sse**: Server-Sent Events endpoints
+- **http**: HTTP JSON-RPC endpoints
+
+**Adding Servers:**
+1. Go to Settings → Claudian → MCP Servers
+2. Click "Add" and choose: stdio, http/sse, or Import from clipboard
+3. Fill in the configuration and save
+4. Use "Test" button to verify connectivity and see available tools
+
+**Context-Saving Mode:**
+Enable per-server to hide tools from agent unless explicitly needed:
+- Server tools are excluded by default (saves context window)
+- Type `@server-name` in your message to enable for that query
+- Or click the server in the MCP selector (plug icon in toolbar)
+
+**Toolbar Selector:**
+- Plug icon appears next to folder icon when MCP servers are configured
+- Glows purple when at least one server is enabled
+- Shows badge with count when multiple servers enabled
+- Click to toggle servers on/off for current session
+
 ### Example prompts
 
 - "List all notes in this vault"
@@ -175,6 +203,7 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
 - **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
 - **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
 - **Environment snippets**: Save and restore environment variable configurations
+- **MCP Servers**: Add/edit/test/delete MCP server configurations with context-saving mode
 
 ### Safety and permissions
 
@@ -199,6 +228,7 @@ Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/e
 - **Outbound scope**: Content sent to Claude/custom APIs includes your input, attached files/snippets, images (base64), and model-issued tool calls plus summarized outputs. Default provider is Anthropic; if `ANTHROPIC_BASE_URL` is set, traffic goes to that endpoint.
 - **Local storage**: Data is stored in a distributed format (like Claude Code):
   - `vault/.claude/settings.json` - User settings and permissions (shareable)
+  - `vault/.claude/mcp.json` - MCP server configurations (Claude Code compatible)
   - `vault/.claude/commands/*.md` - Slash commands as Markdown files
   - `vault/.claude/sessions/*.jsonl` - Chat sessions (one file per conversation)
   - `.obsidian/plugins/claudian/data.json` - Machine state (active conversation, model tracking)
@@ -221,7 +251,9 @@ src/
 ├── services/            # Claude-facing services and subagent state
 │   ├── InlineEditService.ts # Lightweight Claude service for inline editing
 │   ├── InstructionRefineService.ts # Lightweight Claude service for refining # instructions
-│   └── AsyncSubagentManager.ts # Async subagent state machine
+│   ├── AsyncSubagentManager.ts # Async subagent state machine
+│   ├── McpService.ts    # MCP server management and @-mention detection
+│   └── McpTester.ts     # MCP server connection testing
 ├── system-prompt/       # System prompts for different agents
 │   ├── mainAgent.ts          # Main chat system prompt
 │   ├── inlineEdit.ts         # Inline edit system prompt
@@ -247,6 +279,7 @@ src/
 │   ├── SettingsStorage.ts    # .claude/settings.json handling
 │   ├── SlashCommandStorage.ts # .claude/commands/*.md handling
 │   ├── SessionStorage.ts     # .claude/sessions/*.jsonl handling
+│   ├── McpStorage.ts         # .claude/mcp.json handling
 │   └── VaultFileAdapter.ts   # Obsidian Vault API wrapper
 ├── types/               # Type definitions (modular)
 │   ├── models.ts, settings.ts, chat.ts, tools.ts, sdk.ts
@@ -270,7 +303,10 @@ src/
     ├── InlineEditModal.ts    # Inline edit UI 
     ├── InstructionModeManager.ts # # instruction mode detection and UI state
     ├── InstructionConfirmModal.ts # Unified instruction modal
-    └── SelectionHighlight.ts # Shared CM6 selection highlight 
+    ├── SelectionHighlight.ts # Shared CM6 selection highlight
+    ├── McpServerModal.ts    # MCP server add/edit modal
+    ├── McpSettingsManager.ts # MCP servers settings list
+    └── McpTestModal.ts      # MCP connection test results
 ```
 
 ## Roadmap
@@ -299,7 +335,8 @@ src/
 - [x] Context paths for read-only access to external directories
 - [x] Distributed storage (settings, commands, sessions as separate files)
 - [x] Windows platform support (MSYS paths, PowerShell blocklist, env vars)
-- [ ] Hooks, MCP and other advanced features
+- [x] MCP (Model Context Protocol) server support with context-saving mode
+- [ ] Hooks and other advanced features
 
 ## License
 

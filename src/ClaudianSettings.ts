@@ -9,7 +9,7 @@ import { PluginSettingTab, Setting } from 'obsidian';
 
 import type ClaudianPlugin from './main';
 import { getCurrentPlatformKey } from './types';
-import { EnvSnippetManager, SlashCommandSettings } from './ui';
+import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from './ui';
 
 /** Plugin settings tab displayed in Obsidian's settings pane. */
 export class ClaudianSettingTab extends PluginSettingTab {
@@ -328,5 +328,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Environment Snippets subsection
     const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
     new EnvSnippetManager(envSnippetsContainer, this.plugin);
+
+    // MCP Servers section
+    new Setting(containerEl).setName('MCP Servers').setHeading();
+
+    const mcpDesc = containerEl.createDiv({ cls: 'claudian-mcp-settings-desc' });
+    mcpDesc.createEl('p', {
+      text: 'Configure Model Context Protocol servers to extend Claude\'s capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate.',
+      cls: 'setting-item-description',
+    });
+
+    const mcpContainer = containerEl.createDiv({ cls: 'claudian-mcp-container' });
+    new McpSettingsManager(mcpContainer, this.plugin);
   }
 }

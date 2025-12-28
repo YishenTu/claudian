@@ -2,6 +2,7 @@
  * Claudian - File context manager
  *
  * Manages attached files indicator, edited files tracking, and @ mention dropdown.
+ * Also handles MCP server @-mentions for context-saving mode.
  */
 
 import { createHash } from 'crypto';
@@ -9,12 +10,21 @@ import type { App, EventRef } from 'obsidian';
 import { setIcon, TFile } from 'obsidian';
 import * as path from 'path';
 
+import type { McpService } from '../services/McpService';
 import { isEditTool } from '../tools/toolNames';
-import { getVaultPath } from '../utils';
+import { extractMcpMentions } from '../utils/mcp';
+import { getVaultPath } from '../utils/path';
 
 interface FileHashState {
   originalHash: string | null;
   postEditHash: string;
+}
+
+/** Union type for @-mention dropdown items. */
+interface MentionItem {
+  type: 'file' | 'mcp-server';
+  name: string;
+  path?: string;  // For files
 }
 
 /** Callbacks for file context interactions. */
@@ -45,8 +55,14 @@ export class FileContextManager {
   private mentionStartIndex = -1;
   private selectedMentionIndex = 0;
   private filteredFiles: TFile[] = [];
+  private filteredMentionItems: MentionItem[] = [];
   private cachedMarkdownFiles: TFile[] = [];
   private filesCacheDirty = true;
+
+  // MCP server support
+  private mcpService: McpService | null = null;
+  private mentionedMcpServers: Set<string> = new Set();
+  private onMcpMentionChange: ((servers: Set<string>) => void) | null = null;
 
   constructor(
     app: App,
@@ -114,6 +130,7 @@ export class FileContextManager {
     this.lastSentFiles.clear();
     this.attachedFiles.clear();
     this.clearEditedFiles();
+    this.clearMcpMentions();
   }
 
   /** Resets state for loading an existing conversation. */
@@ -122,6 +139,7 @@ export class FileContextManager {
     this.attachedFiles.clear();
     this.sessionStarted = hasMessages;
     this.clearEditedFiles();
+    this.clearMcpMentions();
   }
 
   /** Sets attached files (for restoring persisted state). */
@@ -257,6 +275,7 @@ export class FileContextManager {
   /** Handles input changes to detect @ mentions. */
   handleInputChange() {
     const text = this.inputEl.value;
+    this.updateMcpMentionsFromText(text);
     const cursorPos = this.inputEl.selectionStart || 0;
 
     const textBeforeCursor = text.substring(0, cursorPos);
@@ -649,6 +668,51 @@ export class FileContextManager {
     return this.cachedMarkdownFiles;
   }
 
+  // ========================================
+  // MCP Server Support
+  // ========================================
+
+  /** Set the MCP service for @-mention autocomplete. */
+  setMcpService(service: McpService | null): void {
+    this.mcpService = service;
+  }
+
+  /** Set callback for when MCP mentions change (for McpServerSelector integration). */
+  setOnMcpMentionChange(callback: (servers: Set<string>) => void): void {
+    this.onMcpMentionChange = callback;
+  }
+
+  /** Get currently @-mentioned MCP servers. */
+  getMentionedMcpServers(): Set<string> {
+    return new Set(this.mentionedMcpServers);
+  }
+
+  /** Clear MCP mentions (call on new conversation). */
+  clearMcpMentions(): void {
+    this.mentionedMcpServers.clear();
+  }
+
+  /** Update MCP mentions from input text. */
+  updateMcpMentionsFromText(text: string): void {
+    if (!this.mcpService) return;
+
+    const validNames = new Set(
+      this.mcpService.getContextSavingServers().map(s => s.name)
+    );
+
+    const newMentions = extractMcpMentions(text, validNames);
+
+    // Update if changed
+    const changed = newMentions.size !== this.mentionedMcpServers.size ||
+      [...newMentions].some(n => !this.mentionedMcpServers.has(n));
+
+    if (changed) {
+      this.mentionedMcpServers = newMentions;
+      // Notify McpServerSelector about new mentions
+      this.onMcpMentionChange?.(newMentions);
+    }
+  }
+
   private hasExcludedTag(file: TFile): boolean {
     const excludedTags = this.callbacks.getExcludedTags();
     if (excludedTags.length === 0) return false;
@@ -675,9 +739,25 @@ export class FileContextManager {
   }
 
   private showMentionDropdown(searchText: string) {
-    const allFiles = this.getCachedMarkdownFiles();
-
     const searchLower = searchText.toLowerCase();
+    this.filteredMentionItems = [];
+
+    // Add MCP servers first (context-saving ones only)
+    if (this.mcpService) {
+      const mcpServers = this.mcpService.getContextSavingServers();
+
+      for (const server of mcpServers) {
+        if (server.name.toLowerCase().includes(searchLower)) {
+          this.filteredMentionItems.push({
+            type: 'mcp-server',
+            name: server.name,
+          });
+        }
+      }
+    }
+
+    // Add files
+    const allFiles = this.getCachedMarkdownFiles();
     this.filteredFiles = allFiles
       .filter(file => {
         const pathLower = file.path.toLowerCase();
@@ -691,7 +771,16 @@ export class FileContextManager {
         if (!aNameMatch && bNameMatch) return 1;
         return b.stat.mtime - a.stat.mtime;
       })
-      .slice(0, 10);
+      .slice(0, 10 - this.filteredMentionItems.length);
+
+    // Add file items to mention items
+    for (const file of this.filteredFiles) {
+      this.filteredMentionItems.push({
+        type: 'file',
+        name: file.name,
+        path: file.path,
+      });
+    }
 
     this.selectedMentionIndex = 0;
     this.renderMentionDropdown();
@@ -704,23 +793,34 @@ export class FileContextManager {
 
     this.mentionDropdown.empty();
 
-    if (this.filteredFiles.length === 0) {
+    if (this.filteredMentionItems.length === 0) {
       const emptyEl = this.mentionDropdown.createDiv({ cls: 'claudian-mention-empty' });
-      emptyEl.setText('No matching files');
+      emptyEl.setText('No matches');
     } else {
-      for (let i = 0; i < this.filteredFiles.length; i++) {
-        const file = this.filteredFiles[i];
+      for (let i = 0; i < this.filteredMentionItems.length; i++) {
+        const item = this.filteredMentionItems[i];
         const itemEl = this.mentionDropdown.createDiv({ cls: 'claudian-mention-item' });
+
+        if (item.type === 'mcp-server') {
+          itemEl.addClass('mcp-server');
+        }
 
         if (i === this.selectedMentionIndex) {
           itemEl.addClass('selected');
         }
 
         const iconEl = itemEl.createSpan({ cls: 'claudian-mention-icon' });
-        setIcon(iconEl, 'file-text');
+        setIcon(iconEl, item.type === 'mcp-server' ? 'plug' : 'file-text');
 
-        const pathEl = itemEl.createSpan({ cls: 'claudian-mention-path' });
-        pathEl.setText(file.path);
+        const textEl = itemEl.createSpan({ cls: 'claudian-mention-text' });
+
+        if (item.type === 'mcp-server') {
+          const nameEl = textEl.createSpan({ cls: 'claudian-mention-name' });
+          nameEl.setText(`@${item.name}`);
+        } else {
+          const pathEl = textEl.createSpan({ cls: 'claudian-mention-path' });
+          pathEl.setText(item.path || item.name);
+        }
 
         itemEl.addEventListener('click', () => {
           this.selectedMentionIndex = i;
@@ -738,7 +838,7 @@ export class FileContextManager {
   }
 
   private navigateMentionDropdown(direction: number) {
-    const maxIndex = this.filteredFiles.length - 1;
+    const maxIndex = this.filteredMentionItems.length - 1;
     this.selectedMentionIndex = Math.max(0, Math.min(maxIndex, this.selectedMentionIndex + direction));
     this.updateMentionSelection();
   }
@@ -756,26 +856,41 @@ export class FileContextManager {
   }
 
   private selectMentionItem() {
-    if (this.filteredFiles.length === 0) return;
+    if (this.filteredMentionItems.length === 0) return;
 
-    const selectedFile = this.filteredFiles[this.selectedMentionIndex];
-    if (!selectedFile) return;
-
-    const normalizedPath = this.normalizePathForVault(selectedFile.path);
-    if (normalizedPath) {
-      this.attachedFiles.add(normalizedPath);
-    }
+    const selectedItem = this.filteredMentionItems[this.selectedMentionIndex];
+    if (!selectedItem) return;
 
     const text = this.inputEl.value;
     const beforeAt = text.substring(0, this.mentionStartIndex);
     const afterCursor = text.substring(this.inputEl.selectionStart || 0);
-    const filename = selectedFile.name;
-    const replacement = `@${filename} `;
-    this.inputEl.value = beforeAt + replacement + afterCursor;
-    this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+
+    if (selectedItem.type === 'mcp-server') {
+      // MCP server mention
+      const replacement = `@${selectedItem.name} `;
+      this.inputEl.value = beforeAt + replacement + afterCursor;
+      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+
+      // Add to mentioned servers and notify McpServerSelector
+      this.mentionedMcpServers.add(selectedItem.name);
+      this.onMcpMentionChange?.(this.mentionedMcpServers);
+    } else {
+      // File mention
+      const file = this.filteredFiles.find(f => f.path === selectedItem.path);
+      if (file) {
+        const normalizedPath = this.normalizePathForVault(file.path);
+        if (normalizedPath) {
+          this.attachedFiles.add(normalizedPath);
+        }
+      }
+
+      const replacement = `@${selectedItem.name} `;
+      this.inputEl.value = beforeAt + replacement + afterCursor;
+      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+      this.updateFileIndicator();
+    }
 
     this.hideMentionDropdown();
-    this.updateFileIndicator();
     this.inputEl.focus();
   }
 }

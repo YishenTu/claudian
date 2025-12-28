@@ -31,6 +31,7 @@ export {
 export {
   ContextPathSelector,
   createInputToolbar,
+  McpServerSelector,
   ModelSelector,
   PermissionToggle,
   ThinkingBudgetSelector,
@@ -50,6 +51,9 @@ export {
   InstructionModeManager,
   type InstructionModeState,
 } from './InstructionModeManager';
+export { McpServerModal } from './McpServerModal';
+export { McpSettingsManager } from './McpSettingsManager';
+export { McpTestModal } from './McpTestModal';
 export {
   SlashCommandDropdown,
   type SlashCommandDropdownCallbacks,

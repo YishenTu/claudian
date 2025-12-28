@@ -16,7 +16,9 @@ src/
 ├── services/            # Agent services and subagent state
 │   ├── AsyncSubagentManager.ts # Async subagent state machine
 │   ├── InlineEditService.ts # Inline text editing service
-│   └── InstructionRefineService.ts # Instruction refinement service
+│   ├── InstructionRefineService.ts # Instruction refinement service
+│   ├── McpService.ts    # MCP server management
+│   └── McpTester.ts     # MCP connection testing
 ├── system-prompt/       # System prompts for different agents
 ├── sdk/                 # SDK message transformation
 ├── hooks/               # PreToolUse/PostToolUse hooks
@@ -36,10 +38,10 @@ src/
 | `security/` | Approval, blocklist, path validation |
 | `tools/` | Tool names, icons, input parsing |
 | `images/` | Image caching with SHA-256 dedup |
-| `storage/` | Settings, commands, sessions storage (Claude Code pattern) |
-| `services/` | Agent services and subagent state |
-| `types/` | Type definitions |
-| `ui/` | All UI components |
+| `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
+| `services/` | Agent services, subagent state, MCP management |
+| `types/` | Type definitions (includes MCP types) |
+| `ui/` | All UI components (includes MCP settings/selector) |
 
 ## Commands
 
@@ -144,6 +146,7 @@ Distributed storage mimicking Claude Code patterns:
 ```
 vault/.claude/
 ├── settings.json              # User settings + permissions (shareable)
+├── mcp.json                   # MCP server configurations
 ├── commands/                  # Slash commands as Markdown
 │   └── {name}.md              # YAML frontmatter + prompt content
 └── sessions/                  # Chat sessions as JSONL
@@ -156,6 +159,7 @@ vault/.claude/
 | File | Contents |
 |------|----------|
 | `settings.json` | All settings including `permissions` (like Claude Code) |
+| `mcp.json` | MCP server configs with `_claudian` metadata (Claude Code compatible) |
 | `commands/*.md` | Slash commands with YAML frontmatter |
 | `sessions/*.jsonl` | Conversations (meta + messages per line) |
 | `data.json` | `activeConversationId`, `lastEnvHash`, model tracking |
@@ -204,6 +208,14 @@ Reusable capability modules that Claude discovers and invokes automatically base
 - **User skills**: `~/.claude/skills/{name}/SKILL.md` (all vaults)
 - **Project skills**: `{vault}/.claude/skills/{name}/SKILL.md` (vault-specific)
 - Compatible with [Claude Code skill format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
+
+### MCP (Model Context Protocol)
+Extend Claude with external tools and data sources via MCP servers.
+- **Server types**: `stdio` (local command), `sse` (Server-Sent Events), `http` (HTTP endpoint)
+- **Storage**: `.claude/mcp.json` (Claude Code compatible with `_claudian` metadata)
+- **Context-saving mode**: Hide server tools unless `@`-mentioned (saves context window)
+- **UI**: Settings page for add/edit/delete, connection tester, toolbar selector with glow effect
+- **@-mention**: Type `@server-name` to enable context-saving servers in a message
 
 ## Security
 
@@ -254,7 +266,9 @@ All classes use `.claudian-` prefix. Key patterns:
 | Inline edit | `-inline-input`, `-inline-diff-replace`, `-diff-del`, `-diff-ins` |
 | Selection | `-selection-indicator`, `-selection-highlight` |
 | Context paths | `-context-path-selector`, `-context-path-icon`, `-context-path-dropdown` |
-| Modals | `-approval-modal`, `-instruction-modal` |
+| MCP | `-mcp-selector`, `-mcp-selector-icon`, `-mcp-selector-dropdown`, `-mcp-item` |
+| MCP Settings | `-mcp-header`, `-mcp-list`, `-mcp-status`, `-mcp-test-modal` |
+| Modals | `-approval-modal`, `-instruction-modal`, `-mcp-modal` |
 
 ## Development Notes
 

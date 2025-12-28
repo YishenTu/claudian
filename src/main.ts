@@ -44,6 +44,9 @@ export default class ClaudianPlugin extends Plugin {
 
     this.agentService = new ClaudianService(this);
 
+    // Load MCP server configurations
+    await this.agentService.loadMcpServers();
+
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
       (leaf) => new ClaudianView(leaf, this)

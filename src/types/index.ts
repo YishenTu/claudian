@@ -58,3 +58,20 @@ export {
   type ToolCallInfo,
   type ToolDiffData,
 } from './tools';
+
+// MCP types
+export {
+  type ClaudianMcpConfigFile,
+  type ClaudianMcpServer,
+  DEFAULT_MCP_SERVER,
+  getMcpServerType,
+  inferMcpServerType,
+  isValidMcpServerConfig,
+  type McpConfigFile,
+  type McpHttpServerConfig,
+  type McpServerConfig,
+  type McpServerType,
+  type McpSSEServerConfig,
+  type McpStdioServerConfig,
+  type ParsedMcpConfig,
+} from './mcp';

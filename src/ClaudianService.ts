@@ -24,6 +24,7 @@ import {
   ApprovalManager,
   getActionDescription,
 } from './security';
+import { McpService } from './services/McpService';
 import { buildSystemPrompt } from './system-prompt/mainAgent';
 import type {
   ApprovedAction,
@@ -189,6 +190,8 @@ export interface FileEditTracker {
 export interface QueryOptions {
   allowedTools?: string[];
   model?: string;
+  /** MCP servers enabled via UI selector (in addition to @-mentioned servers). */
+  enabledMcpServers?: Set<string>;
 }
 
 /** Service for interacting with Claude via the Agent SDK. */
@@ -204,6 +207,7 @@ export class ClaudianService {
   private sessionManager = new SessionManager();
   private approvalManager: ApprovalManager;
   private diffStore = new DiffStore();
+  private mcpService: McpService;
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
@@ -218,6 +222,24 @@ export class ClaudianService {
       this.plugin.settings.permissions.push(action);
       await this.plugin.saveSettings();
     });
+
+    // Initialize MCP service
+    this.mcpService = new McpService(plugin);
+  }
+
+  /** Load MCP server configurations from storage. */
+  async loadMcpServers(): Promise<void> {
+    await this.mcpService.loadServers();
+  }
+
+  /** Reload MCP server configurations (call after settings change). */
+  async reloadMcpServers(): Promise<void> {
+    await this.mcpService.loadServers();
+  }
+
+  /** Get the MCP service for external access (e.g., for @-mention autocomplete). */
+  getMcpService(): McpService {
+    return this.mcpService;
   }
 
   private findClaudeCLI(): string | null {
@@ -405,6 +427,19 @@ export class ClaudianService {
         ...customEnv,
       },
     };
+
+    // Add MCP servers to options
+    // Combine @-mentioned servers from prompt with UI-enabled servers
+    const promptText = typeof queryPrompt === 'string' ? queryPrompt : prompt;
+    const mentionedServers = this.mcpService.extractMentions(promptText);
+    // Merge with UI-enabled servers
+    const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
+    const combinedMentions = new Set([...mentionedServers, ...uiEnabledServers]);
+    const mcpServers = this.mcpService.getActiveServers(combinedMentions);
+
+    if (Object.keys(mcpServers).length > 0) {
+      options.mcpServers = mcpServers;
+    }
 
     // Create hooks for security enforcement
     const blocklistHook = createBlocklistHook(() => ({
