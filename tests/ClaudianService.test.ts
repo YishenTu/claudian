@@ -37,7 +37,7 @@ import {
   getLastUserMessage,
   isSessionExpiredError,
   truncateToolResult,
-} from '../src/utils';
+} from '../src/utils/session';
 
 // Helper to create SDK-format assistant message with tool_use
 function createAssistantWithToolUse(toolName: string, toolInput: Record<string, unknown>, toolId = 'tool-123') {

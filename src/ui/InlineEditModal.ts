@@ -10,11 +10,12 @@ import type { App, Editor} from 'obsidian';
 import { MarkdownView, Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../main';
+import { isCommandBlocked } from '../security/BlocklistChecker';
 import { type InlineEditMode, InlineEditService } from '../services/InlineEditService';
 import { TOOL_BASH } from '../tools/toolNames';
 import { getBashToolBlockedCommands } from '../types';
-import type { CursorContext } from '../utils';
-import { getVaultPath, isCommandBlocked } from '../utils';
+import { type CursorContext } from '../utils/editor';
+import { getVaultPath } from '../utils/path';
 import { ApprovalModal } from './ApprovalModal';
 import { formatSlashCommandWarnings } from './formatSlashCommandWarnings';
 import { escapeHtml,normalizeInsertionText } from './inlineEditUtils';

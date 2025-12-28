@@ -11,7 +11,7 @@ import type { App } from 'obsidian';
 import * as path from 'path';
 
 import type { ImageMediaType } from '../types';
-import { getVaultPath } from '../utils';
+import { getVaultPath } from '../utils/path';
 
 export const IMAGE_CACHE_DIR = '.claudian-cache/images';
 

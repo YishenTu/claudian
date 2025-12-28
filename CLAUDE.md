@@ -12,7 +12,15 @@ src/
 ├── ClaudianView.ts      # Sidebar chat UI (ItemView)
 ├── ClaudianService.ts   # Claude Agent SDK wrapper
 ├── ClaudianSettings.ts  # Settings tab
-├── utils.ts             # Vault, env, session utilities
+├── utils/               # Modular utility functions
+│   ├── date.ts          # Date formatting
+│   ├── path.ts          # Path resolution, validation, access control
+│   ├── env.ts           # Environment variable parsing, model config
+│   ├── context.ts       # Context file formatting
+│   ├── editor.ts        # Editor/cursor context
+│   ├── session.ts       # Session recovery, history reconstruction
+│   ├── markdown.ts      # Markdown utilities
+│   └── mcp.ts           # MCP utilities (SSE, JSON-RPC)
 ├── services/            # Agent services and subagent state
 │   ├── AsyncSubagentManager.ts # Async subagent state machine
 │   ├── InlineEditService.ts # Inline text editing service
@@ -32,6 +40,7 @@ src/
 
 | Folder | Purpose |
 |--------|---------|
+| `utils/` | Modular utilities: date, path, env, context, editor, session, markdown, mcp |
 | `system-prompt/` | System prompts (main agent, inline edit, instruction refine) |
 | `sdk/` | SDK message transformation |
 | `hooks/` | Security and diff tracking hooks |

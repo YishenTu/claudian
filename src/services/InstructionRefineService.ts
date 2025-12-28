@@ -12,12 +12,8 @@ import type ClaudianPlugin from '../main';
 import { buildRefineSystemPrompt } from '../system-prompt/instructionRefine';
 import { TOOL_GLOB, TOOL_GREP, TOOL_READ } from '../tools/toolNames';
 import { type InstructionRefineResult, THINKING_BUDGETS } from '../types';
-import {
-  findClaudeCLIPath,
-  getVaultPath,
-  isPathWithinVault as isPathWithinVaultUtil,
-  parseEnvironmentVariables,
-} from '../utils';
+import { parseEnvironmentVariables } from '../utils/env';
+import { findClaudeCLIPath, getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../utils/path';
 
 const READ_ONLY_TOOLS = [TOOL_READ, TOOL_GREP, TOOL_GLOB] as const;
 

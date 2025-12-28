@@ -5,7 +5,7 @@
  * Obsidian-specific instructions, tool guidance, and image handling.
  */
 
-import { getTodayDate } from '../utils';
+import { getTodayDate } from '../utils/date';
 
 const TEMP_CACHE_DIR = '.claudian-cache/temp';
 

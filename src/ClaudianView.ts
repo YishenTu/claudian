@@ -11,6 +11,7 @@ import { ItemView, MarkdownRenderer, MarkdownView, Notice, setIcon } from 'obsid
 
 import { getImageAttachmentDataUri } from './images/imageLoader';
 import type ClaudianPlugin from './main';
+import { isCommandBlocked } from './security/BlocklistChecker';
 import { AsyncSubagentManager } from './services/AsyncSubagentManager';
 import { InstructionRefineService } from './services/InstructionRefineService';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_BASH, TOOL_TASK, TOOL_TODO_WRITE } from './tools/toolNames';
@@ -70,7 +71,10 @@ import {
   updateToolCallResult,
   updateWriteEditWithDiff,
 } from './ui';
-import { appendMarkdownSnippet, type EditorSelectionContext, getVaultPath, isCommandBlocked, prependContextFiles, prependEditorContext } from './utils';
+import { prependContextFiles } from './utils/context';
+import { type EditorSelectionContext, prependEditorContext } from './utils/editor';
+import { appendMarkdownSnippet } from './utils/markdown';
+import { getVaultPath } from './utils/path';
 
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {

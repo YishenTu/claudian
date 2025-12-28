@@ -20,13 +20,9 @@ import {
   TOOL_READ,
 } from '../tools/toolNames';
 import { THINKING_BUDGETS } from '../types';
-import {
-  type CursorContext,
-  findClaudeCLIPath,
-  getVaultPath,
-  isPathWithinVault as isPathWithinVaultUtil,
-  parseEnvironmentVariables,
-} from '../utils';
+import { type CursorContext } from '../utils/editor';
+import { parseEnvironmentVariables } from '../utils/env';
+import { findClaudeCLIPath, getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../utils/path';
 
 export type InlineEditMode = 'selection' | 'cursor';
 

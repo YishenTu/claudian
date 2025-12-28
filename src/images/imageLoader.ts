@@ -9,7 +9,7 @@ import type { App } from 'obsidian';
 import * as path from 'path';
 
 import type { ImageAttachment } from '../types';
-import { getVaultPath } from '../utils';
+import { getVaultPath } from '../utils/path';
 import { readCachedImageBase64 } from './imageCache';
 
 export function resolveImageFilePath(filePath: string, vaultPath: string | null): string | null {

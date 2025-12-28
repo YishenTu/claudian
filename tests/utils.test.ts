@@ -2,19 +2,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from '../src/utils/env';
+import { appendMarkdownSnippet } from '../src/utils/markdown';
 import {
-  appendMarkdownSnippet,
   expandHomePath,
   findClaudeCLIPath,
-  getCurrentModelFromEnvironment,
-  getModelsFromEnvironment,
   getPathAccessType,
   getVaultPath,
   isPathInAllowedExportPaths,
   isPathWithinVault,
-  parseEnvironmentVariables,
   translateMsysPath,
-} from '../src/utils';
+} from '../src/utils/path';
 
 describe('utils.ts', () => {
   describe('getVaultPath', () => {

@@ -11,7 +11,7 @@ import * as path from 'path';
 
 import { saveImageToCache } from '../images/imageCache';
 import type { ImageAttachment, ImageMediaType } from '../types';
-import { getVaultPath } from '../utils';
+import { getVaultPath } from '../utils/path';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 

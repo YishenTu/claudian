@@ -23,8 +23,8 @@ import {
   VIEW_TYPE_CLAUDIAN,
 } from './types';
 import { type InlineEditContext,InlineEditModal } from './ui/InlineEditModal';
-import { buildCursorContext } from './utils';
-import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils';
+import { buildCursorContext } from './utils/editor';
+import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 
 /**
  * Main plugin class for Claudian.

@@ -35,17 +35,10 @@ import type {
   ToolDiffData,
 } from './types';
 import { THINKING_BUDGETS } from './types';
-import {
-  buildContextFromHistory,
-  findClaudeCLIPath,
-  getLastUserMessage,
-  getPathAccessType,
-  getVaultPath,
-  isSessionExpiredError,
-  parseEnvironmentVariables,
-  type PathAccessType,
-  stripContextFilesPrefix,
-} from './utils';
+import { stripContextFilesPrefix } from './utils/context';
+import { parseEnvironmentVariables } from './utils/env';
+import { findClaudeCLIPath, getPathAccessType, getVaultPath, type PathAccessType } from './utils/path';
+import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from './utils/session';
 
 // ============================================
 // Session Management (inlined)

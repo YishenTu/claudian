@@ -13,7 +13,7 @@ jest.mock('obsidian', () => ({
   },
 }));
 
-jest.mock('../src/utils', () => ({
+jest.mock('../src/utils/path', () => ({
   getVaultPath: jest.fn(() => '/vault'),
 }));
 

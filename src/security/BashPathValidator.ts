@@ -7,7 +7,7 @@
 
 import * as path from 'path';
 
-import type { PathAccessType } from '../utils';
+import type { PathAccessType } from '../utils/path';
 
 /** Result of a path violation check */
 export type PathViolation =

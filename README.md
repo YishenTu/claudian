@@ -244,10 +244,17 @@ Enable per-server to hide tools from agent unless explicitly needed:
 src/
 ├── main.ts              # Plugin entry point
 ├── ClaudianView.ts      # Sidebar chat UI, orchestrates components
-├── ClaudianService.ts   # Claude Agent SDK wrapper 
+├── ClaudianService.ts   # Claude Agent SDK wrapper
 ├── ClaudianSettings.ts  # Settings tab
-├── types.ts             # Type definitions
-├── utils.ts             # Utilities 
+├── utils/               # Modular utility functions
+│   ├── date.ts          # Date formatting for system prompts
+│   ├── path.ts          # Path resolution, validation, access control
+│   ├── env.ts           # Environment variable parsing, model config
+│   ├── context.ts       # Context file formatting
+│   ├── editor.ts        # Editor/cursor context for inline editing
+│   ├── session.ts       # Session recovery, history reconstruction
+│   ├── markdown.ts      # Markdown utilities
+│   └── mcp.ts           # MCP utilities (SSE, JSON-RPC)
 ├── services/            # Claude-facing services and subagent state
 │   ├── InlineEditService.ts # Lightweight Claude service for inline editing
 │   ├── InstructionRefineService.ts # Lightweight Claude service for refining # instructions
@@ -300,7 +307,7 @@ src/
     ├── DiffRenderer.ts       # Diff computation and rendering
     ├── WriteEditRenderer.ts  # Write/Edit diff blocks
     ├── EnvSnippetManager.ts  # Environment variable snippets
-    ├── InlineEditModal.ts    # Inline edit UI 
+    ├── InlineEditModal.ts    # Inline edit UI
     ├── InstructionModeManager.ts # # instruction mode detection and UI state
     ├── InstructionConfirmModal.ts # Unified instruction modal
     ├── SelectionHighlight.ts # Shared CM6 selection highlight

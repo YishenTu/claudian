@@ -20,7 +20,7 @@ jest.mock('fs');
 import type { InlineEditRequest } from '../src/services/InlineEditService';
 import { InlineEditService } from '../src/services/InlineEditService';
 import { getPathFromToolInput } from '../src/tools/toolInput';
-import { buildCursorContext } from '../src/utils';
+import { buildCursorContext } from '../src/utils/editor';
 
 // Create a mock plugin
 function createMockPlugin(settings = {}) {

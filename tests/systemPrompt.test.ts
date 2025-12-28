@@ -1,4 +1,4 @@
-jest.mock('../src/utils', () => ({
+jest.mock('../src/utils/date', () => ({
   getTodayDate: () => 'Mocked Date',
 }));
 

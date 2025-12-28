@@ -12,7 +12,7 @@ import { isCommandBlocked } from '../security/BlocklistChecker';
 import { getPathFromToolInput } from '../tools/toolInput';
 import { isEditTool, isFileTool, TOOL_BASH } from '../tools/toolNames';
 import { getBashToolBlockedCommands, type PlatformBlockedCommands } from '../types';
-import type { PathAccessType } from '../utils';
+import type { PathAccessType } from '../utils/path';
 
 /** Context for blocklist checking. */
 export interface BlocklistContext {
