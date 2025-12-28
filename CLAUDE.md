@@ -24,8 +24,12 @@ src/
 │   └── types/                   # Type definitions
 ├── features/                    # Feature modules
 │   ├── chat/                    # Main chat interface
-│   │   ├── ClaudianView.ts
-│   │   └── services/            # Chat-specific services
+│   │   ├── ClaudianView.ts      # Thin shell: lifecycle + assembly
+│   │   ├── constants.ts         # FLAVOR_TEXTS, LOGO_SVG
+│   │   ├── state/               # Centralized state (ChatState)
+│   │   ├── controllers/         # ConversationController, StreamController, InputController, SelectionController
+│   │   ├── rendering/           # MessageRenderer
+│   │   └── services/            # AsyncSubagentManager, InstructionRefineService
 │   ├── inline-edit/             # Inline edit feature
 │   ├── mcp/                     # MCP @-mention detection and UI helpers
 │   │   ├── McpService.ts
@@ -52,7 +56,10 @@ src/
 | | `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
 | | `tools/` | Tool names, icons, input parsing |
 | | `types/` | Type definitions (includes MCP types) |
-| **features** | `chat/` | Main chat view and subagent state |
+| **features** | `chat/` | Main chat view with modular controllers |
+| | `chat/state/` | Centralized chat state management (ChatState) |
+| | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
+| | `chat/rendering/` | Message DOM rendering (MessageRenderer) |
 | | `inline-edit/` | Inline edit service |
 | | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
 | | `settings/` | Settings tab UI |

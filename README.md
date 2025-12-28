@@ -255,7 +255,7 @@ src/
 │   ├── tools/                   # Tool constants and utilities
 │   └── types/                   # Type definitions
 ├── features/                    # Feature modules
-│   ├── chat/                    # Main chat view (ClaudianView) and services
+│   ├── chat/                    # Main chat view with modular controllers
 │   ├── inline-edit/             # Inline edit service
 │   ├── mcp/                     # MCP @-mention detection and connection testing
 │   └── settings/                # Settings tab (ClaudianSettings)

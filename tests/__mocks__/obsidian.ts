@@ -78,6 +78,16 @@ export class App {
   };
 }
 
+export class MarkdownView {
+  editor: any;
+  file?: any;
+
+  constructor(editor?: any, file?: any) {
+    this.editor = editor;
+    this.file = file;
+  }
+}
+
 export class Setting {
   constructor(containerEl: any) {}
   setName = jest.fn().mockReturnThis();

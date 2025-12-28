@@ -84,9 +84,9 @@ describe('ClaudianView persistence', () => {
       },
     ];
 
-    (view as any).messages = messages;
+    view.state.messages = messages;
 
-    const persisted = (view as any).getPersistedMessages();
+    const persisted = view.state.getPersistedMessages();
 
     expect(persisted[0].images?.[0].data).toBeUndefined();
     expect(persisted[0].images?.[0].cachePath).toBe('.claudian-cache/images/cached.png');
