@@ -7,8 +7,6 @@
 
 import { getTodayDate } from '../../utils/date';
 
-const TEMP_CACHE_DIR = '.claudian-cache/temp';
-
 export interface SystemPromptSettings {
   mediaFolder?: string;
   customPrompt?: string;
@@ -232,7 +230,6 @@ function getImageInstructions(mediaFolder: string): string {
   const folder = mediaFolder.trim();
   const mediaPath = folder ? './' + folder : '.';
   const examplePath = folder ? folder + '/' : '';
-  const cacheDir = TEMP_CACHE_DIR;
 
   return `
 
@@ -247,18 +244,18 @@ function getImageInstructions(mediaFolder: string): string {
 
 **External images** (\`![alt](url)\`):
 - WebFetch does NOT support images
-- Download → Read → Delete (always clean up):
+- Download to media folder → Read → Replace URL with wiki-link:
 
 \`\`\`bash
-# Use timestamp for unique filename to avoid collisions
-mkdir -p ${cacheDir}
-img_path=${cacheDir}/img_\\$(date +%s).png
-curl -sfo "$img_path" 'URL'
-# Read the image, then ALWAYS delete
-rm -f "$img_path"
+# Download to media folder with descriptive name
+mkdir -p ${mediaPath}
+img_name="downloaded_\\$(date +%s).png"
+curl -sfo "${examplePath}$img_name" 'URL'
 \`\`\`
 
-**Important**: Always delete temp files even if read fails. Remove the specific file with \`rm -f "$img_path"\`; if unsure, clean the cache with \`rm ${cacheDir}/img_*.png\`.`;
+Then read with \`Read file_path="${examplePath}$img_name"\`, and replace the markdown link \`![alt](url)\` with \`![[${examplePath}$img_name]]\` in the note.
+
+**Benefits**: Image becomes a permanent vault asset, works offline, and uses Obsidian's native embed syntax.`;
 }
 
 /** Builds the complete system prompt with optional custom settings. */

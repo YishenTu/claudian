@@ -67,9 +67,9 @@ describe('systemPrompt', () => {
     it('should include external image handling instructions', () => {
       const prompt = buildSystemPrompt({ mediaFolder: 'media' });
       expect(prompt).toContain('WebFetch does NOT support images');
-      expect(prompt).toContain('.claudian-cache/temp');
+      expect(prompt).toContain('Download to media folder');
       expect(prompt).toContain('curl');
-      expect(prompt).toContain('rm -f');
+      expect(prompt).toContain('replace the markdown link');
     });
   });
 

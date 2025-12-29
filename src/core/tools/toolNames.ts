@@ -9,7 +9,6 @@ export const TOOL_ASK_USER_QUESTION = 'AskUserQuestion' as const;
 export const TOOL_BASH = 'Bash' as const;
 export const TOOL_BASH_OUTPUT = 'BashOutput' as const;
 export const TOOL_EDIT = 'Edit' as const;
-export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
 export const TOOL_GLOB = 'Glob' as const;
 export const TOOL_GREP = 'Grep' as const;
 export const TOOL_KILL_SHELL = 'KillShell' as const;
