@@ -49,6 +49,7 @@ export class AskUserQuestionPanel {
   private onSubmit: (answers: Record<string, string | string[]>) => void;
   private onCancel: () => void;
   private isDestroyed = false;
+  private documentKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   // DOM references
   private tabsEl: HTMLElement | null = null;
@@ -85,6 +86,8 @@ export class AskUserQuestionPanel {
 
     // Focus the panel
     this.panelEl.focus();
+
+    this.attachDocumentHandler();
   }
 
   /** Create the panel DOM structure. */
@@ -652,6 +655,35 @@ export class AskUserQuestionPanel {
     }
   }
 
+  private attachDocumentHandler(): void {
+    this.detachDocumentHandler();
+    this.documentKeydownHandler = (e: KeyboardEvent) => {
+      if (this.isDestroyed) return;
+      if (!this.isNavigationKey(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.handleKeyDown(e);
+    };
+    document.addEventListener('keydown', this.documentKeydownHandler, true);
+  }
+
+  private detachDocumentHandler(): void {
+    if (this.documentKeydownHandler) {
+      document.removeEventListener('keydown', this.documentKeydownHandler, true);
+      this.documentKeydownHandler = null;
+    }
+  }
+
+  private isNavigationKey(e: KeyboardEvent): boolean {
+    return (
+      e.key === 'ArrowUp' ||
+      e.key === 'ArrowDown' ||
+      e.key === 'ArrowLeft' ||
+      e.key === 'ArrowRight' ||
+      e.key === 'Tab'
+    );
+  }
+
   /** Update visual focus indicator. */
   private updateOptionFocus(): void {
     if (!this.questionContentEl) return;
@@ -825,6 +857,7 @@ export class AskUserQuestionPanel {
     if (this.isDestroyed) return;
     this.isDestroyed = true;
 
+    this.detachDocumentHandler();
     this.panelEl.remove();
 
     if (this.inputWrapper) {

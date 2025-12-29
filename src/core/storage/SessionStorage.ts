@@ -35,6 +35,8 @@ interface SessionMetaRecord {
   sessionId: string | null;
   attachedFiles?: string[];
   usage?: UsageInfo;
+  approvedPlan?: string;
+  pendingPlanContent?: string;
 }
 
 /** Message record stored as subsequent lines. */
@@ -229,6 +231,8 @@ export class SessionStorage {
       messages,
       attachedFiles: meta.attachedFiles,
       usage: meta.usage,
+      approvedPlan: meta.approvedPlan,
+      pendingPlanContent: meta.pendingPlanContent,
     };
   }
 
@@ -247,6 +251,8 @@ export class SessionStorage {
       sessionId: conversation.sessionId,
       attachedFiles: conversation.attachedFiles,
       usage: conversation.usage,
+      approvedPlan: conversation.approvedPlan,
+      pendingPlanContent: conversation.pendingPlanContent,
     };
     lines.push(JSON.stringify(meta));
 

@@ -124,6 +124,39 @@ describe('ClaudianService', () => {
     service = new ClaudianService(mockPlugin, createMockMcpManager());
   });
 
+  describe('plan mode approvals', () => {
+    it('includes revise feedback in ExitPlanMode response', async () => {
+      service.setExitPlanModeCallback(async () => ({
+        decision: 'revise',
+        feedback: 'Add coverage for edge cases.',
+      }));
+
+      const result = await (service as any).handleExitPlanModeTool({ plan: 'Plan draft' }, 'tool-1');
+
+      expect(result.behavior).toBe('deny');
+      expect(result.interrupt).toBe(false);
+      expect(result.message).toContain('Add coverage for edge cases.');
+    });
+
+    it('reads plan content from ~/.claude/plans with tilde expansion', async () => {
+      const planFromFile = 'Plan from file';
+      const planPath = path.resolve(os.homedir(), '.claude', 'plans', 'plan.md');
+
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.readFileSync as jest.Mock).mockReturnValue(planFromFile);
+
+      service.setCurrentPlanFilePath('~/.claude/plans/plan.md');
+      const callback = jest.fn().mockResolvedValue({ decision: 'cancel' });
+      service.setExitPlanModeCallback(callback);
+
+      await (service as any).handleExitPlanModeTool({ plan: 'Plan from input' }, 'tool-2');
+
+      expect(fs.existsSync).toHaveBeenCalledWith(planPath);
+      expect(fs.readFileSync).toHaveBeenCalledWith(planPath, 'utf-8');
+      expect(callback).toHaveBeenCalledWith(planFromFile);
+    });
+  });
+
   describe('shouldBlockCommand', () => {
     it('should block dangerous rm commands', async () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
@@ -1675,6 +1708,25 @@ describe('ClaudianService', () => {
       expect(textChunks.map((c: any) => c.content).join('')).toBe('hello world');
     });
 
+    it('should skip usage for subagent results', () => {
+      const sdkMessage: any = {
+        type: 'result',
+        parent_tool_use_id: 'task-1',
+        model: 'model-a',
+        modelUsage: {
+          'model-a': {
+            inputTokens: 10,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 100,
+          },
+        },
+      };
+
+      const chunks = Array.from(transformSDKMessage(sdkMessage));
+      expect(chunks).toHaveLength(0);
+    });
+
     it('should emit usage chunk with computed tokens and clamped percentage', () => {
       const sdkMessage: any = {
         type: 'result',
@@ -1731,7 +1783,7 @@ describe('ClaudianService', () => {
       expect((chunks[0] as any).usage.contextTokens).toBe(10);
     });
 
-    it('should select highest usage entry when message model is missing', () => {
+    it('should select highest usage entry when message model is missing and no intendedModel', () => {
       const sdkMessage: any = {
         type: 'result',
         modelUsage: {
@@ -1754,6 +1806,37 @@ describe('ClaudianService', () => {
       expect(chunks).toHaveLength(1);
       expect((chunks[0] as any).usage.model).toBe('model-b');
       expect((chunks[0] as any).usage.contextTokens).toBe(50);
+    });
+
+    it('should prefer intendedModel over highest tokens when message.model is missing', () => {
+      const sdkMessage: any = {
+        type: 'result',
+        // No message.model set - simulates SDK not providing it
+        modelUsage: {
+          'main-model': {
+            inputTokens: 10,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 200000,
+          },
+          'subagent-model': {
+            inputTokens: 100, // Higher tokens - would be picked without intendedModel
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 200000,
+          },
+        },
+      };
+
+      // Without intendedModel: picks subagent-model (higher tokens)
+      const chunksWithoutIntended = Array.from(transformSDKMessage(sdkMessage));
+      expect((chunksWithoutIntended[0] as any).usage.model).toBe('subagent-model');
+
+      // With intendedModel: picks main-model (ignores subagent)
+      const chunksWithIntended = Array.from(transformSDKMessage(sdkMessage, { intendedModel: 'main-model' }));
+      expect(chunksWithIntended).toHaveLength(1);
+      expect((chunksWithIntended[0] as any).usage.model).toBe('main-model');
+      expect((chunksWithIntended[0] as any).usage.contextTokens).toBe(10);
     });
 
     it('should skip usage chunk when contextWindow is missing or zero', () => {

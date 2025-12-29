@@ -5,7 +5,7 @@
  * state tracking, and thinking indicator display.
  */
 
-import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isPlanModeTool, isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
@@ -67,7 +67,7 @@ export class StreamController {
 
   /** Processes a stream chunk and updates the message. */
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
-    const { state } = this.deps;
+    const { state, plugin } = this.deps;
 
     // Route subagent chunks
     if ('parentToolUseId' in chunk && chunk.parentToolUseId) {
@@ -121,6 +121,11 @@ export class StreamController {
           break;
         }
 
+        // Skip rendering plan mode tools (EnterPlanMode, ExitPlanMode)
+        if (isPlanModeTool(chunk.name)) {
+          break;
+        }
+
         this.handleRegularToolUse(chunk, msg);
         break;
       }
@@ -141,9 +146,21 @@ export class StreamController {
       case 'done':
         break;
 
-      case 'usage':
-        state.usage = chunk.usage;
+      case 'usage': {
+        // Skip usage updates from other sessions or when flagged (during session reset)
+        const currentSessionId = plugin.agentService.getSessionId();
+        const chunkSessionId = chunk.sessionId ?? null;
+        if (
+          (chunkSessionId && currentSessionId && chunkSessionId !== currentSessionId) ||
+          (chunkSessionId && !currentSessionId)
+        ) {
+          break;
+        }
+        if (!state.ignoreUsageUpdates) {
+          state.usage = chunk.usage;
+        }
         break;
+      }
     }
 
     this.scrollToBottom();
@@ -159,6 +176,12 @@ export class StreamController {
     msg: ChatMessage
   ): void {
     const { plugin, state } = this.deps;
+
+    // Skip rendering Write/Edit tools during plan mode (read-only mode)
+    const isPlanMode = state.planModeState?.isActive;
+    if (isPlanMode && isWriteEditTool(chunk.name)) {
+      return;
+    }
 
     const toolCall: ToolCallInfo = {
       id: chunk.id,

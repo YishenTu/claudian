@@ -59,6 +59,9 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       agentService: {
         query: jest.fn(),
         cancel: jest.fn(),
+        resetSession: jest.fn(),
+        setApprovedPlanContent: jest.fn(),
+        setCurrentPlanFilePath: jest.fn(),
       },
       settings: {
         slashCommands: [],
@@ -100,13 +103,18 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       getAttachedFiles: jest.fn().mockReturnValue(new Set()),
       hasFilesChanged: jest.fn().mockReturnValue(false),
       markFilesSent: jest.fn(),
+      setPlanModeActive: jest.fn(),
     }) as any,
     getImageContextManager: () => imageContextManager as any,
     getSlashCommandManager: () => null,
     getMcpServerSelector: () => null,
     getInstructionModeManager: () => null,
     getInstructionRefineService: () => null,
+    getComponent: () => ({} as any),
+    setPlanModeActive: jest.fn(),
+    getPlanBanner: () => null,
     generateId: () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+    resetContextMeter: jest.fn(),
     ...overrides,
   };
 }
@@ -333,6 +341,38 @@ describe('InputController - Message Queue', () => {
       const queryOptions = queryCall[3];
       expect(queryOptions.mcpMentions).toBe(mcpMentions);
       expect(queryOptions.enabledMcpServers).toBe(enabledServers);
+    });
+  });
+
+  describe('Plan mode', () => {
+    it('clears stale plan file path when starting plan mode', async () => {
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+      inputEl.value = 'Plan this';
+
+      await controller.sendPlanModeMessage();
+
+      expect(deps.plugin.agentService.setCurrentPlanFilePath).toHaveBeenCalledWith(null);
+    });
+
+    it('resets plan mode state on interrupt', async () => {
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'working' },
+          { type: 'done' },
+        ])
+      );
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => {
+        deps.state.cancelRequested = true;
+      });
+      inputEl.value = 'Plan this';
+
+      await controller.sendPlanModeMessage();
+
+      expect(deps.setPlanModeActive).toHaveBeenCalledWith(false);
+      expect(deps.plugin.agentService.setCurrentPlanFilePath).toHaveBeenCalledTimes(2);
+      expect(deps.state.planModeState).toBeNull();
     });
   });
 });

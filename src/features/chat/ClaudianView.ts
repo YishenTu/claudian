@@ -23,6 +23,7 @@ import {
   type McpServerSelector,
   type ModelSelector,
   type PermissionToggle,
+  PlanBanner,
   SlashCommandDropdown,
   SlashCommandManager,
   type ThinkingBudgetSelector,
@@ -80,6 +81,7 @@ export class ClaudianView extends ItemView {
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private instructionModeManager: InstructionModeManager | null = null;
   private contextUsageMeter: ContextUsageMeter | null = null;
+  private planBanner: PlanBanner | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
@@ -112,6 +114,13 @@ export class ClaudianView extends ItemView {
     // Build header
     const header = container.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
+
+    // Create plan banner (mounted to container, inserts before messages)
+    this.planBanner = new PlanBanner({
+      app: this.plugin.app,
+      component: this,
+    });
+    this.planBanner.mount(container);
 
     // Build messages area
     this.messagesEl = container.createDiv({ cls: 'claudian-messages' });
@@ -378,6 +387,11 @@ export class ClaudianView extends ItemView {
         getImageContextManager: () => this.imageContextManager,
         getMcpServerSelector: () => this.mcpServerSelector,
         clearQueuedMessage: () => this.inputController?.clearQueuedMessage(),
+        getApprovedPlan: () => this.plugin.agentService.getApprovedPlanContent(),
+        setApprovedPlan: (plan) => this.plugin.agentService.setApprovedPlanContent(plan),
+        showPlanBanner: (content) => { void this.planBanner?.show(content); },
+        hidePlanBanner: () => this.planBanner?.hide(),
+        triggerPendingPlanApproval: (content) => this.inputController?.restorePendingPlanApproval(content),
       },
       {}
     );
@@ -399,7 +413,14 @@ export class ClaudianView extends ItemView {
       getMcpServerSelector: () => this.mcpServerSelector,
       getInstructionModeManager: () => this.instructionModeManager,
       getInstructionRefineService: () => this.instructionRefineService,
+      getComponent: () => this,
+      setPlanModeActive: (active) => {
+        this.permissionToggle?.setPlanModeActive(active);
+        this.fileContextManager?.setPlanModeActive(active);
+      },
+      getPlanBanner: () => this.planBanner,
       generateId: () => this.generateId(),
+      resetContextMeter: () => this.contextUsageMeter?.update(null),
     });
 
     // Set approval callback
@@ -410,6 +431,11 @@ export class ClaudianView extends ItemView {
     // Set AskUserQuestion callback
     this.plugin.agentService.setAskUserQuestionCallback(
       (input) => this.inputController!.handleAskUserQuestion(input)
+    );
+
+    // Set ExitPlanMode callback
+    this.plugin.agentService.setExitPlanModeCallback(
+      (planFilePath) => this.inputController!.handleExitPlanMode(planFilePath)
     );
   }
 
@@ -450,6 +476,15 @@ export class ClaudianView extends ItemView {
       }
     });
 
+    // Shift+Tab: Toggle plan mode (capture phase for priority)
+    this.inputEl!.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && e.shiftKey && !this.state.isStreaming) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.permissionToggle?.togglePlanMode();
+      }
+    }, { capture: true });
+
     // Input events
     this.inputEl!.addEventListener('keydown', (e) => {
       if (this.instructionModeManager?.handleKeydown(e)) {
@@ -470,9 +505,14 @@ export class ClaudianView extends ItemView {
         return;
       }
 
+      // Enter: Send message (plan mode if active, normal otherwise)
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        void this.inputController?.sendMessage();
+        if (this.permissionToggle?.isPlanModeActive()) {
+          void this.inputController?.sendPlanModeMessage();
+        } else {
+          void this.inputController?.sendMessage();
+        }
       }
     });
 

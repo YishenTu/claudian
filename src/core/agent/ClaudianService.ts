@@ -7,11 +7,13 @@
 
 import type { CanUseTool, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import * as os from 'os';
+import * as path from 'path';
 
 import type ClaudianPlugin from '../../main';
 import { stripContextFilesPrefix } from '../../utils/context';
 import { parseEnvironmentVariables } from '../../utils/env';
-import { findClaudeCLIPath, getPathAccessType, getVaultPath, type PathAccessType } from '../../utils/path';
+import { expandHomePath, findClaudeCLIPath, getPathAccessType, getVaultPath, type PathAccessType } from '../../utils/path';
 import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
 import {
   createBlocklistHook,
@@ -30,7 +32,7 @@ import {
   ApprovalManager,
   getActionDescription,
 } from '../security';
-import { TOOL_ASK_USER_QUESTION } from '../tools/toolNames';
+import { TOOL_ASK_USER_QUESTION, TOOL_EXIT_PLAN_MODE } from '../tools/toolNames';
 import type {
   ApprovedAction,
   AskUserQuestionCallback,
@@ -191,7 +193,19 @@ export interface QueryOptions {
   mcpMentions?: Set<string>;
   /** MCP servers enabled via UI selector (in addition to @-mentioned servers). */
   enabledMcpServers?: Set<string>;
+  /** Enable plan mode (read-only exploration). */
+  planMode?: boolean;
 }
+
+/** Decision returned after plan approval. */
+export type ExitPlanModeDecision =
+  | { decision: 'approve' }
+  | { decision: 'approve_new_session' }
+  | { decision: 'revise'; feedback: string }
+  | { decision: 'cancel' };
+
+/** Callback for ExitPlanMode tool - shows approval panel and returns decision. */
+export type ExitPlanModeCallback = (planContent: string) => Promise<ExitPlanModeDecision>;
 
 /** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
@@ -200,6 +214,9 @@ export class ClaudianService {
   private resolvedClaudePath: string | null = null;
   private approvalCallback: ApprovalCallback | null = null;
   private askUserQuestionCallback: AskUserQuestionCallback | null = null;
+  private exitPlanModeCallback: ExitPlanModeCallback | null = null;
+  private currentPlanFilePath: string | null = null;
+  private approvedPlanContent: string | null = null;
   private fileEditTracker: FileEditTracker | null = null;
   private vaultPath: string | null = null;
 
@@ -409,7 +426,10 @@ export class ClaudianService {
       allowedContextPaths: this.plugin.settings.allowedContextPaths,
       vaultPath: cwd,
       hasEditorContext,
+      planMode: queryOptions?.planMode,
+      appendedPlan: this.approvedPlanContent ?? undefined,
     });
+
 
     const options: Options = {
       cwd,
@@ -453,9 +473,19 @@ export class ClaudianService {
       ? { markFileBeingEdited: (name, input) => this.fileEditTracker!.markFileBeingEdited(name, input) }
       : undefined;
 
-    const postCallback: FileEditPostCallback | undefined = this.fileEditTracker
-      ? { trackEditedFile: (name, input, isError) => this.fileEditTracker!.trackEditedFile(name, input, isError) }
-      : undefined;
+    const postCallback: FileEditPostCallback = {
+      trackEditedFile: async (name, input, isError) => {
+        // Track plan file writes (to ~/.claude/plans/)
+        if (name === 'Write' && !isError) {
+          const filePath = input?.file_path as string;
+          if (typeof filePath === 'string' && this.isPlanFilePath(filePath)) {
+            this.currentPlanFilePath = this.resolvePlanPath(filePath);
+          }
+        }
+        // Forward to file edit tracker if available
+        await this.fileEditTracker?.trackEditedFile(name, input, isError);
+      },
+    };
 
     // Create file hash tracking hooks
     const fileHashPreHook = createFileHashPreHook(
@@ -478,7 +508,11 @@ export class ClaudianService {
       PostToolUse: [fileHashPostHook],
     };
 
-    if (permissionMode === 'yolo') {
+    // Set permission mode based on settings or plan mode
+    if (queryOptions?.planMode) {
+      // Plan mode: read-only exploration, no tool execution
+      options.permissionMode = 'plan';
+    } else if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
       options.allowDangerouslySkipPermissions = true;
     } else {
@@ -506,6 +540,7 @@ export class ClaudianService {
 
     try {
       const response = agentQuery({ prompt: queryPrompt, options });
+      let streamSessionId: string | null = this.sessionManager.getSessionId();
 
       for await (const message of response) {
         if (this.abortController?.signal.aborted) {
@@ -513,11 +548,16 @@ export class ClaudianService {
           break;
         }
 
-        for (const event of transformSDKMessage(message)) {
+        for (const event of transformSDKMessage(message, { intendedModel: selectedModel })) {
           if (isSessionInitEvent(event)) {
             this.sessionManager.captureSession(event.sessionId);
+            streamSessionId = event.sessionId;
           } else if (isStreamChunk(event)) {
-            yield event;
+            if (event.type === 'usage') {
+              yield { ...event, sessionId: streamSessionId };
+            } else {
+              yield event;
+            }
           }
         }
       }
@@ -544,6 +584,8 @@ export class ClaudianService {
     this.sessionManager.reset();
     this.approvalManager.clearSessionApprovals();
     this.diffStore.clear();
+    this.approvedPlanContent = null;
+    this.currentPlanFilePath = null;
   }
 
   /** Get the current session ID. */
@@ -572,6 +614,36 @@ export class ClaudianService {
     this.askUserQuestionCallback = callback;
   }
 
+  /** Sets the ExitPlanMode callback for plan approval. */
+  setExitPlanModeCallback(callback: ExitPlanModeCallback | null) {
+    this.exitPlanModeCallback = callback;
+  }
+
+  /** Sets the current plan file path (for ExitPlanMode handling). */
+  setCurrentPlanFilePath(path: string | null) {
+    this.currentPlanFilePath = path;
+  }
+
+  /** Gets the current plan file path. */
+  getCurrentPlanFilePath(): string | null {
+    return this.currentPlanFilePath;
+  }
+
+  /** Sets the approved plan content to be included in future system prompts. */
+  setApprovedPlanContent(content: string | null) {
+    this.approvedPlanContent = content;
+  }
+
+  /** Gets the approved plan content. */
+  getApprovedPlanContent(): string | null {
+    return this.approvedPlanContent;
+  }
+
+  /** Clears the approved plan content. */
+  clearApprovedPlanContent() {
+    this.approvedPlanContent = null;
+  }
+
   /** Sets the file edit tracker for syncing edit state with the UI. */
   setFileEditTracker(tracker: FileEditTracker | null) {
     this.fileEditTracker = tracker;
@@ -597,15 +669,36 @@ export class ClaudianService {
     );
   }
 
+  private resolvePlanPath(filePath: string): string {
+    const expanded = expandHomePath(filePath);
+    return path.resolve(expanded);
+  }
+
+  private isPlanFilePath(filePath: string): boolean {
+    const plansDir = path.resolve(os.homedir(), '.claude', 'plans');
+    const resolved = this.resolvePlanPath(filePath);
+    const normalizedPlans = process.platform === 'win32' ? plansDir.toLowerCase() : plansDir;
+    const normalizedResolved = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    return (
+      normalizedResolved === normalizedPlans ||
+      normalizedResolved.startsWith(normalizedPlans + path.sep)
+    );
+  }
+
   /**
    * Create unified callback that handles both YOLO and normal modes.
-   * AskUserQuestion always prompts user regardless of mode.
+   * AskUserQuestion and ExitPlanMode always prompt user regardless of mode.
    */
   private createUnifiedToolCallback(mode: PermissionMode): CanUseTool {
     return async (toolName, input, context): Promise<PermissionResult> => {
       // Special handling for AskUserQuestion - always prompt user
       if (toolName === TOOL_ASK_USER_QUESTION) {
         return this.handleAskUserQuestionTool(input, context?.toolUseID);
+      }
+
+      // Special handling for ExitPlanMode - show plan approval UI
+      if (toolName === TOOL_EXIT_PLAN_MODE) {
+        return this.handleExitPlanModeTool(input, context?.toolUseID);
       }
 
       // YOLO mode: auto-approve everything else
@@ -669,6 +762,99 @@ export class ClaudianService {
       this.askUserQuestionAnswers.delete(toolUseId);
     }
     return answers;
+  }
+
+  /**
+   * Handle ExitPlanMode tool - shows plan approval UI and handles decision.
+   * Reads plan content from the persisted file in ~/.claude/plans/.
+   */
+  private async handleExitPlanModeTool(
+    input: Record<string, unknown>,
+    toolUseId?: string
+  ): Promise<PermissionResult> {
+    if (!this.exitPlanModeCallback) {
+      return {
+        behavior: 'deny',
+        message: 'No plan mode handler available.',
+      };
+    }
+
+    // Read plan content from the persisted file
+    let planContent: string | null = null;
+    if (this.currentPlanFilePath && this.isPlanFilePath(this.currentPlanFilePath)) {
+      const planPath = this.resolvePlanPath(this.currentPlanFilePath);
+      try {
+        const fs = await import('fs');
+        if (fs.existsSync(planPath)) {
+          planContent = fs.readFileSync(planPath, 'utf-8');
+        }
+      } catch {
+        // Fall back to SDK input
+      }
+    }
+
+    // Fall back to SDK's input.plan if file read failed
+    if (!planContent) {
+      planContent = typeof input.plan === 'string' ? input.plan : null;
+    }
+
+    if (!planContent) {
+      return {
+        behavior: 'deny',
+        message: 'No plan content available.',
+      };
+    }
+
+    try {
+      const decision = await this.exitPlanModeCallback(planContent);
+
+      switch (decision.decision) {
+        case 'approve':
+          // Plan approved - interrupt current plan mode query and let caller handle implementation
+          // We use 'deny' with a success message because the SDK would otherwise continue in plan mode
+          return {
+            behavior: 'deny',
+            message: 'PLAN APPROVED. Plan mode has ended. The user has approved your plan and it has been saved. Implementation will begin with a new query that has full tool access.',
+            interrupt: true,
+          };
+        case 'approve_new_session':
+          // Plan approved with fresh session - interrupt and let caller handle
+          return {
+            behavior: 'deny',
+            message: 'PLAN APPROVED WITH NEW SESSION. Plan mode has ended. Implementation will begin with a fresh session that has full tool access.',
+            interrupt: true,
+          };
+        case 'revise': {
+          const feedback = decision.feedback.trim();
+          const feedbackSection = feedback ? `\n\nUser feedback:\n${feedback}` : '';
+          // User wants to revise - deny to continue planning
+          return {
+            behavior: 'deny',
+            message: `Please revise the plan based on user feedback and call ExitPlanMode again when ready.${feedbackSection}`,
+            interrupt: false,
+          };
+        }
+        case 'cancel':
+          // User cancelled (Esc) - interrupt
+          return {
+            behavior: 'deny',
+            message: 'Plan cancelled by user.',
+            interrupt: true,
+          };
+        default:
+          return {
+            behavior: 'deny',
+            message: 'Unknown decision.',
+            interrupt: true,
+          };
+      }
+    } catch {
+      return {
+        behavior: 'deny',
+        message: 'Failed to get plan approval.',
+        interrupt: true,
+      };
+    }
   }
 
   /**

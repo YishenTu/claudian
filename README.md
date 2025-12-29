@@ -18,6 +18,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget. Monitor context window usage with a real-time gauge.
 - **Transparent Tooling**: Visualize tool calls, subagent activity, and track asynchronous subagent operations with detailed UI feedback.
+- **Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.
 - **Persistent Sessions**: Save and resume conversations with full context across sessions.
 - **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
 - **Intuitive File Management**: See indicators for edited files, with smart detection, auto-dismissal, and quick access.
@@ -131,6 +132,29 @@ Define commands in Settings → Claudian → Slash Commands, then type `/` in th
 - **File references**: `@path/to/file.md`, `@"path with spaces.md"`, `@'path with spaces.md'`
 - **Inline bash**: `` !`command` `` substitutes with command output (see safety notes below)
 
+### Plan Mode
+
+Enable plan mode to have Claude explore and plan before making changes. The agent operates in read-only mode during exploration, then presents a plan for your approval before implementation.
+
+**Toggle:**
+- Press `Shift+Tab` in the input area to toggle plan mode
+- Teal "Plan" indicator appears next to YOLO/Safe toggle when active
+
+**Workflow:**
+1. Enable plan mode with `Shift+Tab`
+2. Describe your task and send
+3. Agent explores the codebase using read-only tools
+4. Agent writes a plan to `~/.claude/plans/` and presents it
+5. Review the plan in the approval panel:
+   - **Approve**: Implement in current session
+   - **Approve + New Session**: Implement in a fresh conversation
+   - **Revise**: Provide feedback for the agent to refine the plan
+6. Once approved, the plan is appended to system prompt and implementation begins
+
+**Read-only tools in plan mode:**
+- `Read`, `Glob`, `Grep`, `LS`, `WebSearch`, `WebFetch`
+- `EnterPlanMode`, `ExitPlanMode` (internal)
+
 ### Instruction Mode (`#`)
 
 Use `#` at the start of the chat input to add a refined instruction to Settings → Custom system prompt.
@@ -187,6 +211,29 @@ Monitor your context usage with a 240° arc gauge in the input toolbar.
 - **Tooltip**: Hover to see detailed usage (e.g., "45k / 200k")
 - **Persistence**: Usage is saved per conversation and restored on switch/reload
 - **Updates**: Refreshes after each completed agent response
+
+### Plan Mode
+
+Enable plan mode to have Claude explore and plan before making changes. The agent operates in read-only mode during exploration, then presents a plan for your approval before implementation.
+
+**Toggle:**
+- Press `Shift+Tab` in the input area to toggle plan mode
+- Teal "Plan" indicator appears next to YOLO/Safe toggle when active
+
+**Workflow:**
+1. Enable plan mode with `Shift+Tab`
+2. Describe your task and send
+3. Agent explores the codebase using read-only tools
+4. Agent writes a plan to `~/.claude/plans/` and presents it
+5. Review the plan in the approval panel:
+   - **Approve**: Implement in current session
+   - **Approve + New Session**: Implement in a fresh conversation
+   - **Revise**: Provide feedback for the agent to refine the plan
+6. Once approved, the plan is appended to system prompt and implementation begins
+
+**Read-only tools in plan mode:**
+- `Read`, `Glob`, `Grep`, `LS`, `WebSearch`, `WebFetch`
+- `EnterPlanMode`, `ExitPlanMode` (internal)
 
 ### Example prompts
 
@@ -306,7 +353,7 @@ src/
 - [x] Windows platform support (MSYS paths, PowerShell blocklist, env vars)
 - [x] MCP (Model Context Protocol) server support with context-saving mode
 - [x] Context window usage display
-- [ ] Plan mode
+- [x] Plan mode (Shift+Tab toggle, read-only exploration, approval flow)
 - [ ] Hooks and other advanced features
 
 ## License

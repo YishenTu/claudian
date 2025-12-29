@@ -36,6 +36,16 @@ export interface ConversationControllerDeps {
   getImageContextManager: () => ImageContextManager | null;
   getMcpServerSelector: () => McpServerSelector | null;
   clearQueuedMessage: () => void;
+  /** Get current approved plan content from agent service. */
+  getApprovedPlan: () => string | null;
+  /** Set approved plan content in agent service. */
+  setApprovedPlan: (plan: string | null) => void;
+  /** Show the plan banner with content. */
+  showPlanBanner: (content: string) => void;
+  /** Hide the plan banner. */
+  hidePlanBanner: () => void;
+  /** Trigger pending plan approval panel (for restore on load). */
+  triggerPendingPlanApproval: (content: string) => void;
 }
 
 /**
@@ -71,6 +81,11 @@ export class ConversationController {
     state.currentConversationId = conversation.id;
     state.clearMessages();
     state.usage = null;
+
+    // Clear approved plan and pending plan for new conversation
+    this.deps.setApprovedPlan(null);
+    this.deps.hidePlanBanner();
+    state.pendingPlanContent = null;
 
     const messagesEl = this.deps.getMessagesEl();
     messagesEl.empty();
@@ -110,6 +125,18 @@ export class ConversationController {
 
     plugin.agentService.setSessionId(conversation.sessionId);
 
+    // Restore approved plan for this conversation
+    if (conversation.approvedPlan) {
+      this.deps.setApprovedPlan(conversation.approvedPlan);
+      this.deps.showPlanBanner(conversation.approvedPlan);
+    } else {
+      this.deps.setApprovedPlan(null);
+      this.deps.hidePlanBanner();
+    }
+
+    // Restore pending plan content
+    state.pendingPlanContent = conversation.pendingPlanContent ?? null;
+
     const hasMessages = state.messages.length > 0;
     const fileCtx = this.deps.getFileContextManager();
     fileCtx?.resetForLoadedConversation(hasMessages);
@@ -128,6 +155,11 @@ export class ConversationController {
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationLoaded?.();
+
+    // Trigger pending plan approval if there's pending content
+    if (conversation.pendingPlanContent && !conversation.approvedPlan) {
+      this.deps.triggerPendingPlanApproval(conversation.pendingPlanContent);
+    }
   }
 
   /** Switches to a different conversation. */
@@ -149,6 +181,18 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
 
+    // Restore approved plan for this conversation
+    if (conversation.approvedPlan) {
+      this.deps.setApprovedPlan(conversation.approvedPlan);
+      this.deps.showPlanBanner(conversation.approvedPlan);
+    } else {
+      this.deps.setApprovedPlan(null);
+      this.deps.hidePlanBanner();
+    }
+
+    // Restore pending plan content
+    state.pendingPlanContent = conversation.pendingPlanContent ?? null;
+
     this.deps.getInputEl().value = '';
     this.deps.clearQueuedMessage();
 
@@ -169,6 +213,11 @@ export class ConversationController {
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationSwitched?.();
+
+    // Trigger pending plan approval if there's pending content
+    if (conversation.pendingPlanContent && !conversation.approvedPlan) {
+      this.deps.triggerPendingPlanApproval(conversation.pendingPlanContent);
+    }
   }
 
   /** Saves the current conversation. */
@@ -179,12 +228,15 @@ export class ConversationController {
     const sessionId = plugin.agentService.getSessionId();
     const fileCtx = this.deps.getFileContextManager();
     const attachedFiles = fileCtx ? Array.from(fileCtx.getAttachedFiles()) : [];
+    const approvedPlan = this.deps.getApprovedPlan();
 
     const updates: Partial<Conversation> = {
       messages: state.getPersistedMessages(),
       sessionId: sessionId,
       attachedFiles: attachedFiles,
       usage: state.usage ?? undefined,
+      approvedPlan: approvedPlan ?? undefined,
+      pendingPlanContent: state.pendingPlanContent ?? undefined,
     };
 
     if (updateLastResponse) {

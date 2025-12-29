@@ -73,6 +73,7 @@ function createMockDeps(): StreamControllerDeps {
   const agentService = {
     getAskUserQuestionAnswers: jest.fn().mockReturnValue(undefined),
     getDiffData: jest.fn().mockReturnValue(undefined),
+    getSessionId: jest.fn().mockReturnValue('session-1'),
   };
   const fileContextManager = {
     markFileBeingEdited: jest.fn(),
@@ -200,6 +201,42 @@ describe('StreamController - Text Content', () => {
       await expect(
         controller.handleStreamChunk({ type: 'done' }, msg)
       ).resolves.not.toThrow();
+    });
+  });
+
+  describe('Usage handling', () => {
+    it('should update usage for current session', async () => {
+      const msg = createTestMessage();
+      const usage = {
+        model: 'model-a',
+        inputTokens: 10,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 100,
+        contextTokens: 10,
+        percentage: 10,
+      };
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toEqual(usage);
+    });
+
+    it('should ignore usage from other sessions', async () => {
+      const msg = createTestMessage();
+      const usage = {
+        model: 'model-a',
+        inputTokens: 10,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 100,
+        contextTokens: 10,
+        percentage: 10,
+      };
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-2' }, msg);
+
+      expect(deps.state.usage).toBeNull();
     });
   });
 

@@ -24,6 +24,15 @@ export const TOOL_TODO_WRITE = 'TodoWrite' as const;
 export const TOOL_WEB_FETCH = 'WebFetch' as const;
 export const TOOL_WEB_SEARCH = 'WebSearch' as const;
 export const TOOL_WRITE = 'Write' as const;
+export const TOOL_ENTER_PLAN_MODE = 'EnterPlanMode' as const;
+export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
+
+export const PLAN_MODE_TOOLS = [TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE] as const;
+export type PlanModeToolName = (typeof PLAN_MODE_TOOLS)[number];
+
+export function isPlanModeTool(toolName: string): toolName is PlanModeToolName {
+  return (PLAN_MODE_TOOLS as readonly string[]).includes(toolName);
+}
 
 export const EDIT_TOOLS = [TOOL_WRITE, TOOL_EDIT, TOOL_NOTEBOOK_EDIT] as const;
 export type EditToolName = (typeof EDIT_TOOLS)[number];

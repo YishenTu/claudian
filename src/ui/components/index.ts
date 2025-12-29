@@ -30,6 +30,15 @@ export {
   InstructionModeManager,
   type InstructionModeState,
 } from './InstructionModeManager';
+export {
+  PlanApprovalPanel,
+  type PlanApprovalPanelOptions,
+  showPlanApprovalPanel,
+} from './PlanApprovalPanel';
+export {
+  PlanBanner,
+  type PlanBannerOptions,
+} from './PlanBanner';
 export { hideSelectionHighlight, showSelectionHighlight } from './SelectionHighlight';
 export {
   SlashCommandDropdown,

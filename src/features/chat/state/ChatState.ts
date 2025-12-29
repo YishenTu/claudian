@@ -12,6 +12,7 @@ import type {
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
+  PlanModeState,
   QueuedMessage,
   SubagentState,
   ThinkingBlockState,
@@ -38,6 +39,9 @@ function createInitialState(): ChatStateData {
     writeEditStates: new Map(),
     askUserQuestionStates: new Map(),
     usage: null,
+    ignoreUsageUpdates: false,
+    planModeState: null,
+    pendingPlanContent: null,
   };
 }
 
@@ -212,6 +216,43 @@ export class ChatState {
   set usage(value: UsageInfo | null) {
     this.state.usage = value;
     this.callbacks.onUsageChanged?.(value);
+  }
+
+  get ignoreUsageUpdates(): boolean {
+    return this.state.ignoreUsageUpdates;
+  }
+
+  set ignoreUsageUpdates(value: boolean) {
+    this.state.ignoreUsageUpdates = value;
+  }
+
+  // ============================================
+  // Plan Mode State
+  // ============================================
+
+  get planModeState(): PlanModeState | null {
+    return this.state.planModeState;
+  }
+
+  set planModeState(value: PlanModeState | null) {
+    this.state.planModeState = value;
+  }
+
+  /** Resets plan mode state. */
+  resetPlanModeState(): void {
+    this.state.planModeState = null;
+  }
+
+  // ============================================
+  // Pending Plan Content (for approval persistence)
+  // ============================================
+
+  get pendingPlanContent(): string | null {
+    return this.state.pendingPlanContent;
+  }
+
+  set pendingPlanContent(value: string | null) {
+    this.state.pendingPlanContent = value;
   }
 
   // ============================================

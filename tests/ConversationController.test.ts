@@ -97,6 +97,11 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
       clearEnabled: jest.fn(),
     }) as any,
     clearQueuedMessage: jest.fn(),
+    getApprovedPlan: jest.fn().mockReturnValue(null),
+    setApprovedPlan: jest.fn(),
+    showPlanBanner: jest.fn(),
+    hidePlanBanner: jest.fn(),
+    triggerPendingPlanApproval: jest.fn(),
     ...overrides,
   };
 }

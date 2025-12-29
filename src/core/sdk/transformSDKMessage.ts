@@ -17,15 +17,25 @@ import type { SDKMessage, UsageInfo } from '../types';
 import { selectModelUsage } from './selectModelUsage';
 import type { TransformEvent } from './types';
 
+/** Options for transformSDKMessage. */
+export interface TransformOptions {
+  /** The intended model from settings/query (used as fallback for usage selection). */
+  intendedModel?: string;
+}
+
 /**
  * Transform SDK message to StreamChunk format.
  * Returns a generator since one SDK message can contain multiple chunks
  * (e.g., assistant message with both text and tool_use blocks).
  *
  * @param message - The SDK message to transform
+ * @param options - Optional transform options (intendedModel for usage selection)
  * @yields StreamChunk events for UI rendering, or SessionInitEvent for session tracking
  */
-export function* transformSDKMessage(message: SDKMessage): Generator<TransformEvent> {
+export function* transformSDKMessage(
+  message: SDKMessage,
+  options?: TransformOptions
+): Generator<TransformEvent> {
   // Capture parent_tool_use_id for subagent routing
   // null = main agent, non-null = subagent context
   const parentToolUseId = message.parent_tool_use_id ?? null;
@@ -129,10 +139,13 @@ export function* transformSDKMessage(message: SDKMessage): Generator<TransformEv
     }
 
     case 'result': {
+      if (parentToolUseId) {
+        break;
+      }
       // Extract usage info from result message
       const usageByModel = message.modelUsage;
       if (usageByModel) {
-        const selected = selectModelUsage(usageByModel, message.model);
+        const selected = selectModelUsage(usageByModel, message.model, options?.intendedModel);
         if (selected && selected.usage.contextWindow && selected.usage.contextWindow > 0) {
           const { modelName, usage } = selected;
           const inputTokens = usage.inputTokens ?? 0;

@@ -64,6 +64,9 @@ export class FileContextManager {
   private mentionedMcpServers: Set<string> = new Set();
   private onMcpMentionChange: ((servers: Set<string>) => void) | null = null;
 
+  // Plan mode state
+  private planModeActive = false;
+
   constructor(
     app: App,
     containerEl: HTMLElement,
@@ -186,6 +189,8 @@ export class FileContextManager {
 
   /** Marks a file as being edited (called from PreToolUse hook). */
   async markFileBeingEdited(toolName: string, toolInput: Record<string, unknown>) {
+    // Skip tracking during plan mode (agent only writes to ~/.claude/plans/)
+    if (this.planModeActive) return;
     if (!isEditTool(toolName)) return;
 
     const rawPath = (toolInput?.file_path as string) || (toolInput?.notebook_path as string);
@@ -203,6 +208,8 @@ export class FileContextManager {
 
   /** Tracks a file as edited (called from PostToolUse hook). */
   async trackEditedFile(toolName: string | undefined, toolInput: Record<string, unknown> | undefined, isError: boolean) {
+    // Skip tracking during plan mode (agent only writes to ~/.claude/plans/)
+    if (this.planModeActive) return;
     if (!toolName || !isEditTool(toolName)) return;
 
     const rawPath = (toolInput?.file_path as string) || (toolInput?.notebook_path as string);
@@ -627,7 +634,8 @@ export class FileContextManager {
   private updateEditedFilesIndicator() {
     this.editedFilesIndicatorEl.empty();
 
-    if (!this.shouldShowEditedFilesSection()) {
+    // Hide during plan mode or if no edited files
+    if (this.planModeActive || !this.shouldShowEditedFilesSection()) {
       this.editedFilesIndicatorEl.style.display = 'none';
       return;
     }
@@ -666,6 +674,16 @@ export class FileContextManager {
       this.filesCacheDirty = false;
     }
     return this.cachedMarkdownFiles;
+  }
+
+  // ========================================
+  // Plan Mode Support
+  // ========================================
+
+  /** Set plan mode active state (hides edited files indicator during plan mode). */
+  setPlanModeActive(active: boolean): void {
+    this.planModeActive = active;
+    this.updateEditedFilesIndicator();
   }
 
   // ========================================

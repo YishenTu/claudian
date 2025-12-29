@@ -14,8 +14,13 @@ export interface SystemPromptSettings {
   allowedContextPaths?: string[];
   vaultPath?: string;
   hasEditorContext?: boolean;
+  /** Whether this query is in plan mode (read-only exploration). */
+  planMode?: boolean;
+  /** Approved plan content to append (from plan mode approval). */
+  appendedPlan?: string;
 }
 
+/** Returns the base system prompt with core instructions. */
 function getBaseSystemPrompt(vaultPath?: string): string {
   const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
 
@@ -128,33 +133,45 @@ Use proactively for any task meeting these criteria to keep progress visible.
 
 Reusable capability modules that provide specialized functionality. Use the \`Skill\` tool to invoke them.
 
-**Locations:**
-- User skills: \`~/.claude/skills/{name}/SKILL.md\` (available in all vaults)
-- Project skills: \`.claude/skills/{name}/SKILL.md\` (vault-specific)
-
 **Usage:** \`Skill skill="{name}"\` with optional \`args\` parameter.
 
 Skills are discovered automatically and listed in the system context. Invoke a skill when its description matches the user's request.`;
 }
 
-/** Returns editor context instructions (only included when selection exists). */
-function getEditorContextInstructions(): string {
+/** Returns instructions for handling embedded images in notes. */
+function getImageInstructions(mediaFolder: string): string {
+  const folder = mediaFolder.trim();
+  const mediaPath = folder ? './' + folder : '.';
+  const examplePath = folder ? folder + '/' : '';
+
   return `
 
-## Editor Selection
+## Embedded Images in Notes
 
-User messages may include an \`<editor_selection>\` tag showing text the user selected:
+**Proactive image reading**: When reading a note with embedded images, read them alongside text for full context. Images often contain critical information (diagrams, screenshots, charts).
 
-\`\`\`xml
-<editor_selection path="path/to/file.md">
-selected text here
-possibly multiple lines
-</editor_selection>
+**Local images** (\`![[image.jpg]]\`):
+- Located in media folder: \`${mediaPath}\`
+- Read with: \`Read file_path="${examplePath}image.jpg"\`
+- Formats: PNG, JPG/JPEG, GIF, WebP
+
+**External images** (\`![alt](url)\`):
+- WebFetch does NOT support images
+- Download to media folder → Read → Replace URL with wiki-link:
+
+\`\`\`bash
+# Download to media folder with descriptive name
+mkdir -p ${mediaPath}
+img_name="downloaded_\\$(date +%s).png"
+curl -sfo "${examplePath}$img_name" 'URL'
 \`\`\`
 
-**When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
+Then read with \`Read file_path="${examplePath}$img_name"\`, and replace the markdown link \`![alt](url)\` with \`![[${examplePath}$img_name]]\` in the note.
+
+**Benefits**: Image becomes a permanent vault asset, works offline, and uses Obsidian's native embed syntax.`;
 }
 
+/** Returns instructions for allowed export paths (write-only paths outside vault). */
 function getExportInstructions(allowedExportPaths: string[]): string {
   if (!allowedExportPaths || allowedExportPaths.length === 0) {
     return '';
@@ -190,6 +207,7 @@ cat ./note.md > ~/Desktop/note.md
 \`\`\``;
 }
 
+/** Returns instructions for allowed context paths (read-only paths outside vault). */
 function getContextPathInstructions(allowedContextPaths: string[]): string {
   if (!allowedContextPaths || allowedContextPaths.length === 0) {
     return '';
@@ -225,53 +243,80 @@ Rules:
 - When user refers to a folder by name (e.g., "check Workspace"), use the corresponding path`;
 }
 
-/** Generates instructions for handling embedded images in notes. */
-function getImageInstructions(mediaFolder: string): string {
-  const folder = mediaFolder.trim();
-  const mediaPath = folder ? './' + folder : '.';
-  const examplePath = folder ? folder + '/' : '';
-
+/** Returns editor context instructions (only included when selection exists). */
+function getEditorContextInstructions(): string {
   return `
 
-## Embedded Images in Notes
+## Editor Selection
 
-**Proactive image reading**: When reading a note with embedded images, read them alongside text for full context. Images often contain critical information (diagrams, screenshots, charts).
+User messages may include an \`<editor_selection>\` tag showing text the user selected:
 
-**Local images** (\`![[image.jpg]]\`):
-- Located in media folder: \`${mediaPath}\`
-- Read with: \`Read file_path="${examplePath}image.jpg"\`
-- Formats: PNG, JPG/JPEG, GIF, WebP
-
-**External images** (\`![alt](url)\`):
-- WebFetch does NOT support images
-- Download to media folder → Read → Replace URL with wiki-link:
-
-\`\`\`bash
-# Download to media folder with descriptive name
-mkdir -p ${mediaPath}
-img_name="downloaded_\\$(date +%s).png"
-curl -sfo "${examplePath}$img_name" 'URL'
+\`\`\`xml
+<editor_selection path="path/to/file.md">
+selected text here
+possibly multiple lines
+</editor_selection>
 \`\`\`
 
-Then read with \`Read file_path="${examplePath}$img_name"\`, and replace the markdown link \`![alt](url)\` with \`![[${examplePath}$img_name]]\` in the note.
+**When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
+}
 
-**Benefits**: Image becomes a permanent vault asset, works offline, and uses Obsidian's native embed syntax.`;
+/** Returns plan mode instructions (only included during plan mode). */
+function getPlanModeInstructions(): string {
+  return `
+
+### Plan Mode (EnterPlanMode / ExitPlanMode)
+
+You are in **plan mode** - a read-only exploration phase before implementation.
+
+**Available tools:**
+- Read, Grep, Glob, LS (file exploration)
+- WebSearch, WebFetch (research)
+- TodoWrite (organize findings)
+
+**Disabled tools:** Write, Edit, Bash, NotebookEdit - you cannot modify files during planning.
+
+**Workflow:**
+1. Call \`EnterPlanMode\` to begin (already done if you see this)
+2. Explore the codebase to understand the task
+3. Create a detailed implementation plan
+4. Call \`ExitPlanMode\` when ready for user approval
+
+**Plan structure guidelines:**
+- Start with a brief summary of the task
+- List files to create/modify with specific changes
+- Note dependencies and order of operations
+- Identify potential risks or edge cases
+- Keep it actionable - each step should be concrete
+
+**After approval:** The plan is appended to your system prompt and you gain full tool access for implementation.`;
 }
 
 /** Builds the complete system prompt with optional custom settings. */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   let prompt = getBaseSystemPrompt(settings.vaultPath);
 
-  if (settings.hasEditorContext) {
-    prompt += getEditorContextInstructions();
-  }
-
+  // Stable content (ordered for context cache optimization)
   prompt += getImageInstructions(settings.mediaFolder || '');
   prompt += getExportInstructions(settings.allowedExportPaths || []);
   prompt += getContextPathInstructions(settings.allowedContextPaths || []);
 
   if (settings.customPrompt?.trim()) {
     prompt += '\n\n## Custom Instructions\n\n' + settings.customPrompt.trim();
+  }
+
+  // Variable content (changes per query, placed last for cache efficiency)
+  if (settings.hasEditorContext) {
+    prompt += getEditorContextInstructions();
+  }
+
+  if (settings.planMode) {
+    prompt += getPlanModeInstructions();
+  }
+
+  if (settings.appendedPlan?.trim()) {
+    prompt += '\n\n## Approved Implementation Plan\n\n<plan>\n' + settings.appendedPlan.trim() + '\n</plan>';
+    prompt += '\n\n**IMPORTANT:** Follow this plan exactly. The user has approved this implementation. Execute the steps in order.';
   }
 
   return prompt;

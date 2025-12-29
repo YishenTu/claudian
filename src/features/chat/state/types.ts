@@ -25,6 +25,7 @@ export interface QueuedMessage {
   content: string;
   images?: ImageAttachment[];
   editorContext: EditorSelectionContext | null;
+  hidden?: boolean;
 }
 
 /** Stored selection state from editor polling. */
@@ -36,6 +37,18 @@ export interface StoredSelection {
   from: number;
   to: number;
   editorView: EditorView;
+}
+
+/** Plan mode state for read-only planning workflow. */
+export interface PlanModeState {
+  /** Whether plan mode is currently active. */
+  isActive: boolean;
+  /** Path to the current plan file (e.g., .claude/plan/123456.md). */
+  planFilePath: string | null;
+  /** The plan content once written/read. */
+  planContent: string | null;
+  /** User's original query that started plan mode. */
+  originalQuery: string | null;
 }
 
 /** Centralized chat state data. */
@@ -70,6 +83,14 @@ export interface ChatStateData {
 
   // Context window usage
   usage: UsageInfo | null;
+  // Flag to ignore usage updates (during session reset)
+  ignoreUsageUpdates: boolean;
+
+  // Plan mode state
+  planModeState: PlanModeState | null;
+
+  // Pending plan content awaiting user approval (persisted)
+  pendingPlanContent: string | null;
 }
 
 /** Callbacks for ChatState changes. */
@@ -86,6 +107,8 @@ export interface QueryOptions {
   model?: string;
   mcpMentions?: Set<string>;
   enabledMcpServers?: Set<string>;
+  /** Enable plan mode (read-only exploration). */
+  planMode?: boolean;
 }
 
 // Re-export types that are used across the chat feature

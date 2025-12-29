@@ -44,6 +44,15 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   contextFiles?: string[];
   images?: ImageAttachment[];
+  /** Whether this is a plan message (for distinct styling). */
+  isPlanMessage?: boolean;
+  /** Whether this message should be hidden from the UI. */
+  hidden?: boolean;
+  /** Approval indicator for plan mode decisions. */
+  approvalIndicator?: {
+    type: 'approve' | 'approve_new_session' | 'revise';
+    feedback?: string; // For revise
+  };
 }
 
 /** Persisted conversation with messages and session state. */
@@ -59,6 +68,10 @@ export interface Conversation {
   attachedFiles?: string[];
   /** Context window usage information. */
   usage?: UsageInfo;
+  /** Approved implementation plan for this conversation. */
+  approvedPlan?: string;
+  /** Pending plan content awaiting user approval. */
+  pendingPlanContent?: string;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -82,7 +95,7 @@ export type StreamChunk =
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
   | { type: 'done' }
-  | { type: 'usage'; usage: UsageInfo };
+  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null };
 
 /** Context window usage information. */
 export interface UsageInfo {

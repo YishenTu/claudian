@@ -177,12 +177,14 @@ export class ThinkingBudgetSelector {
   }
 }
 
-/** Permission mode toggle (YOLO/Safe). */
+/** Permission mode toggle (YOLO/Safe/Plan). */
 export class PermissionToggle {
   private container: HTMLElement;
   private toggleEl: HTMLElement | null = null;
   private labelEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
+  private planModeActive = false;
+  private onPlanModeToggle: ((active: boolean) => void) | null = null;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -199,11 +201,46 @@ export class PermissionToggle {
     this.updateDisplay();
 
     this.toggleEl.addEventListener('click', () => this.toggle());
+    // Container click for plan mode exit
+    this.container.addEventListener('click', (e) => {
+      if (this.planModeActive && e.target !== this.toggleEl) {
+        this.toggle();
+      }
+    });
+  }
+
+  /** Set callback for plan mode toggle. */
+  setOnPlanModeToggle(callback: (active: boolean) => void) {
+    this.onPlanModeToggle = callback;
+  }
+
+  /** Set plan mode active state. */
+  setPlanModeActive(active: boolean) {
+    this.planModeActive = active;
+    this.updateDisplay();
+  }
+
+  /** Check if plan mode is active. */
+  isPlanModeActive(): boolean {
+    return this.planModeActive;
   }
 
   updateDisplay() {
     if (!this.toggleEl || !this.labelEl) return;
 
+    // Plan mode takes precedence
+    if (this.planModeActive) {
+      this.toggleEl.removeClass('active');
+      this.container.addClass('plan-mode');
+      // Show pause icon (two vertical bars) + "Plan Mode"
+      this.labelEl.empty();
+      const iconEl = this.labelEl.createSpan({ cls: 'claudian-plan-mode-icon' });
+      iconEl.textContent = '❘❘';
+      this.labelEl.createSpan({ text: 'Plan Mode' });
+      return;
+    }
+
+    this.container.removeClass('plan-mode');
     const isYolo = this.callbacks.getSettings().permissionMode === 'yolo';
 
     if (isYolo) {
@@ -216,9 +253,24 @@ export class PermissionToggle {
   }
 
   private async toggle() {
+    // If in plan mode, clicking exits plan mode
+    if (this.planModeActive) {
+      this.planModeActive = false;
+      this.onPlanModeToggle?.(false);
+      this.updateDisplay();
+      return;
+    }
+
     const current = this.callbacks.getSettings().permissionMode;
     const newMode: PermissionMode = current === 'yolo' ? 'normal' : 'yolo';
     await this.callbacks.onPermissionModeChange(newMode);
+    this.updateDisplay();
+  }
+
+  /** Toggle plan mode on/off. */
+  togglePlanMode() {
+    this.planModeActive = !this.planModeActive;
+    this.onPlanModeToggle?.(this.planModeActive);
     this.updateDisplay();
   }
 }

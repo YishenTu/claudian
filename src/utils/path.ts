@@ -386,6 +386,12 @@ export function getPathAccessType(
     return 'vault';
   }
 
+  // Allow full access to ~/.claude/ (agent's native directory)
+  const claudeDir = normalizePathForComparison(resolveRealPath(path.join(os.homedir(), '.claude')));
+  if (resolvedCandidate === claudeDir || resolvedCandidate.startsWith(claudeDir + path.sep)) {
+    return 'vault';
+  }
+
   const roots = new Map<string, { context: boolean; export: boolean }>();
 
   const addRoot = (rawPath: string, kind: 'context' | 'export') => {
