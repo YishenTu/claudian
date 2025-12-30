@@ -383,7 +383,7 @@ describe('InputController - Message Queue', () => {
   describe('Title generation', () => {
     it('should set pending status and fallback title after first exchange', async () => {
       const mockTitleService = {
-        generateTitle: jest.fn(),
+        generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
       const welcomeEl = { style: { display: '' } } as any;
@@ -465,7 +465,7 @@ describe('InputController - Message Queue', () => {
 
     it('should call title generation service when available', async () => {
       const mockTitleService = {
-        generateTitle: jest.fn(),
+        generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
       const welcomeEl = { style: { display: '' } } as any;
@@ -514,7 +514,7 @@ describe('InputController - Message Queue', () => {
 
     it('should not overwrite user-renamed title in callback', async () => {
       const mockTitleService = {
-        generateTitle: jest.fn(),
+        generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
       const welcomeEl = { style: { display: '' } } as any;
@@ -614,7 +614,7 @@ describe('InputController - Message Queue', () => {
 
     it('should not set pending status when assistantText is empty', async () => {
       const mockTitleService = {
-        generateTitle: jest.fn(),
+        generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
       const welcomeEl = { style: { display: '' } } as any;

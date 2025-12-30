@@ -6,12 +6,12 @@ import { ConversationController, type ConversationControllerDeps } from '../src/
 import { ChatState } from '../src/features/chat/state/ChatState';
 
 // Helper to create mock DOM element
-function createMockElement() {
+function createMockElement(): any {
   const style: Record<string, string> = {};
   const classList = new Set<string>();
   const children: any[] = [];
 
-  return {
+  const el: any = {
     style,
     classList: {
       add: (cls: string) => classList.add(cls),
@@ -28,9 +28,26 @@ function createMockElement() {
       children.push(child);
       return child;
     },
+    createSpan: (opts?: { text?: string }) => {
+      const child = createMockElement();
+      if (opts?.text) child.textContent = opts.text;
+      children.push(child);
+      return child;
+    },
+    createEl: (_tag: string, opts?: { cls?: string; text?: string }) => {
+      const child = createMockElement();
+      if (opts?.cls) child.addClass(opts.cls);
+      children.push(child);
+      return child;
+    },
+    setAttribute: jest.fn(),
+    addEventListener: jest.fn(),
+    querySelector: jest.fn().mockReturnValue(null),
     setText: jest.fn(),
     textContent: '',
   };
+
+  return el;
 }
 
 // Helper to create mock dependencies
@@ -68,7 +85,10 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
         updatedAt: Date.now(),
       }),
       getActiveConversation: jest.fn().mockReturnValue(null),
+      getConversationById: jest.fn().mockReturnValue(null),
+      getConversationList: jest.fn().mockReturnValue([]),
       updateConversation: jest.fn().mockResolvedValue(undefined),
+      renameConversation: jest.fn().mockResolvedValue(undefined),
       agentService: {
         getSessionId: jest.fn().mockReturnValue(null),
         setSessionId: jest.fn(),
@@ -102,6 +122,7 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     showPlanBanner: jest.fn(),
     hidePlanBanner: jest.fn(),
     triggerPendingPlanApproval: jest.fn(),
+    getTitleGenerationService: () => null,
     ...overrides,
   };
 }
@@ -279,5 +300,231 @@ describe('ConversationController - Callbacks', () => {
     await controller.loadActive();
 
     expect(onConversationLoaded).toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController - Title Generation', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockTitleService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockTitleService = {
+      generateTitle: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn(),
+    };
+    deps = createMockDeps({
+      getTitleGenerationService: () => mockTitleService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  describe('regenerateTitle', () => {
+    it('should not regenerate if titleService is null', async () => {
+      const depsNoService = createMockDeps({
+        getTitleGenerationService: () => null,
+      });
+      const controllerNoService = new ConversationController(depsNoService);
+
+      (depsNoService.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Old Title',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Hi there!' },
+        ],
+      });
+
+      await controllerNoService.regenerateTitle('conv-1');
+
+      expect(depsNoService.plugin.updateConversation).not.toHaveBeenCalled();
+    });
+
+    it('should not regenerate if conversation not found', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue(null);
+
+      await controller.regenerateTitle('non-existent');
+
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('should not regenerate if conversation has less than 2 messages', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Title',
+        messages: [{ role: 'user', content: 'Hello' }],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('should not regenerate if no user message found', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Title',
+        messages: [
+          { role: 'assistant', content: 'Hi' },
+          { role: 'assistant', content: 'There' },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('should not regenerate if no assistant message found', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Title',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'user', content: 'There' },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('should not regenerate if assistant text is empty', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Title',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: '' },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('should set pending status before generating', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Old Title',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Hi there!' },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+        titleGenerationStatus: 'pending',
+      });
+    });
+
+    it('should call titleService.generateTitle with correct params', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Old Title',
+        messages: [
+          { role: 'user', content: 'Hello world', displayContent: 'Hello world!' },
+          { role: 'assistant', content: 'Hi there!' },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).toHaveBeenCalledWith(
+        'conv-1',
+        'Hello world!', // Uses displayContent
+        'Hi there!',
+        expect.any(Function)
+      );
+    });
+
+    it('should preserve [Plan] prefix for plan conversations', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: '[Plan] Old Title',
+        messages: [
+          { role: 'user', content: 'Create a plan' },
+          { role: 'assistant', content: 'Here is the plan...' },
+        ],
+      });
+
+      // Simulate callback being called
+      mockTitleService.generateTitle.mockImplementation(
+        async (convId: string, _user: string, _assistant: string, callback: any) => {
+          await callback(convId, { success: true, title: 'New Generated Title' });
+        }
+      );
+
+      // Also mock getConversationById to return the expected title for the callback check
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: '[Plan] Old Title',
+        messages: [
+          { role: 'user', content: 'Create a plan' },
+          { role: 'assistant', content: 'Here is the plan...' },
+        ],
+      });
+
+      (deps.plugin.renameConversation as any) = jest.fn().mockResolvedValue(undefined);
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', '[Plan] New Generated Title');
+    });
+
+    it('should extract text from contentBlocks if content is empty', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Title',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          {
+            role: 'assistant',
+            content: '',
+            contentBlocks: [
+              { type: 'text', content: 'Block 1' },
+              { type: 'thinking', content: 'Thinking...' },
+              { type: 'text', content: 'Block 2' },
+            ],
+          },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).toHaveBeenCalledWith(
+        'conv-1',
+        'Hello',
+        'Block 1\nBlock 2', // Joins text blocks with newline
+        expect.any(Function)
+      );
+    });
+  });
+
+  describe('generateFallbackTitle', () => {
+    it('should generate title from first sentence', () => {
+      const title = controller.generateFallbackTitle('How do I set up React? I need help.');
+
+      expect(title).toBe('How do I set up React');
+    });
+
+    it('should truncate long titles to 50 chars', () => {
+      const longMessage = 'A'.repeat(100);
+      const title = controller.generateFallbackTitle(longMessage);
+
+      expect(title.length).toBeLessThanOrEqual(53); // 50 + '...'
+      expect(title).toContain('...');
+    });
+
+    it('should handle messages with no sentence breaks', () => {
+      const title = controller.generateFallbackTitle('Hello world');
+
+      expect(title).toBe('Hello world');
+    });
   });
 });

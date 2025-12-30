@@ -13,12 +13,10 @@ import type ClaudianPlugin from '../../../main';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { findClaudeCLIPath, getVaultPath } from '../../../utils/path';
 
-/** Result of title generation. */
-export interface TitleGenerationResult {
-  success: boolean;
-  title?: string;
-  error?: string;
-}
+/** Result of title generation (discriminated union). */
+export type TitleGenerationResult =
+  | { success: true; title: string }
+  | { success: false; error: string };
 
 /** Callback when title generation completes. */
 export type TitleGenerationCallback = (
@@ -49,7 +47,8 @@ export class TitleGenerationService {
   ): Promise<void> {
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
-      await callback(conversationId, {
+      console.warn('[TitleGeneration] Could not determine vault path');
+      await this.safeCallback(callback, conversationId, {
         success: false,
         error: 'Could not determine vault path',
       });
@@ -61,7 +60,8 @@ export class TitleGenerationService {
     }
 
     if (!this.resolvedClaudePath) {
-      await callback(conversationId, {
+      console.warn('[TitleGeneration] Claude CLI not found');
+      await this.safeCallback(callback, conversationId, {
         success: false,
         error: 'Claude CLI not found',
       });
@@ -126,7 +126,7 @@ Generate a title for this conversation:`;
 
       for await (const message of response) {
         if (abortController.signal.aborted) {
-          await callback(conversationId, {
+          await this.safeCallback(callback, conversationId, {
             success: false,
             error: 'Cancelled',
           });
@@ -141,16 +141,21 @@ Generate a title for this conversation:`;
 
       const title = this.parseTitle(responseText);
       if (title) {
-        await callback(conversationId, { success: true, title });
+        await this.safeCallback(callback, conversationId, { success: true, title });
       } else {
-        await callback(conversationId, {
+        console.warn('[TitleGeneration] Failed to parse title from response');
+        await this.safeCallback(callback, conversationId, {
           success: false,
           error: 'Failed to parse title from response',
         });
       }
     } catch (error) {
+      // Don't log AbortError as it's expected when cancelled
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.error('[TitleGeneration] Error generating title:', error.message);
+      }
       const msg = error instanceof Error ? error.message : 'Unknown error';
-      await callback(conversationId, { success: false, error: msg });
+      await this.safeCallback(callback, conversationId, { success: false, error: msg });
     } finally {
       // Clean up the controller for this conversation
       this.activeGenerations.delete(conversationId);
@@ -210,5 +215,18 @@ Generate a title for this conversation:`;
     }
 
     return title || null;
+  }
+
+  /** Safely invokes callback with try-catch to prevent unhandled errors. */
+  private async safeCallback(
+    callback: TitleGenerationCallback,
+    conversationId: string,
+    result: TitleGenerationResult
+  ): Promise<void> {
+    try {
+      await callback(conversationId, result);
+    } catch (error) {
+      console.error('[TitleGeneration] Error in callback:', error instanceof Error ? error.message : error);
+    }
   }
 }
