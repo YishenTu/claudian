@@ -72,6 +72,8 @@ export interface Conversation {
   approvedPlan?: string;
   /** Pending plan content awaiting user approval. */
   pendingPlanContent?: string;
+  /** Status of AI title generation. */
+  titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -84,6 +86,8 @@ export interface ConversationMeta {
   lastResponseAt?: number;
   messageCount: number;
   preview: string;
+  /** Status of AI title generation. */
+  titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */

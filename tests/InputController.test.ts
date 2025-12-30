@@ -73,6 +73,8 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
         extractMentions: jest.fn().mockReturnValue(new Set()),
       },
       renameConversation: jest.fn(),
+      updateConversation: jest.fn(),
+      getConversationById: jest.fn().mockReturnValue(null),
     } as any,
     state,
     renderer: {
@@ -93,7 +95,8 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     } as any,
     conversationController: {
       save: jest.fn(),
-      generateTitle: jest.fn().mockReturnValue('Test Title'),
+      generateFallbackTitle: jest.fn().mockReturnValue('Test Title'),
+      updateHistoryDropdown: jest.fn(),
     } as any,
     getInputEl: () => inputEl,
     getWelcomeEl: () => null,
@@ -110,6 +113,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     getMcpServerSelector: () => null,
     getInstructionModeManager: () => null,
     getInstructionRefineService: () => null,
+    getTitleGenerationService: () => null,
     getComponent: () => ({} as any),
     setPlanModeActive: jest.fn(),
     getPlanBanner: () => null,
@@ -373,6 +377,286 @@ describe('InputController - Message Queue', () => {
       expect(deps.setPlanModeActive).toHaveBeenCalledWith(false);
       expect(deps.plugin.agentService.setCurrentPlanFilePath).toHaveBeenCalledTimes(2);
       expect(deps.state.planModeState).toBeNull();
+    });
+  });
+
+  describe('Title generation', () => {
+    it('should set pending status and fallback title after first exchange', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Mock the agent query to return a text response
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Hello, how can I help?' },
+          { type: 'done' },
+        ])
+      );
+
+      // Mock handleStreamChunk to populate assistant content
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // After first exchange (2 messages), should set pending status (only when titleService available and content exists)
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { titleGenerationStatus: 'pending' });
+      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
+    });
+
+    it('should find messages by role, not by index', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Verify messages are found by role
+      const userMsg = deps.state.messages.find(m => m.role === 'user');
+      const assistantMsg = deps.state.messages.find(m => m.role === 'assistant');
+      expect(userMsg).toBeDefined();
+      expect(assistantMsg).toBeDefined();
+    });
+
+    it('should call title generation service when available', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response text' },
+          { type: 'done' },
+        ])
+      );
+
+      // Mock handleStreamChunk to populate assistant content
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Title service should be called with user and assistant content
+      expect(mockTitleService.generateTitle).toHaveBeenCalled();
+      const callArgs = mockTitleService.generateTitle.mock.calls[0];
+      expect(callArgs[0]).toBe('conv-1'); // conversationId
+      expect(callArgs[1]).toContain('Hello world'); // user content
+    });
+
+    it('should not overwrite user-renamed title in callback', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      // Mock getConversationById to return a conversation with different title (user renamed)
+      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
+        id: 'conv-1',
+        title: 'User Custom Title', // User renamed it
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Get the callback and simulate it being called
+      const callback = mockTitleService.generateTitle.mock.calls[0][3];
+      await callback('conv-1', { success: true, title: 'AI Generated Title' });
+
+      // Should clear status since user manually renamed (not apply AI title)
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { titleGenerationStatus: undefined });
+    });
+
+    it('should not set pending status when titleService is null', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+        getTitleGenerationService: () => null, // No title service
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Should NOT set pending status when no titleService
+      const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
+      const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
+        call[1]?.titleGenerationStatus === 'pending'
+      );
+      expect(pendingCall).toBeUndefined();
+    });
+
+    it('should not set pending status when assistantText is empty', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Return empty stream - no text content
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      // Don't populate assistant content (leave it empty)
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => {});
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Should NOT call title service when assistantText is empty
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+
+      // Should NOT set pending status when assistantText is empty
+      const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
+      const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
+        call[1]?.titleGenerationStatus === 'pending'
+      );
+      expect(pendingCall).toBeUndefined();
     });
   });
 });

@@ -169,3 +169,22 @@
   outline: none;
   box-shadow: 0 0 0 2px var(--interactive-accent-hover);
 }
+
+/* Loading indicator for title generation */
+.claudian-action-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: claudian-spin 1s linear infinite;
+  opacity: 0.6;
+  cursor: default;
+}
+
+@keyframes claudian-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

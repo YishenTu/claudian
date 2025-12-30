@@ -444,6 +444,11 @@ export default class ClaudianPlugin extends Plugin {
     return this.conversations.find(c => c.id === this.activeConversationId) || null;
   }
 
+  /** Gets a conversation by ID from the in-memory cache. */
+  getConversationById(id: string): Conversation | null {
+    return this.conversations.find(c => c.id === id) || null;
+  }
+
   /** Returns conversation metadata list for the history dropdown. */
   getConversationList(): ConversationMeta[] {
     return this.conversations.map(c => ({
@@ -454,6 +459,7 @@ export default class ClaudianPlugin extends Plugin {
       lastResponseAt: c.lastResponseAt,
       messageCount: c.messages.length,
       preview: this.getConversationPreview(c),
+      titleGenerationStatus: c.titleGenerationStatus,
     }));
   }
 

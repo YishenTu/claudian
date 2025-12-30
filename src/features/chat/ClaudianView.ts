@@ -39,6 +39,7 @@ import {
 import { MessageRenderer } from './rendering';
 import { AsyncSubagentManager } from './services/AsyncSubagentManager';
 import { InstructionRefineService } from './services/InstructionRefineService';
+import { TitleGenerationService } from './services/TitleGenerationService';
 import { ChatState } from './state';
 
 /** Main sidebar chat view for interacting with Claude. */
@@ -60,6 +61,7 @@ export class ClaudianView extends ItemView {
   // Services
   private asyncSubagentManager: AsyncSubagentManager;
   private instructionRefineService: InstructionRefineService | null = null;
+  private titleGenerationService: TitleGenerationService | null = null;
 
   // DOM Elements
   private messagesEl: HTMLElement | null = null;
@@ -176,6 +178,8 @@ export class ClaudianView extends ItemView {
     this.instructionModeManager = null;
     this.instructionRefineService?.cancel();
     this.instructionRefineService = null;
+    this.titleGenerationService?.cancel();
+    this.titleGenerationService = null;
 
     // Cleanup async subagents
     this.asyncSubagentManager.orphanAllActive();
@@ -286,6 +290,7 @@ export class ClaudianView extends ItemView {
 
     // Instruction mode manager
     this.instructionRefineService = new InstructionRefineService(this.plugin);
+    this.titleGenerationService = new TitleGenerationService(this.plugin);
     this.instructionModeManager = new InstructionModeManagerClass(
       this.inputEl,
       {
@@ -396,6 +401,7 @@ export class ClaudianView extends ItemView {
         showPlanBanner: (content) => { void this.planBanner?.show(content); },
         hidePlanBanner: () => this.planBanner?.hide(),
         triggerPendingPlanApproval: (content) => this.inputController?.restorePendingPlanApproval(content),
+        getTitleGenerationService: () => this.titleGenerationService,
       },
       {}
     );
@@ -417,6 +423,7 @@ export class ClaudianView extends ItemView {
       getMcpServerSelector: () => this.mcpServerSelector,
       getInstructionModeManager: () => this.instructionModeManager,
       getInstructionRefineService: () => this.instructionRefineService,
+      getTitleGenerationService: () => this.titleGenerationService,
       getComponent: () => this,
       setPlanModeActive: (active) => {
         this.permissionToggle?.setPlanModeActive(active);
