@@ -12,6 +12,7 @@ import type ClaudianPlugin from '../../../main';
 import type { FileContextManager, ImageContextManager, McpServerSelector } from '../../../ui';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
+import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 
 /** Callbacks for conversation events. */
@@ -46,6 +47,8 @@ export interface ConversationControllerDeps {
   hidePlanBanner: () => void;
   /** Trigger pending plan approval panel (for restore on load). */
   triggerPendingPlanApproval: (content: string) => void;
+  /** Get title generation service. */
+  getTitleGenerationService: () => TitleGenerationService | null;
 }
 
 /**
@@ -314,6 +317,25 @@ export class ConversationController {
 
       const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
 
+      // Show regenerate button if title generation failed, or loading indicator if pending
+      if (conv.titleGenerationStatus === 'pending') {
+        const loadingEl = actions.createEl('span', { cls: 'claudian-action-btn claudian-action-loading' });
+        setIcon(loadingEl, 'loader-2');
+        loadingEl.setAttribute('aria-label', 'Generating title...');
+      } else if (conv.titleGenerationStatus === 'failed') {
+        const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+        setIcon(regenerateBtn, 'refresh-cw');
+        regenerateBtn.setAttribute('aria-label', 'Regenerate title');
+        regenerateBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await this.regenerateTitle(conv.id);
+          } catch (error) {
+            console.error('[ConversationController] Failed to regenerate title:', error);
+          }
+        });
+      }
+
       const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
       setIcon(renameBtn, 'pencil');
       renameBtn.setAttribute('aria-label', 'Rename');
@@ -466,12 +488,77 @@ export class ConversationController {
   // Utilities
   // ============================================
 
-  /** Generates a title from the first message. */
-  generateTitle(firstMessage: string): string {
+  /** Generates a fallback title from the first message (used when AI fails). */
+  generateFallbackTitle(firstMessage: string): string {
     const firstSentence = firstMessage.split(/[.!?\n]/)[0].trim();
     const autoTitle = firstSentence.substring(0, 50);
     const suffix = firstSentence.length > 50 ? '...' : '';
     return `${autoTitle}${suffix}`;
+  }
+
+  /** Regenerates AI title for a conversation. */
+  async regenerateTitle(conversationId: string): Promise<void> {
+    const { plugin } = this.deps;
+    const titleService = this.deps.getTitleGenerationService();
+    if (!titleService) return;
+
+    // Get the full conversation from cache
+    const fullConv = plugin.getConversationById(conversationId);
+    if (!fullConv || fullConv.messages.length < 2) return;
+
+    // Find first user and assistant messages by role (not by index)
+    const firstUserMsg = fullConv.messages.find(m => m.role === 'user');
+    const firstAssistantMsg = fullConv.messages.find(m => m.role === 'assistant');
+    if (!firstUserMsg || !firstAssistantMsg) return;
+
+    const userContent = firstUserMsg.displayContent || firstUserMsg.content;
+
+    // Extract text from assistant response
+    const assistantText = firstAssistantMsg.content ||
+      firstAssistantMsg.contentBlocks
+        ?.filter((b): b is { type: 'text'; content: string } => b.type === 'text')
+        .map(b => b.content)
+        .join('\n') || '';
+
+    if (!assistantText) return;
+
+    // Check if it's a plan conversation (title starts with [Plan])
+    const isPlan = fullConv.title.startsWith('[Plan]');
+
+    // Store current title to check if user renames during generation
+    const expectedTitle = fullConv.title;
+
+    // Set pending status before starting generation
+    await plugin.updateConversation(conversationId, { titleGenerationStatus: 'pending' });
+    this.updateHistoryDropdown();
+
+    // Fire async AI title generation
+    await titleService.generateTitle(
+      conversationId,
+      userContent,
+      assistantText,
+      async (convId, result) => {
+        // Check if conversation still exists and user hasn't manually renamed
+        const currentConv = plugin.getConversationById(convId);
+        if (!currentConv) return;
+
+        // Only apply AI title if user hasn't manually renamed (title still matches expected)
+        const userManuallyRenamed = currentConv.title !== expectedTitle;
+
+        if (result.success && result.title && !userManuallyRenamed) {
+          const newTitle = isPlan ? `[Plan] ${result.title}` : result.title;
+          await plugin.renameConversation(convId, newTitle);
+          await plugin.updateConversation(convId, { titleGenerationStatus: 'success' });
+        } else if (!userManuallyRenamed) {
+          // Keep existing title, mark as failed (only if user hasn't renamed)
+          await plugin.updateConversation(convId, { titleGenerationStatus: 'failed' });
+        } else {
+          // User manually renamed, clear the status (user's choice takes precedence)
+          await plugin.updateConversation(convId, { titleGenerationStatus: undefined });
+        }
+        this.updateHistoryDropdown();
+      }
+    );
   }
 
   /** Formats a timestamp for display. */

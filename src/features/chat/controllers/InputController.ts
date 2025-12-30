@@ -32,6 +32,7 @@ import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { formatSlashCommandWarnings } from '../../../utils/slashCommandWarnings';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
+import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
 import type { ConversationController } from './ConversationController';
@@ -58,6 +59,7 @@ export interface InputControllerDeps {
   getMcpServerSelector: () => McpServerSelector | null;
   getInstructionModeManager: () => InstructionModeManager | null;
   getInstructionRefineService: () => InstructionRefineService | null;
+  getTitleGenerationService: () => TitleGenerationService | null;
   getComponent: () => Component;
   setPlanModeActive: (active: boolean) => void;
   getPlanBanner: () => PlanBanner | null;
@@ -247,11 +249,6 @@ export class InputController {
       renderer.addMessage(userMsg);
     }
 
-    if (state.messages.length === 1 && state.currentConversationId) {
-      const title = conversationController.generateTitle(displayContent);
-      await plugin.renameConversation(state.currentConversationId, title);
-    }
-
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
       role: 'assistant',
@@ -328,6 +325,9 @@ export class InputController {
           scheduledPlanModeResend = true;
         }
       }
+
+      // Generate AI title after first complete exchange (user + assistant)
+      await this.triggerTitleGeneration();
 
       if (!scheduledPlanModeResend) {
         this.processQueuedMessage();
@@ -510,12 +510,7 @@ ${content}
       state.addMessage(userMsg);
       renderer.addMessage(userMsg);
 
-      if (state.messages.length === 1 && state.currentConversationId) {
-        const title = conversationController.generateTitle(displayContent);
-        await plugin.renameConversation(state.currentConversationId, title);
-      }
     }
-
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
       role: 'assistant',
@@ -575,6 +570,9 @@ ${content}
       state.activeSubagents.clear();
 
       await conversationController.save(true);
+
+      // Generate AI title after first complete plan mode exchange
+      await this.triggerTitleGeneration({ isPlanMode: true });
 
       this.processQueuedMessage();
     }
@@ -651,6 +649,89 @@ ${content}
     }
 
     setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, hidden }), 0);
+  }
+
+  // ============================================
+  // Title Generation
+  // ============================================
+
+  /**
+   * Triggers AI title generation after first exchange.
+   * Handles setting fallback title, firing async generation, and updating UI.
+   */
+  private async triggerTitleGeneration(options: { isPlanMode?: boolean } = {}): Promise<void> {
+    const { plugin, state, conversationController } = this.deps;
+    const { isPlanMode = false } = options;
+
+    if (state.messages.length !== 2 || !state.currentConversationId) {
+      return;
+    }
+
+    // Find first user and assistant messages by role (not by index)
+    const firstUserMsg = state.messages.find(m => m.role === 'user');
+    const firstAssistantMsg = state.messages.find(m => m.role === 'assistant');
+
+    if (!firstUserMsg || !firstAssistantMsg) {
+      return;
+    }
+
+    const userContent = firstUserMsg.displayContent || firstUserMsg.content;
+
+    // Extract text from assistant response
+    const assistantText = firstAssistantMsg.content ||
+      firstAssistantMsg.contentBlocks
+        ?.filter((b): b is { type: 'text'; content: string } => b.type === 'text')
+        .map(b => b.content)
+        .join('\n') || '';
+
+    // Set immediate fallback title
+    const fallbackTitle = conversationController.generateFallbackTitle(userContent);
+    const displayTitle = isPlanMode ? `[Plan] ${fallbackTitle}` : fallbackTitle;
+    await plugin.renameConversation(state.currentConversationId, displayTitle);
+
+    // Fire async AI title generation only if service and content available
+    const titleService = this.deps.getTitleGenerationService();
+    if (!titleService || !assistantText) {
+      // No titleService or no assistantText, just keep the fallback title with no status
+      return;
+    }
+
+    // Mark as pending only when we're actually starting generation
+    await plugin.updateConversation(state.currentConversationId, { titleGenerationStatus: 'pending' });
+    conversationController.updateHistoryDropdown();
+
+    const convId = state.currentConversationId;
+    const expectedTitle = displayTitle; // Store to check if user renamed during generation
+
+    titleService.generateTitle(
+      convId,
+      userContent,
+      assistantText,
+      async (conversationId, result) => {
+        // Check if conversation still exists and user hasn't manually renamed
+        const currentConv = plugin.getConversationById(conversationId);
+        if (!currentConv) return;
+
+        // Only apply AI title if user hasn't manually renamed (title still matches fallback)
+        const userManuallyRenamed = currentConv.title !== expectedTitle;
+
+        if (result.success && !userManuallyRenamed) {
+          const newTitle = isPlanMode ? `[Plan] ${result.title}` : result.title;
+          await plugin.renameConversation(conversationId, newTitle);
+          await plugin.updateConversation(conversationId, { titleGenerationStatus: 'success' });
+        } else if (!userManuallyRenamed) {
+          // Keep fallback title, mark as failed (only if user hasn't renamed)
+          await plugin.updateConversation(conversationId, { titleGenerationStatus: 'failed' });
+        } else {
+          // User manually renamed, clear the status (user's choice takes precedence)
+          await plugin.updateConversation(conversationId, { titleGenerationStatus: undefined });
+        }
+        conversationController.updateHistoryDropdown();
+      }
+    ).catch((error) => {
+      // Log unexpected errors (callback errors are already handled by safeCallback)
+      console.error('[InputController] Title generation failed:', error instanceof Error ? error.message : error);
+    });
   }
 
   // ============================================

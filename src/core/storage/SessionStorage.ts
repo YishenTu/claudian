@@ -37,6 +37,7 @@ interface SessionMetaRecord {
   usage?: UsageInfo;
   approvedPlan?: string;
   pendingPlanContent?: string;
+  titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
 
 /** Message record stored as subsequent lines. */
@@ -190,6 +191,7 @@ export class SessionStorage {
         lastResponseAt: record.lastResponseAt,
         messageCount,
         preview,
+        titleGenerationStatus: record.titleGenerationStatus,
       };
     } catch {
       return null;
@@ -233,6 +235,7 @@ export class SessionStorage {
       usage: meta.usage,
       approvedPlan: meta.approvedPlan,
       pendingPlanContent: meta.pendingPlanContent,
+      titleGenerationStatus: meta.titleGenerationStatus,
     };
   }
 
@@ -253,6 +256,7 @@ export class SessionStorage {
       usage: conversation.usage,
       approvedPlan: conversation.approvedPlan,
       pendingPlanContent: conversation.pendingPlanContent,
+      titleGenerationStatus: conversation.titleGenerationStatus,
     };
     lines.push(JSON.stringify(meta));
 
