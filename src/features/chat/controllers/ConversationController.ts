@@ -302,7 +302,8 @@ export class ConversationController {
       setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
 
       const content = item.createDiv({ cls: 'claudian-history-item-content' });
-      content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
+      const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
+      titleEl.setAttribute('title', conv.title);
       content.createDiv({
         cls: 'claudian-history-item-date',
         text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),

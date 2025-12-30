@@ -68,11 +68,17 @@ export class TitleGenerationService {
       return;
     }
 
-    // Get the appropriate model: ANTHROPIC_DEFAULT_HAIKU_MODEL or fallback to claude-haiku-4-5
+    // Get the appropriate model with fallback chain:
+    // 1. User's titleGenerationModel setting (if set)
+    // 2. ANTHROPIC_DEFAULT_HAIKU_MODEL env var
+    // 3. claude-haiku-4-5 default
     const envVars = parseEnvironmentVariables(
       this.plugin.getActiveEnvironmentVariables()
     );
-    const titleModel = envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-haiku-4-5';
+    const titleModel =
+      this.plugin.settings.titleGenerationModel ||
+      envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
+      'claude-haiku-4-5';
 
     // Cancel any existing generation for this conversation
     const existingController = this.activeGenerations.get(conversationId);

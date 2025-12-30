@@ -14,14 +14,12 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input, with review/edit in a modal.
 - **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
-- **Dynamic Responses**: Experience real-time streaming, observe Claude's extended reasoning process, and cancel responses mid-stream.
-- **Write/Edit Diff View**: See inline diffs for Write/Edit tool calls in the chat panel with line stats; large/binary files gracefully skip with a notice.
+
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget. Monitor context window usage with a real-time gauge.
-- **Transparent Tooling**: Visualize tool calls, subagent activity, and track asynchronous subagent operations with detailed UI feedback.
+
 - **Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.
-- **Persistent Sessions**: Save and resume conversations with full context across sessions.
+
 - **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
-- **Intuitive File Management**: See indicators for edited files, with smart detection, auto-dismissal, and quick access.
 
 ## Requirements
 
@@ -74,174 +72,26 @@ npm run build
 ## Usage
 
 **Two modes:**
-1. Click the bot icon in ribbon or launch Claudian in palette
-2. Select text in any note and press hotkey to open inline edit
+1. Click the bot icon in ribbon or use command palette to open chat
+2. Select text + hotkey for inline edit
 
-Use it like Claude Code, ask it to read, write, edit, search, etc. to help you with your notes.
+Use it like Claude Code—read, write, edit, search files in your vault.
 
-### File Context
+### Context
 
-- **Auto-attach**: New conversations auto-attach the currently focused note
-- **@ mention**: Type `@` anywhere to search and attach files from your vault
-- **Excluded tags**: Notes with tags listed in Settings → Excluded tags won't auto-attach (but can still be manually attached via `@`)
-- Files are sent as context with your message; Claude will read them to understand your question
+- **File**: Auto-attaches focused note; type `@` to attach other files
+- **Selection**: Select text in editor, then chat—selection included automatically
+- **Images**: Drag-drop, paste, or type path; configure media folder for `![[image]]` embeds
+- **External paths**: Click folder icon in toolbar for read-only access to directories outside vault
 
-### Selection Context
+### Features
 
-Select text in any note, then click the chat input - your selection is automatically included as context.
-
-- **Visual indicator**: "X lines selected" badge appears in the input area
-- **Preserved highlight**: Selection stays visually highlighted even after clicking input
-- **Automatic inclusion**: Selected text is sent with your message as `<editor_selection>` context
-- **Persistent context**: Selection stays active until cleared or replaced
-
-### Context Paths
-
-Grant Claude read-only access to directories outside your vault for additional context (e.g., reference data, shared resources, project files).
-
-- **Folder icon**: Click the folder icon in the input toolbar to add paths via native folder picker
-- **Visual feedback**: Icon glows when paths are configured; badge shows count when >1
-- **Hover dropdown**: View configured paths and remove with ✕
-- **Read-only access**: Claude can read files (`Read`, `Glob`, `Grep`, `LS`) and use bash read operations, but cannot write to these paths
-- **Office documents**: With appropriate tools installed (`pandoc`, `xlsx2csv`), Claude can extract text from `.docx`, `.xlsx`, `.pptx` files
-
-### Image Context
-
-Send images to Claude via drag-and-drop, paste (Cmd/Ctrl+V), or file path in your message.
-
-**Supported:** JPEG, PNG, GIF, WebP (max 5MB)
-
-**Embedded images:** Configure media folder in settings, then Claude can read `![[image.png]]` references.
-
-### Inline Edit
-
-Interact with text directly in your notes - ask questions, request edits, or insert new content - without opening the sidebar chat.
-
-**Features:**
-- **Selection & cursor modes**: Edit selected text or insert at cursor position
-- **Multi-turn conversation**: Agent can ask clarifying questions
-- **Read-only tools**: Agent can read files and search the web for context
-- **Inline diff**: Word-level diff with red strikethrough (deletions) and green highlight (insertions)
-
-### Slash Commands
-
-Define commands in Settings → Claudian → Slash Commands, then type `/` in the chat input or inline edit input to select a command.
-
-- **Invocation**: `/commandName arguments...`
-- **Placeholders**: `$ARGUMENTS`, `$1`, `$2`, ... (basic quoted args supported)
-- **File references**: `@path/to/file.md`, `@"path with spaces.md"`, `@'path with spaces.md'`
-- **Inline bash**: `` !`command` `` substitutes with command output (see safety notes below)
-
-### Plan Mode
-
-Enable plan mode to have Claude explore and plan before making changes. The agent operates in read-only mode during exploration, then presents a plan for your approval before implementation.
-
-**Toggle:**
-- Press `Shift+Tab` in the input area to toggle plan mode
-- Teal "Plan" indicator appears next to YOLO/Safe toggle when active
-
-**Workflow:**
-1. Enable plan mode with `Shift+Tab`
-2. Describe your task and send
-3. Agent explores the codebase using read-only tools
-4. Agent writes a plan to `~/.claude/plans/` and presents it
-5. Review the plan in the approval panel:
-   - **Approve**: Implement in current session
-   - **Approve + New Session**: Implement in a fresh conversation
-   - **Revise**: Provide feedback for the agent to refine the plan
-6. Once approved, the plan is appended to system prompt and implementation begins
-
-**Read-only tools in plan mode:**
-- `Read`, `Glob`, `Grep`, `LS`, `WebSearch`, `WebFetch`
-- `EnterPlanMode`, `ExitPlanMode` (internal)
-
-### Instruction Mode (`#`)
-
-Use `#` at the start of the chat input to add a refined instruction to Settings → Custom system prompt.
-
-1. Type `#` (or `# `) at the start of your message to enter instruction mode
-2. Type your instruction and press Enter
-3. A modal opens immediately (loading → clarification or confirmation)
-4. Review the refined snippet, optionally edit it, then Accept to save
-
-Accepted content is appended to the custom system prompt as-is. The agent decides the best Markdown format (single bullet, multiple bullets, or a small section).
-
-### Skills
-
-Extend Claudian with reusable capability modules. Skills are `SKILL.md` files with YAML frontmatter that Claude discovers and invokes automatically based on context.
-
-- **User skills**: `~/.claude/skills/{name}/SKILL.md` (all vaults)
-- **Project skills**: `{vault}/.claude/skills/{name}/SKILL.md` (vault-specific)
-
-Compatible with [Claude Code's Skills format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview). Ask "What skills are available?" to list discovered skills.
-
-### MCP (Model Context Protocol)
-
-Extend Claude with external tools and data sources via MCP servers. Claudian supports all MCP server types and stores configurations in Claude Code-compatible format.
-
-**Server Types:**
-- **stdio**: Local command-line servers (e.g., `docker exec`, `npx`, `python -m`)
-- **sse**: Server-Sent Events endpoints
-- **http**: HTTP JSON-RPC endpoints
-
-**Adding Servers:**
-1. Go to Settings → Claudian → MCP Servers
-2. Click "Add" and choose: stdio, http/sse, or Import from clipboard
-3. Fill in the configuration and save
-4. Use "Test" button to verify connectivity and see available tools
-
-**Context-Saving Mode:**
-Enable per-server to hide tools from agent unless explicitly needed:
-- Server tools are excluded by default (saves context window)
-- Type `@server-name` in your message to enable for that query
-- Or click the server in the MCP selector (plug icon in toolbar)
-
-**Toolbar Selector:**
-- Plug icon appears next to folder icon when MCP servers are configured
-- Glows when at least one server is enabled (Claude brand color)
-- Shows badge with count when multiple servers enabled
-- Click to toggle servers on/off for current session
-
-### Context Window Usage
-
-Monitor your context usage with a 240° arc gauge in the input toolbar.
-
-- **Location**: Between thinking selector and folder icon
-- **Display**: Arc gauge + percentage (e.g., "26%")
-- **Tooltip**: Hover to see detailed usage (e.g., "45k / 200k")
-- **Persistence**: Usage is saved per conversation and restored on switch/reload
-- **Updates**: Refreshes after each completed agent response
-
-### Plan Mode
-
-Enable plan mode to have Claude explore and plan before making changes. The agent operates in read-only mode during exploration, then presents a plan for your approval before implementation.
-
-**Toggle:**
-- Press `Shift+Tab` in the input area to toggle plan mode
-- Teal "Plan" indicator appears next to YOLO/Safe toggle when active
-
-**Workflow:**
-1. Enable plan mode with `Shift+Tab`
-2. Describe your task and send
-3. Agent explores the codebase using read-only tools
-4. Agent writes a plan to `~/.claude/plans/` and presents it
-5. Review the plan in the approval panel:
-   - **Approve**: Implement in current session
-   - **Approve + New Session**: Implement in a fresh conversation
-   - **Revise**: Provide feedback for the agent to refine the plan
-6. Once approved, the plan is appended to system prompt and implementation begins
-
-**Read-only tools in plan mode:**
-- `Read`, `Glob`, `Grep`, `LS`, `WebSearch`, `WebFetch`
-- `EnterPlanMode`, `ExitPlanMode` (internal)
-
-### Example prompts
-
-- "List all notes in this vault"
-- "Create a new note called 'Ideas' with a template for brainstorming"
-- "Find all notes tagged #project and summarize them"
-- "Organize my daily notes into monthly folders"
-- "Summarize this note" (with a note attached via @ or auto-attach)
+- **Inline Edit**: Select text + hotkey to edit directly in notes with word-level diff preview
+- **Slash Commands**: Type `/` for custom prompt templates (Settings → Slash Commands)
+- **Instruction Mode**: Type `#` to add refined instructions to system prompt
+- **Plan Mode**: `Shift+Tab` for read-only exploration before implementation
+- **Skills**: Add `SKILL.md` files to `~/.claude/skills/` or `{vault}/.claude/skills/`
+- **MCP**: Add external tools via Settings → MCP Servers; use `@server-name` to activate
 
 ## Configuration
 
@@ -255,6 +105,7 @@ Enable plan mode to have Claude explore and plan before making changes. The agen
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Custom system prompt**: Additional instructions appended to the default system prompt (Instruction Mode `#` saves here)
+- **Title generation model**: Model used for auto-generating conversation titles (default: Auto/Haiku)
 - **Permission mode**: Toggle YOLO (bypass prompts) or Safe (require approval)
 - **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
 - **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
@@ -354,6 +205,7 @@ src/
 - [x] MCP (Model Context Protocol) server support with context-saving mode
 - [x] Context window usage display
 - [x] Plan mode (Shift+Tab toggle, read-only exploration, approval flow)
+- [x] Auto title generation (AI-powered, concurrent, with regenerate option)
 - [ ] Hooks and other advanced features
 
 ## License

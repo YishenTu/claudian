@@ -29,7 +29,7 @@ src/
 │   │   ├── state/               # Centralized state (ChatState)
 │   │   ├── controllers/         # ConversationController, StreamController, InputController, SelectionController
 │   │   ├── rendering/           # MessageRenderer
-│   │   └── services/            # AsyncSubagentManager, InstructionRefineService
+│   │   └── services/            # TitleGenerationService, AsyncSubagentManager, InstructionRefineService
 │   ├── inline-edit/             # Inline edit feature
 │   ├── mcp/                     # MCP @-mention detection and UI helpers
 │   │   ├── McpService.ts
@@ -50,7 +50,7 @@ src/
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
 | | `mcp/` | MCP server config loading and filtering (McpServerManager) |
-| | `prompts/` | System prompts (main agent, inline edit, instruction refine) |
+| | `prompts/` | System prompts (main agent, inline edit, instruction refine, title generation) |
 | | `sdk/` | SDK message transformation |
 | | `security/` | Approval, blocklist, path validation |
 | | `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
@@ -60,6 +60,7 @@ src/
 | | `chat/state/` | Centralized chat state management (ChatState) |
 | | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
 | | `chat/rendering/` | Message DOM rendering (MessageRenderer) |
+| | `chat/services/` | TitleGenerationService, AsyncSubagentManager, InstructionRefineService |
 | | `inline-edit/` | Inline edit service |
 | | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
 | | `settings/` | Settings tab UI |
@@ -176,6 +177,7 @@ await MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, component
 ```typescript
 interface ClaudianSettings {
   model: string;                     // 'claude-haiku-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4-5' | custom
+  titleGenerationModel: string;      // Model for auto titles (empty = auto)
   thinkingBudget: 'off' | 'low' | 'medium' | 'high';  // 0 | 4k | 8k | 16k tokens
   permissionMode: 'yolo' | 'normal';
   enableBlocklist: boolean;
@@ -290,6 +292,17 @@ Read-only exploration mode with approval flow before implementation.
 - **Approval panel**: Approve / Approve + New Session / Revise options
 - **Implementation**: Approved plan appended to system prompt, auto-sends hidden implementation prompt
 - **UI components**: `PlanBanner` (teal indicator), `PlanApprovalPanel` (approval/revise flow)
+
+### Auto Title Generation
+AI-powered conversation titles generated after first exchange.
+- **Trigger**: After first user message and assistant response complete
+- **Model**: Configurable via `titleGenerationModel` setting, falls back to `ANTHROPIC_DEFAULT_HAIKU_MODEL` env var, then `claude-haiku-4-5`
+- **Concurrent**: Each conversation has its own AbortController; multiple can generate simultaneously
+- **UI**: Loading spinner while generating, refresh icon if failed (click to retry)
+- **Constraints**: Max 50 characters, no quotes/punctuation, sentence case
+- **Plan prefix**: Plan conversations preserve `[Plan]` prefix
+- **Manual override**: User rename takes precedence; generation stops if renamed during progress
+- **Status tracking**: `titleGenerationStatus` field: `pending` | `success` | `failed`
 
 ## Security
 
