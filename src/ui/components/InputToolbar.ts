@@ -2,7 +2,7 @@
  * Claudian - Input toolbar components (model selector, thinking budget, permission toggle).
  */
 
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import type {
   ClaudeModel,
@@ -325,16 +325,71 @@ export class ContextPathSelector {
         const selectedPath = result.filePaths[0];
         const paths = this.callbacks.getSettings().allowedContextPaths;
 
-        if (!paths.includes(selectedPath)) {
-          const newPaths = [...paths, selectedPath];
-          await this.callbacks.onContextPathsChange(newPaths);
-          this.updateDisplay();
-          this.renderDropdown();
+        // Check for duplicate
+        if (paths.includes(selectedPath)) {
+          return;
         }
+
+        // Check for nested/overlapping paths
+        const conflict = this.findConflictingPath(selectedPath, paths);
+        if (conflict) {
+          // Show warning notice
+          this.showConflictNotice(selectedPath, conflict);
+          return;
+        }
+
+        const newPaths = [...paths, selectedPath];
+        await this.callbacks.onContextPathsChange(newPaths);
+        this.updateDisplay();
+        this.renderDropdown();
       }
     } catch (err) {
       console.error('Failed to open folder picker:', err);
     }
+  }
+
+  /**
+   * Checks if a new path conflicts with existing paths (nested or overlapping).
+   * Returns the conflicting path if found, null otherwise.
+   */
+  private findConflictingPath(newPath: string, existingPaths: string[]): { path: string; type: 'parent' | 'child' } | null {
+    const normalizedNew = this.normalizePath(newPath);
+
+    for (const existing of existingPaths) {
+      const normalizedExisting = this.normalizePath(existing);
+
+      // Check if new path is a child of existing (existing is parent)
+      if (normalizedNew.startsWith(normalizedExisting + '/')) {
+        return { path: existing, type: 'parent' };
+      }
+
+      // Check if new path is a parent of existing (new would contain existing)
+      if (normalizedExisting.startsWith(normalizedNew + '/')) {
+        return { path: existing, type: 'child' };
+      }
+    }
+
+    return null;
+  }
+
+  /** Normalizes a path for comparison (removes trailing slashes, normalizes separators). */
+  private normalizePath(p: string): string {
+    return p.replace(/\\/g, '/').replace(/\/+$/, '');
+  }
+
+  /** Shows a notice when a conflicting path is detected. */
+  private showConflictNotice(newPath: string, conflict: { path: string; type: 'parent' | 'child' }) {
+    const shortNew = this.shortenPath(newPath);
+    const shortExisting = this.shortenPath(conflict.path);
+
+    let message: string;
+    if (conflict.type === 'parent') {
+      message = `Cannot add "${shortNew}" - it's inside existing path "${shortExisting}"`;
+    } else {
+      message = `Cannot add "${shortNew}" - it contains existing path "${shortExisting}"`;
+    }
+
+    new Notice(message, 5000);
   }
 
   private renderDropdown() {

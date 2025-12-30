@@ -255,6 +255,7 @@ export class ClaudianView extends ItemView {
         getExcludedTags: () => this.plugin.settings.excludedTags,
         onFileOpen: async () => {},
         onChipsChanged: () => this.renderer?.scrollToBottomIfNeeded(),
+        getContextPaths: () => this.plugin.settings.allowedContextPaths,
       }
     );
     this.plugin.agentService.setFileEditTracker(this.fileContextManager);
@@ -336,6 +337,8 @@ export class ClaudianView extends ItemView {
       onContextPathsChange: async (paths) => {
         this.plugin.settings.allowedContextPaths = paths;
         await this.plugin.saveSettings();
+        // Pre-scan newly added paths to warm the cache
+        this.fileContextManager?.preScanContextPaths();
       },
     });
 

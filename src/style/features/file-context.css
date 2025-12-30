@@ -102,3 +102,50 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Context file items in @-mention dropdown */
+.claudian-mention-item.context-file .claudian-mention-icon {
+  color: #D97757;
+}
+
+.claudian-mention-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.claudian-mention-name-context {
+  color: var(--text-normal);
+}
+
+.claudian-mention-badge {
+  display: flex;
+  align-items: center;
+  color: #D97757;
+}
+
+.claudian-mention-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Context file chips */
+.claudian-file-chip-context {
+  border-color: rgba(217, 119, 87, 0.3);
+}
+
+.claudian-file-chip-context .claudian-file-chip-icon {
+  color: #D97757;
+}
+
+.claudian-file-chip-badge {
+  display: flex;
+  align-items: center;
+  color: #D97757;
+  margin-left: 4px;
+}
+
+.claudian-file-chip-badge svg {
+  width: 10px;
+  height: 10px;
+}

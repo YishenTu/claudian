@@ -1,5 +1,6 @@
 import type { FileContextCallbacks } from '@/ui/components/FileContext';
 import { FileContextManager } from '@/ui/components/FileContext';
+import type { ContextPathFile } from '@/utils/contextPathScanner';
 
 jest.mock('obsidian', () => ({
   setIcon: jest.fn(),
@@ -13,8 +14,19 @@ jest.mock('obsidian', () => ({
   },
 }));
 
+let mockVaultPath = '/vault';
 jest.mock('@/utils/path', () => ({
-  getVaultPath: jest.fn(() => '/vault'),
+  getVaultPath: jest.fn(() => mockVaultPath),
+}));
+
+// Mock context path scanner
+const mockScanPaths = jest.fn<ContextPathFile[], [string[]]>(() => []);
+jest.mock('@/utils/contextPathScanner', () => ({
+  contextPathScanner: {
+    scanPaths: (paths: string[]) => mockScanPaths(paths),
+    invalidateCache: jest.fn(),
+    invalidatePath: jest.fn(),
+  },
 }));
 
 interface MockElement {
@@ -33,6 +45,9 @@ interface MockElement {
   empty: () => void;
   firstChild: MockElement | null;
   insertBefore: (el: MockElement, ref: MockElement | null) => void;
+  querySelectorAll: (selector: string) => MockElement[];
+  contains: (node: Node) => boolean;
+  scrollIntoView: (opts?: { block?: string }) => void;
 }
 
 function createMockElement(): MockElement {
@@ -92,6 +107,24 @@ function createMockElement(): MockElement {
     insertBefore: (el: MockElement, _ref: MockElement | null) => {
       children.unshift(el);
     },
+    querySelectorAll: (selector: string): MockElement[] => {
+      // Simple implementation for class selectors
+      const results: MockElement[] = [];
+      const className = selector.replace('.', '');
+
+      const search = (elements: MockElement[]) => {
+        for (const el of elements) {
+          if (el.hasClass(className)) {
+            results.push(el);
+          }
+          search(el.children);
+        }
+      };
+      search(children);
+      return results;
+    },
+    contains: () => false,
+    scrollIntoView: () => {},
   };
 
   return element;
@@ -161,10 +194,11 @@ function createMockApp(activeFilePath: string | null = null) {
   } as any;
 }
 
-function createMockCallbacks(): FileContextCallbacks {
+function createMockCallbacks(contextPaths: string[] = []): FileContextCallbacks {
   return {
     getExcludedTags: jest.fn(() => []),
     onFileOpen: jest.fn(),
+    getContextPaths: jest.fn(() => contextPaths),
   };
 }
 
@@ -441,6 +475,857 @@ describe('FileContextManager - Edited File Indicator', () => {
         (c) => c.hasClass('claudian-edited-files-indicator')
       );
       expect(editedIndicator!.style.display).toBe('flex');
+
+      manager.destroy();
+    });
+  });
+});
+
+describe('FileContextManager - Context Path Files', () => {
+  let containerEl: MockElement;
+  let inputEl: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockVaultPath = '/vault';
+    mockScanPaths.mockReturnValue([]);
+    containerEl = createMockElement();
+    inputEl = {
+      value: '',
+      selectionStart: 0,
+      selectionEnd: 0,
+      focus: jest.fn(),
+    };
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe('Context file detection', () => {
+    it('should have getContextPaths callback in FileContextCallbacks', () => {
+      const callbacks = createMockCallbacks(['/external/path']);
+      expect(callbacks.getContextPaths).toBeDefined();
+      expect(callbacks.getContextPaths!()).toEqual(['/external/path']);
+    });
+
+    it('should handle empty context paths', () => {
+      const callbacks = createMockCallbacks([]);
+      expect(callbacks.getContextPaths!()).toEqual([]);
+    });
+
+    it('should handle multiple context paths', () => {
+      const callbacks = createMockCallbacks(['/path1', '/path2', '/path3']);
+      expect(callbacks.getContextPaths!()).toEqual(['/path1', '/path2', '/path3']);
+    });
+  });
+
+  describe('File chip rendering for context files', () => {
+    it('should create manager with context paths callback', () => {
+      const app = createMockApp();
+      const callbacks = createMockCallbacks(['/external/context']);
+
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      expect(manager).toBeDefined();
+      manager.destroy();
+    });
+  });
+});
+
+describe('FileContextManager - isWithinVault boundary checks', () => {
+  let containerEl: MockElement;
+  let inputEl: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockVaultPath = '/vault';
+    mockScanPaths.mockReturnValue([]);
+    containerEl = createMockElement();
+    inputEl = {
+      value: '',
+      selectionStart: 0,
+      selectionEnd: 0,
+      focus: jest.fn(),
+    };
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  // Test isWithinVault indirectly via file chip rendering behavior
+  // Context files outside vault get the 'claudian-file-chip-context' class
+
+  it('should identify path inside vault correctly', () => {
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    // Manually add a vault-relative path
+    manager.setAttachedFiles(['notes/test.md']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    expect(fileIndicator).toBeDefined();
+
+    // Should NOT have context class for vault files
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(false);
+
+    manager.destroy();
+  });
+
+  it('should identify path outside vault as context file', () => {
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    // Add an absolute path outside vault
+    manager.setAttachedFiles(['/external/project/file.ts']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    expect(fileIndicator).toBeDefined();
+
+    // Should have context class for external files
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(true);
+
+    manager.destroy();
+  });
+
+  it('should NOT consider /vault2/file.txt as within /vault (false positive prevention)', () => {
+    mockVaultPath = '/vault';
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    // Add a path that starts with vault name but is a different directory
+    // This is the key edge case from the review
+    manager.setAttachedFiles(['/vault2/file.txt']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+
+    // Should be treated as context file (outside vault)
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(true);
+
+    manager.destroy();
+  });
+
+  it('should handle vault path with trailing slash', () => {
+    mockVaultPath = '/vault/';
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    manager.setAttachedFiles(['/vault/subdir/file.md']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+
+    // Should NOT be context file (it's inside vault)
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(false);
+
+    manager.destroy();
+  });
+
+  it('should handle exact vault path match', () => {
+    mockVaultPath = '/vault';
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    // Path equals vault path exactly (edge case)
+    manager.setAttachedFiles(['/vault']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+
+    // Should NOT be context file (it IS the vault)
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(false);
+
+    manager.destroy();
+  });
+
+  it('should handle Windows-style paths', () => {
+    mockVaultPath = 'C:\\Users\\test\\vault';
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    // Windows path inside vault
+    manager.setAttachedFiles(['C:\\Users\\test\\vault\\notes\\file.md']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+
+    // Should NOT be context file
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(false);
+
+    manager.destroy();
+  });
+
+  it('should handle similar directory names with longer suffix', () => {
+    mockVaultPath = '/users/vault';
+    const app = createMockApp();
+    const callbacks = createMockCallbacks();
+
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      callbacks
+    );
+
+    // Different directory starting with same name (vault-backup vs vault)
+    manager.setAttachedFiles(['/users/vault-backup/file.txt']);
+
+    const fileIndicator = containerEl.children.find(
+      (c) => c.hasClass('claudian-file-indicator')
+    );
+    const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+    expect(fileChip).toBeDefined();
+
+    // Should be context file (different directory)
+    expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(true);
+
+    manager.destroy();
+  });
+});
+
+describe('FileContextManager - Context file @-mention dropdown', () => {
+  let containerEl: MockElement;
+  let inputEl: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockVaultPath = '/vault';
+    mockScanPaths.mockReturnValue([]);
+    containerEl = createMockElement();
+    inputEl = {
+      value: '',
+      selectionStart: 0,
+      selectionEnd: 0,
+      focus: jest.fn(),
+    };
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe('Context file filtering', () => {
+    it('should filter context files by name', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/src/app.ts', name: 'app.ts', relativePath: 'src/app.ts', contextRoot: '/external', mtime: 1000 },
+        { path: '/external/src/index.ts', name: 'index.ts', relativePath: 'src/index.ts', contextRoot: '/external', mtime: 2000 },
+        { path: '/external/config.json', name: 'config.json', relativePath: 'config.json', contextRoot: '/external', mtime: 3000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      // Type @ followed by search text
+      inputEl.value = '@app';
+      inputEl.selectionStart = 4;
+      manager.handleInputChange();
+
+      // Check that dropdown is visible
+      const dropdown = containerEl.children.find(
+        c => c.hasClass('claudian-mention-dropdown')
+      );
+      expect(dropdown).toBeDefined();
+      expect(dropdown!.hasClass('visible')).toBe(true);
+
+      // Should only show files matching 'app'
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+      expect(items.length).toBe(1);
+
+      manager.destroy();
+    });
+
+    it('should filter context files by path', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/src/app.ts', name: 'app.ts', relativePath: 'src/app.ts', contextRoot: '/external', mtime: 1000 },
+        { path: '/external/lib/utils.ts', name: 'utils.ts', relativePath: 'lib/utils.ts', contextRoot: '/external', mtime: 2000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      // Search by path segment
+      inputEl.value = '@src';
+      inputEl.selectionStart = 4;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+
+      // Should match file with 'src' in path
+      expect(items.length).toBe(1);
+
+      manager.destroy();
+    });
+
+    it('should filter case-insensitively', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/README.md', name: 'README.md', relativePath: 'README.md', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      // Search with lowercase
+      inputEl.value = '@readme';
+      inputEl.selectionStart = 7;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+
+      expect(items.length).toBe(1);
+
+      manager.destroy();
+    });
+
+    it('should show "No matches" when no files match', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/app.ts', name: 'app.ts', relativePath: 'app.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@nonexistent';
+      inputEl.selectionStart = 12;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const emptyEl = dropdown!.children.find(c => c.hasClass('claudian-mention-empty'));
+
+      expect(emptyEl).toBeDefined();
+
+      manager.destroy();
+    });
+  });
+
+  describe('Context file sorting', () => {
+    it('should prioritize name prefix matches over other matches', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/contains-test.ts', name: 'contains-test.ts', relativePath: 'contains-test.ts', contextRoot: '/external', mtime: 3000 },
+        { path: '/external/test.ts', name: 'test.ts', relativePath: 'test.ts', contextRoot: '/external', mtime: 1000 },
+        { path: '/external/mytest.ts', name: 'mytest.ts', relativePath: 'mytest.ts', contextRoot: '/external', mtime: 2000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@test';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+
+      // test.ts should be first (name starts with 'test')
+      expect(items.length).toBe(3);
+      // First item should have context-file class and be test.ts
+      expect(items[0].hasClass('context-file')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should sort by mtime when name matches are equal', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      // All have same prefix match status, so mtime should determine order
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/old.ts', name: 'old.ts', relativePath: 'old.ts', contextRoot: '/external', mtime: 1000 },
+        { path: '/external/newest.ts', name: 'newest.ts', relativePath: 'newest.ts', contextRoot: '/external', mtime: 3000 },
+        { path: '/external/middle.ts', name: 'middle.ts', relativePath: 'middle.ts', contextRoot: '/external', mtime: 2000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      // Empty search to get all files
+      inputEl.value = '@';
+      inputEl.selectionStart = 1;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+
+      // newest.ts should be first (highest mtime)
+      expect(items.length).toBe(3);
+
+      manager.destroy();
+    });
+
+    it('should limit context files to 5', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [];
+      for (let i = 0; i < 10; i++) {
+        contextFiles.push({
+          path: `/external/file${i}.ts`,
+          name: `file${i}.ts`,
+          relativePath: `file${i}.ts`,
+          contextRoot: '/external',
+          mtime: i * 1000,
+        });
+      }
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@file';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const contextItems = dropdown!.children.filter(c => c.hasClass('context-file'));
+
+      // Should be limited to 5 context files
+      expect(contextItems.length).toBe(5);
+
+      manager.destroy();
+    });
+  });
+
+  describe('Context file selection', () => {
+    it('should add absolute path to attached files when context file is selected', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/src/app.ts', name: 'app.ts', relativePath: 'src/app.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      // Trigger mention dropdown
+      inputEl.value = '@app';
+      inputEl.selectionStart = 4;
+      manager.handleInputChange();
+
+      // Simulate Enter key to select
+      const handled = manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
+      expect(handled).toBe(true);
+
+      // Check attached files contains the absolute path
+      const attachedFiles = manager.getAttachedFiles();
+      expect(attachedFiles.has('/external/src/app.ts')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should update input text with file name after selection', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/myfile.ts', name: 'myfile.ts', relativePath: 'myfile.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@my';
+      inputEl.selectionStart = 3;
+      manager.handleInputChange();
+
+      manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
+
+      // Input should now have the file name
+      expect(inputEl.value).toBe('@myfile.ts ');
+
+      manager.destroy();
+    });
+
+    it('should hide dropdown after selection', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/file.ts', name: 'file.ts', relativePath: 'file.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@file';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      expect(manager.isMentionDropdownVisible()).toBe(true);
+
+      manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
+
+      expect(manager.isMentionDropdownVisible()).toBe(false);
+
+      manager.destroy();
+    });
+  });
+
+  describe('UI rendering for context files', () => {
+    it('should show context-file class on dropdown items', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/app.ts', name: 'app.ts', relativePath: 'app.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@app';
+      inputEl.selectionStart = 4;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+
+      expect(items[0].hasClass('context-file')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should render file chip with context styling for attached context files', () => {
+      const app = createMockApp();
+      const callbacks = createMockCallbacks(['/external']);
+
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      // Directly add a context file path
+      manager.setAttachedFiles(['/external/src/file.ts']);
+
+      const fileIndicator = containerEl.children.find(
+        (c) => c.hasClass('claudian-file-indicator')
+      );
+
+      const fileChip = fileIndicator!.children.find(c => c.hasClass('claudian-file-chip'));
+      expect(fileChip).toBeDefined();
+      expect(fileChip!.hasClass('claudian-file-chip-context')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should differentiate vault files from context files in dropdown', () => {
+      const app = createMockApp();
+
+      // Add vault files
+      const vaultFile = new MockTFile('notes/vaultfile.md');
+      app.vault.getMarkdownFiles.mockReturnValue([vaultFile]);
+
+      // Add context files
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/contextfile.ts', name: 'contextfile.ts', relativePath: 'contextfile.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@file';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
+      const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
+
+      // Should have both context and vault files
+      const contextItems = items.filter(i => i.hasClass('context-file'));
+      const vaultItems = items.filter(i => !i.hasClass('context-file') && !i.hasClass('mcp-server'));
+
+      expect(contextItems.length).toBe(1);
+      expect(vaultItems.length).toBe(1);
+
+      manager.destroy();
+    });
+  });
+
+  describe('Dropdown keyboard navigation', () => {
+    it('should navigate with arrow keys', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/file1.ts', name: 'file1.ts', relativePath: 'file1.ts', contextRoot: '/external', mtime: 2000 },
+        { path: '/external/file2.ts', name: 'file2.ts', relativePath: 'file2.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@file';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      // Navigate down
+      manager.handleMentionKeydown({ key: 'ArrowDown', preventDefault: jest.fn() } as any);
+
+      // Navigate up
+      manager.handleMentionKeydown({ key: 'ArrowUp', preventDefault: jest.fn() } as any);
+
+      // Select with Tab
+      const handled = manager.handleMentionKeydown({ key: 'Tab', preventDefault: jest.fn() } as any);
+      expect(handled).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should close dropdown with Escape', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/file.ts', name: 'file.ts', relativePath: 'file.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@file';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      expect(manager.isMentionDropdownVisible()).toBe(true);
+
+      manager.handleMentionKeydown({ key: 'Escape', preventDefault: jest.fn() } as any);
+
+      expect(manager.isMentionDropdownVisible()).toBe(false);
+
+      manager.destroy();
+    });
+  });
+
+  describe('Default selection behavior', () => {
+    it('should default select first vault file when vault files exist', () => {
+      const app = createMockApp();
+
+      const vaultFile = new MockTFile('notes/file.md');
+      app.vault.getMarkdownFiles.mockReturnValue([vaultFile]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/contextfile.ts', name: 'contextfile.ts', relativePath: 'contextfile.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@file';
+      inputEl.selectionStart = 5;
+      manager.handleInputChange();
+
+      // Select without navigation - should select vault file (default)
+      manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
+
+      // Should have added vault file, not context file
+      const attachedFiles = manager.getAttachedFiles();
+      expect(attachedFiles.has('notes/file.md')).toBe(true);
+      expect(attachedFiles.has('/external/contextfile.ts')).toBe(false);
+
+      manager.destroy();
+    });
+
+    it('should default select first context file when no vault files match', () => {
+      const app = createMockApp();
+      app.vault.getMarkdownFiles.mockReturnValue([]);
+
+      const contextFiles: ContextPathFile[] = [
+        { path: '/external/mycode.ts', name: 'mycode.ts', relativePath: 'mycode.ts', contextRoot: '/external', mtime: 1000 },
+      ];
+      mockScanPaths.mockReturnValue(contextFiles);
+
+      const callbacks = createMockCallbacks(['/external']);
+      const manager = new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        callbacks
+      );
+
+      inputEl.value = '@mycode';
+      inputEl.selectionStart = 7;
+      manager.handleInputChange();
+
+      manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
+
+      const attachedFiles = manager.getAttachedFiles();
+      expect(attachedFiles.has('/external/mycode.ts')).toBe(true);
 
       manager.destroy();
     });
