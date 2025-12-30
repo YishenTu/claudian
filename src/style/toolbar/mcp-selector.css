@@ -119,10 +119,6 @@
   background: rgba(217, 119, 87, 0.1);
 }
 
-.claudian-mcp-selector-item.disabled {
-  opacity: 0.5;
-}
-
 .claudian-mcp-selector-check {
   display: flex;
   align-items: center;
@@ -167,12 +163,4 @@
   border-radius: 3px;
   background: rgba(217, 119, 87, 0.2);
   color: #D97757;
-}
-
-.claudian-mcp-selector-disabled-badge {
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: rgba(220, 53, 69, 0.15);
-  color: #dc3545;
 }
