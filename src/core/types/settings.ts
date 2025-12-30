@@ -127,6 +127,7 @@ export interface ClaudianSettings {
   showToolUse: boolean;
   toolCallExpandedByDefault: boolean;
   model: ClaudeModel;
+  titleGenerationModel: string;  // Model for auto title generation (empty = auto)
   lastClaudeModel?: ClaudeModel;
   lastCustomModel?: ClaudeModel;
   lastEnvHash?: string;
@@ -151,6 +152,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   showToolUse: true,
   toolCallExpandedByDefault: false,
   model: 'haiku',
+  titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
   lastClaudeModel: 'haiku',
   lastCustomModel: '',
   lastEnvHash: '',

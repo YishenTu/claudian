@@ -18,6 +18,7 @@ function createMockPlugin(settings = {}) {
   return {
     settings: {
       model: 'sonnet',
+      titleGenerationModel: '',
       thinkingBudget: 'off',
       ...settings,
     },
@@ -91,7 +92,53 @@ describe('TitleGenerationService', () => {
       expect(options?.permissionMode).toBe('bypassPermissions');
     });
 
-    it('should use ANTHROPIC_DEFAULT_HAIKU_MODEL when set', async () => {
+    it('should use titleGenerationModel setting when set', async () => {
+      mockPlugin.settings.titleGenerationModel = 'opus';
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: 'Title' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      const callback = jest.fn();
+      await service.generateTitle('conv-123', 'test', 'response', callback);
+
+      const options = getLastOptions();
+      expect(options?.model).toBe('opus');
+    });
+
+    it('should prioritize setting over env var', async () => {
+      mockPlugin.settings.titleGenerationModel = 'sonnet';
+      mockPlugin.getActiveEnvironmentVariables.mockReturnValue(
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku'
+      );
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: 'Title' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      const callback = jest.fn();
+      await service.generateTitle('conv-123', 'test', 'response', callback);
+
+      const options = getLastOptions();
+      expect(options?.model).toBe('sonnet');
+    });
+
+    it('should use ANTHROPIC_DEFAULT_HAIKU_MODEL when setting is empty', async () => {
+      mockPlugin.settings.titleGenerationModel = '';
       mockPlugin.getActiveEnvironmentVariables.mockReturnValue(
         'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku'
       );

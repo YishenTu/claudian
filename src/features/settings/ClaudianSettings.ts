@@ -8,8 +8,10 @@ import type { App} from 'obsidian';
 import { PluginSettingTab, Setting } from 'obsidian';
 
 import { getCurrentPlatformKey } from '../../core/types';
+import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import type ClaudianPlugin from '../../main';
 import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from '../../ui';
+import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
 
 /** Plugin settings tab displayed in Obsidian's settings pane. */
 export class ClaudianSettingTab extends PluginSettingTab {
@@ -153,6 +155,30 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
+      });
+
+    new Setting(containerEl)
+      .setName('Title generation model')
+      .setDesc('Model used for auto-generating conversation titles. "Auto" uses ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5.')
+      .addDropdown((dropdown) => {
+        // Add "Auto" option (empty string = use default logic)
+        dropdown.addOption('', 'Auto (Haiku)');
+
+        // Get available models from environment or defaults
+        const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
+        const customModels = getModelsFromEnvironment(envVars);
+        const models = customModels.length > 0 ? customModels : DEFAULT_CLAUDE_MODELS;
+
+        for (const model of models) {
+          dropdown.addOption(model.value, model.label);
+        }
+
+        dropdown
+          .setValue(this.plugin.settings.titleGenerationModel || '')
+          .onChange(async (value) => {
+            this.plugin.settings.titleGenerationModel = value;
+            await this.plugin.saveSettings();
+          });
       });
 
     // Slash Commands section
