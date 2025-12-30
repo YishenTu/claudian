@@ -49,6 +49,8 @@ export interface PlanModeState {
   planContent: string | null;
   /** User's original query that started plan mode. */
   originalQuery: string | null;
+  /** Whether we need to re-send the query with plan mode after current stream ends. */
+  pendingResend?: boolean;
 }
 
 /** Centralized chat state data. */

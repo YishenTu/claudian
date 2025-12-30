@@ -32,7 +32,7 @@ import {
   ApprovalManager,
   getActionDescription,
 } from '../security';
-import { TOOL_ASK_USER_QUESTION, TOOL_EXIT_PLAN_MODE } from '../tools/toolNames';
+import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE } from '../tools/toolNames';
 import type {
   ApprovedAction,
   AskUserQuestionCallback,
@@ -207,6 +207,9 @@ export type ExitPlanModeDecision =
 /** Callback for ExitPlanMode tool - shows approval panel and returns decision. */
 export type ExitPlanModeCallback = (planContent: string) => Promise<ExitPlanModeDecision>;
 
+/** Callback for EnterPlanMode tool - notifies UI and triggers re-send with plan mode. */
+export type EnterPlanModeCallback = () => Promise<void>;
+
 /** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
   private plugin: ClaudianPlugin;
@@ -215,6 +218,7 @@ export class ClaudianService {
   private approvalCallback: ApprovalCallback | null = null;
   private askUserQuestionCallback: AskUserQuestionCallback | null = null;
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
+  private enterPlanModeCallback: EnterPlanModeCallback | null = null;
   private currentPlanFilePath: string | null = null;
   private approvedPlanContent: string | null = null;
   private fileEditTracker: FileEditTracker | null = null;
@@ -619,6 +623,11 @@ export class ClaudianService {
     this.exitPlanModeCallback = callback;
   }
 
+  /** Sets the EnterPlanMode callback for plan mode initiation. */
+  setEnterPlanModeCallback(callback: EnterPlanModeCallback | null) {
+    this.enterPlanModeCallback = callback;
+  }
+
   /** Sets the current plan file path (for ExitPlanMode handling). */
   setCurrentPlanFilePath(path: string | null) {
     this.currentPlanFilePath = path;
@@ -687,13 +696,18 @@ export class ClaudianService {
 
   /**
    * Create unified callback that handles both YOLO and normal modes.
-   * AskUserQuestion and ExitPlanMode always prompt user regardless of mode.
+   * AskUserQuestion, EnterPlanMode, and ExitPlanMode have special handling regardless of mode.
    */
   private createUnifiedToolCallback(mode: PermissionMode): CanUseTool {
     return async (toolName, input, context): Promise<PermissionResult> => {
       // Special handling for AskUserQuestion - always prompt user
       if (toolName === TOOL_ASK_USER_QUESTION) {
         return this.handleAskUserQuestionTool(input, context?.toolUseID);
+      }
+
+      // Special handling for EnterPlanMode - interrupt and re-send with plan mode
+      if (toolName === TOOL_ENTER_PLAN_MODE) {
+        return this.handleEnterPlanModeTool();
       }
 
       // Special handling for ExitPlanMode - show plan approval UI
@@ -762,6 +776,35 @@ export class ClaudianService {
       this.askUserQuestionAnswers.delete(toolUseId);
     }
     return answers;
+  }
+
+  /**
+   * Handle EnterPlanMode tool - notifies UI and triggers re-send with plan mode.
+   * Interrupts the current query so it can be re-sent with proper plan mode settings.
+   */
+  private async handleEnterPlanModeTool(): Promise<PermissionResult> {
+    if (!this.enterPlanModeCallback) {
+      // No callback - just allow the tool (UI will handle via stream detection)
+      return { behavior: 'allow', updatedInput: {} };
+    }
+
+    try {
+      // Notify UI to update state and queue re-send with plan mode
+      await this.enterPlanModeCallback();
+
+      // Interrupt so the query can be re-sent with plan mode enabled
+      return {
+        behavior: 'deny',
+        message: 'ENTERING_PLAN_MODE. Restarting query with plan mode enabled.',
+        interrupt: true,
+      };
+    } catch {
+      return {
+        behavior: 'deny',
+        message: 'Failed to enter plan mode.',
+        interrupt: true,
+      };
+    }
   }
 
   /**
