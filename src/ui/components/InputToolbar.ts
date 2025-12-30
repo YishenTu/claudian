@@ -537,11 +537,12 @@ export class McpServerSelector {
     // Server list
     const listEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-list' });
 
-    const servers = this.mcpService?.getServers() || [];
+    const allServers = this.mcpService?.getServers() || [];
+    const servers = allServers.filter(s => s.enabled);
 
     if (servers.length === 0) {
       const emptyEl = listEl.createDiv({ cls: 'claudian-mcp-selector-empty' });
-      emptyEl.setText('No MCP servers configured');
+      emptyEl.setText(allServers.length === 0 ? 'No MCP servers configured' : 'All MCP servers disabled');
       return;
     }
 
@@ -556,9 +557,6 @@ export class McpServerSelector {
     const isEnabled = this.enabledServers.has(server.name);
     if (isEnabled) {
       itemEl.addClass('enabled');
-    }
-    if (!server.enabled) {
-      itemEl.addClass('disabled');
     }
 
     // Checkbox
@@ -580,20 +578,11 @@ export class McpServerSelector {
       csEl.setAttribute('title', 'Context-saving: can also enable via @' + server.name);
     }
 
-    if (!server.enabled) {
-      const disabledEl = infoEl.createSpan({ cls: 'claudian-mcp-selector-disabled-badge' });
-      disabledEl.setText('disabled');
-    }
-
     // Click to toggle
-    if (server.enabled) {
-      itemEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.toggleServer(server.name);
-      });
-    } else {
-      itemEl.setAttribute('title', 'Enable this server in settings to use it');
-    }
+    itemEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleServer(server.name);
+    });
   }
 
   private toggleServer(name: string) {
