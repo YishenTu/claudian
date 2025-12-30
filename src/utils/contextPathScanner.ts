@@ -118,6 +118,9 @@ class ContextPathScanner {
         // Skip common large/build directories
         if (SKIP_DIRECTORIES.has(entry.name)) continue;
 
+        // Skip symlinks to prevent infinite recursion and directory escape
+        if (entry.isSymbolicLink()) continue;
+
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
@@ -134,16 +137,16 @@ class ContextPathScanner {
               contextRoot,
               mtime: fileStat.mtimeMs,
             });
-          } catch {
-            // Skip files we can't stat (permission errors, etc.)
+          } catch (err) {
+            console.debug(`Skipped file ${fullPath}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
         // Limit total files per context path
         if (files.length >= MAX_FILES_PER_PATH) break;
       }
-    } catch {
-      // Skip directories we can't access (permission errors, etc.)
+    } catch (err) {
+      console.warn(`Failed to scan context directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     return files;

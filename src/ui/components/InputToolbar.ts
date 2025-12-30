@@ -15,6 +15,7 @@ import {
   THINKING_BUDGETS
 } from '../../core/types';
 import type { McpService } from '../../features/mcp/McpService';
+import { findConflictingPath } from '../../utils/contextPath';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
 
 /** Settings access interface for toolbar components. */
@@ -331,7 +332,7 @@ export class ContextPathSelector {
         }
 
         // Check for nested/overlapping paths
-        const conflict = this.findConflictingPath(selectedPath, paths);
+        const conflict = findConflictingPath(selectedPath, paths);
         if (conflict) {
           // Show warning notice
           this.showConflictNotice(selectedPath, conflict);
@@ -346,35 +347,6 @@ export class ContextPathSelector {
     } catch (err) {
       console.error('Failed to open folder picker:', err);
     }
-  }
-
-  /**
-   * Checks if a new path conflicts with existing paths (nested or overlapping).
-   * Returns the conflicting path if found, null otherwise.
-   */
-  private findConflictingPath(newPath: string, existingPaths: string[]): { path: string; type: 'parent' | 'child' } | null {
-    const normalizedNew = this.normalizePath(newPath);
-
-    for (const existing of existingPaths) {
-      const normalizedExisting = this.normalizePath(existing);
-
-      // Check if new path is a child of existing (existing is parent)
-      if (normalizedNew.startsWith(normalizedExisting + '/')) {
-        return { path: existing, type: 'parent' };
-      }
-
-      // Check if new path is a parent of existing (new would contain existing)
-      if (normalizedExisting.startsWith(normalizedNew + '/')) {
-        return { path: existing, type: 'child' };
-      }
-    }
-
-    return null;
-  }
-
-  /** Normalizes a path for comparison (removes trailing slashes, normalizes separators). */
-  private normalizePath(p: string): string {
-    return p.replace(/\\/g, '/').replace(/\/+$/, '');
   }
 
   /** Shows a notice when a conflicting path is detected. */

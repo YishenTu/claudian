@@ -12,9 +12,10 @@ import * as path from 'path';
 
 import { isEditTool } from '../../core/tools/toolNames';
 import type { McpService } from '../../features/mcp/McpService';
+import { getFolderName } from '../../utils/contextPath';
 import { type ContextPathFile,contextPathScanner } from '../../utils/contextPathScanner';
 import { extractMcpMentions } from '../../utils/mcp';
-import { getVaultPath } from '../../utils/path';
+import { getVaultPath, isPathWithinVault } from '../../utils/path';
 
 interface FileHashState {
   originalHash: string | null;
@@ -23,11 +24,12 @@ interface FileHashState {
 
 /** Union type for @-mention dropdown items. */
 interface MentionItem {
-  type: 'file' | 'mcp-server' | 'context-file';
+  type: 'file' | 'mcp-server' | 'context-file' | 'context-folder';
   name: string;
   path?: string;           // For vault files
   absolutePath?: string;   // For context path files
   contextRoot?: string;    // For context path files
+  folderName?: string;     // For context folder filters
 }
 
 /** Callbacks for file context interactions. */
@@ -71,6 +73,9 @@ export class FileContextManager {
 
   // Plan mode state
   private planModeActive = false;
+
+  // Context folder filter state
+  private activeContextFilter: { folderName: string; contextRoot: string } | null = null;
 
   constructor(
     app: App,
@@ -459,14 +464,7 @@ export class FileContextManager {
     const vaultPath = getVaultPath(this.app);
     if (!vaultPath) return false;
 
-    // Normalize paths: forward slashes and remove trailing slashes
-    const normalizedVault = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
-    const normalizedFile = filePath.replace(/\\/g, '/');
-
-    // Check for exact match or proper path boundary (followed by /)
-    // This prevents /vault2/file.txt being considered within /vault
-    return normalizedFile === normalizedVault ||
-           normalizedFile.startsWith(normalizedVault + '/');
+    return isPathWithinVault(filePath, vaultPath);
   }
 
   private async openFileFromChip(filePath: string) {
@@ -743,7 +741,11 @@ export class FileContextManager {
 
     // Run scan asynchronously to avoid blocking UI
     setTimeout(() => {
-      contextPathScanner.scanPaths(contextPaths);
+      try {
+        contextPathScanner.scanPaths(contextPaths);
+      } catch (err) {
+        console.warn('Failed to pre-scan context paths:', err instanceof Error ? err.message : String(err));
+      }
     }, 0);
   }
 
@@ -808,6 +810,68 @@ export class FileContextManager {
     this.filteredMentionItems = [];
     this.filteredContextFiles = [];
 
+    const contextPaths = this.callbacks.getContextPaths?.() || [];
+
+    // Check if user is typing a context folder filter (e.g., @workspace/)
+    const isFilterSearch = searchText.includes('/');
+    let filterFolderName: string | null = null;
+    let fileSearchText = searchLower;
+
+    if (isFilterSearch) {
+      const slashIndex = searchText.indexOf('/');
+      filterFolderName = searchText.substring(0, slashIndex).toLowerCase();
+      fileSearchText = searchText.substring(slashIndex + 1).toLowerCase();
+
+      // Activate the filter for matching context folder
+      const matchingContext = contextPaths.find(p =>
+        getFolderName(p).toLowerCase() === filterFolderName
+      );
+
+      if (matchingContext) {
+        this.activeContextFilter = {
+          folderName: getFolderName(matchingContext),
+          contextRoot: matchingContext,
+        };
+      }
+    }
+
+    // If we have an active filter from @folder/ pattern, only show files from that context
+    if (this.activeContextFilter && isFilterSearch) {
+      const contextFiles = contextPathScanner.scanPaths([this.activeContextFilter.contextRoot]);
+      this.filteredContextFiles = contextFiles
+        .filter(file => {
+          const pathLower = file.path.toLowerCase();
+          const nameLower = file.name.toLowerCase();
+          return pathLower.includes(fileSearchText) || nameLower.includes(fileSearchText);
+        })
+        .sort((a, b) => {
+          const aNameMatch = a.name.toLowerCase().startsWith(fileSearchText);
+          const bNameMatch = b.name.toLowerCase().startsWith(fileSearchText);
+          if (aNameMatch && !bNameMatch) return -1;
+          if (!aNameMatch && bNameMatch) return 1;
+          return b.mtime - a.mtime;
+        })
+        .slice(0, 10);
+
+      for (const file of this.filteredContextFiles) {
+        this.filteredMentionItems.push({
+          type: 'context-file',
+          name: file.name,
+          absolutePath: file.path,
+          contextRoot: file.contextRoot,
+          folderName: this.activeContextFilter.folderName,
+        });
+      }
+
+      this.filteredFiles = [];
+      this.selectedMentionIndex = 0;
+      this.renderMentionDropdown();
+      return;
+    }
+
+    // Reset filter when not in filter mode
+    this.activeContextFilter = null;
+
     // Add MCP servers first (context-saving ones only)
     if (this.mcpService) {
       const mcpServers = this.mcpService.getContextSavingServers();
@@ -822,8 +886,24 @@ export class FileContextManager {
       }
     }
 
+    // Add context folder filters (when search matches a context path folder name)
+    if (contextPaths.length > 0) {
+      const matchingFolders = new Set<string>();
+      for (const contextPath of contextPaths) {
+        const folderName = getFolderName(contextPath);
+        if (folderName.toLowerCase().includes(searchLower) && !matchingFolders.has(folderName)) {
+          matchingFolders.add(folderName);
+          this.filteredMentionItems.push({
+            type: 'context-folder',
+            name: folderName,
+            contextRoot: contextPath,
+            folderName,
+          });
+        }
+      }
+    }
+
     // Add context path files (up to 5)
-    const contextPaths = this.callbacks.getContextPaths?.() || [];
     if (contextPaths.length > 0) {
       const contextFiles = contextPathScanner.scanPaths(contextPaths);
       this.filteredContextFiles = contextFiles
@@ -848,11 +928,12 @@ export class FileContextManager {
           name: file.name,
           absolutePath: file.path,
           contextRoot: file.contextRoot,
+          folderName: getFolderName(file.contextRoot),
         });
       }
     }
 
-    // Track where vault files start (after MCP servers and context files)
+    // Track where vault files start (after MCP servers, context folders, and context files)
     const firstVaultFileIndex = this.filteredMentionItems.length;
 
     // Add vault files (remaining slots up to 10 total)
@@ -919,6 +1000,8 @@ export class FileContextManager {
           itemEl.addClass('mcp-server');
         } else if (item.type === 'context-file') {
           itemEl.addClass('context-file');
+        } else if (item.type === 'context-folder') {
+          itemEl.addClass('context-folder');
         }
 
         if (i === this.selectedMentionIndex) {
@@ -930,6 +1013,8 @@ export class FileContextManager {
           setIcon(iconEl, 'plug');
         } else if (item.type === 'context-file') {
           setIcon(iconEl, 'folder-open');
+        } else if (item.type === 'context-folder') {
+          setIcon(iconEl, 'folder');
         } else {
           setIcon(iconEl, 'file-text');
         }
@@ -939,11 +1024,18 @@ export class FileContextManager {
         if (item.type === 'mcp-server') {
           const nameEl = textEl.createSpan({ cls: 'claudian-mention-name' });
           nameEl.setText(`@${item.name}`);
+        } else if (item.type === 'context-folder') {
+          // Context folder filter: show @folderName/ with filter hint
+          const nameEl = textEl.createSpan({ cls: 'claudian-mention-name claudian-mention-name-folder' });
+          nameEl.setText(`@${item.name}/`);
+          const hintEl = textEl.createSpan({ cls: 'claudian-mention-hint' });
+          hintEl.setText('filter files');
         } else if (item.type === 'context-file') {
-          // Context file: show name with folder badge and relative path
+          // Context file: show @folderName/filename with folder badge
           const nameRow = textEl.createSpan({ cls: 'claudian-mention-name-row' });
           const nameEl = nameRow.createSpan({ cls: 'claudian-mention-name claudian-mention-name-context' });
-          nameEl.setText(item.name);
+          // Show with folder prefix for clarity
+          nameEl.setText(item.folderName ? `@${item.folderName}/${item.name}` : item.name);
           const badgeEl = nameRow.createSpan({ cls: 'claudian-mention-badge' });
           setIcon(badgeEl, 'folder');
           // Show relative path
@@ -1009,13 +1101,28 @@ export class FileContextManager {
       // Add to mentioned servers and notify McpServerSelector
       this.mentionedMcpServers.add(selectedItem.name);
       this.onMcpMentionChange?.(this.mentionedMcpServers);
+    } else if (selectedItem.type === 'context-folder') {
+      // Context folder filter - insert @folderName/ to enable filtering
+      // Don't hide dropdown, let user continue typing to filter files
+      const replacement = `@${selectedItem.name}/`;
+      this.inputEl.value = beforeAt + replacement + afterCursor;
+      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+      this.inputEl.focus();
+
+      // Trigger input change to refresh dropdown with filtered files
+      this.handleInputChange();
+      return; // Don't hide dropdown - user needs to select a file
     } else if (selectedItem.type === 'context-file') {
-      // Context file mention - use absolute path
+      // Context file mention - use absolute path, show with folder prefix
       if (selectedItem.absolutePath) {
         this.attachedFiles.add(selectedItem.absolutePath);
       }
 
-      const replacement = `@${selectedItem.name} `;
+      // Format as @folderName/filename to indicate it's from a context path
+      const displayName = selectedItem.folderName
+        ? `@${selectedItem.folderName}/${selectedItem.name}`
+        : `@${selectedItem.name}`;
+      const replacement = `${displayName} `;
       this.inputEl.value = beforeAt + replacement + afterCursor;
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
       this.updateFileIndicator();

@@ -17,6 +17,12 @@ jest.mock('obsidian', () => ({
 let mockVaultPath = '/vault';
 jest.mock('@/utils/path', () => ({
   getVaultPath: jest.fn(() => mockVaultPath),
+  isPathWithinVault: jest.fn((candidatePath: string, vaultPath: string) => {
+    // Simple implementation for testing: check if path starts with vault + separator
+    const normalizedVault = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
+    const normalizedPath = candidatePath.replace(/\\/g, '/');
+    return normalizedPath === normalizedVault || normalizedPath.startsWith(normalizedVault + '/');
+  }),
 }));
 
 // Mock context path scanner
@@ -967,8 +973,9 @@ describe('FileContextManager - Context file @-mention dropdown', () => {
       const dropdown = containerEl.children.find(c => c.hasClass('claudian-mention-dropdown'));
       const items = dropdown!.children.filter(c => c.hasClass('claudian-mention-item'));
 
-      // newest.ts should be first (highest mtime)
-      expect(items.length).toBe(3);
+      // Should have context folder filter + 3 context files = 4 items
+      // (context folder "external" is shown as a filter option)
+      expect(items.length).toBe(4);
 
       manager.destroy();
     });
@@ -1068,8 +1075,8 @@ describe('FileContextManager - Context file @-mention dropdown', () => {
 
       manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
 
-      // Input should now have the file name
-      expect(inputEl.value).toBe('@myfile.ts ');
+      // Input should now have the @folderName/filename format for context files
+      expect(inputEl.value).toBe('@external/myfile.ts ');
 
       manager.destroy();
     });

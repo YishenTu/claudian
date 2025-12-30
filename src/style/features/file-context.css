@@ -108,6 +108,31 @@
   color: #D97757;
 }
 
+/* Context folder filter items in @-mention dropdown */
+.claudian-mention-item.context-folder {
+  background: rgba(217, 119, 87, 0.08);
+}
+
+.claudian-mention-item.context-folder:hover,
+.claudian-mention-item.context-folder.selected {
+  background: rgba(217, 119, 87, 0.15);
+}
+
+.claudian-mention-item.context-folder .claudian-mention-icon {
+  color: #D97757;
+}
+
+.claudian-mention-name-folder {
+  color: #D97757;
+  font-weight: 600;
+}
+
+.claudian-mention-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .claudian-mention-name-row {
   display: flex;
   align-items: center;
