@@ -369,6 +369,10 @@ export class ClaudianView extends ItemView {
       getMessagesEl: () => this.messagesEl!,
       getFileContextManager: () => this.fileContextManager,
       updateQueueIndicator: () => this.inputController?.updateQueueIndicator(),
+      setPlanModeActive: (active) => {
+        this.permissionToggle?.setPlanModeActive(active);
+        this.fileContextManager?.setPlanModeActive(active);
+      },
     });
 
     // Conversation controller
@@ -436,6 +440,11 @@ export class ClaudianView extends ItemView {
     // Set ExitPlanMode callback
     this.plugin.agentService.setExitPlanModeCallback(
       (planFilePath) => this.inputController!.handleExitPlanMode(planFilePath)
+    );
+
+    // Set EnterPlanMode callback
+    this.plugin.agentService.setEnterPlanModeCallback(
+      () => this.inputController!.handleEnterPlanMode()
     );
   }
 

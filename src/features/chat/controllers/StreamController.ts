@@ -5,7 +5,7 @@
  * state tracking, and thinking indicator display.
  */
 
-import { isPlanModeTool, isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isPlanModeTool, isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
@@ -49,6 +49,8 @@ export interface StreamControllerDeps {
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
+  /** Callback to set plan mode active (for UI toggle sync). */
+  setPlanModeActive: (active: boolean) => void;
 }
 
 /**
@@ -121,8 +123,13 @@ export class StreamController {
           break;
         }
 
-        // Skip rendering plan mode tools (EnterPlanMode, ExitPlanMode)
+        // Handle plan mode tools (EnterPlanMode, ExitPlanMode)
         if (isPlanModeTool(chunk.name)) {
+          // When agent calls EnterPlanMode, activate plan mode state
+          if (chunk.name === TOOL_ENTER_PLAN_MODE) {
+            this.activatePlanMode();
+          }
+          // Skip rendering - these tools are invisible to the user
           break;
         }
 
@@ -702,6 +709,37 @@ export class StreamController {
       state.thinkingEl = null;
     }
     state.queueIndicatorEl = null;
+  }
+
+  // ============================================
+  // Plan Mode
+  // ============================================
+
+  /**
+   * Activates plan mode when agent calls EnterPlanMode tool.
+   * Sets state and notifies file context manager to hide edited files.
+   */
+  private activatePlanMode(): void {
+    const { state } = this.deps;
+
+    // Only activate if not already in plan mode
+    if (state.planModeState?.isActive) {
+      return;
+    }
+
+    // Set plan mode state
+    state.planModeState = {
+      isActive: true,
+      planFilePath: null,
+      planContent: null,
+      originalQuery: null, // Agent-initiated, no original query
+    };
+
+    // Update file context manager to hide edited files during plan mode
+    this.deps.getFileContextManager()?.setPlanModeActive(true);
+
+    // Update UI toggle to show plan mode is active
+    this.deps.setPlanModeActive(true);
   }
 
   // ============================================

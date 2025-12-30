@@ -11,7 +11,7 @@ import { Notice } from 'obsidian';
 import type { ExitPlanModeDecision } from '../../../core/agent/ClaudianService';
 import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
 import { TOOL_BASH } from '../../../core/tools/toolNames';
-import type { AskUserQuestionInput, ChatMessage } from '../../../core/types';
+import type { AskUserQuestionInput, ChatMessage, ImageAttachment } from '../../../core/types';
 import { getBashToolBlockedCommands } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
@@ -38,6 +38,9 @@ import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
 
+const PLAN_MODE_CONTINUE_PROMPT =
+  'Continue the most recent user request in plan mode. Use the prior request as the task, plus any attached files, editor context, and images. Create an implementation plan and call ExitPlanMode when ready.';
+
 /** Dependencies for InputController. */
 export interface InputControllerDeps {
   plugin: ClaudianPlugin;
@@ -62,11 +65,26 @@ export interface InputControllerDeps {
   resetContextMeter: () => void;
 }
 
+interface PlanModeResendPayload {
+  content: string;
+  displayContent?: string;
+  images?: ImageAttachment[];
+  contextFiles?: string[];
+  editorContext?: EditorSelectionContext | null;
+  queryOptions?: QueryOptions;
+}
+
+interface PlanModeSendOptions extends PlanModeResendPayload {
+  skipUserMessage?: boolean;
+}
+
 /**
  * InputController handles user input and message sending.
  */
 export class InputController {
   private deps: InputControllerDeps;
+  private lastSentPayload: PlanModeResendPayload | null = null;
+  private pendingPlanModeResendPayload: PlanModeResendPayload | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -203,6 +221,15 @@ export class InputController {
       contextFilesForMessage = currentFiles;
     }
 
+    this.lastSentPayload = {
+      content,
+      displayContent,
+      images: imagesForMessage,
+      contextFiles: contextFilesForMessage,
+      editorContext,
+      queryOptions,
+    };
+
     fileContextManager?.markFilesSent();
 
     const userMsg: ChatMessage = {
@@ -258,6 +285,7 @@ export class InputController {
     }
 
     let wasInterrupted = false;
+    let scheduledPlanModeResend = false;
     try {
       for await (const chunk of plugin.agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
         if (state.cancelRequested) {
@@ -270,7 +298,11 @@ export class InputController {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
     } finally {
-      if (wasInterrupted) {
+      // Check if we need to re-send with plan mode (agent called EnterPlanMode)
+      const planModeState = state.planModeState;
+      const pendingPlanModeResend = planModeState?.pendingResend;
+
+      if (wasInterrupted && !pendingPlanModeResend) {
         await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
       }
       streamController.hideThinkingIndicator();
@@ -284,7 +316,22 @@ export class InputController {
 
       await conversationController.save(true);
 
-      this.processQueuedMessage();
+      // If agent initiated plan mode, re-send with plan mode enabled
+      if (pendingPlanModeResend) {
+        planModeState.pendingResend = false;
+        const resendPayload = this.pendingPlanModeResendPayload ?? this.getPlanModeResendPayload();
+        this.pendingPlanModeResendPayload = null;
+        if (resendPayload) {
+          setTimeout(() => {
+            void this.sendMessageWithPlanMode({ ...resendPayload, skipUserMessage: true });
+          }, 100);
+          scheduledPlanModeResend = true;
+        }
+      }
+
+      if (!scheduledPlanModeResend) {
+        this.processQueuedMessage();
+      }
     }
   }
 
@@ -322,22 +369,70 @@ export class InputController {
 
     // Clear input and send
     inputEl.value = '';
-    this.deps.getInputEl().value = content;
-    await this.sendMessageWithPlanMode();
+    await this.sendMessageWithPlanMode({ content });
+  }
+
+  /**
+   * Handles agent-initiated EnterPlanMode tool call.
+   * Sets up state for re-sending with plan mode after current stream ends.
+   */
+  async handleEnterPlanMode(): Promise<void> {
+    const { state, plugin } = this.deps;
+
+    if (state.planModeState?.isActive) {
+      return;
+    }
+
+    const resendPayload = this.getPlanModeResendPayload();
+    if (!resendPayload || !resendPayload.content.trim()) {
+      return;
+    }
+
+    const originalQuery = resendPayload.content;
+    const planModePayload: PlanModeResendPayload = {
+      ...resendPayload,
+      content: PLAN_MODE_CONTINUE_PROMPT,
+      displayContent: PLAN_MODE_CONTINUE_PROMPT,
+    };
+
+    this.pendingPlanModeResendPayload = {
+      ...planModePayload,
+      images: planModePayload.images ? [...planModePayload.images] : undefined,
+      contextFiles: planModePayload.contextFiles ? [...planModePayload.contextFiles] : undefined,
+    };
+
+    // Set plan mode state with pending resend flag
+    state.planModeState = {
+      isActive: true,
+      planFilePath: null,
+      planContent: null,
+      originalQuery,
+      pendingResend: true,
+    };
+
+    // Update UI
+    this.deps.setPlanModeActive(true);
+    this.deps.getFileContextManager()?.setPlanModeActive(true);
+
+    // Clear stale plan file path
+    plugin.agentService.setCurrentPlanFilePath(null);
   }
 
   /** Internal: sends message with plan mode options. */
-  private async sendMessageWithPlanMode(): Promise<void> {
+  private async sendMessageWithPlanMode(options?: PlanModeSendOptions): Promise<void> {
     const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
     const inputEl = this.deps.getInputEl();
     const imageContextManager = this.deps.getImageContextManager();
     const fileContextManager = this.deps.getFileContextManager();
     const mcpServerSelector = this.deps.getMcpServerSelector();
 
-    const content = inputEl.value.trim();
+    const content = (options?.content ?? inputEl.value).trim();
     if (!content) return;
 
-    inputEl.value = '';
+    const skipUserMessage = options?.skipUserMessage ?? false;
+    if (options?.content === undefined) {
+      inputEl.value = '';
+    }
     state.isStreaming = true;
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
@@ -350,25 +445,44 @@ export class InputController {
 
     fileContextManager?.startSession();
 
-    const images = imageContextManager?.getAttachedImages() || [];
+    const images = skipUserMessage
+      ? (options?.images ?? [])
+      : (options?.images ?? (imageContextManager?.getAttachedImages() || []));
     const imagesForMessage = images.length > 0 ? [...images] : undefined;
-    imageContextManager?.clearImages();
+    if (!skipUserMessage && !options?.images) {
+      imageContextManager?.clearImages();
+    }
 
-    const attachedFiles = fileContextManager?.getAttachedFiles() || new Set();
-    const currentFiles = Array.from(attachedFiles);
-    const filesChanged = fileContextManager?.hasFilesChanged() ?? false;
+    let currentFiles: string[] = [];
+    let filesChanged = false;
+    let contextFilesForMessage: string[] | undefined;
+    if (skipUserMessage) {
+      currentFiles = options?.contextFiles ? [...options.contextFiles] : [];
+      filesChanged = currentFiles.length > 0;
+      contextFilesForMessage = filesChanged ? currentFiles : undefined;
+    } else if (options?.contextFiles) {
+      currentFiles = [...options.contextFiles];
+      filesChanged = currentFiles.length > 0;
+      contextFilesForMessage = filesChanged ? currentFiles : undefined;
+    } else {
+      const attachedFiles = fileContextManager?.getAttachedFiles() || new Set();
+      currentFiles = Array.from(attachedFiles);
+      filesChanged = fileContextManager?.hasFilesChanged() ?? false;
+      if (filesChanged) {
+        contextFilesForMessage = currentFiles;
+      }
+    }
 
-    const editorContext = selectionController.getContext();
+    const editorContext = options?.editorContext ?? selectionController.getContext();
 
     // Wrap query in XML tag with plan mode context
+    // Note: The system prompt already includes full plan mode instructions
     let promptToSend = `[Plan Mode]
-User requested to enter plan mode. First call the EnterPlanMode tool, then explore the codebase and create an implementation plan. Call the ExitPlanMode tool when the plan is ready for user approval.
+Explore the codebase and create an implementation plan. Call the ExitPlanMode tool when the plan is ready for user approval.
 
 <query>
 ${content}
 </query>`;
-    let contextFilesForMessage: string[] | undefined;
-
     if (editorContext) {
       promptToSend = prependEditorContext(promptToSend, editorContext);
     }
@@ -378,22 +492,28 @@ ${content}
       contextFilesForMessage = currentFiles;
     }
 
-    fileContextManager?.markFilesSent();
+    if (!skipUserMessage) {
+      fileContextManager?.markFilesSent();
+    }
 
-    const userMsg: ChatMessage = {
-      id: this.deps.generateId(),
-      role: 'user',
-      content,
-      timestamp: Date.now(),
-      contextFiles: contextFilesForMessage,
-      images: imagesForMessage,
-    };
-    state.addMessage(userMsg);
-    renderer.addMessage(userMsg);
+    if (!skipUserMessage) {
+      const displayContent = options?.displayContent ?? content;
+      const userMsg: ChatMessage = {
+        id: this.deps.generateId(),
+        role: 'user',
+        content,
+        displayContent: displayContent !== content ? displayContent : undefined,
+        timestamp: Date.now(),
+        contextFiles: contextFilesForMessage,
+        images: imagesForMessage,
+      };
+      state.addMessage(userMsg);
+      renderer.addMessage(userMsg);
 
-    if (state.messages.length === 1 && state.currentConversationId) {
-      const title = conversationController.generateTitle(content);
-      await plugin.renameConversation(state.currentConversationId, `[Plan] ${title}`);
+      if (state.messages.length === 1 && state.currentConversationId) {
+        const title = conversationController.generateTitle(displayContent);
+        await plugin.renameConversation(state.currentConversationId, title);
+      }
     }
 
     const assistantMsg: ChatMessage = {
@@ -420,6 +540,7 @@ ${content}
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
 
     const queryOptions = {
+      ...options?.queryOptions,
       planMode: true,
       mcpMentions,
       enabledMcpServers,
@@ -457,6 +578,26 @@ ${content}
 
       this.processQueuedMessage();
     }
+  }
+
+  private getPlanModeResendPayload(): PlanModeResendPayload | null {
+    if (this.lastSentPayload?.content) {
+      return this.lastSentPayload;
+    }
+
+    const { state, selectionController } = this.deps;
+    const lastUserMsg = [...state.messages].reverse().find(m => m.role === 'user');
+    if (!lastUserMsg?.content) {
+      return null;
+    }
+
+    return {
+      content: lastUserMsg.content,
+      displayContent: lastUserMsg.displayContent,
+      images: lastUserMsg.images,
+      contextFiles: lastUserMsg.contextFiles,
+      editorContext: selectionController.getContext(),
+    };
   }
 
   // ============================================
