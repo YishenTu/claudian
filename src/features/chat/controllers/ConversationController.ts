@@ -500,6 +500,7 @@ export class ConversationController {
   /** Regenerates AI title for a conversation. */
   async regenerateTitle(conversationId: string): Promise<void> {
     const { plugin } = this.deps;
+    if (!plugin.settings.enableAutoTitleGeneration) return;
     const titleService = this.deps.getTitleGenerationService();
     if (!titleService) return;
 

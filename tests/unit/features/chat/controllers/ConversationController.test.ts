@@ -95,6 +95,7 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
       },
       settings: {
         userName: '',
+        enableAutoTitleGeneration: true,
       },
     } as any,
     state,
@@ -339,6 +340,26 @@ describe('ConversationController - Title Generation', () => {
       await controllerNoService.regenerateTitle('conv-1');
 
       expect(depsNoService.plugin.updateConversation).not.toHaveBeenCalled();
+    });
+
+    it('should not regenerate if enableAutoTitleGeneration is false', async () => {
+      deps.plugin.settings.enableAutoTitleGeneration = false;
+      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        title: 'Old Title',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Hi there!' },
+        ],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+      expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+
+      // Reset for other tests
+      deps.plugin.settings.enableAutoTitleGeneration = true;
     });
 
     it('should not regenerate if conversation not found', async () => {

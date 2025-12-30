@@ -68,6 +68,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
         blockedCommands: { unix: [], windows: [] },
         enableBlocklist: true,
         permissionMode: 'yolo',
+        enableAutoTitleGeneration: true,
       },
       mcpService: {
         extractMentions: jest.fn().mockReturnValue(new Set()),
@@ -657,6 +658,63 @@ describe('InputController - Message Queue', () => {
         call[1]?.titleGenerationStatus === 'pending'
       );
       expect(pendingCall).toBeUndefined();
+    });
+
+    it('should NOT call title generation service when enableAutoTitleGeneration is false', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn().mockResolvedValue(undefined),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+        hasFilesChanged: jest.fn().mockReturnValue(false),
+        markFilesSent: jest.fn(),
+      };
+      const imageContextManager = createMockImageContextManager();
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      // Disable auto title generation
+      deps.plugin.settings.enableAutoTitleGeneration = false;
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response text' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Title service should NOT be called when setting is disabled
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+
+      // Should NOT set pending status
+      const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
+      const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
+        call[1]?.titleGenerationStatus === 'pending'
+      );
+      expect(pendingCall).toBeUndefined();
+
+      // Should still set fallback title
+      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
     });
   });
 });
