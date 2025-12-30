@@ -175,7 +175,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: claudian-spin 1s linear infinite;
+  animation: spin 1s linear infinite;
   opacity: 0.6;
   cursor: default;
 }

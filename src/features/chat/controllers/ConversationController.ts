@@ -328,7 +328,11 @@ export class ConversationController {
         regenerateBtn.setAttribute('aria-label', 'Regenerate title');
         regenerateBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          await this.regenerateTitle(conv.id);
+          try {
+            await this.regenerateTitle(conv.id);
+          } catch (error) {
+            console.error('[ConversationController] Failed to regenerate title:', error);
+          }
         });
       }
 

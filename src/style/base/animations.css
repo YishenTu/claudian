@@ -66,13 +66,3 @@
   }
 }
 
-/* History title generation spinner */
-@keyframes claudian-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
