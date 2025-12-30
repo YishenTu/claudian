@@ -689,6 +689,10 @@ ${content}
     const displayTitle = isPlanMode ? `[Plan] ${fallbackTitle}` : fallbackTitle;
     await plugin.renameConversation(state.currentConversationId, displayTitle);
 
+    if (!plugin.settings.enableAutoTitleGeneration) {
+      return;
+    }
+
     // Fire async AI title generation only if service and content available
     const titleService = this.deps.getTitleGenerationService();
     if (!titleService || !assistantText) {
