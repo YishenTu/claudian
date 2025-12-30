@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@test/*": ["tests/*"]
+    },
     "skipLibCheck": true,
     "inlineSourceMap": true,
     "inlineSources": true,
@@ -14,7 +18,7 @@
     "strictNullChecks": true,
     "lib": ["DOM", "ES6", "ES7"],
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "."
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

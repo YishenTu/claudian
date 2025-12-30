@@ -80,6 +80,32 @@ npm run lint      # Lint code
 npm run test      # Run tests
 ```
 
+## Tests
+
+- Tests are split into `unit` and `integration`, mirroring the `src/` structure.
+- Coverage focuses on `unit`; `integration` targets key component flows.
+- E2E tests are intentionally out of scope for now.
+
+```
+tests/
+  __mocks__/
+  unit/
+    core/
+    features/
+    ui/
+    utils/
+  integration/
+    core/
+    features/
+    main.test.ts
+```
+
+```bash
+npm run test -- --selectProjects unit        # Run unit tests
+npm run test -- --selectProjects integration # Run integration tests
+npm run test:coverage -- --selectProjects unit # Unit coverage
+```
+
 ## Key Patterns
 
 ### Claude Agent SDK
