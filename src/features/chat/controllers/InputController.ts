@@ -137,6 +137,7 @@ export class InputController {
     state.isStreaming = true;
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
+    state.subagentsSpawnedThisStream = 0; // Reset subagent counter for new query
 
     // Hide welcome message when sending first message
     const welcomeEl = this.deps.getWelcomeEl();
@@ -436,6 +437,7 @@ export class InputController {
     state.isStreaming = true;
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
+    state.subagentsSpawnedThisStream = 0; // Reset subagent counter for new query
 
     // Hide welcome message
     const welcomeEl = this.deps.getWelcomeEl();

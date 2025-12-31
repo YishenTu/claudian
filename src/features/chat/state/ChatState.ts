@@ -40,6 +40,7 @@ function createInitialState(): ChatStateData {
     askUserQuestionStates: new Map(),
     usage: null,
     ignoreUsageUpdates: false,
+    subagentsSpawnedThisStream: 0,
     planModeState: null,
     pendingPlanContent: null,
   };
@@ -224,6 +225,14 @@ export class ChatState {
 
   set ignoreUsageUpdates(value: boolean) {
     this.state.ignoreUsageUpdates = value;
+  }
+
+  get subagentsSpawnedThisStream(): number {
+    return this.state.subagentsSpawnedThisStream;
+  }
+
+  set subagentsSpawnedThisStream(value: number) {
+    this.state.subagentsSpawnedThisStream = value;
   }
 
   // ============================================

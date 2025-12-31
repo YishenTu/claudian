@@ -87,6 +87,8 @@ export interface ChatStateData {
   usage: UsageInfo | null;
   // Flag to ignore usage updates (during session reset)
   ignoreUsageUpdates: boolean;
+  // Count of subagents spawned during current streaming session (for filtering usage)
+  subagentsSpawnedThisStream: number;
 
   // Plan mode state
   planModeState: PlanModeState | null;

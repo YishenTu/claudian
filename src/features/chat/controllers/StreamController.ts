@@ -104,6 +104,8 @@ export class StreamController {
         this.finalizeCurrentTextBlock(msg);
 
         if (chunk.name === TOOL_TASK) {
+          // Track subagent spawn for usage filtering
+          state.subagentsSpawnedThisStream++;
           const isAsync = this.deps.asyncSubagentManager.isAsyncTask(chunk.input);
           if (isAsync) {
             await this.handleAsyncTaskToolUse(chunk, msg);
@@ -161,6 +163,10 @@ export class StreamController {
           (chunkSessionId && currentSessionId && chunkSessionId !== currentSessionId) ||
           (chunkSessionId && !currentSessionId)
         ) {
+          break;
+        }
+        // Skip usage updates when subagents ran (SDK reports cumulative usage including subagents)
+        if (state.subagentsSpawnedThisStream > 0) {
           break;
         }
         if (!state.ignoreUsageUpdates) {
