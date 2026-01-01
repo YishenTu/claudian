@@ -12,6 +12,7 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import type ClaudianPlugin from '../../main';
 import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from '../../ui';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
+import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
 /** Plugin settings tab displayed in Obsidian's settings pane. */
 export class ClaudianSettingTab extends PluginSettingTab {
@@ -76,93 +77,58 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const navDesc = containerEl.createDiv({ cls: 'setting-item-description' });
     navDesc.setText('Vim-style navigation: press Escape to focus chat panel, then use keys to scroll or focus input.');
 
-    // Helper to validate navigation key (checks against all other keys)
-    const validateNavKey = (
-      value: string,
-      otherKeys: string[],
-      defaultKey: string
-    ): { key: string | null; error?: string } => {
-      const key = value.trim();
-      if (!key) return { key: defaultKey };
-      if (key.length !== 1) return { key: null, error: 'Key must be a single character' };
-      for (const other of otherKeys) {
-        if (key.toLowerCase() === other.toLowerCase()) {
-          return { key: null, error: 'Navigation keys must be unique' };
-        }
-      }
-      return { key };
-    };
-
     new Setting(containerEl)
-      .setName('Scroll up key')
-      .setDesc('Single character key to scroll up (default: w)')
-      .addText((text) => {
-        text
-          .setPlaceholder('w')
-          .setValue(this.plugin.settings.keyboardNavigation.scrollUpKey)
-          .onChange(async (value) => {
-            const otherKeys = [
-              this.plugin.settings.keyboardNavigation.scrollDownKey,
-              this.plugin.settings.keyboardNavigation.focusInputKey,
-            ];
-            const result = validateNavKey(value, otherKeys, 'w');
-            if (result.key === null) {
-              new Notice(`Invalid key: ${result.error}`);
-              text.setValue(this.plugin.settings.keyboardNavigation.scrollUpKey);
-              return;
-            }
-            this.plugin.settings.keyboardNavigation.scrollUpKey = result.key;
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.maxLength = 1;
-      });
+      .setName('Vim-style navigation mappings')
+      .setDesc('One mapping per line. Format: "map <key> <action>" (actions: scrollUp, scrollDown, focusInput).')
+      .addTextArea((text) => {
+        let pendingValue = buildNavMappingText(this.plugin.settings.keyboardNavigation);
+        let saveTimeout: number | null = null;
 
-    new Setting(containerEl)
-      .setName('Scroll down key')
-      .setDesc('Single character key to scroll down (default: s)')
-      .addText((text) => {
-        text
-          .setPlaceholder('s')
-          .setValue(this.plugin.settings.keyboardNavigation.scrollDownKey)
-          .onChange(async (value) => {
-            const otherKeys = [
-              this.plugin.settings.keyboardNavigation.scrollUpKey,
-              this.plugin.settings.keyboardNavigation.focusInputKey,
-            ];
-            const result = validateNavKey(value, otherKeys, 's');
-            if (result.key === null) {
-              new Notice(`Invalid key: ${result.error}`);
-              text.setValue(this.plugin.settings.keyboardNavigation.scrollDownKey);
-              return;
-            }
-            this.plugin.settings.keyboardNavigation.scrollDownKey = result.key;
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.maxLength = 1;
-      });
+        const commitValue = async (showError: boolean): Promise<void> => {
+          if (saveTimeout !== null) {
+            window.clearTimeout(saveTimeout);
+            saveTimeout = null;
+          }
 
-    new Setting(containerEl)
-      .setName('Focus input key')
-      .setDesc('Single character key to focus the input area (default: i)')
-      .addText((text) => {
-        text
-          .setPlaceholder('i')
-          .setValue(this.plugin.settings.keyboardNavigation.focusInputKey)
-          .onChange(async (value) => {
-            const otherKeys = [
-              this.plugin.settings.keyboardNavigation.scrollUpKey,
-              this.plugin.settings.keyboardNavigation.scrollDownKey,
-            ];
-            const result = validateNavKey(value, otherKeys, 'i');
-            if (result.key === null) {
-              new Notice(`Invalid key: ${result.error}`);
-              text.setValue(this.plugin.settings.keyboardNavigation.focusInputKey);
-              return;
+          const result = parseNavMappings(pendingValue);
+          if (!result.settings) {
+            if (showError) {
+              new Notice(`Invalid navigation mappings: ${result.error}`);
+              pendingValue = buildNavMappingText(this.plugin.settings.keyboardNavigation);
+              text.setValue(pendingValue);
             }
-            this.plugin.settings.keyboardNavigation.focusInputKey = result.key;
-            await this.plugin.saveSettings();
+            return;
+          }
+
+          this.plugin.settings.keyboardNavigation.scrollUpKey = result.settings.scrollUp;
+          this.plugin.settings.keyboardNavigation.scrollDownKey = result.settings.scrollDown;
+          this.plugin.settings.keyboardNavigation.focusInputKey = result.settings.focusInput;
+          await this.plugin.saveSettings();
+          pendingValue = buildNavMappingText(this.plugin.settings.keyboardNavigation);
+          text.setValue(pendingValue);
+        };
+
+        const scheduleSave = (): void => {
+          if (saveTimeout !== null) {
+            window.clearTimeout(saveTimeout);
+          }
+          saveTimeout = window.setTimeout(() => {
+            void commitValue(false);
+          }, 500);
+        };
+
+        text
+          .setPlaceholder('map w scrollUp\nmap s scrollDown\nmap i focusInput')
+          .setValue(pendingValue)
+          .onChange((value) => {
+            pendingValue = value;
+            scheduleSave();
           });
-        text.inputEl.maxLength = 1;
+
+        text.inputEl.rows = 3;
+        text.inputEl.addEventListener('blur', async () => {
+          await commitValue(true);
+        });
       });
 
     // Customization section

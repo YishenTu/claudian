@@ -20,6 +20,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.
 
 - **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
+- **Vim-style Navigation**: Press Escape to focus the chat panel, then use `w/s` (configurable) to scroll and `i` to focus input.
 
 ## Requirements
 
@@ -116,6 +117,7 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
 - **Environment snippets**: Save and restore environment variable configurations
 - **MCP Servers**: Add/edit/test/delete MCP server configurations with context-saving mode
+- **Vim-style navigation mappings**: Configure key bindings with lines like `map w scrollUp`, `map s scrollDown`, `map i focusInput`
 
 ### Safety and permissions
 
