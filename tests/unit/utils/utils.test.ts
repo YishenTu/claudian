@@ -475,6 +475,15 @@ describe('utils.ts', () => {
         process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming';
       });
 
+      it('should prefer .exe when both .exe and cli.js exist', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
+        const exePath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
+        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === exePath || p === cliJsPath);
+
+        expect(findClaudeCLIPath()).toBe(exePath);
+      });
+
       it('should prioritize cli.js over .cmd files on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         // Note: path.join uses actual platform separator, so we match against that

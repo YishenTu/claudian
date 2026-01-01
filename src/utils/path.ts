@@ -202,39 +202,52 @@ export function findClaudeCLIPath(): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
 
-  // On Windows, prioritize cli.js files over .cmd files
-  // This is because .cmd files cannot be spawned directly without shell: true,
-  // which breaks the SDK's stdio pipe communication for stream-json mode.
-  // The SDK properly executes .js files via Node.js.
+  // On Windows, prefer native .exe, then cli.js, and only use .cmd as last resort.
+  // .cmd files cannot be spawned directly without shell: true, which breaks
+  // the SDK's stdio pipe communication for stream-json mode.
   if (isWindows) {
+    const exePaths: string[] = [
+      path.join(homeDir, '.claude', 'local', 'claude.exe'),
+      path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
+      path.join(homeDir, '.local', 'bin', 'claude.exe'),
+    ];
+
+    for (const p of exePaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
     const cliJsPaths = getNpmCliJsPaths();
     for (const p of cliJsPaths) {
       if (fs.existsSync(p)) {
         return p;
       }
     }
+
+    const cmdPaths: string[] = [
+      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
+    ];
+    for (const p of cmdPaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    return null;
   }
 
   // Platform-specific search paths for native binaries
-  const commonPaths: string[] = isWindows
-    ? [
-        // Windows paths - native executable first
-        path.join(homeDir, '.claude', 'local', 'claude.exe'),
-        path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
-        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
-        path.join(homeDir, '.local', 'bin', 'claude.exe'),
-        // .cmd files as last resort (may not work properly with SDK's stdio mode)
-        path.join(homeDir, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
-      ]
-    : [
-        // Unix/macOS paths
-        path.join(homeDir, '.claude', 'local', 'claude'),
-        path.join(homeDir, '.local', 'bin', 'claude'),
-        '/usr/local/bin/claude',
-        '/opt/homebrew/bin/claude',
-        path.join(homeDir, 'bin', 'claude'),
-      ];
+  const commonPaths: string[] = [
+    // Unix/macOS paths
+    path.join(homeDir, '.claude', 'local', 'claude'),
+    path.join(homeDir, '.local', 'bin', 'claude'),
+    '/usr/local/bin/claude',
+    '/opt/homebrew/bin/claude',
+    path.join(homeDir, 'bin', 'claude'),
+  ];
 
   for (const p of commonPaths) {
     if (fs.existsSync(p)) {
