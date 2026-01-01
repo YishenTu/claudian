@@ -442,5 +442,29 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Environment Snippets subsection
     const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
     new EnvSnippetManager(envSnippetsContainer, this.plugin);
+
+    // Advanced section
+    new Setting(containerEl).setName('Advanced').setHeading();
+
+    new Setting(containerEl)
+      .setName('Claude CLI path')
+      .setDesc('Custom path to Claude Code CLI. Leave empty for auto-detection. Use cli.js path on Windows for npm installations.')
+      .addText((text) => {
+        // Platform-aware placeholder
+        const placeholder = process.platform === 'win32'
+          ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
+          : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+        text
+          .setPlaceholder(placeholder)
+          .setValue(this.plugin.settings.claudeCliPath || '')
+          .onChange(async (value) => {
+            this.plugin.settings.claudeCliPath = value.trim();
+            await this.plugin.saveSettings();
+            // Clear cached path so next query will use the new path
+            this.plugin.agentService?.cleanup();
+          });
+        text.inputEl.addClass('claudian-settings-cli-path-input');
+        text.inputEl.style.width = '100%';
+      });
   }
 }

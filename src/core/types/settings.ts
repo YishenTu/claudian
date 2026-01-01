@@ -153,6 +153,7 @@ export interface ClaudianSettings {
   allowedContextPaths: string[];
   slashCommands: SlashCommand[];
   keyboardNavigation: KeyboardNavigationSettings;
+  claudeCliPath: string;  // Custom Claude CLI path (empty = auto-detect)
 }
 
 /** Default plugin settings. */
@@ -185,6 +186,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
     scrollDownKey: 's',
     focusInputKey: 'i',
   },
+  claudeCliPath: '',  // Empty = auto-detect
 };
 
 /** Result from instruction refinement agent query. */

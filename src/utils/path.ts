@@ -117,21 +117,108 @@ export function expandHomePath(p: string): string {
 // Claude CLI Detection
 // ============================================
 
+/**
+ * Gets the npm global prefix directory.
+ * Returns null if npm is not available or prefix cannot be determined.
+ */
+function getNpmGlobalPrefix(): string | null {
+  // Check npm prefix environment variable first (set by some npm configurations)
+  if (process.env.npm_config_prefix) {
+    return process.env.npm_config_prefix;
+  }
+
+  // Check common custom npm prefix locations on Windows
+  if (process.platform === 'win32') {
+    // Custom npm global paths are often configured via npm config
+    // Check %APPDATA%\npm first (default Windows npm global)
+    const appDataNpm = process.env.APPDATA
+      ? path.join(process.env.APPDATA, 'npm')
+      : null;
+    if (appDataNpm && fs.existsSync(appDataNpm)) {
+      return appDataNpm;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Builds the list of paths to search for cli.js in npm's node_modules.
+ */
+function getNpmCliJsPaths(): string[] {
+  const homeDir = os.homedir();
+  const isWindows = process.platform === 'win32';
+  const cliJsPaths: string[] = [];
+
+  if (isWindows) {
+    // Default npm global path on Windows
+    cliJsPaths.push(
+      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+    );
+
+    // npm prefix from environment/config
+    const npmPrefix = getNpmGlobalPrefix();
+    if (npmPrefix) {
+      cliJsPaths.push(
+        path.join(npmPrefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      );
+    }
+
+    // Common custom npm global directories on Windows
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+
+    // Check common nodejs installation paths with custom npm global
+    cliJsPaths.push(
+      path.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      path.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+    );
+
+    // Also check D: drive which is commonly used for custom installations
+    cliJsPaths.push(
+      path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+    );
+  } else {
+    // Unix/macOS npm global paths
+    cliJsPaths.push(
+      path.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
+      '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'
+    );
+  }
+
+  return cliJsPaths;
+}
+
 /** Finds Claude Code CLI executable in common install locations. */
 export function findClaudeCLIPath(): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
 
-  // Platform-specific search paths
+  // On Windows, prioritize cli.js files over .cmd files
+  // This is because .cmd files cannot be spawned directly without shell: true,
+  // which breaks the SDK's stdio pipe communication for stream-json mode.
+  // The SDK properly executes .js files via Node.js.
+  if (isWindows) {
+    const cliJsPaths = getNpmCliJsPaths();
+    for (const p of cliJsPaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+  }
+
+  // Platform-specific search paths for native binaries
   const commonPaths: string[] = isWindows
     ? [
-        // Windows paths
+        // Windows paths - native executable first
         path.join(homeDir, '.claude', 'local', 'claude.exe'),
         path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-        path.join(homeDir, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
         path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
         path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
         path.join(homeDir, '.local', 'bin', 'claude.exe'),
+        // .cmd files as last resort (may not work properly with SDK's stdio mode)
+        path.join(homeDir, 'AppData', 'Roaming', 'npm', 'claude.cmd'),
       ]
     : [
         // Unix/macOS paths
@@ -145,6 +232,16 @@ export function findClaudeCLIPath(): string | null {
   for (const p of commonPaths) {
     if (fs.existsSync(p)) {
       return p;
+    }
+  }
+
+  // On Unix, also check for cli.js if binary not found
+  if (!isWindows) {
+    const cliJsPaths = getNpmCliJsPaths();
+    for (const p of cliJsPaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
     }
   }
 

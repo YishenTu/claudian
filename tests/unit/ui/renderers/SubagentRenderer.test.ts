@@ -1,5 +1,6 @@
 import { setIcon } from 'obsidian';
 
+import type { SubagentInfo } from '@/core/types';
 import {
   createAsyncSubagentBlock,
   createSubagentBlock,
@@ -8,7 +9,6 @@ import {
   renderStoredSubagent,
   updateAsyncSubagentRunning,
 } from '@/ui/renderers/SubagentRenderer';
-import type { SubagentInfo } from '@/core/types';
 
 interface MockElement {
   children: MockElement[];

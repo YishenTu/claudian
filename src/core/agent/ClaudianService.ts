@@ -7,6 +7,7 @@
 
 import type { CanUseTool, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -252,6 +253,16 @@ export class ClaudianService {
   }
 
   private findClaudeCLI(): string | null {
+    // Check for user-specified custom path first
+    const customPath = this.plugin.settings.claudeCliPath?.trim();
+    if (customPath) {
+      const expandedPath = expandHomePath(customPath);
+      if (fs.existsSync(expandedPath)) {
+        return expandedPath;
+      }
+      // Log warning but continue to auto-detection
+      console.warn(`Claudian: Custom CLI path not found: ${expandedPath}`);
+    }
     return findClaudeCLIPath();
   }
 

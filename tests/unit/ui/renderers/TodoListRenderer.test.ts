@@ -2,8 +2,6 @@
  * Tests for TodoListRenderer - TodoWrite tool UI
  */
 
-import { setIcon } from 'obsidian';
-
 import {
   parseTodoInput,
   renderStoredTodoList,
