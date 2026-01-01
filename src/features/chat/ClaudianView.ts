@@ -33,6 +33,7 @@ import { LOGO_SVG } from './constants';
 import {
   ConversationController,
   InputController,
+  NavigationController,
   SelectionController,
   StreamController,
 } from './controllers';
@@ -54,6 +55,7 @@ export class ClaudianView extends ItemView {
   private conversationController: ConversationController | null = null;
   private streamController: StreamController | null = null;
   private inputController: InputController | null = null;
+  private navigationController: NavigationController | null = null;
 
   // Rendering
   private renderer: MessageRenderer | null = null;
@@ -159,6 +161,9 @@ export class ClaudianView extends ItemView {
     // Stop polling
     this.selectionController?.stop();
     this.selectionController?.clear();
+
+    // Cleanup navigation controller
+    this.navigationController?.dispose();
 
     // Cleanup thinking state
     cleanupThinkingBlock(this.state.currentThinkingState);
@@ -488,6 +493,15 @@ export class ClaudianView extends ItemView {
     this.plugin.agentService.setEnterPlanModeCallback(
       () => this.inputController!.handleEnterPlanMode()
     );
+
+    // Navigation controller (vim-style keyboard navigation)
+    this.navigationController = new NavigationController({
+      getMessagesEl: () => this.messagesEl!,
+      getInputEl: () => this.inputEl!,
+      getSettings: () => this.plugin.settings.keyboardNavigation,
+      isStreaming: () => this.state.isStreaming,
+    });
+    this.navigationController.initialize();
   }
 
   // ============================================

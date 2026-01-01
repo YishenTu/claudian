@@ -70,6 +70,38 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    // Keyboard Navigation section
+    new Setting(containerEl).setName('Keyboard Navigation').setHeading();
+
+    const navDesc = containerEl.createDiv({ cls: 'setting-item-description' });
+    navDesc.setText('Vim-style navigation: press Escape to focus chat panel, then use keys to scroll. Press i to return to input.');
+
+    new Setting(containerEl)
+      .setName('Scroll up key')
+      .setDesc('Key to scroll up when focused on chat panel')
+      .addText((text) =>
+        text
+          .setPlaceholder('w')
+          .setValue(this.plugin.settings.keyboardNavigation.scrollUpKey)
+          .onChange(async (value) => {
+            this.plugin.settings.keyboardNavigation.scrollUpKey = value || 'w';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Scroll down key')
+      .setDesc('Key to scroll down when focused on chat panel')
+      .addText((text) =>
+        text
+          .setPlaceholder('s')
+          .setValue(this.plugin.settings.keyboardNavigation.scrollDownKey)
+          .onChange(async (value) => {
+            this.plugin.settings.keyboardNavigation.scrollDownKey = value || 's';
+            await this.plugin.saveSettings();
+          })
+      );
+
     // Customization section
     new Setting(containerEl).setName('Customization').setHeading();
 

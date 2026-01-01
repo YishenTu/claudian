@@ -120,6 +120,12 @@ export interface SlashCommand {
   content: string;             // Prompt template with placeholders
 }
 
+/** Keyboard navigation settings for vim-style scrolling. */
+export interface KeyboardNavigationSettings {
+  scrollUpKey: string;         // Key to scroll up when focused on messages (default: 'w')
+  scrollDownKey: string;       // Key to scroll down when focused on messages (default: 's')
+}
+
 /** Plugin settings persisted to disk. */
 export interface ClaudianSettings {
   userName: string;
@@ -145,6 +151,7 @@ export interface ClaudianSettings {
   allowedExportPaths: string[];
   allowedContextPaths: string[];
   slashCommands: SlashCommand[];
+  keyboardNavigation: KeyboardNavigationSettings;
 }
 
 /** Default plugin settings. */
@@ -172,6 +179,10 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   allowedExportPaths: ['~/Desktop', '~/Downloads'],
   allowedContextPaths: [],
   slashCommands: [],
+  keyboardNavigation: {
+    scrollUpKey: 'w',
+    scrollDownKey: 's',
+  },
 };
 
 /** Result from instruction refinement agent query. */

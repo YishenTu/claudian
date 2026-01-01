@@ -46,6 +46,7 @@ export {
   getCurrentPlatformKey,
   getDefaultBlockedCommands,
   type InstructionRefineResult,
+  type KeyboardNavigationSettings,
   type NonPlanPermissionMode,
   type Permission,
   type PermissionMode,

@@ -101,6 +101,7 @@ describe('types.ts', () => {
         allowedExportPaths: [],
         allowedContextPaths: [],
         slashCommands: [],
+        keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's' },
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -130,6 +131,7 @@ describe('types.ts', () => {
         allowedExportPaths: [],
         allowedContextPaths: [],
         slashCommands: [],
+        keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's' },
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -158,6 +160,7 @@ describe('types.ts', () => {
         allowedExportPaths: [],
         allowedContextPaths: [],
         slashCommands: [],
+        keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's' },
       };
 
       expect(settings.lastClaudeModel).toBe('opus');
