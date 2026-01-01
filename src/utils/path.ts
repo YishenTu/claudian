@@ -185,6 +185,13 @@ function getNpmCliJsPaths(): string[] {
       '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
       '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'
     );
+
+    // Check npm_config_prefix for custom npm global paths on Unix
+    if (process.env.npm_config_prefix) {
+      cliJsPaths.push(
+        path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      );
+    }
   }
 
   return cliJsPaths;

@@ -258,10 +258,16 @@ export class ClaudianService {
     if (customPath) {
       const expandedPath = expandHomePath(customPath);
       if (fs.existsSync(expandedPath)) {
-        return expandedPath;
+        // Validate that the path is a file, not a directory
+        const stat = fs.statSync(expandedPath);
+        if (stat.isFile()) {
+          return expandedPath;
+        }
+        console.warn(`Claudian: Custom CLI path is a directory, not a file: ${expandedPath}`);
+      } else {
+        console.warn(`Claudian: Custom CLI path not found: ${expandedPath}`);
       }
-      // Log warning but continue to auto-detection
-      console.warn(`Claudian: Custom CLI path not found: ${expandedPath}`);
+      // Continue to auto-detection if custom path is invalid
     }
     return findClaudeCLIPath();
   }

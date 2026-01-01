@@ -316,6 +316,93 @@ describe('ClaudianService', () => {
       expect(errorChunk).toBeDefined();
       expect(errorChunk?.content).toContain('Claude CLI not found');
     });
+
+    it('should use custom CLI path when valid file is specified', async () => {
+      const customPath = '/custom/path/to/cli.js';
+      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === customPath);
+      (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true });
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+      ]);
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('hello')) {
+        chunks.push(chunk);
+      }
+
+      const errorChunk = chunks.find(
+        (c) => c.type === 'error' && c.content.includes('Claude CLI not found')
+      );
+      expect(errorChunk).toBeUndefined();
+    });
+
+    it('should fall back to auto-detection when custom path is a directory', async () => {
+      const customPath = '/custom/path/to/directory';
+      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      const homeDir = os.homedir();
+      const autoDetectedPath = path.join(homeDir, '.claude', 'local', 'claude');
+
+      (fs.existsSync as jest.Mock).mockImplementation((p: string) =>
+        p === customPath || p === autoDetectedPath
+      );
+      (fs.statSync as jest.Mock).mockImplementation((p: string) => ({
+        isFile: () => p !== customPath, // Custom path is a directory
+      }));
+
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+      ]);
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('hello')) {
+        chunks.push(chunk);
+      }
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('directory, not a file')
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('should fall back to auto-detection when custom path does not exist', async () => {
+      const customPath = '/nonexistent/path/cli.js';
+      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      const homeDir = os.homedir();
+      const autoDetectedPath = path.join(homeDir, '.claude', 'local', 'claude');
+
+      (fs.existsSync as jest.Mock).mockImplementation((p: string) =>
+        p === autoDetectedPath // Custom path does not exist
+      );
+
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+      ]);
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('hello')) {
+        chunks.push(chunk);
+      }
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('not found')
+      );
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('transformSDKMessage', () => {
