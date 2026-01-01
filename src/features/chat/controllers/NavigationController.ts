@@ -18,6 +18,8 @@ export interface NavigationControllerDeps {
   getInputEl: () => HTMLTextAreaElement;
   getSettings: () => KeyboardNavigationSettings;
   isStreaming: () => boolean;
+  /** Returns true if a UI component (dropdown, modal, mode) should handle Escape instead. */
+  shouldSkipEscapeHandling?: () => boolean;
 }
 
 /**
@@ -131,7 +133,12 @@ export class NavigationController {
       return;
     }
 
-    // Not streaming: blur input and focus messages panel
+    // If a UI component (dropdown, modal, instruction mode) should handle Escape, skip
+    if (this.deps.shouldSkipEscapeHandling?.()) {
+      return;
+    }
+
+    // Not streaming, no active UI: blur input and focus messages panel
     e.preventDefault();
     e.stopPropagation();
     this.deps.getInputEl().blur();

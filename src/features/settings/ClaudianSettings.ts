@@ -76,31 +76,57 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const navDesc = containerEl.createDiv({ cls: 'setting-item-description' });
     navDesc.setText('Vim-style navigation: press Escape to focus chat panel, then use keys to scroll. Press i to return to input.');
 
+    // Helper to validate navigation key
+    const validateNavKey = (value: string, otherKey: string, defaultKey: string): string | null => {
+      const key = value.trim();
+      if (!key) return defaultKey;
+      if (key.length !== 1) return null; // Must be single character
+      if (key.toLowerCase() === 'i') return null; // 'i' is reserved for focus input
+      if (key.toLowerCase() === otherKey.toLowerCase()) return null; // No conflict
+      return key;
+    };
+
     new Setting(containerEl)
       .setName('Scroll up key')
-      .setDesc('Key to scroll up when focused on chat panel')
-      .addText((text) =>
+      .setDesc('Single character key to scroll up (default: w)')
+      .addText((text) => {
         text
           .setPlaceholder('w')
           .setValue(this.plugin.settings.keyboardNavigation.scrollUpKey)
           .onChange(async (value) => {
-            this.plugin.settings.keyboardNavigation.scrollUpKey = value || 'w';
+            const otherKey = this.plugin.settings.keyboardNavigation.scrollDownKey;
+            const validated = validateNavKey(value, otherKey, 'w');
+            if (validated === null) {
+              // Invalid: revert to current value
+              text.setValue(this.plugin.settings.keyboardNavigation.scrollUpKey);
+              return;
+            }
+            this.plugin.settings.keyboardNavigation.scrollUpKey = validated;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+        text.inputEl.maxLength = 1;
+      });
 
     new Setting(containerEl)
       .setName('Scroll down key')
-      .setDesc('Key to scroll down when focused on chat panel')
-      .addText((text) =>
+      .setDesc('Single character key to scroll down (default: s)')
+      .addText((text) => {
         text
           .setPlaceholder('s')
           .setValue(this.plugin.settings.keyboardNavigation.scrollDownKey)
           .onChange(async (value) => {
-            this.plugin.settings.keyboardNavigation.scrollDownKey = value || 's';
+            const otherKey = this.plugin.settings.keyboardNavigation.scrollUpKey;
+            const validated = validateNavKey(value, otherKey, 's');
+            if (validated === null) {
+              // Invalid: revert to current value
+              text.setValue(this.plugin.settings.keyboardNavigation.scrollDownKey);
+              return;
+            }
+            this.plugin.settings.keyboardNavigation.scrollDownKey = validated;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+        text.inputEl.maxLength = 1;
+      });
 
     // Customization section
     new Setting(containerEl).setName('Customization').setHeading();

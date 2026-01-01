@@ -500,6 +500,13 @@ export class ClaudianView extends ItemView {
       getInputEl: () => this.inputEl!,
       getSettings: () => this.plugin.settings.keyboardNavigation,
       isStreaming: () => this.state.isStreaming,
+      shouldSkipEscapeHandling: () => {
+        // Skip if instruction mode, slash dropdown, or mention dropdown is active
+        if (this.instructionModeManager?.isActive()) return true;
+        if (this.slashCommandDropdown?.isVisible()) return true;
+        if (this.fileContextManager?.isMentionDropdownVisible()) return true;
+        return false;
+      },
     });
     this.navigationController.initialize();
   }
