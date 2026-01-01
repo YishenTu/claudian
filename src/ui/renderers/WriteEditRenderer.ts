@@ -57,24 +57,24 @@ function shortenPath(filePath: string, maxLength = 40): string {
   return `${firstDir}/.../${filename}`;
 }
 
-/** Create a Write/Edit block during streaming (expanded by default). */
+/** Create a Write/Edit block during streaming (collapsed by default). */
 export function createWriteEditBlock(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo
 ): WriteEditState {
   const filePath = (toolCall.input.file_path as string) || 'file';
   const toolName = toolCall.name; // 'Write' or 'Edit'
-  const isExpanded = true;
+  const isExpanded = false;
 
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-write-edit-block expanded' });
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-write-edit-block' });
   wrapperEl.dataset.toolId = toolCall.id;
 
   // Header (clickable to collapse/expand)
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'true');
-  headerEl.setAttribute('aria-label', `${toolName}: ${shortenPath(filePath)} - click to collapse`);
+  headerEl.setAttribute('aria-expanded', 'false');
+  headerEl.setAttribute('aria-label', `${toolName}: ${shortenPath(filePath)} - click to expand`);
 
   // File icon
   const iconEl = headerEl.createDiv({ cls: 'claudian-write-edit-icon' });
@@ -94,8 +94,9 @@ export function createWriteEditBlock(
   statusEl.setAttribute('aria-label', 'Status: running');
   statusEl.createSpan({ cls: 'claudian-spinner' });
 
-  // Content area (expanded by default)
+  // Content area (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-content' });
+  contentEl.style.display = 'none';
 
   // Initial loading state
   const loadingRow = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });

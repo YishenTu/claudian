@@ -128,14 +128,14 @@ describe('WriteEditRenderer', () => {
       expect(state.toolCall).toBe(toolCall);
     });
 
-    it('should start expanded by default', () => {
+    it('should start collapsed by default', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall();
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      expect(state.isExpanded).toBe(true);
-      expect(state.wrapperEl.hasClass('expanded')).toBe(true);
+      expect(state.isExpanded).toBe(false);
+      expect(state.wrapperEl.hasClass('expanded')).toBe(false);
     });
 
     it('should set data-tool-id on wrapper', () => {
@@ -175,22 +175,22 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      // Initially expanded
-      expect(state.isExpanded).toBe(true);
-      expect(state.wrapperEl.hasClass('expanded')).toBe(true);
+      // Initially collapsed
+      expect(state.isExpanded).toBe(false);
+      expect(state.wrapperEl.hasClass('expanded')).toBe(false);
 
       // Trigger click
       const clickHandlers = (state.headerEl as any)._eventListeners.get('click') || [];
       expect(clickHandlers.length).toBeGreaterThan(0);
       clickHandlers[0]();
 
-      // Should be collapsed
-      expect(state.isExpanded).toBe(false);
-      expect(state.wrapperEl.hasClass('expanded')).toBe(false);
-
-      // Click again to expand
-      clickHandlers[0]();
+      // Should be expanded
       expect(state.isExpanded).toBe(true);
+      expect(state.wrapperEl.hasClass('expanded')).toBe(true);
+
+      // Click again to collapse
+      clickHandlers[0]();
+      expect(state.isExpanded).toBe(false);
     });
 
     it('should set ARIA attributes for accessibility', () => {
@@ -201,7 +201,7 @@ describe('WriteEditRenderer', () => {
 
       expect(state.headerEl.getAttribute('role')).toBe('button');
       expect(state.headerEl.getAttribute('tabindex')).toBe('0');
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
     });
 
     it('should shorten long file paths', () => {

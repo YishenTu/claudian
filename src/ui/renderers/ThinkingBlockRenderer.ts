@@ -17,19 +17,19 @@ export interface ThinkingBlockState {
   timerInterval: ReturnType<typeof setInterval> | null;
 }
 
-/** Create a streaming thinking block. */
+/** Create a streaming thinking block. Collapsed by default. */
 export function createThinkingBlock(
   parentEl: HTMLElement,
   renderContent: RenderContentFn
 ): ThinkingBlockState {
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block expanded' });
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block' });
 
   // Header (clickable to expand/collapse)
   const header = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', 'true');
-  header.setAttribute('aria-label', 'Extended thinking - click to collapse');
+  header.setAttribute('aria-expanded', 'false');
+  header.setAttribute('aria-label', 'Extended thinking - click to expand');
 
   // Label with timer
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
@@ -42,11 +42,12 @@ export function createThinkingBlock(
     labelEl.setText(`Thinking ${elapsed}s...`);
   }, 1000);
 
-  // Collapsible content (expanded by default while thinking)
+  // Collapsible content (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
+  contentEl.style.display = 'none';
 
   // Toggle expand/collapse handler
-  let isExpanded = true;
+  let isExpanded = false;
   const toggleExpand = () => {
     isExpanded = !isExpanded;
     if (isExpanded) {

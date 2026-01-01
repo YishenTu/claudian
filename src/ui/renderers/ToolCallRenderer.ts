@@ -184,12 +184,12 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
   return false;
 }
 
-/** Renders a tool call UI element (for streaming). Expanded by default unless overridden. */
+/** Renders a tool call UI element (for streaming). Collapsed by default unless overridden. */
 export function renderToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
   toolCallElements: Map<string, HTMLElement>,
-  expandedByDefault = true
+  expandedByDefault = false
 ): HTMLElement {
   const isExpanded = expandedByDefault;
   const toolEl = parentEl.createDiv({ cls: `claudian-tool-call${isExpanded ? ' expanded' : ''}` });

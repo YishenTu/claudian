@@ -43,11 +43,11 @@ function getStatusIcon(status: TodoItem['status']): string {
   }
 }
 
-/** Render a TodoWrite tool call as a todo list. */
+/** Render a TodoWrite tool call as a todo list. Collapsed by default. */
 export function renderTodoList(
   parentEl: HTMLElement,
   todos: TodoItem[],
-  isExpanded: boolean = true
+  isExpanded: boolean = false
 ): HTMLElement {
   const container = parentEl.createDiv({ cls: 'claudian-todo-list' });
   if (isExpanded) {

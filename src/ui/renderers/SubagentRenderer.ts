@@ -44,7 +44,7 @@ function truncateResult(result: string): string {
 }
 
 
-/** Create a subagent block for a Task tool call (streaming). Expanded by default. */
+/** Create a subagent block for a Task tool call (streaming). Collapsed by default. */
 export function createSubagentBlock(
   parentEl: HTMLElement,
   taskToolId: string,
@@ -57,18 +57,18 @@ export function createSubagentBlock(
     description,
     status: 'running',
     toolCalls: [],
-    isExpanded: true, // Expanded by default
+    isExpanded: false, // Collapsed by default
   };
 
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list expanded' });
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   wrapperEl.dataset.subagentId = taskToolId;
 
   // Header (clickable to collapse/expand)
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'true');
-  headerEl.setAttribute('aria-label', `Subagent task: ${truncateDescription(description)} - click to collapse`);
+  headerEl.setAttribute('aria-expanded', 'false');
+  headerEl.setAttribute('aria-label', `Subagent task: ${truncateDescription(description)} - click to expand`);
 
   // Robot icon (decorative)
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
@@ -87,9 +87,9 @@ export function createSubagentBlock(
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
 
-  // Content (expanded by default)
+  // Content (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  // No display:none since expanded by default
+  contentEl.style.display = 'none';
 
   // Toggle collapse handler
   const toggleExpand = () => {
