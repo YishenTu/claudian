@@ -259,11 +259,16 @@ export class ClaudianService {
       const expandedPath = expandHomePath(customPath);
       if (fs.existsSync(expandedPath)) {
         // Validate that the path is a file, not a directory
-        const stat = fs.statSync(expandedPath);
-        if (stat.isFile()) {
-          return expandedPath;
+        try {
+          const stat = fs.statSync(expandedPath);
+          if (stat.isFile()) {
+            return expandedPath;
+          }
+          console.warn(`Claudian: Custom CLI path is a directory, not a file: ${expandedPath}`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`Claudian: Custom CLI path not accessible: ${expandedPath} (${message})`);
         }
-        console.warn(`Claudian: Custom CLI path is a directory, not a file: ${expandedPath}`);
       } else {
         console.warn(`Claudian: Custom CLI path not found: ${expandedPath}`);
       }
@@ -613,6 +618,7 @@ export class ClaudianService {
   cleanup() {
     this.cancel();
     this.resetSession();
+    this.resolvedClaudePath = null;
   }
 
   /** Sets the approval callback for UI prompts. */

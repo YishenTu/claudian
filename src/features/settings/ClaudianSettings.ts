@@ -4,16 +4,16 @@
  * Plugin settings UI for hotkeys, customization, safety, and environment variables.
  */
 
-import * as fs from 'fs';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
-import * as os from 'os';
+import * as fs from 'fs';
 
 import { getCurrentPlatformKey } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import type ClaudianPlugin from '../../main';
 import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from '../../ui';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
+import { expandHomePath } from '../../utils/path';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
 /** Plugin settings tab displayed in Obsidian's settings pane. */
@@ -461,11 +461,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
     validationEl.style.display = 'none';
 
     const validatePath = (value: string): string | null => {
-      if (!value.trim()) return null; // Empty is valid (auto-detect)
+      const trimmed = value.trim();
+      if (!trimmed) return null; // Empty is valid (auto-detect)
 
-      const expandedPath = value.startsWith('~')
-        ? value.replace(/^~/, os.homedir())
-        : value;
+      const expandedPath = expandHomePath(trimmed);
 
       if (!fs.existsSync(expandedPath)) {
         return 'Path does not exist';

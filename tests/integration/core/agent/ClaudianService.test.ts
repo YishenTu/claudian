@@ -280,6 +280,11 @@ describe('ClaudianService', () => {
   });
 
   describe('findClaudeCLI', () => {
+    afterEach(() => {
+      (fs.existsSync as jest.Mock).mockReset();
+      (fs.statSync as jest.Mock).mockReset();
+    });
+
     it('should find claude CLI in ~/.claude/local/claude', async () => {
       const homeDir = os.homedir();
       const expectedPath = path.join(homeDir, '.claude', 'local', 'claude');
@@ -402,6 +407,88 @@ describe('ClaudianService', () => {
         expect.stringContaining('not found')
       );
       consoleSpy.mockRestore();
+    });
+
+    it('should fall back to auto-detection when custom path stat fails', async () => {
+      const customPath = '/custom/path/to/cli.js';
+      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      const homeDir = os.homedir();
+      const autoDetectedPath = path.join(homeDir, '.claude', 'local', 'claude');
+
+      (fs.existsSync as jest.Mock).mockImplementation((p: string) =>
+        p === customPath || p === autoDetectedPath
+      );
+      (fs.statSync as jest.Mock).mockImplementation(() => {
+        throw new Error('EACCES');
+      });
+
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+      ]);
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('hello')) {
+        chunks.push(chunk);
+      }
+
+      const errorChunk = chunks.find(
+        (c) => c.type === 'error' && c.content.includes('Claude CLI not found')
+      );
+      expect(errorChunk).toBeUndefined();
+
+      const options = getLastOptions();
+      expect(options?.pathToClaudeCodeExecutable).toBe(autoDetectedPath);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('not accessible')
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('should reload CLI path after cleanup', async () => {
+      const firstPath = '/custom/path/to/cli-1.js';
+      const secondPath = '/custom/path/to/cli-2.js';
+      mockPlugin = createMockPlugin({ claudeCliPath: firstPath });
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === firstPath);
+      (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true });
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+      ]);
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _chunk of service.query('hello')) {
+        // drain
+      }
+
+      const firstOptions = getLastOptions();
+      expect(firstOptions?.pathToClaudeCodeExecutable).toBe(firstPath);
+
+      mockPlugin.settings.claudeCliPath = secondPath;
+      service.cleanup();
+
+      (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === secondPath);
+      (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true });
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello again' }] } },
+      ]);
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _chunk of service.query('hello again')) {
+        // drain
+      }
+
+      const secondOptions = getLastOptions();
+      expect(secondOptions?.pathToClaudeCodeExecutable).toBe(secondPath);
     });
   });
 
