@@ -2,10 +2,13 @@ import { setIcon } from 'obsidian';
 
 import {
   createAsyncSubagentBlock,
+  createSubagentBlock,
   finalizeAsyncSubagent,
   markAsyncSubagentOrphaned,
+  renderStoredSubagent,
   updateAsyncSubagentRunning,
 } from '@/ui/renderers/SubagentRenderer';
+import type { SubagentInfo } from '@/core/types';
 
 interface MockElement {
   children: MockElement[];
@@ -118,6 +121,171 @@ const getTextByClass = (el: MockElement, cls: string): string[] => {
   visit(el);
   return results;
 };
+
+describe('Sync Subagent Renderer', () => {
+  let parentEl: MockElement;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parentEl = createMockElement('div');
+  });
+
+  describe('createSubagentBlock', () => {
+    it('should start collapsed by default', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect(state.info.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
+
+    it('should set aria-expanded to false by default', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('should hide content by default', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect((state.contentEl as any).style.display).toBe('none');
+    });
+
+    it('should set correct ARIA attributes for accessibility', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect(state.headerEl.getAttribute('role')).toBe('button');
+      expect(state.headerEl.getAttribute('tabindex')).toBe('0');
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+      expect(state.headerEl.getAttribute('aria-label')).toContain('click to expand');
+    });
+
+    it('should toggle expand/collapse on header click', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      // Initially collapsed
+      expect(state.info.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+      expect((state.contentEl as any).style.display).toBe('none');
+
+      // Trigger click
+      (state.headerEl as any).click();
+
+      // Should be expanded
+      expect(state.info.isExpanded).toBe(true);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
+      expect((state.contentEl as any).style.display).toBe('block');
+
+      // Click again to collapse
+      (state.headerEl as any).click();
+      expect(state.info.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+      expect((state.contentEl as any).style.display).toBe('none');
+    });
+
+    it('should update aria-expanded on toggle', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      // Initially collapsed
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+
+      // Expand
+      (state.headerEl as any).click();
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
+
+      // Collapse
+      (state.headerEl as any).click();
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('should show description in label', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'My task description' });
+
+      expect(state.labelEl.textContent).toBe('My task description');
+    });
+
+    it('should show tool count badge', () => {
+      const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect(state.countEl.textContent).toBe('0 tool uses');
+    });
+  });
+
+  describe('renderStoredSubagent', () => {
+    it('should start collapsed by default', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+      };
+
+      const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+
+      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
+
+    it('should set aria-expanded to false by default', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+      };
+
+      const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+
+      const headerEl = (wrapperEl as any).children[0];
+      expect(headerEl.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('should hide content by default', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+      };
+
+      const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+
+      const contentEl = (wrapperEl as any).children[1];
+      expect(contentEl.style.display).toBe('none');
+    });
+
+    it('should toggle expand/collapse on click', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+      };
+
+      const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
+      const contentEl = (wrapperEl as any).children[1];
+
+      // Initially collapsed
+      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+      expect(contentEl.style.display).toBe('none');
+
+      // Click to expand
+      headerEl.click();
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+      expect(contentEl.style.display).toBe('block');
+      expect(headerEl.getAttribute('aria-expanded')).toBe('true');
+
+      // Click to collapse
+      headerEl.click();
+      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+      expect(contentEl.style.display).toBe('none');
+      expect(headerEl.getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+});
 
 describe('Async Subagent Renderer', () => {
   let parentEl: MockElement;
