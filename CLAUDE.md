@@ -178,7 +178,7 @@ await MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, component
 interface ClaudianSettings {
   model: string;                     // 'claude-haiku-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4-5' | custom
   titleGenerationModel: string;      // Model for auto titles (empty = auto)
-  thinkingBudget: 'off' | 'low' | 'medium' | 'high';  // 0 | 4k | 8k | 16k tokens
+  thinkingBudget: 'off' | 'low' | 'medium' | 'high' | 'xhigh';  // 0 | 4k | 8k | 16k | 32k tokens
   permissionMode: 'yolo' | 'normal';
   enableBlocklist: boolean;
   blockedCommands: { unix: string[], windows: string[] };  // Platform-keyed blocklist

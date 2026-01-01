@@ -13,7 +13,7 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
 ];
 
 /** Extended thinking token budget levels. */
-export type ThinkingBudget = 'off' | 'low' | 'medium' | 'high';
+export type ThinkingBudget = 'off' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /** Thinking budget configuration with token counts. */
 export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: number }[] = [
@@ -21,6 +21,7 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
   { value: 'low', label: 'Low', tokens: 4000 },
   { value: 'medium', label: 'Med', tokens: 8000 },
   { value: 'high', label: 'High', tokens: 16000 },
+  { value: 'xhigh', label: 'Ultra', tokens: 32000 },
 ];
 
 /** Default thinking budget per model tier. */
