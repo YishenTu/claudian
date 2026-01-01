@@ -34,6 +34,8 @@ export class NavigationController {
   private deps: NavigationControllerDeps;
   private scrollDirection: 'up' | 'down' | null = null;
   private animationFrameId: number | null = null;
+  private initialized = false;
+  private disposed = false;
 
   // Bound handlers for cleanup
   private boundMessagesKeydown: (e: KeyboardEvent) => void;
@@ -53,29 +55,45 @@ export class NavigationController {
 
   /** Initializes navigation by making messagesEl focusable and attaching listeners. */
   initialize(): void {
+    if (this.initialized || this.disposed) return;
+
     const messagesEl = this.deps.getMessagesEl();
+    const inputEl = this.deps.getInputEl();
+
+    // Guard against missing DOM elements
+    if (!messagesEl || !inputEl) return;
+
+    // Make messages panel focusable (focus style handled in CSS)
     messagesEl.setAttribute('tabindex', '0');
-    messagesEl.style.outline = 'none'; // No visible focus ring
+    messagesEl.addClass('claudian-messages-focusable');
 
     // Attach event listeners
     messagesEl.addEventListener('keydown', this.boundMessagesKeydown);
     document.addEventListener('keyup', this.boundKeyup);
 
-    const inputEl = this.deps.getInputEl();
     // Use capture phase to run before other handlers
     inputEl.addEventListener('keydown', this.boundInputKeydown, { capture: true });
+
+    this.initialized = true;
   }
 
   /** Cleans up event listeners and animation frames. */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+
     this.stopScrolling();
 
-    const messagesEl = this.deps.getMessagesEl();
-    messagesEl.removeEventListener('keydown', this.boundMessagesKeydown);
+    // Always clean up document listener first (most important for preventing leaks)
     document.removeEventListener('keyup', this.boundKeyup);
 
+    // Element cleanup - may already be destroyed during view teardown
+    const messagesEl = this.deps.getMessagesEl();
+    messagesEl?.removeEventListener('keydown', this.boundMessagesKeydown);
+    messagesEl?.removeClass('claudian-messages-focusable');
+
     const inputEl = this.deps.getInputEl();
-    inputEl.removeEventListener('keydown', this.boundInputKeydown, { capture: true });
+    inputEl?.removeEventListener('keydown', this.boundInputKeydown, { capture: true });
   }
 
   // ============================================
@@ -83,6 +101,9 @@ export class NavigationController {
   // ============================================
 
   private handleMessagesKeydown(e: KeyboardEvent): void {
+    // Ignore if any modifier is held - allow system shortcuts (Ctrl+W, Cmd+W, etc.)
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+
     const settings = this.deps.getSettings();
     const key = e.key.toLowerCase();
 
@@ -134,8 +155,12 @@ export class NavigationController {
     }
 
     // If a UI component (dropdown, modal, instruction mode) should handle Escape, skip
-    if (this.deps.shouldSkipEscapeHandling?.()) {
-      return;
+    try {
+      if (this.deps.shouldSkipEscapeHandling?.()) {
+        return;
+      }
+    } catch {
+      // Callback threw - continue with default behavior
     }
 
     // Not streaming, no active UI: blur input and focus messages panel
@@ -167,9 +192,15 @@ export class NavigationController {
   }
 
   private scrollLoop = (): void => {
-    if (this.scrollDirection === null) return;
+    if (this.scrollDirection === null || this.disposed) return;
 
     const messagesEl = this.deps.getMessagesEl();
+    if (!messagesEl) {
+      // Element was destroyed - stop scrolling silently (expected on cleanup)
+      this.stopScrolling();
+      return;
+    }
+
     const scrollAmount = this.scrollDirection === 'up' ? -SCROLL_SPEED : SCROLL_SPEED;
     messagesEl.scrollTop += scrollAmount;
 

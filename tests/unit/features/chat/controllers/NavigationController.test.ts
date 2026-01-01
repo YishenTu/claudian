@@ -12,14 +12,30 @@ class MockKeyboardEvent {
   public key: string;
   public cancelable: boolean;
   public bubbles: boolean;
+  public ctrlKey: boolean;
+  public metaKey: boolean;
+  public altKey: boolean;
+  public shiftKey: boolean;
   private defaultPrevented = false;
   private propagationStopped = false;
 
-  constructor(type: string, options: { key: string; cancelable?: boolean; bubbles?: boolean } = { key: '' }) {
+  constructor(type: string, options: {
+    key: string;
+    cancelable?: boolean;
+    bubbles?: boolean;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    altKey?: boolean;
+    shiftKey?: boolean;
+  } = { key: '' }) {
     this.type = type;
     this.key = options.key;
     this.cancelable = options.cancelable ?? false;
     this.bubbles = options.bubbles ?? false;
+    this.ctrlKey = options.ctrlKey ?? false;
+    this.metaKey = options.metaKey ?? false;
+    this.altKey = options.altKey ?? false;
+    this.shiftKey = options.shiftKey ?? false;
   }
 
   preventDefault(): void {
@@ -48,6 +64,7 @@ class MockElement {
   public scrollTop = 0;
   public style: Record<string, string> = {};
   private attributes: Map<string, string> = new Map();
+  private classes: Set<string> = new Set();
   private listeners: Map<string, { listener: Listener; options?: AddEventListenerOptions }[]> = new Map();
 
   constructor(tagName = 'DIV') {
@@ -60,6 +77,18 @@ class MockElement {
 
   getAttribute(name: string): string | null {
     return this.attributes.get(name) ?? null;
+  }
+
+  addClass(cls: string): void {
+    this.classes.add(cls);
+  }
+
+  removeClass(cls: string): void {
+    this.classes.delete(cls);
+  }
+
+  hasClass(cls: string): boolean {
+    return this.classes.has(cls);
   }
 
   addEventListener(type: string, listener: Listener, options?: AddEventListenerOptions | boolean): void {
@@ -199,9 +228,9 @@ describe('NavigationController', () => {
       expect(messagesEl.getAttribute('tabindex')).toBe('0');
     });
 
-    it('removes focus outline from messagesEl', () => {
+    it('adds focusable CSS class to messagesEl', () => {
       controller.initialize();
-      expect(messagesEl.style.outline).toBe('none');
+      expect(messagesEl.hasClass('claudian-messages-focusable')).toBe(true);
     });
 
     it('attaches keydown listener to messagesEl', () => {
@@ -353,6 +382,39 @@ describe('NavigationController', () => {
       jest.advanceTimersByTime(16);
 
       expect(messagesEl.scrollTop).toBeGreaterThan(scrollAfterUp);
+    });
+
+    it('ignores scroll key when modifier keys are held (Ctrl)', () => {
+      const keydownEvent = new KeyboardEvent('keydown', { key: 'w', ctrlKey: true });
+      messagesEl.dispatchEvent(keydownEvent);
+      jest.advanceTimersByTime(16);
+
+      // scrollTop should not change - modifier key blocks scrolling
+      expect(messagesEl.scrollTop).toBe(100);
+    });
+
+    it('ignores scroll key when modifier keys are held (Meta/Cmd)', () => {
+      const keydownEvent = new KeyboardEvent('keydown', { key: 'w', metaKey: true });
+      messagesEl.dispatchEvent(keydownEvent);
+      jest.advanceTimersByTime(16);
+
+      expect(messagesEl.scrollTop).toBe(100);
+    });
+
+    it('ignores scroll key when modifier keys are held (Alt)', () => {
+      const keydownEvent = new KeyboardEvent('keydown', { key: 's', altKey: true });
+      messagesEl.dispatchEvent(keydownEvent);
+      jest.advanceTimersByTime(16);
+
+      expect(messagesEl.scrollTop).toBe(100);
+    });
+
+    it('ignores scroll key when modifier keys are held (Shift)', () => {
+      const keydownEvent = new KeyboardEvent('keydown', { key: 'w', shiftKey: true });
+      messagesEl.dispatchEvent(keydownEvent);
+      jest.advanceTimersByTime(16);
+
+      expect(messagesEl.scrollTop).toBe(100);
     });
   });
 

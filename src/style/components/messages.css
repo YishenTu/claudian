@@ -8,6 +8,11 @@
   gap: 12px;
 }
 
+/* Focusable messages panel for vim-style navigation */
+.claudian-messages-focusable:focus {
+  outline: none;
+}
+
 /* Welcome message - claude.ai style */
 .claudian-welcome {
   flex: 1;

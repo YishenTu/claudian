@@ -4,8 +4,8 @@
  * Plugin settings UI for hotkeys, customization, safety, and environment variables.
  */
 
-import type { App} from 'obsidian';
-import { PluginSettingTab, Setting } from 'obsidian';
+import type { App } from 'obsidian';
+import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
 import { getCurrentPlatformKey } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
@@ -77,13 +77,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
     navDesc.setText('Vim-style navigation: press Escape to focus chat panel, then use keys to scroll. Press i to return to input.');
 
     // Helper to validate navigation key
-    const validateNavKey = (value: string, otherKey: string, defaultKey: string): string | null => {
+    const validateNavKey = (value: string, otherKey: string, defaultKey: string): { key: string | null; error?: string } => {
       const key = value.trim();
-      if (!key) return defaultKey;
-      if (key.length !== 1) return null; // Must be single character
-      if (key.toLowerCase() === 'i') return null; // 'i' is reserved for focus input
-      if (key.toLowerCase() === otherKey.toLowerCase()) return null; // No conflict
-      return key;
+      if (!key) return { key: defaultKey };
+      if (key.length !== 1) return { key: null, error: 'Key must be a single character' };
+      if (key.toLowerCase() === 'i') return { key: null, error: "'i' is reserved for focusing the input" };
+      if (key.toLowerCase() === otherKey.toLowerCase()) return { key: null, error: 'Scroll keys must be different' };
+      return { key };
     };
 
     new Setting(containerEl)
@@ -95,13 +95,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.keyboardNavigation.scrollUpKey)
           .onChange(async (value) => {
             const otherKey = this.plugin.settings.keyboardNavigation.scrollDownKey;
-            const validated = validateNavKey(value, otherKey, 'w');
-            if (validated === null) {
-              // Invalid: revert to current value
+            const result = validateNavKey(value, otherKey, 'w');
+            if (result.key === null) {
+              new Notice(`Invalid key: ${result.error}`);
               text.setValue(this.plugin.settings.keyboardNavigation.scrollUpKey);
               return;
             }
-            this.plugin.settings.keyboardNavigation.scrollUpKey = validated;
+            this.plugin.settings.keyboardNavigation.scrollUpKey = result.key;
             await this.plugin.saveSettings();
           });
         text.inputEl.maxLength = 1;
@@ -116,13 +116,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.keyboardNavigation.scrollDownKey)
           .onChange(async (value) => {
             const otherKey = this.plugin.settings.keyboardNavigation.scrollUpKey;
-            const validated = validateNavKey(value, otherKey, 's');
-            if (validated === null) {
-              // Invalid: revert to current value
+            const result = validateNavKey(value, otherKey, 's');
+            if (result.key === null) {
+              new Notice(`Invalid key: ${result.error}`);
               text.setValue(this.plugin.settings.keyboardNavigation.scrollDownKey);
               return;
             }
-            this.plugin.settings.keyboardNavigation.scrollDownKey = validated;
+            this.plugin.settings.keyboardNavigation.scrollDownKey = result.key;
             await this.plugin.saveSettings();
           });
         text.inputEl.maxLength = 1;
