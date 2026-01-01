@@ -231,6 +231,46 @@ describe('ThinkingBlockRenderer', () => {
       expect(duration).toBeGreaterThanOrEqual(5);
       expect(state.labelEl.textContent).toContain('Thought for');
     });
+
+    it('should sync isExpanded state so toggle works correctly after finalize', () => {
+      const parentEl = createMockElement();
+
+      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const header = (state.wrapperEl as any)._children[0];
+
+      // Expand the block
+      const clickHandlers = header._eventListeners.get('click') || [];
+      clickHandlers[0]();
+      expect(state.isExpanded).toBe(true);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
+
+      // Finalize (which collapses)
+      finalizeThinkingBlock(state);
+      expect(state.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+
+      // Now click once - should expand (not require two clicks)
+      clickHandlers[0]();
+      expect(state.isExpanded).toBe(true);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
+      expect((state.contentEl as any).style.display).toBe('block');
+    });
+
+    it('should update aria-expanded on finalize', () => {
+      const parentEl = createMockElement();
+
+      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const header = (state.wrapperEl as any)._children[0];
+
+      // Expand first
+      const clickHandlers = header._eventListeners.get('click') || [];
+      clickHandlers[0]();
+      expect(header.getAttribute('aria-expanded')).toBe('true');
+
+      // Finalize
+      finalizeThinkingBlock(state);
+      expect(header.getAttribute('aria-expanded')).toBe('false');
+    });
   });
 
   describe('renderStoredThinkingBlock', () => {
@@ -278,6 +318,74 @@ describe('ThinkingBlockRenderer', () => {
       expect((wrapperEl as any).hasClass('expanded')).toBe(true);
       expect(content.style.display).toBe('block');
       expect(header.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('should support keyboard navigation (Enter/Space)', () => {
+      const parentEl = createMockElement();
+
+      const wrapperEl = renderStoredThinkingBlock(parentEl, 'thinking content', 10, mockRenderContent);
+      const header = (wrapperEl as any)._children[0];
+
+      const keydownHandlers = header._eventListeners.get('keydown') || [];
+      expect(keydownHandlers.length).toBeGreaterThan(0);
+
+      // Simulate Enter key
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      keydownHandlers[0](enterEvent);
+
+      expect(enterEvent.preventDefault).toHaveBeenCalled();
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+
+      // Simulate Space key to collapse
+      const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+      keydownHandlers[0](spaceEvent);
+
+      expect(spaceEvent.preventDefault).toHaveBeenCalled();
+      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
+  });
+
+  describe('createThinkingBlock keyboard navigation', () => {
+    it('should support keyboard navigation (Enter/Space)', () => {
+      const parentEl = createMockElement();
+
+      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const header = (state.wrapperEl as any)._children[0];
+
+      const keydownHandlers = header._eventListeners.get('keydown') || [];
+      expect(keydownHandlers.length).toBeGreaterThan(0);
+
+      // Simulate Enter key
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      keydownHandlers[0](enterEvent);
+
+      expect(enterEvent.preventDefault).toHaveBeenCalled();
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
+      expect((state.contentEl as any).style.display).toBe('block');
+
+      // Simulate Space key to collapse
+      const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+      keydownHandlers[0](spaceEvent);
+
+      expect(spaceEvent.preventDefault).toHaveBeenCalled();
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+      expect((state.contentEl as any).style.display).toBe('none');
+    });
+
+    it('should ignore other keys', () => {
+      const parentEl = createMockElement();
+
+      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const header = (state.wrapperEl as any)._children[0];
+
+      const keydownHandlers = header._eventListeners.get('keydown') || [];
+
+      // Simulate Tab key (should not toggle)
+      const tabEvent = { key: 'Tab', preventDefault: jest.fn() };
+      keydownHandlers[0](tabEvent);
+
+      expect(tabEvent.preventDefault).not.toHaveBeenCalled();
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
     });
   });
 });

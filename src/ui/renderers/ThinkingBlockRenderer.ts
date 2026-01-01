@@ -4,6 +4,8 @@
  * Renders extended thinking blocks with live timer and expand/collapse.
  */
 
+import { collapseElement, setupCollapsible } from '@/ui/utils/collapsible';
+
 /** Callback for rendering markdown content. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
@@ -15,6 +17,7 @@ export interface ThinkingBlockState {
   content: string;
   startTime: number;
   timerInterval: ReturnType<typeof setInterval> | null;
+  isExpanded: boolean;
 }
 
 /** Create a streaming thinking block. Collapsed by default. */
@@ -44,42 +47,22 @@ export function createThinkingBlock(
 
   // Collapsible content (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
-  contentEl.style.display = 'none';
 
-  // Toggle expand/collapse handler
-  let isExpanded = false;
-  const toggleExpand = () => {
-    isExpanded = !isExpanded;
-    if (isExpanded) {
-      contentEl.style.display = 'block';
-      wrapperEl.addClass('expanded');
-      header.setAttribute('aria-expanded', 'true');
-    } else {
-      contentEl.style.display = 'none';
-      wrapperEl.removeClass('expanded');
-      header.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  // Click handler
-  header.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
-
-  return {
+  // Create state object first so toggle can reference it
+  const state: ThinkingBlockState = {
     wrapperEl,
     contentEl,
     labelEl,
     content: '',
     startTime,
     timerInterval,
+    isExpanded: false,
   };
+
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  setupCollapsible(wrapperEl, header, contentEl, state);
+
+  return state;
 }
 
 /** Append content to a streaming thinking block. */
@@ -106,12 +89,10 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Update label to show final duration (without "...")
   state.labelEl.setText(`Thought for ${durationSeconds}s`);
 
-  // Collapse when done
-  state.contentEl.style.display = 'none';
-  state.wrapperEl.removeClass('expanded');
+  // Collapse when done and sync state
   const header = state.wrapperEl.querySelector('.claudian-thinking-header');
   if (header) {
-    header.setAttribute('aria-expanded', 'false');
+    collapseElement(state.wrapperEl, header as HTMLElement, state.contentEl, state);
   }
 
   return durationSeconds;
@@ -137,7 +118,6 @@ export function renderStoredThinkingBlock(
   const header = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', 'false');
   header.setAttribute('aria-label', 'Extended thinking - click to expand');
 
   // Label with duration
@@ -145,36 +125,13 @@ export function renderStoredThinkingBlock(
   const labelText = durationSeconds !== undefined ? `Thought for ${durationSeconds}s` : 'Thinking';
   labelEl.setText(labelText);
 
-  // Collapsible content (starts collapsed)
+  // Collapsible content
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
-  contentEl.style.display = 'none';
   renderContent(contentEl, content);
 
-  // Toggle expand/collapse handler
-  let isExpanded = false;
-  const toggleExpand = () => {
-    isExpanded = !isExpanded;
-    if (isExpanded) {
-      contentEl.style.display = 'block';
-      wrapperEl.addClass('expanded');
-      header.setAttribute('aria-expanded', 'true');
-    } else {
-      contentEl.style.display = 'none';
-      wrapperEl.removeClass('expanded');
-      header.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  // Click handler
-  header.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const state = { isExpanded: false };
+  setupCollapsible(wrapperEl, header, contentEl, state);
 
   return wrapperEl;
 }

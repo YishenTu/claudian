@@ -7,6 +7,7 @@
 import { setIcon } from 'obsidian';
 
 import type { SubagentInfo, ToolCallInfo } from '../../core/types';
+import { setupCollapsible } from '../utils/collapsible';
 import { getToolLabel } from './ToolCallRenderer';
 
 /** State for a streaming subagent block. */
@@ -89,32 +90,9 @@ export function createSubagentBlock(
 
   // Content (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  contentEl.style.display = 'none';
 
-  // Toggle collapse handler
-  const toggleExpand = () => {
-    info.isExpanded = !info.isExpanded;
-    if (info.isExpanded) {
-      wrapperEl.addClass('expanded');
-      contentEl.style.display = 'block';
-      headerEl.setAttribute('aria-expanded', 'true');
-    } else {
-      wrapperEl.removeClass('expanded');
-      contentEl.style.display = 'none';
-      headerEl.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  // Click handler
-  headerEl.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  headerEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior - use info as state (it has isExpanded property)
+  setupCollapsible(wrapperEl, headerEl, contentEl, info);
 
   return {
     wrapperEl,
@@ -251,12 +229,7 @@ export function renderStoredSubagent(
   parentEl: HTMLElement,
   subagent: SubagentInfo
 ): HTMLElement {
-  const isExpanded = false; // Collapsed by default for stored
-
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
-  if (isExpanded) {
-    wrapperEl.addClass('expanded');
-  }
   if (subagent.status === 'completed') {
     wrapperEl.addClass('done');
   } else if (subagent.status === 'error') {
@@ -271,7 +244,6 @@ export function renderStoredSubagent(
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
   headerEl.setAttribute('aria-label', `Subagent task: ${truncateDescription(subagent.description)} - ${toolCount} tool uses - Status: ${subagent.status}`);
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
@@ -296,11 +268,8 @@ export function renderStoredSubagent(
     statusEl.createSpan({ cls: 'claudian-spinner' });
   }
 
-  // Content (collapsed by default)
+  // Content
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  if (!isExpanded) {
-    contentEl.style.display = 'none';
-  }
 
   // Show "DONE" or "ERROR" for completed subagents
   if (subagent.status === 'completed' || subagent.status === 'error') {
@@ -335,30 +304,9 @@ export function renderStoredSubagent(
     }
   }
 
-  // Toggle collapse handler
-  const toggleExpand = () => {
-    const expanded = wrapperEl.hasClass('expanded');
-    if (expanded) {
-      wrapperEl.removeClass('expanded');
-      contentEl.style.display = 'none';
-      headerEl.setAttribute('aria-expanded', 'false');
-    } else {
-      wrapperEl.addClass('expanded');
-      contentEl.style.display = 'block';
-      headerEl.setAttribute('aria-expanded', 'true');
-    }
-  };
-
-  // Click handler
-  headerEl.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  headerEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const state = { isExpanded: false };
+  setupCollapsible(wrapperEl, headerEl, contentEl, state);
 
   return wrapperEl;
 }
@@ -450,7 +398,6 @@ export function createAsyncSubagentBlock(
 
   // Content (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  contentEl.style.display = 'none';
 
   // Initial content
   const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
@@ -459,30 +406,8 @@ export function createAsyncSubagentBlock(
   const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
   textEl.setText('run in background');
 
-  // Toggle collapse handler
-  const toggleExpand = () => {
-    info.isExpanded = !info.isExpanded;
-    if (info.isExpanded) {
-      wrapperEl.addClass('expanded');
-      contentEl.style.display = 'block';
-      headerEl.setAttribute('aria-expanded', 'true');
-    } else {
-      wrapperEl.removeClass('expanded');
-      contentEl.style.display = 'none';
-      headerEl.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  // Click handler
-  headerEl.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  headerEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior - use info as state (it has isExpanded property)
+  setupCollapsible(wrapperEl, headerEl, contentEl, info);
 
   return {
     wrapperEl,
@@ -603,8 +528,6 @@ export function renderStoredAsyncSubagent(
   parentEl: HTMLElement,
   subagent: SubagentInfo
 ): HTMLElement {
-  const isExpanded = false; // Always collapsed for stored
-
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   const statusClass = getAsyncDisplayStatus(subagent.asyncStatus);
   setAsyncWrapperStatus(wrapperEl, statusClass);
@@ -624,7 +547,6 @@ export function renderStoredAsyncSubagent(
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
   headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - Status: ${statusText}`);
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
@@ -652,11 +574,8 @@ export function renderStoredAsyncSubagent(
     setIcon(statusEl, subagent.asyncStatus === 'orphaned' ? 'alert-circle' : 'x');
   }
 
-  // Content (collapsed by default)
+  // Content
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  if (!isExpanded) {
-    contentEl.style.display = 'none';
-  }
 
   // Show status-appropriate content
   const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
@@ -679,30 +598,9 @@ export function renderStoredAsyncSubagent(
     textEl.setText('run in background');
   }
 
-  // Toggle collapse handler
-  const toggleExpand = () => {
-    const expanded = wrapperEl.hasClass('expanded');
-    if (expanded) {
-      wrapperEl.removeClass('expanded');
-      contentEl.style.display = 'none';
-      headerEl.setAttribute('aria-expanded', 'false');
-    } else {
-      wrapperEl.addClass('expanded');
-      contentEl.style.display = 'block';
-      headerEl.setAttribute('aria-expanded', 'true');
-    }
-  };
-
-  // Click handler
-  headerEl.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  headerEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const state = { isExpanded: false };
+  setupCollapsible(wrapperEl, headerEl, contentEl, state);
 
   return wrapperEl;
 }

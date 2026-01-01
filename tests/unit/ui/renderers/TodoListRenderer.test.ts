@@ -2,8 +2,6 @@
  * Tests for TodoListRenderer - TodoWrite tool UI
  */
 
-import { setIcon } from 'obsidian';
-
 import {
   parseTodoInput,
   renderStoredTodoList,
@@ -277,6 +275,50 @@ describe('TodoListRenderer', () => {
       const result = renderStoredTodoList(parentEl, {});
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('keyboard navigation', () => {
+    it('should support keyboard navigation (Enter/Space) on renderTodoList', () => {
+      const parentEl = createMockElement();
+      const todos = createSampleTodos();
+
+      const container = renderTodoList(parentEl, todos);
+      const header = (container as any)._children[0];
+
+      const keydownHandlers = header._eventListeners.get('keydown') || [];
+      expect(keydownHandlers.length).toBeGreaterThan(0);
+
+      // Simulate Enter key
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      keydownHandlers[0](enterEvent);
+
+      expect(enterEvent.preventDefault).toHaveBeenCalled();
+      expect(container.hasClass('expanded')).toBe(true);
+
+      // Simulate Space key to collapse
+      const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+      keydownHandlers[0](spaceEvent);
+
+      expect(spaceEvent.preventDefault).toHaveBeenCalled();
+      expect(container.hasClass('expanded')).toBe(false);
+    });
+
+    it('should ignore other keys', () => {
+      const parentEl = createMockElement();
+      const todos = createSampleTodos();
+
+      const container = renderTodoList(parentEl, todos);
+      const header = (container as any)._children[0];
+
+      const keydownHandlers = header._eventListeners.get('keydown') || [];
+
+      // Simulate Tab key (should not toggle)
+      const tabEvent = { key: 'Tab', preventDefault: jest.fn() };
+      keydownHandlers[0](tabEvent);
+
+      expect(tabEvent.preventDefault).not.toHaveBeenCalled();
+      expect(container.hasClass('expanded')).toBe(false);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { setIcon } from 'obsidian';
 
+import type { SubagentInfo } from '@/core/types';
 import {
   createAsyncSubagentBlock,
   createSubagentBlock,
@@ -8,7 +9,6 @@ import {
   renderStoredSubagent,
   updateAsyncSubagentRunning,
 } from '@/ui/renderers/SubagentRenderer';
-import type { SubagentInfo } from '@/core/types';
 
 interface MockElement {
   children: MockElement[];
@@ -287,12 +287,118 @@ describe('Sync Subagent Renderer', () => {
   });
 });
 
+describe('keyboard navigation', () => {
+  let parentEl: MockElement;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parentEl = createMockElement('div');
+  });
+
+  it('should support keyboard navigation (Enter/Space) on createSubagentBlock', () => {
+    const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+    // Simulate keydown event
+    const keydownHandlers: Array<(e: any) => void> = [];
+    const originalAddEventListener = state.headerEl.addEventListener;
+    state.headerEl.addEventListener = (event: string, handler: (e: any) => void) => {
+      if (event === 'keydown') {
+        keydownHandlers.push(handler);
+      }
+      originalAddEventListener.call(state.headerEl, event, handler);
+    };
+
+    // Re-check - the handler should already be registered
+    // We need to dispatch a keydown event
+    const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+    (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
+
+    // The handler should have been called and expanded
+    expect(state.info.isExpanded).toBe(true);
+    expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
+
+    // Space to collapse
+    const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+    (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
+
+    expect(state.info.isExpanded).toBe(false);
+    expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+  });
+
+  it('should support keyboard navigation (Enter/Space) on renderStoredSubagent', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Test task',
+      status: 'completed',
+      toolCalls: [],
+      isExpanded: false,
+    };
+
+    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    const headerEl = (wrapperEl as any).children[0];
+
+    // Simulate Enter key
+    const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+    headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
+
+    expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+
+    // Simulate Space key to collapse
+    const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+    headerEl.dispatchEvent({ type: 'keydown', ...spaceEvent });
+
+    expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+  });
+});
+
 describe('Async Subagent Renderer', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
     jest.clearAllMocks();
     parentEl = createMockElement('div');
+  });
+
+  describe('collapsed by default', () => {
+    it('should start collapsed by default', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect(state.info.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
+
+    it('should set aria-expanded to false by default', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('should hide content by default', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      expect((state.contentEl as any).style.display).toBe('none');
+    });
+
+    it('should toggle expand/collapse on header click', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      // Initially collapsed
+      expect(state.info.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+
+      // Trigger click
+      (state.headerEl as any).click();
+
+      // Should be expanded
+      expect(state.info.isExpanded).toBe(true);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
+      expect((state.contentEl as any).style.display).toBe('block');
+
+      // Click again to collapse
+      (state.headerEl as any).click();
+      expect(state.info.isExpanded).toBe(false);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
   });
 
   it('shows label immediately and running status text', () => {

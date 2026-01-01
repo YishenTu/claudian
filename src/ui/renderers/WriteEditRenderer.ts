@@ -11,6 +11,7 @@ import { setIcon } from 'obsidian';
 
 import { TOOL_EDIT } from '../../core/tools/toolNames';
 import type { ToolCallInfo, ToolDiffData } from '../../core/types';
+import { setupCollapsible } from '../utils/collapsible';
 import type {
   DiffLine} from './DiffRenderer';
 import {
@@ -64,7 +65,6 @@ export function createWriteEditBlock(
 ): WriteEditState {
   const filePath = (toolCall.input.file_path as string) || 'file';
   const toolName = toolCall.name; // 'Write' or 'Edit'
-  const isExpanded = false;
 
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-write-edit-block' });
   wrapperEl.dataset.toolId = toolCall.id;
@@ -73,7 +73,6 @@ export function createWriteEditBlock(
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'false');
   headerEl.setAttribute('aria-label', `${toolName}: ${shortenPath(filePath)} - click to expand`);
 
   // File icon
@@ -96,14 +95,13 @@ export function createWriteEditBlock(
 
   // Content area (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-content' });
-  contentEl.style.display = 'none';
 
   // Initial loading state
   const loadingRow = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
   const loadingEl = loadingRow.createDiv({ cls: 'claudian-write-edit-loading' });
   loadingEl.setText('Writing...');
 
-  // Toggle collapse handler
+  // Create state object
   const state: WriteEditState = {
     wrapperEl,
     contentEl,
@@ -112,29 +110,11 @@ export function createWriteEditBlock(
     statsEl,
     statusEl,
     toolCall,
-    isExpanded,
+    isExpanded: false,
   };
 
-  const toggleExpand = () => {
-    state.isExpanded = !state.isExpanded;
-    if (state.isExpanded) {
-      wrapperEl.addClass('expanded');
-      contentEl.style.display = 'block';
-      headerEl.setAttribute('aria-expanded', 'true');
-    } else {
-      wrapperEl.removeClass('expanded');
-      contentEl.style.display = 'none';
-      headerEl.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  headerEl.addEventListener('click', toggleExpand);
-  headerEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  setupCollapsible(wrapperEl, headerEl, contentEl, state);
 
   return state;
 }
@@ -243,7 +223,6 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'false');
 
   // File icon
   const iconEl = headerEl.createDiv({ cls: 'claudian-write-edit-icon' });
@@ -284,9 +263,8 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
     setIcon(statusEl, 'x');
   }
 
-  // Content (collapsed by default)
+  // Content
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-content' });
-  contentEl.style.display = 'none';
 
   // Render diff if available
   const row = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
@@ -315,27 +293,9 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
     doneEl.setText(isError ? 'ERROR' : 'DONE');
   }
 
-  // Toggle collapse handler
-  const toggleExpand = () => {
-    const expanded = wrapperEl.hasClass('expanded');
-    if (expanded) {
-      wrapperEl.removeClass('expanded');
-      contentEl.style.display = 'none';
-      headerEl.setAttribute('aria-expanded', 'false');
-    } else {
-      wrapperEl.addClass('expanded');
-      contentEl.style.display = 'block';
-      headerEl.setAttribute('aria-expanded', 'true');
-    }
-  };
-
-  headerEl.addEventListener('click', toggleExpand);
-  headerEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
-  });
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const state = { isExpanded: false };
+  setupCollapsible(wrapperEl, headerEl, contentEl, state);
 
   return wrapperEl;
 }

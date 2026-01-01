@@ -6,6 +6,8 @@
 
 import { setIcon } from 'obsidian';
 
+import { setupCollapsible } from '@/ui/utils/collapsible';
+
 /** Todo item structure from TodoWrite tool. */
 export interface TodoItem {
   content: string;
@@ -50,9 +52,6 @@ export function renderTodoList(
   isExpanded: boolean = false
 ): HTMLElement {
   const container = parentEl.createDiv({ cls: 'claudian-todo-list' });
-  if (isExpanded) {
-    container.addClass('expanded');
-  }
 
   // Count completed vs total
   const completedCount = todos.filter(t => t.status === 'completed').length;
@@ -63,8 +62,8 @@ export function renderTodoList(
   const header = container.createDiv({ cls: 'claudian-todo-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-  header.setAttribute('aria-label', `Task list - ${completedCount} of ${totalCount} completed - click to ${isExpanded ? 'collapse' : 'expand'}`);
+  // aria-label is set dynamically by setupCollapsible based on expand state
+  const baseAriaLabel = `Task list - ${completedCount} of ${totalCount} completed`;
 
   const icon = header.createDiv({ cls: 'claudian-todo-icon' });
   icon.setAttribute('aria-hidden', 'true');
@@ -79,9 +78,6 @@ export function renderTodoList(
 
   // Content (collapsible)
   const content = container.createDiv({ cls: 'claudian-todo-content' });
-  if (!isExpanded) {
-    content.style.display = 'none';
-  }
 
   // Render each todo item
   for (const todo of todos) {
@@ -98,29 +94,11 @@ export function renderTodoList(
     text.setText(todo.status === 'in_progress' ? todo.activeForm : todo.content);
   }
 
-  // Toggle collapse handler
-  const toggleExpand = () => {
-    const expanded = container.hasClass('expanded');
-    if (expanded) {
-      container.removeClass('expanded');
-      content.style.display = 'none';
-      header.setAttribute('aria-expanded', 'false');
-    } else {
-      container.addClass('expanded');
-      content.style.display = 'block';
-      header.setAttribute('aria-expanded', 'true');
-    }
-  };
-
-  // Click handler
-  header.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const state = { isExpanded: false };
+  setupCollapsible(container, header, content, state, {
+    initiallyExpanded: isExpanded,
+    baseAriaLabel
   });
 
   return container;

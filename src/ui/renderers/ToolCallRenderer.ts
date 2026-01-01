@@ -8,6 +8,7 @@ import { setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../core/tools/toolIcons';
 import type { ToolCallInfo } from '../../core/types';
+import { setupCollapsible } from '../utils/collapsible';
 
 // Note: getToolIcon is now exported from src/tools/index.ts
 // This module uses it internally but does not re-export it.
@@ -191,18 +192,15 @@ export function renderToolCall(
   toolCallElements: Map<string, HTMLElement>,
   expandedByDefault = false
 ): HTMLElement {
-  const isExpanded = expandedByDefault;
-  const toolEl = parentEl.createDiv({ cls: `claudian-tool-call${isExpanded ? ' expanded' : ''}` });
+  const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
   toolEl.dataset.toolId = toolCall.id;
   toolCallElements.set(toolCall.id, toolEl);
-  toolCall.isExpanded = isExpanded;
 
   // Header (clickable to expand/collapse)
   const header = toolEl.createDiv({ cls: 'claudian-tool-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-  header.setAttribute('aria-label', `${getToolLabel(toolCall.name, toolCall.input)} - click to ${isExpanded ? 'collapse' : 'expand'}`);
+  // aria-label is set dynamically by setupCollapsible based on expand state
 
   // Tool icon (decorative)
   const iconEl = header.createSpan({ cls: 'claudian-tool-icon' });
@@ -223,9 +221,6 @@ export function renderToolCall(
 
   // Collapsible content
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
-  if (!isExpanded) {
-    content.style.display = 'none';
-  }
 
   // Tree-branch result row
   const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
@@ -234,29 +229,13 @@ export function renderToolCall(
   const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
   resultText.setText('Running...');
 
-  // Toggle expand/collapse handler
-  const toggleExpand = () => {
-    toolCall.isExpanded = !toolCall.isExpanded;
-    if (toolCall.isExpanded) {
-      content.style.display = 'block';
-      toolEl.addClass('expanded');
-      header.setAttribute('aria-expanded', 'true');
-    } else {
-      content.style.display = 'none';
-      toolEl.removeClass('expanded');
-      header.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  // Click handler
-  header.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
+  // Setup collapsible behavior and sync state to toolCall
+  const state = { isExpanded: expandedByDefault };
+  toolCall.isExpanded = expandedByDefault;
+  setupCollapsible(toolEl, header, content, state, {
+    initiallyExpanded: expandedByDefault,
+    onToggle: (expanded) => { toolCall.isExpanded = expanded; },
+    baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });
 
   return toolEl;
@@ -308,14 +287,13 @@ export function renderStoredToolCall(
   toolCall: ToolCallInfo,
   expandedByDefault = false
 ): HTMLElement {
-  const toolEl = parentEl.createDiv({ cls: `claudian-tool-call${expandedByDefault ? ' expanded' : ''}` });
+  const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
 
   // Header
   const header = toolEl.createDiv({ cls: 'claudian-tool-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', expandedByDefault ? 'true' : 'false');
-  header.setAttribute('aria-label', `${getToolLabel(toolCall.name, toolCall.input)} - click to ${expandedByDefault ? 'collapse' : 'expand'}`);
+  // aria-label is set dynamically by setupCollapsible based on expand state
 
   // Tool icon (decorative)
   const iconEl = header.createSpan({ cls: 'claudian-tool-icon' });
@@ -340,9 +318,6 @@ export function renderStoredToolCall(
 
   // Collapsible content
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
-  if (!expandedByDefault) {
-    content.style.display = 'none';
-  }
 
   // Tree-branch result row
   const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
@@ -364,30 +339,11 @@ export function renderStoredToolCall(
     resultText.setText('No result');
   }
 
-  // Toggle expand/collapse handler
-  let isExpanded = expandedByDefault;
-  const toggleExpand = () => {
-    isExpanded = !isExpanded;
-    if (isExpanded) {
-      content.style.display = 'block';
-      toolEl.addClass('expanded');
-      header.setAttribute('aria-expanded', 'true');
-    } else {
-      content.style.display = 'none';
-      toolEl.removeClass('expanded');
-      header.setAttribute('aria-expanded', 'false');
-    }
-  };
-
-  // Click handler
-  header.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpand();
-    }
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const state = { isExpanded: false };
+  setupCollapsible(toolEl, header, content, state, {
+    initiallyExpanded: expandedByDefault,
+    baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });
 
   return toolEl;
