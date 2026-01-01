@@ -138,7 +138,7 @@ describe('NavigationController', () => {
   let messagesEl: MockElement;
   let inputEl: MockElement;
   let deps: NavigationControllerDeps;
-  let settings: { scrollUpKey: string; scrollDownKey: string };
+  let settings: { scrollUpKey: string; scrollDownKey: string; focusInputKey: string };
   let isStreaming: boolean;
   let shouldSkipEscapeHandling: jest.Mock | undefined;
   let mockRaf: jest.Mock;
@@ -196,7 +196,7 @@ describe('NavigationController', () => {
     // Create mock elements
     messagesEl = new MockElement('DIV');
     inputEl = new MockElement('TEXTAREA');
-    settings = { scrollUpKey: 'w', scrollDownKey: 's' };
+    settings = { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' };
     isStreaming = false;
     shouldSkipEscapeHandling = undefined;
 
@@ -447,6 +447,21 @@ describe('NavigationController', () => {
       const keydownEvent = new KeyboardEvent('keydown', { key: 'I' });
       messagesEl.dispatchEvent(keydownEvent);
 
+      expect(focusSpy).toHaveBeenCalled();
+    });
+
+    it('uses configured focus input key', () => {
+      settings.focusInputKey = 'a';
+      const focusSpy = jest.spyOn(inputEl, 'focus');
+
+      // 'i' should not focus now
+      const keydownI = new KeyboardEvent('keydown', { key: 'i' });
+      messagesEl.dispatchEvent(keydownI);
+      expect(focusSpy).not.toHaveBeenCalled();
+
+      // 'a' should focus
+      const keydownA = new KeyboardEvent('keydown', { key: 'a' });
+      messagesEl.dispatchEvent(keydownA);
       expect(focusSpy).toHaveBeenCalled();
     });
   });

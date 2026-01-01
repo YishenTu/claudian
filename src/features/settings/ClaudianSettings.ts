@@ -74,15 +74,22 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Keyboard Navigation').setHeading();
 
     const navDesc = containerEl.createDiv({ cls: 'setting-item-description' });
-    navDesc.setText('Vim-style navigation: press Escape to focus chat panel, then use keys to scroll. Press i to return to input.');
+    navDesc.setText('Vim-style navigation: press Escape to focus chat panel, then use keys to scroll or focus input.');
 
-    // Helper to validate navigation key
-    const validateNavKey = (value: string, otherKey: string, defaultKey: string): { key: string | null; error?: string } => {
+    // Helper to validate navigation key (checks against all other keys)
+    const validateNavKey = (
+      value: string,
+      otherKeys: string[],
+      defaultKey: string
+    ): { key: string | null; error?: string } => {
       const key = value.trim();
       if (!key) return { key: defaultKey };
       if (key.length !== 1) return { key: null, error: 'Key must be a single character' };
-      if (key.toLowerCase() === 'i') return { key: null, error: "'i' is reserved for focusing the input" };
-      if (key.toLowerCase() === otherKey.toLowerCase()) return { key: null, error: 'Scroll keys must be different' };
+      for (const other of otherKeys) {
+        if (key.toLowerCase() === other.toLowerCase()) {
+          return { key: null, error: 'Navigation keys must be unique' };
+        }
+      }
       return { key };
     };
 
@@ -94,8 +101,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .setPlaceholder('w')
           .setValue(this.plugin.settings.keyboardNavigation.scrollUpKey)
           .onChange(async (value) => {
-            const otherKey = this.plugin.settings.keyboardNavigation.scrollDownKey;
-            const result = validateNavKey(value, otherKey, 'w');
+            const otherKeys = [
+              this.plugin.settings.keyboardNavigation.scrollDownKey,
+              this.plugin.settings.keyboardNavigation.focusInputKey,
+            ];
+            const result = validateNavKey(value, otherKeys, 'w');
             if (result.key === null) {
               new Notice(`Invalid key: ${result.error}`);
               text.setValue(this.plugin.settings.keyboardNavigation.scrollUpKey);
@@ -115,14 +125,41 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .setPlaceholder('s')
           .setValue(this.plugin.settings.keyboardNavigation.scrollDownKey)
           .onChange(async (value) => {
-            const otherKey = this.plugin.settings.keyboardNavigation.scrollUpKey;
-            const result = validateNavKey(value, otherKey, 's');
+            const otherKeys = [
+              this.plugin.settings.keyboardNavigation.scrollUpKey,
+              this.plugin.settings.keyboardNavigation.focusInputKey,
+            ];
+            const result = validateNavKey(value, otherKeys, 's');
             if (result.key === null) {
               new Notice(`Invalid key: ${result.error}`);
               text.setValue(this.plugin.settings.keyboardNavigation.scrollDownKey);
               return;
             }
             this.plugin.settings.keyboardNavigation.scrollDownKey = result.key;
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.maxLength = 1;
+      });
+
+    new Setting(containerEl)
+      .setName('Focus input key')
+      .setDesc('Single character key to focus the input area (default: i)')
+      .addText((text) => {
+        text
+          .setPlaceholder('i')
+          .setValue(this.plugin.settings.keyboardNavigation.focusInputKey)
+          .onChange(async (value) => {
+            const otherKeys = [
+              this.plugin.settings.keyboardNavigation.scrollUpKey,
+              this.plugin.settings.keyboardNavigation.scrollDownKey,
+            ];
+            const result = validateNavKey(value, otherKeys, 'i');
+            if (result.key === null) {
+              new Notice(`Invalid key: ${result.error}`);
+              text.setValue(this.plugin.settings.keyboardNavigation.focusInputKey);
+              return;
+            }
+            this.plugin.settings.keyboardNavigation.focusInputKey = result.key;
             await this.plugin.saveSettings();
           });
         text.inputEl.maxLength = 1;

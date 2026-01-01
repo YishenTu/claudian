@@ -124,6 +124,7 @@ export interface SlashCommand {
 export interface KeyboardNavigationSettings {
   scrollUpKey: string;         // Key to scroll up when focused on messages (default: 'w')
   scrollDownKey: string;       // Key to scroll down when focused on messages (default: 's')
+  focusInputKey: string;       // Key to focus input (default: 'i', like vim insert mode)
 }
 
 /** Plugin settings persisted to disk. */
@@ -182,6 +183,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   keyboardNavigation: {
     scrollUpKey: 'w',
     scrollDownKey: 's',
+    focusInputKey: 'i',
   },
 };
 

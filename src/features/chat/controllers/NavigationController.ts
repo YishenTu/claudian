@@ -122,7 +122,7 @@ export class NavigationController {
     }
 
     // Focus input (vim 'i' for insert mode)
-    if (key === 'i') {
+    if (key === settings.focusInputKey.toLowerCase()) {
       e.preventDefault();
       this.deps.getInputEl().focus();
       return;
