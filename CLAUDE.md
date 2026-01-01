@@ -193,6 +193,11 @@ interface ClaudianSettings {
   allowedExportPaths: string[];      // Write-only paths outside vault
   allowedContextPaths: string[];     // Read-only paths outside vault
   slashCommands: SlashCommand[];     // Loaded from .claude/commands/*.md
+  keyboardNavigation: {             // Vim-style navigation key bindings
+    scrollUpKey: string;
+    scrollDownKey: string;
+    focusInputKey: string;
+  };
 }
 ```
 
