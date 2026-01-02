@@ -811,9 +811,8 @@ export class ClaudianService {
     try {
       // Notify UI to update state and queue re-send with plan mode
       await this.enterPlanModeCallback();
-    } catch (error) {
-      // Non-critical: UI can detect plan mode from stream, so allow the tool to proceed
-      console.warn('Failed to notify UI of plan mode activation:', error);
+    } catch {
+      // Non-critical: UI can detect plan mode from stream
     }
     return { behavior: 'allow', updatedInput: {} };
   }

@@ -437,8 +437,7 @@ export class ContextPathSelector {
       if (compareFull.startsWith(compareHome)) {
         return '~' + fullPath.slice(homeDir.length);
       }
-    } catch (error) {
-      console.warn('Failed to normalize home path:', error);
+    } catch {
       // Fall back to full path
     }
     return fullPath;
