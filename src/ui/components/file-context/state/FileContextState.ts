@@ -10,7 +10,7 @@ export class FileContextState {
   private mentionedMcpServers: Set<string> = new Set();
 
   getAttachedFiles(): Set<string> {
-    return this.attachedFiles;
+    return new Set(this.attachedFiles);
   }
 
   hasFilesChanged(): boolean {

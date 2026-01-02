@@ -224,7 +224,7 @@ export class EditedFilesTracker {
       const content = await this.app.vault.read(file);
       return await this.computeContentHash(content);
     } catch (error) {
-      console.warn('Failed to compute file hash:', error);
+      console.warn(`Failed to compute file hash for "${path}":`, error);
       return null;
     }
   }

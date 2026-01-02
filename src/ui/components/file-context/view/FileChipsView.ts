@@ -30,6 +30,11 @@ export class FileChipsView {
     }
   }
 
+  destroy(): void {
+    this.fileIndicatorEl.remove();
+    this.editedFilesIndicatorEl.remove();
+  }
+
   renderAttachments(attachedFiles: Set<string>): void {
     this.fileIndicatorEl.empty();
 
@@ -92,7 +97,11 @@ export class FileChipsView {
 
     chipEl.addEventListener('click', async (e) => {
       if ((e.target as HTMLElement).closest('.claudian-file-chip-remove')) return;
-      await this.callbacks.onOpenFile(filePath);
+      try {
+        await this.callbacks.onOpenFile(filePath);
+      } catch (error) {
+        console.error('Failed to open file:', error);
+      }
     });
 
     removeEl.addEventListener('click', (e) => {
@@ -116,7 +125,11 @@ export class FileChipsView {
     nameEl.setAttribute('title', filePath);
 
     chipEl.addEventListener('click', async () => {
-      await this.callbacks.onOpenFile(filePath);
+      try {
+        await this.callbacks.onOpenFile(filePath);
+      } catch (error) {
+        console.error('Failed to open file:', error);
+      }
     });
   }
 }

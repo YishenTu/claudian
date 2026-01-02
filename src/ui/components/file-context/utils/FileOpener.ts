@@ -26,7 +26,8 @@ export async function openFileFromChip(
     try {
       await app.workspace.getLeaf('tab').openFile(file);
       return { opened: true, openedWithDefaultApp: false };
-    } catch {
+    } catch (error) {
+      console.warn('Failed to open file in Obsidian:', error);
       const vaultPath = getVaultPath(app);
       const absolutePath = vaultPath ? path.join(vaultPath, file.path) : file.path;
       const opened = await openWithDefaultApp(app, absolutePath);

@@ -10,7 +10,7 @@ import { getFolderName, normalizePathForComparison } from '../../../../utils/con
 import { type ContextPathFile, contextPathScanner } from '../../../../utils/contextPathScanner';
 import { extractMcpMentions } from '../../../../utils/mcp';
 import { SelectableDropdown } from '../../SelectableDropdown';
-import type { ContextPathEntry, MentionItem } from './types';
+import { createContextPathEntry, type ContextPathEntry, type MentionItem } from './types';
 
 export interface MentionDropdownOptions {
   fixed?: boolean;
@@ -188,12 +188,7 @@ export class MentionDropdownController {
       const folderName = getFolderName(contextRoot);
       const needsDisambiguation = (counts.get(folderName) ?? 0) > 1;
       const displayName = this.getContextDisplayName(normalized, folderName, needsDisambiguation);
-      return {
-        contextRoot,
-        folderName,
-        displayName,
-        displayNameLower: displayName.toLowerCase(),
-      };
+      return createContextPathEntry(contextRoot, folderName, displayName);
     });
   }
 
