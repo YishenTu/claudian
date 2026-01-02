@@ -110,3 +110,16 @@ describe('ImageContextManager extractImagePath', () => {
     // Note: This is a simple check that only looks for '../' and '..\' as prefixes
   });
 });
+
+describe('ImageContextManager handleImagePathInText', () => {
+  it('removes file URLs from text when image loads', async () => {
+    const manager = createManager();
+    const addImageSpy = jest.spyOn(manager, 'addImageFromPath').mockResolvedValue(true);
+
+    const result = await manager.handleImagePathInText('file:///C:/Users/me/image.png');
+
+    expect(addImageSpy).toHaveBeenCalledWith('C:\\Users\\me\\image.png');
+    expect(result).toEqual({ text: '', imageLoaded: true });
+    addImageSpy.mockRestore();
+  });
+});

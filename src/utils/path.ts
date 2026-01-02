@@ -68,11 +68,8 @@ function expandEnvironmentVariables(value: string): string {
   let expanded = value;
 
   // Windows %VAR% format - allow parentheses for vars like %ProgramFiles(x86)%
-  // Note: We allow parentheses in env var names to support Windows built-in vars
   expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?[A-Za-z0-9_]*)%/g, (match, name) => {
-    // Remove parentheses from name when looking up
-    const lookupName = name.replace(/\(|\)/g, '');
-    const envValue = getEnvValue(lookupName);
+    const envValue = getEnvValue(name);
     return envValue !== undefined ? envValue : match;
   });
 
@@ -389,13 +386,20 @@ export function normalizePathForComparison(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
+
+  const expanded = normalizePathBeforeResolution(value);
+  let normalized = expanded;
+
   try {
-    const normalized = normalizeWindowsPathPrefix(path.normalize(value));
-    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+    normalized = path.normalize(expanded);
   } catch {
-    // Fallback to input if normalization fails
-    return process.platform === 'win32' ? value.toLowerCase() : value;
+    normalized = expanded;
   }
+
+  normalized = normalizeWindowsPathPrefix(normalized);
+  normalized = normalized.replace(/\\/g, '/').replace(/\/+$/, '');
+
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 // ============================================

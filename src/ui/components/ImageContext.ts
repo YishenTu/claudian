@@ -103,13 +103,45 @@ export class ImageContextManager {
 
   /** Extracts an image path from text if present. */
   extractImagePath(text: string): string | null {
-    const markdownCandidate = this.extractMarkdownImagePath(text);
-    const normalizedMarkdown = this.normalizeCandidatePath(markdownCandidate);
-    if (normalizedMarkdown) return normalizedMarkdown;
+    const info = this.extractImagePathInfo(text);
+    return info ? info.normalized : null;
+  }
+
+  /** Handles potential image path in message text. Returns cleaned text if image was loaded. */
+  async handleImagePathInText(text: string): Promise<{ text: string; imageLoaded: boolean }> {
+    const info = this.extractImagePathInfo(text);
+    if (!info) {
+      return { text, imageLoaded: false };
+    }
+
+    const loaded = await this.addImageFromPath(info.normalized);
+    if (loaded) {
+      const cleanedText = text
+        .replace(info.raw, '')
+        .replace(info.normalized, '')
+        .replace(/["']\s*["']/g, '')
+        .trim();
+      return { text: cleanedText, imageLoaded: true };
+    }
+
+    return { text, imageLoaded: false };
+  }
+
+  private extractImagePathInfo(text: string): { raw: string; normalized: string } | null {
+    const markdownMatch = text.match(/!\[[^\]]*]\(([^)]+)\)/);
+    if (markdownMatch && markdownMatch[1]) {
+      const markdownCandidate = this.extractMarkdownImagePath(text);
+      const normalizedMarkdown = this.normalizeCandidatePath(markdownCandidate);
+      if (normalizedMarkdown) {
+        return { raw: markdownMatch[1], normalized: normalizedMarkdown };
+      }
+    }
 
     const htmlCandidate = this.extractHtmlImagePath(text);
     const normalizedHtml = this.normalizeCandidatePath(htmlCandidate);
-    if (normalizedHtml) return normalizedHtml;
+    if (htmlCandidate && normalizedHtml) {
+      return { raw: htmlCandidate, normalized: normalizedHtml };
+    }
 
     const tokenPattern = /[^\s"'<>()[\]]+?\.(?:jpe?g|png|gif|webp)\b/gi;
     const matches = text.match(tokenPattern) || [];
@@ -117,27 +149,11 @@ export class ImageContextManager {
     for (const raw of matches) {
       const normalized = this.normalizeCandidatePath(raw);
       if (normalized) {
-        return normalized;
+        return { raw, normalized };
       }
     }
 
     return null;
-  }
-
-  /** Handles potential image path in message text. Returns cleaned text if image was loaded. */
-  async handleImagePathInText(text: string): Promise<{ text: string; imageLoaded: boolean }> {
-    const imagePath = this.extractImagePath(text);
-    if (!imagePath) {
-      return { text, imageLoaded: false };
-    }
-
-    const loaded = await this.addImageFromPath(imagePath);
-    if (loaded) {
-      const cleanedText = text.replace(imagePath, '').replace(/["']\s*["']/g, '').trim();
-      return { text: cleanedText, imageLoaded: true };
-    }
-
-    return { text, imageLoaded: false };
   }
 
   private setupDragAndDrop() {
