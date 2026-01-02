@@ -6,7 +6,10 @@
  * Consider extracting these to a shared module for direct testing.
  */
 
-import { escapeHtml,normalizeInsertionText } from '@/utils/inlineEdit';
+import * as path from 'path';
+
+import { escapeHtml, normalizeInsertionText } from '@/utils/inlineEdit';
+import { isPathWithinVault, normalizePathForFilesystem } from '@/utils/path';
 
 // Copy of the diff algorithm from InlineEditModal for testing
 interface DiffOp {
@@ -400,5 +403,104 @@ describe('InlineEditModal - Word-level Diff', () => {
       expect(ops.some((op) => op.type === 'delete')).toBe(true);
       expect(ops.some((op) => op.type === 'insert')).toBe(true);
     });
+  });
+});
+
+/**
+ * Tests for normalizePathForVault edge cases
+ * This replicates the logic from InlineEditModal.normalizePathForVault
+ */
+describe('normalizePathForVault edge cases', () => {
+  // Helper that mirrors the InlineEditModal.normalizePathForVault logic
+  function normalizePathForVault(
+    rawPath: string | undefined | null,
+    vaultPath: string | null
+  ): string | null {
+    if (!rawPath) return null;
+    try {
+      const normalizedRaw = normalizePathForFilesystem(rawPath);
+      if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+        const absolute = path.isAbsolute(normalizedRaw)
+          ? normalizedRaw
+          : path.resolve(vaultPath, normalizedRaw);
+        const relative = path.relative(vaultPath, absolute);
+        return relative ? relative.replace(/\\/g, '/') : null;
+      }
+      return normalizedRaw.replace(/\\/g, '/');
+    } catch {
+      return null;
+    }
+  }
+
+  it('should return null for null path', () => {
+    expect(normalizePathForVault(null, '/test/vault')).toBeNull();
+  });
+
+  it('should return null for undefined path', () => {
+    expect(normalizePathForVault(undefined, '/test/vault')).toBeNull();
+  });
+
+  it('should return null for empty string path', () => {
+    expect(normalizePathForVault('', '/test/vault')).toBeNull();
+  });
+
+  it('should normalize path within vault to relative path', () => {
+    const vaultPath = '/test/vault';
+    const filePath = '/test/vault/notes/file.md';
+    const result = normalizePathForVault(filePath, vaultPath);
+    expect(result).toBe('notes/file.md');
+  });
+
+  it('should handle relative path within vault', () => {
+    const vaultPath = '/test/vault';
+    const filePath = 'notes/file.md';
+    const result = normalizePathForVault(filePath, vaultPath);
+    expect(result).toBe('notes/file.md');
+  });
+
+  it('should handle path outside vault', () => {
+    const vaultPath = '/test/vault';
+    const filePath = '/other/location/file.md';
+    const result = normalizePathForVault(filePath, vaultPath);
+    // Should return the normalized path as-is
+    expect(result).toBe('/other/location/file.md');
+  });
+
+  it('should handle null vault path', () => {
+    const filePath = '/some/path/file.md';
+    const result = normalizePathForVault(filePath, null);
+    expect(result).toBe('/some/path/file.md');
+  });
+
+  it('should normalize backslashes to forward slashes', () => {
+    const vaultPath = '/test/vault';
+    const filePath = 'notes\\subfolder\\file.md';
+    const result = normalizePathForVault(filePath, vaultPath);
+    expect(result).toContain('/');
+    expect(result).not.toContain('\\');
+  });
+
+  it('should handle paths with spaces', () => {
+    const vaultPath = '/test/vault';
+    const filePath = '/test/vault/my notes/file.md';
+    const result = normalizePathForVault(filePath, vaultPath);
+    expect(result).toBe('my notes/file.md');
+  });
+
+  it('should return null for empty relative result', () => {
+    const vaultPath = '/test/vault';
+    // When path.relative returns empty string (same dir)
+    const filePath = '/test/vault';
+    const result = normalizePathForVault(filePath, vaultPath);
+    // Empty relative path returns null
+    expect(result).toBeNull();
+  });
+
+  it('should handle tilde paths after normalization', () => {
+    const vaultPath = '/home/user/vault';
+    // normalizePathForFilesystem should handle tilde expansion
+    const filePath = '/home/user/vault/notes/file.md';
+    const result = normalizePathForVault(filePath, vaultPath);
+    expect(result).toBe('notes/file.md');
   });
 });

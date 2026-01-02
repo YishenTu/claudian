@@ -167,6 +167,7 @@ export class InlineEditService {
 
       return this.parseResponse(responseText);
     } catch (error) {
+      console.error('[InlineEditService] Error:', error);
       const msg = error instanceof Error ? error.message : 'Unknown error';
       return { success: false, error: msg };
     } finally {

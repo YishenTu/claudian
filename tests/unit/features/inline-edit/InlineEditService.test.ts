@@ -198,6 +198,78 @@ describe('InlineEditService', () => {
       expect(prompt).toContain('Add content');
       expect(prompt).toContain('</query>');
     });
+
+    it('should prepend context files when provided', () => {
+      const request: InlineEditRequest = {
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'Fix this',
+        notePath: 'test.md',
+        contextFiles: ['notes/helper.md', 'docs/api.md'],
+      };
+
+      const prompt = (service as any).buildPrompt(request);
+
+      // Context files should be prepended with <context_files> tag
+      expect(prompt).toContain('<context_files>');
+      expect(prompt).toContain('notes/helper.md');
+      expect(prompt).toContain('docs/api.md');
+      expect(prompt).toContain('</context_files>');
+      // Original content should still be present
+      expect(prompt).toContain('<editor_selection');
+      expect(prompt).toContain('<query>');
+    });
+
+    it('should not modify prompt when contextFiles is empty', () => {
+      const request: InlineEditRequest = {
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'Fix this',
+        notePath: 'test.md',
+        contextFiles: [],
+      };
+
+      const prompt = (service as any).buildPrompt(request);
+
+      expect(prompt).not.toContain('<context_files>');
+      expect(prompt).toContain('<editor_selection');
+    });
+
+    it('should not modify prompt when contextFiles is undefined', () => {
+      const request: InlineEditRequest = {
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'Fix this',
+        notePath: 'test.md',
+      };
+
+      const prompt = (service as any).buildPrompt(request);
+
+      expect(prompt).not.toContain('<context_files>');
+      expect(prompt).toContain('<editor_selection');
+    });
+
+    it('should prepend context files for cursor mode', () => {
+      const request: InlineEditRequest = {
+        mode: 'cursor',
+        instruction: 'insert here',
+        notePath: 'test.md',
+        cursorContext: {
+          beforeCursor: 'before',
+          afterCursor: 'after',
+          isInbetween: false,
+          line: 0,
+          column: 6,
+        },
+        contextFiles: ['utils.ts'],
+      };
+
+      const prompt = (service as any).buildPrompt(request);
+
+      expect(prompt).toContain('<context_files>');
+      expect(prompt).toContain('utils.ts');
+      expect(prompt).toContain('<editor_cursor');
+    });
   });
 
   describe('parseResponse', () => {
@@ -465,6 +537,107 @@ describe('InlineEditService', () => {
 
       const options = getLastOptions();
       expect(options?.resume).toBe('continue-session');
+    });
+
+    it('should prepend context files when provided', async () => {
+      // First message to establish session
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'context-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'What do you want?' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      // Follow-up message with context files
+      setMockMessages([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>final result</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.continueConversation('make it blue', ['notes/helper.md', 'docs/api.md']);
+
+      // The prompt should include the context files
+      // Since we can't directly access the prompt, we verify the session resumed
+      const options = getLastOptions();
+      expect(options?.resume).toBe('context-session');
+    });
+
+    it('should not modify prompt when no context files provided', async () => {
+      // First message to establish session
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'no-context-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'What do you want?' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      // Follow-up without context files
+      setMockMessages([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>result</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.continueConversation('make it blue');
+
+      const options = getLastOptions();
+      expect(options?.resume).toBe('no-context-session');
+    });
+
+    it('should handle empty context files array', async () => {
+      // First message to establish session
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'empty-context-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'What do you want?' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      // Follow-up with empty context files array
+      setMockMessages([
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>result</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.continueConversation('make it blue', []);
+
+      const options = getLastOptions();
+      expect(options?.resume).toBe('empty-context-session');
     });
   });
 

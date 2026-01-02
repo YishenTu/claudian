@@ -457,7 +457,14 @@ class InlineEditController {
         setMentionedMcpServers: () => false,
         addMentionedMcpServer: () => {},
         getContextPaths: () => [],
-        getCachedMarkdownFiles: () => this.app.vault.getMarkdownFiles(),
+        getCachedMarkdownFiles: () => {
+          try {
+            return this.app.vault.getMarkdownFiles();
+          } catch (error) {
+            console.error('[InlineEditModal] getCachedMarkdownFiles error:', error);
+            return [];
+          }
+        },
         normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
       },
       { fixed: true }
@@ -752,16 +759,22 @@ class InlineEditController {
 
   private normalizePathForVault(rawPath: string | undefined | null): string | null {
     if (!rawPath) return null;
-    const normalizedRaw = normalizePathForFilesystem(rawPath);
-    const vaultPath = getVaultPath(this.app);
-    if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
-      const absolute = path.isAbsolute(normalizedRaw)
-        ? normalizedRaw
-        : path.resolve(vaultPath, normalizedRaw);
-      const relative = path.relative(vaultPath, absolute);
-      return relative ? relative.replace(/\\/g, '/') : null;
+    try {
+      const normalizedRaw = normalizePathForFilesystem(rawPath);
+      const vaultPath = getVaultPath(this.app);
+      if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+        const absolute = path.isAbsolute(normalizedRaw)
+          ? normalizedRaw
+          : path.resolve(vaultPath, normalizedRaw);
+        const relative = path.relative(vaultPath, absolute);
+        return relative ? relative.replace(/\\/g, '/') : null;
+      }
+      return normalizedRaw.replace(/\\/g, '/');
+    } catch (error) {
+      console.error('[InlineEditModal] normalizePathForVault error:', error);
+      new Notice('Failed to attach file: invalid path');
+      return null;
     }
-    return normalizedRaw.replace(/\\/g, '/');
   }
 
   private async requestInlineBashApproval(command: string): Promise<boolean> {
