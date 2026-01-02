@@ -375,7 +375,18 @@ export function normalizePathForFilesystem(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
-  return normalizeWindowsPathPrefix(normalizePathBeforeResolution(value));
+  const expanded = normalizePathBeforeResolution(value);
+  let normalized = expanded;
+
+  try {
+    normalized = process.platform === 'win32'
+      ? path.win32.normalize(expanded)
+      : path.normalize(expanded);
+  } catch {
+    normalized = expanded;
+  }
+
+  return normalizeWindowsPathPrefix(normalized);
 }
 
 /**
@@ -391,7 +402,9 @@ export function normalizePathForComparison(value: string): string {
   let normalized = expanded;
 
   try {
-    normalized = path.normalize(expanded);
+    normalized = process.platform === 'win32'
+      ? path.win32.normalize(expanded)
+      : path.normalize(expanded);
   } catch {
     normalized = expanded;
   }

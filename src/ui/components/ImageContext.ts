@@ -143,8 +143,19 @@ export class ImageContextManager {
       return { raw: htmlCandidate, normalized: normalizedHtml };
     }
 
+    const fileUrlPattern = /file:\/\/[^\s"'<>()[\]]+/gi;
+    let sanitizedText = text;
+    const fileMatches = text.match(fileUrlPattern) || [];
+    for (const raw of fileMatches) {
+      const normalized = this.normalizeCandidatePath(raw);
+      if (normalized) {
+        return { raw, normalized };
+      }
+      sanitizedText = sanitizedText.replace(raw, ' ');
+    }
+
     const tokenPattern = /[^\s"'<>()[\]]+?\.(?:jpe?g|png|gif|webp)\b/gi;
-    const matches = text.match(tokenPattern) || [];
+    const matches = sanitizedText.match(tokenPattern) || [];
 
     for (const raw of matches) {
       const normalized = this.normalizeCandidatePath(raw);
