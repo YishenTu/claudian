@@ -11,6 +11,7 @@ import {
   getVaultPath,
   isPathInAllowedExportPaths,
   isPathWithinVault,
+  normalizePathForFilesystem,
   translateMsysPath,
 } from '@/utils/path';
 
@@ -264,6 +265,46 @@ describe('utils.ts', () => {
     it('should leave unknown environment variables untouched', () => {
       expect(expandHomePath('%CLAUDIAN_MISSING_VAR%')).toBe('%CLAUDIAN_MISSING_VAR%');
       expect(expandHomePath('$CLAUDIAN_MISSING_VAR')).toBe('$CLAUDIAN_MISSING_VAR');
+    });
+  });
+
+  describe('normalizePathForFilesystem', () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('expands home paths before filesystem use', () => {
+      const expected = path.join(os.homedir(), 'notes/file.md');
+      expect(normalizePathForFilesystem('~/notes/file.md')).toBe(expected);
+    });
+
+    it('expands environment variables before filesystem use', () => {
+      const envKey = 'CLAUDIAN_FS_TEST_PATH';
+      const originalValue = process.env[envKey];
+      process.env[envKey] = '/tmp/claudian-test';
+
+      try {
+        expect(normalizePathForFilesystem(`$${envKey}/notes/file.md`)).toBe('/tmp/claudian-test/notes/file.md');
+      } finally {
+        if (originalValue === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = originalValue;
+        }
+      }
+    });
+
+    it('strips Windows device prefixes when platform is win32', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(normalizePathForFilesystem('\\\\?\\C:\\Users\\test\\file.txt')).toBe('C:\\Users\\test\\file.txt');
+      expect(normalizePathForFilesystem('\\\\?\\UNC\\server\\share\\file.txt')).toBe('\\\\server\\share\\file.txt');
+    });
+
+    it('translates MSYS paths when platform is win32', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(normalizePathForFilesystem('/c/Users/test/file.txt')).toBe('C:\\Users\\test\\file.txt');
     });
   });
 

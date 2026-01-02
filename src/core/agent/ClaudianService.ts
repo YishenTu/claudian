@@ -812,8 +812,13 @@ export class ClaudianService {
       // Notify UI to update state and queue re-send with plan mode
       await this.enterPlanModeCallback();
       return { behavior: 'allow', updatedInput: {} };
-    } catch {
-      return { behavior: 'allow', updatedInput: {} };
+    } catch (error) {
+      console.error('Failed to enter plan mode:', error);
+      return {
+        behavior: 'deny',
+        message: 'Failed to enter plan mode.',
+        interrupt: true,
+      };
     }
   }
 

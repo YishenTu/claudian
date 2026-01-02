@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import type { App } from 'obsidian';
-import { TFile } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
 import * as path from 'path';
 
 import { saveImageToCache } from '../../core/images/imageCache';
@@ -94,8 +94,9 @@ export class ImageContextManager {
         this.callbacks.onImagesChanged();
         return true;
       }
-    } catch {
-      // Failed to load image
+      this.notifyImageError(`Unable to load image from path: ${imagePath}`);
+    } catch (error) {
+      this.notifyImageError(`Failed to load image from path: ${imagePath}`, error);
     }
     return false;
   }
@@ -256,16 +257,21 @@ export class ImageContextManager {
 
   private async addImageFromFile(file: File, source: 'paste' | 'drop'): Promise<boolean> {
     if (file.size > MAX_IMAGE_SIZE) {
+      this.notifyImageError(`Image exceeds ${this.formatSize(MAX_IMAGE_SIZE)} limit.`);
       return false;
     }
 
     const mediaType = this.getMediaType(file.name) || (file.type as ImageMediaType);
-    if (!mediaType) return false;
+    if (!mediaType) {
+      this.notifyImageError('Unsupported image type.');
+      return false;
+    }
 
     try {
       const { buffer, base64 } = await this.fileToBufferAndBase64(file);
       const cacheEntry = saveImageToCache(this.app, buffer, mediaType, file.name);
       if (!cacheEntry) {
+        this.notifyImageError('Failed to save image to cache.');
         return false;
       }
 
@@ -283,7 +289,8 @@ export class ImageContextManager {
       this.updateImagePreview();
       this.callbacks.onImagesChanged();
       return true;
-    } catch {
+    } catch (error) {
+      this.notifyImageError('Failed to attach image.', error);
       return false;
     }
   }
@@ -571,9 +578,19 @@ export class ImageContextManager {
       }
 
       return pathname;
-    } catch {
+    } catch (error) {
+      console.warn('Failed to parse file URL:', value, error);
       return null;
     }
+  }
+
+  private notifyImageError(message: string, error?: unknown) {
+    if (error) {
+      console.error(message, error);
+    } else {
+      console.warn(message);
+    }
+    new Notice(message);
   }
 
   private getStoredFilePath(fullPath: string, vaultPath: string | null): string {

@@ -80,7 +80,8 @@ export function createFileHashPreHook(
                 // New file
                 originalContents.set(toolUseId, { filePath, content: '' });
               }
-            } catch {
+            } catch (error) {
+              console.warn('Failed to capture original file contents:', fullPath, error);
               originalContents.set(toolUseId, { filePath, content: null, skippedReason: 'unavailable' });
             }
           }
@@ -152,7 +153,8 @@ export function createFileHashPostHook(
                 } else {
                   diffData = { filePath, skippedReason: 'unavailable' };
                 }
-              } catch {
+              } catch (error) {
+                console.warn('Failed to capture updated file contents:', fullPath, error);
                 diffData = { filePath, skippedReason: 'unavailable' };
               }
             }

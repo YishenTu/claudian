@@ -55,10 +55,13 @@ describe('ImageContextManager extractImagePath', () => {
 
   it('parses file URLs into local paths', () => {
     const manager = createManager();
-    expect(manager.extractImagePath('file:///C:/Users/me/image.png')).toBe('C:\\\\Users\\\\me\\\\image.png');
-    expect(manager.extractImagePath('file://localhost/C:/Users/me/image.png')).toBe('C:\\\\Users\\\\me\\\\image.png');
+    expect(manager.extractImagePath('file:///C:/Users/me/image.png')).toBe('C:\\Users\\me\\image.png');
+    expect(manager.extractImagePath('file://localhost/C:/Users/me/image.png')).toBe('C:\\Users\\me\\image.png');
     expect(manager.extractImagePath('file:///Users/me/image.png')).toBe('/Users/me/image.png');
-    expect(manager.extractImagePath('file://server/share/image.png')).toBe('\\\\\\\\server\\\\share\\\\image.png');
+    expect(manager.extractImagePath('file://server/share/image.png')).toBe('\\\\server\\share\\image.png');
+    expect(manager.extractImagePath('file:///C:/Users/me/My%20Image.png')).toBe('C:\\Users\\me\\My Image.png');
+    expect(manager.extractImagePath('file:///Users/me/My%20Image.png')).toBe('/Users/me/My Image.png');
+    expect(manager.extractImagePath('file:///C:/Users/me/%ZZ.png')).toBeNull();
   });
 
   it('handles trailing punctuation', () => {
@@ -77,5 +80,11 @@ describe('ImageContextManager extractImagePath', () => {
   it('skips URL tokens and returns the next image path', () => {
     const manager = createManager();
     expect(manager.extractImagePath('https://example.com/image.png and local.png')).toBe('local.png');
+  });
+
+  it('returns null for empty or non-image inputs', () => {
+    const manager = createManager();
+    expect(manager.extractImagePath('')).toBeNull();
+    expect(manager.extractImagePath('document.pdf')).toBeNull();
   });
 });

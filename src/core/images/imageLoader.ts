@@ -27,7 +27,8 @@ function readFileBase64(absPath: string): string | null {
   try {
     const buffer = fs.readFileSync(absPath);
     return buffer.toString('base64');
-  } catch {
+  } catch (error) {
+    console.warn('Failed to read image file:', absPath, error);
     return null;
   }
 }
