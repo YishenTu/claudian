@@ -8,7 +8,6 @@ import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
   renderStoredThinkingBlock,
-  renderStoredTodoList,
   renderStoredToolCall,
   renderStoredWriteEdit,
 } from '@/ui';
@@ -17,7 +16,6 @@ jest.mock('@/ui', () => ({
   renderStoredAsyncSubagent: jest.fn(),
   renderStoredSubagent: jest.fn(),
   renderStoredThinkingBlock: jest.fn(),
-  renderStoredTodoList: jest.fn(),
   renderStoredToolCall: jest.fn(),
   renderStoredWriteEdit: jest.fn(),
 }));
@@ -128,7 +126,7 @@ describe('MessageRenderer', () => {
 
     expect(renderStoredThinkingBlock).toHaveBeenCalled();
     expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'Text block');
-    expect(renderStoredTodoList).toHaveBeenCalled();
+    // TodoWrite is not rendered inline - only in bottom panel
     expect(renderStoredWriteEdit).toHaveBeenCalled();
     expect(renderStoredToolCall).toHaveBeenCalled();
     expect(renderStoredAsyncSubagent).toHaveBeenCalled();

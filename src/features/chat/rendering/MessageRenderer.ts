@@ -16,7 +16,6 @@ import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
   renderStoredThinkingBlock,
-  renderStoredTodoList,
   renderStoredToolCall,
   renderStoredWriteEdit,
 } from '../../../ui';
@@ -68,6 +67,7 @@ export class MessageRenderer {
   addMessage(msg: ChatMessage): HTMLElement {
     // Skip hidden messages
     if (msg.hidden) {
+      this.ensureTodoPanelAtBottom();
       this.scrollToBottom();
       const lastChild = this.messagesEl.lastElementChild as HTMLElement;
       return lastChild ?? this.messagesEl;
@@ -76,6 +76,7 @@ export class MessageRenderer {
     // Render approval indicator if present
     if (msg.approvalIndicator) {
       const indicatorEl = this.renderApprovalIndicator(msg.approvalIndicator);
+      this.ensureTodoPanelAtBottom();
       this.scrollToBottom();
       return indicatorEl;
     }
@@ -89,6 +90,7 @@ export class MessageRenderer {
     if (msg.role === 'user') {
       const textToShow = msg.displayContent ?? msg.content;
       if (!textToShow) {
+        this.ensureTodoPanelAtBottom();
         this.scrollToBottom();
         const lastChild = this.messagesEl.lastElementChild as HTMLElement;
         return lastChild ?? this.messagesEl;
@@ -109,6 +111,7 @@ export class MessageRenderer {
       }
     }
 
+    this.ensureTodoPanelAtBottom();
     this.scrollToBottom();
     return msgEl;
   }
@@ -127,6 +130,7 @@ export class MessageRenderer {
     messages: ChatMessage[],
     getGreeting: () => string
   ): HTMLElement {
+    const existingTodoPanel = this.messagesEl.querySelector('.claudian-todo-panel') as HTMLElement | null;
     this.messagesEl.empty();
 
     // Recreate welcome element after clearing
@@ -137,6 +141,7 @@ export class MessageRenderer {
       this.renderStoredMessage(msg);
     }
 
+    this.ensureTodoPanelAtBottom(existingTodoPanel);
     this.scrollToBottom();
     return newWelcomeEl;
   }
@@ -273,11 +278,13 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders a tool call with special handling for TodoWrite, Write/Edit, and AskUserQuestion.
+   * Renders a tool call with special handling for Write/Edit, and AskUserQuestion.
+   * TodoWrite is not rendered inline - it only shows in the bottom panel.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: { id: string; name: string; input: Record<string, unknown>; status?: string; result?: string }): void {
     if (toolCall.name === TOOL_TODO_WRITE) {
-      renderStoredTodoList(contentEl, toolCall.input);
+      // TodoWrite is not rendered inline - only in bottom panel
+      return;
     } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
       renderStoredAskUserQuestion(contentEl, toolCall as any);
     } else if (isWriteEditTool(toolCall.name)) {
@@ -429,6 +436,14 @@ export class MessageRenderer {
       requestAnimationFrame(() => {
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       });
+    }
+  }
+
+  /** Keeps the persistent todo panel pinned to the bottom of the messages container. */
+  private ensureTodoPanelAtBottom(panelEl?: HTMLElement | null): void {
+    const todoPanel = panelEl ?? (this.messagesEl.querySelector('.claudian-todo-panel') as HTMLElement | null);
+    if (todoPanel) {
+      this.messagesEl.appendChild(todoPanel);
     }
   }
 }

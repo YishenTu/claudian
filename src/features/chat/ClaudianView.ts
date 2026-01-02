@@ -27,6 +27,7 @@ import {
   PlanBanner,
   SlashCommandDropdown,
   type ThinkingBudgetSelector,
+  TodoPanel,
 } from '../../ui';
 import { getVaultPath } from '../../utils/path';
 import { LOGO_SVG } from './constants';
@@ -86,12 +87,14 @@ export class ClaudianView extends ItemView {
   private instructionModeManager: InstructionModeManager | null = null;
   private contextUsageMeter: ContextUsageMeter | null = null;
   private planBanner: PlanBanner | null = null;
+  private todoPanel: TodoPanel | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
     this.state = new ChatState({
       onUsageChanged: (usage) => this.contextUsageMeter?.update(usage),
+      onTodosChanged: (todos) => this.todoPanel?.updateTodos(todos),
     });
     this.asyncSubagentManager = new AsyncSubagentManager(
       (subagent) => this.streamController?.onAsyncSubagentStateChange(subagent)
@@ -131,6 +134,10 @@ export class ClaudianView extends ItemView {
 
     // Welcome message
     this.welcomeEl = this.messagesEl.createDiv({ cls: 'claudian-welcome' });
+
+    // Create todo panel (mounts to messages area, shows at bottom)
+    this.todoPanel = new TodoPanel();
+    this.todoPanel.mount(this.messagesEl);
 
     // Build input area
     const inputContainerEl = container.createDiv({ cls: 'claudian-input-container' });
@@ -185,6 +192,8 @@ export class ClaudianView extends ItemView {
     this.instructionRefineService = null;
     this.titleGenerationService?.cancel();
     this.titleGenerationService = null;
+    this.todoPanel?.destroy();
+    this.todoPanel = null;
 
     // Cleanup async subagents
     this.asyncSubagentManager.orphanAllActive();

@@ -27,7 +27,6 @@ import {
   markAsyncSubagentOrphaned,
   parseAskUserQuestionInput,
   parseTodoInput,
-  renderTodoList,
   renderToolCall,
   type SubagentState,
   updateAsyncSubagentRunning,
@@ -209,10 +208,10 @@ export class StreamController {
       if (chunk.name === TOOL_TODO_WRITE) {
         const todos = parseTodoInput(chunk.input);
         if (todos) {
-          const todoEl = renderTodoList(state.currentContentEl!, todos, true);
-          todoEl.dataset.toolId = chunk.id;
-          state.toolCallElements.set(chunk.id, todoEl);
+          // Only update persistent bottom panel - no inline rendering
+          this.deps.state.currentTodos = todos;
         } else {
+          // Fallback: render tool call so invalid input is visible for debugging
           renderToolCall(state.currentContentEl!, toolCall, state.toolCallElements, plugin.settings.toolCallExpandedByDefault);
         }
       } else if (isWriteEditTool(chunk.name)) {

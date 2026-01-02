@@ -12,7 +12,7 @@
 @import "./components/code.css";
 @import "./components/thinking.css";
 @import "./components/toolcalls.css";
-@import "./components/todo.css";
+@import "./components/todo-panel.css";
 @import "./components/subagent.css";
 @import "./components/ask-user-question.css";
 @import "./components/plan-approval.css";

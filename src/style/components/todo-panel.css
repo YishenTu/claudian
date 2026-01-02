@@ -1,0 +1,129 @@
+/* Todo Panel - persistent bottom panel for todos */
+
+/* Main container - no border/background, flows seamlessly */
+.claudian-todo-panel {
+  padding: 0;
+}
+
+/* Todos container */
+.claudian-todo-panel-todos {
+  margin-top: 4px;
+}
+
+/* Header (collapsed view) - subtle hover only */
+.claudian-todo-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.claudian-todo-panel-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-todo-panel-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Chevron */
+.claudian-todo-panel-chevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 12px;
+  text-align: center;
+}
+
+/* Label */
+.claudian-todo-panel-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--interactive-accent);
+}
+
+/* Separator dot */
+.claudian-todo-panel-separator {
+  color: var(--text-muted);
+}
+
+/* Current task preview (collapsed state) */
+.claudian-todo-panel-current {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* Content (expanded list) */
+.claudian-todo-panel-content {
+  padding: 4px 0 4px 18px;
+}
+
+/* Individual todo item - reuses existing styles */
+.claudian-todo-panel-content .claudian-todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.claudian-todo-panel-content .claudian-todo-item:first-child {
+  padding-top: 0;
+}
+
+.claudian-todo-panel-content .claudian-todo-item:last-child {
+  padding-bottom: 0;
+}
+
+.claudian-todo-panel-content .claudian-todo-status-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.claudian-todo-panel-content .claudian-todo-status-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-todo-panel-content .claudian-todo-text {
+  font-size: 13px;
+  line-height: 1.4;
+  flex: 1;
+}
+
+/* Status-specific styling */
+.claudian-todo-panel-content .claudian-todo-pending .claudian-todo-status-icon {
+  color: var(--text-muted);
+}
+
+.claudian-todo-panel-content .claudian-todo-pending .claudian-todo-text {
+  color: var(--text-muted);
+}
+
+.claudian-todo-panel-content .claudian-todo-in_progress .claudian-todo-status-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-todo-panel-content .claudian-todo-in_progress .claudian-todo-text {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.claudian-todo-panel-content .claudian-todo-completed .claudian-todo-status-icon {
+  color: var(--color-green);
+}
+
+.claudian-todo-panel-content .claudian-todo-completed .claudian-todo-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}

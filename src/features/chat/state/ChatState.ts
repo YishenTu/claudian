@@ -16,6 +16,7 @@ import type {
   QueuedMessage,
   SubagentState,
   ThinkingBlockState,
+  TodoItem,
   WriteEditState,
 } from './types';
 
@@ -45,6 +46,7 @@ function createInitialState(): ChatStateData {
     planModeRequested: false,
     planModeActivationPending: false,
     pendingPlanContent: null,
+    currentTodos: null,
   };
 }
 
@@ -283,6 +285,19 @@ export class ChatState {
   }
 
   // ============================================
+  // Current Todos (for persistent bottom panel)
+  // ============================================
+
+  get currentTodos(): TodoItem[] | null {
+    return this.state.currentTodos;
+  }
+
+  set currentTodos(value: TodoItem[] | null) {
+    this.state.currentTodos = value;
+    this.callbacks.onTodosChanged?.(value);
+  }
+
+  // ============================================
   // Reset Methods
   // ============================================
 
@@ -314,6 +329,7 @@ export class ChatState {
     this.state.planModeRequested = false;
     this.state.planModeActivationPending = false;
     this.usage = null;
+    this.currentTodos = null;
   }
 
   /** Gets persisted messages (strips image data). */

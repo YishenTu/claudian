@@ -18,6 +18,7 @@ import type {
   ThinkingBlockState,
   WriteEditState,
 } from '../../../ui';
+import type { TodoItem } from '../../../ui/renderers/TodoListRenderer';
 import type { EditorSelectionContext } from '../../../utils/editor';
 
 /** Queued message waiting to be sent after current streaming completes. */
@@ -100,6 +101,9 @@ export interface ChatStateData {
 
   // Pending plan content awaiting user approval (persisted)
   pendingPlanContent: string | null;
+
+  // Current todo items for the persistent bottom panel
+  currentTodos: TodoItem[] | null;
 }
 
 /** Callbacks for ChatState changes. */
@@ -108,6 +112,7 @@ export interface ChatStateCallbacks {
   onStreamingStateChanged?: (isStreaming: boolean) => void;
   onConversationChanged?: (id: string | null) => void;
   onUsageChanged?: (usage: UsageInfo | null) => void;
+  onTodosChanged?: (todos: TodoItem[] | null) => void;
 }
 
 /** Options for query execution. */
@@ -130,6 +135,7 @@ export type {
   SubagentInfo,
   SubagentState,
   ThinkingBlockState,
+  TodoItem,
   ToolCallInfo,
   UsageInfo,
   WriteEditState,

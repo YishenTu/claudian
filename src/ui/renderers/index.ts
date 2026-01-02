@@ -43,8 +43,6 @@ export {
 } from './ThinkingBlockRenderer';
 export {
   parseTodoInput,
-  renderStoredTodoList,
-  renderTodoList,
   type TodoItem,
 } from './TodoListRenderer';
 export {
