@@ -8,6 +8,7 @@
 
 import type { App, Editor} from 'obsidian';
 import { MarkdownView, Notice } from 'obsidian';
+import * as path from 'path';
 
 import { isCommandBlocked } from '../../core/security/BlocklistChecker';
 import { TOOL_BASH } from '../../core/tools/toolNames';
@@ -16,8 +17,9 @@ import { type InlineEditMode, InlineEditService } from '../../features/inline-ed
 import type ClaudianPlugin from '../../main';
 import { type CursorContext } from '../../utils/editor';
 import { escapeHtml, normalizeInsertionText } from '../../utils/inlineEdit';
-import { getVaultPath } from '../../utils/path';
+import { getVaultPath, isPathWithinVault, normalizePathForFilesystem } from '../../utils/path';
 import { formatSlashCommandWarnings } from '../../utils/slashCommandWarnings';
+import { MentionDropdownController } from '../components/file-context/mention/MentionDropdownController';
 import { hideSelectionHighlight, showSelectionHighlight } from '../components/SelectionHighlight';
 import { SlashCommandDropdown } from '../components/SlashCommandDropdown';
 import { SlashCommandManager } from '../components/SlashCommandManager';
@@ -274,6 +276,8 @@ class InlineEditController {
   private isConversing = false;  // True when agent asked clarification
   private slashCommandManager: SlashCommandManager | null = null;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
+  private mentionDropdown: MentionDropdownController | null = null;
+  private attachedFiles: Set<string> = new Set();
 
   constructor(
     private app: App,
@@ -441,8 +445,27 @@ class InlineEditController {
       );
     }
 
+    // Initialize mention dropdown (vault files only, no cache needed for short-lived modal)
+    this.mentionDropdown = new MentionDropdownController(
+      document.body,
+      this.inputEl,
+      {
+        onAttachFile: (filePath) => this.attachedFiles.add(filePath),
+        onAttachmentsChanged: () => {},
+        onMcpMentionChange: () => {},
+        getMentionedMcpServers: () => new Set(),
+        setMentionedMcpServers: () => false,
+        addMentionedMcpServer: () => {},
+        getContextPaths: () => [],
+        getCachedMarkdownFiles: () => this.app.vault.getMarkdownFiles(),
+        normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
+      },
+      { fixed: true }
+    );
+
     // Events
     this.inputEl.addEventListener('keydown', (e) => this.handleKeydown(e));
+    this.inputEl.addEventListener('input', () => this.mentionDropdown?.handleInputChange());
 
     setTimeout(() => this.inputEl?.focus(), 50);
     return container;
@@ -493,10 +516,14 @@ class InlineEditController {
     this.inputEl.disabled = true;
     this.spinnerEl.style.display = 'block';
 
+    // Get files @-mentioned this turn, then clear for next turn
+    const contextFiles = Array.from(this.attachedFiles);
+    this.attachedFiles.clear();
+
     let result;
     if (this.isConversing) {
-      // Continue conversation with follow-up message
-      result = await this.inlineEditService.continueConversation(userMessage);
+      // Continue conversation with any new @-mentioned files
+      result = await this.inlineEditService.continueConversation(userMessage, contextFiles);
     } else {
       // Initial edit request - build request based on mode
       if (this.mode === 'cursor') {
@@ -505,6 +532,7 @@ class InlineEditController {
           instruction: userMessage,
           notePath: this.notePath,
           cursorContext: this.cursorContext as CursorContext,
+          contextFiles,
         });
       } else {
         const lineCount = this.selectedText.split(/\r?\n/).length;
@@ -515,6 +543,7 @@ class InlineEditController {
           selectedText: this.selectedText,
           startLine: this.startLine,
           lineCount,
+          contextFiles,
         });
       }
     }
@@ -680,6 +709,11 @@ class InlineEditController {
     this.slashCommandDropdown = null;
     this.slashCommandManager = null;
 
+    // Clean up mention dropdown
+    this.mentionDropdown?.destroy();
+    this.mentionDropdown = null;
+    this.attachedFiles.clear();
+
     if (activeController === this) {
       activeController = null;
     }
@@ -699,7 +733,12 @@ class InlineEditController {
   }
 
   private handleKeydown(e: KeyboardEvent) {
-    // Check slash command dropdown first
+    // Check mention dropdown first
+    if (this.mentionDropdown?.handleKeydown(e)) {
+      return;
+    }
+
+    // Check slash command dropdown
     if (this.slashCommandDropdown?.handleKeydown(e)) {
       return;
     }
@@ -709,6 +748,20 @@ class InlineEditController {
       e.preventDefault();
       this.generate();
     }
+  }
+
+  private normalizePathForVault(rawPath: string | undefined | null): string | null {
+    if (!rawPath) return null;
+    const normalizedRaw = normalizePathForFilesystem(rawPath);
+    const vaultPath = getVaultPath(this.app);
+    if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+      const absolute = path.isAbsolute(normalizedRaw)
+        ? normalizedRaw
+        : path.resolve(vaultPath, normalizedRaw);
+      const relative = path.relative(vaultPath, absolute);
+      return relative ? relative.replace(/\\/g, '/') : null;
+    }
+    return normalizedRaw.replace(/\\/g, '/');
   }
 
   private async requestInlineBashApproval(command: string): Promise<boolean> {

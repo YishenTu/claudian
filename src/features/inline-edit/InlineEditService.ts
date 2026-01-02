@@ -20,6 +20,7 @@ import {
 } from '../../core/tools/toolNames';
 import { THINKING_BUDGETS } from '../../core/types';
 import type ClaudianPlugin from '../../main';
+import { prependContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
 import { parseEnvironmentVariables } from '../../utils/env';
 import { findClaudeCLIPath, getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../utils/path';
@@ -33,6 +34,7 @@ export interface InlineEditSelectionRequest {
   selectedText: string;
   startLine?: number;  // 1-indexed
   lineCount?: number;
+  contextFiles?: string[];
 }
 
 export interface InlineEditCursorRequest {
@@ -40,6 +42,7 @@ export interface InlineEditCursorRequest {
   instruction: string;
   notePath: string;
   cursorContext: CursorContext;
+  contextFiles?: string[];
 }
 
 export type InlineEditRequest = InlineEditSelectionRequest | InlineEditCursorRequest;
@@ -80,11 +83,16 @@ export class InlineEditService {
   }
 
   /** Continues conversation with a follow-up message. */
-  async continueConversation(message: string): Promise<InlineEditResult> {
+  async continueConversation(message: string, contextFiles?: string[]): Promise<InlineEditResult> {
     if (!this.sessionId) {
       return { success: false, error: 'No active conversation to continue' };
     }
-    return this.sendMessage(message);
+    // Prepend new context files if any
+    let prompt = message;
+    if (contextFiles && contextFiles.length > 0) {
+      prompt = prependContextFiles(message, contextFiles);
+    }
+    return this.sendMessage(prompt);
   }
 
   private async sendMessage(prompt: string): Promise<InlineEditResult> {
@@ -187,22 +195,32 @@ export class InlineEditService {
   }
 
   private buildPrompt(request: InlineEditRequest): string {
+    let prompt: string;
+
     if (request.mode === 'cursor') {
-      return this.buildCursorPrompt(request);
+      prompt = this.buildCursorPrompt(request);
+    } else {
+      // Selection mode - XML format with line numbers
+      const lineAttr = request.startLine && request.lineCount
+        ? ` lines="${request.startLine}-${request.startLine + request.lineCount - 1}"`
+        : '';
+      prompt = [
+        `<editor_selection path="${request.notePath}"${lineAttr}>`,
+        request.selectedText,
+        '</editor_selection>',
+        '',
+        '<query>',
+        request.instruction,
+        '</query>',
+      ].join('\n');
     }
-    // Selection mode - XML format with line numbers
-    const lineAttr = request.startLine && request.lineCount
-      ? ` lines="${request.startLine}-${request.startLine + request.lineCount - 1}"`
-      : '';
-    return [
-      `<editor_selection path="${request.notePath}"${lineAttr}>`,
-      request.selectedText,
-      '</editor_selection>',
-      '',
-      '<query>',
-      request.instruction,
-      '</query>',
-    ].join('\n');
+
+    // Prepend context files if any
+    if (request.contextFiles && request.contextFiles.length > 0) {
+      prompt = prependContextFiles(prompt, request.contextFiles);
+    }
+
+    return prompt;
   }
 
   private buildCursorPrompt(request: InlineEditCursorRequest): string {

@@ -1,5 +1,5 @@
 {
     "scripts": {
-        "run": "git add -A && git commit -m 'temp' && cd $CONDUCTOR_ROOT_PATH && git checkout $(git rev-parse --abbrev-ref HEAD) -- . && npm run build; git reset --hard HEAD"
+        "run": "cd $CONDUCTOR_ROOT_PATH && git checkout $(git rev-parse --abbrev-ref HEAD) -- . && npm run build; git reset --hard HEAD"
     }
 }
