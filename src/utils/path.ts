@@ -68,8 +68,11 @@ function expandEnvironmentVariables(value: string): string {
   let expanded = value;
 
   // Windows %VAR% format - allow parentheses for vars like %ProgramFiles(x86)%
-  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_()]*[A-Za-z0-9_)]?)%/g, (match, name) => {
-    const envValue = getEnvValue(name);
+  // Note: We allow parentheses in env var names to support Windows built-in vars
+  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?[A-Za-z0-9_]*)%/g, (match, name) => {
+    // Remove parentheses from name when looking up
+    const lookupName = name.replace(/\(|\)/g, '');
+    const envValue = getEnvValue(lookupName);
     return envValue !== undefined ? envValue : match;
   });
 

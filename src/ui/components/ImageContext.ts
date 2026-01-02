@@ -517,6 +517,11 @@ export class ImageContextManager {
     if (/^https?:\/\//i.test(cleaned)) {
       return null;
     }
+    // Reject paths with obvious path traversal attempts
+    // Note: This is a basic check; actual file access is still validated by the OS/vault
+    if (cleaned.includes('../') || cleaned.includes('..\\')) {
+      return null;
+    }
     return cleaned;
   }
 
@@ -590,7 +595,16 @@ export class ImageContextManager {
     } else {
       console.warn(message);
     }
-    new Notice(message);
+    // Provide more actionable error messages
+    let userMessage = message;
+    if (error instanceof Error) {
+      if (error.message.includes('ENOENT') || error.message.includes('no such file')) {
+        userMessage = `${message} (File not found)`;
+      } else if (error.message.includes('EACCES') || error.message.includes('permission denied')) {
+        userMessage = `${message} (Permission denied)`;
+      }
+    }
+    new Notice(userMessage);
   }
 
   private getStoredFilePath(fullPath: string, vaultPath: string | null): string {
