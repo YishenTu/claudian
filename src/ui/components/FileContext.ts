@@ -15,7 +15,7 @@ import type { McpService } from '../../features/mcp/McpService';
 import { getFolderName, normalizePathForComparison } from '../../utils/contextPath';
 import { type ContextPathFile, contextPathScanner } from '../../utils/contextPathScanner';
 import { extractMcpMentions } from '../../utils/mcp';
-import { getVaultPath, isPathWithinVault } from '../../utils/path';
+import { getVaultPath, isPathWithinVault, translateMsysPath } from '../../utils/path';
 
 interface FileHashState {
   originalHash: string | null;
@@ -380,20 +380,21 @@ export class FileContextManager {
   normalizePathForVault(rawPath: string | undefined | null): string | null {
     if (!rawPath) return null;
 
-    const unixPath = rawPath.replace(/\\/g, '/');
+    const normalizedRaw = translateMsysPath(rawPath);
     const vaultPath = getVaultPath(this.app);
 
-    if (vaultPath) {
-      const normalizedVault = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
-      if (unixPath.startsWith(normalizedVault)) {
-        const relative = unixPath.slice(normalizedVault.length).replace(/^\/+/, '');
-        if (relative) {
-          return relative;
-        }
+    if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+      const absolute = path.isAbsolute(normalizedRaw)
+        ? normalizedRaw
+        : path.resolve(vaultPath, normalizedRaw);
+      const relative = path.relative(vaultPath, absolute);
+      if (relative) {
+        return relative.replace(/\\/g, '/');
       }
+      return null;
     }
 
-    return unixPath;
+    return normalizedRaw.replace(/\\/g, '/');
   }
 
   private updateFileIndicator() {

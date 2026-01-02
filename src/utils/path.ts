@@ -367,7 +367,12 @@ function normalizeWindowsPathPrefix(value: string): string {
   return normalized;
 }
 
-function normalizePathForComparison(value: string): string {
+/** Normalizes a path for filesystem operations (expand env/home, translate MSYS, strip Windows prefixes). */
+export function normalizePathForFilesystem(value: string): string {
+  return normalizeWindowsPathPrefix(normalizePathBeforeResolution(value));
+}
+
+export function normalizePathForComparison(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }

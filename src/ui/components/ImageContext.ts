@@ -11,7 +11,7 @@ import * as path from 'path';
 
 import { saveImageToCache } from '../../core/images/imageCache';
 import type { ImageAttachment, ImageMediaType } from '../../core/types';
-import { getVaultPath } from '../../utils/path';
+import { getVaultPath, isPathWithinVault, normalizePathForFilesystem } from '../../utils/path';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -102,17 +102,16 @@ export class ImageContextManager {
 
   /** Extracts an image path from text if present. */
   extractImagePath(text: string): string | null {
-    const patterns = [
-      /["']((?:[^"']+\/)?[^"']+\.(?:jpe?g|png|gif|webp))["']/i,
-      /((?:\.{0,2}\/)?(?:[^\s"'<>|:*?]+\/)+[^\s"'<>|:*?]+\.(?:jpe?g|png|gif|webp))/i,
-      /\b([^\s"'<>|:*?/]+\.(?:jpe?g|png|gif|webp))\b/i,
-    ];
+    const tokenPattern = /[^\s"'<>]+?\.(?:jpe?g|png|gif|webp)\b/gi;
+    const matches = text.match(tokenPattern) || [];
 
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        return match[1];
+    for (const raw of matches) {
+      const cleaned = this.cleanImagePathToken(raw);
+      if (!cleaned) continue;
+      if (/^https?:\/\//i.test(cleaned) || /^file:\/\//i.test(cleaned)) {
+        continue;
       }
+      return cleaned;
     }
     return null;
   }
@@ -288,18 +287,19 @@ export class ImageContextManager {
       return null;
     }
 
-    let fullPath = imagePath;
+    const normalizedInput = normalizePathForFilesystem(imagePath);
+    let fullPath = normalizedInput;
     const vaultPath = getVaultPath(this.app);
     const mediaFolder = this.callbacks.getMediaFolder
       ? this.callbacks.getMediaFolder().trim()
       : undefined;
 
-    if (!path.isAbsolute(imagePath)) {
+    if (!path.isAbsolute(normalizedInput)) {
       const candidates: string[] = [];
       if (vaultPath) {
-        candidates.push(path.join(vaultPath, imagePath));
+        candidates.push(path.join(vaultPath, normalizedInput));
         if (mediaFolder) {
-          candidates.push(path.join(vaultPath, mediaFolder, imagePath));
+          candidates.push(path.join(vaultPath, mediaFolder, normalizedInput));
         }
       }
       const foundPath = candidates.find(p => fs.existsSync(p));
@@ -312,9 +312,10 @@ export class ImageContextManager {
       const normalizedMediaFolder = mediaFolder
         ?.replace(/\\/g, '/')
         .replace(/^\/+|\/+$/g, '');
+      const vaultRelativePath = normalizedInput.replace(/\\/g, '/');
       const vaultPaths = [
-        imagePath,
-        normalizedMediaFolder ? `${normalizedMediaFolder}/${imagePath}` : null,
+        vaultRelativePath,
+        normalizedMediaFolder ? `${normalizedMediaFolder}/${vaultRelativePath}` : null,
       ].filter(Boolean) as string[];
 
       for (const vaultRelativePath of vaultPaths) {
@@ -483,11 +484,22 @@ export class ImageContextManager {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  private cleanImagePathToken(token: string): string | null {
+    let cleaned = token.trim();
+    cleaned = cleaned.replace(/^["'`]+|["'`]+$/g, '');
+    cleaned = cleaned.replace(/[)\],.;>]+$/g, '');
+    return cleaned || null;
+  }
+
   private getStoredFilePath(fullPath: string, vaultPath: string | null): string {
-    if (vaultPath && fullPath.startsWith(vaultPath)) {
-      const relative = path.relative(vaultPath, fullPath);
+    const normalizedFull = normalizePathForFilesystem(fullPath);
+    if (vaultPath && isPathWithinVault(normalizedFull, vaultPath)) {
+      const absolute = path.isAbsolute(normalizedFull)
+        ? normalizedFull
+        : path.resolve(vaultPath, normalizedFull);
+      const relative = path.relative(vaultPath, absolute);
       return relative.replace(/\\/g, '/');
     }
-    return fullPath;
+    return normalizedFull;
   }
 }

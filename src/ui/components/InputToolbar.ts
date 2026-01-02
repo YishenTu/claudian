@@ -425,7 +425,16 @@ export class ContextPathSelector {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const os = require('os');
       const homeDir = os.homedir();
-      if (fullPath.startsWith(homeDir)) {
+      const normalize = (value: string) => value.replace(/\\/g, '/');
+      const normalizedFull = normalize(fullPath);
+      const normalizedHome = normalize(homeDir);
+      const compareFull = process.platform === 'win32'
+        ? normalizedFull.toLowerCase()
+        : normalizedFull;
+      const compareHome = process.platform === 'win32'
+        ? normalizedHome.toLowerCase()
+        : normalizedHome;
+      if (compareFull.startsWith(compareHome)) {
         return '~' + fullPath.slice(homeDir.length);
       }
     } catch {
