@@ -370,11 +370,21 @@ function normalizeWindowsPathPrefix(value: string): string {
   return normalized;
 }
 
-/** Normalizes a path for filesystem operations (expand env/home, translate MSYS, strip Windows prefixes). */
+/**
+ * Normalizes a path for filesystem operations (expand env/home, translate MSYS, strip Windows prefixes).
+ * This is the main entry point for path normalization before file operations.
+ */
 export function normalizePathForFilesystem(value: string): string {
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
   return normalizeWindowsPathPrefix(normalizePathBeforeResolution(value));
 }
 
+/**
+ * Normalizes a path for comparison (case-insensitive on Windows, slashes normalized, trailing slash removed).
+ * This is the main entry point for path comparisons and should be used consistently across modules.
+ */
 export function normalizePathForComparison(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';

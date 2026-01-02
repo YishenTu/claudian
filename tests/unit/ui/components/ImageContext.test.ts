@@ -87,4 +87,26 @@ describe('ImageContextManager extractImagePath', () => {
     expect(manager.extractImagePath('')).toBeNull();
     expect(manager.extractImagePath('document.pdf')).toBeNull();
   });
+
+  it('handles malformed URL encoding gracefully', () => {
+    const manager = createManager();
+    // Incomplete percent-encoding
+    expect(manager.extractImagePath('file:///C:/Users/me/%2.png')).toBeNull();
+    // Invalid encoding at different positions
+    expect(manager.extractImagePath('file:///C:/Users/me/%20%ZZ.png')).toBeNull();
+    // Mixed valid and invalid encoding
+    expect(manager.extractImagePath('file:///C:/Users/me/%2.png%20more.png')).toBeNull();
+  });
+
+  it('rejects paths with traversal attempts', () => {
+    const manager = createManager();
+    // Unix-style traversal
+    expect(manager.extractImagePath('../../etc/passwd.jpg')).toBeNull();
+    expect(manager.extractImagePath('/path/../../../etc/passwd.jpg')).toBeNull();
+    // Windows-style traversal
+    expect(manager.extractImagePath('..\\..\\windows\\system32\\img.jpg')).toBeNull();
+    expect(manager.extractImagePath('C:\\path\\..\\..\\windows\\img.jpg')).toBeNull();
+    // But allow legitimate paths with '..' in the middle (like '..' as part of a filename)
+    // Note: This is a simple check that only looks for '../' and '..\' as prefixes
+  });
 });

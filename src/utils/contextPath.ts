@@ -4,7 +4,7 @@
  * Utilities for context path validation, normalization, and conflict detection.
  */
 
-import { normalizePathForFilesystem } from './path';
+import { normalizePathForComparison as normalizePathForComparisonImpl } from './path';
 
 /** Conflict detection result type. */
 export interface PathConflict {
@@ -14,17 +14,13 @@ export interface PathConflict {
 
 /**
  * Normalizes a path for comparison.
- * - Converts backslashes to forward slashes
- * - Removes trailing slashes
- * - Normalizes MSYS paths and home/env expansions
- * - Lowercases on Windows for case-insensitive comparisons
+ * Re-exports the unified implementation from path.ts for consistency.
+ * - Handles MSYS paths, home/env expansions
+ * - Case-insensitive on Windows
+ * - Trailing slash removed
  */
 export function normalizePathForComparison(p: string): string {
-  if (!p) return '';
-  const normalized = normalizePathForFilesystem(p)
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  return normalizePathForComparisonImpl(p);
 }
 
 function normalizePathForDisplay(p: string): string {
