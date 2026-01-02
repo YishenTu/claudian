@@ -21,6 +21,12 @@
   display: block;
 }
 
+/* Fixed positioning for inline editor */
+.claudian-mention-dropdown-fixed {
+  position: fixed;
+  z-index: 10001;
+}
+
 .claudian-mention-item {
   display: flex;
   align-items: center;
