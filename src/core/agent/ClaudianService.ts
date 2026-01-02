@@ -42,12 +42,12 @@ import {
 } from '../security';
 import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE } from '../tools/toolNames';
 import type {
-  ApprovedAction,
   AskUserQuestionCallback,
   AskUserQuestionInput,
   ChatMessage,
   ClaudeModel,
   ImageAttachment,
+  Permission,
   PermissionMode,
   StreamChunk,
   ToolDiffData,
@@ -243,7 +243,7 @@ export class ClaudianService {
     );
 
     // Set up persistence callback for permanent approvals
-    this.approvalManager.setPersistCallback(async (action: ApprovedAction) => {
+    this.approvalManager.setPersistCallback(async (action: Permission) => {
       this.plugin.settings.permissions.push(action);
       await this.plugin.saveSettings();
     });

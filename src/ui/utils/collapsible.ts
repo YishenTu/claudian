@@ -108,18 +108,3 @@ export function collapseElement(
   contentEl.style.display = 'none';
   headerEl.setAttribute('aria-expanded', 'false');
 }
-
-/**
- * Expand a collapsible element and sync state.
- */
-export function expandElement(
-  wrapperEl: HTMLElement,
-  headerEl: HTMLElement,
-  contentEl: HTMLElement,
-  state: CollapsibleState
-): void {
-  state.isExpanded = true;
-  wrapperEl.addClass('expanded');
-  contentEl.style.display = 'block';
-  headerEl.setAttribute('aria-expanded', 'true');
-}

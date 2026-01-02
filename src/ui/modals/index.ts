@@ -7,9 +7,6 @@ export {
   InlineEditModal,
 } from './InlineEditModal';
 export {
-  type ClarificationSubmitCallback,
-  InstructionClarificationModal,
-  InstructionConfirmModal,
   type InstructionDecision,
   InstructionModal,
   type InstructionModalCallbacks,

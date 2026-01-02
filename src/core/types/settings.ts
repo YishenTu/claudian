@@ -98,9 +98,6 @@ export interface Permission {
   scope: 'session' | 'always';
 }
 
-/** @deprecated Use Permission instead */
-export type ApprovedAction = Permission;
-
 /** Saved environment variable configuration. */
 export interface EnvSnippet {
   id: string;

@@ -14,10 +14,10 @@ import {
   TOOL_READ,
   TOOL_WRITE,
 } from '../tools/toolNames';
-import type { ApprovedAction } from '../types';
+import type { Permission } from '../types';
 
 /** Callback to persist approved actions to settings. */
-export type PersistApprovalCallback = (action: ApprovedAction) => Promise<void>;
+export type PersistApprovalCallback = (action: Permission) => Promise<void>;
 
 /**
  * Generate a pattern from tool input for matching.
@@ -125,11 +125,11 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
  * Manages approved actions for Safe mode permission handling.
  */
 export class ApprovalManager {
-  private sessionApprovedActions: ApprovedAction[] = [];
+  private sessionApprovedActions: Permission[] = [];
   private persistCallback: PersistApprovalCallback | null = null;
-  private getPermanentApprovals: () => ApprovedAction[];
+  private getPermanentApprovals: () => Permission[];
 
-  constructor(getPermanentApprovals: () => ApprovedAction[]) {
+  constructor(getPermanentApprovals: () => Permission[]) {
     this.getPermanentApprovals = getPermanentApprovals;
   }
 
@@ -169,7 +169,7 @@ export class ApprovalManager {
     scope: 'session' | 'always'
   ): Promise<void> {
     const pattern = getActionPattern(toolName, input);
-    const action: ApprovedAction = {
+    const action: Permission = {
       toolName,
       pattern,
       approvedAt: Date.now(),
@@ -195,7 +195,7 @@ export class ApprovalManager {
   /**
    * Get session-scoped approvals (for testing/debugging).
    */
-  getSessionApprovals(): ApprovedAction[] {
+  getSessionApprovals(): Permission[] {
     return [...this.sessionApprovedActions];
   }
 }

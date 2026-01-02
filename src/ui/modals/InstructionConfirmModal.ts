@@ -284,24 +284,3 @@ export class InstructionModal extends Modal {
     this.contentEl.empty();
   }
 }
-
-// Legacy exports for backwards compatibility
-export { InstructionModal as InstructionConfirmModal };
-export type ClarificationSubmitCallback = (response: string) => Promise<void>;
-
-/** @deprecated Use InstructionModal instead */
-export class InstructionClarificationModal extends Modal {
-  constructor(
-    app: App,
-    _clarification: string,
-    _onSubmit: ClarificationSubmitCallback,
-    _onCancel: () => void
-  ) {
-    super(app);
-  }
-
-  onOpen() {}
-  onClose() {}
-  updateClarification(text: string) {}
-  closeModal() { this.close(); }
-}
