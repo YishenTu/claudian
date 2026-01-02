@@ -102,17 +102,24 @@ export class ImageContextManager {
 
   /** Extracts an image path from text if present. */
   extractImagePath(text: string): string | null {
-    const tokenPattern = /[^\s"'<>]+?\.(?:jpe?g|png|gif|webp)\b/gi;
+    const markdownCandidate = this.extractMarkdownImagePath(text);
+    const normalizedMarkdown = this.normalizeCandidatePath(markdownCandidate);
+    if (normalizedMarkdown) return normalizedMarkdown;
+
+    const htmlCandidate = this.extractHtmlImagePath(text);
+    const normalizedHtml = this.normalizeCandidatePath(htmlCandidate);
+    if (normalizedHtml) return normalizedHtml;
+
+    const tokenPattern = /[^\s"'<>()[\]]+?\.(?:jpe?g|png|gif|webp)\b/gi;
     const matches = text.match(tokenPattern) || [];
 
     for (const raw of matches) {
-      const cleaned = this.cleanImagePathToken(raw);
-      if (!cleaned) continue;
-      if (/^https?:\/\//i.test(cleaned) || /^file:\/\//i.test(cleaned)) {
-        continue;
+      const normalized = this.normalizeCandidatePath(raw);
+      if (normalized) {
+        return normalized;
       }
-      return cleaned;
     }
+
     return null;
   }
 
@@ -487,8 +494,86 @@ export class ImageContextManager {
   private cleanImagePathToken(token: string): string | null {
     let cleaned = token.trim();
     cleaned = cleaned.replace(/^["'`]+|["'`]+$/g, '');
+    cleaned = cleaned.replace(/^!\[[^\]]*]\(/, '');
+    cleaned = cleaned.replace(/^[\[(<]+/, '');
     cleaned = cleaned.replace(/[)\],.;>]+$/g, '');
     return cleaned || null;
+  }
+
+  private normalizeCandidatePath(candidate: string | null): string | null {
+    if (!candidate) return null;
+    const cleaned = this.cleanImagePathToken(candidate);
+    if (!cleaned) return null;
+    if (/^file:\/\//i.test(cleaned)) {
+      return this.parseFileUrlToPath(cleaned);
+    }
+    if (/^https?:\/\//i.test(cleaned)) {
+      return null;
+    }
+    return cleaned;
+  }
+
+  private extractMarkdownImagePath(text: string): string | null {
+    const match = text.match(/!\[[^\]]*]\(([^)]+)\)/);
+    if (!match) return null;
+
+    let inside = match[1].trim();
+
+    if (inside.startsWith('<') && inside.endsWith('>')) {
+      inside = inside.slice(1, -1).trim();
+    }
+
+    const quoted = inside.match(/^"([^"]+)"|^'([^']+)'/);
+    if (quoted) {
+      inside = quoted[1] ?? quoted[2] ?? inside;
+    }
+
+    if (/\s/.test(inside)) {
+      inside = inside.split(/\s+/)[0];
+    }
+
+    return inside || null;
+  }
+
+  private extractHtmlImagePath(text: string): string | null {
+    const match = text.match(/<img[^>]+src\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+    if (!match) return null;
+    return match[1] ?? match[2] ?? match[3] ?? null;
+  }
+
+  private parseFileUrlToPath(value: string): string | null {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'file:') return null;
+
+      const host = url.hostname;
+      const hostLower = host.toLowerCase();
+      const isLocalHost = hostLower === '' || hostLower === 'localhost' || hostLower === '127.0.0.1' || hostLower === '::1';
+
+      let pathname = decodeURIComponent(url.pathname || '');
+      if (!pathname) return null;
+
+      // Windows drive paths like file:///C:/Users/... or file://localhost/C:/Users/...
+      if (isLocalHost && /^\/[a-zA-Z]:\//.test(pathname)) {
+        pathname = pathname.slice(1);
+        return pathname.replace(/\//g, '\\');
+      }
+
+      // file://C:/Users/... (host is drive letter)
+      if (/^[a-zA-Z]:$/.test(host)) {
+        const combined = `${host}${pathname}`;
+        return combined.replace(/\//g, '\\');
+      }
+
+      // UNC paths: file://server/share/path -> \\server\share\path
+      if (!isLocalHost && host) {
+        return `\\\\${host}${pathname.replace(/\//g, '\\')}`;
+      }
+
+      return pathname;
+    } catch {
+      return null;
+    }
   }
 
   private getStoredFilePath(fullPath: string, vaultPath: string | null): string {

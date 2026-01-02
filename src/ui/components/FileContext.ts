@@ -15,7 +15,7 @@ import type { McpService } from '../../features/mcp/McpService';
 import { getFolderName, normalizePathForComparison } from '../../utils/contextPath';
 import { type ContextPathFile, contextPathScanner } from '../../utils/contextPathScanner';
 import { extractMcpMentions } from '../../utils/mcp';
-import { getVaultPath, isPathWithinVault, translateMsysPath } from '../../utils/path';
+import { getVaultPath, isPathWithinVault, normalizePathForFilesystem } from '../../utils/path';
 
 interface FileHashState {
   originalHash: string | null;
@@ -380,7 +380,7 @@ export class FileContextManager {
   normalizePathForVault(rawPath: string | undefined | null): string | null {
     if (!rawPath) return null;
 
-    const normalizedRaw = translateMsysPath(rawPath);
+    const normalizedRaw = normalizePathForFilesystem(rawPath);
     const vaultPath = getVaultPath(this.app);
 
     if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
