@@ -8,16 +8,17 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import * as path from 'path';
 
-import { getVaultPath } from '../../utils/path';
+import { getVaultPath, normalizePathForFilesystem } from '../../utils/path';
 import type { ImageAttachment } from '../types';
 import { readCachedImageBase64 } from './imageCache';
 
 export function resolveImageFilePath(filePath: string, vaultPath: string | null): string | null {
-  if (path.isAbsolute(filePath)) {
-    return filePath;
+  const normalized = normalizePathForFilesystem(filePath);
+  if (path.isAbsolute(normalized)) {
+    return normalized;
   }
   if (vaultPath) {
-    return path.join(vaultPath, filePath);
+    return path.join(vaultPath, normalized);
   }
   return null;
 }
@@ -26,7 +27,8 @@ function readFileBase64(absPath: string): string | null {
   try {
     const buffer = fs.readFileSync(absPath);
     return buffer.toString('base64');
-  } catch {
+  } catch (error) {
+    console.warn('Failed to read image file:', absPath, error);
     return null;
   }
 }

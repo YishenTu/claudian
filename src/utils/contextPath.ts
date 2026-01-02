@@ -4,6 +4,8 @@
  * Utilities for context path validation, normalization, and conflict detection.
  */
 
+import { normalizePathForComparison as normalizePathForComparisonImpl } from './path';
+
 /** Conflict detection result type. */
 export interface PathConflict {
   path: string;
@@ -12,10 +14,17 @@ export interface PathConflict {
 
 /**
  * Normalizes a path for comparison.
- * - Converts backslashes to forward slashes
- * - Removes trailing slashes
+ * Re-exports the unified implementation from path.ts for consistency.
+ * - Handles MSYS paths, home/env expansions
+ * - Case-insensitive on Windows
+ * - Trailing slash removed
  */
 export function normalizePathForComparison(p: string): string {
+  return normalizePathForComparisonImpl(p);
+}
+
+function normalizePathForDisplay(p: string): string {
+  if (!p) return '';
   return p.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
@@ -56,7 +65,7 @@ export function findConflictingPath(
  * @returns The folder name (last path segment)
  */
 export function getFolderName(p: string): string {
-  const normalized = normalizePathForComparison(p);
+  const normalized = normalizePathForDisplay(p);
   const segments = normalized.split('/');
   return segments[segments.length - 1] || normalized;
 }

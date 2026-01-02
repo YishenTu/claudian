@@ -223,7 +223,8 @@ export class EditedFilesTracker {
       if (!(file instanceof TFile)) return null;
       const content = await this.app.vault.read(file);
       return await this.computeContentHash(content);
-    } catch {
+    } catch (error) {
+      console.warn('Failed to compute file hash:', error);
       return null;
     }
   }

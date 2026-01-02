@@ -1,4 +1,5 @@
 import esbuild from 'esbuild';
+import path from 'path';
 import process from 'process';
 import builtins from 'builtin-modules';
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
@@ -19,7 +20,7 @@ const prod = process.argv[2] === 'production';
 // Obsidian plugin folder path (set via OBSIDIAN_VAULT env var or .env.local)
 const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT;
 const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT
-  ? `${OBSIDIAN_VAULT}/.obsidian/plugins/claudian`
+  ? path.join(OBSIDIAN_VAULT, '.obsidian', 'plugins', 'claudian')
   : null;
 
 // Plugin to copy built files to Obsidian plugin folder
@@ -36,7 +37,7 @@ const copyToObsidian = {
       const files = ['main.js', 'manifest.json', 'styles.css'];
       for (const file of files) {
         if (existsSync(file)) {
-          copyFileSync(file, `${OBSIDIAN_PLUGIN_PATH}/${file}`);
+          copyFileSync(file, path.join(OBSIDIAN_PLUGIN_PATH, file));
           console.log(`Copied ${file} to Obsidian plugin folder`);
         }
       }

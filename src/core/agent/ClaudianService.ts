@@ -14,7 +14,14 @@ import * as path from 'path';
 import type ClaudianPlugin from '../../main';
 import { stripContextFilesPrefix } from '../../utils/context';
 import { parseEnvironmentVariables } from '../../utils/env';
-import { expandHomePath, findClaudeCLIPath, getPathAccessType, getVaultPath, type PathAccessType } from '../../utils/path';
+import {
+  expandHomePath,
+  findClaudeCLIPath,
+  getPathAccessType,
+  getVaultPath,
+  normalizePathForFilesystem,
+  type PathAccessType,
+} from '../../utils/path';
 import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
 import {
   createBlocklistHook,
@@ -692,8 +699,8 @@ export class ClaudianService {
   }
 
   private resolvePlanPath(filePath: string): string {
-    const expanded = expandHomePath(filePath);
-    return path.resolve(expanded);
+    const normalized = normalizePathForFilesystem(filePath);
+    return path.resolve(normalized);
   }
 
   private isPlanFilePath(filePath: string): boolean {
@@ -804,10 +811,10 @@ export class ClaudianService {
     try {
       // Notify UI to update state and queue re-send with plan mode
       await this.enterPlanModeCallback();
-      return { behavior: 'allow', updatedInput: {} };
     } catch {
-      return { behavior: 'allow', updatedInput: {} };
+      // Non-critical: UI can detect plan mode from stream
     }
+    return { behavior: 'allow', updatedInput: {} };
   }
 
   /**

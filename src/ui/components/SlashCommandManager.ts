@@ -213,7 +213,8 @@ export class SlashCommandManager {
     for (let i = matches.length - 1; i >= 0; i--) {
       const m = matches[i];
       try {
-        const file = this.app.vault.getAbstractFileByPath(m.path);
+        const normalizedPath = m.path.replace(/\\/g, '/');
+        const file = this.app.vault.getAbstractFileByPath(normalizedPath);
         if (file instanceof TFile) {
           const fileContent = await this.app.vault.read(file);
           result =
@@ -222,7 +223,7 @@ export class SlashCommandManager {
             fileContent +
             result.slice(m.index + m.full.length);
         } else {
-          errors.push(`File reference not found: ${m.path}`);
+          errors.push(`File reference not found: ${normalizedPath}`);
         }
       } catch (error) {
         errors.push(

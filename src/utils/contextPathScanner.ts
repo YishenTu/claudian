@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { expandHomePath } from './path';
+import { normalizePathForFilesystem } from './path';
 
 /** File information from a context path. */
 export interface ContextPathFile {
@@ -73,7 +73,7 @@ class ContextPathScanner {
     const now = Date.now();
 
     for (const contextPath of contextPaths) {
-      const expandedPath = expandHomePath(contextPath);
+      const expandedPath = normalizePathForFilesystem(contextPath);
 
       // Check cache first
       const cached = this.cache.get(expandedPath);
@@ -159,7 +159,7 @@ class ContextPathScanner {
 
   /** Clears cached results for a specific context path. */
   invalidatePath(contextPath: string): void {
-    const expandedPath = expandHomePath(contextPath);
+    const expandedPath = normalizePathForFilesystem(contextPath);
     this.cache.delete(expandedPath);
   }
 }

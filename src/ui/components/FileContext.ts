@@ -6,11 +6,11 @@
  */
 
 import type { App, EventRef } from 'obsidian';
-import { TFile } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
 import * as path from 'path';
 
 import type { McpService } from '../../features/mcp/McpService';
-import { getVaultPath, isPathWithinVault } from '../../utils/path';
+import { getVaultPath, isPathWithinVault, normalizePathForFilesystem } from '../../utils/path';
 import { MentionDropdownController } from './file-context/mention/MentionDropdownController';
 import { EditedFilesTracker } from './file-context/state/EditedFilesTracker';
 import { FileContextState } from './file-context/state/FileContextState';
@@ -77,6 +77,10 @@ export class FileContextManager {
         const result = await openFileFromChip(this.app, (p) => this.normalizePathForVault(p), filePath);
         if (result.openedWithDefaultApp) {
           this.editedFilesTracker.dismissEditedFile(filePath);
+          return;
+        }
+        if (!result.opened) {
+          this.notifyOpenFailure(filePath);
         }
       },
       isContextFile: (filePath) => path.isAbsolute(filePath) && !this.isWithinVault(filePath),
@@ -88,7 +92,7 @@ export class FileContextManager {
       this.inputEl,
       {
         onAttachFile: (filePath) => this.state.attachFile(filePath),
-      onAttachmentsChanged: () => this.refreshAttachments(),
+        onAttachmentsChanged: () => this.refreshAttachments(),
         onMcpMentionChange: (servers) => this.onMcpMentionChange?.(servers),
         getMentionedMcpServers: () => this.state.getMentionedMcpServers(),
         setMentionedMcpServers: (mentions) => this.state.setMentionedMcpServers(mentions),
@@ -244,20 +248,21 @@ export class FileContextManager {
   normalizePathForVault(rawPath: string | undefined | null): string | null {
     if (!rawPath) return null;
 
-    const unixPath = rawPath.replace(/\\/g, '/');
+    const normalizedRaw = normalizePathForFilesystem(rawPath);
     const vaultPath = getVaultPath(this.app);
 
-    if (vaultPath) {
-      const normalizedVault = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
-      if (unixPath.startsWith(normalizedVault)) {
-        const relative = unixPath.slice(normalizedVault.length).replace(/^\/+/, '');
-        if (relative) {
-          return relative;
-        }
+    if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+      const absolute = path.isAbsolute(normalizedRaw)
+        ? normalizedRaw
+        : path.resolve(vaultPath, normalizedRaw);
+      const relative = path.relative(vaultPath, absolute);
+      if (relative) {
+        return relative.replace(/\\/g, '/');
       }
+      return null;
     }
 
-    return unixPath;
+    return normalizedRaw.replace(/\\/g, '/');
   }
 
   /** Checks if a path is within the vault using proper path boundary checks. */
@@ -266,6 +271,11 @@ export class FileContextManager {
     if (!vaultPath) return false;
 
     return isPathWithinVault(filePath, vaultPath);
+  }
+
+  private notifyOpenFailure(filePath: string): void {
+    console.warn(`Failed to open file: ${filePath}`);
+    new Notice(`Failed to open file: ${filePath}`);
   }
 
   private handleFileRenamed(oldPath: string, newPath: string) {

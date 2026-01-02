@@ -6,29 +6,50 @@ import {
 
 describe('contextPath utilities', () => {
   describe('normalizePathForComparison', () => {
+    const originalPlatform = process.platform;
+    const expectNormalized = (input: string, expected: string) => {
+      const normalized = normalizePathForComparison(input);
+      const resolved = process.platform === 'win32' ? expected.toLowerCase() : expected;
+      expect(normalized).toBe(resolved);
+    };
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
     it('should convert backslashes to forward slashes', () => {
-      expect(normalizePathForComparison('C:\\Users\\test')).toBe('C:/Users/test');
-      expect(normalizePathForComparison('path\\to\\file')).toBe('path/to/file');
+      expectNormalized('C:\\Users\\test', 'C:/Users/test');
+      expectNormalized('path\\to\\file', 'path/to/file');
     });
 
     it('should remove trailing slashes', () => {
-      expect(normalizePathForComparison('/path/to/dir/')).toBe('/path/to/dir');
-      expect(normalizePathForComparison('/path/to/dir///')).toBe('/path/to/dir');
+      expectNormalized('/path/to/dir/', '/path/to/dir');
+      expectNormalized('/path/to/dir///', '/path/to/dir');
     });
 
     it('should handle combined cases', () => {
-      expect(normalizePathForComparison('C:\\Users\\test\\')).toBe('C:/Users/test');
-      expect(normalizePathForComparison('C:\\Users\\test\\subdir\\')).toBe('C:/Users/test/subdir');
+      expectNormalized('C:\\Users\\test\\', 'C:/Users/test');
+      expectNormalized('C:\\Users\\test\\subdir\\', 'C:/Users/test/subdir');
     });
 
     it('should handle paths without trailing slashes', () => {
-      expect(normalizePathForComparison('/path/to/dir')).toBe('/path/to/dir');
-      expect(normalizePathForComparison('C:/Users/test')).toBe('C:/Users/test');
+      expectNormalized('/path/to/dir', '/path/to/dir');
+      expectNormalized('C:/Users/test', 'C:/Users/test');
     });
 
     it('should handle Unix-style paths', () => {
-      expect(normalizePathForComparison('/home/user/project')).toBe('/home/user/project');
-      expect(normalizePathForComparison('/home/user/project/')).toBe('/home/user/project');
+      expectNormalized('/home/user/project', '/home/user/project');
+      expectNormalized('/home/user/project/', '/home/user/project');
+    });
+
+    it('should normalize Windows case when platform is win32', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(normalizePathForComparison('C:\\Users\\Test\\Docs')).toBe('c:/users/test/docs');
+    });
+
+    it('should translate MSYS paths on Windows', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(normalizePathForComparison('/c/Users/Test')).toBe('c:/users/test');
     });
   });
 

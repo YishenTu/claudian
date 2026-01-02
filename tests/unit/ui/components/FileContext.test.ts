@@ -15,15 +15,19 @@ jest.mock('obsidian', () => ({
 }));
 
 let mockVaultPath = '/vault';
-jest.mock('@/utils/path', () => ({
-  getVaultPath: jest.fn(() => mockVaultPath),
-  isPathWithinVault: jest.fn((candidatePath: string, vaultPath: string) => {
-    // Simple implementation for testing: check if path starts with vault + separator
-    const normalizedVault = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
-    const normalizedPath = candidatePath.replace(/\\/g, '/');
-    return normalizedPath === normalizedVault || normalizedPath.startsWith(normalizedVault + '/');
-  }),
-}));
+jest.mock('@/utils/path', () => {
+  const actual = jest.requireActual('@/utils/path') as typeof import('@/utils/path');
+  return {
+    ...actual,
+    getVaultPath: jest.fn(() => mockVaultPath),
+    isPathWithinVault: jest.fn((candidatePath: string, vaultPath: string) => {
+      // Simple implementation for testing: check if path starts with vault + separator
+      const normalizedVault = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedPath = candidatePath.replace(/\\/g, '/');
+      return normalizedPath === normalizedVault || normalizedPath.startsWith(normalizedVault + '/');
+    }),
+  };
+});
 
 // Mock context path scanner
 const mockScanPaths = jest.fn<ContextPathFile[], [string[]]>(() => []);

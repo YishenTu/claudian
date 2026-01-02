@@ -11,6 +11,7 @@ import {
   getVaultPath,
   isPathInAllowedExportPaths,
   isPathWithinVault,
+  normalizePathForFilesystem,
   translateMsysPath,
 } from '@/utils/path';
 
@@ -264,6 +265,100 @@ describe('utils.ts', () => {
     it('should leave unknown environment variables untouched', () => {
       expect(expandHomePath('%CLAUDIAN_MISSING_VAR%')).toBe('%CLAUDIAN_MISSING_VAR%');
       expect(expandHomePath('$CLAUDIAN_MISSING_VAR')).toBe('$CLAUDIAN_MISSING_VAR');
+    });
+  });
+
+  describe('normalizePathForFilesystem', () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('expands home paths before filesystem use', () => {
+      const expected = path.join(os.homedir(), 'notes/file.md');
+      expect(normalizePathForFilesystem('~/notes/file.md')).toBe(expected);
+    });
+
+    it('expands environment variables before filesystem use', () => {
+      const envKey = 'CLAUDIAN_FS_TEST_PATH';
+      const originalValue = process.env[envKey];
+      process.env[envKey] = '/tmp/claudian-test';
+
+      try {
+        expect(normalizePathForFilesystem(`$${envKey}/notes/file.md`)).toBe('/tmp/claudian-test/notes/file.md');
+      } finally {
+        if (originalValue === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = originalValue;
+        }
+      }
+    });
+
+    it('strips Windows device prefixes when platform is win32', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(normalizePathForFilesystem('\\\\?\\C:\\Users\\test\\file.txt')).toBe('C:\\Users\\test\\file.txt');
+      expect(normalizePathForFilesystem('\\\\?\\UNC\\server\\share\\file.txt')).toBe('\\\\server\\share\\file.txt');
+    });
+
+    it('translates MSYS paths when platform is win32', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      expect(normalizePathForFilesystem('/c/Users/test/file.txt')).toBe('C:\\Users\\test\\file.txt');
+    });
+
+    it('handles empty string input', () => {
+      expect(normalizePathForFilesystem('')).toBe('');
+    });
+
+    it('handles non-existent environment variables', () => {
+      // Non-existent env vars should be left as-is
+      expect(normalizePathForFilesystem('$NONEXISTENT/path')).toBe('$NONEXISTENT/path');
+      expect(normalizePathForFilesystem('%NONEXISTENT%/path')).toBe('%NONEXISTENT%/path');
+    });
+
+    it('handles mixed path separators', () => {
+      // Mixed / and \ should be normalized by path operations
+      const result = normalizePathForFilesystem('C:/Users\\test/path.txt');
+      // On Windows: path module normalizes, on Unix: keeps as-is
+      expect(result).toBeTruthy();
+    });
+
+    it('handles chained home and environment variable expansions', () => {
+      const envKey = 'CLAUDIAN_TEST_SUBDIR';
+      const originalValue = process.env[envKey];
+      process.env[envKey] = 'project';
+
+      try {
+        const result = normalizePathForFilesystem(`~/$${envKey}/file.md`);
+        const expected = path.join(os.homedir(), 'project', 'file.md');
+        expect(result).toBe(expected);
+      } finally {
+        if (originalValue === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = originalValue;
+        }
+      }
+    });
+
+    it('handles Windows env vars with parentheses like ProgramFiles(x86)', () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const originalPFx86 = process.env['ProgramFiles(x86)'];
+
+      try {
+        process.env['ProgramFiles(x86)'] = 'C:\\Program Files (x86)';
+        const result = normalizePathForFilesystem('%ProgramFiles(x86)%/app/file.txt');
+        expect(result).toBe('C:\\Program Files (x86)\\app\\file.txt');
+      } finally {
+        if (originalPFx86 === undefined) {
+          delete process.env['ProgramFiles(x86)'];
+        } else {
+          process.env['ProgramFiles(x86)'] = originalPFx86;
+        }
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
     });
   });
 

@@ -8,6 +8,7 @@ import type { HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { normalizePathForFilesystem } from '../../utils/path';
 import { TOOL_EDIT, TOOL_WRITE } from '../tools/toolNames';
 import type { ToolDiffData } from '../types';
 
@@ -60,9 +61,10 @@ export function createFileHashPreHook(
           const filePath = typeof rawPath === 'string' && rawPath ? rawPath : undefined;
 
           if (filePath && vaultPath && toolUseId) {
-            const fullPath = path.isAbsolute(filePath)
-              ? filePath
-              : path.join(vaultPath, filePath);
+            const normalizedPath = normalizePathForFilesystem(filePath);
+            const fullPath = path.isAbsolute(normalizedPath)
+              ? normalizedPath
+              : path.join(vaultPath, normalizedPath);
 
             try {
               if (fs.existsSync(fullPath)) {
@@ -78,7 +80,8 @@ export function createFileHashPreHook(
                 // New file
                 originalContents.set(toolUseId, { filePath, content: '' });
               }
-            } catch {
+            } catch (error) {
+              console.warn('Failed to capture original file contents:', fullPath, error);
               originalContents.set(toolUseId, { filePath, content: null, skippedReason: 'unavailable' });
             }
           }
@@ -119,9 +122,10 @@ export function createFileHashPostHook(
             typeof rawPath === 'string' && rawPath ? rawPath : originalEntry?.filePath;
 
           if (!isError && filePath && vaultPath) {
-            const fullPath = path.isAbsolute(filePath)
-              ? filePath
-              : path.join(vaultPath, filePath);
+            const normalizedPath = normalizePathForFilesystem(filePath);
+            const fullPath = path.isAbsolute(normalizedPath)
+              ? normalizedPath
+              : path.join(vaultPath, normalizedPath);
 
             let diffData: ToolDiffData | undefined;
 
@@ -149,7 +153,8 @@ export function createFileHashPostHook(
                 } else {
                   diffData = { filePath, skippedReason: 'unavailable' };
                 }
-              } catch {
+              } catch (error) {
+                console.warn('Failed to capture updated file contents:', fullPath, error);
                 diffData = { filePath, skippedReason: 'unavailable' };
               }
             }

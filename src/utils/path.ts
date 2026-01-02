@@ -68,7 +68,7 @@ function expandEnvironmentVariables(value: string): string {
   let expanded = value;
 
   // Windows %VAR% format - allow parentheses for vars like %ProgramFiles(x86)%
-  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_()]*[A-Za-z0-9_)]?)%/g, (match, name) => {
+  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?[A-Za-z0-9_]*)%/g, (match, name) => {
     const envValue = getEnvValue(name);
     return envValue !== undefined ? envValue : match;
   });
@@ -367,17 +367,52 @@ function normalizeWindowsPathPrefix(value: string): string {
   return normalized;
 }
 
-function normalizePathForComparison(value: string): string {
+/**
+ * Normalizes a path for filesystem operations (expand env/home, translate MSYS, strip Windows prefixes).
+ * This is the main entry point for path normalization before file operations.
+ */
+export function normalizePathForFilesystem(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
+  const expanded = normalizePathBeforeResolution(value);
+  let normalized = expanded;
+
   try {
-    const normalized = normalizeWindowsPathPrefix(path.normalize(value));
-    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+    normalized = process.platform === 'win32'
+      ? path.win32.normalize(expanded)
+      : path.normalize(expanded);
   } catch {
-    // Fallback to input if normalization fails
-    return process.platform === 'win32' ? value.toLowerCase() : value;
+    normalized = expanded;
   }
+
+  return normalizeWindowsPathPrefix(normalized);
+}
+
+/**
+ * Normalizes a path for comparison (case-insensitive on Windows, slashes normalized, trailing slash removed).
+ * This is the main entry point for path comparisons and should be used consistently across modules.
+ */
+export function normalizePathForComparison(value: string): string {
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
+
+  const expanded = normalizePathBeforeResolution(value);
+  let normalized = expanded;
+
+  try {
+    normalized = process.platform === 'win32'
+      ? path.win32.normalize(expanded)
+      : path.normalize(expanded);
+  } catch {
+    normalized = expanded;
+  }
+
+  normalized = normalizeWindowsPathPrefix(normalized);
+  normalized = normalized.replace(/\\/g, '/').replace(/\/+$/, '');
+
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 // ============================================
