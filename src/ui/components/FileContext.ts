@@ -242,6 +242,7 @@ export class FileContextManager {
     if (this.renameEventRef) this.app.vault.offref(this.renameEventRef);
     if (this.modifyEventRef) this.app.vault.offref(this.modifyEventRef);
     this.mentionDropdown.destroy();
+    this.chipsView.destroy();
   }
 
   /** Normalizes a file path to be vault-relative with forward slashes. */

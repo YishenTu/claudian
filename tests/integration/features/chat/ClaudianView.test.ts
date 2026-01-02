@@ -497,7 +497,7 @@ describe('FileContextManager - Edited Files Section', () => {
       tracker.editedFilesThisSession.add('edited2.md');
       // This file is both edited AND attached
       tracker.editedFilesThisSession.add('attached.md');
-      fileContextManager.getAttachedFiles().add('attached.md');
+      fileContextManager.setAttachedFiles(['attached.md']);
 
       const nonAttached = (fileContextManager as any).getNonAttachedEditedFiles();
 
@@ -509,7 +509,7 @@ describe('FileContextManager - Edited Files Section', () => {
 
     it('should return empty array when all edited files are attached', () => {
       tracker.editedFilesThisSession.add('file.md');
-      fileContextManager.getAttachedFiles().add('file.md');
+      fileContextManager.setAttachedFiles(['file.md']);
 
       const nonAttached = (fileContextManager as any).getNonAttachedEditedFiles();
 
@@ -533,7 +533,7 @@ describe('FileContextManager - Edited Files Section', () => {
 
     it('should NOT show edited files section when all edited files are attached', () => {
       tracker.editedFilesThisSession.add('attached.md');
-      fileContextManager.getAttachedFiles().add('attached.md');
+      fileContextManager.setAttachedFiles(['attached.md']);
 
       const chipsView = (fileContextManager as any).chipsView as any;
       (fileContextManager as any).refreshEditedFiles();
@@ -557,7 +557,7 @@ describe('FileContextManager - Edited Files Section', () => {
       (fileContextManager as any).refreshEditedFiles();
       expect(chipsView.editedFilesIndicatorEl.style.display).toBe('flex');
 
-      fileContextManager.getAttachedFiles().add('notes/edited.md');
+      fileContextManager.setAttachedFiles(['notes/edited.md']);
       (fileContextManager as any).refreshAttachments();
 
       expect(chipsView.editedFilesIndicatorEl.style.display).toBe('none');
@@ -565,13 +565,13 @@ describe('FileContextManager - Edited Files Section', () => {
 
     it('should show edited section when an edited attached file is removed', () => {
       tracker.editedFilesThisSession.add('notes/edited.md');
-      fileContextManager.getAttachedFiles().add('notes/edited.md');
+      fileContextManager.setAttachedFiles(['notes/edited.md']);
 
       const chipsView = (fileContextManager as any).chipsView as any;
       (fileContextManager as any).refreshAttachments();
       expect(chipsView.editedFilesIndicatorEl.style.display).toBe('none');
 
-      fileContextManager.getAttachedFiles().delete('notes/edited.md');
+      fileContextManager.setAttachedFiles([]);
       (fileContextManager as any).refreshAttachments();
 
       expect(chipsView.editedFilesIndicatorEl.style.display).toBe('flex');
@@ -1034,7 +1034,7 @@ describe('FileContextManager - Border indicator sync with @ mentions', () => {
     const filePath = 'notes/attached.md';
 
     // File is both attached and edited
-    fileContextManager.getAttachedFiles().add(filePath);
+    fileContextManager.setAttachedFiles([filePath]);
     tracker.editedFilesThisSession.add(filePath);
     tracker.editedFileHashes.set(filePath, {
       originalHash: 'hash1',
@@ -1056,7 +1056,7 @@ describe('FileContextManager - Border indicator sync with @ mentions', () => {
     const newPath = 'notes/new.md';
 
     // File is both attached and edited
-    fileContextManager.getAttachedFiles().add(oldPath);
+    fileContextManager.setAttachedFiles([oldPath]);
     tracker.editedFilesThisSession.add(oldPath);
 
     // Trigger rename
@@ -1092,7 +1092,7 @@ describe('FileContextManager - Attached Files Persistence', () => {
 
     it('should clear existing attached files before setting new ones', () => {
       // First set some files
-      fileContextManager.getAttachedFiles().add('old/file.md');
+      fileContextManager.setAttachedFiles(['old/file.md']);
 
       // Now set new files
       fileContextManager.setAttachedFiles(['new/file.md']);
@@ -1113,7 +1113,7 @@ describe('FileContextManager - Attached Files Persistence', () => {
 
     it('should handle empty array', () => {
       // Start with some files
-      fileContextManager.getAttachedFiles().add('file.md');
+      fileContextManager.setAttachedFiles(['file.md']);
 
       fileContextManager.setAttachedFiles([]);
 
@@ -1123,7 +1123,9 @@ describe('FileContextManager - Attached Files Persistence', () => {
 
   describe('hasFilesChanged', () => {
     it('should return true when files have been added', () => {
-      fileContextManager.getAttachedFiles().add('new-file.md');
+      // Access internal state to add file without triggering setAttachedFiles
+      const state = (fileContextManager as any).state;
+      state.attachedFiles.add('new-file.md');
 
       expect(fileContextManager.hasFilesChanged()).toBe(true);
     });
@@ -1140,8 +1142,9 @@ describe('FileContextManager - Attached Files Persistence', () => {
       fileContextManager.setAttachedFiles(['file1.md', 'file2.md']);
       fileContextManager.markFilesSent();
 
-      // Remove one
-      fileContextManager.getAttachedFiles().delete('file1.md');
+      // Remove one via internal state
+      const state = (fileContextManager as any).state;
+      state.attachedFiles.delete('file1.md');
 
       expect(fileContextManager.hasFilesChanged()).toBe(true);
     });
@@ -1151,9 +1154,10 @@ describe('FileContextManager - Attached Files Persistence', () => {
       fileContextManager.setAttachedFiles(['file1.md']);
       fileContextManager.markFilesSent();
 
-      // Replace with different file
-      fileContextManager.getAttachedFiles().clear();
-      fileContextManager.getAttachedFiles().add('file2.md');
+      // Replace with different file via internal state
+      const state = (fileContextManager as any).state;
+      state.attachedFiles.clear();
+      state.attachedFiles.add('file2.md');
 
       expect(fileContextManager.hasFilesChanged()).toBe(true);
     });
@@ -1161,15 +1165,17 @@ describe('FileContextManager - Attached Files Persistence', () => {
 
   describe('markFilesSent', () => {
     it('should sync lastSentFiles with attachedFiles', () => {
-      fileContextManager.getAttachedFiles().add('file1.md');
-      fileContextManager.getAttachedFiles().add('file2.md');
+      // Access internal state to add files
+      const state = (fileContextManager as any).state;
+      state.attachedFiles.add('file1.md');
+      state.attachedFiles.add('file2.md');
 
       fileContextManager.markFilesSent();
 
       expect(fileContextManager.hasFilesChanged()).toBe(false);
 
       // Adding a new file should show change
-      fileContextManager.getAttachedFiles().add('file3.md');
+      state.attachedFiles.add('file3.md');
       expect(fileContextManager.hasFilesChanged()).toBe(true);
     });
   });
@@ -1386,7 +1392,7 @@ describe('FileContextManager - Session State', () => {
 
     it('should reset session on new conversation', () => {
       fileContextManager.startSession();
-      fileContextManager.getAttachedFiles().add('file.md');
+      fileContextManager.setAttachedFiles(['file.md']);
 
       fileContextManager.resetForNewConversation();
 
