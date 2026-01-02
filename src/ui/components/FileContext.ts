@@ -63,7 +63,7 @@ export class FileContextManager {
       this.app,
       (rawPath) => this.normalizePathForVault(rawPath),
       {
-        onEditedFilesChanged: () => this.refreshEditedFiles(),
+        onEditedFilesChanged: () => this.refreshEditedFiles(true),
         getActiveFile: () => this.app.workspace.getActiveFile(),
       }
     );
@@ -327,7 +327,10 @@ export class FileContextManager {
     this.callbacks.onChipsChanged?.();
   }
 
-  private refreshEditedFiles(): void {
+  private refreshEditedFiles(refreshAttachments = false): void {
+    if (refreshAttachments) {
+      this.chipsView.renderAttachments(this.state.getAttachedFiles());
+    }
     this.chipsView.renderEditedFiles(this.getNonAttachedEditedFiles(), this.state.isPlanModeActive());
   }
 
