@@ -50,6 +50,7 @@ interface MockElement {
   createSpan: (opts?: { cls?: string; text?: string }) => MockElement;
   setText: (text: string) => void;
   setAttribute: (name: string, value: string) => void;
+  remove: () => void;
   textContent: string;
   style: Record<string, string>;
   empty: () => void;
@@ -102,6 +103,7 @@ function createMockElement(): MockElement {
       textContent = text;
     },
     setAttribute: () => {},
+    remove: () => {},
     get textContent() {
       return textContent;
     },
