@@ -2,7 +2,7 @@
  * Tests for TodoListRenderer - TodoWrite input parsing
  */
 
-import { parseTodoInput } from '@/ui/renderers/TodoListRenderer';
+import { extractLastTodosFromMessages, parseTodoInput } from '@/ui/renderers/TodoListRenderer';
 
 describe('TodoListRenderer', () => {
   beforeEach(() => {
@@ -43,6 +43,105 @@ describe('TodoListRenderer', () => {
 
       expect(result).toHaveLength(1);
       expect(result![0].content).toBe('Valid');
+    });
+  });
+
+  describe('extractLastTodosFromMessages', () => {
+    it('should return the most recent TodoWrite from conversation', () => {
+      const messages = [
+        {
+          role: 'assistant',
+          toolCalls: [{
+            name: 'TodoWrite',
+            input: { todos: [{ content: 'Old task', status: 'completed', activeForm: 'Old' }] },
+          }],
+        },
+        { role: 'user' },
+        {
+          role: 'assistant',
+          toolCalls: [{
+            name: 'TodoWrite',
+            input: { todos: [{ content: 'New task', status: 'pending', activeForm: 'New' }] },
+          }],
+        },
+      ];
+
+      const result = extractLastTodosFromMessages(messages);
+
+      expect(result).not.toBeNull();
+      expect(result![0].content).toBe('New task');
+      expect(result![0].status).toBe('pending');
+    });
+
+    it('should return null when no TodoWrite exists', () => {
+      const messages = [
+        { role: 'assistant', toolCalls: [{ name: 'Read', input: {} }] },
+        { role: 'user' },
+      ];
+
+      expect(extractLastTodosFromMessages(messages)).toBeNull();
+    });
+
+    it('should return null for empty messages array', () => {
+      expect(extractLastTodosFromMessages([])).toBeNull();
+    });
+
+    it('should handle messages without toolCalls', () => {
+      const messages = [
+        { role: 'assistant' },
+        { role: 'user' },
+      ];
+
+      expect(extractLastTodosFromMessages(messages)).toBeNull();
+    });
+
+    it('should ignore user messages with toolCalls', () => {
+      const messages = [
+        {
+          role: 'user',
+          toolCalls: [{
+            name: 'TodoWrite',
+            input: { todos: [{ content: 'User task', status: 'pending', activeForm: 'Task' }] },
+          }],
+        },
+      ];
+
+      expect(extractLastTodosFromMessages(messages)).toBeNull();
+    });
+
+    it('should find TodoWrite among other tool calls', () => {
+      const messages = [
+        {
+          role: 'assistant',
+          toolCalls: [
+            { name: 'Read', input: {} },
+            { name: 'TodoWrite', input: { todos: [{ content: 'Task', status: 'in_progress', activeForm: 'Doing' }] } },
+            { name: 'Write', input: {} },
+          ],
+        },
+      ];
+
+      const result = extractLastTodosFromMessages(messages);
+
+      expect(result).not.toBeNull();
+      expect(result![0].content).toBe('Task');
+    });
+
+    it('should return the last TodoWrite in a message with multiple TodoWrites', () => {
+      const messages = [
+        {
+          role: 'assistant',
+          toolCalls: [
+            { name: 'TodoWrite', input: { todos: [{ content: 'First', status: 'pending', activeForm: 'First' }] } },
+            { name: 'TodoWrite', input: { todos: [{ content: 'Last', status: 'pending', activeForm: 'Last' }] } },
+          ],
+        },
+      ];
+
+      const result = extractLastTodosFromMessages(messages);
+
+      expect(result).not.toBeNull();
+      expect(result![0].content).toBe('Last');
     });
   });
 });

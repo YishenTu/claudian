@@ -23,6 +23,10 @@ export class TodoPanel {
   private isExpanded = false;
   private currentTodos: TodoItem[] | null = null;
 
+  // Event handler references for cleanup
+  private clickHandler: (() => void) | null = null;
+  private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+
   /**
    * Mount the panel into the messages container.
    * Appends to the end of the messages area.
@@ -36,7 +40,10 @@ export class TodoPanel {
    * Create the panel structure.
    */
   private createPanel(): void {
-    if (!this.containerEl) return;
+    if (!this.containerEl) {
+      console.warn('[TodoPanel] Cannot create panel - containerEl not set. Was mount() called correctly?');
+      return;
+    }
 
     // Create panel element (no border/background - seamless)
     this.panelEl = document.createElement('div');
@@ -53,13 +60,17 @@ export class TodoPanel {
     this.todoHeaderEl.className = 'claudian-todo-panel-header';
     this.todoHeaderEl.setAttribute('tabindex', '0');
     this.todoHeaderEl.setAttribute('role', 'button');
-    this.todoHeaderEl.addEventListener('click', () => this.toggle());
-    this.todoHeaderEl.addEventListener('keydown', (e) => {
+
+    // Store handler references for cleanup
+    this.clickHandler = () => this.toggle();
+    this.keydownHandler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         this.toggle();
       }
-    });
+    };
+    this.todoHeaderEl.addEventListener('click', this.clickHandler);
+    this.todoHeaderEl.addEventListener('keydown', this.keydownHandler);
     this.todoContainerEl.appendChild(this.todoHeaderEl);
 
     // Todo content (expanded list)
@@ -251,6 +262,18 @@ export class TodoPanel {
    * Destroy the panel.
    */
   destroy(): void {
+    // Remove event listeners before removing elements
+    if (this.todoHeaderEl) {
+      if (this.clickHandler) {
+        this.todoHeaderEl.removeEventListener('click', this.clickHandler);
+      }
+      if (this.keydownHandler) {
+        this.todoHeaderEl.removeEventListener('keydown', this.keydownHandler);
+      }
+    }
+    this.clickHandler = null;
+    this.keydownHandler = null;
+
     if (this.panelEl) {
       this.panelEl.remove();
       this.panelEl = null;
