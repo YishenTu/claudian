@@ -4,11 +4,25 @@
  * Parses TodoWrite tool input into typed todo items.
  */
 
+import { TOOL_TODO_WRITE } from '@/core/tools';
+
 /** Todo item structure from TodoWrite tool. */
 export interface TodoItem {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
   activeForm: string;
+}
+
+/** Type guard for valid todo item. */
+function isValidTodoItem(item: unknown): item is TodoItem {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    typeof (item as Record<string, unknown>).content === 'string' &&
+    typeof (item as Record<string, unknown>).activeForm === 'string' &&
+    typeof (item as Record<string, unknown>).status === 'string' &&
+    ['pending', 'in_progress', 'completed'].includes((item as Record<string, unknown>).status as string)
+  );
 }
 
 /** Parse todos from TodoWrite tool input. */
@@ -17,15 +31,24 @@ export function parseTodoInput(input: Record<string, unknown>): TodoItem[] | nul
     return null;
   }
 
-  const validTodos = input.todos.filter((item): item is TodoItem => {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      typeof item.content === 'string' &&
-      typeof item.status === 'string' &&
-      ['pending', 'in_progress', 'completed'].includes(item.status)
-    );
-  });
+  const validTodos: TodoItem[] = [];
+  const invalidItems: unknown[] = [];
+
+  for (const item of input.todos) {
+    if (isValidTodoItem(item)) {
+      validTodos.push(item);
+    } else {
+      invalidItems.push(item);
+    }
+  }
+
+  if (invalidItems.length > 0) {
+    console.warn('[TodoListRenderer] Dropped invalid todo items:', {
+      dropped: invalidItems.length,
+      total: input.todos.length,
+      sample: invalidItems.slice(0, 3),
+    });
+  }
 
   return validTodos.length > 0 ? validTodos : null;
 }
@@ -44,7 +67,7 @@ export function extractLastTodosFromMessages(
       // Find the last TodoWrite in this message
       for (let j = msg.toolCalls.length - 1; j >= 0; j--) {
         const toolCall = msg.toolCalls[j];
-        if (toolCall.name === 'TodoWrite') {
+        if (toolCall.name === TOOL_TODO_WRITE) {
           return parseTodoInput(toolCall.input);
         }
       }
