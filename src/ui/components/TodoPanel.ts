@@ -72,12 +72,20 @@ export class TodoPanel {
   }
 
   /**
-   * Update with new todo items.
+   * Update the panel with new todo items.
+   * Called by ChatState.onTodosChanged callback when TodoWrite tool is used.
+   * Passing null or empty array hides the panel.
    */
   updateTodos(todos: TodoItem[] | null): void {
     this.currentTodos = todos;
 
-    if (!this.todoContainerEl || !this.todoHeaderEl || !this.todoContentEl) return;
+    if (!this.todoContainerEl || !this.todoHeaderEl || !this.todoContentEl) {
+      // Only warn if we have todos to display but component is not ready
+      if (todos && todos.length > 0) {
+        console.warn('[TodoPanel] Cannot update todos - component not mounted or destroyed');
+      }
+      return;
+    }
 
     if (!todos || todos.length === 0) {
       this.todoContainerEl.style.display = 'none';
@@ -251,5 +259,6 @@ export class TodoPanel {
     this.todoHeaderEl = null;
     this.todoContentEl = null;
     this.containerEl = null;
+    this.currentTodos = null;
   }
 }

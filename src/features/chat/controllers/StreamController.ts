@@ -212,7 +212,13 @@ export class StreamController {
           this.deps.state.currentTodos = todos;
         } else {
           // Fallback: render tool call so invalid input is visible for debugging
-          renderToolCall(state.currentContentEl!, toolCall, state.toolCallElements, plugin.settings.toolCallExpandedByDefault);
+          console.warn('[StreamController] TodoWrite input parsing failed, rendering as raw tool call', {
+            toolId: chunk.id,
+            inputKeys: Object.keys(chunk.input),
+          });
+          if (state.currentContentEl) {
+            renderToolCall(state.currentContentEl, toolCall, state.toolCallElements, plugin.settings.toolCallExpandedByDefault);
+          }
         }
       } else if (isWriteEditTool(chunk.name)) {
         const writeEditState = createWriteEditBlock(state.currentContentEl!, toolCall);
