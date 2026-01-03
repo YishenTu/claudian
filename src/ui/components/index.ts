@@ -45,3 +45,6 @@ export {
   type SlashCommandDropdownCallbacks,
   type SlashCommandDropdownOptions,
 } from './SlashCommandDropdown';
+export {
+  TodoPanel,
+} from './TodoPanel';

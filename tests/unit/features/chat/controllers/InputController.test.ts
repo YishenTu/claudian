@@ -258,8 +258,9 @@ describe('InputController - Message Queue', () => {
 
       controller.updateQueueIndicator();
 
-      expect(deps.state.queueIndicatorEl!.style.display).toBe('block');
-      expect(deps.state.queueIndicatorEl!.textContent).toContain('⌙ Queued: test message');
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.setText).toHaveBeenCalledWith('⌙ Queued: test message');
+      expect(queueIndicatorEl.style.display).toBe('block');
     });
 
     it('should hide queue indicator when no message is queued', () => {
@@ -267,7 +268,8 @@ describe('InputController - Message Queue', () => {
 
       controller.updateQueueIndicator();
 
-      expect(deps.state.queueIndicatorEl!.style.display).toBe('none');
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.style.display).toBe('none');
     });
 
     it('should truncate long message preview in indicator', () => {
@@ -276,7 +278,9 @@ describe('InputController - Message Queue', () => {
 
       controller.updateQueueIndicator();
 
-      expect(deps.state.queueIndicatorEl!.textContent).toContain('...');
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      const call = queueIndicatorEl.setText.mock.calls[0][0] as string;
+      expect(call).toContain('...');
     });
 
     it('should include [images] when queue message has images', () => {
@@ -285,8 +289,10 @@ describe('InputController - Message Queue', () => {
 
       controller.updateQueueIndicator();
 
-      expect(deps.state.queueIndicatorEl!.textContent).toContain('queued content');
-      expect(deps.state.queueIndicatorEl!.textContent).toContain('[images]');
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      const call = queueIndicatorEl.setText.mock.calls[0][0] as string;
+      expect(call).toContain('queued content');
+      expect(call).toContain('[images]');
     });
 
     it('should show [images] when queue message has only images', () => {
@@ -295,7 +301,8 @@ describe('InputController - Message Queue', () => {
 
       controller.updateQueueIndicator();
 
-      expect(deps.state.queueIndicatorEl!.textContent).toBe('⌙ Queued: [images]');
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.setText).toHaveBeenCalledWith('⌙ Queued: [images]');
     });
   });
 
@@ -306,7 +313,8 @@ describe('InputController - Message Queue', () => {
       controller.clearQueuedMessage();
 
       expect(deps.state.queuedMessage).toBeNull();
-      expect(deps.state.queueIndicatorEl!.style.display).toBe('none');
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.style.display).toBe('none');
     });
   });
 

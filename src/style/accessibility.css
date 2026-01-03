@@ -3,7 +3,6 @@
 /* Collapsible headers - keyboard focus indicators */
 .claudian-tool-header:focus-visible,
 .claudian-thinking-header:focus-visible,
-.claudian-todo-header:focus-visible,
 .claudian-subagent-header:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;

@@ -1,18 +1,39 @@
 /**
- * Claudian - Todo list renderer
+ * Claudian - Todo list parser
  *
- * Renders TodoWrite tool calls as collapsible task lists.
+ * Parses TodoWrite tool input into typed todo items.
  */
 
-import { setIcon } from 'obsidian';
+import { TOOL_TODO_WRITE } from '@/core/tools';
 
-import { setupCollapsible } from '@/ui/utils/collapsible';
-
-/** Todo item structure from TodoWrite tool. */
+/**
+ * Todo item structure from TodoWrite tool.
+ *
+ * Represents a single task with imperative and progressive forms:
+ * - `content`: Imperative description (e.g., "Run tests")
+ * - `activeForm`: Present continuous form (e.g., "Running tests")
+ */
 export interface TodoItem {
+  /** Imperative description of the task (e.g., "Run tests") */
   content: string;
+  /** Current status of the task */
   status: 'pending' | 'in_progress' | 'completed';
+  /** Present continuous form shown during execution (e.g., "Running tests") */
   activeForm: string;
+}
+
+/** Type guard for valid todo item. */
+function isValidTodoItem(item: unknown): item is TodoItem {
+  if (typeof item !== 'object' || item === null) return false;
+  const record = item as Record<string, unknown>;
+  return (
+    typeof record.content === 'string' &&
+    record.content.length > 0 &&
+    typeof record.activeForm === 'string' &&
+    record.activeForm.length > 0 &&
+    typeof record.status === 'string' &&
+    ['pending', 'in_progress', 'completed'].includes(record.status)
+  );
 }
 
 /** Parse todos from TodoWrite tool input. */
@@ -21,98 +42,56 @@ export function parseTodoInput(input: Record<string, unknown>): TodoItem[] | nul
     return null;
   }
 
-  return input.todos.filter((item): item is TodoItem => {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      typeof item.content === 'string' &&
-      typeof item.status === 'string' &&
-      ['pending', 'in_progress', 'completed'].includes(item.status)
-    );
-  });
-}
+  const validTodos: TodoItem[] = [];
+  const invalidItems: unknown[] = [];
 
-/** Get status icon name for a todo item. */
-function getStatusIcon(status: TodoItem['status']): string {
-  switch (status) {
-    case 'completed':
-      return 'check-circle-2';
-    case 'in_progress':
-      return 'circle-dot';
-    case 'pending':
-    default:
-      return 'circle';
-  }
-}
-
-/** Render a TodoWrite tool call as a todo list. Collapsed by default. */
-export function renderTodoList(
-  parentEl: HTMLElement,
-  todos: TodoItem[],
-  isExpanded: boolean = false
-): HTMLElement {
-  const container = parentEl.createDiv({ cls: 'claudian-todo-list' });
-
-  // Count completed vs total
-  const completedCount = todos.filter(t => t.status === 'completed').length;
-  const totalCount = todos.length;
-  const currentTask = todos.find(t => t.status === 'in_progress');
-
-  // Header (clickable to collapse/expand)
-  const header = container.createDiv({ cls: 'claudian-todo-header' });
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('role', 'button');
-  // aria-label is set dynamically by setupCollapsible based on expand state
-  const baseAriaLabel = `Task list - ${completedCount} of ${totalCount} completed`;
-
-  const icon = header.createDiv({ cls: 'claudian-todo-icon' });
-  icon.setAttribute('aria-hidden', 'true');
-  setIcon(icon, 'list-checks');
-
-  const label = header.createDiv({ cls: 'claudian-todo-label' });
-  if (currentTask) {
-    label.setText(`${currentTask.activeForm} (${completedCount}/${totalCount})`);
-  } else {
-    label.setText(`Tasks (${completedCount}/${totalCount})`);
+  for (const item of input.todos) {
+    if (isValidTodoItem(item)) {
+      validTodos.push(item);
+    } else {
+      invalidItems.push(item);
+    }
   }
 
-  // Content (collapsible)
-  const content = container.createDiv({ cls: 'claudian-todo-content' });
-
-  // Render each todo item
-  for (const todo of todos) {
-    const itemEl = content.createDiv({
-      cls: `claudian-todo-item claudian-todo-${todo.status}`
+  if (invalidItems.length > 0) {
+    console.warn('[TodoListRenderer] Dropped invalid todo items:', {
+      dropped: invalidItems.length,
+      total: input.todos.length,
+      sample: invalidItems.slice(0, 3),
     });
-
-    const statusIcon = itemEl.createDiv({ cls: 'claudian-todo-status-icon' });
-    statusIcon.setAttribute('aria-hidden', 'true');
-    setIcon(statusIcon, getStatusIcon(todo.status));
-
-    const text = itemEl.createDiv({ cls: 'claudian-todo-text' });
-    // Show activeForm for in_progress, content otherwise
-    text.setText(todo.status === 'in_progress' ? todo.activeForm : todo.content);
   }
 
-  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
-  const state = { isExpanded: false };
-  setupCollapsible(container, header, content, state, {
-    initiallyExpanded: isExpanded,
-    baseAriaLabel
-  });
-
-  return container;
+  return validTodos.length > 0 ? validTodos : null;
 }
 
-/** Render a stored TodoWrite tool call (from conversation history). */
-export function renderStoredTodoList(
-  parentEl: HTMLElement,
-  input: Record<string, unknown>
-): HTMLElement | null {
-  const todos = parseTodoInput(input);
-  if (!todos) {
-    return null;
+/**
+ * Extract the last TodoWrite todos from a list of messages.
+ * Used to restore the todo panel when loading a saved conversation.
+ */
+export function extractLastTodosFromMessages(
+  messages: Array<{ role: string; toolCalls?: Array<{ name: string; input: Record<string, unknown> }> }>
+): TodoItem[] | null {
+  // Scan from the end to find the most recent TodoWrite
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'assistant' && msg.toolCalls) {
+      // Find the last TodoWrite in this message
+      for (let j = msg.toolCalls.length - 1; j >= 0; j--) {
+        const toolCall = msg.toolCalls[j];
+        if (toolCall.name === TOOL_TODO_WRITE) {
+          const todos = parseTodoInput(toolCall.input);
+          if (!todos) {
+            // Log when TodoWrite is found but parsing fails (indicates data corruption or schema change)
+            console.warn('[TodoListRenderer] Failed to parse TodoWrite from saved conversation', {
+              messageIndex: i,
+              toolCallIndex: j,
+              inputKeys: Object.keys(toolCall.input),
+            });
+          }
+          return todos;
+        }
+      }
+    }
   }
-  // Stored todos are collapsed by default
-  return renderTodoList(parentEl, todos, false);
+  return null;
 }

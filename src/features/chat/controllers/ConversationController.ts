@@ -9,7 +9,7 @@ import { setIcon } from 'obsidian';
 
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import type { ContextPathSelector, FileContextManager, ImageContextManager, McpServerSelector } from '../../../ui';
+import { type ContextPathSelector, extractLastTodosFromMessages, type FileContextManager, type ImageContextManager, type McpServerSelector } from '../../../ui';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -175,6 +175,9 @@ export class ConversationController {
     this.deps.setWelcomeEl(welcomeEl);
     this.updateWelcomeVisibility();
 
+    // Restore todo panel from loaded conversation
+    state.currentTodos = extractLastTodosFromMessages(state.messages);
+
     this.callbacks.onConversationLoaded?.();
 
     // Trigger pending plan approval if there's pending content
@@ -241,6 +244,9 @@ export class ConversationController {
       () => this.getGreeting()
     );
     this.deps.setWelcomeEl(welcomeEl);
+
+    // Restore todo panel from switched conversation
+    state.currentTodos = extractLastTodosFromMessages(state.messages);
 
     this.deps.getHistoryDropdown()?.removeClass('visible');
     this.updateWelcomeVisibility();

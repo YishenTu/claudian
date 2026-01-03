@@ -42,9 +42,8 @@ export {
   type ThinkingBlockState,
 } from './ThinkingBlockRenderer';
 export {
+  extractLastTodosFromMessages,
   parseTodoInput,
-  renderStoredTodoList,
-  renderTodoList,
   type TodoItem,
 } from './TodoListRenderer';
 export {
