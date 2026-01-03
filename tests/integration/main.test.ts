@@ -56,7 +56,6 @@ describe('ClaudianPlugin', () => {
 
       expect(plugin.settings).toBeDefined();
       expect(plugin.settings.enableBlocklist).toBe(DEFAULT_SETTINGS.enableBlocklist);
-      expect(plugin.settings.showToolUse).toBe(DEFAULT_SETTINGS.showToolUse);
       expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
     });
 
@@ -163,7 +162,6 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/settings.json') {
           return JSON.stringify({
             enableBlocklist: false,
-            showToolUse: false,
           });
         }
         return '';
@@ -172,7 +170,6 @@ describe('ClaudianPlugin', () => {
       await plugin.loadSettings();
 
       expect(plugin.settings.enableBlocklist).toBe(false);
-      expect(plugin.settings.showToolUse).toBe(false);
       // Should still have defaults for blockedCommands
       expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
     });
@@ -245,7 +242,6 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       plugin.settings.enableBlocklist = false;
-      plugin.settings.showToolUse = false;
 
       await plugin.saveSettings();
 

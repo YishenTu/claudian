@@ -23,11 +23,6 @@ import {
 /** Render content function type for callbacks. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
-/** Options for MessageRenderer. */
-export interface MessageRendererOptions {
-  getShowToolUse: () => boolean;
-}
-
 /**
  * MessageRenderer handles all message DOM rendering.
  *
@@ -37,18 +32,15 @@ export class MessageRenderer {
   private app: App;
   private component: Component;
   private messagesEl: HTMLElement;
-  private options: MessageRendererOptions;
 
   constructor(
     app: App,
     component: Component,
-    messagesEl: HTMLElement,
-    options: MessageRendererOptions
+    messagesEl: HTMLElement
   ) {
     this.app = app;
     this.component = component;
     this.messagesEl = messagesEl;
-    this.options = options;
   }
 
   /** Sets the messages container element. */
@@ -232,8 +224,6 @@ export class MessageRenderer {
    * Renders assistant message content (content blocks or fallback).
    */
   private renderAssistantContent(msg: ChatMessage, contentEl: HTMLElement): void {
-    const showToolUse = this.options.getShowToolUse();
-
     if (msg.contentBlocks && msg.contentBlocks.length > 0) {
       for (const block of msg.contentBlocks) {
         if (block.type === 'thinking') {
@@ -246,12 +236,12 @@ export class MessageRenderer {
         } else if (block.type === 'text') {
           const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
           void this.renderContent(textEl, block.content);
-        } else if (block.type === 'tool_use' && showToolUse) {
+        } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
             this.renderToolCall(contentEl, toolCall);
           }
-        } else if (block.type === 'subagent' && showToolUse) {
+        } else if (block.type === 'subagent') {
           const subagent = msg.subagents?.find(s => s.id === block.subagentId);
           if (subagent) {
             const mode = block.mode || subagent.mode || 'sync';
@@ -269,7 +259,7 @@ export class MessageRenderer {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, msg.content);
       }
-      if (msg.toolCalls && showToolUse) {
+      if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
           this.renderToolCall(contentEl, toolCall);
         }

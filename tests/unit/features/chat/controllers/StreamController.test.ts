@@ -15,6 +15,7 @@ function createMockElement() {
   const children: any[] = [];
   const classList = new Set<string>();
   const dataset: Record<string, string> = {};
+  const attributes: Record<string, string> = {};
 
   const element: any = {
     children,
@@ -59,6 +60,10 @@ function createMockElement() {
     remove: jest.fn(),
     setText: jest.fn((text: string) => { element.textContent = text; }),
     setAttr: jest.fn(),
+    setAttribute: (name: string, value: string) => { attributes[name] = value; },
+    getAttribute: (name: string) => attributes[name],
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
     textContent: '',
     tagName: 'DIV',
   };
@@ -85,8 +90,7 @@ function createMockDeps(): StreamControllerDeps {
   return {
     plugin: {
       settings: {
-        showToolUse: false,
-        toolCallExpandedByDefault: false,
+        permissionMode: 'yolo',
       },
       app: {
         vault: {
@@ -242,7 +246,7 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Tool handling', () => {
-    it('should record tool_use when tool rendering is disabled', async () => {
+    it('should record tool_use and add to content blocks', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockElement();
 
@@ -254,7 +258,8 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls).toHaveLength(1);
       expect(msg.toolCalls![0].id).toBe('tool-1');
       expect(msg.toolCalls![0].status).toBe('running');
-      expect(msg.contentBlocks).toHaveLength(0);
+      expect(msg.contentBlocks).toHaveLength(1);
+      expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'tool-1' });
       expect(deps.updateQueueIndicator).toHaveBeenCalled();
     });
 
@@ -286,7 +291,7 @@ describe('StreamController - Text Content', () => {
       );
     });
 
-    it('should persist AskUserQuestion answers when tool rendering is disabled', async () => {
+    it('should persist AskUserQuestion answers and render block', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockElement();
 

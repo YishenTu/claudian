@@ -147,8 +147,7 @@ export class ClaudianView extends ItemView {
     this.renderer = new MessageRenderer(
       this.plugin.app,
       this,
-      this.messagesEl,
-      { getShowToolUse: () => this.plugin.settings.showToolUse }
+      this.messagesEl
     );
 
     // Initialize controllers

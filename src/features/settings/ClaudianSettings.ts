@@ -95,30 +95,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Show tool usage')
-      .setDesc('Display when Claude reads, writes, or edits files')
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showToolUse)
-          .onChange(async (value) => {
-            this.plugin.settings.showToolUse = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Expand tool calls during streaming')
-      .setDesc('When enabled, tool call blocks start expanded during streaming. History tool calls remain collapsed.')
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.toolCallExpandedByDefault)
-          .onChange(async (value) => {
-            this.plugin.settings.toolCallExpandedByDefault = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
       .setName('Excluded tags')
       .setDesc('Notes with these tags will not auto-load as context (one per line, without #)')
       .addTextArea((text) => {

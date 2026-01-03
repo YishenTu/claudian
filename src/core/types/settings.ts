@@ -129,8 +129,6 @@ export interface ClaudianSettings {
   userName: string;
   enableBlocklist: boolean;
   blockedCommands: PlatformBlockedCommands;
-  showToolUse: boolean;
-  toolCallExpandedByDefault: boolean;
   model: ClaudeModel;
   enableAutoTitleGeneration: boolean;
   titleGenerationModel: string;  // Model for auto title generation (empty = auto)
@@ -158,8 +156,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   userName: '',
   enableBlocklist: true,
   blockedCommands: getDefaultBlockedCommands(),
-  showToolUse: true,
-  toolCallExpandedByDefault: false,
   model: 'haiku',
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)

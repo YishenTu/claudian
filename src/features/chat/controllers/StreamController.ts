@@ -201,7 +201,7 @@ export class StreamController {
     msg.toolCalls = msg.toolCalls || [];
     msg.toolCalls.push(toolCall);
 
-    // TodoWrite always updates the persistent bottom panel regardless of showToolUse setting
+    // TodoWrite always updates the persistent bottom panel
     if (chunk.name === TOOL_TODO_WRITE) {
       const todos = parseTodoInput(chunk.input);
       if (todos) {
@@ -211,14 +211,14 @@ export class StreamController {
           toolId: chunk.id,
           inputKeys: Object.keys(chunk.input),
         });
-        // If showToolUse is on and parsing failed, render as raw tool call for debugging
-        if (plugin.settings.showToolUse && state.currentContentEl) {
+        // Parsing failed - render as raw tool call for debugging
+        if (state.currentContentEl) {
           msg.contentBlocks = msg.contentBlocks || [];
           msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
-          renderToolCall(state.currentContentEl, toolCall, state.toolCallElements, plugin.settings.toolCallExpandedByDefault);
+          renderToolCall(state.currentContentEl, toolCall, state.toolCallElements);
         }
       }
-    } else if (plugin.settings.showToolUse) {
+    } else {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
 
@@ -227,7 +227,7 @@ export class StreamController {
         state.writeEditStates.set(chunk.id, writeEditState);
         state.toolCallElements.set(chunk.id, writeEditState.wrapperEl);
       } else {
-        renderToolCall(state.currentContentEl!, toolCall, state.toolCallElements, plugin.settings.toolCallExpandedByDefault);
+        renderToolCall(state.currentContentEl!, toolCall, state.toolCallElements);
       }
     }
 
@@ -241,7 +241,7 @@ export class StreamController {
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): void {
-    const { plugin, state } = this.deps;
+    const { state } = this.deps;
     if (!state.currentContentEl) return;
 
     const toolCall: ToolCallInfo = {
@@ -254,14 +254,12 @@ export class StreamController {
     msg.toolCalls = msg.toolCalls || [];
     msg.toolCalls.push(toolCall);
 
-    if (plugin.settings.showToolUse) {
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
+    msg.contentBlocks = msg.contentBlocks || [];
+    msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
 
-      const askQuestionState = createAskUserQuestionBlock(state.currentContentEl, toolCall);
-      state.askUserQuestionStates.set(chunk.id, askQuestionState);
-      state.toolCallElements.set(chunk.id, askQuestionState.wrapperEl);
-    }
+    const askQuestionState = createAskUserQuestionBlock(state.currentContentEl, toolCall);
+    state.askUserQuestionStates.set(chunk.id, askQuestionState);
+    state.toolCallElements.set(chunk.id, askQuestionState.wrapperEl);
 
     if (state.currentContentEl) {
       this.showThinkingIndicator(state.currentContentEl);
@@ -357,7 +355,7 @@ export class StreamController {
           }
         }
         finalizeWriteEditBlock(writeEditState, chunk.isError || isBlocked);
-      } else if (plugin.settings.showToolUse) {
+      } else {
         updateToolCallResult(chunk.id, existingToolCall, state.toolCallElements);
       }
     }
@@ -453,7 +451,7 @@ export class StreamController {
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): Promise<void> {
-    const { plugin, state } = this.deps;
+    const { state } = this.deps;
     if (!state.currentContentEl) return;
 
     const subagentState = createSubagentBlock(state.currentContentEl, chunk.id, chunk.input);
@@ -462,10 +460,8 @@ export class StreamController {
     msg.subagents = msg.subagents || [];
     msg.subagents.push(subagentState.info);
 
-    if (plugin.settings.showToolUse) {
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id });
-    }
+    msg.contentBlocks = msg.contentBlocks || [];
+    msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id });
 
     if (state.currentContentEl) {
       this.showThinkingIndicator(state.currentContentEl);
@@ -558,7 +554,7 @@ export class StreamController {
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): Promise<void> {
-    const { plugin, state, asyncSubagentManager } = this.deps;
+    const { state, asyncSubagentManager } = this.deps;
     if (!state.currentContentEl) return;
 
     const subagentInfo = asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
@@ -569,10 +565,8 @@ export class StreamController {
     msg.subagents = msg.subagents || [];
     msg.subagents.push(subagentInfo);
 
-    if (plugin.settings.showToolUse) {
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id, mode: 'async' });
-    }
+    msg.contentBlocks = msg.contentBlocks || [];
+    msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id, mode: 'async' });
 
     if (state.currentContentEl) {
       this.showThinkingIndicator(state.currentContentEl);

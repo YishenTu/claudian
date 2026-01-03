@@ -91,7 +91,6 @@ function createMockPlugin(settings = {}) {
           'Format-Volume',
         ],
       },
-      showToolUse: true,
       permissions: [],
       permissionMode: 'yolo',
       ...settings,

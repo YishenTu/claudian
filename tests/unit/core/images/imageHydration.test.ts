@@ -11,7 +11,6 @@ function createMockPlugin(vaultPath: string) {
     settings: {
       enableBlocklist: true,
       blockedCommands: { unix: [], windows: [] },
-      showToolUse: true,
       permissions: [],
       permissionMode: 'yolo',
       model: 'haiku',

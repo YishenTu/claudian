@@ -192,8 +192,6 @@ interface ClaudianSettings {
   permissionMode: 'yolo' | 'normal';
   enableBlocklist: boolean;
   blockedCommands: { unix: string[], windows: string[] };  // Platform-keyed blocklist
-  showToolUse: boolean;
-  toolCallExpandedByDefault: boolean;
   permissions: Permission[];         // Tool approvals (like Claude Code)
   excludedTags: string[];            // Tags to exclude from auto-context
   mediaFolder: string;               // Attachment folder for ![[images]]

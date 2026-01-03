@@ -106,7 +106,6 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Blocked commands**: Patterns to block (supports regex)
 - **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`). Supports `~`, `$VAR`, `${VAR}`, and `%VAR%` (Windows).
 - **Context paths**: Directories outside the vault that Claude can read for additional context (click folder icon in input toolbar)
-- **Show tool usage**: Display file operations in chat
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Custom system prompt**: Additional instructions appended to the default system prompt (Instruction Mode `#` saves here)

@@ -26,7 +26,6 @@ function createMockPlugin(settingsOverrides = {}) {
     settings: {
       enableBlocklist: true,
       blockedCommands: { unix: [], windows: [] },
-      showToolUse: true,
       model: 'haiku',
       thinkingBudget: 'off',
       permissionMode: 'yolo',

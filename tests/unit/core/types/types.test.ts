@@ -21,10 +21,6 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.enableBlocklist).toBe(true);
     });
 
-    it('should have showToolUse set to true by default', () => {
-      expect(DEFAULT_SETTINGS.showToolUse).toBe(true);
-    });
-
     it('should have default blocked commands as platform-keyed object', () => {
       expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('unix');
       expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('windows');
@@ -73,10 +69,6 @@ describe('types.ts', () => {
     it('should have lastCustomModel as empty string by default', () => {
       expect(DEFAULT_SETTINGS.lastCustomModel).toBe('');
     });
-
-    it('should have toolCallExpandedByDefault set to false by default', () => {
-      expect(DEFAULT_SETTINGS.toolCallExpandedByDefault).toBe(false);
-    });
   });
 
   describe('ClaudianSettings type', () => {
@@ -85,8 +77,6 @@ describe('types.ts', () => {
         userName: '',
         enableBlocklist: false,
         blockedCommands: { unix: ['test'], windows: ['test-win'] },
-        showToolUse: false,
-        toolCallExpandedByDefault: true,
         model: 'haiku',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
@@ -107,7 +97,6 @@ describe('types.ts', () => {
 
       expect(settings.enableBlocklist).toBe(false);
       expect(settings.blockedCommands).toEqual({ unix: ['test'], windows: ['test-win'] });
-      expect(settings.showToolUse).toBe(false);
       expect(settings.model).toBe('haiku');
     });
 
@@ -116,8 +105,6 @@ describe('types.ts', () => {
         userName: '',
         enableBlocklist: true,
         blockedCommands: { unix: [], windows: [] },
-        showToolUse: true,
-        toolCallExpandedByDefault: true,
         model: 'anthropic/custom-model-v1',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
@@ -144,8 +131,6 @@ describe('types.ts', () => {
         userName: '',
         enableBlocklist: true,
         blockedCommands: { unix: [], windows: [] },
-        showToolUse: true,
-        toolCallExpandedByDefault: false,
         model: 'sonnet',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
