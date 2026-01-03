@@ -218,17 +218,6 @@ describe('ToolCallRenderer', () => {
       expect(header.getAttribute('aria-expanded')).toBe('false');
     });
 
-    it('should allow expanded state to be passed as parameter', () => {
-      const parentEl = createMockElement();
-      const toolCall = createToolCall();
-      const toolCallElements = new Map<string, HTMLElement>();
-
-      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements, true);
-
-      expect(toolEl.hasClass('expanded')).toBe(true);
-      expect(toolCall.isExpanded).toBe(true);
-    });
-
     it('should store element in toolCallElements map', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall({ id: 'test-id' });
@@ -305,15 +294,6 @@ describe('ToolCallRenderer', () => {
       expect(toolEl.hasClass('expanded')).toBe(false);
       expect(content.style.display).toBe('none');
       expect(header.getAttribute('aria-expanded')).toBe('false');
-    });
-
-    it('should allow expanded state to be passed as parameter', () => {
-      const parentEl = createMockElement();
-      const toolCall = createToolCall({ status: 'completed' });
-
-      const toolEl = renderStoredToolCall(parentEl, toolCall, true);
-
-      expect(toolEl.hasClass('expanded')).toBe(true);
     });
 
     it('should show completed status icon', () => {

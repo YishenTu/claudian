@@ -185,12 +185,11 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
   return false;
 }
 
-/** Renders a tool call UI element (for streaming). Collapsed by default unless overridden. */
+/** Renders a tool call UI element (for streaming). Collapsed by default. */
 export function renderToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
-  toolCallElements: Map<string, HTMLElement>,
-  expandedByDefault = false
+  toolCallElements: Map<string, HTMLElement>
 ): HTMLElement {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
   toolEl.dataset.toolId = toolCall.id;
@@ -230,10 +229,10 @@ export function renderToolCall(
   resultText.setText('Running...');
 
   // Setup collapsible behavior and sync state to toolCall
-  const state = { isExpanded: expandedByDefault };
-  toolCall.isExpanded = expandedByDefault;
+  const state = { isExpanded: false };
+  toolCall.isExpanded = false;
   setupCollapsible(toolEl, header, content, state, {
-    initiallyExpanded: expandedByDefault,
+    initiallyExpanded: false,
     onToggle: (expanded) => { toolCall.isExpanded = expanded; },
     baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });
@@ -281,11 +280,10 @@ export function updateToolCallResult(
   }
 }
 
-/** Render a stored tool call (non-streaming). Collapsed by default unless overridden. */
+/** Render a stored tool call (non-streaming). Collapsed by default. */
 export function renderStoredToolCall(
   parentEl: HTMLElement,
-  toolCall: ToolCallInfo,
-  expandedByDefault = false
+  toolCall: ToolCallInfo
 ): HTMLElement {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
 
@@ -342,7 +340,7 @@ export function renderStoredToolCall(
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
   const state = { isExpanded: false };
   setupCollapsible(toolEl, header, content, state, {
-    initiallyExpanded: expandedByDefault,
+    initiallyExpanded: false,
     baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });
 
