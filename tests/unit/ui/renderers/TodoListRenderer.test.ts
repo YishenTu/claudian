@@ -44,6 +44,21 @@ describe('TodoListRenderer', () => {
       expect(result).toHaveLength(1);
       expect(result![0].content).toBe('Valid');
     });
+
+    it('should filter out items with empty strings', () => {
+      const input = {
+        todos: [
+          { content: '', status: 'pending', activeForm: 'Doing' },
+          { content: 'Valid', status: 'pending', activeForm: '' },
+          { content: 'Also valid', status: 'completed', activeForm: 'Done' },
+        ],
+      };
+
+      const result = parseTodoInput(input);
+
+      expect(result).toHaveLength(1);
+      expect(result![0].content).toBe('Also valid');
+    });
   });
 
   describe('extractLastTodosFromMessages', () => {

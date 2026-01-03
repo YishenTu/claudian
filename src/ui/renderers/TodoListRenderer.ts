@@ -15,13 +15,15 @@ export interface TodoItem {
 
 /** Type guard for valid todo item. */
 function isValidTodoItem(item: unknown): item is TodoItem {
+  if (typeof item !== 'object' || item === null) return false;
+  const record = item as Record<string, unknown>;
   return (
-    typeof item === 'object' &&
-    item !== null &&
-    typeof (item as Record<string, unknown>).content === 'string' &&
-    typeof (item as Record<string, unknown>).activeForm === 'string' &&
-    typeof (item as Record<string, unknown>).status === 'string' &&
-    ['pending', 'in_progress', 'completed'].includes((item as Record<string, unknown>).status as string)
+    typeof record.content === 'string' &&
+    record.content.length > 0 &&
+    typeof record.activeForm === 'string' &&
+    record.activeForm.length > 0 &&
+    typeof record.status === 'string' &&
+    ['pending', 'in_progress', 'completed'].includes(record.status)
   );
 }
 
