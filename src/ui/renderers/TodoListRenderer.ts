@@ -6,10 +6,19 @@
 
 import { TOOL_TODO_WRITE } from '@/core/tools';
 
-/** Todo item structure from TodoWrite tool. */
+/**
+ * Todo item structure from TodoWrite tool.
+ *
+ * Represents a single task with imperative and progressive forms:
+ * - `content`: Imperative description (e.g., "Run tests")
+ * - `activeForm`: Present continuous form (e.g., "Running tests")
+ */
 export interface TodoItem {
+  /** Imperative description of the task (e.g., "Run tests") */
   content: string;
+  /** Current status of the task */
   status: 'pending' | 'in_progress' | 'completed';
+  /** Present continuous form shown during execution (e.g., "Running tests") */
   activeForm: string;
 }
 
@@ -70,7 +79,16 @@ export function extractLastTodosFromMessages(
       for (let j = msg.toolCalls.length - 1; j >= 0; j--) {
         const toolCall = msg.toolCalls[j];
         if (toolCall.name === TOOL_TODO_WRITE) {
-          return parseTodoInput(toolCall.input);
+          const todos = parseTodoInput(toolCall.input);
+          if (!todos) {
+            // Log when TodoWrite is found but parsing fails (indicates data corruption or schema change)
+            console.warn('[TodoListRenderer] Failed to parse TodoWrite from saved conversation', {
+              messageIndex: i,
+              toolCallIndex: j,
+              inputKeys: Object.keys(toolCall.input),
+            });
+          }
+          return todos;
         }
       }
     }

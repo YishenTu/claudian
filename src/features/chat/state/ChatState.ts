@@ -293,8 +293,10 @@ export class ChatState {
   }
 
   set currentTodos(value: TodoItem[] | null) {
-    this.state.currentTodos = value;
-    this.callbacks.onTodosChanged?.(value);
+    // Normalize empty arrays to null for consistency
+    const normalizedValue = (value && value.length > 0) ? value : null;
+    this.state.currentTodos = normalizedValue;
+    this.callbacks.onTodosChanged?.(normalizedValue);
   }
 
   // ============================================

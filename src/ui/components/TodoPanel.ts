@@ -88,15 +88,17 @@ export class TodoPanel {
    * Passing null or empty array hides the panel.
    */
   updateTodos(todos: TodoItem[] | null): void {
-    this.currentTodos = todos;
-
     if (!this.todoContainerEl || !this.todoHeaderEl || !this.todoContentEl) {
       // Only warn if we have todos to display but component is not ready
+      // Don't update internal state to keep it consistent with display
       if (todos && todos.length > 0) {
         console.warn('[TodoPanel] Cannot update todos - component not mounted or destroyed');
       }
       return;
     }
+
+    // Update internal state only after confirming component is ready
+    this.currentTodos = todos;
 
     if (!todos || todos.length === 0) {
       this.todoContainerEl.style.display = 'none';

@@ -158,5 +158,30 @@ describe('TodoListRenderer', () => {
       expect(result).not.toBeNull();
       expect(result![0].content).toBe('Last');
     });
+
+    it('should log warning when TodoWrite parsing fails', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const messages = [
+        {
+          role: 'assistant',
+          toolCalls: [
+            { name: 'TodoWrite', input: { todos: 'invalid' } }, // Invalid: todos should be array
+          ],
+        },
+      ];
+
+      const result = extractLastTodosFromMessages(messages);
+
+      expect(result).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[TodoListRenderer] Failed to parse TodoWrite from saved conversation',
+        expect.objectContaining({
+          messageIndex: 0,
+          toolCallIndex: 0,
+          inputKeys: ['todos'],
+        })
+      );
+      warnSpy.mockRestore();
+    });
   });
 });
