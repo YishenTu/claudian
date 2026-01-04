@@ -23,7 +23,6 @@ export interface BlocklistContext {
 /** Context for vault restriction checking. */
 export interface VaultRestrictionContext {
   getPathAccessType: (filePath: string) => PathAccessType;
-  onEditBlocked?: (toolName: string, toolInput: Record<string, unknown>) => void;
 }
 
 /**
@@ -124,7 +123,6 @@ export function createVaultRestrictionHook(context: VaultRestrictionContext): Ho
             }
 
             if (accessType === 'context') {
-              context.onEditBlocked?.(toolName, input.tool_input);
               return {
                 continue: false,
                 hookSpecificOutput: {
@@ -145,10 +143,6 @@ export function createVaultRestrictionHook(context: VaultRestrictionContext): Ho
                 permissionDecisionReason: `Access denied: Path "${filePath}" is in an allowed export directory, but export paths are write-only.`,
               },
             };
-          }
-
-          if (isEditTool(toolName)) {
-            context.onEditBlocked?.(toolName, input.tool_input);
           }
 
           return {

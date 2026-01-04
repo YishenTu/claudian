@@ -7,7 +7,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 ## Features
 
 - **Full Agentic Capabilities**: Leverage Claude Code's power to read, write, and edit files, and execute bash commands, all within your Obsidian vault.
-- **Context-Aware**: Automatically attach the focused note , mention files with `@`, exclude notes by tag, include editor selection (Highlight), and access external directories for additional context.
+- **Context-Aware**: Automatically attach the focused note, mention files with `@`, exclude notes by tag, include editor selection (Highlight), and access external directories for additional context.
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
 - **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.

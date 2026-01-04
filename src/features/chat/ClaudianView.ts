@@ -265,7 +265,6 @@ export class ClaudianView extends ItemView {
       this.inputEl,
       {
         getExcludedTags: () => this.plugin.settings.excludedTags,
-        onFileOpen: async () => {},
         onChipsChanged: () => this.renderer?.scrollToBottomIfNeeded(),
         getContextPaths: () => this.contextPathSelector?.getContextPaths() || [],
       }

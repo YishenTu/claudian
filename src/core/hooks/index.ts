@@ -7,7 +7,6 @@ export {
   createFileHashPreHook,
   type DiffContentEntry,
   type FileEditPostCallback,
-  type FileEditPreCallback,
   MAX_DIFF_SIZE,
 } from './DiffTrackingHooks';
 export {

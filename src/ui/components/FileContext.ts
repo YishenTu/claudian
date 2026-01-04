@@ -6,7 +6,7 @@
  */
 
 import type { App, EventRef } from 'obsidian';
-import { Notice, TFile } from 'obsidian';
+import { TFile } from 'obsidian';
 import * as path from 'path';
 
 import type { McpService } from '../../features/mcp/McpService';
@@ -19,7 +19,6 @@ import { FileChipsView } from './file-context/view/FileChipsView';
 /** Callbacks for file context interactions. */
 export interface FileContextCallbacks {
   getExcludedTags: () => string[];
-  onFileOpen: (path: string) => Promise<void>;
   onChipsChanged?: () => void;
   getContextPaths?: () => string[];
 }
@@ -66,12 +65,10 @@ export class FileContextManager {
           this.refreshCurrentNoteChip();
         }
       },
-      onOpenFile: async (filePath) => {
+      onOpenFile: (filePath) => {
         const file = this.app.vault.getAbstractFileByPath(filePath);
         if (file instanceof TFile) {
-          await this.app.workspace.getLeaf().openFile(file);
-        } else {
-          new Notice(`Could not open file: ${filePath}`);
+          this.app.workspace.getLeaf().openFile(file);
         }
       },
     });
@@ -175,8 +172,6 @@ export class FileContextManager {
       }
       this.refreshCurrentNoteChip();
     }
-
-    this.callbacks.onFileOpen(normalizedPath);
   }
 
   markFilesCacheDirty() {

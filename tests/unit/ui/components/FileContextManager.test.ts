@@ -203,7 +203,6 @@ function createMockCallbacks(options: {
   const { contextPaths = [], excludedTags = [] } = options;
   return {
     getExcludedTags: jest.fn(() => excludedTags),
-    onFileOpen: jest.fn(),
     getContextPaths: jest.fn(() => contextPaths),
   };
 }

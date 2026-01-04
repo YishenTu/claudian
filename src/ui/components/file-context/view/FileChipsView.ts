@@ -6,7 +6,7 @@ import { setIcon } from 'obsidian';
 
 export interface FileChipsViewCallbacks {
   onRemoveAttachment: (path: string) => void;
-  onOpenFile: (path: string) => Promise<void>;
+  onOpenFile: (path: string) => void;
 }
 
 export class FileChipsView {
@@ -60,17 +60,13 @@ export class FileChipsView {
     removeEl.setText('\u00D7');
     removeEl.setAttribute('aria-label', 'Remove');
 
-    chipEl.addEventListener('click', async (e) => {
-      if ((e.target as HTMLElement).closest('.claudian-file-chip-remove')) return;
-      try {
-        await this.callbacks.onOpenFile(filePath);
-      } catch (error) {
-        console.error('Failed to open file:', error);
+    chipEl.addEventListener('click', (e) => {
+      if (!(e.target as HTMLElement).closest('.claudian-file-chip-remove')) {
+        this.callbacks.onOpenFile(filePath);
       }
     });
 
-    removeEl.addEventListener('click', (e) => {
-      e.stopPropagation();
+    removeEl.addEventListener('click', () => {
       onRemove();
     });
   }

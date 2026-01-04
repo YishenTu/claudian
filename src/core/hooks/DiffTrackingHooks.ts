@@ -15,11 +15,6 @@ import type { ToolDiffData } from '../types';
 /** Maximum file size for diff capture (100KB). */
 export const MAX_DIFF_SIZE = 100 * 1024;
 
-/** Callback for pre-edit tracking. */
-export interface FileEditPreCallback {
-  markFileBeingEdited(toolName: string, toolInput: Record<string, unknown>): Promise<void>;
-}
-
 /** Callback for post-edit tracking. */
 export interface FileEditPostCallback {
   trackEditedFile(
@@ -43,8 +38,7 @@ export interface DiffContentEntry {
  */
 export function createFileHashPreHook(
   vaultPath: string | null,
-  originalContents: Map<string, DiffContentEntry>,
-  preCallback?: FileEditPreCallback
+  originalContents: Map<string, DiffContentEntry>
 ): HookCallbackMatcher {
   return {
     matcher: 'Write|Edit|NotebookEdit',
@@ -87,7 +81,6 @@ export function createFileHashPreHook(
           }
         }
 
-        await preCallback?.markFileBeingEdited(input.tool_name, input.tool_input);
         return { continue: true };
       },
     ],
