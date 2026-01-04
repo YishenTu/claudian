@@ -1,7 +1,7 @@
 /**
  * Claudian - File context manager
  *
- * Manages attached files indicator, edited files tracking, and @ mention dropdown.
+ * Manages current note chip and @ mention dropdown.
  * Also handles MCP server @-mentions for context-saving mode.
  */
 
@@ -12,10 +12,8 @@ import * as path from 'path';
 import type { McpService } from '../../features/mcp/McpService';
 import { getVaultPath, isPathWithinVault, normalizePathForFilesystem } from '../../utils/path';
 import { MentionDropdownController } from './file-context/mention/MentionDropdownController';
-import { EditedFilesTracker } from './file-context/state/EditedFilesTracker';
 import { FileContextState } from './file-context/state/FileContextState';
 import { MarkdownFileCache } from './file-context/state/MarkdownFileCache';
-import { openFileFromChip } from './file-context/utils/FileOpener';
 import { FileChipsView } from './file-context/view/FileChipsView';
 
 /** Callbacks for file context interactions. */
@@ -26,20 +24,21 @@ export interface FileContextCallbacks {
   getContextPaths?: () => string[];
 }
 
-/** Manages file context UI: attached files, edited files, and @ mention dropdown. */
+/** Manages file context: current note chip and @ mention dropdown. */
 export class FileContextManager {
   private app: App;
   private callbacks: FileContextCallbacks;
   private containerEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private state: FileContextState;
-  private editedFilesTracker: EditedFilesTracker;
   private fileCache: MarkdownFileCache;
   private chipsView: FileChipsView;
   private mentionDropdown: MentionDropdownController;
   private deleteEventRef: EventRef | null = null;
   private renameEventRef: EventRef | null = null;
-  private modifyEventRef: EventRef | null = null;
+
+  // Current note (shown as chip)
+  private currentNotePath: string | null = null;
 
   // MCP server support
   private mcpService: McpService | null = null;
@@ -59,32 +58,22 @@ export class FileContextManager {
     this.state = new FileContextState();
     this.fileCache = new MarkdownFileCache(this.app);
 
-    this.editedFilesTracker = new EditedFilesTracker(
-      this.app,
-      (rawPath) => this.normalizePathForVault(rawPath),
-      {
-        onEditedFilesChanged: () => this.refreshEditedFiles(true),
-        getActiveFile: () => this.app.workspace.getActiveFile(),
-      }
-    );
-
     this.chipsView = new FileChipsView(this.containerEl, {
       onRemoveAttachment: (filePath) => {
-        this.state.detachFile(filePath);
-        this.refreshAttachments();
+        if (filePath === this.currentNotePath) {
+          this.currentNotePath = null;
+          this.state.detachFile(filePath);
+          this.refreshCurrentNoteChip();
+        }
       },
       onOpenFile: async (filePath) => {
-        const result = await openFileFromChip(this.app, (p) => this.normalizePathForVault(p), filePath);
-        if (result.openedWithDefaultApp) {
-          this.editedFilesTracker.dismissEditedFile(filePath);
-          return;
-        }
-        if (!result.opened) {
-          this.notifyOpenFailure(filePath);
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (file instanceof TFile) {
+          await this.app.workspace.getLeaf().openFile(file);
+        } else {
+          new Notice(`Could not open file: ${filePath}`);
         }
       },
-      isContextFile: (filePath) => path.isAbsolute(filePath) && !this.isWithinVault(filePath),
-      isFileEdited: (filePath) => this.editedFilesTracker.isFileEdited(filePath),
     });
 
     this.mentionDropdown = new MentionDropdownController(
@@ -92,7 +81,6 @@ export class FileContextManager {
       this.inputEl,
       {
         onAttachFile: (filePath) => this.state.attachFile(filePath),
-        onAttachmentsChanged: () => this.refreshAttachments(),
         onMcpMentionChange: (servers) => this.onMcpMentionChange?.(servers),
         getMentionedMcpServers: () => this.state.getMentionedMcpServers(),
         setMentionedMcpServers: (mentions) => this.state.setMentionedMcpServers(mentions),
@@ -110,25 +98,22 @@ export class FileContextManager {
     this.renameEventRef = this.app.vault.on('rename', (file, oldPath) => {
       if (file instanceof TFile) this.handleFileRenamed(oldPath, file.path);
     });
-
-    this.modifyEventRef = this.app.vault.on('modify', (file) => {
-      if (file instanceof TFile) this.editedFilesTracker.handleFileModified(file);
-    });
   }
 
-  /** Returns the set of currently attached files. */
-  getAttachedFiles(): Set<string> {
-    return this.state.getAttachedFiles();
+  /** Returns the current note path (shown as chip). */
+  getCurrentNotePath(): string | null {
+    return this.currentNotePath;
   }
 
-  /** Checks if attached files have changed since last sent. */
-  hasFilesChanged(): boolean {
-    return this.state.hasFilesChanged();
+  /** Checks whether current note should be sent for this session. */
+  shouldSendCurrentNote(notePath?: string | null): boolean {
+    const resolvedPath = notePath ?? this.currentNotePath;
+    return !!resolvedPath && !this.state.hasSentCurrentNote();
   }
 
-  /** Marks files as sent (call after sending a message). */
-  markFilesSent() {
-    this.state.markFilesSent();
+  /** Marks current note as sent (call after sending a message). */
+  markCurrentNoteSent() {
+    this.state.markCurrentNoteSent();
   }
 
   isSessionStarted(): boolean {
@@ -141,22 +126,25 @@ export class FileContextManager {
 
   /** Resets state for a new conversation. */
   resetForNewConversation() {
+    this.currentNotePath = null;
     this.state.resetForNewConversation();
-    this.editedFilesTracker.clear();
-    this.refreshAttachments();
+    this.refreshCurrentNoteChip();
   }
 
   /** Resets state for loading an existing conversation. */
   resetForLoadedConversation(hasMessages: boolean) {
+    this.currentNotePath = null;
     this.state.resetForLoadedConversation(hasMessages);
-    this.editedFilesTracker.clear();
-    this.refreshAttachments();
+    this.refreshCurrentNoteChip();
   }
 
-  /** Sets attached files (for restoring persisted state). */
-  setAttachedFiles(files: string[]) {
-    this.state.setAttachedFiles(files);
-    this.refreshAttachments();
+  /** Sets current note (for restoring persisted state). */
+  setCurrentNote(notePath: string | null) {
+    this.currentNotePath = notePath;
+    if (notePath) {
+      this.state.attachFile(notePath);
+    }
+    this.refreshCurrentNoteChip();
   }
 
   /** Auto-attaches the currently focused file (for new sessions). */
@@ -165,10 +153,11 @@ export class FileContextManager {
     if (activeFile && !this.hasExcludedTag(activeFile)) {
       const normalizedPath = this.normalizePathForVault(activeFile.path);
       if (normalizedPath) {
+        this.currentNotePath = normalizedPath;
         this.state.attachFile(normalizedPath);
+        this.refreshCurrentNoteChip();
       }
     }
-    this.refreshAttachments();
   }
 
   /** Handles file open event. */
@@ -176,38 +165,18 @@ export class FileContextManager {
     const normalizedPath = this.normalizePathForVault(file.path);
     if (!normalizedPath) return;
 
-    if (this.editedFilesTracker.isFileEdited(normalizedPath)) {
-      this.editedFilesTracker.dismissEditedFile(normalizedPath);
-    }
-
     if (!this.state.isSessionStarted()) {
       this.state.clearAttachments();
       if (!this.hasExcludedTag(file)) {
+        this.currentNotePath = normalizedPath;
         this.state.attachFile(normalizedPath);
+      } else {
+        this.currentNotePath = null;
       }
-      this.refreshAttachments();
+      this.refreshCurrentNoteChip();
     }
 
     this.callbacks.onFileOpen(normalizedPath);
-  }
-
-  /** Marks a file as being edited (called from PreToolUse hook). */
-  async markFileBeingEdited(toolName: string, toolInput: Record<string, unknown>) {
-    await this.editedFilesTracker.markFileBeingEdited(toolName, toolInput);
-  }
-
-  /** Tracks a file as edited (called from PostToolUse hook). */
-  async trackEditedFile(
-    toolName: string | undefined,
-    toolInput: Record<string, unknown> | undefined,
-    isError: boolean
-  ) {
-    await this.editedFilesTracker.trackEditedFile(toolName, toolInput, isError);
-  }
-
-  /** Cleans up state for a file when permission was denied. */
-  cancelFileEdit(toolName: string, toolInput: Record<string, unknown>) {
-    this.editedFilesTracker.cancelFileEdit(toolName, toolInput);
   }
 
   markFilesCacheDirty() {
@@ -240,7 +209,6 @@ export class FileContextManager {
   destroy() {
     if (this.deleteEventRef) this.app.vault.offref(this.deleteEventRef);
     if (this.renameEventRef) this.app.vault.offref(this.renameEventRef);
-    if (this.modifyEventRef) this.app.vault.offref(this.modifyEventRef);
     this.mentionDropdown.destroy();
     this.chipsView.destroy();
   }
@@ -266,17 +234,9 @@ export class FileContextManager {
     return normalizedRaw.replace(/\\/g, '/');
   }
 
-  /** Checks if a path is within the vault using proper path boundary checks. */
-  private isWithinVault(filePath: string): boolean {
-    const vaultPath = getVaultPath(this.app);
-    if (!vaultPath) return false;
-
-    return isPathWithinVault(filePath, vaultPath);
-  }
-
-  private notifyOpenFailure(filePath: string): void {
-    console.warn(`Failed to open file: ${filePath}`);
-    new Notice(`Failed to open file: ${filePath}`);
+  private refreshCurrentNoteChip(): void {
+    this.chipsView.renderCurrentNote(this.currentNotePath);
+    this.callbacks.onChipsChanged?.();
   }
 
   private handleFileRenamed(oldPath: string, newPath: string) {
@@ -286,6 +246,13 @@ export class FileContextManager {
 
     let needsUpdate = false;
 
+    // Update current note path if renamed
+    if (this.currentNotePath === normalizedOld) {
+      this.currentNotePath = normalizedNew;
+      needsUpdate = true;
+    }
+
+    // Update attached files
     if (this.state.getAttachedFiles().has(normalizedOld)) {
       this.state.detachFile(normalizedOld);
       if (normalizedNew) {
@@ -294,56 +261,32 @@ export class FileContextManager {
       needsUpdate = true;
     }
 
-    this.editedFilesTracker.handleFileRenamed(oldPath, newPath);
+    if (needsUpdate) {
+      this.refreshCurrentNoteChip();
+    }
+  }
+
+  private handleFileDeleted(deletedPath: string): void {
+    const normalized = this.normalizePathForVault(deletedPath);
+    if (!normalized) return;
+
+    let needsUpdate = false;
+
+    // Clear current note if deleted
+    if (this.currentNotePath === normalized) {
+      this.currentNotePath = null;
+      needsUpdate = true;
+    }
+
+    // Remove from attached files
+    if (this.state.getAttachedFiles().has(normalized)) {
+      this.state.detachFile(normalized);
+      needsUpdate = true;
+    }
 
     if (needsUpdate) {
-      this.refreshAttachments();
+      this.refreshCurrentNoteChip();
     }
-  }
-
-  private handleFileDeleted(path: string): void {
-    const normalized = this.normalizePathForVault(path);
-    let attachmentsChanged = false;
-
-    if (normalized && this.state.getAttachedFiles().has(normalized)) {
-      this.state.detachFile(normalized);
-      attachmentsChanged = true;
-    }
-
-    this.editedFilesTracker.handleFileDeleted(path);
-
-    if (attachmentsChanged) {
-      this.refreshAttachments();
-    }
-  }
-
-  private getNonAttachedEditedFiles(): string[] {
-    const attached = this.state.getAttachedFiles();
-    return this.editedFilesTracker.getEditedFiles().filter(path => !attached.has(path));
-  }
-
-  private refreshAttachments(): void {
-    this.chipsView.renderAttachments(this.state.getAttachedFiles());
-    this.refreshEditedFiles();
-    this.callbacks.onChipsChanged?.();
-  }
-
-  private refreshEditedFiles(refreshAttachments = false): void {
-    if (refreshAttachments) {
-      this.chipsView.renderAttachments(this.state.getAttachedFiles());
-    }
-    this.chipsView.renderEditedFiles(this.getNonAttachedEditedFiles(), this.state.isPlanModeActive());
-  }
-
-  // ========================================
-  // Plan Mode Support
-  // ========================================
-
-  /** Set plan mode active state (hides edited files indicator during plan mode). */
-  setPlanModeActive(active: boolean): void {
-    this.state.setPlanModeActive(active);
-    this.editedFilesTracker.setPlanModeActive(active);
-    this.refreshEditedFiles();
   }
 
   // ========================================

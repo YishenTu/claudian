@@ -18,7 +18,6 @@ export interface MentionDropdownOptions {
 
 export interface MentionDropdownCallbacks {
   onAttachFile: (path: string) => void;
-  onAttachmentsChanged: () => void;
   onMcpMentionChange?: (servers: Set<string>) => void;
   getMentionedMcpServers: () => Set<string>;
   setMentionedMcpServers: (mentions: Set<string>) => boolean;
@@ -449,7 +448,6 @@ export class MentionDropdownController {
       const replacement = `${displayName} `;
       this.inputEl.value = beforeAt + replacement + afterCursor;
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-      this.callbacks.onAttachmentsChanged();
     } else {
       const file = selectedItem.file;
       if (file) {
@@ -467,7 +465,6 @@ export class MentionDropdownController {
       const replacement = `@${selectedItem.name} `;
       this.inputEl.value = beforeAt + replacement + afterCursor;
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-      this.callbacks.onAttachmentsChanged();
     }
 
     this.hide();

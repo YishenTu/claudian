@@ -128,27 +128,6 @@
   background: var(--background-modifier-hover);
 }
 
-/* Edited file indicator - border highlight */
-.claudian-file-chip.claudian-file-chip-edited {
-  border: 1.5px solid var(--interactive-accent);
-}
-
-/* Edited files indicator section (non-attached edited files) */
-.claudian-edited-files-indicator {
-  display: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  margin-bottom: 4px;
-}
-
-.claudian-edited-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-right: 2px;
-}
-
 /* Message Queue Indicator (shown below flavor text in thinking indicator) */
 .claudian-queue-indicator {
   display: none;

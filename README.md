@@ -7,20 +7,16 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 ## Features
 
 - **Full Agentic Capabilities**: Leverage Claude Code's power to read, write, and edit files, and execute bash commands, all within your Obsidian vault.
-- **Context-Aware**: Automatically attach the focused note, mention files with `@`, exclude notes by tag, include editor selection, and access external directories for additional context.
+- **Context-Aware**: Automatically attach the focused note , mention files with `@`, exclude notes by tag, include editor selection (Highlight), and access external directories for additional context.
 - **Vision Support**: Analyze images by sending them via drag-and-drop, paste, or file path.
 - **Inline Edit**: Edit selected text or insert content at cursor position directly in notes with word-level diff preview and read-only tool access for context.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
 - **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input, with review/edit in a modal.
 - **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
-
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget. Monitor context window usage with a real-time gauge.
-
 - **Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.
-
 - **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
-- **Vim-style Navigation**: Press Escape to focus the chat panel, then use `w/s` (configurable) to scroll and `i` to focus input.
 
 ## Requirements
 

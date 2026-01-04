@@ -42,7 +42,7 @@ export interface ChatMessage {
   toolCalls?: ToolCallInfo[];
   subagents?: SubagentInfo[];
   contentBlocks?: ContentBlock[];
-  contextFiles?: string[];
+  currentNote?: string;
   images?: ImageAttachment[];
   /** Whether this is a plan message (for distinct styling). */
   isPlanMessage?: boolean;
@@ -65,7 +65,7 @@ export interface Conversation {
   lastResponseAt?: number;
   sessionId: string | null;
   messages: ChatMessage[];
-  attachedFiles?: string[];
+  currentNote?: string;
   /** Session-specific context paths (read-only external directories). Resets on new session. */
   sessionContextPaths?: string[];
   /** Context window usage information. */

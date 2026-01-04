@@ -4,26 +4,20 @@
 
 export class FileContextState {
   private attachedFiles: Set<string> = new Set();
-  private lastSentFiles: Set<string> = new Set();
   private sessionStarted = false;
-  private planModeActive = false;
   private mentionedMcpServers: Set<string> = new Set();
+  private currentNoteSent = false;
 
   getAttachedFiles(): Set<string> {
     return new Set(this.attachedFiles);
   }
 
-  hasFilesChanged(): boolean {
-    const currentFiles = Array.from(this.attachedFiles);
-    if (currentFiles.length !== this.lastSentFiles.size) return true;
-    for (const file of currentFiles) {
-      if (!this.lastSentFiles.has(file)) return true;
-    }
-    return false;
+  hasSentCurrentNote(): boolean {
+    return this.currentNoteSent;
   }
 
-  markFilesSent(): void {
-    this.lastSentFiles = new Set(this.attachedFiles);
+  markCurrentNoteSent(): void {
+    this.currentNoteSent = true;
   }
 
   isSessionStarted(): boolean {
@@ -36,13 +30,13 @@ export class FileContextState {
 
   resetForNewConversation(): void {
     this.sessionStarted = false;
-    this.lastSentFiles.clear();
+    this.currentNoteSent = false;
     this.attachedFiles.clear();
     this.clearMcpMentions();
   }
 
   resetForLoadedConversation(hasMessages: boolean): void {
-    this.lastSentFiles.clear();
+    this.currentNoteSent = hasMessages;
     this.attachedFiles.clear();
     this.sessionStarted = hasMessages;
     this.clearMcpMentions();
@@ -53,7 +47,6 @@ export class FileContextState {
     for (const file of files) {
       this.attachedFiles.add(file);
     }
-    this.lastSentFiles = new Set(this.attachedFiles);
   }
 
   attachFile(path: string): void {
@@ -66,14 +59,6 @@ export class FileContextState {
 
   clearAttachments(): void {
     this.attachedFiles.clear();
-  }
-
-  setPlanModeActive(active: boolean): void {
-    this.planModeActive = active;
-  }
-
-  isPlanModeActive(): boolean {
-    return this.planModeActive;
   }
 
   getMentionedMcpServers(): Set<string> {

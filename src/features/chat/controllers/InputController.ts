@@ -26,7 +26,7 @@ import {
   showAskUserQuestionPanel,
   showPlanApprovalPanel,
 } from '../../../ui';
-import { prependContextFiles } from '../../../utils/context';
+import { prependCurrentNote } from '../../../utils/context';
 import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { formatSlashCommandWarnings } from '../../../utils/slashCommand';
@@ -71,7 +71,7 @@ interface PlanModeResendPayload {
   content: string;
   displayContent?: string;
   images?: ImageAttachment[];
-  contextFiles?: string[];
+  currentNote?: string;
   editorContext?: EditorSelectionContext | null;
   queryOptions?: QueryOptions;
 }
@@ -224,9 +224,8 @@ export class InputController {
       imageContextManager?.clearImages();
     }
 
-    const attachedFiles = fileContextManager?.getAttachedFiles() || new Set();
-    const currentFiles = Array.from(attachedFiles);
-    const filesChanged = fileContextManager?.hasFilesChanged() ?? false;
+    const currentNotePath = fileContextManager?.getCurrentNotePath() || null;
+    const shouldSendCurrentNote = fileContextManager?.shouldSendCurrentNote(currentNotePath) ?? false;
 
     const editorContextOverride = options?.editorContextOverride;
     const editorContext = editorContextOverride !== undefined
@@ -235,23 +234,23 @@ export class InputController {
 
     // Wrap query in XML tag
     let promptToSend = `<query>\n${content}\n</query>`;
-    let contextFilesForMessage: string[] | undefined;
+    let currentNoteForMessage: string | undefined;
 
     // Prepend editor context if available
     if (editorContext) {
       promptToSend = prependEditorContext(promptToSend, editorContext);
     }
 
-    if (filesChanged) {
-      promptToSend = prependContextFiles(promptToSend, currentFiles);
-      contextFilesForMessage = currentFiles;
+    if (shouldSendCurrentNote && currentNotePath) {
+      promptToSend = prependCurrentNote(promptToSend, currentNotePath);
+      currentNoteForMessage = currentNotePath;
     }
 
     if (options?.promptPrefix) {
       promptToSend = `${options.promptPrefix}\n\n${promptToSend}`;
     }
 
-    fileContextManager?.markFilesSent();
+    fileContextManager?.markCurrentNoteSent();
 
     const userMsg: ChatMessage = {
       id: this.deps.generateId(),
@@ -259,7 +258,7 @@ export class InputController {
       content,
       displayContent: displayContent !== content ? displayContent : undefined,
       timestamp: Date.now(),
-      contextFiles: contextFilesForMessage,
+      currentNote: currentNoteForMessage,
       images: imagesForMessage,
       hidden: options?.hidden,
     };
@@ -499,24 +498,17 @@ export class InputController {
       imageContextManager?.clearImages();
     }
 
-    let currentFiles: string[] = [];
-    let filesChanged = false;
-    let contextFilesForMessage: string[] | undefined;
-    if (skipUserMessage) {
-      currentFiles = options?.contextFiles ? [...options.contextFiles] : [];
-      filesChanged = currentFiles.length > 0;
-      contextFilesForMessage = filesChanged ? currentFiles : undefined;
-    } else if (options?.contextFiles) {
-      currentFiles = [...options.contextFiles];
-      filesChanged = currentFiles.length > 0;
-      contextFilesForMessage = filesChanged ? currentFiles : undefined;
+    let currentNote: string | null = null;
+    let shouldSendCurrentNote = false;
+    let currentNoteForMessage: string | undefined;
+    if (skipUserMessage || options?.currentNote) {
+      currentNote = options?.currentNote || null;
     } else {
-      const attachedFiles = fileContextManager?.getAttachedFiles() || new Set();
-      currentFiles = Array.from(attachedFiles);
-      filesChanged = fileContextManager?.hasFilesChanged() ?? false;
-      if (filesChanged) {
-        contextFilesForMessage = currentFiles;
-      }
+      currentNote = fileContextManager?.getCurrentNotePath() || null;
+    }
+    shouldSendCurrentNote = fileContextManager?.shouldSendCurrentNote(currentNote) ?? false;
+    if (shouldSendCurrentNote && currentNote) {
+      currentNoteForMessage = currentNote;
     }
 
     const editorContext = options?.editorContext ?? selectionController.getContext();
@@ -533,14 +525,12 @@ ${content}
       promptToSend = prependEditorContext(promptToSend, editorContext);
     }
 
-    if (filesChanged) {
-      promptToSend = prependContextFiles(promptToSend, currentFiles);
-      contextFilesForMessage = currentFiles;
+    if (shouldSendCurrentNote && currentNote) {
+      promptToSend = prependCurrentNote(promptToSend, currentNote);
+      currentNoteForMessage = currentNote;
     }
 
-    if (!skipUserMessage) {
-      fileContextManager?.markFilesSent();
-    }
+    fileContextManager?.markCurrentNoteSent();
 
     if (!skipUserMessage) {
       const displayContent = options?.displayContent ?? content;
@@ -550,7 +540,7 @@ ${content}
         content,
         displayContent: displayContent !== content ? displayContent : undefined,
         timestamp: Date.now(),
-        contextFiles: contextFilesForMessage,
+        currentNote: currentNoteForMessage,
         images: imagesForMessage,
         hidden: options?.hidden,
       };

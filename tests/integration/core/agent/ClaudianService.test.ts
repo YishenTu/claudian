@@ -1572,30 +1572,7 @@ describe('ClaudianService', () => {
       expect(result.message).toBe('User denied this action.');
     });
 
-    it('should cancel file edit state when approval is denied', async () => {
-      const cancelFileEdit = jest.fn();
-      service.setFileEditTracker({
-        cancelFileEdit,
-        markFileBeingEdited: jest.fn().mockResolvedValue(undefined),
-        trackEditedFile: jest.fn().mockResolvedValue(undefined),
-      });
-      const approvalCallback = jest.fn().mockResolvedValue('deny');
-      service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-
-      const result = await canUse('Write', { file_path: '/test/file.md' }, {});
-
-      expect(result.behavior).toBe('deny');
-      expect(cancelFileEdit).toHaveBeenCalledWith('Write', { file_path: '/test/file.md' });
-    });
-
     it('should deny and interrupt when approval flow errors', async () => {
-      const cancelFileEdit = jest.fn();
-      service.setFileEditTracker({
-        cancelFileEdit,
-        markFileBeingEdited: jest.fn().mockResolvedValue(undefined),
-        trackEditedFile: jest.fn().mockResolvedValue(undefined),
-      });
       const approvalCallback = jest.fn().mockRejectedValue(new Error('boom'));
       service.setApprovalCallback(approvalCallback);
       const canUse = (service as any).createUnifiedToolCallback('normal');
@@ -1605,7 +1582,6 @@ describe('ClaudianService', () => {
       expect(result.behavior).toBe('deny');
       expect(result.interrupt).toBe(true);
       expect(result.message).toBe('Approval request failed.');
-      expect(cancelFileEdit).toHaveBeenCalledWith('Read', { file_path: '/test/file.md' });
     });
   });
 
@@ -1665,15 +1641,15 @@ describe('ClaudianService', () => {
       expect(context).toContain('File contents');
     });
 
-    it('should include context files in rebuilt history', () => {
+    it('should include current note in rebuilt history', () => {
       const messages = [
-        { id: 'msg-1', role: 'user' as const, content: 'Edit this file', timestamp: Date.now(), contextFiles: ['notes/file.md'] },
+        { id: 'msg-1', role: 'user' as const, content: 'Edit this file', timestamp: Date.now(), currentNote: 'notes/file.md' },
       ];
 
       // Now test the standalone function directly
       const context = buildContextFromHistory(messages);
 
-      expect(context).toContain('<context_files>');
+      expect(context).toContain('<current_note>');
       expect(context).toContain('notes/file.md');
     });
 
@@ -1724,7 +1700,7 @@ describe('ClaudianService', () => {
             { id: 'tool-1', name: 'Read', input: { file_path: '/test/vault/path/file.md' }, status: 'completed' as const, result: 'file content' },
           ],
         },
-        { id: 'msg-3', role: 'user' as const, content: 'Follow up', timestamp: Date.now(), contextFiles: ['note.md'] },
+        { id: 'msg-3', role: 'user' as const, content: 'Follow up', timestamp: Date.now(), currentNote: 'note.md' },
       ];
 
       const chunks: any[] = [];
@@ -1735,7 +1711,7 @@ describe('ClaudianService', () => {
       expect(prompts[0]).toBe('Follow up');
       expect(prompts[1]).toContain('User: First question');
       expect(prompts[1]).toContain('Assistant: Answer');
-      expect(prompts[1]).toContain('<context_files>');
+      expect(prompts[1]).toContain('<current_note>');
       expect(prompts[1]).toContain('note.md');
       expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
       expect(service.getSessionId()).toBeNull();
@@ -2037,11 +2013,6 @@ describe('ClaudianService', () => {
 
       mockPlugin = createMockPlugin({ permissionMode: 'yolo' });
       service = new ClaudianService(mockPlugin, createMockMcpManager());
-      service.setFileEditTracker({
-        cancelFileEdit: jest.fn(),
-        markFileBeingEdited: jest.fn().mockResolvedValue(undefined),
-        trackEditedFile: jest.fn().mockResolvedValue(undefined),
-      });
       (service as any).vaultPath = '/test/vault/path';
     });
 

@@ -178,7 +178,6 @@ export class ClaudianView extends ItemView {
     // Cleanup services
     this.plugin.agentService.setApprovalCallback(null);
     this.plugin.agentService.setAskUserQuestionCallback(null);
-    this.plugin.agentService.setFileEditTracker(null);
 
     // Cleanup UI components
     this.fileContextManager?.destroy();
@@ -271,7 +270,6 @@ export class ClaudianView extends ItemView {
         getContextPaths: () => this.contextPathSelector?.getContextPaths() || [],
       }
     );
-    this.plugin.agentService.setFileEditTracker(this.fileContextManager);
     this.fileContextManager.setMcpService(this.plugin.mcpService);
 
     // Image context manager
@@ -623,7 +621,6 @@ export class ClaudianView extends ItemView {
     const isPlanMode = this.plugin.settings.permissionMode === 'plan';
     const isPlanModeRequested = this.state.planModeRequested;
     this.permissionToggle?.setPlanModeActive(isPlanMode || isPlanModeRequested);
-    this.fileContextManager?.setPlanModeActive(isPlanMode);
   }
 
 }

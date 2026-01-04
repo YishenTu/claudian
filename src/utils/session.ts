@@ -5,7 +5,7 @@
  */
 
 import type { ChatMessage, ToolCallInfo } from '../core/types';
-import { formatContextFilesLine } from './context';
+import { formatCurrentNote } from './context';
 
 // ============================================
 // Session Recovery
@@ -75,10 +75,10 @@ export function truncateToolResult(result: string, maxLength = 800): string {
 
 /** Formats a context line for user messages when rebuilding history. */
 export function formatContextLine(message: ChatMessage): string | null {
-  if (!message.contextFiles || message.contextFiles.length === 0) {
+  if (!message.currentNote) {
     return null;
   }
-  return formatContextFilesLine(message.contextFiles);
+  return formatCurrentNote(message.currentNote);
 }
 
 /**

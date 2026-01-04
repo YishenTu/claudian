@@ -105,10 +105,9 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     getMessagesEl: () => createMockElement() as any,
     getFileContextManager: () => ({
       startSession: jest.fn(),
-      getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-      hasFilesChanged: jest.fn().mockReturnValue(false),
-      markFilesSent: jest.fn(),
-      setPlanModeActive: jest.fn(),
+      getCurrentNotePath: jest.fn().mockReturnValue(null),
+      shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+      markCurrentNoteSent: jest.fn(),
     }) as any,
     getImageContextManager: () => imageContextManager as any,
     getSlashCommandManager: () => null,
@@ -344,9 +343,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = deps.getImageContextManager()!;
       (imageContextManager.handleImagePathInText as jest.Mock).mockResolvedValue({
@@ -374,6 +373,32 @@ describe('InputController - Message Queue', () => {
       expect(deps.conversationController.save).toHaveBeenCalledWith(true);
       expect(deps.plugin.agentService.query).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
+    });
+
+    it('should prepend current note only once per session', async () => {
+      const prompts: string[] = [];
+      let currentNoteSent = false;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue('notes/session.md'),
+        shouldSendCurrentNote: jest.fn().mockImplementation(() => !currentNoteSent),
+        markCurrentNoteSent: jest.fn().mockImplementation(() => { currentNoteSent = true; }),
+      };
+
+      deps.getFileContextManager = () => fileContextManager as any;
+      deps.plugin.agentService.query = jest.fn().mockImplementation((prompt: string) => {
+        prompts.push(prompt);
+        return createMockStream([{ type: 'done' }]);
+      });
+
+      inputEl.value = 'First message';
+      await controller.sendMessage();
+
+      inputEl.value = 'Second message';
+      await controller.sendMessage();
+
+      expect(prompts[0]).toContain('<current_note>');
+      expect(prompts[1]).not.toContain('<current_note>');
     });
 
     it('should include MCP options in query when mentions are present', async () => {
@@ -505,9 +530,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 
@@ -549,9 +574,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 
@@ -587,9 +612,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 
@@ -636,9 +661,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 
@@ -687,9 +712,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 
@@ -736,9 +761,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 
@@ -783,9 +808,9 @@ describe('InputController - Message Queue', () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
-        getAttachedFiles: jest.fn().mockReturnValue(new Set()),
-        hasFilesChanged: jest.fn().mockReturnValue(false),
-        markFilesSent: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = createMockImageContextManager();
 

@@ -360,12 +360,6 @@ export class StreamController {
       }
     }
 
-    this.deps.getFileContextManager()?.trackEditedFile(
-      existingToolCall?.name,
-      existingToolCall?.input || {},
-      chunk.isError || isBlocked
-    );
-
     if (state.currentContentEl) {
       this.showThinkingIndicator(state.currentContentEl);
     }
@@ -504,13 +498,6 @@ export class StreamController {
           toolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
           toolCall.result = chunk.content;
           updateSubagentToolResult(subagentState, chunk.id, toolCall);
-
-          this.deps.getFileContextManager()?.trackEditedFile(
-            toolCall.name,
-            toolCall.input || {},
-            chunk.isError || isBlocked
-          );
-
           this.deps.plugin.agentService.getDiffData(chunk.id);
         }
         break;

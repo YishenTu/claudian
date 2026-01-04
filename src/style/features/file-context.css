@@ -128,11 +128,3 @@
   color: var(--text-normal);
 }
 
-/* Context file chips */
-.claudian-file-chip-context {
-  border-color: rgba(217, 119, 87, 0.3);
-}
-
-.claudian-file-chip-context .claudian-file-chip-icon {
-  color: #D97757;
-}

@@ -12,7 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type ClaudianPlugin from '../../main';
-import { stripContextFilesPrefix } from '../../utils/context';
+import { stripCurrentNotePrefix } from '../../utils/context';
 import { parseEnvironmentVariables } from '../../utils/env';
 import {
   expandHomePath,
@@ -30,7 +30,6 @@ import {
   createVaultRestrictionHook,
   type DiffContentEntry,
   type FileEditPostCallback,
-  type FileEditPreCallback,
 } from '../hooks';
 import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
@@ -179,12 +178,6 @@ export type ApprovalCallback = (
   description: string
 ) => Promise<'allow' | 'allow-always' | 'deny' | 'cancel'>;
 
-export interface FileEditTracker {
-  markFileBeingEdited(toolName: string, toolInput: Record<string, unknown>): Promise<void>;
-  trackEditedFile(toolName: string | undefined, toolInput: Record<string, unknown> | undefined, isError: boolean): Promise<void>;
-  cancelFileEdit(toolName: string, toolInput: Record<string, unknown>): void;
-}
-
 /** Options for query execution with optional overrides. */
 export interface QueryOptions {
   allowedTools?: string[];
@@ -221,7 +214,6 @@ export class ClaudianService {
   private enterPlanModeCallback: EnterPlanModeCallback | null = null;
   private currentPlanFilePath: string | null = null;
   private approvedPlanContent: string | null = null;
-  private fileEditTracker: FileEditTracker | null = null;
   private vaultPath: string | null = null;
 
   // Modular components
@@ -332,7 +324,7 @@ export class ClaudianService {
       if (conversationHistory && conversationHistory.length > 0) {
         const historyContext = buildContextFromHistory(conversationHistory);
         const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripContextFilesPrefix(prompt);
+        const actualPrompt = stripCurrentNotePrefix(prompt);
         const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
         queryPrompt = historyContext
           ? shouldAppendPrompt
@@ -352,7 +344,7 @@ export class ClaudianService {
 
         const historyContext = buildContextFromHistory(conversationHistory);
         const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripContextFilesPrefix(prompt);
+        const actualPrompt = stripCurrentNotePrefix(prompt);
         const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
         const fullPrompt = historyContext
           ? shouldAppendPrompt
@@ -486,16 +478,9 @@ export class ClaudianService {
 
     const vaultRestrictionHook = createVaultRestrictionHook({
       getPathAccessType: (p) => this.getPathAccessType(p),
-      onEditBlocked: (toolName, toolInput) => {
-        this.fileEditTracker?.cancelFileEdit(toolName, toolInput);
-      },
     });
 
     // Create file tracking callbacks
-    const preCallback: FileEditPreCallback | undefined = this.fileEditTracker
-      ? { markFileBeingEdited: (name, input) => this.fileEditTracker!.markFileBeingEdited(name, input) }
-      : undefined;
-
     const postCallback: FileEditPostCallback = {
       trackEditedFile: async (name, input, isError) => {
         // Track plan file writes (to ~/.claude/plans/)
@@ -505,16 +490,13 @@ export class ClaudianService {
             this.currentPlanFilePath = this.resolvePlanPath(filePath);
           }
         }
-        // Forward to file edit tracker if available
-        await this.fileEditTracker?.trackEditedFile(name, input, isError);
       },
     };
 
     // Create file hash tracking hooks
     const fileHashPreHook = createFileHashPreHook(
       this.vaultPath,
-      this.diffStore.getOriginalContents(),
-      preCallback
+      this.diffStore.getOriginalContents()
     );
     const fileHashPostHook = createFileHashPostHook(
       this.vaultPath,
@@ -671,11 +653,6 @@ export class ClaudianService {
   /** Clears the approved plan content. */
   clearApprovedPlanContent() {
     this.approvedPlanContent = null;
-  }
-
-  /** Sets the file edit tracker for syncing edit state with the UI. */
-  setFileEditTracker(tracker: FileEditTracker | null) {
-    this.fileEditTracker = tracker;
   }
 
   /** Get pending diff data for a tool_use_id (and remove it from pending). */
@@ -924,7 +901,6 @@ export class ClaudianService {
 
     // If no approval callback is set, deny the action
     if (!this.approvalCallback) {
-      this.fileEditTracker?.cancelFileEdit(toolName, input);
       return {
         behavior: 'deny',
         message: 'No approval handler available. Please enable YOLO mode or configure permissions.',
@@ -940,7 +916,6 @@ export class ClaudianService {
 
       if (decision === 'cancel') {
         // User pressed Escape - interrupt the stream like in Claude Code
-        this.fileEditTracker?.cancelFileEdit(toolName, input);
         return {
           behavior: 'deny',
           message: 'User interrupted.',
@@ -950,7 +925,6 @@ export class ClaudianService {
 
       if (decision === 'deny') {
         // User explicitly clicked Deny button - continue with denial
-        this.fileEditTracker?.cancelFileEdit(toolName, input);
         return {
           behavior: 'deny',
           message: 'User denied this action.',
@@ -967,7 +941,6 @@ export class ClaudianService {
 
       return { behavior: 'allow', updatedInput: input };
     } catch {
-      this.fileEditTracker?.cancelFileEdit(toolName, input);
       return {
         behavior: 'deny',
         message: 'Approval request failed.',

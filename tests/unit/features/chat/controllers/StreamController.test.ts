@@ -298,7 +298,7 @@ describe('StreamController - Text Content', () => {
       expect(deps.updateQueueIndicator).toHaveBeenCalled();
     });
 
-    it('should update tool_result status and track edited file', async () => {
+    it('should update tool_result status', async () => {
       const msg = createTestMessage();
       msg.toolCalls = [
         {
@@ -317,13 +317,6 @@ describe('StreamController - Text Content', () => {
 
       expect(msg.toolCalls![0].status).toBe('completed');
       expect(msg.toolCalls![0].result).toBe('ok');
-
-      const fileContextManager = deps.getFileContextManager()!;
-      expect(fileContextManager.trackEditedFile).toHaveBeenCalledWith(
-        'Read',
-        { file_path: 'notes/test.md' },
-        false
-      );
     });
 
     it('should persist AskUserQuestion answers and render block', async () => {

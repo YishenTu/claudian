@@ -33,7 +33,7 @@ interface SessionMetaRecord {
   updatedAt: number;
   lastResponseAt?: number;
   sessionId: string | null;
-  attachedFiles?: string[];
+  currentNote?: string;
   usage?: UsageInfo;
   approvedPlan?: string;
   pendingPlanContent?: string;
@@ -232,7 +232,7 @@ export class SessionStorage {
       lastResponseAt: meta.lastResponseAt,
       sessionId: meta.sessionId,
       messages,
-      attachedFiles: meta.attachedFiles,
+      currentNote: meta.currentNote,
       usage: meta.usage,
       approvedPlan: meta.approvedPlan,
       pendingPlanContent: meta.pendingPlanContent,
@@ -254,7 +254,7 @@ export class SessionStorage {
       updatedAt: conversation.updatedAt,
       lastResponseAt: conversation.lastResponseAt,
       sessionId: conversation.sessionId,
-      attachedFiles: conversation.attachedFiles,
+      currentNote: conversation.currentNote,
       usage: conversation.usage,
       approvedPlan: conversation.approvedPlan,
       pendingPlanContent: conversation.pendingPlanContent,

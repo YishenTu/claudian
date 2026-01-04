@@ -62,8 +62,8 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     resetForNewConversation: jest.fn(),
     resetForLoadedConversation: jest.fn(),
     autoAttachActiveFile: jest.fn(),
-    setAttachedFiles: jest.fn(),
-    getAttachedFiles: jest.fn().mockReturnValue(new Set()),
+    setCurrentNote: jest.fn(),
+    getCurrentNotePath: jest.fn().mockReturnValue(null),
   };
 
   return {

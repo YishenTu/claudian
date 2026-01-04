@@ -451,7 +451,6 @@ class InlineEditController {
       this.inputEl,
       {
         onAttachFile: (filePath) => this.attachedFiles.add(filePath),
-        onAttachmentsChanged: () => {},
         onMcpMentionChange: () => {},
         getMentionedMcpServers: () => new Set(),
         setMentionedMcpServers: () => false,

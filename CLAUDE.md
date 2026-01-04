@@ -39,8 +39,7 @@ src/
 │   ├── components/              # Reusable UI components
 │   │   └── file-context/        # File context manager (modular)
 │   │       ├── mention/         # @-mention dropdown controller
-│   │       ├── state/           # State management (files, cache, edited tracking)
-│   │       ├── utils/           # File opening utilities
+│   │       ├── state/           # State management (session, cache, MCP mentions)
 │   │       └── view/            # File chips UI
 │   ├── modals/                  # Modal dialogs
 │   ├── renderers/               # Content renderers
@@ -72,9 +71,8 @@ src/
 | **ui** | `components/` | Input toolbar (with context meter), file/image context, slash command dropdown, AskUserQuestion panel, PlanBanner, PlanApprovalPanel |
 | | `components/file-context/` | Modular file context manager with submodules: |
 | | `  mention/` | MentionDropdownController - @-mention dropdown with MCP/vault/context file support |
-| | `  state/` | FileContextState, EditedFilesTracker, MarkdownFileCache |
-| | `  view/` | FileChipsView - attached/edited file chips UI |
-| | `  utils/` | FileOpener - open files in editor or default app |
+| | `  state/` | FileContextState, MarkdownFileCache |
+| | `  view/` | FileChipsView - current note chip UI |
 | | `modals/` | Approval, inline edit, instruction, MCP modals |
 | | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs, AskUserQuestion |
 | | `settings/` | Env snippets, MCP settings, slash command settings |
@@ -291,6 +289,8 @@ Type `@` in the input to open the mention dropdown for attaching context.
 - **Context folders**: `@folder/` filters to files from that context path (session-only, added via folder icon)
 - **Context files**: Only shown after `@folder/` filter, displays filename with folder badge
 - **Vault files**: Markdown files from the vault, shown by default
+
+**Current note chip**: Only the focused note is shown as a chip. It is sent once per session as `<current_note>` and stored on the conversation. `@` mentions stay in the query text (no chips).
 
 **Session-only state**: Context paths and MCP server selections reset when switching conversations or creating new ones.
 

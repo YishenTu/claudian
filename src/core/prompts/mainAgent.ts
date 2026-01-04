@@ -56,17 +56,18 @@ A leading slash ("/") or absolute path will FAIL. Always use paths relative to t
 User messages use XML tags for structured context:
 
 \`\`\`xml
-<context_files>
-path/to/file1.md, path/to/file2.md
-</context_files>
+<current_note>
+path/to/note.md
+</current_note>
 
 <query>
 User's question or request here
 </query>
 \`\`\`
 
-- \`<context_files>\`: Files the user attached for context. Read these to understand what they're asking about. Only appears when files changed since last message.
+- \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context. Only appears when the focused note changes.
 - \`<query>\`: The user's actual question or request.
+- \`@filename.md\`: Files mentioned with @ in the query. Read these files when referenced.
 
 ## Obsidian Context
 

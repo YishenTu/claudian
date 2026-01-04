@@ -71,11 +71,11 @@ describe('SessionStorage JSONL format', () => {
       expect(conversation!.lastResponseAt).toBe(1500);
     });
 
-    it('should parse attachedFiles when present', () => {
-      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"updatedAt":2000,"sessionId":null,"attachedFiles":["file1.md","file2.txt"]}';
+    it('should parse currentNote when present', () => {
+      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"updatedAt":2000,"sessionId":null,"currentNote":"file1.md"}';
 
       const conversation = parseJSONLHelper(jsonl);
-      expect(conversation!.attachedFiles).toEqual(['file1.md', 'file2.txt']);
+      expect(conversation!.currentNote).toBe('file1.md');
     });
   });
 
@@ -209,7 +209,7 @@ describe('SessionStorage JSONL format', () => {
         updatedAt: 2000,
         lastResponseAt: 1500,
         sessionId: 'sess-rt',
-        attachedFiles: ['a.md', 'b.md'],
+        currentNote: 'a.md',
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1001 },
           { id: 'msg-2', role: 'assistant', content: 'World', timestamp: 1002 },
@@ -226,7 +226,7 @@ describe('SessionStorage JSONL format', () => {
       expect(parsed!.updatedAt).toBe(original.updatedAt);
       expect(parsed!.lastResponseAt).toBe(original.lastResponseAt);
       expect(parsed!.sessionId).toBe(original.sessionId);
-      expect(parsed!.attachedFiles).toEqual(original.attachedFiles);
+      expect(parsed!.currentNote).toBe(original.currentNote);
       expect(parsed!.messages).toHaveLength(2);
     });
   });
@@ -528,7 +528,7 @@ interface SessionMetaRecord {
   updatedAt: number;
   lastResponseAt?: number;
   sessionId: string | null;
-  attachedFiles?: string[];
+  currentNote?: string;
 }
 
 interface SessionMessageRecord {
@@ -568,7 +568,7 @@ function parseJSONLHelper(content: string): Conversation | null {
     lastResponseAt: meta.lastResponseAt,
     sessionId: meta.sessionId,
     messages,
-    attachedFiles: meta.attachedFiles,
+    currentNote: meta.currentNote,
   };
 }
 
@@ -583,7 +583,7 @@ function serializeToJSONLHelper(conversation: Conversation): string {
     updatedAt: conversation.updatedAt,
     lastResponseAt: conversation.lastResponseAt,
     sessionId: conversation.sessionId,
-    attachedFiles: conversation.attachedFiles,
+    currentNote: conversation.currentNote,
   };
   lines.push(JSON.stringify(meta));
 

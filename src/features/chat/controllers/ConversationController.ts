@@ -160,8 +160,8 @@ export class ConversationController {
     const fileCtx = this.deps.getFileContextManager();
     fileCtx?.resetForLoadedConversation(hasMessages);
 
-    if (conversation.attachedFiles && conversation.attachedFiles.length > 0) {
-      fileCtx?.setAttachedFiles(conversation.attachedFiles);
+    if (conversation.currentNote) {
+      fileCtx?.setCurrentNote(conversation.currentNote);
     } else if (isNewConversation || !hasMessages) {
       fileCtx?.autoAttachActiveFile();
     }
@@ -230,8 +230,8 @@ export class ConversationController {
     const fileCtx = this.deps.getFileContextManager();
     fileCtx?.resetForLoadedConversation(state.messages.length > 0);
 
-    if (conversation.attachedFiles && conversation.attachedFiles.length > 0) {
-      fileCtx?.setAttachedFiles(conversation.attachedFiles);
+    if (conversation.currentNote) {
+      fileCtx?.setCurrentNote(conversation.currentNote);
     }
 
     // Restore session context paths (or clear if none)
@@ -272,7 +272,7 @@ export class ConversationController {
 
     const sessionId = plugin.agentService.getSessionId();
     const fileCtx = this.deps.getFileContextManager();
-    const attachedFiles = fileCtx ? Array.from(fileCtx.getAttachedFiles()) : [];
+    const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const contextPathSelector = this.deps.getContextPathSelector();
     const sessionContextPaths = contextPathSelector?.getContextPaths() ?? [];
     const approvedPlan = this.deps.getApprovedPlan();
@@ -280,7 +280,7 @@ export class ConversationController {
     const updates: Partial<Conversation> = {
       messages: state.getPersistedMessages(),
       sessionId: sessionId,
-      attachedFiles: attachedFiles,
+      currentNote: currentNote,
       sessionContextPaths: sessionContextPaths.length > 0 ? sessionContextPaths : undefined,
       usage: state.usage ?? undefined,
       approvedPlan: approvedPlan ?? undefined,
