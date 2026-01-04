@@ -62,6 +62,24 @@ export class McpServerManager {
     return result;
   }
 
+  /** Get disabled MCP tools formatted for SDK disallowedTools option. */
+  getDisallowedMcpTools(): string[] {
+    const disallowed = new Set<string>();
+
+    for (const server of this.servers) {
+      if (!server.enabled) continue;
+      if (!server.disabledTools || server.disabledTools.length === 0) continue;
+
+      for (const tool of server.disabledTools) {
+        const normalized = tool.trim();
+        if (!normalized) continue;
+        disallowed.add(`mcp__${server.name}__${normalized}`);
+      }
+    }
+
+    return Array.from(disallowed);
+  }
+
   /** Check if any MCP servers are configured. */
   hasServers(): boolean {
     return this.servers.length > 0;

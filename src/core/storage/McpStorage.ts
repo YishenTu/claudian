@@ -11,7 +11,7 @@
  *   },
  *   "_claudian": {
  *     "servers": {
- *       "server-name": { "enabled": true, "contextSaving": true, "description": "..." }
+ *       "server-name": { "enabled": true, "contextSaving": true, "disabledTools": ["tool"], "description": "..." }
  *     }
  *   }
  * }
@@ -56,11 +56,18 @@ export class McpStorage {
         }
 
         const meta = claudianMeta[name] ?? {};
+        const disabledTools = Array.isArray(meta.disabledTools)
+          ? meta.disabledTools.filter((tool) => typeof tool === 'string')
+          : undefined;
+        const normalizedDisabledTools =
+          disabledTools && disabledTools.length > 0 ? disabledTools : undefined;
+
         servers.push({
           name,
           config,
           enabled: meta.enabled ?? DEFAULT_MCP_SERVER.enabled,
           contextSaving: meta.contextSaving ?? DEFAULT_MCP_SERVER.contextSaving,
+          disabledTools: normalizedDisabledTools,
           description: meta.description,
         });
       }
@@ -78,20 +85,31 @@ export class McpStorage {
       const mcpServers: Record<string, McpServerConfig> = {};
       const claudianServers: Record<
         string,
-        { enabled?: boolean; contextSaving?: boolean; description?: string }
+        { enabled?: boolean; contextSaving?: boolean; disabledTools?: string[]; description?: string }
       > = {};
 
       for (const server of servers) {
         mcpServers[server.name] = server.config;
 
         // Only store Claudian metadata if different from defaults
-        const meta: { enabled?: boolean; contextSaving?: boolean; description?: string } = {};
+        const meta: {
+          enabled?: boolean;
+          contextSaving?: boolean;
+          disabledTools?: string[];
+          description?: string;
+        } = {};
 
         if (server.enabled !== DEFAULT_MCP_SERVER.enabled) {
           meta.enabled = server.enabled;
         }
         if (server.contextSaving !== DEFAULT_MCP_SERVER.contextSaving) {
           meta.contextSaving = server.contextSaving;
+        }
+        const normalizedDisabledTools = server.disabledTools
+          ?.map((tool) => tool.trim())
+          .filter((tool) => tool.length > 0);
+        if (normalizedDisabledTools && normalizedDisabledTools.length > 0) {
+          meta.disabledTools = normalizedDisabledTools;
         }
         if (server.description) {
           meta.description = server.description;

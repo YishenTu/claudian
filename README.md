@@ -111,7 +111,7 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
 - **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
 - **Environment snippets**: Save and restore environment variable configurations
-- **MCP Servers**: Add/edit/test/delete MCP server configurations with context-saving mode
+- **MCP Servers**: Add/edit/verify/delete MCP server configurations with context-saving mode
 - **Vim-style navigation mappings**: Configure key bindings with lines like `map w scrollUp`, `map s scrollDown`, `map i focusInput`
 
 ### Safety and permissions

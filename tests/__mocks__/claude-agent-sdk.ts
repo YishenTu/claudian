@@ -11,12 +11,14 @@ export interface Options {
   allowDangerouslySkipPermissions?: boolean;
   model?: string;
   allowedTools?: string[];
+  disallowedTools?: string[];
   abortController?: AbortController;
   pathToClaudeCodeExecutable?: string;
   resume?: string;
   maxThinkingTokens?: number;
   canUseTool?: CanUseTool;
   systemPrompt?: string | { content: string; cacheControl?: { type: string } };
+  mcpServers?: Record<string, unknown>;
   hooks?: {
     PreToolUse?: HookCallbackMatcher[];
   };

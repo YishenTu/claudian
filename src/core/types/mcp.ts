@@ -45,6 +45,8 @@ export interface ClaudianMcpServer {
   enabled: boolean;
   /** Context-saving mode: hide tools unless @-mentioned. */
   contextSaving: boolean;
+  /** Tool names disabled for this server. */
+  disabledTools?: string[];
   /** Optional description for UI display. */
   description?: string;
 }
@@ -63,6 +65,7 @@ export interface ClaudianMcpConfigFile extends McpConfigFile {
       {
         enabled?: boolean;
         contextSaving?: boolean;
+        disabledTools?: string[];
         description?: string;
       }
     >;

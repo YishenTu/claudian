@@ -475,6 +475,11 @@ export class ClaudianService {
       options.mcpServers = mcpServers;
     }
 
+    const disallowedMcpTools = this.mcpManager.getDisallowedMcpTools();
+    if (disallowedMcpTools.length > 0) {
+      options.disallowedTools = disallowedMcpTools;
+    }
+
     // Create hooks for security enforcement
     const blocklistHook = createBlocklistHook(() => ({
       blockedCommands: this.plugin.settings.blockedCommands,

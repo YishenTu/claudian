@@ -142,10 +142,10 @@ export class McpSettingsManager {
     // Actions
     const actionsEl = itemEl.createDiv({ cls: 'claudian-mcp-actions' });
 
-    // Test connection button
+    // Verify button (shows tools)
     const testBtn = actionsEl.createEl('button', {
       cls: 'claudian-mcp-action-btn',
-      attr: { 'aria-label': 'Test connection' },
+      attr: { 'aria-label': 'Verify (show tools)' },
     });
     setIcon(testBtn, 'zap');
     testBtn.addEventListener('click', () => this.testServer(server));
@@ -176,14 +176,83 @@ export class McpSettingsManager {
   }
 
   private async testServer(server: ClaudianMcpServer) {
-    const modal = new McpTestModal(this.plugin.app, server.name);
+    const modal = new McpTestModal(
+      this.plugin.app,
+      server.name,
+      server.disabledTools,
+      async (toolName, enabled) => {
+        await this.updateDisabledTool(server, toolName, enabled);
+      },
+      async (disabledTools) => {
+        await this.updateAllDisabledTools(server, disabledTools);
+      }
+    );
     modal.open();
 
     try {
       const result = await testMcpServer(server);
       modal.setResult(result);
     } catch (error) {
-      modal.setError(error instanceof Error ? error.message : 'Test failed');
+      modal.setError(error instanceof Error ? error.message : 'Verification failed');
+    }
+  }
+
+  private async updateDisabledTool(
+    server: ClaudianMcpServer,
+    toolName: string,
+    enabled: boolean
+  ) {
+    const previous = server.disabledTools ? [...server.disabledTools] : undefined;
+    const disabledTools = new Set(server.disabledTools ?? []);
+
+    if (enabled) {
+      disabledTools.delete(toolName);
+    } else {
+      disabledTools.add(toolName);
+    }
+
+    server.disabledTools = disabledTools.size > 0 ? Array.from(disabledTools) : undefined;
+
+    try {
+      await this.plugin.storage.mcp.save(this.servers);
+    } catch (error) {
+      server.disabledTools = previous;
+      throw error;
+    }
+
+    try {
+      await this.plugin.agentService.reloadMcpServers();
+    } catch (error) {
+      // Rollback in-memory state and re-save to restore consistency
+      server.disabledTools = previous;
+      await this.plugin.storage.mcp.save(this.servers).catch(() => {
+        // Ignore re-save errors; next load will sync from persisted state
+      });
+      throw error;
+    }
+  }
+
+  private async updateAllDisabledTools(server: ClaudianMcpServer, disabledTools: string[]) {
+    const previous = server.disabledTools ? [...server.disabledTools] : undefined;
+
+    server.disabledTools = disabledTools.length > 0 ? disabledTools : undefined;
+
+    try {
+      await this.plugin.storage.mcp.save(this.servers);
+    } catch (error) {
+      server.disabledTools = previous;
+      throw error;
+    }
+
+    try {
+      await this.plugin.agentService.reloadMcpServers();
+    } catch (error) {
+      // Rollback in-memory state and re-save to restore consistency
+      server.disabledTools = previous;
+      await this.plugin.storage.mcp.save(this.servers).catch(() => {
+        // Ignore re-save errors; next load will sync from persisted state
+      });
+      throw error;
     }
   }
 

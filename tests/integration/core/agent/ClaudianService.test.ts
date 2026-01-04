@@ -67,6 +67,7 @@ function createMockMcpManager() {
     getServers: jest.fn().mockReturnValue([]),
     getEnabledCount: jest.fn().mockReturnValue(0),
     getActiveServers: jest.fn().mockReturnValue({}),
+    getDisallowedMcpTools: jest.fn().mockReturnValue([]),
     hasServers: jest.fn().mockReturnValue(false),
   } as any;
 }

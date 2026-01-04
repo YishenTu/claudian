@@ -327,6 +327,7 @@ export class McpServerModal extends Modal {
       config,
       enabled: this.enabled,
       contextSaving: this.contextSaving,
+      disabledTools: this.existingServer?.disabledTools,
     };
 
     this.onSave(server);
