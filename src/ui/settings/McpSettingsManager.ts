@@ -197,63 +197,55 @@ export class McpSettingsManager {
     }
   }
 
+  /**
+   * Helper to update server.disabledTools with save and reload.
+   * Rolls back on save failure; warns on reload failure (since save succeeded).
+   */
+  private async updateServerDisabledTools(
+    server: ClaudianMcpServer,
+    newDisabledTools: string[] | undefined
+  ): Promise<void> {
+    const previous = server.disabledTools ? [...server.disabledTools] : undefined;
+    server.disabledTools = newDisabledTools;
+
+    try {
+      await this.plugin.storage.mcp.save(this.servers);
+    } catch (error) {
+      server.disabledTools = previous;
+      throw error;
+    }
+
+    try {
+      await this.plugin.agentService.reloadMcpServers();
+    } catch (error) {
+      // Save succeeded but reload failed - don't rollback since disk has correct state
+      console.warn('[Claudian] MCP reload failed after save:', error);
+      new Notice('Setting saved but reload failed. Changes will apply on next session.');
+    }
+  }
+
   private async updateDisabledTool(
     server: ClaudianMcpServer,
     toolName: string,
     enabled: boolean
   ) {
-    const previous = server.disabledTools ? [...server.disabledTools] : undefined;
     const disabledTools = new Set(server.disabledTools ?? []);
-
     if (enabled) {
       disabledTools.delete(toolName);
     } else {
       disabledTools.add(toolName);
     }
-
-    server.disabledTools = disabledTools.size > 0 ? Array.from(disabledTools) : undefined;
-
-    try {
-      await this.plugin.storage.mcp.save(this.servers);
-    } catch (error) {
-      // Rollback in-memory state since save failed
-      server.disabledTools = previous;
-      throw error;
-    }
-
-    try {
-      await this.plugin.agentService.reloadMcpServers();
-    } catch (error) {
-      // Save succeeded but reload failed - don't rollback since disk has correct state
-      // Log warning and inform user that changes will apply on next session
-      console.warn('[Claudian] MCP reload failed after save, changes will apply on next session:', error);
-      new Notice('Setting saved but reload failed. Changes will apply on next session.');
-      // Don't throw - the save was successful
-    }
+    await this.updateServerDisabledTools(
+      server,
+      disabledTools.size > 0 ? Array.from(disabledTools) : undefined
+    );
   }
 
   private async updateAllDisabledTools(server: ClaudianMcpServer, disabledTools: string[]) {
-    const previous = server.disabledTools ? [...server.disabledTools] : undefined;
-
-    server.disabledTools = disabledTools.length > 0 ? disabledTools : undefined;
-
-    try {
-      await this.plugin.storage.mcp.save(this.servers);
-    } catch (error) {
-      // Rollback in-memory state since save failed
-      server.disabledTools = previous;
-      throw error;
-    }
-
-    try {
-      await this.plugin.agentService.reloadMcpServers();
-    } catch (error) {
-      // Save succeeded but reload failed - don't rollback since disk has correct state
-      // Log warning and inform user that changes will apply on next session
-      console.warn('[Claudian] MCP reload failed after save, changes will apply on next session:', error);
-      new Notice('Setting saved but reload failed. Changes will apply on next session.');
-      // Don't throw - the save was successful
-    }
+    await this.updateServerDisabledTools(
+      server,
+      disabledTools.length > 0 ? disabledTools : undefined
+    );
   }
 
   private getServerPreview(server: ClaudianMcpServer, type: McpServerType): string {
