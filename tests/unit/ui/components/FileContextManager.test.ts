@@ -249,6 +249,42 @@ describe('FileContextManager', () => {
     manager.destroy();
   });
 
+  it('should NOT resend current note when loading conversation with existing messages', () => {
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks()
+    );
+
+    // When loading a conversation that already has messages, the current note
+    // should be marked as already sent to avoid re-sending context
+    manager.resetForLoadedConversation(true);
+    manager.setCurrentNote('notes/restored.md');
+    expect(manager.shouldSendCurrentNote()).toBe(false);
+
+    manager.destroy();
+  });
+
+  it('should send current note when loading empty conversation', () => {
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks()
+    );
+
+    // When loading a conversation with no messages, the current note
+    // should be sent with the first message
+    manager.resetForLoadedConversation(false);
+    manager.setCurrentNote('notes/new.md');
+    expect(manager.shouldSendCurrentNote()).toBe(true);
+
+    manager.destroy();
+  });
+
   it('renders current note chip and removes on click', () => {
     const app = createMockApp();
     const manager = new FileContextManager(

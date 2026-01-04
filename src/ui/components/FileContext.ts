@@ -6,7 +6,7 @@
  */
 
 import type { App, EventRef } from 'obsidian';
-import { TFile } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
 import * as path from 'path';
 
 import type { McpService } from '../../features/mcp/McpService';
@@ -65,10 +65,16 @@ export class FileContextManager {
           this.refreshCurrentNoteChip();
         }
       },
-      onOpenFile: (filePath) => {
+      onOpenFile: async (filePath) => {
         const file = this.app.vault.getAbstractFileByPath(filePath);
-        if (file instanceof TFile) {
-          this.app.workspace.getLeaf().openFile(file);
+        if (!(file instanceof TFile)) {
+          new Notice(`Could not open file: ${filePath}`);
+          return;
+        }
+        try {
+          await this.app.workspace.getLeaf().openFile(file);
+        } catch (error) {
+          new Notice(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`);
         }
       },
     });
