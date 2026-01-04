@@ -29,6 +29,7 @@
 
 /* Features */
 @import "./features/file-context.css";
+@import "./features/file-link.css";
 @import "./features/image-context.css";
 @import "./features/image-modal.css";
 @import "./features/inline-edit.css";

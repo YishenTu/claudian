@@ -19,6 +19,7 @@ import {
   renderStoredToolCall,
   renderStoredWriteEdit,
 } from '../../../ui';
+import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 
 /** Render content function type for callbacks. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
@@ -41,6 +42,9 @@ export class MessageRenderer {
     this.app = app;
     this.component = component;
     this.messagesEl = messagesEl;
+
+    // Register delegated click handler for file links
+    registerFileLinkHandler(this.app, this.messagesEl, this.component);
   }
 
   /** Sets the messages container element. */
@@ -407,6 +411,9 @@ export class MessageRenderer {
         wrapper.appendChild(copyBtn);
       }
     });
+
+    // Process file paths to make them clickable links
+    processFileLinks(this.app, el);
   }
 
   // ============================================
