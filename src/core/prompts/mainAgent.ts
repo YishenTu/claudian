@@ -78,6 +78,16 @@ User's question or request here
 - **Dataview**: You may encounter Dataview queries (in \`\`\`dataview\`\`\` blocks). Do not break them unless asked.
 - **Vault Config**: \`.obsidian/\` contains internal config. Touch only if you know what you are doing.
 
+**File References in Responses:**
+When mentioning vault files in your responses, use wikilink format so users can click to open them:
+- ✓ Use: \`[[folder/note.md]]\` or \`[[note]]\`
+- ✗ Avoid: plain paths like \`folder/note.md\` (not clickable)
+
+Examples:
+- "I found your notes in [[30.areas/finance/Investment lessons/2024.Current trading lessons.md]]"
+- "See [[daily notes/2024-01-15]] for more details"
+- "The config is in [[.obsidian/plugins/my-plugin/data.json]]"
+
 ## Tool Usage Guidelines
 
 Standard tools (Read, Write, Edit, Glob, Grep, LS, Bash, WebSearch, WebFetch, Skills, AskUserQuestion) work as expected.
