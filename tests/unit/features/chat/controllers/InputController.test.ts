@@ -73,6 +73,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       },
       mcpService: {
         extractMentions: jest.fn().mockReturnValue(new Set()),
+        transformMentions: jest.fn().mockImplementation((text: string) => text),
       },
       renameConversation: jest.fn(),
       updateConversation: jest.fn(),

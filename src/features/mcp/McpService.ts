@@ -9,7 +9,7 @@
 import { McpServerManager } from '../../core/mcp';
 import type { ClaudianMcpServer, McpServerConfig } from '../../core/types';
 import type ClaudianPlugin from '../../main';
-import { extractMcpMentions } from '../../utils/mcp';
+import { extractMcpMentions, transformMcpMentions } from '../../utils/mcp';
 
 export class McpService {
   private manager: McpServerManager;
@@ -85,6 +85,17 @@ export class McpService {
   /** Check if any context-saving servers are enabled. */
   hasContextSavingServers(): boolean {
     return this.manager.getServers().some((s) => s.enabled && s.contextSaving);
+  }
+
+  /**
+   * Transform MCP mentions in text by appending " MCP" after each valid @mention.
+   * This is applied to API requests only, not shown in UI.
+   */
+  transformMentions(text: string): string {
+    const validNames = new Set(
+      this.manager.getServers().filter((s) => s.enabled && s.contextSaving).map((s) => s.name)
+    );
+    return transformMcpMentions(text, validNames);
   }
 
   // ============================================

@@ -289,6 +289,9 @@ export class InputController {
     // Extract @-mentioned MCP servers from prompt
     const mcpMentions = plugin.mcpService.extractMentions(promptToSend);
 
+    // Transform @mcpname to @mcpname MCP in API request only
+    promptToSend = plugin.mcpService.transformMentions(promptToSend);
+
     // Add MCP options to query
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
     if (mcpMentions.size > 0 || (enabledMcpServers && enabledMcpServers.size > 0)) {
@@ -570,6 +573,10 @@ ${content}
 
     // Build query options with plan mode
     const mcpMentions = plugin.mcpService.extractMentions(promptToSend);
+
+    // Transform @mcpname to @mcpname MCP in API request only
+    promptToSend = plugin.mcpService.transformMentions(promptToSend);
+
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
 
     const queryOptions = {
