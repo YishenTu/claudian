@@ -216,6 +216,7 @@ export class McpSettingsManager {
     try {
       await this.plugin.storage.mcp.save(this.servers);
     } catch (error) {
+      // Rollback in-memory state since save failed
       server.disabledTools = previous;
       throw error;
     }
@@ -223,12 +224,11 @@ export class McpSettingsManager {
     try {
       await this.plugin.agentService.reloadMcpServers();
     } catch (error) {
-      // Rollback in-memory state and re-save to restore consistency
-      server.disabledTools = previous;
-      await this.plugin.storage.mcp.save(this.servers).catch(() => {
-        // Ignore re-save errors; next load will sync from persisted state
-      });
-      throw error;
+      // Save succeeded but reload failed - don't rollback since disk has correct state
+      // Log warning and inform user that changes will apply on next session
+      console.warn('[Claudian] MCP reload failed after save, changes will apply on next session:', error);
+      new Notice('Setting saved but reload failed. Changes will apply on next session.');
+      // Don't throw - the save was successful
     }
   }
 
@@ -240,6 +240,7 @@ export class McpSettingsManager {
     try {
       await this.plugin.storage.mcp.save(this.servers);
     } catch (error) {
+      // Rollback in-memory state since save failed
       server.disabledTools = previous;
       throw error;
     }
@@ -247,12 +248,11 @@ export class McpSettingsManager {
     try {
       await this.plugin.agentService.reloadMcpServers();
     } catch (error) {
-      // Rollback in-memory state and re-save to restore consistency
-      server.disabledTools = previous;
-      await this.plugin.storage.mcp.save(this.servers).catch(() => {
-        // Ignore re-save errors; next load will sync from persisted state
-      });
-      throw error;
+      // Save succeeded but reload failed - don't rollback since disk has correct state
+      // Log warning and inform user that changes will apply on next session
+      console.warn('[Claudian] MCP reload failed after save, changes will apply on next session:', error);
+      new Notice('Setting saved but reload failed. Changes will apply on next session.');
+      // Don't throw - the save was successful
     }
   }
 

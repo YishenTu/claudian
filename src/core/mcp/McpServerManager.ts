@@ -62,12 +62,24 @@ export class McpServerManager {
     return result;
   }
 
-  /** Get disabled MCP tools formatted for SDK disallowedTools option. */
-  getDisallowedMcpTools(): string[] {
+  /**
+   * Get disabled MCP tools formatted for SDK disallowedTools option.
+   *
+   * Only returns disabled tools from servers that would be active (same filter as getActiveServers).
+   *
+   * @param mentionedNames Set of server names that were @-mentioned in the prompt
+   */
+  getDisallowedMcpTools(mentionedNames: Set<string>): string[] {
     const disallowed = new Set<string>();
 
     for (const server of this.servers) {
       if (!server.enabled) continue;
+
+      // If context-saving is enabled, only include if @-mentioned (same filter as getActiveServers)
+      if (server.contextSaving && !mentionedNames.has(server.name)) {
+        continue;
+      }
+
       if (!server.disabledTools || server.disabledTools.length === 0) continue;
 
       for (const tool of server.disabledTools) {

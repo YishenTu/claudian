@@ -475,7 +475,7 @@ export class ClaudianService {
       options.mcpServers = mcpServers;
     }
 
-    const disallowedMcpTools = this.mcpManager.getDisallowedMcpTools();
+    const disallowedMcpTools = this.mcpManager.getDisallowedMcpTools(combinedMentions);
     if (disallowedMcpTools.length > 0) {
       options.disallowedTools = disallowedMcpTools;
     }
