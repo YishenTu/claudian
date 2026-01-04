@@ -98,4 +98,63 @@ describe('transformMcpMentions', () => {
     const result = transformMcpMentions(text, names);
     expect(result).toBe('@test.server MCP for info');
   });
+
+  // Punctuation edge cases
+  it('transforms mention followed by period', () => {
+    const text = 'Check @context7.';
+    const result = transformMcpMentions(text, validNames);
+    expect(result).toBe('Check @context7 MCP.');
+  });
+
+  it('transforms mention followed by comma', () => {
+    const text = '@context7, please check';
+    const result = transformMcpMentions(text, validNames);
+    expect(result).toBe('@context7 MCP, please check');
+  });
+
+  it('transforms mention followed by colon', () => {
+    const text = '@context7: check this';
+    const result = transformMcpMentions(text, validNames);
+    expect(result).toBe('@context7 MCP: check this');
+  });
+
+  it('transforms mention followed by question mark', () => {
+    const text = 'Did you check @context7?';
+    const result = transformMcpMentions(text, validNames);
+    expect(result).toBe('Did you check @context7 MCP?');
+  });
+
+  it('does not transform partial match with dot-suffix', () => {
+    // @test should NOT match in @test.foo when only "test" is valid
+    const names = new Set(['test']);
+    const text = '@test.foo is unknown';
+    const result = transformMcpMentions(text, names);
+    expect(result).toBe('@test.foo is unknown');
+  });
+
+  it('transforms server with dot in name followed by period', () => {
+    const names = new Set(['test.server']);
+    const text = 'Check @test.server.';
+    const result = transformMcpMentions(text, names);
+    expect(result).toBe('Check @test.server MCP.');
+  });
+
+  // Multiline
+  it('transforms mentions across multiple lines', () => {
+    const text = 'First @context7\nSecond @server1';
+    const result = transformMcpMentions(text, validNames);
+    expect(result).toBe('First @context7 MCP\nSecond @server1 MCP');
+  });
+
+  it('transforms mention followed by newline', () => {
+    const text = '@context7\nmore text';
+    const result = transformMcpMentions(text, validNames);
+    expect(result).toBe('@context7 MCP\nmore text');
+  });
+
+  // Empty input
+  it('handles empty input text', () => {
+    const result = transformMcpMentions('', validNames);
+    expect(result).toBe('');
+  });
 });
