@@ -859,27 +859,14 @@ export class ClaudianService {
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
   }
 
-  /**
-   * Switch to a different session WITHOUT restarting the subprocess.
-   * The SDK handles session switching via the session_id field in each message.
-   * This avoids the 30+ second cold start delay on every new conversation.
-   */
+  /** Switches session via session_id in messages, preserving subprocess. */
   async switchSession(newSessionId: string | null): Promise<void> {
-    // Update session manager - next message will use this session_id
     this.sessionManager.setSessionId(newSessionId, this.plugin.settings.model);
-
-    // Clear session-specific state
     this.approvalManager.clearSessionApprovals();
     this.diffStore.clear();
     this.approvedPlanContent = null;
     this.currentPlanFilePath = null;
-
-    // Clear any pending response handlers from previous session
     this.activeResponseResolvers = [];
-
-    // NOTE: We intentionally do NOT close the persistent query here.
-    // The subprocess stays alive and the SDK handles session switching
-    // based on the session_id in each SDKUserMessage.
   }
 
   /** Cleanup resources. */
