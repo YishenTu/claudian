@@ -250,7 +250,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onClick(() => openHotkeySettings(this.app))
       );
 
-    const openChatCommandId = 'claudian:open-chat';
+    const openChatCommandId = 'claudian:open-view';
     const openChatHotkey = getHotkeyForCommand(this.app, openChatCommandId);
     new Setting(containerEl)
       .setName('Open chat hotkey')

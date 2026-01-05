@@ -98,21 +98,38 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 
 ### Settings
 
-- **Enable command blocklist**: Block dangerous bash commands (default: on)
-- **Blocked commands**: Patterns to block (supports regex)
-- **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`). Supports `~`, `$VAR`, `${VAR}`, and `%VAR%` (Windows).
-- **Context paths**: Directories outside the vault that Claude can read for additional context (click folder icon in input toolbar)
+**Customization**
+- **User name**: Your name for personalized greetings
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Custom system prompt**: Additional instructions appended to the default system prompt (Instruction Mode `#` saves here)
+- **Auto-generate conversation titles**: Toggle AI-powered title generation after first exchange
 - **Title generation model**: Model used for auto-generating conversation titles (default: Auto/Haiku)
-- **Permission mode**: Toggle YOLO (bypass prompts) or Safe (require approval)
-- **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
-- **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
-- **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
-- **Environment snippets**: Save and restore environment variable configurations
-- **MCP Servers**: Add/edit/verify/delete MCP server configurations with context-saving mode
 - **Vim-style navigation mappings**: Configure key bindings with lines like `map w scrollUp`, `map s scrollDown`, `map i focusInput`
+
+**Hotkeys**
+- **Inline edit hotkey**: Hotkey to trigger inline edit on selected text
+- **Open chat hotkey**: Hotkey to open the chat sidebar
+
+**Slash Commands**
+- Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
+
+**MCP Servers**
+- Add/edit/verify/delete MCP server configurations with context-saving mode
+
+**Safety**
+- **Load user Claude settings**: Load `~/.claude/settings.json` (user's Claude Code permission rules may bypass Safe mode)
+- **Enable command blocklist**: Block dangerous bash commands (default: on)
+- **Blocked commands**: Patterns to block (supports regex, platform-specific)
+- **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`). Supports `~`, `$VAR`, `${VAR}`, and `%VAR%` (Windows).
+- **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
+
+**Environment**
+- **Custom variables**: Environment variables for Claude SDK (KEY=VALUE format)
+- **Environment snippets**: Save and restore environment variable configurations
+
+**Advanced**
+- **Claude CLI path**: Custom path to Claude Code CLI (leave empty for auto-detection)
 
 ### Safety and permissions
 
