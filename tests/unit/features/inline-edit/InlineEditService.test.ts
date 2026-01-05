@@ -774,17 +774,23 @@ describe('InlineEditService', () => {
       const spy = jest.spyOn(sdk, 'query').mockImplementation(() => {
         throw new Error('boom');
       });
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      const result = await service.editText({
-        mode: 'selection',
-        selectedText: 'text',
-        instruction: 'edit',
-        notePath: 'note.md',
-      });
+      try {
+        const result = await service.editText({
+          mode: 'selection',
+          selectedText: 'text',
+          instruction: 'edit',
+          notePath: 'note.md',
+        });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('boom');
-      spy.mockRestore();
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('boom');
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+        spy.mockRestore();
+      }
     });
 
     it('returns null path for unknown tool input', () => {

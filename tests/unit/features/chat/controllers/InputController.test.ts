@@ -34,7 +34,6 @@ function createMockImageContextManager() {
     getAttachedImages: jest.fn().mockReturnValue([]),
     clearImages: jest.fn(),
     setImages: jest.fn(),
-    handleImagePathInText: jest.fn().mockResolvedValue({ text: '', imageLoaded: false }),
   };
 }
 
@@ -349,17 +348,13 @@ describe('InputController - Message Queue', () => {
         markCurrentNoteSent: jest.fn(),
       };
       const imageContextManager = deps.getImageContextManager()!;
-      (imageContextManager.handleImagePathInText as jest.Mock).mockResolvedValue({
-        text: 'final content',
-        imageLoaded: true,
-      });
 
       deps.getWelcomeEl = () => welcomeEl;
       deps.getFileContextManager = () => fileContextManager as any;
       deps.state.currentConversationId = 'conv-1';
       deps.plugin.agentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
 
-      inputEl.value = 'original content';
+      inputEl.value = 'See ![[image.png]]';
 
       await controller.sendMessage();
 
@@ -367,8 +362,8 @@ describe('InputController - Message Queue', () => {
       expect(fileContextManager.startSession).toHaveBeenCalled();
       expect(deps.renderer.addMessage).toHaveBeenCalledTimes(2);
       expect(deps.state.messages).toHaveLength(2);
-      expect(deps.state.messages[0].content).toBe('final content');
-      expect(deps.state.messages[0].displayContent).toBe('original content');
+      expect(deps.state.messages[0].content).toBe('See ![[image.png]]');
+      expect(deps.state.messages[0].images).toBeUndefined();
       expect(imageContextManager.clearImages).toHaveBeenCalled();
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
       expect(deps.conversationController.save).toHaveBeenCalledWith(true);
