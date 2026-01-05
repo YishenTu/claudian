@@ -20,7 +20,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 
 ## Requirements
 
-- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (the SDK uses it internally)
+- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (I used Native Installation but if you installed it through `npm` and receive errors, please provide info about platform, claude's path and error message in GitHub issues, I will try to fix it!)
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports anthropic API format (Openrouter, Kimi, GLM, DeepSeek, etc.)
 - Desktop only (macOS, Linux, Windows)

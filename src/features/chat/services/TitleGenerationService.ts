@@ -55,8 +55,12 @@ export class TitleGenerationService {
       return;
     }
 
+    const envVars = parseEnvironmentVariables(
+      this.plugin.getActiveEnvironmentVariables()
+    );
+
     if (!this.resolvedClaudePath) {
-      this.resolvedClaudePath = findClaudeCLIPath();
+      this.resolvedClaudePath = findClaudeCLIPath(envVars.PATH);
     }
 
     if (!this.resolvedClaudePath) {
@@ -72,9 +76,6 @@ export class TitleGenerationService {
     // 1. User's titleGenerationModel setting (if set)
     // 2. ANTHROPIC_DEFAULT_HAIKU_MODEL env var
     // 3. claude-haiku-4-5 default
-    const envVars = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
-    );
     const titleModel =
       this.plugin.settings.titleGenerationModel ||
       envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
@@ -106,11 +107,6 @@ ${truncatedAssistant}
 
 Generate a title for this conversation:`;
 
-    // Parse custom environment variables
-    const customEnv = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
-    );
-
     const options: Options = {
       cwd: vaultPath,
       systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
@@ -119,8 +115,8 @@ Generate a title for this conversation:`;
       pathToClaudeCodeExecutable: this.resolvedClaudePath,
       env: {
         ...process.env,
-        ...customEnv,
-        PATH: getEnhancedPath(customEnv.PATH, this.resolvedClaudePath ?? undefined),
+        ...envVars,
+        PATH: getEnhancedPath(envVars.PATH, this.resolvedClaudePath ?? undefined),
       },
       allowedTools: [], // No tools needed for title generation
       permissionMode: 'bypassPermissions',

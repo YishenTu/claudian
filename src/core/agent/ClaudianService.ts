@@ -273,7 +273,8 @@ export class ClaudianService {
       }
       // Continue to auto-detection if custom path is invalid
     }
-    return findClaudeCLIPath();
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    return findClaudeCLIPath(customEnv.PATH);
   }
 
   /** Sends a query to Claude and streams the response. */

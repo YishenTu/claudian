@@ -301,6 +301,142 @@ describe('getEnhancedPath', () => {
       expect(typeof result).toBe('string');
     });
   });
+
+  describe('CLI directory with node executable (nvm/fnm/volta/asdf support)', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    function mockCliDirWithNode(cliDir: string) {
+      const nodePath = path.join(cliDir, isWindows ? 'node.exe' : 'node');
+      jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+      jest.spyOn(fs, 'statSync').mockImplementation(
+        p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+      );
+    }
+
+    it('adds CLI directory to PATH when it contains node (Unix nvm)', () => {
+      if (isWindows) return;
+
+      const nvmBinDir = '/Users/test/.nvm/versions/node/v20.10.0/bin';
+      const cliPath = path.join(nvmBinDir, 'claude');
+      mockCliDirWithNode(nvmBinDir);
+
+      process.env.PATH = '/usr/bin';
+      const result = getEnhancedPath(undefined, cliPath);
+      const segments = result.split(SEP);
+
+      // CLI directory should be added and come before /usr/bin
+      expect(segments).toContain(nvmBinDir);
+      expect(segments.indexOf(nvmBinDir)).toBeLessThan(segments.indexOf('/usr/bin'));
+    });
+
+    it('adds CLI directory to PATH when it contains node (Windows nvm)', () => {
+      if (!isWindows) return;
+
+      const nvmBinDir = 'C:\\Users\\test\\AppData\\Roaming\\nvm\\v20.10.0';
+      const cliPath = path.join(nvmBinDir, 'claude.cmd');
+      mockCliDirWithNode(nvmBinDir);
+
+      process.env.PATH = 'C:\\Windows\\System32';
+      const result = getEnhancedPath(undefined, cliPath);
+      const segments = result.split(SEP);
+
+      // CLI directory should be added (case-insensitive check for Windows)
+      const hasNvmDir = segments.some(s => s.toLowerCase() === nvmBinDir.toLowerCase());
+      expect(hasNvmDir).toBe(true);
+    });
+
+    it('adds CLI directory to PATH for fnm installation', () => {
+      if (isWindows) return;
+
+      const fnmBinDir = '/Users/test/.fnm/node-versions/v20.10.0/installation/bin';
+      const cliPath = path.join(fnmBinDir, 'claude');
+      mockCliDirWithNode(fnmBinDir);
+
+      process.env.PATH = '/usr/bin';
+      const result = getEnhancedPath(undefined, cliPath);
+
+      expect(result).toContain(fnmBinDir);
+    });
+
+    it('adds CLI directory to PATH for volta installation', () => {
+      if (isWindows) return;
+
+      const voltaBinDir = '/Users/test/.volta/bin';
+      const cliPath = path.join(voltaBinDir, 'claude');
+      mockCliDirWithNode(voltaBinDir);
+
+      process.env.PATH = '/usr/bin';
+      const result = getEnhancedPath(undefined, cliPath);
+
+      expect(result).toContain(voltaBinDir);
+    });
+
+    it('adds CLI directory to PATH for asdf installation', () => {
+      if (isWindows) return;
+
+      const asdfBinDir = '/Users/test/.asdf/installs/nodejs/20.10.0/bin';
+      const cliPath = path.join(asdfBinDir, 'claude');
+      mockCliDirWithNode(asdfBinDir);
+
+      process.env.PATH = '/usr/bin';
+      const result = getEnhancedPath(undefined, cliPath);
+
+      expect(result).toContain(asdfBinDir);
+    });
+
+    it('does not add CLI directory when node is not present', () => {
+      const cliDir = isWindows ? 'C:\\custom\\bin' : '/custom/bin';
+      const cliPath = path.join(cliDir, isWindows ? 'claude.exe' : 'claude');
+
+      // Mock: node does not exist in CLI directory
+      jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+
+      process.env.PATH = isWindows ? 'C:\\Windows\\System32' : '/usr/bin';
+      const result = getEnhancedPath(undefined, cliPath);
+
+      expect(result).not.toContain(cliDir);
+    });
+
+    it('CLI directory has higher priority than fallback node search', () => {
+      if (isWindows) return;
+
+      const nvmBinDir = '/Users/test/.nvm/versions/node/v20.10.0/bin';
+      const cliPath = path.join(nvmBinDir, 'cli.js'); // JS file
+
+      // Mock: node exists in CLI directory
+      const nodePath = path.join(nvmBinDir, 'node');
+      jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+      jest.spyOn(fs, 'statSync').mockImplementation(
+        p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+      );
+
+      process.env.PATH = '/usr/bin';
+      const result = getEnhancedPath(undefined, cliPath);
+      const segments = result.split(SEP);
+
+      // CLI directory should be first (after any additional paths)
+      expect(segments[0]).toBe(nvmBinDir);
+    });
+
+    it('user additional paths have highest priority over CLI directory', () => {
+      if (isWindows) return;
+
+      const nvmBinDir = '/Users/test/.nvm/versions/node/v20.10.0/bin';
+      const cliPath = path.join(nvmBinDir, 'claude');
+      mockCliDirWithNode(nvmBinDir);
+
+      const userPath = '/user/custom/bin';
+      process.env.PATH = '/usr/bin';
+      const result = getEnhancedPath(userPath, cliPath);
+      const segments = result.split(SEP);
+
+      // User path should be first, then CLI directory
+      expect(segments[0]).toBe(userPath);
+      expect(segments[1]).toBe(nvmBinDir);
+    });
+  });
 });
 
 describe('cliPathRequiresNode', () => {

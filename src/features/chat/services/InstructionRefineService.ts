@@ -38,7 +38,8 @@ export class InstructionRefineService {
   }
 
   private findClaudeCLI(): string | null {
-    return findClaudeCLIPath();
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    return findClaudeCLIPath(customEnv.PATH);
   }
 
   /** Refines a raw instruction from user input. */

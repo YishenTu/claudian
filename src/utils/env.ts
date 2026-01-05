@@ -182,13 +182,15 @@ export function cliPathRequiresNode(cliPath: string): boolean {
  *
  * @param additionalPaths - Optional additional PATH entries to include (from user config).
  *                          These take priority and are prepended.
- * @param cliPath - Optional CLI path. If it's a .js file, we'll ensure Node.js is in PATH.
+ * @param cliPath - Optional CLI path. If provided and its directory contains node,
+ *                  that directory is added to PATH. This handles nvm, fnm, volta, etc.
+ *                  where npm globals are installed alongside node.
  */
 export function getEnhancedPath(additionalPaths?: string, cliPath?: string): string {
   const extraPaths = getExtraBinaryPaths().filter(p => p); // Filter out empty
   const currentPath = process.env.PATH || '';
 
-  // Build path segments: additional (user config) > node dir (if needed) > extra paths > current PATH
+  // Build path segments: additional (user config) > CLI dir (if has node) > node dir (fallback) > extra paths > current PATH
   const segments: string[] = [];
 
   // Add user-specified paths first (highest priority)
@@ -196,8 +198,29 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
     segments.push(...additionalPaths.split(PATH_SEPARATOR).filter(p => p));
   }
 
-  // If CLI path is a .js file, ensure Node.js directory is in PATH
-  if (cliPath && cliPathRequiresNode(cliPath)) {
+  // If CLI path is provided, check if its directory contains node executable.
+  // This handles nvm, fnm, volta, asdf, etc. where npm globals are installed
+  // in the same bin directory as node. Works on both Windows and Unix.
+  let cliDirHasNode = false;
+  if (cliPath) {
+    try {
+      const cliDir = path.dirname(cliPath);
+      const nodeInCliDir = path.join(cliDir, NODE_EXECUTABLE);
+      if (fs.existsSync(nodeInCliDir)) {
+        const stat = fs.statSync(nodeInCliDir);
+        if (stat.isFile()) {
+          segments.push(cliDir);
+          cliDirHasNode = true;
+        }
+      }
+    } catch {
+      // Ignore errors checking CLI directory
+    }
+  }
+
+  // Fallback: If CLI is a .js file and we didn't find node in CLI dir,
+  // search common locations for Node.js
+  if (cliPath && cliPathRequiresNode(cliPath) && !cliDirHasNode) {
     const nodeDir = findNodeDirectory();
     if (nodeDir) {
       segments.push(nodeDir);

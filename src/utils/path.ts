@@ -117,6 +117,117 @@ export function expandHomePath(p: string): string {
 // Claude CLI Detection
 // ============================================
 
+function stripSurroundingQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function isPathPlaceholder(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed === '$PATH' || trimmed === '${PATH}') return true;
+  return trimmed.toUpperCase() === '%PATH%';
+}
+
+function splitPathEntries(pathValue?: string): string[] {
+  if (!pathValue) {
+    return [];
+  }
+
+  const delimiter = process.platform === 'win32' ? ';' : ':';
+
+  return pathValue
+    .split(delimiter)
+    .map(segment => stripSurroundingQuotes(segment.trim()))
+    .filter(segment => segment.length > 0 && !isPathPlaceholder(segment))
+    .map(segment => expandHomePath(segment));
+}
+
+function dedupePaths(entries: string[]): string[] {
+  const seen = new Set<string>();
+  return entries.filter(entry => {
+    const key = process.platform === 'win32' ? entry.toLowerCase() : entry;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function findFirstExistingPath(entries: string[], candidates: string[]): string | null {
+  for (const dir of entries) {
+    if (!dir) continue;
+    for (const candidate of candidates) {
+      const fullPath = path.join(dir, candidate);
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
+    }
+  }
+  return null;
+}
+
+function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | null {
+  const directCandidate = path.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+  if (fs.existsSync(directCandidate)) {
+    return directCandidate;
+  }
+
+  const baseName = path.basename(entry).toLowerCase();
+  if (baseName === 'bin') {
+    const prefix = path.dirname(entry);
+    const candidate = isWindows
+      ? path.join(prefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      : path.join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function resolveCliJsFromPathEntries(entries: string[], isWindows: boolean): string | null {
+  for (const entry of entries) {
+    const candidate = resolveCliJsNearPathEntry(entry, isWindows);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function resolveClaudeFromPathEntries(
+  entries: string[],
+  isWindows: boolean
+): { preferred: string | null; cmdFallback: string | null } {
+  if (entries.length === 0) {
+    return { preferred: null, cmdFallback: null };
+  }
+
+  if (!isWindows) {
+    const unixCandidate = findFirstExistingPath(entries, ['claude']);
+    return { preferred: unixCandidate, cmdFallback: null };
+  }
+
+  const exeCandidate = findFirstExistingPath(entries, ['claude.exe', 'claude']);
+  if (exeCandidate) {
+    return { preferred: exeCandidate, cmdFallback: null };
+  }
+
+  const cliJsCandidate = resolveCliJsFromPathEntries(entries, isWindows);
+  if (cliJsCandidate) {
+    return { preferred: cliJsCandidate, cmdFallback: null };
+  }
+
+  const cmdCandidate = findFirstExistingPath(entries, ['claude.cmd', 'claude.bat', 'claude.ps1']);
+  return { preferred: null, cmdFallback: cmdCandidate };
+}
+
 /**
  * Gets the npm global prefix directory.
  * Returns null if npm is not available or prefix cannot be determined.
@@ -197,10 +308,23 @@ function getNpmCliJsPaths(): string[] {
   return cliJsPaths;
 }
 
-/** Finds Claude Code CLI executable in common install locations. */
-export function findClaudeCLIPath(): string | null {
+/** Finds Claude Code CLI executable from PATH or common install locations. */
+export function findClaudeCLIPath(pathValue?: string): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
+
+  const customEntries = dedupePaths(splitPathEntries(pathValue));
+  let cmdFallback: string | null = null;
+
+  if (customEntries.length > 0) {
+    const customResolution = resolveClaudeFromPathEntries(customEntries, isWindows);
+    if (customResolution.preferred) {
+      return customResolution.preferred;
+    }
+    if (isWindows && customResolution.cmdFallback) {
+      cmdFallback = customResolution.cmdFallback;
+    }
+  }
 
   // On Windows, prefer native .exe, then cli.js, and only use .cmd as last resort.
   // .cmd files cannot be spawned directly without shell: true, which breaks
@@ -232,11 +356,12 @@ export function findClaudeCLIPath(): string | null {
     ];
     for (const p of cmdPaths) {
       if (fs.existsSync(p)) {
-        return p;
+        if (!cmdFallback) {
+          cmdFallback = p;
+        }
+        break;
       }
     }
-
-    return null;
   }
 
   // Platform-specific search paths for native binaries and npm symlinks
@@ -271,6 +396,21 @@ export function findClaudeCLIPath(): string | null {
         return p;
       }
     }
+  }
+
+  const envEntries = dedupePaths(splitPathEntries(getEnvValue('PATH')));
+  if (envEntries.length > 0) {
+    const envResolution = resolveClaudeFromPathEntries(envEntries, isWindows);
+    if (envResolution.preferred) {
+      return envResolution.preferred;
+    }
+    if (isWindows && envResolution.cmdFallback && !cmdFallback) {
+      cmdFallback = envResolution.cmdFallback;
+    }
+  }
+
+  if (isWindows && cmdFallback) {
+    return cmdFallback;
   }
 
   return null;

@@ -526,6 +526,7 @@ describe('utils.ts', () => {
 
     beforeEach(() => {
       originalEnv = { ...process.env };
+      process.env.PATH = '';
     });
 
     afterEach(() => {
@@ -560,6 +561,21 @@ describe('utils.ts', () => {
         );
 
         expect(findClaudeCLIPath()).toBe('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
+      });
+
+      it('should resolve Claude CLI from custom PATH', () => {
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === '/custom/bin/claude');
+
+        const customPath = '/custom/bin:/usr/bin';
+        expect(findClaudeCLIPath(customPath)).toBe('/custom/bin/claude');
+      });
+
+      it('should expand home directory in custom PATH', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === '/home/test/bin/claude');
+
+        const customPath = '~/bin:/usr/bin';
+        expect(findClaudeCLIPath(customPath)).toBe('/home/test/bin/claude');
       });
     });
 
@@ -624,6 +640,15 @@ describe('utils.ts', () => {
         jest.spyOn(fs, 'existsSync').mockReturnValue(false as any);
 
         expect(findClaudeCLIPath()).toBeNull();
+      });
+
+      it('should resolve cli.js from custom PATH npm prefix', () => {
+        const npmBin = 'C:\\Users\\test\\AppData\\Roaming\\npm';
+        const cliJsPath = path.join(npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === cliJsPath);
+
+        const customPath = `${npmBin};C:\\Windows\\System32`;
+        expect(findClaudeCLIPath(customPath)).toBe(cliJsPath);
       });
     });
   });

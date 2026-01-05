@@ -72,7 +72,8 @@ export class InlineEditService {
   }
 
   private findClaudeCLI(): string | null {
-    return findClaudeCLIPath();
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    return findClaudeCLIPath(customEnv.PATH);
   }
 
   /** Edits text according to instructions (initial request). */
