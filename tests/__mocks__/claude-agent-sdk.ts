@@ -28,6 +28,15 @@ export interface Options {
 export type CanUseTool = (toolName: string, input: Record<string, unknown>, options: any) => Promise<PermissionResult>;
 export type PermissionResult = { behavior: 'allow' | 'deny'; updatedInput?: Record<string, unknown>; message?: string; interrupt?: boolean };
 
+// Query type that includes dynamic update methods
+interface Query extends AsyncGenerator<any> {
+  interrupt: jest.Mock;
+  setModel: jest.Mock;
+  setMcpServers: jest.Mock;
+  setPermissionMode: jest.Mock;
+  setMaxThinkingTokens: jest.Mock;
+}
+
 // Default mock messages for testing
 const mockMessages = [
   { type: 'system', subtype: 'init', session_id: 'test-session-123' },
@@ -37,7 +46,7 @@ const mockMessages = [
 
 let customMockMessages: any[] | null = null;
 let lastOptions: Options | undefined;
-let lastResponse: (AsyncGenerator<any> & { interrupt: jest.Mock }) | null = null;
+let lastResponse: Query | null = null;
 
 // Allow tests to set custom mock messages
 export function setMockMessages(messages: any[]) {
@@ -54,7 +63,7 @@ export function getLastOptions(): Options | undefined {
   return lastOptions;
 }
 
-export function getLastResponse(): (AsyncGenerator<any> & { interrupt: jest.Mock }) | null {
+export function getLastResponse(): Query | null {
   return lastResponse;
 }
 
@@ -88,52 +97,109 @@ async function runPreToolUseHooks(
 }
 
 // Mock query function that returns an async generator
-export function query({ prompt: _prompt, options }: { prompt: string; options: Options }): AsyncGenerator<any> & { interrupt: () => Promise<void> } {
+// Supports both string prompts (old behavior) and AsyncIterable prompts (streaming mode)
+export function query({ prompt, options }: { prompt: string | AsyncIterable<any>; options: Options }): Query {
   const messages = customMockMessages || mockMessages;
   lastOptions = options;
 
-  const generator = async function* () {
-    for (const msg of messages) {
-      // Check for tool_use in assistant messages and run hooks
-      if (msg.type === 'assistant' && msg.message?.content) {
-        let wasBlocked = false;
-        for (const block of msg.message.content) {
-          if (block.type === 'tool_use') {
-            const hookResult = await runPreToolUseHooks(
-              options.hooks?.PreToolUse,
-              block.name,
-              block.input,
-              block.id || `tool-${Date.now()}`
-            );
+  // Check if prompt is an AsyncIterable (streaming mode)
+  const isStreamingMode = typeof prompt !== 'string' && prompt !== null && typeof (prompt as any)[Symbol.asyncIterator] === 'function';
 
-            if (hookResult.blocked) {
-              // Yield the assistant message first (with tool_use)
-              yield msg;
-              // Then yield a blocked indicator as a user message with error
-              yield {
-                type: 'user',
-                parent_tool_use_id: block.id,
-                tool_use_result: `BLOCKED: ${hookResult.reason}`,
-                message: { content: [] },
-                _blocked: true,
-                _blockReason: hookResult.reason,
-              };
-              wasBlocked = true;
-              break; // Exit inner loop since we already handled this message
+  const generator = async function* () {
+    if (isStreamingMode) {
+      // Streaming mode: consume messages from the prompt generator
+      // and yield responses for each message
+      const promptIterable = prompt as AsyncIterable<any>;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _userMsg of promptIterable) {
+        // For each user message, yield the configured mock responses
+        for (const msg of messages) {
+          // Check for tool_use in assistant messages and run hooks
+          if (msg.type === 'assistant' && msg.message?.content) {
+            let wasBlocked = false;
+            for (const block of msg.message.content) {
+              if (block.type === 'tool_use') {
+                const hookResult = await runPreToolUseHooks(
+                  options.hooks?.PreToolUse,
+                  block.name,
+                  block.input,
+                  block.id || `tool-${Date.now()}`
+                );
+
+                if (hookResult.blocked) {
+                  // Yield the assistant message first (with tool_use)
+                  yield msg;
+                  // Then yield a blocked indicator as a user message with error
+                  yield {
+                    type: 'user',
+                    parent_tool_use_id: block.id,
+                    tool_use_result: `BLOCKED: ${hookResult.reason}`,
+                    message: { content: [] },
+                    _blocked: true,
+                    _blockReason: hookResult.reason,
+                  };
+                  wasBlocked = true;
+                  break; // Exit inner loop since we already handled this message
+                }
+              }
+            }
+            // If the message was blocked, don't yield it again
+            if (wasBlocked) {
+              continue;
             }
           }
-        }
-        // If the message was blocked, don't yield it again
-        if (wasBlocked) {
-          continue;
+          yield msg;
         }
       }
-      yield msg;
+    } else {
+      // Original mode: yield all messages once for string prompt
+      for (const msg of messages) {
+        // Check for tool_use in assistant messages and run hooks
+        if (msg.type === 'assistant' && msg.message?.content) {
+          let wasBlocked = false;
+          for (const block of msg.message.content) {
+            if (block.type === 'tool_use') {
+              const hookResult = await runPreToolUseHooks(
+                options.hooks?.PreToolUse,
+                block.name,
+                block.input,
+                block.id || `tool-${Date.now()}`
+              );
+
+              if (hookResult.blocked) {
+                // Yield the assistant message first (with tool_use)
+                yield msg;
+                // Then yield a blocked indicator as a user message with error
+                yield {
+                  type: 'user',
+                  parent_tool_use_id: block.id,
+                  tool_use_result: `BLOCKED: ${hookResult.reason}`,
+                  message: { content: [] },
+                  _blocked: true,
+                  _blockReason: hookResult.reason,
+                };
+                wasBlocked = true;
+                break; // Exit inner loop since we already handled this message
+              }
+            }
+          }
+          // If the message was blocked, don't yield it again
+          if (wasBlocked) {
+            continue;
+          }
+        }
+        yield msg;
+      }
     }
   };
 
-  const gen = generator() as AsyncGenerator<any> & { interrupt: jest.Mock };
+  const gen = generator() as Query;
   gen.interrupt = jest.fn().mockResolvedValue(undefined);
+  // Add dynamic update methods
+  gen.setModel = jest.fn().mockResolvedValue(undefined);
+  gen.setMcpServers = jest.fn().mockResolvedValue(undefined);
+  gen.setPermissionMode = jest.fn().mockResolvedValue(undefined);
+  gen.setMaxThinkingTokens = jest.fn().mockResolvedValue(undefined);
   lastResponse = gen;
 
   return gen;

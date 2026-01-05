@@ -369,11 +369,11 @@ describe('ClaudianPlugin', () => {
 
       await plugin.createConversation();
 
-      const setSessionIdSpy = jest.spyOn(plugin.agentService, 'setSessionId');
+      const switchSessionSpy = jest.spyOn(plugin.agentService, 'switchSession');
 
       await plugin.switchConversation(conv1.id);
 
-      expect(setSessionIdSpy).toHaveBeenCalledWith('session-123');
+      expect(switchSessionSpy).toHaveBeenCalledWith('session-123');
     });
 
     it('should return null for non-existent conversation', async () => {

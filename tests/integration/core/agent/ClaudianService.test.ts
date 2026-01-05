@@ -123,6 +123,13 @@ describe('ClaudianService', () => {
     service = new ClaudianService(mockPlugin, createMockMcpManager());
   });
 
+  afterEach(() => {
+    // Clean up persistent query state between tests
+    service?.cleanup();
+    // Restore all mocks/spies to prevent leakage between tests
+    jest.restoreAllMocks();
+  });
+
   describe('plan mode approvals', () => {
     it('includes revise feedback in ExitPlanMode response', async () => {
       service.setExitPlanModeCallback(async () => ({
@@ -296,6 +303,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -333,6 +341,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -366,6 +375,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -396,6 +406,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -429,6 +440,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -461,6 +473,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -480,6 +493,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello again' }] } },
+        { type: 'result' },
       ]);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -504,6 +518,7 @@ describe('ClaudianService', () => {
           type: 'assistant',
           message: { content: [{ type: 'text', text: 'This is a test response' }] },
         },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -520,6 +535,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         createAssistantWithToolUse('Read', { file_path: '/test/file.txt' }, 'read-tool-1'),
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -539,6 +555,7 @@ describe('ClaudianService', () => {
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         createAssistantWithToolUse('Read', { file_path: '/test/file.txt' }, 'read-tool-1'),
         createUserWithToolResult('File contents here', 'read-tool-1'),
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -559,6 +576,7 @@ describe('ClaudianService', () => {
           type: 'error',
           error: 'Something went wrong',
         },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -574,6 +592,7 @@ describe('ClaudianService', () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'my-session-123' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -598,18 +617,22 @@ describe('ClaudianService', () => {
         // drain
       }
 
+      // After first query, session ID should be captured
+      expect(service.getSessionId()).toBe('resume-session');
+
       setMockMessages([
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Second run' }] } },
         { type: 'result' },
       ]);
 
+      // Second query uses the same persistent connection with same session
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _chunk of service.query('second')) {
         // drain
       }
 
-      const options = getLastOptions();
-      expect(options?.resume).toBe('resume-session');
+      // Session should still be the same
+      expect(service.getSessionId()).toBe('resume-session');
     });
 
     it('should extract multiple content blocks from assistant message', async () => {
@@ -624,6 +647,7 @@ describe('ClaudianService', () => {
             ],
           },
         },
+        { type: 'result' },
       ]);
 
       const chunks: any[] = [];
@@ -842,12 +866,20 @@ describe('ClaudianService', () => {
 
     it('should rebuild history when session is missing but history exists', async () => {
       (service as any).resolvedClaudePath = '/mock/claude';
-      const prompts: string[] = [];
+      const sentPrompts: string[] = [];
 
-      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (prompt: string) {
-        prompts.push(prompt);
-        yield { type: 'text', content: 'ok' };
-      }) as any);
+      // Spy on buildSDKUserMessage to capture the prompt being sent
+      const originalBuildSDKUserMessage = (service as any).buildSDKUserMessage.bind(service);
+      jest.spyOn(service as any, 'buildSDKUserMessage').mockImplementation((prompt: string, images: any[]) => {
+        sentPrompts.push(prompt);
+        return originalBuildSDKUserMessage(prompt, images);
+      });
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } },
+        { type: 'result' },
+      ]);
 
       const history = [
         { id: 'msg-1', role: 'user' as const, content: 'Previous message', timestamp: Date.now() },
@@ -859,10 +891,10 @@ describe('ClaudianService', () => {
         chunks.push(chunk);
       }
 
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0]).toContain('User: Previous message');
-      expect(prompts[0]).toContain('Assistant: Previous response');
-      expect(prompts[0]).toContain('User: New message');
+      expect(sentPrompts).toHaveLength(1);
+      expect(sentPrompts[0]).toContain('User: Previous message');
+      expect(sentPrompts[0]).toContain('Assistant: Previous response');
+      expect(sentPrompts[0]).toContain('New message');
       expect(chunks.some((c) => c.type === 'text')).toBe(true);
     });
   });
@@ -1678,17 +1710,25 @@ describe('ClaudianService', () => {
       (service as any).resolvedClaudePath = '/mock/claude';
     });
 
-    it('should rebuild history and retry without resume on session expiration', async () => {
-      service.setSessionId('stale-session');
-      const prompts: string[] = [];
+    it('should rebuild history when session was interrupted', async () => {
+      const sentPrompts: string[] = [];
 
-      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (prompt: string) {
-        prompts.push(prompt);
-        if (prompts.length === 1) {
-          throw new Error('Session expired');
-        }
-        yield { type: 'text', content: 'Recovered' };
-      }) as any);
+      // Spy on buildSDKUserMessage to capture the prompt being sent
+      const originalBuildSDKUserMessage = (service as any).buildSDKUserMessage.bind(service);
+      jest.spyOn(service as any, 'buildSDKUserMessage').mockImplementation((prompt: string, images: any[]) => {
+        sentPrompts.push(prompt);
+        return originalBuildSDKUserMessage(prompt, images);
+      });
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Recovered' }] } },
+        { type: 'result' },
+      ]);
+
+      // Simulate interrupted session state
+      service.setSessionId('stale-session');
+      (service as any).sessionManager.markInterrupted();
 
       const history = [
         { id: 'msg-1', role: 'user' as const, content: 'First question', timestamp: Date.now() },
@@ -1709,13 +1749,13 @@ describe('ClaudianService', () => {
         chunks.push(chunk);
       }
 
-      expect(prompts[0]).toBe('Follow up');
-      expect(prompts[1]).toContain('User: First question');
-      expect(prompts[1]).toContain('Assistant: Answer');
-      expect(prompts[1]).toContain('<current_note>');
-      expect(prompts[1]).toContain('note.md');
+      expect(sentPrompts).toHaveLength(1);
+      // History should be rebuilt when session was interrupted
+      expect(sentPrompts[0]).toContain('User: First question');
+      expect(sentPrompts[0]).toContain('Assistant: Answer');
+      expect(sentPrompts[0]).toContain('<current_note>');
+      expect(sentPrompts[0]).toContain('note.md');
       expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
-      expect(service.getSessionId()).toBeNull();
     });
   });
 
@@ -1725,25 +1765,30 @@ describe('ClaudianService', () => {
       (service as any).resolvedClaudePath = '/mock/claude';
     });
 
-    it('should return plain prompt when no valid images', () => {
-      const prompt = (service as any).buildPromptWithImages('hello', []);
-      expect(prompt).toBe('hello');
+    it('should return SDK user message with just text when no valid images', () => {
+      const message = (service as any).buildSDKUserMessage('hello', []);
+      expect(message.type).toBe('user');
+      expect(message.message.role).toBe('user');
+      expect(message.message.content).toHaveLength(1);
+      expect(message.message.content[0].type).toBe('text');
+      expect(message.message.content[0].text).toBe('hello');
     });
 
-    it('should build async generator with image blocks', async () => {
+    it('should build SDK user message with image blocks', () => {
       const images = [
         { id: 'img-1', name: 'a.png', mediaType: 'image/png', data: 'AAA', size: 3, source: 'file' },
         { id: 'img-2', name: 'b.png', mediaType: 'image/png', data: 'BBB', size: 3, source: 'file' },
       ];
 
-      const gen = (service as any).buildPromptWithImages('hi', images) as AsyncGenerator<any>;
-      const messages: any[] = [];
-      for await (const m of gen) messages.push(m);
+      const message = (service as any).buildSDKUserMessage('hi', images);
 
-      expect(messages).toHaveLength(1);
-      expect(messages[0].type).toBe('user');
-      expect(messages[0].message.content[0].type).toBe('image');
-      expect(messages[0].message.content[2].type).toBe('text');
+      expect(message.type).toBe('user');
+      expect(message.message.role).toBe('user');
+      // Images first, then text
+      expect(message.message.content[0].type).toBe('image');
+      expect(message.message.content[1].type).toBe('image');
+      expect(message.message.content[2].type).toBe('text');
+      expect(message.message.content[2].text).toBe('hi');
     });
 
     it('should hydrate images using existing data, cache, and file paths', async () => {
@@ -2084,29 +2129,29 @@ describe('ClaudianService', () => {
       (service as any).resolvedClaudePath = '/mock/claude';
     });
 
-    it('yields error when session retry also fails', async () => {
-      // eslint-disable-next-line require-yield
-      jest.spyOn(service as any, 'queryViaSDK').mockImplementation(async function* () {
-        throw new Error('Session expired');
-      });
+    it('yields error when persistent query fails to start', async () => {
+      // Clean up any existing persistent query first
+      service.cleanup();
 
-      const history = [
-        { id: 'u1', role: 'user' as const, content: 'Hi', timestamp: 0 },
-      ];
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const sdk = require('@anthropic-ai/claude-agent-sdk');
+      jest.spyOn(sdk, 'query').mockImplementation(() => { throw new Error('Session expired'); });
 
       const chunks: any[] = [];
-      for await (const c of service.query('Hi', undefined, history)) chunks.push(c);
+      for await (const c of service.query('Hi')) chunks.push(c);
 
       const errorChunk = chunks.find((c) => c.type === 'error');
       expect(errorChunk).toBeDefined();
       expect(errorChunk.content).toContain('Session expired');
     });
 
-    it('yields error for non-session failures', async () => {
-      // eslint-disable-next-line require-yield
-      jest.spyOn(service as any, 'queryViaSDK').mockImplementation(async function* () {
-        throw new Error('Network down');
-      });
+    it('yields error for startup failures', async () => {
+      // Clean up any existing persistent query first
+      service.cleanup();
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const sdk = require('@anthropic-ai/claude-agent-sdk');
+      jest.spyOn(sdk, 'query').mockImplementation(() => { throw new Error('Network down'); });
 
       const chunks: any[] = [];
       for await (const c of service.query('Hi')) chunks.push(c);
@@ -2150,18 +2195,6 @@ describe('ClaudianService', () => {
 
       expect(resolveImageFilePath('/abs.png', '/test/vault')).toBe('/abs.png');
       expect(resolveImageFilePath('rel.png', null)).toBeNull();
-    });
-
-    it('yields error when SDK query throws inside queryViaSDK', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const sdk = require('@anthropic-ai/claude-agent-sdk');
-      const spy = jest.spyOn(sdk, 'query').mockImplementation(() => { throw new Error('boom'); });
-
-      const chunks: any[] = [];
-      for await (const c of service.query('Hi')) chunks.push(c);
-
-      expect(chunks.some((c) => c.type === 'error' && c.content.includes('boom'))).toBe(true);
-      spy.mockRestore();
     });
 
     it('allows pre-approved actions in safe mode callback', async () => {
@@ -2257,6 +2290,80 @@ describe('ClaudianService', () => {
       await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'large.md' }, tool_result: {} } as any, 'tool-large', {} as any);
 
       expect(pendingDiffData.get('tool-large')).toEqual({ filePath: 'large.md', skippedReason: 'too_large' });
+    });
+  });
+
+  describe('persistent query', () => {
+    beforeEach(() => {
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+    });
+
+    it('should start persistent query on preWarm', async () => {
+      expect(service.isPersistentQueryActive()).toBe(false);
+
+      await service.preWarm();
+
+      expect(service.isPersistentQueryActive()).toBe(true);
+    });
+
+    it('should start persistent query with session ID when provided', async () => {
+      await service.preWarm('existing-session-123');
+
+      expect(service.isPersistentQueryActive()).toBe(true);
+      const options = getLastOptions();
+      expect(options?.resume).toBe('existing-session-123');
+    });
+
+    it('should not start another persistent query if already running', async () => {
+      await service.preWarm();
+      const firstQuery = (service as any).persistentQuery;
+
+      await service.preWarm('different-session');
+      const secondQuery = (service as any).persistentQuery;
+
+      // Should be the same query object (not restarted)
+      expect(firstQuery).toBe(secondQuery);
+    });
+
+    it('should keep persistent query alive on resetSession', async () => {
+      await service.preWarm();
+      expect(service.isPersistentQueryActive()).toBe(true);
+
+      service.resetSession();
+
+      // resetSession no longer closes the persistent query - subprocess stays alive
+      // for instant response on new conversations
+      expect(service.isPersistentQueryActive()).toBe(true);
+      expect(service.getSessionId()).toBeNull();
+    });
+
+    it('should close persistent query on cleanup', async () => {
+      await service.preWarm();
+      expect(service.isPersistentQueryActive()).toBe(true);
+
+      service.cleanup();
+
+      expect(service.isPersistentQueryActive()).toBe(false);
+    });
+
+    it('should keep persistent query alive on switchSession', async () => {
+      await service.preWarm('session-1');
+      expect(service.isPersistentQueryActive()).toBe(true);
+
+      await service.switchSession('session-2');
+
+      // switchSession updates session state without restarting subprocess
+      expect(service.isPersistentQueryActive()).toBe(true);
+      expect(service.getSessionId()).toBe('session-2');
+    });
+
+    it('should handle null session in switchSession for new conversation', async () => {
+      await service.preWarm('existing-session');
+
+      await service.switchSession(null);
+
+      expect(service.isPersistentQueryActive()).toBe(true);
+      expect(service.getSessionId()).toBeNull();
     });
   });
 });

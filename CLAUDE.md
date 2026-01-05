@@ -81,6 +81,8 @@ src/
 
 ## Commands
 
+This project uses npm as the package manager.
+
 ```bash
 npm run dev       # Development (watch mode)
 npm run build     # Production build

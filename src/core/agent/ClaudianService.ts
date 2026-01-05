@@ -5,7 +5,7 @@
  * session persistence, permission modes, and security hooks.
  */
 
-import type { CanUseTool, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, Options, PermissionResult, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -22,7 +22,7 @@ import {
   normalizePathForFilesystem,
   type PathAccessType,
 } from '../../utils/path';
-import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
+import { buildContextFromHistory, getLastUserMessage } from '../../utils/session';
 import {
   createBlocklistHook,
   createFileHashPostHook,
@@ -52,6 +52,59 @@ import type {
   ToolDiffData,
 } from '../types';
 import { THINKING_BUDGETS } from '../types';
+
+// ============================================
+// Message Channel (for persistent streaming)
+// ============================================
+
+interface MessageChannel<T> {
+  send: (message: T) => void;
+  receive: () => AsyncIterable<T>;
+  close: () => void;
+}
+
+function createMessageChannel<T>(): MessageChannel<T> {
+  const queue: T[] = [];
+  let resolver: ((value: IteratorResult<T>) => void) | null = null;
+  let closed = false;
+
+  return {
+    send(message: T) {
+      if (closed) return;
+      if (resolver) {
+        resolver({ value: message, done: false });
+        resolver = null;
+      } else {
+        queue.push(message);
+      }
+    },
+    receive() {
+      return {
+        [Symbol.asyncIterator]() {
+          return {
+            async next(): Promise<IteratorResult<T>> {
+              if (queue.length > 0) {
+                return { value: queue.shift()!, done: false };
+              }
+              if (closed) {
+                return { value: undefined as T, done: true };
+              }
+              return new Promise(resolve => {
+                resolver = resolve;
+              });
+            }
+          };
+        }
+      };
+    },
+    close() {
+      closed = true;
+      if (resolver) {
+        resolver({ value: undefined as T, done: true });
+      }
+    }
+  };
+}
 
 // ============================================
 // Session Management (inlined)
@@ -152,26 +205,6 @@ class DiffStore {
   }
 }
 
-// ============================================
-// SDK Content Types
-// ============================================
-
-interface TextContentBlock {
-  type: 'text';
-  text: string;
-}
-
-interface ImageContentBlock {
-  type: 'image';
-  source: {
-    type: 'base64';
-    media_type: string;
-    data: string;
-  };
-}
-
-type SDKContentBlock = TextContentBlock | ImageContentBlock;
-
 export type ApprovalCallback = (
   toolName: string,
   input: Record<string, unknown>,
@@ -216,6 +249,19 @@ export class ClaudianService {
   private approvedPlanContent: string | null = null;
   private vaultPath: string | null = null;
 
+  // Persistent streaming state - keeps subprocess alive across queries
+  private persistentQuery: Query | null = null;
+  private messageChannel: MessageChannel<SDKUserMessage> | null = null;
+  private queryAbortController: AbortController | null = null;
+  private responseConsumerRunning = false;
+
+  // Response routing - maps each send() to its response chunks
+  private activeResponseResolvers: Array<{
+    onChunk: (chunk: StreamChunk) => void;
+    onDone: () => void;
+    onError: (error: Error) => void;
+  }> = [];
+
   // Modular components
   private sessionManager = new SessionManager();
   private approvalManager: ApprovalManager;
@@ -251,6 +297,279 @@ export class ClaudianService {
     await this.mcpManager.loadServers();
   }
 
+  /**
+   * Pre-warm the Claude Agent SDK by starting a persistent query.
+   * This keeps the subprocess alive for the entire conversation, eliminating
+   * cold start latency on subsequent messages.
+   *
+   * @param resumeSessionId Optional session ID to resume (from active conversation)
+   */
+  async preWarm(resumeSessionId?: string): Promise<void> {
+    // Skip if already have persistent query
+    if (this.persistentQuery) {
+      return;
+    }
+
+    // Resolve CLI path early
+    if (!this.resolvedClaudePath) {
+      this.resolvedClaudePath = this.findClaudeCLI();
+    }
+
+    if (!this.resolvedClaudePath) {
+      return;
+    }
+
+    const vaultPath = getVaultPath(this.plugin.app);
+    if (!vaultPath) {
+      return;
+    }
+
+    this.vaultPath = vaultPath;
+    try {
+      await this.startPersistentQuery(vaultPath, resumeSessionId);
+    } catch (error) {
+      console.error('[Claudian PreWarm] Failed to start persistent query:', error);
+      // Clear any partial state
+      this.persistentQuery = null;
+      this.messageChannel = null;
+    }
+  }
+
+  /**
+   * Starts a persistent query with a message generator that keeps the subprocess alive.
+   * The subprocess remains running until explicitly closed.
+   */
+  private async startPersistentQuery(cwd: string, resumeSessionId?: string): Promise<void> {
+    // Store vault path for security hooks
+    this.vaultPath = cwd;
+
+    // Create message channel for sending user messages
+    this.messageChannel = createMessageChannel<SDKUserMessage>();
+    this.queryAbortController = new AbortController();
+
+    // Build full options for the persistent query
+    const options = this.buildQueryOptions(cwd, resumeSessionId);
+
+    // Start the persistent query with message generator
+    this.persistentQuery = agentQuery({
+      prompt: this.messageChannel.receive(),
+      options,
+    });
+
+    // Start consuming responses in background
+    this.startResponseConsumer();
+
+    // Trigger subprocess spawn by calling setModel - this warms up the connection
+    // Without this, the subprocess only spawns when we first call a method or send a message
+    const model = this.plugin.settings.model;
+    await this.persistentQuery.setModel(model);
+  }
+
+  /**
+   * Build the query options for the persistent query.
+   * These are the base options that can be dynamically updated.
+   */
+  private buildQueryOptions(cwd: string, resumeSessionId?: string): Options {
+    const permissionMode = this.plugin.settings.permissionMode;
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    const enhancedPath = getEnhancedPath(customEnv.PATH);
+
+    // Build hooks
+    const blocklistHook = createBlocklistHook(() => ({
+      blockedCommands: this.plugin.settings.blockedCommands,
+      enableBlocklist: this.plugin.settings.enableBlocklist,
+    }));
+
+    const vaultRestrictionHook = createVaultRestrictionHook({
+      getPathAccessType: (p) => this.getPathAccessType(p),
+    });
+
+    const postCallback: FileEditPostCallback = {
+      trackEditedFile: async (name, input, isError) => {
+        if (name === 'Write' && !isError) {
+          const filePath = input?.file_path as string;
+          if (typeof filePath === 'string' && this.isPlanFilePath(filePath)) {
+            this.currentPlanFilePath = this.resolvePlanPath(filePath);
+          }
+        }
+      },
+    };
+
+    const fileHashPreHook = createFileHashPreHook(cwd, this.diffStore.getOriginalContents());
+    const fileHashPostHook = createFileHashPostHook(
+      cwd,
+      this.diffStore.getOriginalContents(),
+      this.diffStore.getPendingDiffData(),
+      postCallback
+    );
+
+    // Build system prompt (base version - context-specific parts added per-message)
+    const systemPrompt = buildSystemPrompt({
+      mediaFolder: this.plugin.settings.mediaFolder,
+      customPrompt: this.plugin.settings.systemPrompt,
+      allowedExportPaths: this.plugin.settings.allowedExportPaths,
+      allowedContextPaths: this.plugin.settings.allowedContextPaths,
+      vaultPath: cwd,
+      hasEditorContext: false, // Will be updated per-message if needed
+      planMode: false, // Will be updated dynamically
+      appendedPlan: this.approvedPlanContent ?? undefined,
+    });
+
+    const options: Options = {
+      cwd,
+      systemPrompt,
+      model: this.plugin.settings.model,
+      abortController: this.queryAbortController ?? undefined,
+      pathToClaudeCodeExecutable: this.resolvedClaudePath!,
+      // settingSources removed temporarily to test if it causes 31s delay
+      env: {
+        ...process.env,
+        ...customEnv,
+        PATH: enhancedPath,
+      },
+      canUseTool: this.createUnifiedToolCallback(permissionMode),
+      hooks: {
+        PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
+        PostToolUse: [fileHashPostHook],
+      },
+      includePartialMessages: true, // For streaming deltas
+    };
+
+    // Permission mode
+    if (permissionMode === 'yolo') {
+      options.permissionMode = 'bypassPermissions';
+      options.allowDangerouslySkipPermissions = true;
+    } else {
+      options.permissionMode = 'default';
+    }
+
+    // Thinking budget
+    const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+    if (budgetConfig && budgetConfig.tokens > 0) {
+      options.maxThinkingTokens = budgetConfig.tokens;
+    }
+
+    // Resume session if provided
+    if (resumeSessionId) {
+      options.resume = resumeSessionId;
+    }
+
+    return options;
+  }
+
+  /**
+   * Consumes responses from the persistent query in the background.
+   * Routes response chunks to the active response handlers.
+   */
+  private async startResponseConsumer(): Promise<void> {
+    if (!this.persistentQuery || this.responseConsumerRunning) return;
+
+    this.responseConsumerRunning = true;
+
+    try {
+      for await (const message of this.persistentQuery) {
+        // Check for abort
+        if (this.queryAbortController?.signal.aborted) {
+          break;
+        }
+
+        // Transform SDK message to stream chunks
+        for (const event of transformSDKMessage(message, {
+          intendedModel: this.plugin.settings.model
+        })) {
+          if (isSessionInitEvent(event)) {
+            this.sessionManager.captureSession(event.sessionId);
+          } else if (isStreamChunk(event)) {
+            // Route to active response handler
+            this.routeResponseChunk(event);
+          }
+        }
+
+        // Check for result message (turn complete)
+        if (message.type === 'result') {
+          this.notifyTurnComplete();
+        }
+      }
+    } catch (error) {
+      // AbortError is expected when we intentionally close the query (new conversation, cleanup, etc.)
+      const isAbortError = error instanceof Error &&
+        (error.name === 'AbortError' || error.message.includes('aborted'));
+      if (!isAbortError) {
+        console.error('[Claudian] Response consumer error:', error);
+        this.notifyResponseError(error instanceof Error ? error : new Error(String(error)));
+      }
+    } finally {
+      // Resolve any pending handlers so callers don't hang
+      this.resolveAllPendingHandlers();
+      this.responseConsumerRunning = false;
+    }
+  }
+
+  /**
+   * Resolve all pending response handlers to prevent hanging on interruption/shutdown.
+   */
+  private resolveAllPendingHandlers(): void {
+    for (const handler of this.activeResponseResolvers) {
+      handler.onDone();
+    }
+    this.activeResponseResolvers = [];
+  }
+
+  /**
+   * Route a response chunk to the first active response handler.
+   */
+  private routeResponseChunk(chunk: StreamChunk): void {
+    const handler = this.activeResponseResolvers[0];
+    if (handler) {
+      handler.onChunk(chunk);
+    }
+  }
+
+  /**
+   * Notify the first handler that the turn is complete.
+   */
+  private notifyTurnComplete(): void {
+    const handler = this.activeResponseResolvers.shift();
+    if (handler) {
+      handler.onDone();
+    }
+  }
+
+  /**
+   * Notify the first handler of an error.
+   */
+  private notifyResponseError(error: Error): void {
+    const handler = this.activeResponseResolvers.shift();
+    if (handler) {
+      handler.onError(error);
+    }
+  }
+
+  /**
+   * Close the persistent query and clean up resources.
+   */
+  private closePersistentQuery(): void {
+    if (this.persistentQuery) {
+      this.persistentQuery.interrupt().catch(() => {});
+      this.persistentQuery = null;
+    }
+    if (this.messageChannel) {
+      this.messageChannel.close();
+      this.messageChannel = null;
+    }
+    if (this.queryAbortController) {
+      this.queryAbortController.abort();
+      this.queryAbortController = null;
+    }
+    this.activeResponseResolvers = [];
+    this.responseConsumerRunning = false;
+  }
+
+  /** Returns true if persistent query is running. */
+  isPersistentQueryActive(): boolean {
+    return this.persistentQuery !== null;
+  }
+
   private findClaudeCLI(): string | null {
     // Check for user-specified custom path first
     const customPath = this.plugin.settings.claudeCliPath?.trim();
@@ -276,7 +595,7 @@ export class ClaudianService {
     return findClaudeCLIPath();
   }
 
-  /** Sends a query to Claude and streams the response. */
+  /** Sends a query to Claude via the persistent connection and streams the response. */
   async *query(
     prompt: string,
     images?: ImageAttachment[],
@@ -298,6 +617,23 @@ export class ClaudianService {
       return;
     }
 
+    // Ensure persistent query is running
+    if (!this.persistentQuery) {
+      try {
+        const sessionId = this.sessionManager.getSessionId();
+        await this.startPersistentQuery(vaultPath, sessionId ?? undefined);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error starting persistent query';
+        yield { type: 'error', content: msg };
+        return;
+      }
+    }
+
+    if (!this.persistentQuery || !this.messageChannel) {
+      yield { type: 'error', content: 'Failed to start persistent query' };
+      return;
+    }
+
     this.abortController = new AbortController();
 
     const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
@@ -314,9 +650,6 @@ export class ClaudianService {
     }
 
     // Rebuild history if no session exists but we have conversation history
-    // (e.g., after provider change cleared the sessionId).
-    // Note: Model switching within same provider doesn't require session reset -
-    // the SDK handles it natively with the same session ID.
     const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
       conversationHistory && conversationHistory.length > 0;
 
@@ -336,53 +669,56 @@ export class ClaudianService {
       this.sessionManager.invalidateSession();
     }
 
+    // Update dynamic options before sending
+    await this.updateQueryOptions(queryOptions);
+
+    // Set pending model for session capture
+    const selectedModel = queryOptions?.model || this.plugin.settings.model;
+    this.sessionManager.setPendingModel(selectedModel);
+
+    // Build user message
+    const userMessage = this.buildSDKUserMessage(queryPrompt, hydratedImages || []);
+
+    // Create response stream
+    const responseStream = this.createResponseStream();
+
+    // Send message to persistent query
+    this.messageChannel.send(userMessage);
+
+    // Yield responses
     try {
-      yield* this.queryViaSDK(queryPrompt, vaultPath, hydratedImages, queryOptions);
-    } catch (error) {
-      if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
-        this.sessionManager.invalidateSession();
-
-        const historyContext = buildContextFromHistory(conversationHistory);
-        const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        const fullPrompt = historyContext
-          ? shouldAppendPrompt
-            ? `${historyContext}\n\nUser: ${prompt}`
-            : historyContext
-          : prompt;
-
-        const retryImages = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
-
-        try {
-          yield* this.queryViaSDK(fullPrompt, vaultPath, retryImages, queryOptions);
-        } catch (retryError) {
-          const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
-          yield { type: 'error', content: msg };
+      let streamSessionId: string | null = this.sessionManager.getSessionId();
+      for await (const chunk of responseStream) {
+        if (chunk.type === 'usage') {
+          yield { ...chunk, sessionId: streamSessionId };
+        } else {
+          yield chunk;
         }
-        return;
+        // Capture session ID if it changed
+        const currentSessionId = this.sessionManager.getSessionId();
+        if (currentSessionId !== streamSessionId) {
+          streamSessionId = currentSessionId;
+        }
       }
-
+    } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', content: msg };
     } finally {
       this.abortController = null;
+      this.sessionManager.clearPendingModel();
     }
+
+    yield { type: 'done' };
   }
 
   /**
-   * Build a prompt with images as content blocks
+   * Build an SDKUserMessage from prompt and images.
    */
-  private buildPromptWithImages(prompt: string, images?: ImageAttachment[]): string | AsyncGenerator<any> {
-    const validImages = (images || []).filter(img => !!img.data);
-    if (validImages.length === 0) {
-      return prompt;
-    }
+  private buildSDKUserMessage(prompt: string, images: ImageAttachment[]): SDKUserMessage {
+    const content: Array<{ type: string; [key: string]: unknown }> = [];
 
-    const content: SDKContentBlock[] = [];
-
-    // Add image blocks first (Claude recommends images before text)
-    for (const image of validImages) {
+    // Add images first (Claude recommends images before text)
+    for (const image of images.filter(img => !!img.data)) {
       content.push({
         type: 'image',
         source: {
@@ -393,197 +729,105 @@ export class ClaudianService {
       });
     }
 
-    // Add text block with the prompt
+    // Add text
     if (prompt.trim()) {
-      content.push({
-        type: 'text',
-        text: prompt,
-      });
+      content.push({ type: 'text', text: prompt });
     }
 
-    async function* messageGenerator() {
-      yield {
-        type: 'user',
-        message: {
-          role: 'user',
-          content,
-        },
-      };
-    }
-
-    return messageGenerator();
+    return {
+      type: 'user',
+      message: { role: 'user', content },
+      session_id: this.sessionManager.getSessionId() || '',
+      parent_tool_use_id: null,
+    } as SDKUserMessage;
   }
 
-  private async *queryViaSDK(
-    prompt: string,
-    cwd: string,
-    images?: ImageAttachment[],
-    queryOptions?: QueryOptions
-  ): AsyncGenerator<StreamChunk> {
-    const selectedModel = queryOptions?.model || this.plugin.settings.model;
-    const permissionMode = this.plugin.settings.permissionMode;
+  /**
+   * Create a response stream that receives chunks from the response consumer.
+   */
+  private createResponseStream(): AsyncIterable<StreamChunk> {
+    return {
+      [Symbol.asyncIterator]: () => {
+        const chunks: StreamChunk[] = [];
+        let resolver: ((result: IteratorResult<StreamChunk>) => void) | null = null;
+        let done = false;
+        let error: Error | null = null;
 
-    this.sessionManager.setPendingModel(selectedModel);
-    this.vaultPath = cwd;
+        // Register handler
+        this.activeResponseResolvers.push({
+          onChunk: (chunk) => {
+            if (resolver) {
+              resolver({ value: chunk, done: false });
+              resolver = null;
+            } else {
+              chunks.push(chunk);
+            }
+          },
+          onDone: () => {
+            done = true;
+            if (resolver) {
+              resolver({ value: undefined as unknown as StreamChunk, done: true });
+            }
+          },
+          onError: (err) => {
+            error = err;
+            if (resolver) {
+              resolver({ value: undefined as unknown as StreamChunk, done: true });
+            }
+          },
+        });
 
-    // Parse custom environment variables from settings
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-
-    // Enhance PATH for GUI apps (Obsidian has minimal PATH)
-    // User-specified PATH from settings takes priority
-    const enhancedPath = getEnhancedPath(customEnv.PATH);
-
-    // Build the prompt - either a string or content blocks with images
-    const queryPrompt = this.buildPromptWithImages(prompt, images);
-
-    // Build system prompt with settings
-    const hasEditorContext = prompt.includes('<editor_selection');
-    const systemPrompt = buildSystemPrompt({
-      mediaFolder: this.plugin.settings.mediaFolder,
-      customPrompt: this.plugin.settings.systemPrompt,
-      allowedExportPaths: this.plugin.settings.allowedExportPaths,
-      allowedContextPaths: this.plugin.settings.allowedContextPaths,
-      vaultPath: cwd,
-      hasEditorContext,
-      planMode: queryOptions?.planMode,
-      appendedPlan: this.approvedPlanContent ?? undefined,
-    });
-
-
-    const options: Options = {
-      cwd,
-      systemPrompt,
-      model: selectedModel,
-      abortController: this.abortController ?? undefined,
-      pathToClaudeCodeExecutable: this.resolvedClaudePath!,
-      settingSources: ['user', 'project'],
-      env: {
-        ...process.env,
-        ...customEnv,
-        PATH: enhancedPath,
+        return {
+          async next(): Promise<IteratorResult<StreamChunk>> {
+            if (error) throw error;
+            if (chunks.length > 0) {
+              return { value: chunks.shift()!, done: false };
+            }
+            if (done) {
+              return { value: undefined as unknown as StreamChunk, done: true };
+            }
+            return new Promise(resolve => {
+              resolver = resolve;
+            });
+          },
+        };
       },
     };
+  }
 
-    // Add MCP servers to options
-    // Combine @-mentioned servers (from caller) with UI-enabled servers
+  /**
+   * Update dynamic options on the persistent query.
+   */
+  private async updateQueryOptions(queryOptions?: QueryOptions): Promise<void> {
+    if (!this.persistentQuery) return;
+
+    // Update model if changed
+    const model = queryOptions?.model || this.plugin.settings.model;
+    await this.persistentQuery.setModel(model);
+
+    // Update thinking budget
+    const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+    if (budgetConfig) {
+      await this.persistentQuery.setMaxThinkingTokens(
+        budgetConfig.tokens > 0 ? budgetConfig.tokens : null
+      );
+    }
+
+    // Update permission mode if plan mode requested
+    if (queryOptions?.planMode) {
+      await this.persistentQuery.setPermissionMode('plan');
+    } else if (this.plugin.settings.permissionMode === 'yolo') {
+      await this.persistentQuery.setPermissionMode('bypassPermissions');
+    } else {
+      await this.persistentQuery.setPermissionMode('default');
+    }
+
+    // MCP servers - use setMcpServers() for dynamic updates
     const mcpMentions = queryOptions?.mcpMentions || new Set<string>();
     const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
     const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
     const mcpServers = this.mcpManager.getActiveServers(combinedMentions);
-
-    if (Object.keys(mcpServers).length > 0) {
-      options.mcpServers = mcpServers;
-    }
-
-    const disallowedMcpTools = this.mcpManager.getDisallowedMcpTools(combinedMentions);
-    if (disallowedMcpTools.length > 0) {
-      options.disallowedTools = disallowedMcpTools;
-    }
-
-    // Create hooks for security enforcement
-    const blocklistHook = createBlocklistHook(() => ({
-      blockedCommands: this.plugin.settings.blockedCommands,
-      enableBlocklist: this.plugin.settings.enableBlocklist,
-    }));
-
-    const vaultRestrictionHook = createVaultRestrictionHook({
-      getPathAccessType: (p) => this.getPathAccessType(p),
-    });
-
-    // Create file tracking callbacks
-    const postCallback: FileEditPostCallback = {
-      trackEditedFile: async (name, input, isError) => {
-        // Track plan file writes (to ~/.claude/plans/)
-        if (name === 'Write' && !isError) {
-          const filePath = input?.file_path as string;
-          if (typeof filePath === 'string' && this.isPlanFilePath(filePath)) {
-            this.currentPlanFilePath = this.resolvePlanPath(filePath);
-          }
-        }
-      },
-    };
-
-    // Create file hash tracking hooks
-    const fileHashPreHook = createFileHashPreHook(
-      this.vaultPath,
-      this.diffStore.getOriginalContents()
-    );
-    const fileHashPostHook = createFileHashPostHook(
-      this.vaultPath,
-      this.diffStore.getOriginalContents(),
-      this.diffStore.getPendingDiffData(),
-      postCallback
-    );
-
-    // Apply permission mode
-    // Always use canUseTool for AskUserQuestion support in both modes
-    options.canUseTool = this.createUnifiedToolCallback(permissionMode);
-    options.hooks = {
-      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
-      PostToolUse: [fileHashPostHook],
-    };
-
-    // Set permission mode based on settings or plan mode
-    if (queryOptions?.planMode) {
-      // Plan mode: read-only exploration, no tool execution
-      options.permissionMode = 'plan';
-    } else if (permissionMode === 'yolo') {
-      options.permissionMode = 'bypassPermissions';
-      options.allowDangerouslySkipPermissions = true;
-    } else {
-      options.permissionMode = 'default';
-    }
-
-    // Enable extended thinking based on thinking budget setting
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
-    }
-
-    // Apply allowedTools restriction if specified by slash command
-    // Include 'Skill' tool to maintain skill availability
-    if (queryOptions?.allowedTools && queryOptions.allowedTools.length > 0) {
-      options.allowedTools = [...queryOptions.allowedTools, 'Skill'];
-    }
-
-    // Resume previous session if we have a session ID
-    const sessionId = this.sessionManager.getSessionId();
-    if (sessionId) {
-      options.resume = sessionId;
-    }
-
-    try {
-      const response = agentQuery({ prompt: queryPrompt, options });
-      let streamSessionId: string | null = this.sessionManager.getSessionId();
-
-      for await (const message of response) {
-        if (this.abortController?.signal.aborted) {
-          await response.interrupt();
-          break;
-        }
-
-        for (const event of transformSDKMessage(message, { intendedModel: selectedModel })) {
-          if (isSessionInitEvent(event)) {
-            this.sessionManager.captureSession(event.sessionId);
-            streamSessionId = event.sessionId;
-          } else if (isStreamChunk(event)) {
-            if (event.type === 'usage') {
-              yield { ...event, sessionId: streamSessionId };
-            } else {
-              yield event;
-            }
-          }
-        }
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      yield { type: 'error', content: msg };
-    } finally {
-      this.sessionManager.clearPendingModel();
-    }
-
-    yield { type: 'done' };
+    await this.persistentQuery.setMcpServers(mcpServers);
   }
 
   /** Cancel the current query. */
@@ -592,15 +836,28 @@ export class ClaudianService {
       this.abortController.abort();
       this.sessionManager.markInterrupted();
     }
+    // Interrupt the persistent query to stop current response
+    if (this.persistentQuery) {
+      this.persistentQuery.interrupt().catch(() => {});
+    }
   }
 
-  /** Reset the conversation session. */
+  /**
+   * Reset the conversation session WITHOUT restarting the subprocess.
+   * Clears session state but keeps the persistent query alive for instant response.
+   */
   resetSession() {
+    // NOTE: We intentionally do NOT close the persistent query here.
+    // The subprocess stays alive and the SDK handles new sessions
+    // based on the empty session_id in each SDKUserMessage.
     this.sessionManager.reset();
     this.approvalManager.clearSessionApprovals();
     this.diffStore.clear();
     this.approvedPlanContent = null;
     this.currentPlanFilePath = null;
+
+    // Clear any pending response handlers from previous session
+    this.activeResponseResolvers = [];
   }
 
   /** Get the current session ID. */
@@ -613,9 +870,33 @@ export class ClaudianService {
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
   }
 
+  /**
+   * Switch to a different session WITHOUT restarting the subprocess.
+   * The SDK handles session switching via the session_id field in each message.
+   * This avoids the 30+ second cold start delay on every new conversation.
+   */
+  async switchSession(newSessionId: string | null): Promise<void> {
+    // Update session manager - next message will use this session_id
+    this.sessionManager.setSessionId(newSessionId, this.plugin.settings.model);
+
+    // Clear session-specific state
+    this.approvalManager.clearSessionApprovals();
+    this.diffStore.clear();
+    this.approvedPlanContent = null;
+    this.currentPlanFilePath = null;
+
+    // Clear any pending response handlers from previous session
+    this.activeResponseResolvers = [];
+
+    // NOTE: We intentionally do NOT close the persistent query here.
+    // The subprocess stays alive and the SDK handles session switching
+    // based on the session_id in each SDKUserMessage.
+  }
+
   /** Cleanup resources. */
   cleanup() {
     this.cancel();
+    this.closePersistentQuery();
     this.resetSession();
     this.resolvedClaudePath = null;
   }

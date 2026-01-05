@@ -51,6 +51,13 @@ export default class ClaudianPlugin extends Plugin {
     // Initialize agent service with the MCP manager
     this.agentService = new ClaudianService(this, this.mcpService.getManager());
 
+    // Pre-warm the Claude Agent SDK in the background
+    // This spawns the subprocess early so the first user message is faster
+    // Use the active conversation's session ID if available
+    const activeConv = this.getActiveConversation();
+    const sessionToPreWarm = activeConv?.sessionId ?? undefined;
+    void this.agentService.preWarm(sessionToPreWarm);
+
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
       (leaf) => new ClaudianView(leaf, this)
@@ -393,7 +400,8 @@ export default class ClaudianPlugin extends Plugin {
     if (!conversation) return null;
 
     this.activeConversationId = id;
-    this.agentService.setSessionId(conversation.sessionId);
+    // Use switchSession to update session state (subprocess stays alive)
+    await this.agentService.switchSession(conversation.sessionId);
 
     await this.storage.updateState({ activeConversationId: this.activeConversationId });
     return conversation;
