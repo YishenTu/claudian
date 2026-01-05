@@ -426,7 +426,13 @@ export class ClaudianService {
       model: selectedModel,
       abortController: this.abortController ?? undefined,
       pathToClaudeCodeExecutable: cliPath,
-      settingSources: ['user', 'project'],
+      // Load project settings. Optionally load user settings if enabled.
+      // Note: User settings (~/.claude/settings.json) may contain permission rules
+      // that bypass Claudian's permission system. Skills from ~/.claude/skills/
+      // are still discovered regardless (not in settings.json).
+      settingSources: this.plugin.settings.loadUserClaudeSettings
+        ? ['user', 'project']
+        : ['project'],
       env: {
         ...process.env,
         ...customEnv,

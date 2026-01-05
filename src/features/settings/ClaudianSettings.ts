@@ -291,6 +291,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Safety').setHeading();
 
     new Setting(containerEl)
+      .setName('Load user Claude settings')
+      .setDesc('Load ~/.claude/settings.json. When enabled, user\'s Claude Code permission rules may bypass Safe mode.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.loadUserClaudeSettings)
+          .onChange(async (value) => {
+            this.plugin.settings.loadUserClaudeSettings = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Enable command blocklist')
       .setDesc('Block potentially dangerous bash commands')
       .addToggle((toggle) =>
@@ -516,5 +528,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.style.borderColor = 'var(--text-error)';
       }
     });
+
   }
 }
