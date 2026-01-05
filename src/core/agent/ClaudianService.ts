@@ -790,14 +790,12 @@ export class ClaudianService {
   private async updateQueryOptions(queryOptions?: QueryOptions): Promise<void> {
     if (!this.persistentQuery) return;
 
-    // Update model only if changed
     const model = queryOptions?.model || this.plugin.settings.model;
     if (model !== this.currentModel) {
       await this.persistentQuery.setModel(model);
       this.currentModel = model;
     }
 
-    // Update thinking budget only if changed
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
     if (budgetConfig) {
       const tokens = budgetConfig.tokens > 0 ? budgetConfig.tokens : null;
@@ -807,7 +805,6 @@ export class ClaudianService {
       }
     }
 
-    // Update permission mode only if changed
     let permissionMode: string;
     if (queryOptions?.planMode) {
       permissionMode = 'plan';
@@ -821,7 +818,6 @@ export class ClaudianService {
       this.currentPermissionMode = permissionMode;
     }
 
-    // MCP servers - only update if the set of servers changed
     const mcpMentions = queryOptions?.mcpMentions || new Set<string>();
     const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
     const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
@@ -833,33 +829,23 @@ export class ClaudianService {
     }
   }
 
-  /** Cancel the current query. */
   cancel() {
     if (this.abortController) {
       this.abortController.abort();
       this.sessionManager.markInterrupted();
     }
-    // Interrupt the persistent query to stop current response
     if (this.persistentQuery) {
       this.persistentQuery.interrupt().catch(() => {});
     }
   }
 
-  /**
-   * Reset the conversation session WITHOUT restarting the subprocess.
-   * Clears session state but keeps the persistent query alive for instant response.
-   */
+  /** Resets session state while preserving the subprocess for instant response. */
   resetSession() {
-    // NOTE: We intentionally do NOT close the persistent query here.
-    // The subprocess stays alive and the SDK handles new sessions
-    // based on the empty session_id in each SDKUserMessage.
     this.sessionManager.reset();
     this.approvalManager.clearSessionApprovals();
     this.diffStore.clear();
     this.approvedPlanContent = null;
     this.currentPlanFilePath = null;
-
-    // Clear any pending response handlers from previous session
     this.activeResponseResolvers = [];
   }
 
