@@ -253,9 +253,9 @@ Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANT
 ## Features
 
 ### Image Support
-- Drag/drop, paste, or path in message (`./image.png`)
+- Drag/drop or paste images into the chat input
 - Formats: JPEG, PNG, GIF, WebP (max 5MB)
-- Auto-detects quoted, relative, and absolute paths
+- Typed image paths (for example `![[image.png]]` or `./image.png`) stay as text and are not auto-attached
 
 ### Media Folder
 Configure `mediaFolder` setting so agent can read `![[image.jpg]]` embeds.

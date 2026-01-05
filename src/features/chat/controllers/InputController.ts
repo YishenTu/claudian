@@ -209,13 +209,6 @@ export class InputController {
       }
     }
 
-    if (content && imageContextManager) {
-      const result = await imageContextManager.handleImagePathInText(content);
-      if (result.imageLoaded) {
-        content = result.text;
-      }
-    }
-
     const images = imageContextManager?.getAttachedImages() || [];
     const imagesForMessage = images.length > 0 ? [...images] : undefined;
 

@@ -278,7 +278,6 @@ export class ClaudianView extends ItemView {
       this.inputEl,
       {
         onImagesChanged: () => this.renderer?.scrollToBottomIfNeeded(),
-        getMediaFolder: () => this.plugin.settings.mediaFolder,
       }
     );
 
