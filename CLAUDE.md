@@ -255,9 +255,9 @@ Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANT
 ## Features
 
 ### Image Support
-- Drag/drop, paste, or path in message (`./image.png`)
+- Drag/drop or paste images into the chat input
 - Formats: JPEG, PNG, GIF, WebP (max 5MB)
-- Auto-detects quoted, relative, and absolute paths
+- Typed image paths (for example `![[image.png]]` or `./image.png`) stay as text and are not auto-attached
 
 ### Media Folder
 Configure `mediaFolder` setting so agent can read `![[image.jpg]]` embeds.
@@ -287,14 +287,16 @@ Reusable capability modules that Claude discovers and invokes automatically base
 
 ### @-Mention Dropdown
 Type `@` in the input to open the mention dropdown for attaching context.
-- **MCP servers**: `@server-name` enables context-saving MCP servers (session-only)
+- **MCP servers**: `@server-name` enables context-saving MCP servers (persisted per-conversation)
 - **Context folders**: `@folder/` filters to files from that context path (session-only, added via folder icon)
 - **Context files**: Only shown after `@folder/` filter, displays filename with folder badge
 - **Vault files**: Markdown files from the vault, shown by default
 
 **Current note chip**: Only the focused note is shown as a chip. It is sent once per session as `<current_note>` and stored on the conversation. `@` mentions stay in the query text (no chips).
 
-**Session-only state**: Context paths and MCP server selections reset when switching conversations or creating new ones.
+**Persisted per-conversation**: MCP server selections are saved with each conversation and restored when switching back.
+
+**Session-only state**: Context paths reset when switching conversations or creating new ones.
 
 **Dropdown order**: MCP servers → Context folders → Vault files
 

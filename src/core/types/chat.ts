@@ -78,6 +78,8 @@ export interface Conversation {
   isInPlanMode?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
+  /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
+  enabledMcpServers?: string[];
 }
 
 /** Lightweight conversation metadata for the history dropdown. */

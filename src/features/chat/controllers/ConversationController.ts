@@ -174,6 +174,14 @@ export class ConversationController {
       contextPathSelector?.clearContextPaths();
     }
 
+    // Restore enabled MCP servers (or clear for new conversation)
+    const mcpServerSelector = this.deps.getMcpServerSelector();
+    if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
+      mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
+    } else {
+      mcpServerSelector?.clearEnabled();
+    }
+
     const welcomeEl = renderer.renderMessages(
       state.messages,
       () => this.getGreeting()
@@ -242,8 +250,13 @@ export class ConversationController {
       contextPathSelector?.clearContextPaths();
     }
 
-    // Clear MCP server selections on session switch (session-only)
-    this.deps.getMcpServerSelector()?.clearEnabled();
+    // Restore enabled MCP servers (or clear if none)
+    const mcpServerSelector = this.deps.getMcpServerSelector();
+    if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
+      mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
+    } else {
+      mcpServerSelector?.clearEnabled();
+    }
 
     const welcomeEl = renderer.renderMessages(
       state.messages,
@@ -276,6 +289,8 @@ export class ConversationController {
     const contextPathSelector = this.deps.getContextPathSelector();
     const sessionContextPaths = contextPathSelector?.getContextPaths() ?? [];
     const approvedPlan = this.deps.getApprovedPlan();
+    const mcpServerSelector = this.deps.getMcpServerSelector();
+    const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
     const updates: Partial<Conversation> = {
       messages: state.getPersistedMessages(),
@@ -286,6 +301,7 @@ export class ConversationController {
       approvedPlan: approvedPlan ?? undefined,
       pendingPlanContent: state.pendingPlanContent ?? undefined,
       isInPlanMode: state.planModeState?.isActive ?? undefined,
+      enabledMcpServers: enabledMcpServers.length > 0 ? enabledMcpServers : undefined,
     };
 
     if (updateLastResponse) {

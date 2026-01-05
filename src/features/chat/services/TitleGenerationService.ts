@@ -11,7 +11,7 @@ import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../../../core/prompts/titleGeneration';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
-import { findClaudeCLIPath, getVaultPath } from '../../../utils/path';
+import { getVaultPath } from '../../../utils/path';
 
 /** Result of title generation (discriminated union). */
 export type TitleGenerationResult =
@@ -27,7 +27,6 @@ export type TitleGenerationCallback = (
 /** Service for generating conversation titles with AI. */
 export class TitleGenerationService {
   private plugin: ClaudianPlugin;
-  private resolvedClaudePath: string | null = null;
   /** Map of conversationId to AbortController for concurrent generation support. */
   private activeGenerations: Map<string, AbortController> = new Map();
 
@@ -55,11 +54,12 @@ export class TitleGenerationService {
       return;
     }
 
-    if (!this.resolvedClaudePath) {
-      this.resolvedClaudePath = findClaudeCLIPath();
-    }
+    const envVars = parseEnvironmentVariables(
+      this.plugin.getActiveEnvironmentVariables()
+    );
 
-    if (!this.resolvedClaudePath) {
+    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
+    if (!resolvedClaudePath) {
       console.warn('[TitleGeneration] Claude CLI not found');
       await this.safeCallback(callback, conversationId, {
         success: false,
@@ -72,9 +72,6 @@ export class TitleGenerationService {
     // 1. User's titleGenerationModel setting (if set)
     // 2. ANTHROPIC_DEFAULT_HAIKU_MODEL env var
     // 3. claude-haiku-4-5 default
-    const envVars = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
-    );
     const titleModel =
       this.plugin.settings.titleGenerationModel ||
       envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
@@ -106,21 +103,16 @@ ${truncatedAssistant}
 
 Generate a title for this conversation:`;
 
-    // Parse custom environment variables
-    const customEnv = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
-    );
-
     const options: Options = {
       cwd: vaultPath,
       systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
       model: titleModel,
       abortController,
-      pathToClaudeCodeExecutable: this.resolvedClaudePath,
+      pathToClaudeCodeExecutable: resolvedClaudePath,
       env: {
         ...process.env,
-        ...customEnv,
-        PATH: getEnhancedPath(customEnv.PATH),
+        ...envVars,
+        PATH: getEnhancedPath(envVars.PATH, resolvedClaudePath),
       },
       allowedTools: [], // No tools needed for title generation
       permissionMode: 'bypassPermissions',

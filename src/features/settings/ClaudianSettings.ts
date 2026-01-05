@@ -250,7 +250,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onClick(() => openHotkeySettings(this.app))
       );
 
-    const openChatCommandId = 'claudian:open-chat';
+    const openChatCommandId = 'claudian:open-view';
     const openChatHotkey = getHotkeyForCommand(this.app, openChatCommandId);
     new Setting(containerEl)
       .setName('Open chat hotkey')
@@ -289,6 +289,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // Safety section
     new Setting(containerEl).setName('Safety').setHeading();
+
+    new Setting(containerEl)
+      .setName('Load user Claude settings')
+      .setDesc('Load ~/.claude/settings.json. When enabled, user\'s Claude Code permission rules may bypass Safe mode.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.loadUserClaudeSettings)
+          .onChange(async (value) => {
+            this.plugin.settings.loadUserClaudeSettings = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName('Enable command blocklist')
@@ -452,9 +464,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Advanced section
     new Setting(containerEl).setName('Advanced').setHeading();
 
+    const cliPathDescription = process.platform === 'win32'
+      ? 'Custom path to Claude Code CLI. Leave empty for auto-detection. For the native installer, use claude.exe. For npm/pnpm/yarn or other package manager installs, use the cli.js path (not claude.cmd).'
+      : 'Custom path to Claude Code CLI. Leave empty for auto-detection. Paste the output of "which claude" — works for both native and npm/pnpm/yarn installs.';
+
     const cliPathSetting = new Setting(containerEl)
       .setName('Claude CLI path')
-      .setDesc('Custom path to Claude Code CLI. Leave empty for auto-detection. Use cli.js path on Windows for npm installations.');
+      .setDesc(cliPathDescription);
 
     // Create validation message element
     const validationEl = containerEl.createDiv({ cls: 'claudian-cli-path-validation' });
@@ -502,6 +518,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           this.plugin.settings.claudeCliPath = value.trim();
           await this.plugin.saveSettings();
           // Clear cached path so next query will use the new path
+          this.plugin.cliResolver?.reset();
           this.plugin.agentService?.cleanup();
         });
       text.inputEl.addClass('claudian-settings-cli-path-input');
@@ -515,5 +532,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.style.borderColor = 'var(--text-error)';
       }
     });
+
   }
 }

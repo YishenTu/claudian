@@ -526,6 +526,7 @@ describe('utils.ts', () => {
 
     beforeEach(() => {
       originalEnv = { ...process.env };
+      process.env.PATH = '';
     });
 
     afterEach(() => {
@@ -539,9 +540,17 @@ describe('utils.ts', () => {
         Object.defineProperty(process, 'platform', { value: 'darwin' });
       });
 
+      function mockExistingFile(...paths: string[]) {
+        const pathSet = new Set(paths);
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
+        jest.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
+          isFile: () => pathSet.has(String(p)),
+        }) as fs.Stats);
+      }
+
       it('should return first matching Claude CLI path', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === '/home/test/.local/bin/claude');
+        mockExistingFile('/home/test/.local/bin/claude');
 
         expect(findClaudeCLIPath()).toBe('/home/test/.local/bin/claude');
       });
@@ -555,11 +564,35 @@ describe('utils.ts', () => {
 
       it('should check cli.js paths as fallback on Unix', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) =>
-          p === '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'
-        );
+        mockExistingFile('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
 
         expect(findClaudeCLIPath()).toBe('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
+      });
+
+      it('should resolve Claude CLI from custom PATH', () => {
+        mockExistingFile('/custom/bin/claude');
+
+        const customPath = '/custom/bin:/usr/bin';
+        expect(findClaudeCLIPath(customPath)).toBe('/custom/bin/claude');
+      });
+
+      it('should expand home directory in custom PATH', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+        mockExistingFile('/home/test/bin/claude');
+
+        const customPath = '~/bin:/usr/bin';
+        expect(findClaudeCLIPath(customPath)).toBe('/home/test/bin/claude');
+      });
+
+      it('should not return a directory path even if it exists', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+        const dirPath = path.join('/home/test', '.local', 'bin', 'claude');
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === dirPath);
+        jest.spyOn(fs, 'statSync').mockImplementation(() => ({
+          isFile: () => false,
+        }) as fs.Stats);
+
+        expect(findClaudeCLIPath()).toBeNull();
       });
     });
 
@@ -571,11 +604,19 @@ describe('utils.ts', () => {
         process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming';
       });
 
+      function mockExistingFile(...paths: string[]) {
+        const pathSet = new Set(paths);
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
+        jest.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
+          isFile: () => pathSet.has(String(p)),
+        }) as fs.Stats);
+      }
+
       it('should prefer .exe when both .exe and cli.js exist', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const exePath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
         const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === exePath || p === cliJsPath);
+        mockExistingFile(exePath, cliJsPath);
 
         expect(findClaudeCLIPath()).toBe(exePath);
       });
@@ -585,10 +626,8 @@ describe('utils.ts', () => {
         // Note: path.join uses actual platform separator, so we match against that
         const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
         const cmdPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'claude.cmd');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => {
-          // Both .cmd and cli.js exist, but cli.js should be returned
-          return p === cmdPath || p === cliJsPath;
-        });
+        // Both .cmd and cli.js exist, but cli.js should be returned (cmd is ignored entirely)
+        mockExistingFile(cmdPath, cliJsPath);
 
         // Should return cli.js, not claude.cmd
         expect(findClaudeCLIPath()).toBe(cliJsPath);
@@ -598,7 +637,7 @@ describe('utils.ts', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         process.env.npm_config_prefix = 'D:\\nodejs\\node_global';
         const expectedPath = path.join('D:\\nodejs\\node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === expectedPath);
+        mockExistingFile(expectedPath);
 
         expect(findClaudeCLIPath()).toBe(expectedPath);
       });
@@ -606,22 +645,43 @@ describe('utils.ts', () => {
       it('should fall back to .exe if cli.js not found', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const expectedPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === expectedPath);
+        mockExistingFile(expectedPath);
 
         expect(findClaudeCLIPath()).toBe(expectedPath);
       });
 
-      it('should fall back to .cmd as last resort on Windows', () => {
+      it('should ignore .cmd fallback on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const expectedPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'claude.cmd');
-        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === expectedPath);
+        mockExistingFile(expectedPath);
 
-        expect(findClaudeCLIPath()).toBe(expectedPath);
+        expect(findClaudeCLIPath()).toBeNull();
       });
 
       it('should return null when no CLI is found on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         jest.spyOn(fs, 'existsSync').mockReturnValue(false as any);
+
+        expect(findClaudeCLIPath()).toBeNull();
+      });
+
+      it('should resolve cli.js from custom PATH npm prefix', () => {
+        const npmBin = 'C:\\Users\\test\\AppData\\Roaming\\npm';
+        const cliJsPath = path.join(npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        mockExistingFile(cliJsPath);
+
+        const customPath = `${npmBin};C:\\Windows\\System32`;
+        expect(findClaudeCLIPath(customPath)).toBe(cliJsPath);
+      });
+
+      it('should not return a directory path even if it exists', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
+        const dirPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude');
+        // Simulate a directory named 'claude' (exists but isFile returns false)
+        jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === dirPath);
+        jest.spyOn(fs, 'statSync').mockImplementation(() => ({
+          isFile: () => false,
+        }) as fs.Stats);
 
         expect(findClaudeCLIPath()).toBeNull();
       });

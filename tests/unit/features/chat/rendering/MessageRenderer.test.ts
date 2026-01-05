@@ -70,10 +70,21 @@ function createMockElement() {
   return element;
 }
 
+function createMockComponent() {
+  return {
+    registerDomEvent: jest.fn(),
+    register: jest.fn(),
+    addChild: jest.fn(),
+    load: jest.fn(),
+    unload: jest.fn(),
+  };
+}
+
 describe('MessageRenderer', () => {
   it('renders welcome element and calls renderStoredMessage for each message', () => {
     const messagesEl = createMockElement();
-    const renderer = new MessageRenderer({} as any, {} as any, messagesEl);
+    const mockComponent = createMockComponent();
+    const renderer = new MessageRenderer({} as any, mockComponent as any, messagesEl);
     const renderStoredSpy = jest.spyOn(renderer, 'renderStoredMessage').mockImplementation(() => {});
 
     const messages: ChatMessage[] = [
@@ -90,7 +101,8 @@ describe('MessageRenderer', () => {
 
   it('renders assistant content blocks using specialized renderers', () => {
     const messagesEl = createMockElement();
-    const renderer = new MessageRenderer({} as any, {} as any, messagesEl);
+    const mockComponent = createMockComponent();
+    const renderer = new MessageRenderer({} as any, mockComponent as any, messagesEl);
     const renderContentSpy = jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const msg: ChatMessage = {

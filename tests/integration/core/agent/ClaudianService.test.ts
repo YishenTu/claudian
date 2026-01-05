@@ -30,6 +30,7 @@ import { getActionDescription, getActionPattern } from '@/core/security/Approval
 import { extractPathCandidates } from '@/core/security/BashPathValidator';
 import { getPathFromToolInput } from '@/core/tools/toolInput';
 import type { ToolDiffData } from '@/core/types';
+import { resolveClaudeCliPath } from '@/utils/claudeCli';
 import {
   buildContextFromHistory,
   formatToolCallForContext,
@@ -105,6 +106,7 @@ function createMockPlugin(settings = {}) {
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/mock/claude'),
     // Mock getView to return null (tests don't have real view)
     // This allows optional chaining to work safely
     getView: jest.fn().mockReturnValue(null),
@@ -287,6 +289,15 @@ describe('ClaudianService', () => {
   });
 
   describe('findClaudeCLI', () => {
+    beforeEach(() => {
+      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+        resolveClaudeCliPath(
+          mockPlugin.settings.claudeCliPath,
+          mockPlugin.getActiveEnvironmentVariables()
+        )
+      );
+    });
+
     afterEach(() => {
       (fs.existsSync as jest.Mock).mockReset();
       (fs.statSync as jest.Mock).mockReset();
@@ -299,6 +310,7 @@ describe('ClaudianService', () => {
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => {
         return p === expectedPath;
       });
+      (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true });
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -333,6 +345,12 @@ describe('ClaudianService', () => {
     it('should use custom CLI path when valid file is specified', async () => {
       const customPath = '/custom/path/to/cli.js';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+        resolveClaudeCliPath(
+          mockPlugin.settings.claudeCliPath,
+          mockPlugin.getActiveEnvironmentVariables()
+        )
+      );
       service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === customPath);
@@ -358,6 +376,12 @@ describe('ClaudianService', () => {
     it('should fall back to auto-detection when custom path is a directory', async () => {
       const customPath = '/custom/path/to/directory';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+        resolveClaudeCliPath(
+          mockPlugin.settings.claudeCliPath,
+          mockPlugin.getActiveEnvironmentVariables()
+        )
+      );
       service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       const homeDir = os.homedir();
@@ -392,6 +416,12 @@ describe('ClaudianService', () => {
     it('should fall back to auto-detection when custom path does not exist', async () => {
       const customPath = '/nonexistent/path/cli.js';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+        resolveClaudeCliPath(
+          mockPlugin.settings.claudeCliPath,
+          mockPlugin.getActiveEnvironmentVariables()
+        )
+      );
       service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       const homeDir = os.homedir();
@@ -400,6 +430,9 @@ describe('ClaudianService', () => {
       (fs.existsSync as jest.Mock).mockImplementation((p: string) =>
         p === autoDetectedPath // Custom path does not exist
       );
+      (fs.statSync as jest.Mock).mockImplementation((p: string) => ({
+        isFile: () => p === autoDetectedPath,
+      }));
 
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
@@ -423,6 +456,12 @@ describe('ClaudianService', () => {
     it('should fall back to auto-detection when custom path stat fails', async () => {
       const customPath = '/custom/path/to/cli.js';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
+      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+        resolveClaudeCliPath(
+          mockPlugin.settings.claudeCliPath,
+          mockPlugin.getActiveEnvironmentVariables()
+        )
+      );
       service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       const homeDir = os.homedir();
@@ -431,8 +470,12 @@ describe('ClaudianService', () => {
       (fs.existsSync as jest.Mock).mockImplementation((p: string) =>
         p === customPath || p === autoDetectedPath
       );
-      (fs.statSync as jest.Mock).mockImplementation(() => {
-        throw new Error('EACCES');
+      // Custom path stat throws, auto-detected path works
+      (fs.statSync as jest.Mock).mockImplementation((p: string) => {
+        if (p === customPath) {
+          throw new Error('EACCES');
+        }
+        return { isFile: () => p === autoDetectedPath };
       });
 
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
@@ -465,6 +508,12 @@ describe('ClaudianService', () => {
       const firstPath = '/custom/path/to/cli-1.js';
       const secondPath = '/custom/path/to/cli-2.js';
       mockPlugin = createMockPlugin({ claudeCliPath: firstPath });
+      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+        resolveClaudeCliPath(
+          mockPlugin.settings.claudeCliPath,
+          mockPlugin.getActiveEnvironmentVariables()
+        )
+      );
       service = new ClaudianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === firstPath);
@@ -865,7 +914,6 @@ describe('ClaudianService', () => {
     });
 
     it('should rebuild history when session is missing but history exists', async () => {
-      (service as any).resolvedClaudePath = '/mock/claude';
       const sentPrompts: string[] = [];
 
       // Spy on buildSDKUserMessage to capture the prompt being sent
@@ -1707,7 +1755,7 @@ describe('ClaudianService', () => {
   describe('session expiration recovery flow', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (service as any).resolvedClaudePath = '/mock/claude';
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
     });
 
     it('should rebuild history when session was interrupted', async () => {
@@ -1762,7 +1810,7 @@ describe('ClaudianService', () => {
   describe('image prompt and hydration', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (service as any).resolvedClaudePath = '/mock/claude';
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
     });
 
     it('should return SDK user message with just text when no valid images', () => {
@@ -1820,7 +1868,7 @@ describe('ClaudianService', () => {
     it('should set yolo mode options', async () => {
       mockPlugin = createMockPlugin({ permissionMode: 'yolo', thinkingBudget: 'off' });
       service = new ClaudianService(mockPlugin, createMockMcpManager());
-      (service as any).resolvedClaudePath = '/mock/claude';
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -1841,7 +1889,7 @@ describe('ClaudianService', () => {
     it('should set safe mode, resume, and thinking tokens', async () => {
       mockPlugin = createMockPlugin({ permissionMode: 'normal', thinkingBudget: 'high' });
       service = new ClaudianService(mockPlugin, createMockMcpManager());
-      (service as any).resolvedClaudePath = '/mock/claude';
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
       service.setSessionId('resume-id');
 
       setMockMessages([
@@ -2126,7 +2174,7 @@ describe('ClaudianService', () => {
   describe('remaining business branches', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (service as any).resolvedClaudePath = '/mock/claude';
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
     });
 
     it('yields error when persistent query fails to start', async () => {
@@ -2189,9 +2237,19 @@ describe('ClaudianService', () => {
     it('handles image read errors and path resolution branches', () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const base64 = readImageAttachmentBase64(mockPlugin.app, { filePath: 'x.png' } as any, '/test/vault');
-      expect(base64).toBeNull();
+      try {
+        const base64 = readImageAttachmentBase64(mockPlugin.app, { filePath: 'x.png' } as any, '/test/vault');
+        expect(base64).toBeNull();
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to read image file:',
+          '/test/vault/x.png',
+          expect.any(Error)
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
 
       expect(resolveImageFilePath('/abs.png', '/test/vault')).toBe('/abs.png');
       expect(resolveImageFilePath('rel.png', null)).toBeNull();
@@ -2234,42 +2292,62 @@ describe('ClaudianService', () => {
     it('stores null original content when pre-hook stat fails', async () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      // Create hooks using the exported functions
-      const originalContents = new Map<string, DiffContentEntry>();
-      const pendingDiffData = new Map<string, ToolDiffData>();
-      const vaultPath = '/test/vault/path';
+      try {
+        // Create hooks using the exported functions
+        const originalContents = new Map<string, DiffContentEntry>();
+        const pendingDiffData = new Map<string, ToolDiffData>();
+        const vaultPath = '/test/vault/path';
 
-      const preHook = createFileHashPreHook(vaultPath, originalContents);
-      await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' } } as any, 'tool-bad', {} as any);
+        const preHook = createFileHashPreHook(vaultPath, originalContents);
+        await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' } } as any, 'tool-bad', {} as any);
 
-      expect(originalContents.get('tool-bad')?.content).toBeNull();
+        expect(originalContents.get('tool-bad')?.content).toBeNull();
 
-      const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' }, tool_result: {} } as any, 'tool-bad', {} as any);
-      expect(pendingDiffData.get('tool-bad')).toEqual({ filePath: 'bad.md', skippedReason: 'unavailable' });
+        const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
+        await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' }, tool_result: {} } as any, 'tool-bad', {} as any);
+        expect(pendingDiffData.get('tool-bad')).toEqual({ filePath: 'bad.md', skippedReason: 'unavailable' });
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to capture original file contents:',
+          '/test/vault/path/bad.md',
+          expect.any(Error)
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('skips diff when post-hook lacks original entry or hits read error', async () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
       (fs.readFileSync as jest.Mock).mockReturnValueOnce('new');
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      // Create hooks using the exported functions
-      const originalContents = new Map<string, DiffContentEntry>();
-      const pendingDiffData = new Map<string, ToolDiffData>();
-      const vaultPath = '/test/vault/path';
+      try {
+        // Create hooks using the exported functions
+        const originalContents = new Map<string, DiffContentEntry>();
+        const pendingDiffData = new Map<string, ToolDiffData>();
+        const vaultPath = '/test/vault/path';
 
-      const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'no-orig.md' }, tool_result: {} } as any, 'tool-no-orig', {} as any);
-      expect(pendingDiffData.get('tool-no-orig')).toEqual({ filePath: 'no-orig.md', skippedReason: 'unavailable' });
+        const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
+        await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'no-orig.md' }, tool_result: {} } as any, 'tool-no-orig', {} as any);
+        expect(pendingDiffData.get('tool-no-orig')).toEqual({ filePath: 'no-orig.md', skippedReason: 'unavailable' });
 
-      // Now force read error in post-hook
-      originalContents.set('tool-read-err', { filePath: 'err.md', content: '' });
-      (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
+        // Now force read error in post-hook
+        originalContents.set('tool-read-err', { filePath: 'err.md', content: '' });
+        (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
 
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'err.md' }, tool_result: {} } as any, 'tool-read-err', {} as any);
-      expect(pendingDiffData.get('tool-read-err')).toEqual({ filePath: 'err.md', skippedReason: 'unavailable' });
+        await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'err.md' }, tool_result: {} } as any, 'tool-read-err', {} as any);
+        expect(pendingDiffData.get('tool-read-err')).toEqual({ filePath: 'err.md', skippedReason: 'unavailable' });
+        expect(warnSpy).toHaveBeenCalledWith(
+          'Failed to capture updated file contents:',
+          '/test/vault/path/err.md',
+          expect.any(Error)
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('marks too_large when post-hook sees large new file', async () => {

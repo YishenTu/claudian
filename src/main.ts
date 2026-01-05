@@ -24,6 +24,7 @@ import { ClaudianView } from './features/chat/ClaudianView';
 import { McpService } from './features/mcp/McpService';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { type InlineEditContext, InlineEditModal } from './ui/modals/InlineEditModal';
+import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 
@@ -36,6 +37,7 @@ export default class ClaudianPlugin extends Plugin {
   agentService: ClaudianService;
   mcpService: McpService;
   storage: StorageService;
+  cliResolver: ClaudeCliResolver;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
   private runtimeEnvironmentVariables = '';
@@ -43,6 +45,8 @@ export default class ClaudianPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    this.cliResolver = new ClaudeCliResolver();
 
     // Initialize MCP service first (creates McpServerManager internally)
     this.mcpService = new McpService(this);
@@ -238,6 +242,13 @@ export default class ClaudianPlugin extends Plugin {
   /** Returns the runtime environment variables (fixed at plugin load). */
   getActiveEnvironmentVariables(): string {
     return this.runtimeEnvironmentVariables;
+  }
+
+  getResolvedClaudeCliPath(): string | null {
+    return this.cliResolver.resolve(
+      this.settings.claudeCliPath,
+      this.getActiveEnvironmentVariables()
+    );
   }
 
   private getDefaultModelValues(): string[] {

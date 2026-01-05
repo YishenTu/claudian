@@ -13,7 +13,7 @@ import { TOOL_GLOB, TOOL_GREP, TOOL_READ } from '../../../core/tools/toolNames';
 import { type InstructionRefineResult, THINKING_BUDGETS } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
-import { findClaudeCLIPath, getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../../utils/path';
+import { getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../../utils/path';
 
 const READ_ONLY_TOOLS = [TOOL_READ, TOOL_GREP, TOOL_GLOB] as const;
 
@@ -24,7 +24,6 @@ export type RefineProgressCallback = (update: InstructionRefineResult) => void;
 export class InstructionRefineService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
-  private resolvedClaudePath: string | null = null;
   private sessionId: string | null = null;
   private existingInstructions: string = '';
 
@@ -35,10 +34,6 @@ export class InstructionRefineService {
   /** Resets conversation state for a new refinement session. */
   resetConversation(): void {
     this.sessionId = null;
-  }
-
-  private findClaudeCLI(): string | null {
-    return findClaudeCLIPath();
   }
 
   /** Refines a raw instruction from user input. */
@@ -81,11 +76,8 @@ export class InstructionRefineService {
       return { success: false, error: 'Could not determine vault path' };
     }
 
-    if (!this.resolvedClaudePath) {
-      this.resolvedClaudePath = this.findClaudeCLI();
-    }
-
-    if (!this.resolvedClaudePath) {
+    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
+    if (!resolvedClaudePath) {
       return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
     }
 
@@ -99,11 +91,11 @@ export class InstructionRefineService {
       systemPrompt: buildRefineSystemPrompt(this.existingInstructions),
       model: this.plugin.settings.model,
       abortController: this.abortController,
-      pathToClaudeCodeExecutable: this.resolvedClaudePath,
+      pathToClaudeCodeExecutable: resolvedClaudePath,
       env: {
         ...process.env,
         ...customEnv,
-        PATH: getEnhancedPath(customEnv.PATH),
+        PATH: getEnhancedPath(customEnv.PATH, resolvedClaudePath),
       },
       allowedTools: [...READ_ONLY_TOOLS],
       permissionMode: 'bypassPermissions',

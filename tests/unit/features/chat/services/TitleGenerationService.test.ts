@@ -10,11 +10,6 @@ import {
 } from '@test/__mocks__/claude-agent-sdk';
 
 import { type TitleGenerationResult, TitleGenerationService } from '@/features/chat/services/TitleGenerationService';
-import * as pathUtils from '@/utils/path';
-
-// Mock findClaudeCLIPath for controlled testing
-jest.spyOn(pathUtils, 'findClaudeCLIPath');
-
 function createMockPlugin(settings = {}) {
   return {
     settings: {
@@ -31,6 +26,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -43,7 +39,6 @@ describe('TitleGenerationService', () => {
     resetMockMessages();
     mockPlugin = createMockPlugin();
     service = new TitleGenerationService(mockPlugin);
-    (service as any).resolvedClaudePath = '/fake/claude';
   });
 
   describe('generateTitle', () => {
@@ -256,39 +251,56 @@ describe('TitleGenerationService', () => {
         },
         { type: 'result' },
       ]);
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      try {
+        const callback = jest.fn();
+        await service.generateTitle('conv-123', 'test', 'response', callback);
 
-      expect(callback).toHaveBeenCalledWith('conv-123', {
-        success: false,
-        error: 'Failed to parse title from response',
-      });
+        expect(callback).toHaveBeenCalledWith('conv-123', {
+          success: false,
+          error: 'Failed to parse title from response',
+        });
+        expect(warnSpy).toHaveBeenCalledWith('[TitleGeneration] Failed to parse title from response');
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('should fail when vault path cannot be determined', async () => {
       mockPlugin.app.vault.adapter.basePath = undefined;
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      try {
+        const callback = jest.fn();
+        await service.generateTitle('conv-123', 'test', 'response', callback);
 
-      expect(callback).toHaveBeenCalledWith('conv-123', {
-        success: false,
-        error: 'Could not determine vault path',
-      });
+        expect(callback).toHaveBeenCalledWith('conv-123', {
+          success: false,
+          error: 'Could not determine vault path',
+        });
+        expect(warnSpy).toHaveBeenCalledWith('[TitleGeneration] Could not determine vault path');
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('should fail when Claude CLI is not found', async () => {
-      (service as any).resolvedClaudePath = null;
-      (pathUtils.findClaudeCLIPath as jest.Mock).mockReturnValue(null);
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      try {
+        const callback = jest.fn();
+        await service.generateTitle('conv-123', 'test', 'response', callback);
 
-      expect(callback).toHaveBeenCalledWith('conv-123', {
-        success: false,
-        error: 'Claude CLI not found',
-      });
+        expect(callback).toHaveBeenCalledWith('conv-123', {
+          success: false,
+          error: 'Claude CLI not found',
+        });
+        expect(warnSpy).toHaveBeenCalledWith('[TitleGeneration] Claude CLI not found');
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('should truncate long user messages', async () => {

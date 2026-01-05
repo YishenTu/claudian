@@ -38,11 +38,17 @@ describe('TodoListRenderer', () => {
           { status: 'pending' },
         ],
       };
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const result = parseTodoInput(input);
+      try {
+        const result = parseTodoInput(input);
 
-      expect(result).toHaveLength(1);
-      expect(result![0].content).toBe('Valid');
+        expect(result).toHaveLength(1);
+        expect(result![0].content).toBe('Valid');
+        expect(warnSpy).toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('should filter out items with empty strings', () => {
@@ -53,11 +59,17 @@ describe('TodoListRenderer', () => {
           { content: 'Also valid', status: 'completed', activeForm: 'Done' },
         ],
       };
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const result = parseTodoInput(input);
+      try {
+        const result = parseTodoInput(input);
 
-      expect(result).toHaveLength(1);
-      expect(result![0].content).toBe('Also valid');
+        expect(result).toHaveLength(1);
+        expect(result![0].content).toBe('Also valid');
+        expect(warnSpy).toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 

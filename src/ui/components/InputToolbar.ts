@@ -14,7 +14,7 @@ import {
   DEFAULT_CLAUDE_MODELS,
   THINKING_BUDGETS
 } from '../../core/types';
-import { MCP_ICON_SVG } from '../../features/chat/constants';
+import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../features/chat/constants';
 import type { McpService } from '../../features/mcp/McpService';
 import { findConflictingPath } from '../../utils/contextPath';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
@@ -545,6 +545,14 @@ export class McpServerSelector {
     this.renderDropdown();
   }
 
+  /** Set enabled servers (call when restoring conversation state). */
+  setEnabledServers(names: string[]): void {
+    this.enabledServers = new Set(names);
+    this.pruneEnabledServers();
+    this.updateDisplay();
+    this.renderDropdown();
+  }
+
   private pruneEnabledServers(): void {
     if (!this.mcpService) return;
     const activeNames = new Set(this.mcpService.getServers().filter((s) => s.enabled).map((s) => s.name));
@@ -619,7 +627,7 @@ export class McpServerSelector {
     // Checkbox
     const checkEl = itemEl.createDiv({ cls: 'claudian-mcp-selector-check' });
     if (isEnabled) {
-      setIcon(checkEl, 'check');
+      checkEl.innerHTML = CHECK_ICON_SVG;
     }
 
     // Info
@@ -635,32 +643,31 @@ export class McpServerSelector {
       csEl.setAttribute('title', 'Context-saving: can also enable via @' + server.name);
     }
 
-    // Click to toggle
-    itemEl.addEventListener('click', (e) => {
+    // Click to toggle (use mousedown for more reliable capture)
+    itemEl.addEventListener('mousedown', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       this.toggleServer(server.name, itemEl);
     });
   }
 
-  private toggleServer(name: string, itemEl?: HTMLElement) {
+  private toggleServer(name: string, itemEl: HTMLElement) {
     if (this.enabledServers.has(name)) {
       this.enabledServers.delete(name);
     } else {
       this.enabledServers.add(name);
     }
 
-    // Update item in-place if provided
-    if (itemEl) {
-      const isEnabled = this.enabledServers.has(name);
-      const checkEl = itemEl.querySelector('.claudian-mcp-selector-check');
+    // Update item visually in-place (immediate feedback)
+    const isEnabled = this.enabledServers.has(name);
+    const checkEl = itemEl.querySelector('.claudian-mcp-selector-check') as HTMLElement | null;
 
-      if (isEnabled) {
-        itemEl.addClass('enabled');
-        if (checkEl) setIcon(checkEl as HTMLElement, 'check');
-      } else {
-        itemEl.removeClass('enabled');
-        if (checkEl) checkEl.empty();
-      }
+    if (isEnabled) {
+      itemEl.addClass('enabled');
+      if (checkEl) checkEl.innerHTML = CHECK_ICON_SVG;
+    } else {
+      itemEl.removeClass('enabled');
+      if (checkEl) checkEl.innerHTML = '';
     }
 
     this.updateDisplay();

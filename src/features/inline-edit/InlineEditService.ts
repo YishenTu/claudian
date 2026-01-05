@@ -23,7 +23,7 @@ import type ClaudianPlugin from '../../main';
 import { prependContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../utils/env';
-import { findClaudeCLIPath, getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../utils/path';
+import { getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../utils/path';
 
 export type InlineEditMode = 'selection' | 'cursor';
 
@@ -59,7 +59,6 @@ export interface InlineEditResult {
 export class InlineEditService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
-  private resolvedClaudePath: string | null = null;
   private sessionId: string | null = null;
 
   constructor(plugin: ClaudianPlugin) {
@@ -69,10 +68,6 @@ export class InlineEditService {
   /** Resets conversation state for a new edit session. */
   resetConversation(): void {
     this.sessionId = null;
-  }
-
-  private findClaudeCLI(): string | null {
-    return findClaudeCLIPath();
   }
 
   /** Edits text according to instructions (initial request). */
@@ -101,11 +96,8 @@ export class InlineEditService {
       return { success: false, error: 'Could not determine vault path' };
     }
 
-    if (!this.resolvedClaudePath) {
-      this.resolvedClaudePath = this.findClaudeCLI();
-    }
-
-    if (!this.resolvedClaudePath) {
+    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
+    if (!resolvedClaudePath) {
       return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
     }
 
@@ -119,11 +111,11 @@ export class InlineEditService {
       systemPrompt: getInlineEditSystemPrompt(),
       model: this.plugin.settings.model,
       abortController: this.abortController,
-      pathToClaudeCodeExecutable: this.resolvedClaudePath,
+      pathToClaudeCodeExecutable: resolvedClaudePath,
       env: {
         ...process.env,
         ...customEnv,
-        PATH: getEnhancedPath(customEnv.PATH),
+        PATH: getEnhancedPath(customEnv.PATH, resolvedClaudePath),
       },
       allowedTools: [...READ_ONLY_TOOLS],
       permissionMode: 'bypassPermissions',

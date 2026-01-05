@@ -32,6 +32,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -44,7 +45,6 @@ describe('InstructionRefineService', () => {
     resetMockMessages();
     mockPlugin = createMockPlugin();
     service = new InstructionRefineService(mockPlugin);
-    (service as any).resolvedClaudePath = '/fake/claude';
   });
 
   describe('refineInstruction', () => {

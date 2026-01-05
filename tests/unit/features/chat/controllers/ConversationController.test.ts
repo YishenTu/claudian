@@ -118,6 +118,8 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     }) as any,
     getMcpServerSelector: () => ({
       clearEnabled: jest.fn(),
+      getEnabledServers: jest.fn().mockReturnValue(new Set()),
+      setEnabledServers: jest.fn(),
     }) as any,
     getContextPathSelector: () => ({
       getContextPaths: jest.fn().mockReturnValue([]),
@@ -660,6 +662,123 @@ describe('ConversationController - Title Generation', () => {
       const title = controller.generateFallbackTitle('Hello world');
 
       expect(title).toBe('Hello world');
+    });
+  });
+});
+
+describe('ConversationController - MCP Server Persistence', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockMcpServerSelector: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockMcpServerSelector = {
+      clearEnabled: jest.fn(),
+      getEnabledServers: jest.fn().mockReturnValue(new Set(['mcp-server-1', 'mcp-server-2'])),
+      setEnabledServers: jest.fn(),
+    };
+    deps = createMockDeps({
+      getMcpServerSelector: () => mockMcpServerSelector,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  describe('save', () => {
+    it('should save enabled MCP servers to conversation', async () => {
+      deps.state.currentConversationId = 'conv-1';
+
+      await controller.save();
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          enabledMcpServers: ['mcp-server-1', 'mcp-server-2'],
+        })
+      );
+    });
+
+    it('should save undefined when no MCP servers enabled', async () => {
+      mockMcpServerSelector.getEnabledServers.mockReturnValue(new Set());
+      deps.state.currentConversationId = 'conv-1';
+
+      await controller.save();
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          enabledMcpServers: undefined,
+        })
+      );
+    });
+  });
+
+  describe('loadActive', () => {
+    it('should restore enabled MCP servers from conversation', async () => {
+      (deps.plugin.getActiveConversation as jest.Mock).mockReturnValue({
+        id: 'conv-1',
+        messages: [],
+        sessionId: null,
+        enabledMcpServers: ['restored-server-1', 'restored-server-2'],
+      });
+
+      await controller.loadActive();
+
+      expect(mockMcpServerSelector.setEnabledServers).toHaveBeenCalledWith([
+        'restored-server-1',
+        'restored-server-2',
+      ]);
+    });
+
+    it('should clear MCP servers when conversation has none', async () => {
+      (deps.plugin.getActiveConversation as jest.Mock).mockReturnValue({
+        id: 'conv-1',
+        messages: [],
+        sessionId: null,
+        enabledMcpServers: undefined,
+      });
+
+      await controller.loadActive();
+
+      expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
+    });
+  });
+
+  describe('switchTo', () => {
+    it('should restore enabled MCP servers when switching conversations', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+        id: 'new-conv',
+        messages: [],
+        sessionId: null,
+        enabledMcpServers: ['switched-server'],
+      });
+
+      await controller.switchTo('new-conv');
+
+      expect(mockMcpServerSelector.setEnabledServers).toHaveBeenCalledWith(['switched-server']);
+    });
+
+    it('should clear MCP servers when switching to conversation with no servers', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+        id: 'new-conv',
+        messages: [],
+        sessionId: null,
+        enabledMcpServers: undefined,
+      });
+
+      await controller.switchTo('new-conv');
+
+      expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
+    });
+  });
+
+  describe('createNew', () => {
+    it('should clear enabled MCP servers for new conversation', async () => {
+      await controller.createNew();
+
+      expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
     });
   });
 });

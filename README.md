@@ -20,7 +20,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 
 ## Requirements
 
-- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (the SDK uses it internally)
+- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports anthropic API format (Openrouter, Kimi, GLM, DeepSeek, etc.)
 - Desktop only (macOS, Linux, Windows)
@@ -98,21 +98,38 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 
 ### Settings
 
-- **Enable command blocklist**: Block dangerous bash commands (default: on)
-- **Blocked commands**: Patterns to block (supports regex)
-- **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`). Supports `~`, `$VAR`, `${VAR}`, and `%VAR%` (Windows).
-- **Context paths**: Directories outside the vault that Claude can read for additional context (click folder icon in input toolbar)
+**Customization**
+- **User name**: Your name for personalized greetings
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Custom system prompt**: Additional instructions appended to the default system prompt (Instruction Mode `#` saves here)
+- **Auto-generate conversation titles**: Toggle AI-powered title generation after first exchange
 - **Title generation model**: Model used for auto-generating conversation titles (default: Auto/Haiku)
-- **Permission mode**: Toggle YOLO (bypass prompts) or Safe (require approval)
-- **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
-- **Slash commands**: Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
-- **Environment variables**: Custom environment variables for Claude SDK (KEY=VALUE format)
-- **Environment snippets**: Save and restore environment variable configurations
-- **MCP Servers**: Add/edit/verify/delete MCP server configurations with context-saving mode
 - **Vim-style navigation mappings**: Configure key bindings with lines like `map w scrollUp`, `map s scrollDown`, `map i focusInput`
+
+**Hotkeys**
+- **Inline edit hotkey**: Hotkey to trigger inline edit on selected text
+- **Open chat hotkey**: Hotkey to open the chat sidebar
+
+**Slash Commands**
+- Create/edit/import/export custom `/commands` (optionally override model and allowed tools)
+
+**MCP Servers**
+- Add/edit/verify/delete MCP server configurations with context-saving mode
+
+**Safety**
+- **Load user Claude settings**: Load `~/.claude/settings.json` (user's Claude Code permission rules may bypass Safe mode)
+- **Enable command blocklist**: Block dangerous bash commands (default: on)
+- **Blocked commands**: Patterns to block (supports regex, platform-specific)
+- **Allowed export paths**: Paths outside the vault where files can be exported (default: `~/Desktop`, `~/Downloads`). Supports `~`, `$VAR`, `${VAR}`, and `%VAR%` (Windows).
+- **Approved actions**: In Safe mode, manage permanently approved actions (Allow Once vs. Always Allow)
+
+**Environment**
+- **Custom variables**: Environment variables for Claude SDK (KEY=VALUE format)
+- **Environment snippets**: Save and restore environment variable configurations
+
+**Advanced**
+- **Claude CLI path**: Custom path to Claude Code CLI (leave empty for auto-detection)
 
 ### Safety and permissions
 
@@ -130,7 +147,45 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Command blocklist** (platform-detected):
   - Unix: `rm -rf`, `chmod 777`, `chmod -R 777`
   - Windows CMD: `del /s /q`, `rd /s /q`, `rmdir /s /q`, `format`, `diskpart`
-  - Windows PowerShell: `Remove-Item -Recurse -Force`, `Format-Volume`, `Clear-Disk` 
+  - Windows PowerShell: `Remove-Item -Recurse -Force`, `Format-Volume`, `Clear-Disk`
+
+### Troubleshooting: Claude CLI not found
+
+If you encounter errors like `spawn claude ENOENT` or `Claude CLI not found`, the plugin may not be able to auto-detect your Claude installation. This commonly happens with Node version managers (nvm, fnm, volta, nvm4w, etc.).
+
+**Solution**: Find your Claude CLI path and set it manually in Settings → Advanced → Claude CLI path.
+
+**macOS/Linux:**
+```bash
+which claude
+# Example: /Users/you/.volta/bin/claude
+```
+Use this path directly — works for both native and npm installs.
+
+**Windows (native installer):**
+```powershell
+where.exe claude
+# Example output: C:\Users\you\AppData\Local\Claude\claude.exe
+```
+
+**Windows (npm/pnpm/yarn/others):**
+```powershell
+npm root -g
+# Example: C:\Users\you\AppData\Roaming\npm\node_modules
+# The CLI path is:
+# {npm root -g}\@anthropic-ai\claude-code\cli.js
+```
+
+> **Note**: `where.exe claude` may return `.cmd` wrapper files (e.g., `claude.cmd`). Do not use these. Use `claude.exe` (native installer) or `cli.js` (npm/pnpm/yarn).
+
+Copy the path and paste it into **Settings → Advanced → Claude CLI path**.
+
+**Alternative**: Add your Node.js bin directory to the PATH environment variable in **Settings → Environment → Custom variables**:
+```
+PATH=/Users/you/.volta/bin
+```
+
+**Still having issues?** Please [open a GitHub issue](https://github.com/YishenTu/claudian/issues) with your platform, Claude CLI path (from `which`/`where` output), and the error message.
 
 ## Privacy & Data Use
 

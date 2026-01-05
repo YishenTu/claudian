@@ -9,8 +9,6 @@ import {
   setMockMessages,
 } from '@test/__mocks__/claude-agent-sdk';
 import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 
 // Mock fs module
 jest.mock('fs');
@@ -37,6 +35,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -51,57 +50,6 @@ describe('InlineEditService', () => {
     service = new InlineEditService(mockPlugin);
   });
 
-  describe('findClaudeCLI', () => {
-    it('should find claude CLI in ~/.claude/local/claude', () => {
-      const homeDir = os.homedir();
-      const expectedPath = path.join(homeDir, '.claude', 'local', 'claude');
-
-      (fs.existsSync as jest.Mock).mockImplementation((p: string) => {
-        return p === expectedPath;
-      });
-
-      // Access private method via any
-      const foundPath = (service as any).findClaudeCLI();
-
-      expect(foundPath).toBe(expectedPath);
-    });
-
-    it('should find claude CLI in ~/.local/bin/claude', () => {
-      const homeDir = os.homedir();
-      const expectedPath = path.join(homeDir, '.local', 'bin', 'claude');
-
-      (fs.existsSync as jest.Mock).mockImplementation((p: string) => {
-        return p === expectedPath;
-      });
-
-      const foundPath = (service as any).findClaudeCLI();
-
-      expect(foundPath).toBe(expectedPath);
-    });
-
-    it('should return null when claude CLI not found', () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
-
-      const foundPath = (service as any).findClaudeCLI();
-
-      expect(foundPath).toBeNull();
-    });
-
-    it('should check paths in order of priority', () => {
-      const homeDir = os.homedir();
-      const checkedPaths: string[] = [];
-
-      (fs.existsSync as jest.Mock).mockImplementation((p: string) => {
-        checkedPaths.push(p);
-        return false;
-      });
-
-      (service as any).findClaudeCLI();
-
-      // First path should be ~/.claude/local/claude
-      expect(checkedPaths[0]).toBe(path.join(homeDir, '.claude', 'local', 'claude'));
-    });
-  });
 
   describe('vault restriction hook', () => {
     beforeEach(() => {
@@ -364,7 +312,7 @@ describe('InlineEditService', () => {
     });
 
     it('should return error when claude CLI not found', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
 
       const result = await service.editText({
         mode: 'selection',
@@ -826,17 +774,23 @@ describe('InlineEditService', () => {
       const spy = jest.spyOn(sdk, 'query').mockImplementation(() => {
         throw new Error('boom');
       });
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      const result = await service.editText({
-        mode: 'selection',
-        selectedText: 'text',
-        instruction: 'edit',
-        notePath: 'note.md',
-      });
+      try {
+        const result = await service.editText({
+          mode: 'selection',
+          selectedText: 'text',
+          instruction: 'edit',
+          notePath: 'note.md',
+        });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('boom');
-      spy.mockRestore();
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('boom');
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+        spy.mockRestore();
+      }
     });
 
     it('returns null path for unknown tool input', () => {
