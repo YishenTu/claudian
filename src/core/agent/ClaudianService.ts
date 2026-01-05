@@ -251,6 +251,12 @@ export class ClaudianService {
   private queryAbortController: AbortController | null = null;
   private responseConsumerRunning = false;
 
+  private preWarmPromise: Promise<void> | null = null;
+  private currentModel: string | null = null;
+  private currentThinkingTokens: number | null = null;
+  private currentPermissionMode: string | null = null;
+  private currentMcpServersKey: string | null = null;
+
   // Response routing - maps each send() to its response chunks
   private activeResponseResolvers: Array<{
     onChunk: (chunk: StreamChunk) => void;
@@ -301,28 +307,31 @@ export class ClaudianService {
    * @param resumeSessionId Optional session ID to resume (from active conversation)
    */
   async preWarm(resumeSessionId?: string): Promise<void> {
-    // Skip if already have persistent query
-    if (this.persistentQuery) {
+    if (this.persistentQuery) return;
+    if (this.preWarmPromise) {
+      await this.preWarmPromise;
       return;
     }
 
-    // Check CLI path via plugin
     const cliPath = this.plugin.getResolvedClaudeCliPath();
-    if (!cliPath) {
-      return;
-    }
+    if (!cliPath) return;
 
     const vaultPath = getVaultPath(this.plugin.app);
-    if (!vaultPath) {
-      return;
-    }
+    if (!vaultPath) return;
 
     this.vaultPath = vaultPath;
+    this.preWarmPromise = this.doPreWarm(vaultPath, cliPath, resumeSessionId);
+    try {
+      await this.preWarmPromise;
+    } finally {
+      this.preWarmPromise = null;
+    }
+  }
+
+  private async doPreWarm(vaultPath: string, cliPath: string, resumeSessionId?: string): Promise<void> {
     try {
       await this.startPersistentQuery(vaultPath, cliPath, resumeSessionId);
-    } catch (error) {
-      console.error('[Claudian PreWarm] Failed to start persistent query:', error);
-      // Clear any partial state
+    } catch {
       this.persistentQuery = null;
       this.messageChannel = null;
     }
@@ -333,29 +342,27 @@ export class ClaudianService {
    * The subprocess remains running until explicitly closed.
    */
   private async startPersistentQuery(cwd: string, cliPath: string, resumeSessionId?: string): Promise<void> {
-    // Store vault path for security hooks
     this.vaultPath = cwd;
-
-    // Create message channel for sending user messages
     this.messageChannel = createMessageChannel<SDKUserMessage>();
     this.queryAbortController = new AbortController();
 
-    // Build full options for the persistent query
     const options = this.buildQueryOptions(cwd, cliPath, resumeSessionId);
-
-    // Start the persistent query with message generator
     this.persistentQuery = agentQuery({
       prompt: this.messageChannel.receive(),
       options,
     });
 
-    // Start consuming responses in background
     this.startResponseConsumer();
 
-    // Trigger subprocess spawn by calling setModel - this warms up the connection
-    // Without this, the subprocess only spawns when we first call a method or send a message
+    // setModel() triggers subprocess spawn - without this call, spawn is deferred until first message
     const model = this.plugin.settings.model;
     await this.persistentQuery.setModel(model);
+    this.currentModel = model;
+
+    const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+    this.currentThinkingTokens = budgetConfig && budgetConfig.tokens > 0 ? budgetConfig.tokens : null;
+    this.currentPermissionMode = this.plugin.settings.permissionMode === 'yolo' ? 'bypassPermissions' : 'default';
+    this.currentMcpServersKey = null;
   }
 
   /**
@@ -458,7 +465,9 @@ export class ClaudianService {
    * Routes response chunks to the active response handlers.
    */
   private async startResponseConsumer(): Promise<void> {
-    if (!this.persistentQuery || this.responseConsumerRunning) return;
+    if (!this.persistentQuery || this.responseConsumerRunning) {
+      return;
+    }
 
     this.responseConsumerRunning = true;
 
@@ -559,6 +568,12 @@ export class ClaudianService {
     }
     this.activeResponseResolvers = [];
     this.responseConsumerRunning = false;
+
+    // Reset tracked option values
+    this.currentModel = null;
+    this.currentThinkingTokens = null;
+    this.currentPermissionMode = null;
+    this.currentMcpServersKey = null;
   }
 
   /** Returns true if persistent query is running. */
@@ -583,6 +598,11 @@ export class ClaudianService {
     if (!resolvedClaudePath) {
       yield { type: 'error', content: 'Claude CLI not found. Please install Claude Code CLI.' };
       return;
+    }
+
+    // If preWarm is in progress, wait for it instead of starting a new query
+    if (this.preWarmPromise) {
+      await this.preWarmPromise;
     }
 
     // Ensure persistent query is running
@@ -765,37 +785,52 @@ export class ClaudianService {
 
   /**
    * Update dynamic options on the persistent query.
+   * Only calls SDK methods when values actually change to avoid expensive operations.
    */
   private async updateQueryOptions(queryOptions?: QueryOptions): Promise<void> {
     if (!this.persistentQuery) return;
 
-    // Update model if changed
+    // Update model only if changed
     const model = queryOptions?.model || this.plugin.settings.model;
-    await this.persistentQuery.setModel(model);
+    if (model !== this.currentModel) {
+      await this.persistentQuery.setModel(model);
+      this.currentModel = model;
+    }
 
-    // Update thinking budget
+    // Update thinking budget only if changed
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
     if (budgetConfig) {
-      await this.persistentQuery.setMaxThinkingTokens(
-        budgetConfig.tokens > 0 ? budgetConfig.tokens : null
-      );
+      const tokens = budgetConfig.tokens > 0 ? budgetConfig.tokens : null;
+      if (tokens !== this.currentThinkingTokens) {
+        await this.persistentQuery.setMaxThinkingTokens(tokens);
+        this.currentThinkingTokens = tokens;
+      }
     }
 
-    // Update permission mode if plan mode requested
+    // Update permission mode only if changed
+    let permissionMode: string;
     if (queryOptions?.planMode) {
-      await this.persistentQuery.setPermissionMode('plan');
+      permissionMode = 'plan';
     } else if (this.plugin.settings.permissionMode === 'yolo') {
-      await this.persistentQuery.setPermissionMode('bypassPermissions');
+      permissionMode = 'bypassPermissions';
     } else {
-      await this.persistentQuery.setPermissionMode('default');
+      permissionMode = 'default';
+    }
+    if (permissionMode !== this.currentPermissionMode) {
+      await this.persistentQuery.setPermissionMode(permissionMode as 'plan' | 'bypassPermissions' | 'default');
+      this.currentPermissionMode = permissionMode;
     }
 
-    // MCP servers - use setMcpServers() for dynamic updates
+    // MCP servers - only update if the set of servers changed
     const mcpMentions = queryOptions?.mcpMentions || new Set<string>();
     const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
     const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
     const mcpServers = this.mcpManager.getActiveServers(combinedMentions);
-    await this.persistentQuery.setMcpServers(mcpServers);
+    const mcpServersKey = JSON.stringify(Object.entries(mcpServers).sort());
+    if (mcpServersKey !== this.currentMcpServersKey) {
+      await this.persistentQuery.setMcpServers(mcpServers);
+      this.currentMcpServersKey = mcpServersKey;
+    }
   }
 
   /** Cancel the current query. */
