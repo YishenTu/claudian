@@ -43,6 +43,13 @@ function getExtraBinaryPaths(): string[] {
     paths.push(path.join(programFiles, 'nodejs'));
     paths.push(path.join(programFilesX86, 'nodejs'));
 
+    // nvm4w (Node Version Manager for Windows)
+    // Default: C:\nvm4w\nodejs, but support all drive letters
+    const drives = ['C', 'D', 'E', 'F', 'G', 'H'];
+    for (const drive of drives) {
+      paths.push(path.join(drive + ':', 'nvm4w', 'nodejs'));
+    }
+
     // Docker
     paths.push(path.join(programFiles, 'Docker', 'Docker', 'resources', 'bin'));
 

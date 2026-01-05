@@ -178,6 +178,15 @@ function getNpmCliJsPaths(): string[] {
     cliJsPaths.push(
       path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
     );
+
+    // nvm4w (Node Version Manager for Windows)
+    // Default: C:\nvm4w\nodejs, but support all drive letters
+    const drives = ['C', 'D', 'E', 'F', 'G', 'H'];
+    for (const drive of drives) {
+      cliJsPaths.push(
+        path.join(drive + ':', 'nvm4w', 'nodejs', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      );
+    }
   } else {
     // Unix/macOS npm global paths
     cliJsPaths.push(
