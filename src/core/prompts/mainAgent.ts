@@ -11,7 +11,6 @@ export interface SystemPromptSettings {
   mediaFolder?: string;
   customPrompt?: string;
   allowedExportPaths?: string[];
-  externalContextPaths?: string[];
   vaultPath?: string;
   hasEditorContext?: boolean;
   /** Whether this query is in plan mode (read-only exploration). */
@@ -192,7 +191,33 @@ Use proactively for any task meeting these criteria to keep progress visible.
 
 ### Skills
 
-Reusable capability modules. Use the \`Skill\` tool to invoke them when their description matches the user's need.`;
+Reusable capability modules. Use the \`Skill\` tool to invoke them when their description matches the user's need.
+
+## External Contexts
+
+If the user has enabled external contexts, their message may include:
+
+\`\`\`xml
+<external_contexts>
+/absolute/path/one
+/absolute/path/two
+</external_contexts>
+\`\`\`
+
+Treat these paths as additional roots with full read/write access.
+
+## Editor Selection
+
+User messages may include an \`<editor_selection>\` tag showing text the user selected:
+
+\`\`\`xml
+<editor_selection path="path/to/file.md">
+selected text here
+possibly multiple lines
+</editor_selection>
+\`\`\`
+
+**When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
 }
 
 /** Returns instructions for handling embedded images in notes. */
@@ -257,56 +282,6 @@ cp ./note.md ~/Desktop/note.md
 \`\`\``;
 }
 
-/** Returns instructions for external context directories (directories with full access). */
-function getExternalContextInstructions(externalContextPaths: string[]): string {
-  if (!externalContextPaths || externalContextPaths.length === 0) {
-    return '';
-  }
-
-  const uniquePaths = Array.from(new Set(externalContextPaths.map((p) => p.trim()).filter(Boolean)));
-  if (uniquePaths.length === 0) {
-    return '';
-  }
-
-  // Extract folder name as alias (last segment of path)
-  const formattedPaths = uniquePaths
-    .map((p) => {
-      // Normalize path separators for cross-platform support
-      const normalized = p.replace(/\\/g, '/').replace(/\/+$/, '');
-      const segments = normalized.split('/');
-      const folderName = segments[segments.length - 1] || p;
-      return `- \`${folderName}\` → ${p}`;
-    })
-    .join('\n');
-
-  return `
-
-## External Contexts
-
-Directories outside the vault with **full read/write access**. Use absolute paths:
-
-${formattedPaths}
-
-When user refers to a folder by name (e.g., "check Workspace"), use the corresponding absolute path.`;
-}
-
-/** Returns editor context instructions (only included when selection exists). */
-function getEditorContextInstructions(): string {
-  return `
-
-## Editor Selection
-
-User messages may include an \`<editor_selection>\` tag showing text the user selected:
-
-\`\`\`xml
-<editor_selection path="path/to/file.md">
-selected text here
-possibly multiple lines
-</editor_selection>
-\`\`\`
-
-**When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
-}
 
 /** Returns plan mode instructions (only included during plan mode). */
 function getPlanModeInstructions(): string {
@@ -346,17 +321,12 @@ export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   // Stable content (ordered for context cache optimization)
   prompt += getImageInstructions(settings.mediaFolder || '');
   prompt += getExportInstructions(settings.allowedExportPaths || []);
-  prompt += getExternalContextInstructions(settings.externalContextPaths || []);
 
   if (settings.customPrompt?.trim()) {
     prompt += '\n\n## Custom Instructions\n\n' + settings.customPrompt.trim();
   }
 
-  // Variable content (changes per query, placed last for cache efficiency)
-  if (settings.hasEditorContext) {
-    prompt += getEditorContextInstructions();
-  }
-
+  // Plan mode instructions only for cold-start plan queries
   if (settings.planMode) {
     prompt += getPlanModeInstructions();
   }

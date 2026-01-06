@@ -123,6 +123,8 @@ export interface QueryOptions {
   enabledMcpServers?: Set<string>;
   /** Enable plan mode (read-only exploration). */
   planMode?: boolean;
+  /** Force cold-start query (bypass persistent query). */
+  forceColdStart?: boolean;
   /** Session-specific external context paths (directories with full access). */
   externalContextPaths?: string[];
 }

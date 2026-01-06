@@ -41,6 +41,8 @@ import type { StreamController } from './StreamController';
 
 const PLAN_MODE_REQUEST_PREFIX =
   'User requested plan mode. Call EnterPlanMode before responding.';
+const PLAN_MODE_CONTINUE_PROMPT =
+  'Continue in plan mode. Create a detailed, step-by-step implementation plan for the user\'s last request. Use read-only tools only. Call ExitPlanMode when the plan is ready.';
 
 /** Dependencies for InputController. */
 export interface InputControllerDeps {
@@ -109,6 +111,7 @@ export class InputController {
     const fileContextManager = this.deps.getFileContextManager();
     const slashCommandManager = this.deps.getSlashCommandManager();
     const mcpServerSelector = this.deps.getMcpServerSelector();
+    const externalContextSelector = this.deps.getExternalContextSelector();
 
     const contentOverride = options?.content;
     const shouldUseInput = contentOverride === undefined;
@@ -240,6 +243,9 @@ export class InputController {
       currentNoteForMessage = currentNotePath;
     }
 
+    const externalContextPaths = externalContextSelector?.getExternalContexts();
+    promptToSend = this.prependExternalContexts(promptToSend, externalContextPaths);
+
     if (options?.promptPrefix) {
       promptToSend = `${options.promptPrefix}\n\n${promptToSend}`;
     }
@@ -302,8 +308,6 @@ export class InputController {
     }
 
     // Add external context paths to query
-    const externalContextSelector = this.deps.getExternalContextSelector();
-    const externalContextPaths = externalContextSelector?.getExternalContexts();
     if (externalContextPaths && externalContextPaths.length > 0) {
       queryOptions = {
         ...queryOptions,
@@ -339,6 +343,14 @@ export class InputController {
       await conversationController.save(true);
 
       await this.activatePendingPlanMode();
+
+      // Phase 3: After implementation completes, clear approved plan and restart persistent query
+      // This allows future messages to use the persistent query path
+      if (plugin.agentService.getApprovedPlanContent()) {
+        plugin.agentService.clearApprovedPlanContent();
+        // Restart persistent query for next chat message
+        void plugin.agentService.restartPersistentQuery('implementation completed');
+      }
 
       // Generate AI title after first complete exchange (user + assistant)
       await this.triggerTitleGeneration();
@@ -398,6 +410,24 @@ export class InputController {
     this.ensurePlanModeState(true);
     plugin.agentService.setCurrentPlanFilePath(null);
     this.deps.setPlanModeActive(true);
+
+    await this.sendMessageWithPlanMode({ content: PLAN_MODE_CONTINUE_PROMPT, hidden: true });
+  }
+
+  private prependExternalContexts(prompt: string, externalContextPaths?: string[] | null): string {
+    if (!externalContextPaths || externalContextPaths.length === 0) {
+      return prompt;
+    }
+
+    const uniquePaths = Array.from(
+      new Set(externalContextPaths.map((p) => p.trim()).filter(Boolean))
+    );
+    if (uniquePaths.length === 0) {
+      return prompt;
+    }
+
+    const tag = `<external_contexts>\n${uniquePaths.join('\n')}\n</external_contexts>`;
+    return `${tag}\n\n${prompt}`;
   }
 
   private async exitPlanPermissionMode(): Promise<void> {
@@ -475,6 +505,7 @@ export class InputController {
     const imageContextManager = this.deps.getImageContextManager();
     const fileContextManager = this.deps.getFileContextManager();
     const mcpServerSelector = this.deps.getMcpServerSelector();
+    const externalContextSelector = this.deps.getExternalContextSelector();
     if (plugin.settings.permissionMode !== 'plan') {
       await this.sendMessage({ promptPrefix: PLAN_MODE_REQUEST_PREFIX });
       return;
@@ -542,6 +573,9 @@ ${content}
       currentNoteForMessage = currentNote;
     }
 
+    const externalContextPaths = externalContextSelector?.getExternalContexts();
+    promptToSend = this.prependExternalContexts(promptToSend, externalContextPaths);
+
     fileContextManager?.markCurrentNoteSent();
 
     if (!skipUserMessage) {
@@ -594,6 +628,9 @@ ${content}
       mcpMentions,
       enabledMcpServers,
     };
+    if (externalContextPaths && externalContextPaths.length > 0) {
+      queryOptions.externalContextPaths = externalContextPaths;
+    }
 
     let wasInterrupted = false;
     try {

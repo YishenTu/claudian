@@ -23,6 +23,7 @@ import {
   finalizeSubagentBlock,
   finalizeThinkingBlock,
   finalizeWriteEditBlock,
+  getToolLabel,
   isBlockedToolResult,
   markAsyncSubagentOrphaned,
   parseAskUserQuestionInput,
@@ -188,6 +189,22 @@ export class StreamController {
     // Skip rendering Write/Edit tools during plan mode (read-only mode)
     const isPlanMode = plugin.settings.permissionMode === 'plan';
     if (isPlanMode && isWriteEditTool(chunk.name)) {
+      return;
+    }
+
+    const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
+    if (existingToolCall) {
+      const newInput = chunk.input || {};
+      if (Object.keys(newInput).length > 0) {
+        existingToolCall.input = { ...existingToolCall.input, ...newInput };
+        const toolEl = state.toolCallElements.get(chunk.id);
+        if (toolEl) {
+          const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement | null;
+          if (labelEl) {
+            labelEl.setText(getToolLabel(existingToolCall.name, existingToolCall.input));
+          }
+        }
+      }
       return;
     }
 

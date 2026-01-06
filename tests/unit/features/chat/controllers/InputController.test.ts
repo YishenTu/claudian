@@ -61,6 +61,9 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
         resetSession: jest.fn(),
         setApprovedPlanContent: jest.fn(),
         setCurrentPlanFilePath: jest.fn(),
+        getApprovedPlanContent: jest.fn().mockReturnValue(null),
+        clearApprovedPlanContent: jest.fn(),
+        restartPersistentQuery: jest.fn(),
       },
       saveSettings: jest.fn(),
       settings: {

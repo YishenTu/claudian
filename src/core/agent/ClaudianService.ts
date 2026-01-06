@@ -3,9 +3,24 @@
  *
  * Handles communication with Claude via the Agent SDK. Manages streaming,
  * session persistence, permission modes, and security hooks.
+ *
+ * Architecture:
+ * - Persistent query for active chat conversation (eliminates cold-start latency)
+ * - Cold-start queries for plan mode, inline edit, title generation
+ * - MessageChannel for message queueing and turn management
+ * - Dynamic updates (model, thinking tokens, permission mode, MCP servers)
  */
 
-import type { CanUseTool, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  CanUseTool,
+  McpServerConfig,
+  Options,
+  PermissionMode as SDKPermissionMode,
+  PermissionResult,
+  Query,
+  SDKMessage,
+  SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import * as os from 'os';
 import * as path from 'path';
@@ -25,13 +40,13 @@ import {
 } from '../hooks';
 import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
-import { buildSystemPrompt } from '../prompts/mainAgent';
+import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
   ApprovalManager,
   getActionDescription,
 } from '../security';
-import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE } from '../tools/toolNames';
+import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL } from '../tools/toolNames';
 import type {
   AskUserQuestionCallback,
   AskUserQuestionInput,
@@ -145,6 +160,289 @@ class DiffStore {
 }
 
 // ============================================
+// MessageChannel - Queue-based AsyncIterable
+// ============================================
+
+/** Message queue configuration. */
+const MESSAGE_CHANNEL_CONFIG = {
+  MAX_QUEUED_MESSAGES: 8,
+  MAX_MERGED_CHARS: 12000,
+};
+
+/** Pending message in the queue (text-only for merging). */
+interface PendingTextMessage {
+  type: 'text';
+  content: string;
+}
+
+/** Pending message with attachments (cannot be merged). */
+interface PendingAttachmentMessage {
+  type: 'attachment';
+  message: SDKUserMessage;
+}
+
+type PendingMessage = PendingTextMessage | PendingAttachmentMessage;
+
+/**
+ * MessageChannel - Queue-based async iterable for persistent queries.
+ *
+ * Rules:
+ * - Single in-flight turn at a time
+ * - Text-only messages merge with \n\n while a turn is active
+ * - Non-text messages (images) are deferred until idle
+ * - Overflow policy: drop newest and warn
+ */
+class MessageChannel implements AsyncIterable<SDKUserMessage> {
+  private queue: PendingMessage[] = [];
+  private turnActive = false;
+  private closed = false;
+  private resolveNext: ((value: IteratorResult<SDKUserMessage>) => void) | null = null;
+  private rejectNext: ((error: Error) => void) | null = null;
+  private currentSessionId: string | null = null;
+  private onWarning: (message: string) => void;
+
+  constructor(onWarning: (message: string) => void = console.warn) {
+    this.onWarning = onWarning;
+  }
+
+  /** Set the session ID for outgoing messages. */
+  setSessionId(sessionId: string): void {
+    this.currentSessionId = sessionId;
+  }
+
+  /** Check if a turn is currently active. */
+  isTurnActive(): boolean {
+    return this.turnActive;
+  }
+
+  /** Check if the channel is closed. */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  /**
+   * Enqueue a message. If a turn is active:
+   * - Text-only: merge with queued text
+   * - With attachments: defer as single next message
+   */
+  enqueue(message: SDKUserMessage): void {
+    if (this.closed) {
+      throw new Error('MessageChannel is closed');
+    }
+
+    const hasAttachments = this.messageHasAttachments(message);
+
+    if (!this.turnActive) {
+      // No turn active - send immediately
+      this.turnActive = true;
+      if (this.resolveNext) {
+        const resolve = this.resolveNext;
+        this.resolveNext = null;
+        this.rejectNext = null;
+        resolve({ value: message, done: false });
+      } else {
+        // Store for next pull
+        if (hasAttachments) {
+          this.queue.push({ type: 'attachment', message });
+        } else {
+          this.queue.push({ type: 'text', content: this.extractTextContent(message) });
+        }
+      }
+      return;
+    }
+
+    // Turn is active - queue the message
+    if (hasAttachments) {
+      // Non-text messages are deferred as-is (one at a time)
+      // Find existing attachment message or add new one
+      const existingIdx = this.queue.findIndex(m => m.type === 'attachment');
+      if (existingIdx >= 0) {
+        // Replace existing (newer takes precedence for attachments)
+        this.queue[existingIdx] = { type: 'attachment', message };
+        this.onWarning('[MessageChannel] Attachment message replaced (only one can be queued)');
+      } else {
+        this.queue.push({ type: 'attachment', message });
+      }
+      return;
+    }
+
+    // Text-only - merge with existing text in queue
+    const textContent = this.extractTextContent(message);
+    const existingTextIdx = this.queue.findIndex(m => m.type === 'text');
+
+    if (existingTextIdx >= 0) {
+      const existing = this.queue[existingTextIdx] as PendingTextMessage;
+      const mergedContent = existing.content + '\n\n' + textContent;
+
+      // Check merged size
+      if (mergedContent.length > MESSAGE_CHANNEL_CONFIG.MAX_MERGED_CHARS) {
+        this.onWarning(`[MessageChannel] Merged content exceeds ${MESSAGE_CHANNEL_CONFIG.MAX_MERGED_CHARS} chars, dropping newest`);
+        return;
+      }
+
+      // Check queue count (text counts as 1)
+      const textMessages = this.queue.filter(m => m.type === 'text').length;
+      if (textMessages >= MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES) {
+        this.onWarning(`[MessageChannel] Queue full (${MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES}), dropping newest`);
+        return;
+      }
+
+      existing.content = mergedContent;
+    } else {
+      // No existing text - add new
+      if (this.queue.length >= MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES) {
+        this.onWarning(`[MessageChannel] Queue full (${MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES}), dropping newest`);
+        return;
+      }
+      this.queue.push({ type: 'text', content: textContent });
+    }
+  }
+
+  /** Signal that the current turn has completed. */
+  onTurnComplete(): void {
+    this.turnActive = false;
+
+    // Check if there's a queued message to send
+    if (this.queue.length > 0 && this.resolveNext) {
+      const pending = this.queue.shift()!;
+      this.turnActive = true;
+      const resolve = this.resolveNext;
+      this.resolveNext = null;
+      this.rejectNext = null;
+      resolve({ value: this.pendingToMessage(pending), done: false });
+    }
+  }
+
+  /** Close the channel. */
+  close(): void {
+    this.closed = true;
+    this.queue = [];
+    if (this.resolveNext) {
+      const resolve = this.resolveNext;
+      this.resolveNext = null;
+      this.rejectNext = null;
+      resolve({ value: undefined as any, done: true });
+    }
+  }
+
+  /** Reset the channel for reuse. */
+  reset(): void {
+    this.queue = [];
+    this.turnActive = false;
+    this.closed = false;
+    this.resolveNext = null;
+    this.rejectNext = null;
+  }
+
+  /** Get the number of queued messages. */
+  getQueueLength(): number {
+    return this.queue.length;
+  }
+
+  /** AsyncIterable implementation. */
+  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+    return {
+      next: (): Promise<IteratorResult<SDKUserMessage>> => {
+        if (this.closed) {
+          return Promise.resolve({ value: undefined as any, done: true });
+        }
+
+        // If there's a queued message and no active turn, return it
+        if (this.queue.length > 0 && !this.turnActive) {
+          const pending = this.queue.shift()!;
+          this.turnActive = true;
+          return Promise.resolve({ value: this.pendingToMessage(pending), done: false });
+        }
+
+        // Wait for next message
+        return new Promise((resolve, reject) => {
+          this.resolveNext = resolve;
+          this.rejectNext = reject;
+        });
+      },
+    };
+  }
+
+  private messageHasAttachments(message: SDKUserMessage): boolean {
+    if (!message.message?.content) return false;
+    if (typeof message.message.content === 'string') return false;
+    return message.message.content.some((block: { type: string }) => block.type === 'image');
+  }
+
+  private extractTextContent(message: SDKUserMessage): string {
+    if (!message.message?.content) return '';
+    if (typeof message.message.content === 'string') return message.message.content;
+    return message.message.content
+      .filter((block: { type: string }): block is { type: 'text'; text: string } => block.type === 'text')
+      .map((block: { type: 'text'; text: string }) => block.text)
+      .join('\n\n');
+  }
+
+  private pendingToMessage(pending: PendingMessage): SDKUserMessage {
+    if (pending.type === 'attachment') {
+      return pending.message;
+    }
+
+    // Text-only - create a new SDKUserMessage
+    return {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: pending.content,
+      },
+      parent_tool_use_id: null,
+      session_id: this.currentSessionId || '',
+    };
+  }
+}
+
+// ============================================
+// Response Handler for Routing
+// ============================================
+
+/** Handler for routing stream chunks to the appropriate query caller. */
+interface ResponseHandler {
+  id: string;
+  onChunk: (chunk: StreamChunk) => void;
+  onDone: () => void;
+  onError: (error: Error) => void;
+  sawStreamText: boolean;
+}
+
+// ============================================
+// Persistent Query Configuration State
+// ============================================
+
+/** Tracked configuration for detecting changes that require restart. */
+interface PersistentQueryConfig {
+  model: string | null;
+  thinkingTokens: number | null;
+  permissionMode: PermissionMode | null;
+  allowDangerouslySkip: boolean;
+  systemPromptKey: string;
+  disallowedToolsKey: string;
+  mcpServersKey: string;
+  externalContextPaths: string[];
+  allowedExportPaths: string[];
+  settingSources: string;
+  claudeCliPath: string;
+}
+
+/** Compute a stable key for system prompt inputs. */
+function computeSystemPromptKey(settings: SystemPromptSettings): string {
+  const parts = [
+    settings.mediaFolder || '',
+    settings.customPrompt || '',
+    (settings.allowedExportPaths || []).sort().join('|'),
+    settings.vaultPath || '',
+    // Note: hasEditorContext and planMode are per-message, not tracked here
+    // appendedPlan changes trigger restart
+    settings.appendedPlan || '',
+  ];
+  return parts.join('::');
+}
+
+// ============================================
 // SDK Content Types
 // ============================================
 
@@ -180,6 +478,8 @@ export interface QueryOptions {
   enabledMcpServers?: Set<string>;
   /** Enable plan mode (read-only exploration). */
   planMode?: boolean;
+  /** Force cold-start query (bypass persistent query). */
+  forceColdStart?: boolean;
   /** Session-specific external context paths (directories with full access). */
   externalContextPaths?: string[];
 }
@@ -208,6 +508,7 @@ export class ClaudianService {
   private currentPlanFilePath: string | null = null;
   private approvedPlanContent: string | null = null;
   private vaultPath: string | null = null;
+  private currentExternalContextPaths: string[] = [];
 
   // Modular components
   private sessionManager = new SessionManager();
@@ -217,6 +518,27 @@ export class ClaudianService {
 
   // Store AskUserQuestion answers by tool_use_id
   private askUserQuestionAnswers = new Map<string, Record<string, string | string[]>>();
+
+  // ============================================
+  // Persistent Query State (Phase 1)
+  // ============================================
+
+  private persistentQuery: Query | null = null;
+  private messageChannel: MessageChannel | null = null;
+  private queryAbortController: AbortController | null = null;
+  private responseHandlers: ResponseHandler[] = [];
+  private responseConsumerRunning = false;
+  private shuttingDown = false;
+
+  // Tracked configuration for detecting changes that require restart
+  private currentConfig: PersistentQueryConfig | null = null;
+
+  // Current allowed tools for canUseTool enforcement (null = no restriction)
+  private currentAllowedTools: string[] | null = null;
+
+  // Last sent message for crash recovery (Phase 1.3)
+  private lastSentMessage: SDKUserMessage | null = null;
+  private crashRecoveryAttempted = false;
 
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -244,7 +566,431 @@ export class ClaudianService {
     await this.mcpManager.loadServers();
   }
 
-  /** Sends a query to Claude and streams the response. */
+  // ============================================
+  // Persistent Query Lifecycle (Phase 1.3)
+  // ============================================
+
+  /**
+   * Pre-warm the persistent query for faster follow-up messages.
+   * Call this on plugin load with the active conversation session ID.
+   */
+  async preWarm(resumeSessionId?: string): Promise<void> {
+    if (this.persistentQuery) {
+      console.log('[ClaudianService] Persistent query already running');
+      return;
+    }
+
+    const vaultPath = getVaultPath(this.plugin.app);
+    if (!vaultPath) {
+      console.warn('[ClaudianService] Cannot pre-warm: vault path not available');
+      return;
+    }
+
+    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
+    if (!resolvedClaudePath) {
+      console.warn('[ClaudianService] Cannot pre-warm: Claude CLI not found');
+      return;
+    }
+
+    await this.startPersistentQuery(vaultPath, resolvedClaudePath, resumeSessionId);
+  }
+
+  /**
+   * Starts the persistent query for the active chat conversation.
+   */
+  private async startPersistentQuery(
+    vaultPath: string,
+    cliPath: string,
+    resumeSessionId?: string
+  ): Promise<void> {
+    if (this.persistentQuery) {
+      console.warn('[ClaudianService] Persistent query already started');
+      return;
+    }
+
+    this.shuttingDown = false;
+    this.vaultPath = vaultPath;
+
+    // Create message channel
+    this.messageChannel = new MessageChannel((msg) => {
+      console.warn(msg);
+      // TODO: Could surface this warning to UI
+    });
+
+    // Create abort controller for the persistent query
+    this.queryAbortController = new AbortController();
+
+    // Build initial configuration
+    const config = this.buildPersistentQueryConfig(vaultPath, cliPath);
+    this.currentConfig = config;
+
+    // Build SDK options
+    const options = await this.buildPersistentQueryOptions(vaultPath, cliPath, resumeSessionId);
+
+    // Create the persistent query with the message channel
+    this.persistentQuery = agentQuery({
+      prompt: this.messageChannel,
+      options,
+    });
+
+    // Start the response consumer loop
+    this.startResponseConsumer();
+
+    console.log('[ClaudianService] Persistent query started', {
+      resumeSessionId: resumeSessionId ?? 'new',
+    });
+  }
+
+  /**
+   * Closes the persistent query and cleans up resources.
+   */
+  closePersistentQuery(reason?: string): void {
+    if (!this.persistentQuery) {
+      return;
+    }
+
+    console.log('[ClaudianService] Closing persistent query', { reason });
+
+    this.shuttingDown = true;
+
+    // Close the message channel (ends the async iterable)
+    this.messageChannel?.close();
+
+    // Interrupt the query
+    void this.persistentQuery.interrupt().catch(() => {
+      // Ignore interrupt errors during shutdown
+    });
+
+    // Abort as backup
+    this.queryAbortController?.abort();
+
+    // Clear state
+    this.persistentQuery = null;
+    this.messageChannel = null;
+    this.queryAbortController = null;
+    this.responseConsumerRunning = false;
+    this.responseHandlers = [];
+    this.currentConfig = null;
+    this.currentAllowedTools = null;
+  }
+
+  /**
+   * Restarts the persistent query (e.g., after configuration change).
+   */
+  async restartPersistentQuery(reason?: string): Promise<void> {
+    console.log('[ClaudianService] Restarting persistent query', { reason });
+
+    const sessionId = this.sessionManager.getSessionId();
+    this.closePersistentQuery(reason);
+
+    const vaultPath = getVaultPath(this.plugin.app);
+    const cliPath = this.plugin.getResolvedClaudeCliPath();
+
+    if (vaultPath && cliPath) {
+      await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined);
+    }
+  }
+
+  /**
+   * Checks if the persistent query needs to be restarted based on configuration changes.
+   */
+  private needsRestart(newConfig: PersistentQueryConfig): boolean {
+    if (!this.currentConfig) return true;
+
+    // These require restart (cannot be updated dynamically)
+    if (this.currentConfig.systemPromptKey !== newConfig.systemPromptKey) return true;
+    if (this.currentConfig.disallowedToolsKey !== newConfig.disallowedToolsKey) return true;
+    if (this.currentConfig.settingSources !== newConfig.settingSources) return true;
+    if (this.currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
+
+    // YOLO mode toggle requires restart (allowDangerouslySkipPermissions)
+    if (this.currentConfig.allowDangerouslySkip !== newConfig.allowDangerouslySkip) return true;
+
+    // Export paths affect system prompt
+    const oldExport = [...(this.currentConfig.allowedExportPaths || [])].sort().join('|');
+    const newExport = [...(newConfig.allowedExportPaths || [])].sort().join('|');
+    if (oldExport !== newExport) return true;
+
+    return false;
+  }
+
+  /**
+   * Builds configuration object for tracking changes.
+   */
+  private buildPersistentQueryConfig(vaultPath: string, cliPath: string): PersistentQueryConfig {
+    const systemPromptSettings: SystemPromptSettings = {
+      mediaFolder: this.plugin.settings.mediaFolder,
+      customPrompt: this.plugin.settings.systemPrompt,
+      allowedExportPaths: this.plugin.settings.allowedExportPaths,
+      vaultPath,
+      appendedPlan: this.approvedPlanContent ?? undefined,
+    };
+
+    const budgetSetting = this.plugin.settings.thinkingBudget;
+    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
+    const thinkingTokens = budgetConfig?.tokens ?? null;
+
+    // Compute disallowedToolsKey from all disabled MCP tools (pre-registered upfront)
+    const allDisallowedTools = this.mcpManager.getAllDisallowedMcpTools();
+    const disallowedToolsKey = allDisallowedTools.join('|');
+
+    return {
+      model: this.plugin.settings.model,
+      thinkingTokens: thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null,
+      permissionMode: this.plugin.settings.permissionMode,
+      allowDangerouslySkip: this.plugin.settings.permissionMode === 'yolo',
+      systemPromptKey: computeSystemPromptKey(systemPromptSettings),
+      disallowedToolsKey,
+      mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
+      externalContextPaths: [],
+      allowedExportPaths: this.plugin.settings.allowedExportPaths,
+      settingSources: this.plugin.settings.loadUserClaudeSettings ? 'user,project' : 'project',
+      claudeCliPath: cliPath,
+    };
+  }
+
+  /**
+   * Builds SDK options for the persistent query.
+   */
+  private async buildPersistentQueryOptions(
+    vaultPath: string,
+    cliPath: string,
+    resumeSessionId?: string
+  ): Promise<Options> {
+    const selectedModel = this.plugin.settings.model;
+    const permissionMode = this.plugin.settings.permissionMode;
+
+    // Parse custom environment variables
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+
+    // Build system prompt (editor context and plan mode are per-message)
+    const systemPrompt = buildSystemPrompt({
+      mediaFolder: this.plugin.settings.mediaFolder,
+      customPrompt: this.plugin.settings.systemPrompt,
+      allowedExportPaths: this.plugin.settings.allowedExportPaths,
+      vaultPath,
+      hasEditorContext: true, // Always include editor selection instructions
+      planMode: false, // Plan mode uses cold-start
+      appendedPlan: this.approvedPlanContent ?? undefined,
+    });
+
+    const options: Options = {
+      cwd: vaultPath,
+      systemPrompt,
+      model: selectedModel,
+      abortController: this.queryAbortController ?? undefined,
+      pathToClaudeCodeExecutable: cliPath,
+      settingSources: this.plugin.settings.loadUserClaudeSettings
+        ? ['user', 'project']
+        : ['project'],
+      env: {
+        ...process.env,
+        ...customEnv,
+        PATH: enhancedPath,
+      },
+      includePartialMessages: true, // Enable streaming (Phase 4)
+    };
+
+    // Pre-register all disabled MCP tools upfront (so @-mentions don't trigger restart)
+    const allDisallowedTools = this.mcpManager.getAllDisallowedMcpTools();
+    if (allDisallowedTools.length > 0) {
+      options.disallowedTools = allDisallowedTools;
+    }
+
+    // Set permission mode
+    if (permissionMode === 'yolo') {
+      options.permissionMode = 'bypassPermissions';
+      options.allowDangerouslySkipPermissions = true;
+    } else {
+      options.permissionMode = 'default';
+    }
+
+    // Add thinking budget
+    const budgetSetting = this.plugin.settings.thinkingBudget;
+    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
+    if (budgetConfig && budgetConfig.tokens > 0) {
+      options.maxThinkingTokens = budgetConfig.tokens;
+    }
+
+    // Add unified tool callback (handles AskUserQuestion, plan mode tools, and permissions)
+    options.canUseTool = this.createUnifiedToolCallback(permissionMode);
+
+    // Add hooks
+    const blocklistHook = createBlocklistHook(() => ({
+      blockedCommands: this.plugin.settings.blockedCommands,
+      enableBlocklist: this.plugin.settings.enableBlocklist,
+    }));
+
+    const vaultRestrictionHook = createVaultRestrictionHook({
+      getPathAccessType: (p) => {
+        if (!this.vaultPath) return 'vault';
+        return getPathAccessType(
+          p,
+          this.currentExternalContextPaths,
+          this.plugin.settings.allowedExportPaths,
+          this.vaultPath
+        );
+      },
+    });
+
+    const postCallback: FileEditPostCallback = {
+      trackEditedFile: async (name, input, isError) => {
+        if (name === 'Write' && !isError) {
+          const filePath = input?.file_path as string;
+          if (typeof filePath === 'string' && this.isPlanFilePath(filePath)) {
+            this.currentPlanFilePath = this.resolvePlanPath(filePath);
+          }
+        }
+      },
+    };
+
+    const fileHashPreHook = createFileHashPreHook(
+      vaultPath,
+      this.diffStore.getOriginalContents()
+    );
+    const fileHashPostHook = createFileHashPostHook(
+      vaultPath,
+      this.diffStore.getOriginalContents(),
+      this.diffStore.getPendingDiffData(),
+      postCallback
+    );
+
+    options.hooks = {
+      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
+      PostToolUse: [fileHashPostHook],
+    };
+
+    // Resume session if provided
+    if (resumeSessionId) {
+      options.resume = resumeSessionId;
+    }
+
+    return options;
+  }
+
+  // ============================================
+  // Response Consumer Loop (Phase 1.4)
+  // ============================================
+
+  /**
+   * Starts the background consumer loop that routes chunks to handlers.
+   */
+  private startResponseConsumer(): void {
+    if (this.responseConsumerRunning) {
+      console.warn('[ClaudianService] Response consumer already running');
+      return;
+    }
+
+    this.responseConsumerRunning = true;
+
+    void (async () => {
+      if (!this.persistentQuery) return;
+
+      try {
+        for await (const message of this.persistentQuery) {
+          if (this.shuttingDown) break;
+
+          await this.routeMessage(message);
+        }
+      } catch (error) {
+        if (!this.shuttingDown) {
+          console.error('[ClaudianService] Response consumer error:', error);
+          // Notify active handler of error
+          const handler = this.responseHandlers[this.responseHandlers.length - 1];
+          if (handler) {
+            handler.onError(error instanceof Error ? error : new Error(String(error)));
+          }
+
+          // Phase 1.3: Crash recovery - restart and re-send pending message once
+          const pendingMessage = this.lastSentMessage;
+          const shouldResend = pendingMessage && !this.crashRecoveryAttempted;
+          this.crashRecoveryAttempted = true;
+
+          // Attempt restart
+          await this.restartPersistentQuery('consumer error');
+
+          // Re-send pending message after restart (once only)
+          if (shouldResend && this.messageChannel && !this.messageChannel.isClosed()) {
+            console.log('[ClaudianService] Re-sending pending message after crash recovery');
+            this.messageChannel.enqueue(pendingMessage);
+          }
+        }
+      } finally {
+        this.responseConsumerRunning = false;
+      }
+    })();
+  }
+
+  /**
+   * Routes an SDK message to the active response handler.
+   */
+  private async routeMessage(message: SDKMessage): Promise<void> {
+    const handler = this.responseHandlers[this.responseHandlers.length - 1];
+    if (handler && this.isStreamTextEvent(message)) {
+      handler.sawStreamText = true;
+    }
+
+    // Transform SDK message to StreamChunks
+    const selectedModel = this.plugin.settings.model;
+    for (const event of transformSDKMessage(message, { intendedModel: selectedModel })) {
+      if (isSessionInitEvent(event)) {
+        this.sessionManager.captureSession(event.sessionId);
+        this.messageChannel?.setSessionId(event.sessionId);
+      } else if (isStreamChunk(event)) {
+        if (message.type === 'assistant' && handler?.sawStreamText && event.type === 'text') {
+          continue;
+        }
+        if (handler) {
+          handler.onChunk(event);
+        } else {
+          console.warn('[ClaudianService] No handler for chunk:', event.type);
+        }
+      }
+    }
+
+    // Check for turn completion (result message)
+    if (message.type === 'result') {
+      // Signal turn complete to message channel
+      this.messageChannel?.onTurnComplete();
+
+      // Notify handler
+      if (handler) {
+        handler.sawStreamText = false;
+        handler.onDone();
+      }
+    }
+  }
+
+  /**
+   * Registers a response handler for an active query.
+   */
+  private registerResponseHandler(handler: ResponseHandler): void {
+    this.responseHandlers.push(handler);
+  }
+
+  /**
+   * Unregisters a response handler.
+   */
+  private unregisterResponseHandler(handlerId: string): void {
+    const idx = this.responseHandlers.findIndex(h => h.id === handlerId);
+    if (idx >= 0) {
+      this.responseHandlers.splice(idx, 1);
+    }
+  }
+
+  /** Check if persistent query is active. */
+  isPersistentQueryActive(): boolean {
+    return this.persistentQuery !== null && !this.shuttingDown;
+  }
+
+  /**
+   * Sends a query to Claude and streams the response.
+   *
+   * Query selection (Phase 1.5):
+   * - Persistent query: default chat (no planMode, no special restrictions)
+   * - Cold-start query: plan mode, inline edit, title generation, instruction refine
+   */
   async *query(
     prompt: string,
     images?: ImageAttachment[],
@@ -263,6 +1009,27 @@ export class ClaudianService {
       return;
     }
 
+    // Determine query path: persistent vs cold-start
+    const shouldUsePersistent = this.shouldUsePersistentQuery(queryOptions);
+
+    if (shouldUsePersistent) {
+      // Start persistent query if not running (e.g., after plan mode ends)
+      if (!this.persistentQuery && !this.shuttingDown) {
+        await this.startPersistentQuery(
+          vaultPath,
+          resolvedClaudePath,
+          this.sessionManager.getSessionId() ?? undefined
+        );
+      }
+
+      if (this.persistentQuery && !this.shuttingDown) {
+        // Use persistent query path
+        yield* this.queryViaPersistent(prompt, images, vaultPath, resolvedClaudePath, queryOptions);
+        return;
+      }
+    }
+
+    // Cold-start path (existing logic)
     this.abortController = new AbortController();
 
     const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
@@ -333,6 +1100,283 @@ export class ClaudianService {
     } finally {
       this.abortController = null;
     }
+  }
+
+  /**
+   * Determines if the persistent query should be used.
+   * Cold-start is used for: plan mode only.
+   *
+   * Note: approved plan content is baked into system prompt when persistent query
+   * restarts (detected via systemPromptKey change in applyDynamicUpdates).
+   */
+  private shouldUsePersistentQuery(queryOptions?: QueryOptions): boolean {
+    // Plan mode uses cold-start (read-only exploration)
+    if (queryOptions?.planMode) return false;
+    if (queryOptions?.forceColdStart) return false;
+
+    // Slash commands with tool restrictions - still use persistent but set allowedTools
+    // The restriction is enforced via canUseTool callback
+
+    return true;
+  }
+
+  /**
+   * Query via persistent query (Phase 1.5).
+   * Uses the message channel to send messages without cold-start latency.
+   */
+  private async *queryViaPersistent(
+    prompt: string,
+    images: ImageAttachment[] | undefined,
+    vaultPath: string,
+    cliPath: string,
+    queryOptions?: QueryOptions
+  ): AsyncGenerator<StreamChunk> {
+    if (!this.persistentQuery || !this.messageChannel) {
+      // Fallback to cold-start if persistent query not available
+      console.warn('[ClaudianService] Persistent query not available, falling back to cold-start');
+      const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      return;
+    }
+
+    // Hydrate images
+    const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
+
+    // Set allowed tools for canUseTool enforcement (Phase 1.7)
+    if (queryOptions?.allowedTools && queryOptions.allowedTools.length > 0) {
+      this.currentAllowedTools = [...queryOptions.allowedTools, TOOL_SKILL];
+    } else {
+      this.currentAllowedTools = null;
+    }
+
+    // Apply dynamic updates before sending (Phase 1.6)
+    await this.applyDynamicUpdates(queryOptions);
+
+    // Build SDKUserMessage
+    const message = this.buildSDKUserMessage(prompt, hydratedImages);
+
+    // Create a promise-based handler to yield chunks
+    // Use a mutable state object to work around TypeScript's control flow analysis
+    const state = {
+      chunks: [] as StreamChunk[],
+      resolveChunk: null as ((chunk: StreamChunk | null) => void) | null,
+      done: false,
+      error: null as Error | null,
+    };
+
+    const handlerId = `handler-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const handler: ResponseHandler = {
+      id: handlerId,
+      onChunk: (chunk) => {
+        if (state.resolveChunk) {
+          state.resolveChunk(chunk);
+          state.resolveChunk = null;
+        } else {
+          state.chunks.push(chunk);
+        }
+      },
+      onDone: () => {
+        state.done = true;
+        if (state.resolveChunk) {
+          state.resolveChunk(null);
+          state.resolveChunk = null;
+        }
+      },
+      onError: (err) => {
+        state.error = err;
+        state.done = true;
+        if (state.resolveChunk) {
+          state.resolveChunk(null);
+          state.resolveChunk = null;
+        }
+      },
+      sawStreamText: false,
+    };
+
+    this.registerResponseHandler(handler);
+
+    try {
+      // Track message for crash recovery (Phase 1.3)
+      this.lastSentMessage = message;
+      this.crashRecoveryAttempted = false;
+
+      // Enqueue the message
+      this.messageChannel.enqueue(message);
+
+      // Yield chunks as they arrive
+      while (!state.done) {
+        if (state.chunks.length > 0) {
+          yield state.chunks.shift()!;
+        } else {
+          const chunk = await new Promise<StreamChunk | null>((resolve) => {
+            state.resolveChunk = resolve;
+          });
+          if (chunk) {
+            yield chunk;
+          }
+        }
+      }
+
+      // Yield any remaining chunks
+      while (state.chunks.length > 0) {
+        yield state.chunks.shift()!;
+      }
+
+      // Check if an error occurred (assigned in onError callback)
+      if (state.error) {
+        yield { type: 'error', content: state.error.message };
+      }
+
+      // Clear message tracking on successful completion
+      this.lastSentMessage = null;
+
+      yield { type: 'done' };
+    } finally {
+      this.unregisterResponseHandler(handlerId);
+      this.currentAllowedTools = null;
+    }
+  }
+
+  /**
+   * Builds an SDKUserMessage from prompt and images.
+   */
+  private buildSDKUserMessage(prompt: string, images?: ImageAttachment[]): SDKUserMessage {
+    const validImages = (images || []).filter(img => !!img.data);
+
+    if (validImages.length === 0) {
+      return {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: prompt,
+        },
+        parent_tool_use_id: null,
+        session_id: this.sessionManager.getSessionId() || '',
+      };
+    }
+
+    // Build content blocks with images
+    const content: SDKContentBlock[] = [];
+
+    for (const image of validImages) {
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: image.mediaType,
+          data: image.data!,
+        },
+      });
+    }
+
+    if (prompt.trim()) {
+      content.push({
+        type: 'text',
+        text: prompt,
+      });
+    }
+
+    return {
+      type: 'user',
+      message: {
+        role: 'user',
+        content,
+      },
+      parent_tool_use_id: null,
+      session_id: this.sessionManager.getSessionId() || '',
+    };
+  }
+
+  /**
+   * Apply dynamic updates to the persistent query before sending a message (Phase 1.6).
+   */
+  private async applyDynamicUpdates(queryOptions?: QueryOptions): Promise<void> {
+    if (!this.persistentQuery) return;
+
+    const selectedModel = queryOptions?.model || this.plugin.settings.model;
+    const permissionMode = this.plugin.settings.permissionMode;
+    const budgetSetting = this.plugin.settings.thinkingBudget;
+    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
+    const thinkingTokens = budgetConfig?.tokens ?? null;
+
+    // Update model if changed
+    if (this.currentConfig && selectedModel !== this.currentConfig.model) {
+      console.log('[ClaudianService] Updating model:', selectedModel);
+      await this.persistentQuery.setModel(selectedModel);
+      this.currentConfig.model = selectedModel;
+    }
+
+    // Update thinking tokens if changed
+    const currentThinking = this.currentConfig?.thinkingTokens ?? null;
+    if (thinkingTokens !== currentThinking) {
+      console.log('[ClaudianService] Updating thinking tokens:', thinkingTokens);
+      await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
+      if (this.currentConfig) {
+        this.currentConfig.thinkingTokens = thinkingTokens;
+      }
+    }
+
+    // Update permission mode if changed (except YOLO toggle which requires restart)
+    // Note: Switching from normal to YOLO requires restart (allowDangerouslySkipPermissions)
+    // Switching from YOLO to normal can use setPermissionMode
+    if (this.currentConfig && permissionMode !== this.currentConfig.permissionMode) {
+      if (permissionMode === 'yolo' && this.currentConfig.permissionMode !== 'yolo') {
+        // Switching TO YOLO requires restart
+        console.log('[ClaudianService] Permission mode change to YOLO requires restart');
+        await this.restartPersistentQuery('permission mode change to YOLO');
+        return;
+      } else if (permissionMode !== 'yolo') {
+        // Can update via setPermissionMode
+        const sdkMode: SDKPermissionMode = permissionMode === 'plan' ? 'plan' : 'default';
+        console.log('[ClaudianService] Updating permission mode:', sdkMode);
+        await this.persistentQuery.setPermissionMode(sdkMode);
+        this.currentConfig.permissionMode = permissionMode;
+      }
+    }
+
+    // Update MCP servers if changed
+    const mcpMentions = queryOptions?.mcpMentions || new Set<string>();
+    const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
+    const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
+    const mcpServers = this.mcpManager.getActiveServers(combinedMentions);
+    const mcpServersKey = Object.keys(mcpServers).sort().join('|');
+
+    if (this.currentConfig && mcpServersKey !== this.currentConfig.mcpServersKey) {
+      console.log('[ClaudianService] Updating MCP servers');
+      // Convert to McpServerConfig format
+      const serverConfigs: Record<string, McpServerConfig> = {};
+      for (const [name, config] of Object.entries(mcpServers)) {
+        serverConfigs[name] = config as McpServerConfig;
+      }
+      await this.persistentQuery.setMcpServers(serverConfigs);
+      this.currentConfig.mcpServersKey = mcpServersKey;
+    }
+
+    // External context paths are injected per message; track but do not restart.
+    if (this.currentConfig) {
+      this.currentConfig.externalContextPaths = queryOptions?.externalContextPaths || [];
+    }
+    this.currentExternalContextPaths = queryOptions?.externalContextPaths || [];
+
+    // Check for other changes that require restart
+    const newConfig = this.buildPersistentQueryConfig(this.vaultPath!, this.plugin.getResolvedClaudeCliPath()!);
+    if (this.needsRestart(newConfig)) {
+      console.log('[ClaudianService] Configuration change requires restart');
+      await this.restartPersistentQuery('configuration change');
+    }
+  }
+
+  private isStreamTextEvent(message: SDKMessage): boolean {
+    if (message.type !== 'stream_event') return false;
+    const event = message.event;
+    if (!event) return false;
+    if (event.type === 'content_block_start') {
+      return event.content_block?.type === 'text';
+    }
+    if (event.type === 'content_block_delta') {
+      return event.delta?.type === 'text_delta';
+    }
+    return false;
   }
 
   /**
@@ -409,7 +1453,6 @@ export class ClaudianService {
       mediaFolder: this.plugin.settings.mediaFolder,
       customPrompt: this.plugin.settings.systemPrompt,
       allowedExportPaths: this.plugin.settings.allowedExportPaths,
-      externalContextPaths: queryOptions?.externalContextPaths,
       vaultPath: cwd,
       hasEditorContext,
       planMode: queryOptions?.planMode,
@@ -435,6 +1478,7 @@ export class ClaudianService {
         ...customEnv,
         PATH: enhancedPath,
       },
+      includePartialMessages: true, // Enable streaming (Phase 4)
     };
 
     // Add MCP servers to options
@@ -525,11 +1569,19 @@ export class ClaudianService {
       options.maxThinkingTokens = budgetConfig.tokens;
     }
 
-    // Apply allowedTools restriction if specified by slash command
-    // Include 'Skill' tool to maintain skill availability
-    if (queryOptions?.allowedTools && queryOptions.allowedTools.length > 0) {
-      options.allowedTools = [...queryOptions.allowedTools, 'Skill'];
+    // Apply tool restriction for cold-start queries (Phase 1.7)
+    // Cold-start uses options.tools for hard restriction (not canUseTool)
+    // Note: We don't use options.allowedTools as it's an auto-allow list, not a restriction
+    if (queryOptions?.allowedTools !== undefined) {
+      if (queryOptions.allowedTools.length === 0) {
+        // Empty array: disable all tools
+        options.tools = [];
+      } else {
+        // Non-empty: restrict to specified tools (include Skill for consistency)
+        options.tools = [...queryOptions.allowedTools, TOOL_SKILL];
+      }
     }
+    // If undefined: no restriction (use default tools)
 
     // Resume previous session if we have a session ID
     const sessionId = this.sessionManager.getSessionId();
@@ -537,11 +1589,15 @@ export class ClaudianService {
       options.resume = sessionId;
     }
 
+    let sawStreamText = false;
     try {
       const response = agentQuery({ prompt: queryPrompt, options });
       let streamSessionId: string | null = this.sessionManager.getSessionId();
 
       for await (const message of response) {
+        if (this.isStreamTextEvent(message)) {
+          sawStreamText = true;
+        }
         if (this.abortController?.signal.aborted) {
           await response.interrupt();
           break;
@@ -552,6 +1608,9 @@ export class ClaudianService {
             this.sessionManager.captureSession(event.sessionId);
             streamSessionId = event.sessionId;
           } else if (isStreamChunk(event)) {
+            if (message.type === 'assistant' && sawStreamText && event.type === 'text') {
+              continue;
+            }
             if (event.type === 'usage') {
               yield { ...event, sessionId: streamSessionId };
             } else {
@@ -559,12 +1618,17 @@ export class ClaudianService {
             }
           }
         }
+
+        if (message.type === 'result') {
+          sawStreamText = false;
+        }
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', content: msg };
     } finally {
       this.sessionManager.clearPendingModel();
+      this.currentAllowedTools = null; // Clear tool restriction after query
     }
 
     yield { type: 'done' };
@@ -572,14 +1636,28 @@ export class ClaudianService {
 
   /** Cancel the current query. */
   cancel() {
+    // Cancel cold-start query
     if (this.abortController) {
       this.abortController.abort();
       this.sessionManager.markInterrupted();
     }
+
+    // Interrupt persistent query (Phase 1.9)
+    if (this.persistentQuery && !this.shuttingDown) {
+      void this.persistentQuery.interrupt().catch(() => {
+        // Ignore interrupt errors
+      });
+    }
   }
 
-  /** Reset the conversation session. */
+  /**
+   * Reset the conversation session (Phase 1.9).
+   * Closes the persistent query since session is changing.
+   */
   resetSession() {
+    // Close persistent query (new session will use cold-start resume)
+    this.closePersistentQuery('session reset');
+
     this.sessionManager.reset();
     this.approvalManager.clearSessionApprovals();
     this.diffStore.clear();
@@ -592,13 +1670,29 @@ export class ClaudianService {
     return this.sessionManager.getSessionId();
   }
 
-  /** Set the session ID (for restoring from saved conversation). */
+  /**
+   * Set the session ID (for restoring from saved conversation).
+   * Closes the persistent query since session is switching (Phase 1.9).
+   */
   setSessionId(id: string | null): void {
+    // Close persistent query when switching sessions
+    const currentId = this.sessionManager.getSessionId();
+    if (currentId !== id) {
+      this.closePersistentQuery('session switch');
+    }
+
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
   }
 
-  /** Cleanup resources. */
+  /**
+   * Cleanup resources (Phase 5).
+   * Called on plugin unload to close persistent query and abort any cold-start query.
+   */
   cleanup() {
+    // Close persistent query
+    this.closePersistentQuery('plugin cleanup');
+
+    // Cancel any in-flight cold-start query
     this.cancel();
     this.resetSession();
   }
@@ -677,6 +1771,10 @@ export class ClaudianService {
   /**
    * Create unified callback that handles both YOLO and normal modes.
    * AskUserQuestion, EnterPlanMode, and ExitPlanMode have special handling regardless of mode.
+   *
+   * Tool restriction policy (Phase 1.7):
+   * - Always allow: AskUserQuestion, EnterPlanMode, ExitPlanMode, Skill
+   * - If currentAllowedTools is set, deny tools not in the list
    */
   private createUnifiedToolCallback(mode: PermissionMode): CanUseTool {
     return async (toolName, input, context): Promise<PermissionResult> => {
@@ -693,6 +1791,18 @@ export class ClaudianService {
       // Special handling for ExitPlanMode - show plan approval UI
       if (toolName === TOOL_EXIT_PLAN_MODE) {
         return this.handleExitPlanModeTool(input, context?.toolUseID);
+      }
+
+      // Phase 1.7: Enforce allowedTools restriction via canUseTool
+      // Always-allowed tools bypass the restriction
+      const alwaysAllowed: string[] = [TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL];
+      if (this.currentAllowedTools !== null && !alwaysAllowed.includes(toolName)) {
+        if (!this.currentAllowedTools.includes(toolName)) {
+          return {
+            behavior: 'deny',
+            message: `Tool "${toolName}" is not allowed for this query.`,
+          };
+        }
       }
 
       // YOLO mode: auto-approve everything else
@@ -761,8 +1871,13 @@ export class ClaudianService {
 
   /**
    * Handle EnterPlanMode tool - notifies UI to activate plan mode after the reply ends.
+   * Closes persistent query since plan mode uses cold-start (Phase 3).
    */
   private async handleEnterPlanModeTool(): Promise<PermissionResult> {
+    // Close persistent query - plan mode will use cold-start
+    // We close it here so it's ready for the plan mode query after current response ends
+    this.closePersistentQuery('entering plan mode');
+
     if (!this.enterPlanModeCallback) {
       // No callback - just allow the tool (UI will handle via stream detection)
       return { behavior: 'allow', updatedInput: {} };

@@ -61,6 +61,54 @@ function createUserWithToolResult(content: string, parentToolUseId = 'tool-123')
   };
 }
 
+function createTextUserMessage(content: string) {
+  return {
+    type: 'user',
+    message: {
+      role: 'user',
+      content,
+    },
+    parent_tool_use_id: null,
+    session_id: '',
+  };
+}
+
+function createImageUserMessage(data = 'image-data') {
+  return {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data,
+          },
+        },
+      ],
+    },
+    parent_tool_use_id: null,
+    session_id: '',
+  };
+}
+
+async function createTestMessageChannel(
+  service: ClaudianService,
+  onWarning: (message: string) => void
+) {
+  await service.preWarm();
+  const channelCtor = (service as any).messageChannel?.constructor as
+    | (new (onWarning?: (message: string) => void) => any)
+    | undefined;
+  service.closePersistentQuery('test message channel setup');
+  if (!channelCtor) {
+    throw new Error('MessageChannel constructor not available');
+  }
+  return new channelCtor(onWarning);
+}
+
 // Create a mock MCP server manager
 function createMockMcpManager() {
   return {
@@ -69,6 +117,7 @@ function createMockMcpManager() {
     getEnabledCount: jest.fn().mockReturnValue(0),
     getActiveServers: jest.fn().mockReturnValue({}),
     getDisallowedMcpTools: jest.fn().mockReturnValue([]),
+    getAllDisallowedMcpTools: jest.fn().mockReturnValue([]),
     hasServers: jest.fn().mockReturnValue(false),
   } as any;
 }
@@ -95,6 +144,12 @@ function createMockPlugin(settings = {}) {
       },
       permissions: [],
       permissionMode: 'yolo',
+      allowedExportPaths: [],
+      loadUserClaudeSettings: false,
+      mediaFolder: '',
+      systemPrompt: '',
+      model: 'claude-sonnet-4-5',
+      thinkingBudget: 'off',
       ...settings,
     },
     app: {
@@ -123,6 +178,11 @@ describe('ClaudianService', () => {
     resetMockMessages();
     mockPlugin = createMockPlugin();
     service = new ClaudianService(mockPlugin, createMockMcpManager());
+  });
+
+  afterEach(() => {
+    // Clean up persistent query to prevent test hangs
+    service.cleanup();
   });
 
   describe('plan mode approvals', () => {
@@ -653,12 +713,13 @@ describe('ClaudianService', () => {
       ]);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      for await (const _chunk of service.query('second')) {
+      for await (const _chunk of service.query('second', undefined, undefined, { forceColdStart: true })) {
         // drain
       }
 
       const options = getLastOptions();
       expect(options?.resume).toBe('resume-session');
+      expect(service.getSessionId()).toBe('resume-session');
     });
 
     it('should extract multiple content blocks from assistant message', async () => {
@@ -731,6 +792,90 @@ describe('ClaudianService', () => {
 
     it('should handle cancel when no query is running', () => {
       expect(() => service.cancel()).not.toThrow();
+    });
+  });
+
+  describe('persistent query message channel', () => {
+    it('merges queued text messages and stamps the session ID', async () => {
+      const warnings: string[] = [];
+      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
+      const iterator = channel[Symbol.asyncIterator]();
+
+      const firstPromise = iterator.next();
+      channel.enqueue(createTextUserMessage('first'));
+      const first = await firstPromise;
+
+      expect(first.value.message.content).toBe('first');
+
+      channel.enqueue(createTextUserMessage('second'));
+      channel.enqueue(createTextUserMessage('third'));
+      channel.setSessionId('session-abc');
+      channel.onTurnComplete();
+
+      const merged = await iterator.next();
+      expect(merged.value.message.content).toBe('second\n\nthird');
+      expect(merged.value.session_id).toBe('session-abc');
+      expect(warnings).toHaveLength(0);
+
+      channel.close();
+    });
+
+    it('defers attachment messages and keeps the latest one', async () => {
+      const warnings: string[] = [];
+      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
+      const iterator = channel[Symbol.asyncIterator]();
+
+      const firstPromise = iterator.next();
+      channel.enqueue(createTextUserMessage('first'));
+      await firstPromise;
+
+      const attachmentOne = createImageUserMessage('image-one');
+      const attachmentTwo = createImageUserMessage('image-two');
+
+      channel.enqueue(attachmentOne);
+      channel.enqueue(attachmentTwo);
+
+      channel.onTurnComplete();
+
+      const queued = await iterator.next();
+      expect(queued.value.message.content).toEqual(attachmentTwo.message.content);
+      expect(warnings.some((msg) => msg.includes('Attachment message replaced'))).toBe(true);
+
+      channel.close();
+    });
+
+    it('drops merged text when it exceeds the max length', async () => {
+      const warnings: string[] = [];
+      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
+      const iterator = channel[Symbol.asyncIterator]();
+
+      const firstPromise = iterator.next();
+      channel.enqueue(createTextUserMessage('first'));
+      await firstPromise;
+
+      const longText = 'x'.repeat(12000);
+      channel.enqueue(createTextUserMessage('short'));
+      channel.enqueue(createTextUserMessage(longText));
+
+      channel.onTurnComplete();
+
+      const merged = await iterator.next();
+      expect(merged.value.message.content).toBe('short');
+      expect(warnings.some((msg) => msg.includes('Merged content exceeds'))).toBe(true);
+
+      channel.close();
+    });
+  });
+
+  describe('persistent query updates', () => {
+    it('updates model on the active persistent query', async () => {
+      const chunks: any[] = [];
+      for await (const chunk of service.query('hello', undefined, undefined, { model: 'claude-opus-4-5' })) {
+        chunks.push(chunk);
+      }
+
+      const response = getLastResponse();
+      expect(response?.setModel).toHaveBeenCalledWith('claude-opus-4-5');
     });
   });
 
@@ -903,7 +1048,7 @@ describe('ClaudianService', () => {
       ];
 
       const chunks: any[] = [];
-      for await (const chunk of service.query('New message', undefined, history)) {
+      for await (const chunk of service.query('New message', undefined, history, { forceColdStart: true })) {
         chunks.push(chunk);
       }
 
@@ -1751,7 +1896,7 @@ describe('ClaudianService', () => {
       ];
 
       const chunks: any[] = [];
-      for await (const chunk of service.query('Follow up', undefined, history)) {
+      for await (const chunk of service.query('Follow up', undefined, history, { forceColdStart: true })) {
         chunks.push(chunk);
       }
 
@@ -2141,7 +2286,7 @@ describe('ClaudianService', () => {
       ];
 
       const chunks: any[] = [];
-      for await (const c of service.query('Hi', undefined, history)) chunks.push(c);
+      for await (const c of service.query('Hi', undefined, history, { forceColdStart: true })) chunks.push(c);
 
       const errorChunk = chunks.find((c) => c.type === 'error');
       expect(errorChunk).toBeDefined();
@@ -2155,7 +2300,7 @@ describe('ClaudianService', () => {
       });
 
       const chunks: any[] = [];
-      for await (const c of service.query('Hi')) chunks.push(c);
+      for await (const c of service.query('Hi', undefined, undefined, { forceColdStart: true })) chunks.push(c);
 
       expect(chunks.some((c) => c.type === 'error' && c.content.includes('Network down'))).toBe(true);
     });
@@ -2214,7 +2359,7 @@ describe('ClaudianService', () => {
       const spy = jest.spyOn(sdk, 'query').mockImplementation(() => { throw new Error('boom'); });
 
       const chunks: any[] = [];
-      for await (const c of service.query('Hi')) chunks.push(c);
+      for await (const c of service.query('Hi', undefined, undefined, { forceColdStart: true })) chunks.push(c);
 
       expect(chunks.some((c) => c.type === 'error' && c.content.includes('boom'))).toBe(true);
       spy.mockRestore();

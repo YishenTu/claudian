@@ -92,6 +92,29 @@ export class McpServerManager {
     return Array.from(disallowed);
   }
 
+  /**
+   * Get all disabled MCP tools from ALL enabled servers (ignoring @-mentions).
+   *
+   * Used for persistent queries to pre-register all disabled tools upfront,
+   * so @-mentioning servers doesn't require cold start.
+   */
+  getAllDisallowedMcpTools(): string[] {
+    const disallowed = new Set<string>();
+
+    for (const server of this.servers) {
+      if (!server.enabled) continue;
+      if (!server.disabledTools || server.disabledTools.length === 0) continue;
+
+      for (const tool of server.disabledTools) {
+        const normalized = tool.trim();
+        if (!normalized) continue;
+        disallowed.add(`mcp__${server.name}__${normalized}`);
+      }
+    }
+
+    return Array.from(disallowed).sort();
+  }
+
   /** Check if any MCP servers are configured. */
   hasServers(): boolean {
     return this.servers.length > 0;

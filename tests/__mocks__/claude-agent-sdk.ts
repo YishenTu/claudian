@@ -88,52 +88,88 @@ async function runPreToolUseHooks(
 }
 
 // Mock query function that returns an async generator
-export function query({ prompt: _prompt, options }: { prompt: string; options: Options }): AsyncGenerator<any> & { interrupt: () => Promise<void> } {
-  const messages = customMockMessages || mockMessages;
+function isAsyncIterable(value: any): value is AsyncIterable<any> {
+  return !!value && typeof value[Symbol.asyncIterator] === 'function';
+}
+
+function getMessagesForPrompt(): any[] {
+  const baseMessages = customMockMessages || mockMessages;
+  const messages = [...baseMessages];
+  if (!messages.some((msg) => msg.type === 'result')) {
+    messages.push({ type: 'result' });
+  }
+  return messages;
+}
+
+async function* emitMessages(messages: any[], options: Options) {
+  for (const msg of messages) {
+    // Check for tool_use in assistant messages and run hooks
+    if (msg.type === 'assistant' && msg.message?.content) {
+      let wasBlocked = false;
+      for (const block of msg.message.content) {
+        if (block.type === 'tool_use') {
+          const hookResult = await runPreToolUseHooks(
+            options.hooks?.PreToolUse,
+            block.name,
+            block.input,
+            block.id || `tool-${Date.now()}`
+          );
+
+          if (hookResult.blocked) {
+            // Yield the assistant message first (with tool_use)
+            yield msg;
+            // Then yield a blocked indicator as a user message with error
+            yield {
+              type: 'user',
+              parent_tool_use_id: block.id,
+              tool_use_result: `BLOCKED: ${hookResult.reason}`,
+              message: { content: [] },
+              _blocked: true,
+              _blockReason: hookResult.reason,
+            };
+            wasBlocked = true;
+            break; // Exit inner loop since we already handled this message
+          }
+        }
+      }
+      // If the message was blocked, don't yield it again
+      if (wasBlocked) {
+        continue;
+      }
+    }
+    yield msg;
+  }
+}
+
+export function query({ prompt, options }: { prompt: any; options: Options }): AsyncGenerator<any> & { interrupt: () => Promise<void> } {
   lastOptions = options;
 
   const generator = async function* () {
-    for (const msg of messages) {
-      // Check for tool_use in assistant messages and run hooks
-      if (msg.type === 'assistant' && msg.message?.content) {
-        let wasBlocked = false;
-        for (const block of msg.message.content) {
-          if (block.type === 'tool_use') {
-            const hookResult = await runPreToolUseHooks(
-              options.hooks?.PreToolUse,
-              block.name,
-              block.input,
-              block.id || `tool-${Date.now()}`
-            );
-
-            if (hookResult.blocked) {
-              // Yield the assistant message first (with tool_use)
-              yield msg;
-              // Then yield a blocked indicator as a user message with error
-              yield {
-                type: 'user',
-                parent_tool_use_id: block.id,
-                tool_use_result: `BLOCKED: ${hookResult.reason}`,
-                message: { content: [] },
-                _blocked: true,
-                _blockReason: hookResult.reason,
-              };
-              wasBlocked = true;
-              break; // Exit inner loop since we already handled this message
-            }
-          }
-        }
-        // If the message was blocked, don't yield it again
-        if (wasBlocked) {
-          continue;
-        }
+    if (isAsyncIterable(prompt)) {
+      for await (const _input of prompt) {
+        const messages = getMessagesForPrompt();
+        yield* emitMessages(messages, options);
       }
-      yield msg;
+      return;
     }
+
+    const messages = getMessagesForPrompt();
+    yield* emitMessages(messages, options);
   };
 
-  const gen = generator() as AsyncGenerator<any> & { interrupt: jest.Mock };
+  const gen = generator() as AsyncGenerator<any> & {
+    interrupt: jest.Mock;
+    setModel: jest.Mock;
+    setMaxThinkingTokens: jest.Mock;
+    setPermissionMode: jest.Mock;
+    setMcpServers: jest.Mock;
+  };
   gen.interrupt = jest.fn().mockResolvedValue(undefined);
+  // Dynamic update methods for persistent queries
+  gen.setModel = jest.fn().mockResolvedValue(undefined);
+  gen.setMaxThinkingTokens = jest.fn().mockResolvedValue(undefined);
+  gen.setPermissionMode = jest.fn().mockResolvedValue(undefined);
+  gen.setMcpServers = jest.fn().mockResolvedValue({ added: [], removed: [], errors: {} });
   lastResponse = gen;
 
   return gen;
