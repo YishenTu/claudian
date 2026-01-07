@@ -199,7 +199,9 @@ export class StreamController {
         existingToolCall.input = { ...existingToolCall.input, ...newInput };
         const toolEl = state.toolCallElements.get(chunk.id);
         if (toolEl) {
-          const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement | null;
+          // Try regular tool label first, then Write/Edit label
+          const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement | null
+            ?? toolEl.querySelector('.claudian-write-edit-label') as HTMLElement | null;
           if (labelEl) {
             labelEl.setText(getToolLabel(existingToolCall.name, existingToolCall.input));
           }
@@ -260,6 +262,17 @@ export class StreamController {
   ): void {
     const { state } = this.deps;
     if (!state.currentContentEl) return;
+
+    // Check for existing AskUserQuestion (input update during streaming)
+    const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
+    if (existingToolCall) {
+      const newInput = chunk.input || {};
+      if (Object.keys(newInput).length > 0) {
+        // Update input so questions are available when finalized
+        existingToolCall.input = { ...existingToolCall.input, ...newInput };
+      }
+      return;
+    }
 
     const toolCall: ToolCallInfo = {
       id: chunk.id,
@@ -465,6 +478,25 @@ export class StreamController {
     const { state } = this.deps;
     if (!state.currentContentEl) return;
 
+    // Check for existing subagent (input update during streaming)
+    const existingState = state.activeSubagents.get(chunk.id);
+    if (existingState) {
+      const newInput = chunk.input || {};
+      if (Object.keys(newInput).length > 0) {
+        // Update the label with new description
+        const description = (newInput.description as string) || '';
+        if (description) {
+          existingState.info.description = description;
+          const labelEl = existingState.wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
+          if (labelEl) {
+            const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
+            labelEl.setText(truncated);
+          }
+        }
+      }
+      return;
+    }
+
     const subagentState = createSubagentBlock(state.currentContentEl, chunk.id, chunk.input);
     state.activeSubagents.set(chunk.id, subagentState);
 
@@ -560,6 +592,28 @@ export class StreamController {
   ): Promise<void> {
     const { state, asyncSubagentManager } = this.deps;
     if (!state.currentContentEl) return;
+
+    // Check for existing async subagent (input update during streaming)
+    const existingState = state.asyncSubagentStates.get(chunk.id);
+    if (existingState) {
+      const newInput = chunk.input || {};
+      if (Object.keys(newInput).length > 0) {
+        // Update the label with new description
+        const description = (newInput.description as string) || '';
+        if (description) {
+          const existingInfo = msg.subagents?.find(s => s.id === chunk.id);
+          if (existingInfo) {
+            existingInfo.description = description;
+          }
+          const labelEl = existingState.wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
+          if (labelEl) {
+            const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
+            labelEl.setText(truncated);
+          }
+        }
+      }
+      return;
+    }
 
     const subagentInfo = asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
 
