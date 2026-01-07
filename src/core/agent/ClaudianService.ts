@@ -265,6 +265,10 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
       } else {
         // No consumer waiting yet - queue for later pickup by next()
         // Don't set turnActive here; next() will set it when it dequeues
+        if (this.queue.length >= MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES) {
+          this.onWarning(`[MessageChannel] Queue full (${MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES}), dropping newest`);
+          return;
+        }
         if (hasAttachments) {
           this.queue.push({ type: 'attachment', message });
         } else {
@@ -1124,8 +1128,50 @@ export class ClaudianService {
       return;
     }
 
+    // Rebuild history if needed before choosing persistent vs cold-start
+    let promptToSend = prompt;
+    let forceColdStart = false;
+
+    if (this.sessionManager.wasInterrupted() && conversationHistory && conversationHistory.length > 0) {
+      const historyContext = buildContextFromHistory(conversationHistory);
+      if (historyContext) {
+        promptToSend = `${historyContext}\n\nUser: ${prompt}`;
+      }
+      this.sessionManager.invalidateSession();
+      this.sessionManager.clearInterrupted();
+      forceColdStart = true;
+    }
+
+    const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
+      conversationHistory && conversationHistory.length > 0;
+
+    if (noSessionButHasHistory) {
+      if (conversationHistory && conversationHistory.length > 0) {
+        const historyContext = buildContextFromHistory(conversationHistory);
+        const lastUserMessage = getLastUserMessage(conversationHistory);
+        const actualPrompt = stripCurrentNotePrefix(prompt);
+        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
+        promptToSend = historyContext
+          ? shouldAppendPrompt
+            ? `${historyContext}\n\nUser: ${prompt}`
+            : historyContext
+          : prompt;
+      }
+
+      this.sessionManager.invalidateSession();
+      forceColdStart = true;
+    }
+
+    const effectiveQueryOptions = forceColdStart
+      ? { ...queryOptions, forceColdStart: true }
+      : queryOptions;
+
+    if (forceColdStart) {
+      this.closePersistentQuery('session invalidated');
+    }
+
     // Determine query path: persistent vs cold-start
-    const shouldUsePersistent = this.shouldUsePersistentQuery(queryOptions);
+    const shouldUsePersistent = this.shouldUsePersistentQuery(effectiveQueryOptions);
 
     if (shouldUsePersistent) {
       // Start persistent query if not running (e.g., after plan mode ends)
@@ -1139,7 +1185,7 @@ export class ClaudianService {
 
       if (this.persistentQuery && !this.shuttingDown) {
         // Use persistent query path
-        yield* this.queryViaPersistent(prompt, images, vaultPath, resolvedClaudePath, queryOptions);
+        yield* this.queryViaPersistent(promptToSend, images, vaultPath, resolvedClaudePath, effectiveQueryOptions);
         return;
       }
     }
@@ -1149,42 +1195,8 @@ export class ClaudianService {
 
     const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
 
-    // After interruption, session is broken - rebuild context proactively
-    let queryPrompt = prompt;
-    if (this.sessionManager.wasInterrupted() && conversationHistory && conversationHistory.length > 0) {
-      const historyContext = buildContextFromHistory(conversationHistory);
-      if (historyContext) {
-        queryPrompt = `${historyContext}\n\nUser: ${prompt}`;
-      }
-      this.sessionManager.invalidateSession();
-      this.sessionManager.clearInterrupted();
-    }
-
-    // Rebuild history if no session exists but we have conversation history
-    // (e.g., after provider change cleared the sessionId).
-    // Note: Model switching within same provider doesn't require session reset -
-    // the SDK handles it natively with the same session ID.
-    const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
-      conversationHistory && conversationHistory.length > 0;
-
-    if (noSessionButHasHistory) {
-      if (conversationHistory && conversationHistory.length > 0) {
-        const historyContext = buildContextFromHistory(conversationHistory);
-        const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        queryPrompt = historyContext
-          ? shouldAppendPrompt
-            ? `${historyContext}\n\nUser: ${prompt}`
-            : historyContext
-          : prompt;
-      }
-
-      this.sessionManager.invalidateSession();
-    }
-
     try {
-      yield* this.queryViaSDK(queryPrompt, vaultPath, resolvedClaudePath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, hydratedImages, effectiveQueryOptions);
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionManager.invalidateSession();
@@ -1202,7 +1214,7 @@ export class ClaudianService {
         const retryImages = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
 
         try {
-          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, retryImages, queryOptions);
+          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, retryImages, effectiveQueryOptions);
         } catch (retryError) {
           const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
           yield { type: 'error', content: msg };
@@ -1443,7 +1455,8 @@ export class ClaudianService {
    */
   private async applyDynamicUpdates(
     queryOptions?: QueryOptions,
-    restartOptions?: ClosePersistentQueryOptions
+    restartOptions?: ClosePersistentQueryOptions,
+    allowRestart = true
   ): Promise<void> {
     if (!this.persistentQuery) return;
 
@@ -1488,7 +1501,13 @@ export class ClaudianService {
       if (permissionMode === 'yolo' && this.currentConfig.permissionMode !== 'yolo') {
         // Switching TO YOLO requires restart
         console.log('[ClaudianService] Permission mode change to YOLO requires restart');
+        if (!allowRestart) {
+          return;
+        }
         await this.restartPersistentQuery('permission mode change to YOLO', restartOptions);
+        if (allowRestart && this.persistentQuery) {
+          await this.applyDynamicUpdates(queryOptions, restartOptions, false);
+        }
         return;
       } else if (permissionMode !== 'yolo') {
         // Can update via setPermissionMode
@@ -1529,7 +1548,13 @@ export class ClaudianService {
     const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath);
     if (this.needsRestart(newConfig)) {
       console.log('[ClaudianService] Configuration change requires restart');
+      if (!allowRestart) {
+        return;
+      }
       await this.restartPersistentQuery('configuration change', restartOptions);
+      if (allowRestart && this.persistentQuery) {
+        await this.applyDynamicUpdates(queryOptions, restartOptions, false);
+      }
     }
   }
 

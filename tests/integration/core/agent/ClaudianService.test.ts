@@ -923,21 +923,21 @@ describe('ClaudianService', () => {
       expect(() => channel.enqueue(createTextUserMessage('test'))).toThrow('MessageChannel is closed');
     });
 
-    it('queues messages without limit when turn is inactive (pre-consumer)', async () => {
+    it('drops newest messages when queue is full before consumer starts', async () => {
       const warnings: string[] = [];
       const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
 
       // Queue many messages before starting iteration (turnActive=false)
-      // When turn is inactive, messages queue as separate entries without limit check
+      // When turn is inactive, queue limit is still enforced
       for (let i = 0; i < 10; i++) {
         channel.enqueue(createTextUserMessage(`msg-${i}`));
       }
 
-      // No warning should be triggered since limit check only applies during active turn
-      expect(warnings.filter((msg) => msg.includes('Queue full'))).toHaveLength(0);
+      // Queue full warning should be triggered
+      expect(warnings.filter((msg) => msg.includes('Queue full'))).not.toHaveLength(0);
 
-      // Verify all messages were queued
-      expect(channel.getQueueLength()).toBe(10);
+      // Verify the queue length is capped
+      expect(channel.getQueueLength()).toBe(8);
 
       channel.close();
     });
@@ -1349,7 +1349,7 @@ describe('ClaudianService', () => {
       ];
 
       const chunks: any[] = [];
-      for await (const chunk of service.query('New message', undefined, history, { forceColdStart: true })) {
+      for await (const chunk of service.query('New message', undefined, history)) {
         chunks.push(chunk);
       }
 
@@ -2871,6 +2871,21 @@ describe('ClaudianService', () => {
 
       const response2 = getLastResponse();
       expect(response2?.setMcpServers).toHaveBeenCalled();
+    });
+
+    it('reapplies query overrides after restart triggered by config change', async () => {
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      mockPlugin.settings.systemPrompt = 'restart-required';
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second', undefined, undefined, {
+        model: 'claude-opus-4-5',
+      })) chunks2.push(c);
+
+      const response = getLastResponse();
+      expect(response?.setModel).toHaveBeenCalledWith('claude-opus-4-5');
     });
 
     it('falls back to cold-start when restart fails during dynamic updates', async () => {
