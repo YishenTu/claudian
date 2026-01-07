@@ -412,6 +412,10 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
 // Response Handler for Routing
 // ============================================
 
+interface ClosePersistentQueryOptions {
+  preserveHandlers?: boolean;
+}
+
 /** Handler for routing stream chunks to the appropriate query caller. */
 interface ResponseHandler {
   id: string;
@@ -419,6 +423,7 @@ interface ResponseHandler {
   onDone: () => void;
   onError: (error: Error) => void;
   sawStreamText: boolean;
+  sawAnyChunk: boolean;
 }
 
 // ============================================
@@ -550,6 +555,7 @@ export class ClaudianService {
 
   // Last sent message for crash recovery (Phase 1.3)
   private lastSentMessage: SDKUserMessage | null = null;
+  private lastSentQueryOptions: QueryOptions | null = null;
   private crashRecoveryAttempted = false;
 
   // Deferred close: set when we want to close after current response ends (e.g., EnterPlanMode)
@@ -659,10 +665,12 @@ export class ClaudianService {
   /**
    * Closes the persistent query and cleans up resources.
    */
-  closePersistentQuery(reason?: string): void {
+  closePersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): void {
     if (!this.persistentQuery) {
       return;
     }
+
+    const preserveHandlers = options?.preserveHandlers ?? false;
 
     console.log('[ClaudianService] Closing persistent query', { reason });
 
@@ -684,10 +692,12 @@ export class ClaudianService {
     // Abort as backup
     this.queryAbortController?.abort();
 
-    // Notify all handlers before clearing so generators don't hang forever.
-    // This ensures queryViaPersistent() exits its while(!state.done) loop.
-    for (const handler of this.responseHandlers) {
-      handler.onDone();
+    if (!preserveHandlers) {
+      // Notify all handlers before clearing so generators don't hang forever.
+      // This ensures queryViaPersistent() exits its while(!state.done) loop.
+      for (const handler of this.responseHandlers) {
+        handler.onDone();
+      }
     }
 
     // Clear state
@@ -695,20 +705,22 @@ export class ClaudianService {
     this.messageChannel = null;
     this.queryAbortController = null;
     this.responseConsumerRunning = false;
-    this.responseHandlers = [];
     this.currentConfig = null;
-    this.currentAllowedTools = null;
-    this.pendingCloseReason = null;
+    if (!preserveHandlers) {
+      this.responseHandlers = [];
+      this.currentAllowedTools = null;
+      this.pendingCloseReason = null;
+    }
   }
 
   /**
    * Restarts the persistent query (e.g., after configuration change).
    */
-  async restartPersistentQuery(reason?: string): Promise<void> {
+  async restartPersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): Promise<void> {
     console.log('[ClaudianService] Restarting persistent query', { reason });
 
     const sessionId = this.sessionManager.getSessionId();
-    this.closePersistentQuery(reason);
+    this.closePersistentQuery(reason, options);
 
     const vaultPath = getVaultPath(this.plugin.app);
     const cliPath = this.plugin.getResolvedClaudeCliPath();
@@ -932,18 +944,33 @@ export class ClaudianService {
       } catch (error) {
         if (!this.shuttingDown) {
           console.error('[ClaudianService] Response consumer error:', error);
-          // Notify active handler of error
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
+          const errorInstance = error instanceof Error ? error : new Error(String(error));
+          const messageToReplay = this.lastSentMessage;
+
+          if (!this.crashRecoveryAttempted && messageToReplay && handler && !handler.sawAnyChunk) {
+            this.crashRecoveryAttempted = true;
+            try {
+              await this.restartPersistentQuery('consumer error', { preserveHandlers: true });
+              if (!this.messageChannel) {
+                throw new Error('Persistent query restart did not create message channel');
+              }
+              await this.applyDynamicUpdates(this.lastSentQueryOptions ?? undefined, { preserveHandlers: true });
+              this.messageChannel.enqueue(messageToReplay);
+              return;
+            } catch (restartError) {
+              console.error('[ClaudianService] Failed to restart after consumer error:', restartError);
+              handler.onError(errorInstance);
+              return;
+            }
+          }
+
+          // Notify active handler of error
           if (handler) {
-            handler.onError(error instanceof Error ? error : new Error(String(error)));
+            handler.onError(errorInstance);
           }
 
           // Crash recovery: restart persistent query to prepare for next user message.
-          // Note: We don't re-enqueue the pending message here because:
-          // 1. closePersistentQuery clears handlers, so re-enqueued message would have no receiver
-          // 2. The caller (queryViaPersistent) has already been notified via handler.onError
-          // 3. The caller can retry if needed
-          // We just restart to ensure the next query can use persistent path.
           if (!this.crashRecoveryAttempted) {
             this.crashRecoveryAttempted = true;
             try {
@@ -1250,6 +1277,7 @@ export class ClaudianService {
     const handler: ResponseHandler = {
       id: handlerId,
       onChunk: (chunk) => {
+        handler.sawAnyChunk = true;
         if (state.resolveChunk) {
           state.resolveChunk(chunk);
           state.resolveChunk = null;
@@ -1273,6 +1301,7 @@ export class ClaudianService {
         }
       },
       sawStreamText: false,
+      sawAnyChunk: false,
     };
 
     this.registerResponseHandler(handler);
@@ -1280,6 +1309,7 @@ export class ClaudianService {
     try {
       // Track message for crash recovery (Phase 1.3)
       this.lastSentMessage = message;
+      this.lastSentQueryOptions = queryOptions ?? null;
       this.crashRecoveryAttempted = false;
 
       // Enqueue the message
@@ -1309,8 +1339,9 @@ export class ClaudianService {
         yield { type: 'error', content: state.error.message };
       }
 
-      // Clear message tracking on successful completion
+      // Clear message tracking after completion
       this.lastSentMessage = null;
+      this.lastSentQueryOptions = null;
 
       yield { type: 'done' };
     } finally {
@@ -1372,7 +1403,10 @@ export class ClaudianService {
   /**
    * Apply dynamic updates to the persistent query before sending a message (Phase 1.6).
    */
-  private async applyDynamicUpdates(queryOptions?: QueryOptions): Promise<void> {
+  private async applyDynamicUpdates(
+    queryOptions?: QueryOptions,
+    restartOptions?: ClosePersistentQueryOptions
+  ): Promise<void> {
     if (!this.persistentQuery) return;
 
     // Guard against null vaultPath/cliPath (shouldn't happen if persistentQuery exists, but be safe)
@@ -1416,7 +1450,7 @@ export class ClaudianService {
       if (permissionMode === 'yolo' && this.currentConfig.permissionMode !== 'yolo') {
         // Switching TO YOLO requires restart
         console.log('[ClaudianService] Permission mode change to YOLO requires restart');
-        await this.restartPersistentQuery('permission mode change to YOLO');
+        await this.restartPersistentQuery('permission mode change to YOLO', restartOptions);
         return;
       } else if (permissionMode !== 'yolo') {
         // Can update via setPermissionMode
@@ -1457,7 +1491,7 @@ export class ClaudianService {
     const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath);
     if (this.needsRestart(newConfig)) {
       console.log('[ClaudianService] Configuration change requires restart');
-      await this.restartPersistentQuery('configuration change');
+      await this.restartPersistentQuery('configuration change', restartOptions);
     }
   }
 

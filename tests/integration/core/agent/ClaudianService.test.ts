@@ -2828,16 +2828,94 @@ describe('ClaudianService', () => {
       // The persistent query should exist
       expect(serviceAny.persistentQuery).not.toBeNull();
 
-      // Crash recovery should restart the persistent query
-      // Note: The actual crash recovery does NOT re-enqueue messages because:
-      // 1. closePersistentQuery clears handlers
-      // 2. Re-enqueued message would have no receiver
-      // Instead, it just restarts to prepare for the next query
+      // Crash recovery should restart the persistent query loop
       serviceAny.crashRecoveryAttempted = false;
       await serviceAny.restartPersistentQuery('consumer error');
 
       // After restart, persistent query should still be ready
       expect(serviceAny.persistentQuery).not.toBeNull();
+    });
+
+    it('re-enqueues pending message after crash recovery restart', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const sdk = require('@anthropic-ai/claude-agent-sdk');
+
+      let callCount = 0;
+      let firstPrompt: any = null;
+      let secondPrompt: any = null;
+      let resolveSecondPrompt: ((message: any) => void) | null = null;
+
+      const secondPromptPromise = new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Timed out waiting for crash recovery re-enqueue'));
+        }, 2000);
+        resolveSecondPrompt = (message: any) => {
+          clearTimeout(timeout);
+          resolve(message);
+        };
+      });
+
+      const spy = jest.spyOn(sdk, 'query').mockImplementation(({ prompt }: { prompt: any }) => {
+        callCount += 1;
+        const callIndex = callCount;
+
+        const generator = async function* () {
+          if (prompt && typeof prompt[Symbol.asyncIterator] === 'function') {
+            for await (const message of prompt) {
+              if (callIndex === 1) {
+                firstPrompt = message;
+                throw new Error('boom');
+              }
+              secondPrompt = message;
+              if (resolveSecondPrompt) resolveSecondPrompt(message);
+              yield { type: 'system', subtype: 'init', session_id: 'test-session-123' };
+              yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Recovered' }] } };
+              yield { type: 'result', result: 'completed' };
+            }
+            return;
+          }
+
+          if (callIndex === 1) {
+            firstPrompt = prompt;
+            throw new Error('boom');
+          }
+          secondPrompt = prompt;
+          if (resolveSecondPrompt) resolveSecondPrompt(prompt);
+          yield { type: 'system', subtype: 'init', session_id: 'test-session-123' };
+          yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Recovered' }] } };
+          yield { type: 'result', result: 'completed' };
+        };
+
+        const gen = generator() as AsyncGenerator<any> & {
+          interrupt: jest.Mock;
+          setModel: jest.Mock;
+          setMaxThinkingTokens: jest.Mock;
+          setPermissionMode: jest.Mock;
+          setMcpServers: jest.Mock;
+        };
+        gen.interrupt = jest.fn().mockResolvedValue(undefined);
+        gen.setModel = jest.fn().mockResolvedValue(undefined);
+        gen.setMaxThinkingTokens = jest.fn().mockResolvedValue(undefined);
+        gen.setPermissionMode = jest.fn().mockResolvedValue(undefined);
+        gen.setMcpServers = jest.fn().mockResolvedValue({ added: [], removed: [], errors: {} });
+        return gen;
+      });
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        for await (const _chunk of service.query('initial')) {
+          // drain
+        }
+
+        await secondPromptPromise;
+
+        expect(callCount).toBeGreaterThanOrEqual(2);
+        expect(firstPrompt).not.toBeNull();
+        expect(secondPrompt).not.toBeNull();
+        expect(secondPrompt.message?.content).toEqual(firstPrompt.message?.content);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('only attempts crash recovery once via crashRecoveryAttempted flag', async () => {
