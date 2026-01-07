@@ -344,14 +344,6 @@ export class InputController {
 
       await this.activatePendingPlanMode();
 
-      // Phase 3: After implementation completes, clear approved plan and restart persistent query
-      // This allows future messages to use the persistent query path
-      if (plugin.agentService.getApprovedPlanContent()) {
-        plugin.agentService.clearApprovedPlanContent();
-        // Restart persistent query for next chat message
-        void plugin.agentService.restartPersistentQuery('implementation completed');
-      }
-
       // Generate AI title after first complete exchange (user + assistant)
       await this.triggerTitleGeneration();
 

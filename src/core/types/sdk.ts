@@ -40,9 +40,9 @@ export interface ModelUsageInfo {
   contextWindow?: number;
 }
 
-/** SDK message structure from the Claude Agent SDK. */
-export interface SDKMessage {
-  type: 'system' | 'assistant' | 'user' | 'stream_event' | 'result' | 'error' | 'tool_progress' | 'auth_status';
+/** SDK message structure from the Claude Agent SDK (non-result messages). */
+export interface SDKNonResultMessage {
+  type: 'system' | 'assistant' | 'user' | 'stream_event' | 'error' | 'tool_progress' | 'auth_status';
   subtype?: 'init' | 'compact_boundary' | 'status' | 'hook_response' | string;
   session_id?: string;
   message?: SDKMessageContent;
@@ -60,3 +60,18 @@ export interface SDKMessage {
   /** Model name for the message. */
   model?: string;
 }
+
+/** SDK result message structure (does not include parent_tool_use_id). */
+export interface SDKResultMessage {
+  type: 'result';
+  subtype?: string;
+  uuid?: string;
+  session_id?: string;
+  /** Usage info by model name. */
+  modelUsage?: Record<string, ModelUsageInfo>;
+  /** Model name for the message. */
+  model?: string;
+}
+
+/** SDK message structure from the Claude Agent SDK. */
+export type SDKMessage = SDKNonResultMessage | SDKResultMessage;

@@ -38,7 +38,9 @@ export function* transformSDKMessage(
 ): Generator<TransformEvent> {
   // Capture parent_tool_use_id for subagent routing
   // null = main agent, non-null = subagent context
-  const parentToolUseId = message.parent_tool_use_id ?? null;
+  const parentToolUseId = message.type === 'result'
+    ? null
+    : message.parent_tool_use_id ?? null;
 
   switch (message.type) {
     case 'system':

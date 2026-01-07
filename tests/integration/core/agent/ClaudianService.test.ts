@@ -2092,7 +2092,7 @@ describe('ClaudianService', () => {
       expect(textChunks.map((c: any) => c.content).join('')).toBe('hello world');
     });
 
-    it('should skip usage for subagent results', () => {
+    it('should ignore parent_tool_use_id on result messages', () => {
       const sdkMessage: any = {
         type: 'result',
         parent_tool_use_id: 'task-1',
@@ -2108,7 +2108,8 @@ describe('ClaudianService', () => {
       };
 
       const chunks = Array.from(transformSDKMessage(sdkMessage));
-      expect(chunks).toHaveLength(0);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual(expect.objectContaining({ type: 'usage' }));
     });
 
     it('should emit usage chunk with computed tokens and clamped percentage', () => {

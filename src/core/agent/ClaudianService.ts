@@ -726,8 +726,8 @@ export class ClaudianService {
     if (this.currentConfig.settingSources !== newConfig.settingSources) return true;
     if (this.currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
 
-    // YOLO mode toggle requires restart (allowDangerouslySkipPermissions)
-    if (this.currentConfig.allowDangerouslySkip !== newConfig.allowDangerouslySkip) return true;
+    // Note: allowDangerouslySkip (YOLO mode) is handled in ensurePersistentQuery's
+    // permission mode section via restart (normal→YOLO) or setPermissionMode (YOLO→normal)
 
     // Export paths affect system prompt
     const oldExport = [...(this.currentConfig.allowedExportPaths || [])].sort().join('|');
@@ -1381,6 +1381,7 @@ export class ClaudianService {
         console.log('[ClaudianService] Updating permission mode:', sdkMode);
         await this.persistentQuery.setPermissionMode(sdkMode);
         this.currentConfig.permissionMode = permissionMode;
+        this.currentConfig.allowDangerouslySkip = false;
       }
     }
 
@@ -1730,6 +1731,9 @@ export class ClaudianService {
     const currentId = this.sessionManager.getSessionId();
     if (currentId !== id) {
       this.closePersistentQuery('session switch');
+      // Clear session-specific state (approved plan is not persisted across sessions)
+      this.approvedPlanContent = null;
+      this.currentPlanFilePath = null;
     }
 
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
