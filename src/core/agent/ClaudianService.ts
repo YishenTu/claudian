@@ -416,7 +416,20 @@ interface ClosePersistentQueryOptions {
   preserveHandlers?: boolean;
 }
 
-/** Handler for routing stream chunks to the appropriate query caller. */
+/**
+ * Handler for routing stream chunks to the appropriate query caller.
+ *
+ * Lifecycle:
+ * 1. Created: Handler is registered via registerResponseHandler() when a query starts
+ * 2. Receiving: Chunks arrive via onChunk(), sawAnyChunk and sawStreamText track state
+ * 3. Terminated: Exactly one of onDone() or onError() is called when the turn ends
+ *
+ * Invariants:
+ * - Only one handler is active at a time (MessageChannel enforces single-turn)
+ * - After onDone()/onError(), the handler is unregistered and should not receive more chunks
+ * - sawAnyChunk is used for crash recovery (restart if no chunks seen before error)
+ * - sawStreamText prevents duplicate text from non-streamed assistant messages
+ */
 interface ResponseHandler {
   id: string;
   onChunk: (chunk: StreamChunk) => void;
@@ -711,6 +724,9 @@ export class ClaudianService {
       this.currentAllowedTools = null;
       this.pendingCloseReason = null;
     }
+
+    // Reset crash recovery flag for next session
+    this.crashRecoveryAttempted = false;
 
     // Reset shuttingDown flag so next query can start a new persistent query.
     // This must be done after all cleanup to prevent race conditions with the consumer loop.
@@ -1324,8 +1340,18 @@ export class ClaudianService {
       this.lastSentQueryOptions = queryOptions ?? null;
       this.crashRecoveryAttempted = false;
 
-      // Enqueue the message
-      this.messageChannel.enqueue(message);
+      // Enqueue the message with race condition protection
+      // The channel could close between our null check above and this call
+      try {
+        this.messageChannel.enqueue(message);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('closed')) {
+          console.warn('[ClaudianService] MessageChannel closed during enqueue, falling back to cold-start');
+          yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+          return;
+        }
+        throw error;
+      }
 
       // Yield chunks as they arrive
       while (!state.done) {
