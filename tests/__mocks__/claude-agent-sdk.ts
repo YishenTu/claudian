@@ -37,6 +37,7 @@ const mockMessages = [
 ];
 
 let customMockMessages: any[] | null = null;
+let appendResultMessage = true;
 let lastOptions: Options | undefined;
 let lastResponse: (AsyncGenerator<any> & {
   interrupt: jest.Mock;
@@ -52,12 +53,14 @@ let throwAfterChunks = 0;
 let queryCallCount = 0;
 
 // Allow tests to set custom mock messages
-export function setMockMessages(messages: any[]) {
+export function setMockMessages(messages: any[], options?: { appendResult?: boolean }) {
   customMockMessages = messages;
+  appendResultMessage = options?.appendResult ?? true;
 }
 
 export function resetMockMessages() {
   customMockMessages = null;
+  appendResultMessage = true;
   lastOptions = undefined;
   lastResponse = null;
   shouldThrowOnIteration = false;
@@ -126,7 +129,7 @@ function isAsyncIterable(value: any): value is AsyncIterable<any> {
 function getMessagesForPrompt(): any[] {
   const baseMessages = customMockMessages || mockMessages;
   const messages = [...baseMessages];
-  if (!messages.some((msg) => msg.type === 'result')) {
+  if (appendResultMessage && !messages.some((msg) => msg.type === 'result')) {
     messages.push({ type: 'result' });
   }
   return messages;

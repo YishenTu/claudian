@@ -1007,6 +1007,23 @@ describe('ClaudianService', () => {
     });
   });
 
+  describe('persistent query error handling', () => {
+    it('completes turn when SDK emits error without result', async () => {
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'error', error: 'Fatal error' },
+      ], { appendResult: false });
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('trigger error')) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks.some((c) => c.type === 'error' && c.content === 'Fatal error')).toBe(true);
+      expect(chunks.some((c) => c.type === 'done')).toBe(true);
+    });
+  });
+
   describe('closePersistentQuery with preserveHandlers', () => {
     afterEach(() => {
       service.cleanup();
