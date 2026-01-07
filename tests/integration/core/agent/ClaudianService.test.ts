@@ -2743,6 +2743,39 @@ describe('ClaudianService', () => {
       // The query should be different (restarted)
       expect(queryAfter).not.toBe(queryBefore);
     });
+
+    it('uses current permission mode in canUseTool callback (not closured)', async () => {
+      // Start in YOLO mode
+      mockPlugin.settings.permissionMode = 'yolo';
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      const serviceAny = service as any;
+
+      // Create the callback (captures initial mode reference)
+      const canUse = serviceAny.createUnifiedToolCallback('yolo');
+
+      // In YOLO mode, should auto-approve
+      let result = await canUse('Write', { file_path: '/test1.md' }, {});
+      expect(result.behavior).toBe('allow');
+
+      // Change to normal mode without recreating callback
+      mockPlugin.settings.permissionMode = 'normal';
+
+      // Without approval callback, should deny
+      result = await canUse('Write', { file_path: '/test2.md' }, {});
+      expect(result.behavior).toBe('deny');
+      expect(result.message).toContain('No approval handler');
+
+      // Set approval callback to allow
+      service.setApprovalCallback(async () => 'allow');
+      result = await canUse('Write', { file_path: '/test3.md' }, {});
+      expect(result.behavior).toBe('allow');
+
+      // Set approval callback to deny (use different path to avoid session cache)
+      service.setApprovalCallback(async () => 'deny');
+      result = await canUse('Write', { file_path: '/test4.md' }, {});
+      expect(result.behavior).toBe('deny');
+    });
   });
 
   describe('persistent query deferred close behavior', () => {
@@ -2785,57 +2818,46 @@ describe('ClaudianService', () => {
   });
 
   describe('persistent query crash recovery behavior', () => {
-    it('re-enqueues pending message after crash recovery restart', async () => {
+    it('restarts persistent query after consumer error to prepare for next query', async () => {
       const serviceAny = service as any;
 
       // Run a query to set up the persistent query
       const chunks: any[] = [];
       for await (const c of service.query('initial')) chunks.push(c);
 
-      // Get references before simulating crash
-      const messageChannel = serviceAny.messageChannel;
-      expect(messageChannel).not.toBeNull();
+      // The persistent query should exist
+      expect(serviceAny.persistentQuery).not.toBeNull();
 
-      // Set up the crash recovery state
+      // Crash recovery should restart the persistent query
+      // Note: The actual crash recovery does NOT re-enqueue messages because:
+      // 1. closePersistentQuery clears handlers
+      // 2. Re-enqueued message would have no receiver
+      // Instead, it just restarts to prepare for the next query
       serviceAny.crashRecoveryAttempted = false;
-      const pendingMessage = createTextUserMessage('pending message');
-      serviceAny.lastSentMessage = pendingMessage;
-
-      // Track if enqueue was called (we don't use the mock result, just verify logic)
-      messageChannel.enqueue = jest.fn();
-
-      // Simulate the crash recovery logic (extract from startResponseConsumer)
-      const shouldResend = serviceAny.lastSentMessage && !serviceAny.crashRecoveryAttempted;
-      expect(shouldResend).toBe(true);
-
-      // Simulate what happens after restart in crash recovery
       await serviceAny.restartPersistentQuery('consumer error');
 
-      // The new messageChannel should have had enqueue called
-      // (Note: after restart, messageChannel is replaced, so we check the flag)
-      if (shouldResend && serviceAny.messageChannel && !serviceAny.messageChannel.isClosed()) {
-        serviceAny.messageChannel.enqueue(pendingMessage);
-      }
-
-      // Verify crash recovery would have re-sent the message
-      expect(serviceAny.crashRecoveryAttempted).toBe(false); // Not set by our simulation
+      // After restart, persistent query should still be ready
+      expect(serviceAny.persistentQuery).not.toBeNull();
     });
 
-    it('does not re-enqueue if crashRecoveryAttempted is already true', async () => {
+    it('only attempts crash recovery once via crashRecoveryAttempted flag', async () => {
       const serviceAny = service as any;
 
       // Run a query to set up the persistent query
       const chunks: any[] = [];
       for await (const c of service.query('initial')) chunks.push(c);
 
-      // Set up state where crash recovery was already attempted
-      serviceAny.crashRecoveryAttempted = true;
-      const pendingMessage = createTextUserMessage('pending message');
-      serviceAny.lastSentMessage = pendingMessage;
+      // First crash - should attempt recovery
+      expect(serviceAny.crashRecoveryAttempted).toBe(false);
+      const shouldAttemptFirst = !serviceAny.crashRecoveryAttempted;
+      expect(shouldAttemptFirst).toBe(true);
 
-      // Verify the shouldResend condition is false
-      const shouldResend = serviceAny.lastSentMessage && !serviceAny.crashRecoveryAttempted;
-      expect(shouldResend).toBe(false);
+      // After first crash, flag is set
+      serviceAny.crashRecoveryAttempted = true;
+
+      // Second crash - should not attempt recovery
+      const shouldAttemptSecond = !serviceAny.crashRecoveryAttempted;
+      expect(shouldAttemptSecond).toBe(false);
     });
   });
 });

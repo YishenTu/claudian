@@ -938,30 +938,18 @@ export class ClaudianService {
             handler.onError(error instanceof Error ? error : new Error(String(error)));
           }
 
-          // Phase 1.3: Crash recovery - restart and re-send pending message once
-          const pendingMessage = this.lastSentMessage;
-          const shouldResend = pendingMessage && !this.crashRecoveryAttempted;
-          this.crashRecoveryAttempted = true;
-
-          try {
-            // Attempt restart
-            await this.restartPersistentQuery('consumer error');
-
-            // Re-send pending message after restart (once only)
-            if (shouldResend && this.messageChannel && !this.messageChannel.isClosed()) {
-              console.log('[ClaudianService] Re-sending pending message after crash recovery');
-              this.messageChannel.enqueue(pendingMessage);
-            }
-          } catch (restartError) {
-            console.error('[ClaudianService] Crash recovery failed:', restartError);
-            const errorMessage = 'Crash recovery failed: ' +
-              (restartError instanceof Error ? restartError.message : String(restartError));
-            // Notify handler of recovery failure if still present
-            if (handler) {
-              handler.onError(new Error(errorMessage));
-            } else {
-              // No handler to notify - store for future detection or log prominently
-              console.error('[ClaudianService] Crash recovery failed with no handler to notify:', errorMessage);
+          // Crash recovery: restart persistent query to prepare for next user message.
+          // Note: We don't re-enqueue the pending message here because:
+          // 1. closePersistentQuery clears handlers, so re-enqueued message would have no receiver
+          // 2. The caller (queryViaPersistent) has already been notified via handler.onError
+          // 3. The caller can retry if needed
+          // We just restart to ensure the next query can use persistent path.
+          if (!this.crashRecoveryAttempted) {
+            this.crashRecoveryAttempted = true;
+            try {
+              await this.restartPersistentQuery('consumer error');
+            } catch (restartError) {
+              console.error('[ClaudianService] Failed to restart after consumer error:', restartError);
             }
           }
         }
@@ -1002,7 +990,12 @@ export class ClaudianService {
           continue;
         }
         if (handler) {
-          handler.onChunk(event);
+          // Add sessionId to usage chunks (consistent with cold-start path)
+          if (event.type === 'usage') {
+            handler.onChunk({ ...event, sessionId: this.sessionManager.getSessionId() });
+          } else {
+            handler.onChunk(event);
+          }
         } else {
           // This indicates a timing issue - chunks arriving without a registered handler
           console.error('[ClaudianService] Chunk discarded - no handler registered:', {
@@ -1679,8 +1672,10 @@ export class ClaudianService {
         // Empty array: only essential tools (consistent with persistent query behavior)
         options.tools = [...ALWAYS_ALLOWED_TOOLS];
       } else {
-        // Non-empty: restrict to specified tools (include Skill for consistency)
-        options.tools = [...queryOptions.allowedTools, TOOL_SKILL];
+        // Non-empty: restrict to specified tools plus ALWAYS_ALLOWED_TOOLS
+        // ALWAYS_ALLOWED_TOOLS are essential for agent-user interaction (AskUserQuestion, etc.)
+        const toolSet = new Set([...queryOptions.allowedTools, ...ALWAYS_ALLOWED_TOOLS]);
+        options.tools = [...toolSet];
       }
     }
     // If undefined: no restriction (use default tools)
@@ -1885,8 +1880,11 @@ export class ClaudianService {
    * Tool restriction policy (Phase 1.7):
    * - Always allow: AskUserQuestion, EnterPlanMode, ExitPlanMode, Skill
    * - If currentAllowedTools is set, deny tools not in the list
+   *
+   * Note: Permission mode is read from this.plugin.settings at call time (not closured)
+   * to support dynamic mode switching via setPermissionMode.
    */
-  private createUnifiedToolCallback(mode: PermissionMode): CanUseTool {
+  private createUnifiedToolCallback(_initialMode: PermissionMode): CanUseTool {
     return async (toolName, input, context): Promise<PermissionResult> => {
       // Special handling for AskUserQuestion - always prompt user
       if (toolName === TOOL_ASK_USER_QUESTION) {
@@ -1917,8 +1915,11 @@ export class ClaudianService {
         }
       }
 
+      // Read current permission mode from settings (not closured) to support dynamic switching
+      const currentMode = this.plugin.settings.permissionMode;
+
       // YOLO mode: auto-approve everything else
-      if (mode === 'yolo') {
+      if (currentMode === 'yolo') {
         return { behavior: 'allow', updatedInput: input };
       }
 
