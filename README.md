@@ -15,7 +15,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget. Monitor context window usage with a real-time gauge.
-- **Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.
+- ~~**Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.~~
 - **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
 
 ## Requirements
@@ -90,7 +90,7 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Inline Edit**: Select text + hotkey to edit directly in notes with word-level diff preview
 - **Slash Commands**: Type `/` for custom prompt templates (Settings → Slash Commands)
 - **Instruction Mode**: Type `#` to add refined instructions to system prompt
-- **Plan Mode**: `Shift+Tab` for read-only exploration before implementation
+- ~~**Plan Mode**: `Shift+Tab` for read-only exploration before implementation~~
 - **Skills**: Add `SKILL.md` files to `~/.claude/skills/` or `{vault}/.claude/skills/`
 - **MCP**: Add external tools via Settings → MCP Servers; use `@server-name` in chat to activate
 
