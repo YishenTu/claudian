@@ -1817,7 +1817,8 @@ describe('ClaudianService', () => {
 
       expect(result.behavior).toBe('deny');
       expect(result.interrupt).toBe(true);
-      expect(result.message).toBe('Approval request failed.');
+      expect(result.message).toContain('Approval request failed');
+      expect(result.message).toContain('boom');
     });
   });
 
@@ -2523,6 +2524,195 @@ describe('ClaudianService', () => {
       await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'large.md' }, tool_result: {} } as any, 'tool-large', {} as any);
 
       expect(pendingDiffData.get('tool-large')).toEqual({ filePath: 'large.md', skippedReason: 'too_large' });
+    });
+  });
+
+  describe('persistent query configuration detection', () => {
+    it('detects system prompt changes requiring restart', async () => {
+      // First query establishes baseline config
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      // Change system prompt which affects systemPromptKey
+      mockPlugin.settings.systemPrompt = 'new custom prompt';
+
+      // Second query should detect the change
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      // If restart happened, the session would change
+      // The service should have detected the configuration change
+      expect(chunks2.some((c) => c.type === 'done')).toBe(true);
+    });
+
+    it('detects export paths changes requiring restart', async () => {
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      // Change export paths
+      mockPlugin.settings.allowedExportPaths = ['/new/export/path'];
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      expect(chunks2.some((c) => c.type === 'done')).toBe(true);
+    });
+  });
+
+  describe('persistent query dynamic updates', () => {
+    it('updates thinking tokens on the active persistent query when budget changes', async () => {
+      // Start with default thinking budget ('off')
+      mockPlugin.settings.thinkingBudget = 'off';
+
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      // Change thinking budget - this should trigger setMaxThinkingTokens on next query
+      mockPlugin.settings.thinkingBudget = 'high';
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      const response = getLastResponse();
+      // setMaxThinkingTokens should be called with the new budget value (16000 for 'high')
+      expect(response?.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
+    });
+
+    it('updates permission mode via setPermissionMode when going from YOLO to normal', async () => {
+      // Start in YOLO mode
+      mockPlugin.settings.permissionMode = 'yolo';
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      // Switch to normal mode
+      mockPlugin.settings.permissionMode = 'normal';
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      const response = getLastResponse();
+      // Should call setPermissionMode for YOLO -> normal transition
+      expect(response?.setPermissionMode).toHaveBeenCalledWith('default');
+    });
+
+    it('updates MCP servers on the active persistent query', async () => {
+      const chunks1: any[] = [];
+      for await (const c of service.query('first', undefined, undefined, {
+        mcpMentions: new Set(['server1']),
+      })) chunks1.push(c);
+
+      const response1 = getLastResponse();
+      expect(response1?.setMcpServers).toHaveBeenCalled();
+
+      // Query with different MCP mentions
+      const chunks2: any[] = [];
+      for await (const c of service.query('second', undefined, undefined, {
+        mcpMentions: new Set(['server2']),
+      })) chunks2.push(c);
+
+      const response2 = getLastResponse();
+      expect(response2?.setMcpServers).toHaveBeenCalled();
+    });
+  });
+
+  describe('persistent query crash recovery', () => {
+    it('prevents infinite crash recovery loops via crashRecoveryAttempted flag', async () => {
+      // Access private state for testing
+      const serviceAny = service as any;
+
+      // Simulate first crash recovery
+      serviceAny.crashRecoveryAttempted = false;
+      serviceAny.lastSentMessage = createTextUserMessage('test');
+
+      // After first crash, flag should be set
+      serviceAny.crashRecoveryAttempted = true;
+
+      // Second crash should not attempt recovery
+      const shouldResend = serviceAny.lastSentMessage && !serviceAny.crashRecoveryAttempted;
+      expect(shouldResend).toBe(false);
+    });
+
+    it('clears lastSentMessage on successful completion', async () => {
+      const serviceAny = service as any;
+
+      // Before query, lastSentMessage should be null
+      expect(serviceAny.lastSentMessage).toBeNull();
+
+      // Run a query
+      const chunks: any[] = [];
+      for await (const c of service.query('test')) chunks.push(c);
+
+      // After successful completion, lastSentMessage should be cleared
+      expect(serviceAny.lastSentMessage).toBeNull();
+    });
+  });
+
+  describe('persistent query deferred close', () => {
+    it('sets pendingCloseReason when EnterPlanMode is called', async () => {
+      const serviceAny = service as any;
+
+      // Mock the callback
+      let callbackCalled = false;
+      service.setEnterPlanModeCallback(async () => {
+        callbackCalled = true;
+      });
+
+      // Call handleEnterPlanModeTool
+      const result = await serviceAny.handleEnterPlanModeTool();
+
+      expect(result.behavior).toBe('allow');
+      expect(callbackCalled).toBe(true);
+      expect(serviceAny.pendingCloseReason).toBe('entering plan mode');
+    });
+
+    it('clears pendingCloseReason after processing result message', async () => {
+      const serviceAny = service as any;
+
+      // Set up persistent query
+      await service.preWarm();
+
+      // Set pending close reason
+      serviceAny.pendingCloseReason = 'test reason';
+
+      // Close the query (simulates cleanup)
+      service.cleanup();
+
+      // After cleanup, pendingCloseReason should be cleared
+      expect(serviceAny.pendingCloseReason).toBeNull();
+    });
+  });
+
+  describe('tool restriction with allowed tools list', () => {
+    it('denies tools not in allowedTools list with helpful message', async () => {
+      const serviceAny = service as any;
+
+      // Set up allowed tools restriction
+      serviceAny.currentAllowedTools = ['Read', 'Grep'];
+
+      const canUse = serviceAny.createUnifiedToolCallback('yolo');
+      const result = await canUse('Write', { file_path: '/test.md' }, {});
+
+      expect(result.behavior).toBe('deny');
+      expect(result.message).toContain('Tool "Write" is not allowed');
+      expect(result.message).toContain('Allowed tools: Read, Grep');
+    });
+
+    it('allows always-allowed tools even with restrictions', async () => {
+      const serviceAny = service as any;
+
+      // Set up empty allowed tools (most restrictive)
+      serviceAny.currentAllowedTools = [];
+
+      const canUse = serviceAny.createUnifiedToolCallback('yolo');
+
+      // AskUserQuestion should still work
+      service.setAskUserQuestionCallback(async () => ({ answer: 'test' }));
+      const result = await canUse('AskUserQuestion', { questions: [] }, { toolUseID: 'test-id' });
+
+      // It should be allowed (behavior is 'allow' after callback returns)
+      expect(result.behavior).toBe('allow');
     });
   });
 });

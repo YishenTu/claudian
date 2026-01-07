@@ -47,18 +47,6 @@ import {
   getActionDescription,
 } from '../security';
 import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL } from '../tools/toolNames';
-
-/**
- * Tools that are always allowed regardless of allowedTools restriction.
- * These are essential for agent-user interaction and plan mode flow.
- * Used by both persistent query (canUseTool) and cold-start (options.tools).
- */
-const ALWAYS_ALLOWED_TOOLS = [
-  TOOL_ASK_USER_QUESTION,
-  TOOL_ENTER_PLAN_MODE,
-  TOOL_EXIT_PLAN_MODE,
-  TOOL_SKILL,
-] as const;
 import type {
   AskUserQuestionCallback,
   AskUserQuestionInput,
@@ -71,6 +59,18 @@ import type {
   ToolDiffData,
 } from '../types';
 import { THINKING_BUDGETS } from '../types';
+
+/**
+ * Tools that are always allowed regardless of allowedTools restriction.
+ * These are essential for agent-user interaction and plan mode flow.
+ * Used by both persistent query (canUseTool) and cold-start (options.tools).
+ */
+const ALWAYS_ALLOWED_TOOLS = [
+  TOOL_ASK_USER_QUESTION,
+  TOOL_ENTER_PLAN_MODE,
+  TOOL_EXIT_PLAN_MODE,
+  TOOL_SKILL,
+] as const;
 
 // ============================================
 // Session Management (inlined)
@@ -175,7 +175,17 @@ class DiffStore {
 // MessageChannel - Queue-based AsyncIterable
 // ============================================
 
-/** Message queue configuration. */
+/**
+ * Message queue configuration for the persistent query channel.
+ *
+ * MAX_QUEUED_MESSAGES: Maximum pending messages before dropping.
+ * This prevents memory buildup from rapid user input. 8 allows
+ * reasonable queuing while protecting against runaway scenarios.
+ *
+ * MAX_MERGED_CHARS: Maximum merged text content size.
+ * Text messages are merged to reduce API calls. 12000 chars allows
+ * substantial batching while staying well under token limits.
+ */
 const MESSAGE_CHANNEL_CONFIG = {
   MAX_QUEUED_MESSAGES: 8,
   MAX_MERGED_CHARS: 12000,
@@ -209,7 +219,6 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
   private turnActive = false;
   private closed = false;
   private resolveNext: ((value: IteratorResult<SDKUserMessage>) => void) | null = null;
-  private rejectNext: ((error: Error) => void) | null = null;
   private currentSessionId: string | null = null;
   private onWarning: (message: string) => void;
 
@@ -250,7 +259,6 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
         this.turnActive = true;
         const resolve = this.resolveNext;
         this.resolveNext = null;
-        this.rejectNext = null;
         resolve({ value: message, done: false });
       } else {
         // No consumer waiting yet - queue for later pickup by next()
@@ -321,7 +329,6 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
       this.turnActive = true;
       const resolve = this.resolveNext;
       this.resolveNext = null;
-      this.rejectNext = null;
       resolve({ value: this.pendingToMessage(pending), done: false });
     }
   }
@@ -333,8 +340,7 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
     if (this.resolveNext) {
       const resolve = this.resolveNext;
       this.resolveNext = null;
-      this.rejectNext = null;
-      resolve({ value: undefined as any, done: true });
+      resolve({ value: undefined, done: true } as IteratorResult<SDKUserMessage>);
     }
   }
 
@@ -344,7 +350,6 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
     this.turnActive = false;
     this.closed = false;
     this.resolveNext = null;
-    this.rejectNext = null;
   }
 
   /** Get the number of queued messages. */
@@ -357,7 +362,7 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
     return {
       next: (): Promise<IteratorResult<SDKUserMessage>> => {
         if (this.closed) {
-          return Promise.resolve({ value: undefined as any, done: true });
+          return Promise.resolve({ value: undefined, done: true } as IteratorResult<SDKUserMessage>);
         }
 
         // If there's a queued message and no active turn, return it
@@ -368,9 +373,8 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
         }
 
         // Wait for next message
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           this.resolveNext = resolve;
-          this.rejectNext = reject;
         });
       },
     };
@@ -673,8 +677,13 @@ export class ClaudianService {
     this.messageChannel?.close();
 
     // Interrupt the query
-    void this.persistentQuery.interrupt().catch(() => {
-      // Ignore interrupt errors during shutdown
+    void this.persistentQuery.interrupt().catch((error) => {
+      // Only silence expected abort/interrupt errors during shutdown
+      if (error instanceof Error &&
+          (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
+        return;
+      }
+      console.warn('[ClaudianService] Unexpected error during shutdown interrupt:', error);
     });
 
     // Abort as backup
@@ -711,6 +720,12 @@ export class ClaudianService {
 
     if (vaultPath && cliPath) {
       await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined);
+    } else {
+      console.warn('[ClaudianService] Cannot restart persistent query:', {
+        hasVaultPath: !!vaultPath,
+        hasCliPath: !!cliPath,
+        reason,
+      });
     }
   }
 
@@ -923,6 +938,8 @@ export class ClaudianService {
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
           if (handler) {
             handler.onError(error instanceof Error ? error : new Error(String(error)));
+          } else {
+            console.error('[ClaudianService] Response consumer error with no handler to notify');
           }
 
           // Phase 1.3: Crash recovery - restart and re-send pending message once
@@ -930,13 +947,22 @@ export class ClaudianService {
           const shouldResend = pendingMessage && !this.crashRecoveryAttempted;
           this.crashRecoveryAttempted = true;
 
-          // Attempt restart
-          await this.restartPersistentQuery('consumer error');
+          try {
+            // Attempt restart
+            await this.restartPersistentQuery('consumer error');
 
-          // Re-send pending message after restart (once only)
-          if (shouldResend && this.messageChannel && !this.messageChannel.isClosed()) {
-            console.log('[ClaudianService] Re-sending pending message after crash recovery');
-            this.messageChannel.enqueue(pendingMessage);
+            // Re-send pending message after restart (once only)
+            if (shouldResend && this.messageChannel && !this.messageChannel.isClosed()) {
+              console.log('[ClaudianService] Re-sending pending message after crash recovery');
+              this.messageChannel.enqueue(pendingMessage);
+            }
+          } catch (restartError) {
+            console.error('[ClaudianService] Crash recovery failed:', restartError);
+            // Notify handler of recovery failure if still present
+            if (handler) {
+              handler.onError(new Error('Crash recovery failed: ' +
+                (restartError instanceof Error ? restartError.message : String(restartError))));
+            }
           }
         }
       } finally {
@@ -973,7 +999,11 @@ export class ClaudianService {
         if (handler) {
           handler.onChunk(event);
         } else {
-          console.warn('[ClaudianService] No handler for chunk:', event.type);
+          // This indicates a timing issue - chunks arriving without a registered handler
+          console.error('[ClaudianService] Chunk discarded - no handler registered:', {
+            type: event.type,
+            handlerCount: this.responseHandlers.length,
+          });
         }
       }
     }
@@ -1696,8 +1726,13 @@ export class ClaudianService {
 
     // Interrupt persistent query (Phase 1.9)
     if (this.persistentQuery && !this.shuttingDown) {
-      void this.persistentQuery.interrupt().catch(() => {
-        // Ignore interrupt errors
+      void this.persistentQuery.interrupt().catch((error) => {
+        // Only silence expected abort/interrupt errors
+        if (error instanceof Error &&
+            (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
+          return;
+        }
+        console.warn('[ClaudianService] Unexpected error during cancel interrupt:', error);
       });
     }
   }
@@ -1852,9 +1887,12 @@ export class ClaudianService {
       // ALWAYS_ALLOWED_TOOLS bypass the restriction (consistent with cold-start behavior)
       if (this.currentAllowedTools !== null && !ALWAYS_ALLOWED_TOOLS.includes(toolName as typeof ALWAYS_ALLOWED_TOOLS[number])) {
         if (!this.currentAllowedTools.includes(toolName)) {
+          const allowedList = this.currentAllowedTools.length > 0
+            ? ` Allowed tools: ${this.currentAllowedTools.join(', ')}.`
+            : ' No tools are allowed for this query type.';
           return {
             behavior: 'deny',
-            message: `Tool "${toolName}" is not allowed for this query.`,
+            message: `Tool "${toolName}" is not allowed for this query.${allowedList}`,
           };
         }
       }
@@ -1905,10 +1943,11 @@ export class ClaudianService {
         behavior: 'allow',
         updatedInput: { ...input, answers },
       };
-    } catch {
+    } catch (error) {
+      console.error('[ClaudianService] AskUserQuestion callback failed:', error);
       return {
         behavior: 'deny',
-        message: 'Failed to get user response.',
+        message: `Failed to get user response: ${error instanceof Error ? error.message : 'Unknown error'}`,
         interrupt: true,
       };
     }
@@ -1940,8 +1979,10 @@ export class ClaudianService {
     try {
       // Notify UI to update state and queue re-send with plan mode
       await this.enterPlanModeCallback();
-    } catch {
-      // Non-critical: UI can detect plan mode from stream
+    } catch (error) {
+      // Non-critical: UI can detect plan mode from stream, but log for debugging
+      console.warn('[ClaudianService] EnterPlanMode callback failed (UI will detect from stream):',
+        error instanceof Error ? error.message : String(error));
     }
     return { behavior: 'allow', updatedInput: {} };
   }
@@ -1970,8 +2011,10 @@ export class ClaudianService {
         if (fs.existsSync(planPath)) {
           planContent = fs.readFileSync(planPath, 'utf-8');
         }
-      } catch {
-        // Fall back to SDK input
+      } catch (error) {
+        // Fall back to SDK input, but log the error for debugging
+        console.error('[ClaudianService] Failed to read plan file, falling back to SDK input:',
+          planPath, error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -2030,10 +2073,11 @@ export class ClaudianService {
             interrupt: true,
           };
       }
-    } catch {
+    } catch (error) {
+      console.error('[ClaudianService] ExitPlanMode callback failed:', error);
       return {
         behavior: 'deny',
-        message: 'Failed to get plan approval.',
+        message: `Failed to get plan approval: ${error instanceof Error ? error.message : 'Unknown error'}`,
         interrupt: true,
       };
     }
@@ -2092,10 +2136,11 @@ export class ClaudianService {
       }
 
       return { behavior: 'allow', updatedInput: input };
-    } catch {
+    } catch (error) {
+      console.error('[ClaudianService] Approval callback failed:', error);
       return {
         behavior: 'deny',
-        message: 'Approval request failed.',
+        message: `Approval request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         interrupt: true,
       };
     }

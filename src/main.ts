@@ -57,11 +57,11 @@ export default class ClaudianPlugin extends Plugin {
 
     // Pre-warm the persistent query with the active conversation's session ID (Phase 5)
     const activeConv = this.getActiveConversation();
-    if (activeConv?.sessionId) {
-      void this.agentService.preWarm(activeConv.sessionId);
-    } else {
-      void this.agentService.preWarm();
-    }
+    const sessionId = activeConv?.sessionId;
+    this.agentService.preWarm(sessionId ?? undefined).catch((error) => {
+      console.warn('[Claudian] Pre-warm failed, first query will use cold-start:',
+        error instanceof Error ? error.message : String(error));
+    });
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,

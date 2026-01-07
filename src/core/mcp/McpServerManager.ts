@@ -102,13 +102,18 @@ export class McpServerManager {
     const disallowed = new Set<string>();
 
     for (const server of this.servers) {
-      if (!server.enabled) continue;
-      if (!server.disabledTools || server.disabledTools.length === 0) continue;
+      try {
+        if (!server.enabled) continue;
+        if (!server.disabledTools || server.disabledTools.length === 0) continue;
 
-      for (const tool of server.disabledTools) {
-        const normalized = tool.trim();
-        if (!normalized) continue;
-        disallowed.add(`mcp__${server.name}__${normalized}`);
+        for (const tool of server.disabledTools) {
+          const normalized = tool.trim();
+          if (!normalized) continue;
+          disallowed.add(`mcp__${server.name}__${normalized}`);
+        }
+      } catch (error) {
+        console.warn('[McpServerManager] Skipping malformed server config:',
+          server?.name, error instanceof Error ? error.message : String(error));
       }
     }
 
