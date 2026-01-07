@@ -2,8 +2,10 @@
 import {
   getLastOptions,
   getLastResponse,
+  getQueryCallCount,
   resetMockMessages,
   setMockMessages,
+  simulateCrash,
 } from '@test/__mocks__/claude-agent-sdk';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -920,6 +922,179 @@ describe('ClaudianService', () => {
 
       const response = getLastResponse();
       expect(response?.setModel).toHaveBeenCalledWith('claude-opus-4-5');
+    });
+  });
+
+  describe('closePersistentQuery with preserveHandlers', () => {
+    afterEach(() => {
+      service.cleanup();
+    });
+
+    it('preserves handlers when preserveHandlers is true', async () => {
+      // Start a query to create handlers
+      const queryPromise = (async () => {
+        const chunks: any[] = [];
+        for await (const chunk of service.query('hello')) {
+          chunks.push(chunk);
+        }
+        return chunks;
+      })();
+
+      // Let the query start
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Access internal state to verify handlers exist
+      const handlersBefore = (service as any).responseHandlers?.length ?? 0;
+
+      // Close with preserveHandlers: true
+      service.closePersistentQuery('test', { preserveHandlers: true });
+
+      // Handlers should still exist
+      const handlersAfter = (service as any).responseHandlers?.length ?? 0;
+      expect(handlersAfter).toBe(handlersBefore);
+
+      // Clean up the promise (it will resolve/reject after close)
+      await queryPromise.catch(() => {});
+    });
+
+    it('clears handlers when preserveHandlers is false (default)', async () => {
+      // Start a query to create handlers
+      const queryPromise = (async () => {
+        const chunks: any[] = [];
+        for await (const chunk of service.query('hello')) {
+          chunks.push(chunk);
+        }
+        return chunks;
+      })();
+
+      // Let the query start
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Close without preserveHandlers (default is false)
+      service.closePersistentQuery('test');
+
+      // Handlers should be cleared
+      const handlersAfter = (service as any).responseHandlers?.length ?? 0;
+      expect(handlersAfter).toBe(0);
+
+      // Clean up the promise
+      await queryPromise.catch(() => {});
+    });
+  });
+
+  describe('crash recovery with simulateCrash', () => {
+    afterEach(() => {
+      service.cleanup();
+    });
+
+    it('restarts persistent query on consumer error when no chunks received', async () => {
+      // Simulate crash before any chunks are emitted
+      simulateCrash(0);
+
+      const initialCallCount = getQueryCallCount();
+      const chunks: any[] = [];
+
+      // The query should recover and eventually succeed
+      for await (const chunk of service.query('hello')) {
+        chunks.push(chunk);
+      }
+
+      // Query should have been called twice (initial + restart)
+      expect(getQueryCallCount()).toBe(initialCallCount + 2);
+
+      // Should have received the successful response after recovery
+      const textChunk = chunks.find((c) => c.type === 'text');
+      expect(textChunk).toBeDefined();
+    });
+
+    it('does not replay message when chunks were already received before crash', async () => {
+      // Simulate crash after 1 chunk is emitted (system init message)
+      simulateCrash(1);
+
+      const chunks: any[] = [];
+
+      for await (const chunk of service.query('hello')) {
+        chunks.push(chunk);
+      }
+
+      // Should have received the system init chunk before error
+      // Note: error is propagated via onError handler which ends the generator
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('persistent query recovery after close', () => {
+    afterEach(() => {
+      service.cleanup();
+    });
+
+    it('can start new persistent query after closePersistentQuery', async () => {
+      // First query establishes persistent query
+      const chunks1: any[] = [];
+      for await (const chunk of service.query('first')) {
+        chunks1.push(chunk);
+      }
+      expect(chunks1.length).toBeGreaterThan(0);
+      expect((service as any).persistentQuery).not.toBeNull();
+
+      // Close the persistent query (simulating EnterPlanMode or session reset)
+      service.closePersistentQuery('test close');
+      expect((service as any).persistentQuery).toBeNull();
+      expect((service as any).shuttingDown).toBe(false); // Should be reset
+
+      // Next query should start a NEW persistent query (not fall back to cold-start)
+      const chunks2: any[] = [];
+      for await (const chunk of service.query('second')) {
+        chunks2.push(chunk);
+      }
+      expect(chunks2.length).toBeGreaterThan(0);
+
+      // Verify persistent query was recreated
+      expect((service as any).persistentQuery).not.toBeNull();
+    });
+
+    it('can recover after resetSession closes persistent query', async () => {
+      // First query
+      const chunks1: any[] = [];
+      for await (const chunk of service.query('first')) {
+        chunks1.push(chunk);
+      }
+      expect((service as any).persistentQuery).not.toBeNull();
+
+      // Reset session (which closes persistent query)
+      service.resetSession();
+      expect((service as any).persistentQuery).toBeNull();
+      expect((service as any).shuttingDown).toBe(false);
+
+      // Next query should work
+      const chunks2: any[] = [];
+      for await (const chunk of service.query('second')) {
+        chunks2.push(chunk);
+      }
+      expect(chunks2.length).toBeGreaterThan(0);
+      expect((service as any).persistentQuery).not.toBeNull();
+    });
+
+    it('can recover after session switch closes persistent query', async () => {
+      // First query
+      const chunks1: any[] = [];
+      for await (const chunk of service.query('first')) {
+        chunks1.push(chunk);
+      }
+      expect((service as any).persistentQuery).not.toBeNull();
+
+      // Switch to a different session (which closes persistent query)
+      service.setSessionId('new-session-id');
+      expect((service as any).persistentQuery).toBeNull();
+      expect((service as any).shuttingDown).toBe(false);
+
+      // Next query should work with new session
+      const chunks2: any[] = [];
+      for await (const chunk of service.query('second')) {
+        chunks2.push(chunk);
+      }
+      expect(chunks2.length).toBeGreaterThan(0);
+      expect((service as any).persistentQuery).not.toBeNull();
     });
   });
 

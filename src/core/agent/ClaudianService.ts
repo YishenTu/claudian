@@ -711,6 +711,10 @@ export class ClaudianService {
       this.currentAllowedTools = null;
       this.pendingCloseReason = null;
     }
+
+    // Reset shuttingDown flag so next query can start a new persistent query.
+    // This must be done after all cleanup to prevent race conditions with the consumer loop.
+    this.shuttingDown = false;
   }
 
   /**
@@ -1260,6 +1264,14 @@ export class ClaudianService {
 
     // Restore allowedTools in case restart cleared it
     this.currentAllowedTools = savedAllowedTools;
+
+    // Check if applyDynamicUpdates triggered a restart that failed
+    // (e.g., CLI path not found, vault path missing)
+    if (!this.persistentQuery || !this.messageChannel) {
+      console.warn('[ClaudianService] Persistent query lost after applyDynamicUpdates, falling back to cold-start');
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      return;
+    }
 
     // Build SDKUserMessage
     const message = this.buildSDKUserMessage(prompt, hydratedImages);

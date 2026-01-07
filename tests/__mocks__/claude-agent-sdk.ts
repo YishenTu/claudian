@@ -46,6 +46,11 @@ let lastResponse: (AsyncGenerator<any> & {
   setMcpServers: jest.Mock;
 }) | null = null;
 
+// Crash simulation control
+let shouldThrowOnIteration = false;
+let throwAfterChunks = 0;
+let queryCallCount = 0;
+
 // Allow tests to set custom mock messages
 export function setMockMessages(messages: any[]) {
   customMockMessages = messages;
@@ -55,6 +60,25 @@ export function resetMockMessages() {
   customMockMessages = null;
   lastOptions = undefined;
   lastResponse = null;
+  shouldThrowOnIteration = false;
+  throwAfterChunks = 0;
+  queryCallCount = 0;
+}
+
+/**
+ * Configure the mock to throw an error during iteration.
+ * @param afterChunks - Number of chunks to emit before throwing (0 = throw immediately)
+ */
+export function simulateCrash(afterChunks = 0) {
+  shouldThrowOnIteration = true;
+  throwAfterChunks = afterChunks;
+}
+
+/**
+ * Get the number of times query() was called (useful for verifying restart behavior).
+ */
+export function getQueryCallCount(): number {
+  return queryCallCount;
 }
 
 export function getLastOptions(): Options | undefined {
@@ -109,7 +133,16 @@ function getMessagesForPrompt(): any[] {
 }
 
 async function* emitMessages(messages: any[], options: Options) {
+  let chunksEmitted = 0;
+
   for (const msg of messages) {
+    // Check if we should throw (crash simulation)
+    if (shouldThrowOnIteration && chunksEmitted >= throwAfterChunks) {
+      // Reset for next query (allows recovery to work)
+      shouldThrowOnIteration = false;
+      throw new Error('Simulated consumer crash');
+    }
+
     // Check for tool_use in assistant messages and run hooks
     if (msg.type === 'assistant' && msg.message?.content) {
       let wasBlocked = false;
@@ -125,6 +158,7 @@ async function* emitMessages(messages: any[], options: Options) {
           if (hookResult.blocked) {
             // Yield the assistant message first (with tool_use)
             yield msg;
+            chunksEmitted++;
             // Then yield a blocked indicator as a user message with error
             yield {
               type: 'user',
@@ -134,6 +168,7 @@ async function* emitMessages(messages: any[], options: Options) {
               _blocked: true,
               _blockReason: hookResult.reason,
             };
+            chunksEmitted++;
             wasBlocked = true;
             break; // Exit inner loop since we already handled this message
           }
@@ -145,11 +180,13 @@ async function* emitMessages(messages: any[], options: Options) {
       }
     }
     yield msg;
+    chunksEmitted++;
   }
 }
 
 export function query({ prompt, options }: { prompt: any; options: Options }): AsyncGenerator<any> & { interrupt: () => Promise<void> } {
   lastOptions = options;
+  queryCallCount++;
 
   const generator = async function* () {
     if (isAsyncIterable(prompt)) {
