@@ -2790,6 +2790,32 @@ describe('ClaudianService', () => {
       const response2 = getLastResponse();
       expect(response2?.setMcpServers).toHaveBeenCalled();
     });
+
+    it('falls back to cold-start when restart fails during dynamic updates', async () => {
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+      expect((service as any).persistentQuery).not.toBeNull();
+
+      // Force a config change that requires restart
+      mockPlugin.settings.systemPrompt = 'restart-required';
+
+      // Allow query + applyDynamicUpdates, then fail restart due to missing CLI path
+      mockPlugin.getResolvedClaudeCliPath.mockReset();
+      mockPlugin.getResolvedClaudeCliPath
+        .mockReturnValueOnce('/mock/claude')
+        .mockReturnValueOnce('/mock/claude')
+        .mockReturnValueOnce(null);
+
+      const callCountBeforeSecond = getQueryCallCount();
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      expect(chunks2.some((c) => c.type === 'text')).toBe(true);
+      expect(getQueryCallCount()).toBe(callCountBeforeSecond + 1);
+      expect((service as any).persistentQuery).toBeNull();
+      expect((service as any).shuttingDown).toBe(false);
+    });
   });
 
   describe('persistent query crash recovery', () => {
