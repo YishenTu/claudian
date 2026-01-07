@@ -117,7 +117,7 @@ export class InlineEditService {
         ...customEnv,
         PATH: getEnhancedPath(customEnv.PATH, resolvedClaudePath),
       },
-      allowedTools: [...READ_ONLY_TOOLS],
+      tools: [...READ_ONLY_TOOLS], // Only read-only tools needed
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       hooks: {

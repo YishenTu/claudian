@@ -10,6 +10,7 @@ export interface Options {
   permissionMode?: string;
   allowDangerouslySkipPermissions?: boolean;
   model?: string;
+  tools?: string[];
   allowedTools?: string[];
   disallowedTools?: string[];
   abortController?: AbortController;
@@ -37,7 +38,13 @@ const mockMessages = [
 
 let customMockMessages: any[] | null = null;
 let lastOptions: Options | undefined;
-let lastResponse: (AsyncGenerator<any> & { interrupt: jest.Mock }) | null = null;
+let lastResponse: (AsyncGenerator<any> & {
+  interrupt: jest.Mock;
+  setModel: jest.Mock;
+  setMaxThinkingTokens: jest.Mock;
+  setPermissionMode: jest.Mock;
+  setMcpServers: jest.Mock;
+}) | null = null;
 
 // Allow tests to set custom mock messages
 export function setMockMessages(messages: any[]) {
@@ -54,7 +61,7 @@ export function getLastOptions(): Options | undefined {
   return lastOptions;
 }
 
-export function getLastResponse(): (AsyncGenerator<any> & { interrupt: jest.Mock }) | null {
+export function getLastResponse(): typeof lastResponse {
   return lastResponse;
 }
 
@@ -146,7 +153,8 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
 
   const generator = async function* () {
     if (isAsyncIterable(prompt)) {
-      for await (const _input of prompt) {
+      for await (const _ of prompt) {
+        void _; // Consume async iterable input
         const messages = getMessagesForPrompt();
         yield* emitMessages(messages, options);
       }

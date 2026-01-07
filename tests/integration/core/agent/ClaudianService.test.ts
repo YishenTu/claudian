@@ -865,6 +865,50 @@ describe('ClaudianService', () => {
 
       channel.close();
     });
+
+    it('delivers message when enqueue is called before next (no deadlock)', async () => {
+      const warnings: string[] = [];
+      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
+
+      // Enqueue BEFORE calling next() - this used to cause a deadlock
+      channel.enqueue(createTextUserMessage('early message'));
+
+      // Now call next() - it should pick up the queued message
+      const iterator = channel[Symbol.asyncIterator]();
+      const result = await iterator.next();
+
+      expect(result.done).toBe(false);
+      expect(result.value.message.content).toBe('early message');
+
+      channel.close();
+    });
+
+    it('handles multiple enqueues before first next (queued separately)', async () => {
+      const warnings: string[] = [];
+      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
+
+      // Enqueue multiple messages before any next() call
+      // When turnActive=false, messages queue separately (no merging)
+      channel.enqueue(createTextUserMessage('first'));
+      channel.enqueue(createTextUserMessage('second'));
+
+      const iterator = channel[Symbol.asyncIterator]();
+
+      // First next() gets first message, turns on turnActive
+      const first = await iterator.next();
+      expect(first.done).toBe(false);
+      expect(first.value.message.content).toBe('first');
+
+      // Complete turn so second message can be delivered
+      channel.onTurnComplete();
+
+      // Second next() gets second message
+      const second = await iterator.next();
+      expect(second.done).toBe(false);
+      expect(second.value.message.content).toBe('second');
+
+      channel.close();
+    });
   });
 
   describe('persistent query updates', () => {

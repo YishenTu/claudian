@@ -84,7 +84,7 @@ describe('TitleGenerationService', () => {
       await service.generateTitle('conv-123', 'test', 'response', callback);
 
       const options = getLastOptions();
-      expect(options?.allowedTools).toEqual([]);
+      expect(options?.tools).toEqual([]);
       expect(options?.permissionMode).toBe('bypassPermissions');
     });
 

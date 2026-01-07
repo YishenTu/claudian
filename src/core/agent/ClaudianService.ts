@@ -47,6 +47,18 @@ import {
   getActionDescription,
 } from '../security';
 import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL } from '../tools/toolNames';
+
+/**
+ * Tools that are always allowed regardless of allowedTools restriction.
+ * These are essential for agent-user interaction and plan mode flow.
+ * Used by both persistent query (canUseTool) and cold-start (options.tools).
+ */
+const ALWAYS_ALLOWED_TOOLS = [
+  TOOL_ASK_USER_QUESTION,
+  TOOL_ENTER_PLAN_MODE,
+  TOOL_EXIT_PLAN_MODE,
+  TOOL_SKILL,
+] as const;
 import type {
   AskUserQuestionCallback,
   AskUserQuestionInput,
@@ -233,15 +245,16 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
     const hasAttachments = this.messageHasAttachments(message);
 
     if (!this.turnActive) {
-      // No turn active - send immediately
-      this.turnActive = true;
       if (this.resolveNext) {
+        // Consumer is waiting - deliver immediately and mark turn active
+        this.turnActive = true;
         const resolve = this.resolveNext;
         this.resolveNext = null;
         this.rejectNext = null;
         resolve({ value: message, done: false });
       } else {
-        // Store for next pull
+        // No consumer waiting yet - queue for later pickup by next()
+        // Don't set turnActive here; next() will set it when it dequeues
         if (hasAttachments) {
           this.queue.push({ type: 'attachment', message });
         } else {
@@ -540,6 +553,9 @@ export class ClaudianService {
   private lastSentMessage: SDKUserMessage | null = null;
   private crashRecoveryAttempted = false;
 
+  // Deferred close: set when we want to close after current response ends (e.g., EnterPlanMode)
+  private pendingCloseReason: string | null = null;
+
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
     this.mcpManager = mcpManager;
@@ -664,6 +680,12 @@ export class ClaudianService {
     // Abort as backup
     this.queryAbortController?.abort();
 
+    // Notify all handlers before clearing so generators don't hang forever.
+    // This ensures queryViaPersistent() exits its while(!state.done) loop.
+    for (const handler of this.responseHandlers) {
+      handler.onDone();
+    }
+
     // Clear state
     this.persistentQuery = null;
     this.messageChannel = null;
@@ -672,6 +694,7 @@ export class ClaudianService {
     this.responseHandlers = [];
     this.currentConfig = null;
     this.currentAllowedTools = null;
+    this.pendingCloseReason = null;
   }
 
   /**
@@ -924,8 +947,14 @@ export class ClaudianService {
 
   /**
    * Routes an SDK message to the active response handler.
+   *
+   * Design: Only one handler exists at a time because MessageChannel enforces
+   * single-turn processing. When a turn is active, new messages are queued/merged.
+   * The next message only dequeues after onTurnComplete(), which calls onDone()
+   * on the current handler. A new handler is registered only when the next query starts.
    */
   private async routeMessage(message: SDKMessage): Promise<void> {
+    // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
     if (handler && this.isStreamTextEvent(message)) {
       handler.sawStreamText = true;
@@ -958,6 +987,13 @@ export class ClaudianService {
       if (handler) {
         handler.sawStreamText = false;
         handler.onDone();
+      }
+
+      // Handle deferred close (e.g., after EnterPlanMode)
+      if (this.pendingCloseReason) {
+        const reason = this.pendingCloseReason;
+        this.pendingCloseReason = null;
+        this.closePersistentQuery(reason);
       }
     }
   }
@@ -1143,14 +1179,28 @@ export class ClaudianService {
     const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
 
     // Set allowed tools for canUseTool enforcement (Phase 1.7)
-    if (queryOptions?.allowedTools && queryOptions.allowedTools.length > 0) {
-      this.currentAllowedTools = [...queryOptions.allowedTools, TOOL_SKILL];
+    // Match cold-start logic: undefined = no restriction, [] = no tools, [...] = restricted
+    if (queryOptions?.allowedTools !== undefined) {
+      if (queryOptions.allowedTools.length === 0) {
+        // Empty array: only always-allowed tools (handled in canUseTool)
+        this.currentAllowedTools = [];
+      } else {
+        // Non-empty: restrict to specified tools (include Skill for consistency)
+        this.currentAllowedTools = [...queryOptions.allowedTools, TOOL_SKILL];
+      }
     } else {
+      // Undefined: no restriction
       this.currentAllowedTools = null;
     }
 
+    // Save allowedTools before applyDynamicUpdates - restart would clear it
+    const savedAllowedTools = this.currentAllowedTools;
+
     // Apply dynamic updates before sending (Phase 1.6)
     await this.applyDynamicUpdates(queryOptions);
+
+    // Restore allowedTools in case restart cleared it
+    this.currentAllowedTools = savedAllowedTools;
 
     // Build SDKUserMessage
     const message = this.buildSDKUserMessage(prompt, hydratedImages);
@@ -1339,7 +1389,8 @@ export class ClaudianService {
     const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
     const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
     const mcpServers = this.mcpManager.getActiveServers(combinedMentions);
-    const mcpServersKey = Object.keys(mcpServers).sort().join('|');
+    // Include full config in key so config changes (not just name changes) trigger update
+    const mcpServersKey = JSON.stringify(mcpServers);
 
     if (this.currentConfig && mcpServersKey !== this.currentConfig.mcpServersKey) {
       console.log('[ClaudianService] Updating MCP servers');
@@ -1574,8 +1625,8 @@ export class ClaudianService {
     // Note: We don't use options.allowedTools as it's an auto-allow list, not a restriction
     if (queryOptions?.allowedTools !== undefined) {
       if (queryOptions.allowedTools.length === 0) {
-        // Empty array: disable all tools
-        options.tools = [];
+        // Empty array: only essential tools (consistent with persistent query behavior)
+        options.tools = [...ALWAYS_ALLOWED_TOOLS];
       } else {
         // Non-empty: restrict to specified tools (include Skill for consistency)
         options.tools = [...queryOptions.allowedTools, TOOL_SKILL];
@@ -1794,9 +1845,8 @@ export class ClaudianService {
       }
 
       // Phase 1.7: Enforce allowedTools restriction via canUseTool
-      // Always-allowed tools bypass the restriction
-      const alwaysAllowed: string[] = [TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL];
-      if (this.currentAllowedTools !== null && !alwaysAllowed.includes(toolName)) {
+      // ALWAYS_ALLOWED_TOOLS bypass the restriction (consistent with cold-start behavior)
+      if (this.currentAllowedTools !== null && !ALWAYS_ALLOWED_TOOLS.includes(toolName as typeof ALWAYS_ALLOWED_TOOLS[number])) {
         if (!this.currentAllowedTools.includes(toolName)) {
           return {
             behavior: 'deny',
@@ -1871,12 +1921,12 @@ export class ClaudianService {
 
   /**
    * Handle EnterPlanMode tool - notifies UI to activate plan mode after the reply ends.
-   * Closes persistent query since plan mode uses cold-start (Phase 3).
+   * Defers closing persistent query until response completes (Phase 3).
    */
   private async handleEnterPlanModeTool(): Promise<PermissionResult> {
-    // Close persistent query - plan mode will use cold-start
-    // We close it here so it's ready for the plan mode query after current response ends
-    this.closePersistentQuery('entering plan mode');
+    // Defer close until result arrives - don't interrupt mid-response
+    // This allows the agent to finish its response after calling EnterPlanMode
+    this.pendingCloseReason = 'entering plan mode';
 
     if (!this.enterPlanModeCallback) {
       // No callback - just allow the tool (UI will handle via stream detection)

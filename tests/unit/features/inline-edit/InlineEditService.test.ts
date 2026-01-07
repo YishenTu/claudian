@@ -343,16 +343,16 @@ describe('InlineEditService', () => {
       });
 
       const options = getLastOptions();
-      expect(options?.allowedTools).toContain('Read');
-      expect(options?.allowedTools).toContain('Grep');
-      expect(options?.allowedTools).toContain('Glob');
-      expect(options?.allowedTools).toContain('LS');
-      expect(options?.allowedTools).toContain('WebSearch');
-      expect(options?.allowedTools).toContain('WebFetch');
+      expect(options?.tools).toContain('Read');
+      expect(options?.tools).toContain('Grep');
+      expect(options?.tools).toContain('Glob');
+      expect(options?.tools).toContain('LS');
+      expect(options?.tools).toContain('WebSearch');
+      expect(options?.tools).toContain('WebFetch');
       // Should NOT include write tools
-      expect(options?.allowedTools).not.toContain('Write');
-      expect(options?.allowedTools).not.toContain('Edit');
-      expect(options?.allowedTools).not.toContain('Bash');
+      expect(options?.tools).not.toContain('Write');
+      expect(options?.tools).not.toContain('Edit');
+      expect(options?.tools).not.toContain('Bash');
     });
 
     it('should bypass permissions for read-only tools', async () => {

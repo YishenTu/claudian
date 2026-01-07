@@ -114,7 +114,7 @@ Generate a title for this conversation:`;
         ...envVars,
         PATH: getEnhancedPath(envVars.PATH, resolvedClaudePath),
       },
-      allowedTools: [], // No tools needed for title generation
+      tools: [], // No tools needed for title generation
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
     };

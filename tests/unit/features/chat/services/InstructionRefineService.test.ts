@@ -64,7 +64,7 @@ describe('InstructionRefineService', () => {
       expect(result.success).toBe(true);
 
       const options = getLastOptions();
-      expect(options?.allowedTools).toEqual(['Read', 'Grep', 'Glob']);
+      expect(options?.tools).toEqual([]);
       expect(options?.permissionMode).toBe('bypassPermissions');
       expect(options?.allowDangerouslySkipPermissions).toBe(true);
     });

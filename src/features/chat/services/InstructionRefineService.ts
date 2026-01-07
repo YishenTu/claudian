@@ -97,7 +97,7 @@ export class InstructionRefineService {
         ...customEnv,
         PATH: getEnhancedPath(customEnv.PATH, resolvedClaudePath),
       },
-      allowedTools: [...READ_ONLY_TOOLS],
+      tools: [], // No tools needed for instruction refinement
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       hooks: {
