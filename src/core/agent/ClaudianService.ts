@@ -61,8 +61,10 @@ import type {
 import { THINKING_BUDGETS } from '../types';
 
 /**
- * Tools that are always allowed regardless of allowedTools restriction.
+ * Tools that bypass the allowedTools restriction but have custom handling logic.
  * These are essential for agent-user interaction and plan mode flow.
+ * Note: These tools may still return 'deny' based on their specific handlers
+ * (e.g., AskUserQuestion on Escape, ExitPlanMode on cancel).
  * Used by both persistent query (canUseTool) and cold-start (options.tools).
  */
 const ALWAYS_ALLOWED_TOOLS = [
@@ -211,7 +213,7 @@ type PendingMessage = PendingTextMessage | PendingAttachmentMessage;
  * Rules:
  * - Single in-flight turn at a time
  * - Text-only messages merge with \n\n while a turn is active
- * - Non-text messages (images) are deferred until idle
+ * - Attachment messages (with images) queue one at a time; newer replaces older while turn is active
  * - Overflow policy: drop newest and warn
  */
 class MessageChannel implements AsyncIterable<SDKUserMessage> {
@@ -243,8 +245,8 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
 
   /**
    * Enqueue a message. If a turn is active:
-   * - Text-only: merge with queued text
-   * - With attachments: defer as single next message
+   * - Text-only: merge with queued text (up to MAX_MERGED_CHARS)
+   * - With attachments: replace any existing queued attachment (one at a time)
    */
   enqueue(message: SDKUserMessage): void {
     if (this.closed) {
@@ -298,13 +300,6 @@ class MessageChannel implements AsyncIterable<SDKUserMessage> {
       // Check merged size
       if (mergedContent.length > MESSAGE_CHANNEL_CONFIG.MAX_MERGED_CHARS) {
         this.onWarning(`[MessageChannel] Merged content exceeds ${MESSAGE_CHANNEL_CONFIG.MAX_MERGED_CHARS} chars, dropping newest`);
-        return;
-      }
-
-      // Check queue count (text counts as 1)
-      const textMessages = this.queue.filter(m => m.type === 'text').length;
-      if (textMessages >= MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES) {
-        this.onWarning(`[MessageChannel] Queue full (${MESSAGE_CHANNEL_CONFIG.MAX_QUEUED_MESSAGES}), dropping newest`);
         return;
       }
 
@@ -922,6 +917,9 @@ export class ClaudianService {
 
     this.responseConsumerRunning = true;
 
+    // Track which query this consumer is for, to detect if we were replaced
+    const queryForThisConsumer = this.persistentQuery;
+
     void (async () => {
       if (!this.persistentQuery) return;
 
@@ -938,8 +936,6 @@ export class ClaudianService {
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
           if (handler) {
             handler.onError(error instanceof Error ? error : new Error(String(error)));
-          } else {
-            console.error('[ClaudianService] Response consumer error with no handler to notify');
           }
 
           // Phase 1.3: Crash recovery - restart and re-send pending message once
@@ -958,15 +954,24 @@ export class ClaudianService {
             }
           } catch (restartError) {
             console.error('[ClaudianService] Crash recovery failed:', restartError);
+            const errorMessage = 'Crash recovery failed: ' +
+              (restartError instanceof Error ? restartError.message : String(restartError));
             // Notify handler of recovery failure if still present
             if (handler) {
-              handler.onError(new Error('Crash recovery failed: ' +
-                (restartError instanceof Error ? restartError.message : String(restartError))));
+              handler.onError(new Error(errorMessage));
+            } else {
+              // No handler to notify - store for future detection or log prominently
+              console.error('[ClaudianService] Crash recovery failed with no handler to notify:', errorMessage);
             }
           }
         }
       } finally {
-        this.responseConsumerRunning = false;
+        // Only clear the flag if this consumer wasn't replaced by a new one (e.g., after restart)
+        // If restartPersistentQuery() was called, it starts a new consumer which sets the flag true,
+        // so we shouldn't clear it here.
+        if (this.persistentQuery === queryForThisConsumer || this.persistentQuery === null) {
+          this.responseConsumerRunning = false;
+        }
       }
     })();
   }
@@ -1003,6 +1008,10 @@ export class ClaudianService {
           console.error('[ClaudianService] Chunk discarded - no handler registered:', {
             type: event.type,
             handlerCount: this.responseHandlers.length,
+            channelClosed: this.messageChannel?.isClosed() ?? 'no channel',
+            turnActive: this.messageChannel?.isTurnActive() ?? 'no channel',
+            shuttingDown: this.shuttingDown,
+            sessionId: this.sessionManager.getSessionId(),
           });
         }
       }
@@ -1373,6 +1382,17 @@ export class ClaudianService {
   private async applyDynamicUpdates(queryOptions?: QueryOptions): Promise<void> {
     if (!this.persistentQuery) return;
 
+    // Guard against null vaultPath/cliPath (shouldn't happen if persistentQuery exists, but be safe)
+    if (!this.vaultPath) {
+      console.warn('[ClaudianService] applyDynamicUpdates called without vaultPath');
+      return;
+    }
+    const cliPath = this.plugin.getResolvedClaudeCliPath();
+    if (!cliPath) {
+      console.warn('[ClaudianService] applyDynamicUpdates called without CLI path');
+      return;
+    }
+
     const selectedModel = queryOptions?.model || this.plugin.settings.model;
     const permissionMode = this.plugin.settings.permissionMode;
     const budgetSetting = this.plugin.settings.thinkingBudget;
@@ -1441,7 +1461,7 @@ export class ClaudianService {
     this.currentExternalContextPaths = queryOptions?.externalContextPaths || [];
 
     // Check for other changes that require restart
-    const newConfig = this.buildPersistentQueryConfig(this.vaultPath!, this.plugin.getResolvedClaudeCliPath()!);
+    const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath);
     if (this.needsRestart(newConfig)) {
       console.log('[ClaudianService] Configuration change requires restart');
       await this.restartPersistentQuery('configuration change');
