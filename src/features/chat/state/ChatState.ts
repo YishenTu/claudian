@@ -7,12 +7,10 @@
 
 import type { UsageInfo } from '../../../core/types';
 import type {
-  AskUserQuestionState,
   AsyncSubagentState,
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
-  PlanModeState,
   QueuedMessage,
   SubagentState,
   ThinkingBlockState,
@@ -38,14 +36,9 @@ function createInitialState(): ChatStateData {
     activeSubagents: new Map(),
     asyncSubagentStates: new Map(),
     writeEditStates: new Map(),
-    askUserQuestionStates: new Map(),
     usage: null,
     ignoreUsageUpdates: false,
     subagentsSpawnedThisStream: 0,
-    planModeState: null,
-    planModeRequested: false,
-    planModeActivationPending: false,
-    pendingPlanContent: null,
     currentTodos: null,
   };
 }
@@ -206,10 +199,6 @@ export class ChatState {
     return this.state.writeEditStates;
   }
 
-  get askUserQuestionStates(): Map<string, AskUserQuestionState> {
-    return this.state.askUserQuestionStates;
-  }
-
   // ============================================
   // Usage State
   // ============================================
@@ -237,51 +226,6 @@ export class ChatState {
 
   set subagentsSpawnedThisStream(value: number) {
     this.state.subagentsSpawnedThisStream = value;
-  }
-
-  // ============================================
-  // Plan Mode State
-  // ============================================
-
-  get planModeState(): PlanModeState | null {
-    return this.state.planModeState;
-  }
-
-  set planModeState(value: PlanModeState | null) {
-    this.state.planModeState = value;
-  }
-
-  /** Resets plan mode state. */
-  resetPlanModeState(): void {
-    this.state.planModeState = null;
-  }
-
-  get planModeRequested(): boolean {
-    return this.state.planModeRequested;
-  }
-
-  set planModeRequested(value: boolean) {
-    this.state.planModeRequested = value;
-  }
-
-  get planModeActivationPending(): boolean {
-    return this.state.planModeActivationPending;
-  }
-
-  set planModeActivationPending(value: boolean) {
-    this.state.planModeActivationPending = value;
-  }
-
-  // ============================================
-  // Pending Plan Content (for approval persistence)
-  // ============================================
-
-  get pendingPlanContent(): string | null {
-    return this.state.pendingPlanContent;
-  }
-
-  set pendingPlanContent(value: string | null) {
-    this.state.pendingPlanContent = value;
   }
 
   // ============================================
@@ -319,7 +263,6 @@ export class ChatState {
     this.state.activeSubagents.clear();
     this.state.asyncSubagentStates.clear();
     this.state.writeEditStates.clear();
-    this.state.askUserQuestionStates.clear();
   }
 
   /** Resets all state for a new conversation. */
@@ -328,8 +271,6 @@ export class ChatState {
     this.resetStreamingState();
     this.clearMaps();
     this.state.queuedMessage = null;
-    this.state.planModeRequested = false;
-    this.state.planModeActivationPending = false;
     this.usage = null;
     this.currentTodos = null;
   }

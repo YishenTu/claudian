@@ -5,14 +5,12 @@
  * instruction mode, and approval dialogs.
  */
 
-import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import type { ExitPlanModeDecision } from '../../../core/agent/ClaudianService';
 import { detectBuiltInCommand, type SlashCommandManager } from '../../../core/commands';
 import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
 import { TOOL_BASH } from '../../../core/tools/toolNames';
-import type { AskUserQuestionInput, ChatMessage, ImageAttachment } from '../../../core/types';
+import type { ChatMessage } from '../../../core/types';
 import { getBashToolBlockedCommands } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
@@ -22,9 +20,6 @@ import {
   InstructionModal,
   type InstructionModeManager,
   type McpServerSelector,
-  type PlanBanner,
-  showAskUserQuestionPanel,
-  showPlanApprovalPanel,
 } from '../../../ui';
 import { prependCurrentNote } from '../../../utils/context';
 import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
@@ -38,11 +33,6 @@ import type { QueryOptions } from '../state/types';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
-
-const PLAN_MODE_REQUEST_PREFIX =
-  'User requested plan mode. Call EnterPlanMode before responding.';
-const PLAN_MODE_CONTINUE_PROMPT =
-  'Continue in plan mode. Create a detailed, step-by-step implementation plan for the user\'s last request. Use read-only tools only. Call ExitPlanMode when the plan is ready.';
 
 /** Dependencies for InputController. */
 export interface InputControllerDeps {
@@ -63,25 +53,8 @@ export interface InputControllerDeps {
   getInstructionModeManager: () => InstructionModeManager | null;
   getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
-  getComponent: () => Component;
-  setPlanModeActive: (active: boolean) => void;
-  getPlanBanner: () => PlanBanner | null;
   generateId: () => string;
   resetContextMeter: () => void;
-}
-
-interface PlanModeResendPayload {
-  content: string;
-  displayContent?: string;
-  images?: ImageAttachment[];
-  currentNote?: string;
-  editorContext?: EditorSelectionContext | null;
-  queryOptions?: QueryOptions;
-}
-
-interface PlanModeSendOptions extends PlanModeResendPayload {
-  skipUserMessage?: boolean;
-  hidden?: boolean;
 }
 
 /**
@@ -101,7 +74,6 @@ export class InputController {
   /** Sends a message with optional editor context override. */
   async sendMessage(options?: {
     editorContextOverride?: EditorSelectionContext | null;
-    hidden?: boolean;
     content?: string;
     promptPrefix?: string;
   }): Promise<void> {
@@ -142,8 +114,6 @@ export class InputController {
           state.queuedMessage.images = [...(state.queuedMessage.images || []), ...images];
         }
         state.queuedMessage.editorContext = editorContext;
-        // Preserve hidden flag (once hidden, always hidden)
-        state.queuedMessage.hidden = state.queuedMessage.hidden || options?.hidden;
         if (promptPrefix) {
           state.queuedMessage.promptPrefix = state.queuedMessage.promptPrefix ?? promptPrefix;
         }
@@ -152,7 +122,6 @@ export class InputController {
           content,
           images,
           editorContext,
-          hidden: options?.hidden,
           promptPrefix,
         };
       }
@@ -275,12 +244,9 @@ export class InputController {
       timestamp: Date.now(),
       currentNote: currentNoteForMessage,
       images: imagesForMessage,
-      hidden: options?.hidden,
     };
     state.addMessage(userMsg);
-    if (!options?.hidden) {
-      renderer.addMessage(userMsg);
-    }
+    renderer.addMessage(userMsg);
 
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
@@ -352,8 +318,6 @@ export class InputController {
 
       await conversationController.save(true);
 
-      await this.activatePendingPlanMode();
-
       // Generate AI title after first complete exchange (user + assistant)
       await this.triggerTitleGeneration();
 
@@ -362,59 +326,8 @@ export class InputController {
   }
 
   // ============================================
-  // Plan Mode
+  // External Context Helpers
   // ============================================
-
-  setPlanModeRequested(active: boolean): void {
-    const { state } = this.deps;
-    if (state.planModeRequested === active) {
-      return;
-    }
-    state.planModeRequested = active;
-    this.deps.setPlanModeActive(active);
-  }
-
-  private ensurePlanModeState(agentInitiated: boolean): void {
-    const { state, plugin } = this.deps;
-    if (plugin.settings.permissionMode !== 'plan') {
-      return;
-    }
-    if (state.planModeState?.isActive) {
-      if (!state.planModeState.agentInitiated && agentInitiated) {
-        state.planModeState.agentInitiated = true;
-      }
-      return;
-    }
-    state.planModeState = {
-      isActive: true,
-      planFilePath: null,
-      planContent: null,
-      originalQuery: null,
-      agentInitiated,
-    };
-  }
-
-  private async activatePendingPlanMode(): Promise<void> {
-    const { plugin, state } = this.deps;
-    if (!state.planModeActivationPending) {
-      return;
-    }
-
-    state.planModeActivationPending = false;
-
-    if (plugin.settings.permissionMode !== 'plan') {
-      plugin.settings.lastNonPlanPermissionMode = plugin.settings.permissionMode;
-      plugin.settings.permissionMode = 'plan';
-      await plugin.saveSettings();
-    }
-
-    state.planModeRequested = false;
-    this.ensurePlanModeState(true);
-    plugin.agentService.setCurrentPlanFilePath(null);
-    this.deps.setPlanModeActive(true);
-
-    await this.sendMessageWithPlanMode({ content: PLAN_MODE_CONTINUE_PROMPT, hidden: true });
-  }
 
   private prependExternalContexts(prompt: string, externalContextPaths?: string[] | null): string {
     if (!externalContextPaths || externalContextPaths.length === 0) {
@@ -430,244 +343,6 @@ export class InputController {
 
     const tag = `<external_contexts>\n${uniquePaths.join('\n')}\n</external_contexts>`;
     return `${tag}\n\n${prompt}`;
-  }
-
-  private async exitPlanPermissionMode(): Promise<void> {
-    const { plugin, state } = this.deps;
-    const restored = plugin.settings.lastNonPlanPermissionMode ?? 'yolo';
-    if (plugin.settings.permissionMode === 'plan') {
-      plugin.settings.permissionMode = restored;
-      plugin.settings.lastNonPlanPermissionMode = restored;
-      await plugin.saveSettings();
-    }
-    state.resetPlanModeState();
-    state.planModeRequested = false;
-    state.planModeActivationPending = false;
-    this.deps.setPlanModeActive(false);
-  }
-
-  /** Sends a message in plan mode (read-only exploration). */
-  async sendPlanModeMessage(): Promise<void> {
-    const { state, plugin } = this.deps;
-    const inputEl = this.deps.getInputEl();
-
-    const content = inputEl.value.trim();
-    if (!content) return;
-
-    // Cannot enter plan mode while streaming
-    if (state.isStreaming) {
-      new Notice('Cannot request plan mode while agent is working');
-      return;
-    }
-
-    if (plugin.settings.permissionMode === 'plan') {
-      // Clear any stale plan file path before starting a new plan mode session
-      plugin.agentService.setCurrentPlanFilePath(null);
-      // Preserve existing agentInitiated value, default to false (user-initiated) if unknown
-      const wasAgentInitiated = state.planModeState?.agentInitiated ?? false;
-      this.ensurePlanModeState(wasAgentInitiated);
-
-      // Set plan mode state (agent determines plan file path)
-      state.planModeState = {
-        isActive: true,
-        planFilePath: null,
-        planContent: null,
-        originalQuery: content,
-        agentInitiated: wasAgentInitiated,
-      };
-
-      // Clear input and send
-      inputEl.value = '';
-      await this.sendMessageWithPlanMode({ content });
-      return;
-    }
-
-    await this.sendMessage({ promptPrefix: PLAN_MODE_REQUEST_PREFIX });
-  }
-
-  /**
-   * Handles agent-initiated EnterPlanMode tool call.
-   * Sets up state for re-sending with plan mode after current stream ends.
-   */
-  async handleEnterPlanMode(): Promise<void> {
-    const { state, plugin } = this.deps;
-
-    if (plugin.settings.permissionMode === 'plan') {
-      this.ensurePlanModeState(true);
-      return;
-    }
-
-    state.planModeActivationPending = true;
-  }
-
-  /** Internal: sends message with plan mode options. */
-  private async sendMessageWithPlanMode(options?: PlanModeSendOptions): Promise<void> {
-    const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
-    const inputEl = this.deps.getInputEl();
-    const imageContextManager = this.deps.getImageContextManager();
-    const fileContextManager = this.deps.getFileContextManager();
-    const mcpServerSelector = this.deps.getMcpServerSelector();
-    const externalContextSelector = this.deps.getExternalContextSelector();
-    if (plugin.settings.permissionMode !== 'plan') {
-      await this.sendMessage({ promptPrefix: PLAN_MODE_REQUEST_PREFIX });
-      return;
-    }
-    // Preserve existing agentInitiated value, default to false (user-initiated) if unknown
-    this.ensurePlanModeState(state.planModeState?.agentInitiated ?? false);
-
-    const content = (options?.content ?? inputEl.value).trim();
-    if (!content) return;
-
-    const skipUserMessage = options?.skipUserMessage ?? false;
-    if (options?.content === undefined) {
-      inputEl.value = '';
-    }
-    state.isStreaming = true;
-    state.cancelRequested = false;
-    state.ignoreUsageUpdates = false; // Allow usage updates for new query
-    state.subagentsSpawnedThisStream = 0; // Reset subagent counter for new query
-
-    // Hide welcome message
-    const welcomeEl = this.deps.getWelcomeEl();
-    if (welcomeEl) {
-      welcomeEl.style.display = 'none';
-    }
-
-    fileContextManager?.startSession();
-
-    const images = skipUserMessage
-      ? (options?.images ?? [])
-      : (options?.images ?? (imageContextManager?.getAttachedImages() || []));
-    const imagesForMessage = images.length > 0 ? [...images] : undefined;
-    if (!skipUserMessage && !options?.images) {
-      imageContextManager?.clearImages();
-    }
-
-    let currentNote: string | null = null;
-    let shouldSendCurrentNote = false;
-    let currentNoteForMessage: string | undefined;
-    if (skipUserMessage || options?.currentNote) {
-      currentNote = options?.currentNote || null;
-    } else {
-      currentNote = fileContextManager?.getCurrentNotePath() || null;
-    }
-    shouldSendCurrentNote = fileContextManager?.shouldSendCurrentNote(currentNote) ?? false;
-    if (shouldSendCurrentNote && currentNote) {
-      currentNoteForMessage = currentNote;
-    }
-
-    const editorContext = options?.editorContext ?? selectionController.getContext();
-
-    // Wrap query in XML tag with plan mode context
-    // Note: The system prompt already includes full plan mode instructions
-    let promptToSend = `[Plan Mode]
-Explore the codebase and create an implementation plan. Call the ExitPlanMode tool when the plan is ready for user approval.
-
-<query>
-${content}
-</query>`;
-    if (editorContext) {
-      promptToSend = prependEditorContext(promptToSend, editorContext);
-    }
-
-    if (shouldSendCurrentNote && currentNote) {
-      promptToSend = prependCurrentNote(promptToSend, currentNote);
-      currentNoteForMessage = currentNote;
-    }
-
-    const externalContextPaths = externalContextSelector?.getExternalContexts();
-    promptToSend = this.prependExternalContexts(promptToSend, externalContextPaths);
-
-    fileContextManager?.markCurrentNoteSent();
-
-    if (!skipUserMessage) {
-      const displayContent = options?.displayContent ?? content;
-      const userMsg: ChatMessage = {
-        id: this.deps.generateId(),
-        role: 'user',
-        content,
-        displayContent: displayContent !== content ? displayContent : undefined,
-        timestamp: Date.now(),
-        currentNote: currentNoteForMessage,
-        images: imagesForMessage,
-        hidden: options?.hidden,
-      };
-      state.addMessage(userMsg);
-      if (!options?.hidden) {
-        renderer.addMessage(userMsg);
-      }
-    }
-    const assistantMsg: ChatMessage = {
-      id: this.deps.generateId(),
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      toolCalls: [],
-      contentBlocks: [],
-    };
-    state.addMessage(assistantMsg);
-    const msgEl = renderer.addMessage(assistantMsg);
-    const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement;
-
-    state.toolCallElements.clear();
-    state.currentContentEl = contentEl;
-    state.currentTextEl = null;
-    state.currentTextContent = '';
-
-    streamController.showThinkingIndicator(contentEl);
-
-    // Build query options with plan mode
-    const mcpMentions = plugin.mcpService.extractMentions(promptToSend);
-
-    // Transform @mcpname to @mcpname MCP in API request only
-    promptToSend = plugin.mcpService.transformMentions(promptToSend);
-
-    const enabledMcpServers = mcpServerSelector?.getEnabledServers();
-
-    const queryOptions = {
-      ...options?.queryOptions,
-      planMode: true,
-      mcpMentions,
-      enabledMcpServers,
-    };
-    if (externalContextPaths && externalContextPaths.length > 0) {
-      queryOptions.externalContextPaths = externalContextPaths;
-    }
-
-    let wasInterrupted = false;
-    try {
-      for await (const chunk of plugin.agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
-        if (state.cancelRequested) {
-          wasInterrupted = true;
-          break;
-        }
-        await streamController.handleStreamChunk(chunk, assistantMsg);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
-    } finally {
-      if (wasInterrupted) {
-        await streamController.appendText('\n\n<span class="claudian-interrupted">Plan mode interrupted</span>');
-        plugin.agentService.setCurrentPlanFilePath(null);
-      }
-      streamController.hideThinkingIndicator();
-      state.isStreaming = false;
-      state.cancelRequested = false;
-      state.currentContentEl = null;
-
-      streamController.finalizeCurrentThinkingBlock(assistantMsg);
-      streamController.finalizeCurrentTextBlock(assistantMsg);
-      state.activeSubagents.clear();
-
-      await conversationController.save(true);
-      await this.activatePendingPlanMode();
-
-      // Generate AI title after first complete plan mode exchange
-      await this.triggerTitleGeneration({ isPlanMode: true });
-
-      this.processQueuedMessage();
-    }
   }
 
   // ============================================
@@ -710,18 +385,9 @@ ${content}
     const { state } = this.deps;
     if (!state.queuedMessage) return;
 
-    const { content, images, editorContext, hidden, promptPrefix } = state.queuedMessage;
+    const { content, images, editorContext, promptPrefix } = state.queuedMessage;
     state.queuedMessage = null;
     this.updateQueueIndicator();
-
-    const isPlanMode = this.deps.plugin.settings.permissionMode === 'plan';
-    if (isPlanMode) {
-      setTimeout(
-        () => this.sendMessageWithPlanMode({ content, images, editorContext, hidden }),
-        0
-      );
-      return;
-    }
 
     const inputEl = this.deps.getInputEl();
     inputEl.value = content;
@@ -729,7 +395,7 @@ ${content}
       this.deps.getImageContextManager()?.setImages(images);
     }
 
-    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, hidden, promptPrefix }), 0);
+    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, promptPrefix }), 0);
   }
 
   // ============================================
@@ -740,9 +406,8 @@ ${content}
    * Triggers AI title generation after first exchange.
    * Handles setting fallback title, firing async generation, and updating UI.
    */
-  private async triggerTitleGeneration(options: { isPlanMode?: boolean } = {}): Promise<void> {
+  private async triggerTitleGeneration(): Promise<void> {
     const { plugin, state, conversationController } = this.deps;
-    const { isPlanMode = false } = options;
 
     if (state.messages.length !== 2 || !state.currentConversationId) {
       return;
@@ -767,8 +432,7 @@ ${content}
 
     // Set immediate fallback title
     const fallbackTitle = conversationController.generateFallbackTitle(userContent);
-    const displayTitle = isPlanMode ? `[Plan] ${fallbackTitle}` : fallbackTitle;
-    await plugin.renameConversation(state.currentConversationId, displayTitle);
+    await plugin.renameConversation(state.currentConversationId, fallbackTitle);
 
     if (!plugin.settings.enableAutoTitleGeneration) {
       return;
@@ -786,7 +450,7 @@ ${content}
     conversationController.updateHistoryDropdown();
 
     const convId = state.currentConversationId;
-    const expectedTitle = displayTitle; // Store to check if user renamed during generation
+    const expectedTitle = fallbackTitle; // Store to check if user renamed during generation
 
     titleService.generateTitle(
       convId,
@@ -801,8 +465,7 @@ ${content}
         const userManuallyRenamed = currentConv.title !== expectedTitle;
 
         if (result.success && !userManuallyRenamed) {
-          const newTitle = isPlanMode ? `[Plan] ${result.title}` : result.title;
-          await plugin.renameConversation(conversationId, newTitle);
+          await plugin.renameConversation(conversationId, result.title);
           await plugin.updateConversation(conversationId, { titleGenerationStatus: 'success' });
         } else if (!userManuallyRenamed) {
           // Keep fallback title, mark as failed (only if user hasn't renamed)
@@ -963,220 +626,6 @@ ${content}
       );
       modal.open();
     });
-  }
-
-  /** Handles AskUserQuestion tool calls by showing a floating panel. */
-  async handleAskUserQuestion(input: AskUserQuestionInput): Promise<Record<string, string | string[]> | null> {
-    const { plugin } = this.deps;
-
-    // Get the container element (the claudian view container)
-    const messagesEl = this.deps.getMessagesEl();
-    const containerEl = messagesEl.parentElement;
-    if (!containerEl) {
-      return null;
-    }
-
-    return showAskUserQuestionPanel(plugin.app, containerEl, input);
-  }
-
-  // ============================================
-  // Plan Mode Approval
-  // ============================================
-
-  /** Handles ExitPlanMode tool by showing plan approval panel. */
-  async handleExitPlanMode(planContent: string): Promise<ExitPlanModeDecision> {
-    const { state, renderer, conversationController, streamController } = this.deps;
-
-    // Get the container element (the claudian view container)
-    const messagesEl = this.deps.getMessagesEl();
-    const containerEl = messagesEl.parentElement;
-    if (!containerEl) {
-      return { decision: 'cancel' };
-    }
-
-    // Store plan content in state
-    if (state.planModeState) {
-      state.planModeState.planContent = planContent;
-    }
-
-    // Hide the thinking indicator from the original (empty) assistant message
-    // before adding the plan message. This prevents it from appearing above
-    // the plan when revision is selected.
-    streamController.hideThinkingIndicator();
-
-    // Add plan as a chat message with distinct styling
-    const planMsg: ChatMessage = {
-      id: this.deps.generateId(),
-      role: 'assistant',
-      content: planContent,
-      timestamp: Date.now(),
-      isPlanMessage: true,
-    };
-    state.addMessage(planMsg);
-    renderer.addMessage(planMsg);
-    // Render the plan content with special styling
-    const lastMsgEl = messagesEl.lastElementChild;
-    if (lastMsgEl) {
-      lastMsgEl.classList.add('claudian-message-plan');
-      const contentEl = lastMsgEl.querySelector('.claudian-message-content') as HTMLElement;
-      if (contentEl) {
-        const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
-        await renderer.renderContent(textEl, planContent);
-        // Update currentContentEl to point to the plan message's content.
-        // This ensures that if revision is selected and the stream continues,
-        // new content (including thinking indicator) will appear below the plan.
-        state.currentContentEl = contentEl;
-        state.currentTextEl = null;
-        state.currentTextContent = '';
-        state.currentThinkingState = null;
-      }
-    }
-
-    // Scroll to bottom to show the plan
-    renderer.scrollToBottom();
-
-    // Save pending plan content to state and persist to conversation
-    state.pendingPlanContent = planContent;
-    await conversationController.save();
-
-    // Show approval panel and handle decision
-    return this.showApprovalPanelAndHandleDecision(planContent, containerEl);
-  }
-
-  /**
-   * Restores pending plan approval panel when loading a conversation.
-   * Called when a conversation with pendingPlanContent is loaded.
-   */
-  restorePendingPlanApproval(planContent: string): void {
-    const messagesEl = this.deps.getMessagesEl();
-    const containerEl = messagesEl.parentElement;
-    if (!containerEl) {
-      return;
-    }
-
-    // Show approval panel (plan message is already in chat from saved messages)
-    void this.showApprovalPanelAndHandleDecision(planContent, containerEl);
-  }
-
-  /** Shows approval panel and handles the decision. */
-  private async showApprovalPanelAndHandleDecision(
-    planContent: string,
-    containerEl: HTMLElement
-  ): Promise<ExitPlanModeDecision> {
-    const { plugin, state, conversationController } = this.deps;
-
-    // Show approval panel (buttons only, plan is already in chat)
-    const result = await showPlanApprovalPanel(
-      plugin.app,
-      containerEl,
-      planContent,
-      this.deps.getComponent()
-    );
-
-    // Clear pending plan content after any decision
-    state.pendingPlanContent = null;
-
-    if (result.decision === 'approve') {
-      // Add approval indicator
-      this.addApprovalIndicator('approve');
-      // Store approved plan content for system prompt
-      plugin.agentService.setApprovedPlanContent(planContent);
-      // Show the plan banner
-      const planBanner = this.deps.getPlanBanner();
-      if (planBanner) {
-        void planBanner.show(planContent);
-      }
-      // Exit plan mode and restore permission settings
-      await this.exitPlanPermissionMode();
-      plugin.agentService.setCurrentPlanFilePath(null);
-      // Save conversation to clear pending and set approved
-      await conversationController.save();
-      // Auto-send implementation prompt (hidden from UI)
-      setTimeout(
-        () => this.sendMessage({ hidden: true, content: 'Please implement the approved plan.' }),
-        100
-      );
-      return { decision: 'approve' };
-    } else if (result.decision === 'approve_new_session') {
-      // Add approval indicator
-      this.addApprovalIndicator('approve_new_session');
-      // Show the plan banner
-      const planBanner = this.deps.getPlanBanner();
-      if (planBanner) {
-        void planBanner.show(planContent);
-      }
-      // Exit plan mode and restore permission settings
-      await this.exitPlanPermissionMode();
-      plugin.agentService.setCurrentPlanFilePath(null);
-      // RESET SESSION for fresh context window
-      plugin.agentService.resetSession();
-      // Store approved plan content AFTER reset (resetSession clears it)
-      plugin.agentService.setApprovedPlanContent(planContent);
-      // Ignore any further usage updates from the old stream
-      state.ignoreUsageUpdates = true;
-      // Clear usage and reset the context meter (fresh session)
-      state.usage = null;
-      this.deps.resetContextMeter();
-      // Save conversation to clear pending and set approved (sessionId will be null)
-      await conversationController.save();
-      // Auto-send implementation prompt (hidden from UI)
-      setTimeout(
-        () => this.sendMessage({ hidden: true, content: 'Please implement the approved plan.' }),
-        100
-      );
-      return { decision: 'approve_new_session' };
-    } else if (result.decision === 'revise') {
-      // Add approval indicator with feedback
-      this.addApprovalIndicator('revise', result.feedback);
-      // Save conversation to clear pending (new plan will be generated)
-      await conversationController.save();
-      // Clear plan file path to avoid reusing stale content on revise
-      plugin.agentService.setCurrentPlanFilePath(null);
-      // Auto-send feedback as hidden plan mode message (indicator already shows it)
-      setTimeout(
-        () => this.sendMessageWithPlanMode({ content: result.feedback, hidden: true, images: [] }),
-        100
-      );
-      return { decision: 'revise', feedback: result.feedback };
-    } else {
-      // Cancel (Esc) - plan mode stays active, user can continue chatting or revise
-      // Only clear the plan file path so a new plan can be generated
-      plugin.agentService.setCurrentPlanFilePath(null);
-      // Save conversation to clear pending
-      await conversationController.save();
-      return { decision: 'cancel' };
-    }
-  }
-
-  /** Hides the plan banner. */
-  hidePlanBanner(): void {
-    const planBanner = this.deps.getPlanBanner();
-    if (planBanner) {
-      planBanner.hide();
-    }
-  }
-
-  /** Adds an approval indicator message to the chat. */
-  private addApprovalIndicator(
-    type: 'approve' | 'approve_new_session' | 'revise',
-    feedback?: string
-  ): void {
-    const { state, renderer } = this.deps;
-
-    const indicatorMsg: ChatMessage = {
-      id: `indicator-${Date.now()}`,
-      role: 'user',
-      content: '', // Empty content, rendered via approvalIndicator
-      timestamp: Date.now(),
-      approvalIndicator: {
-        type,
-        feedback,
-      },
-    };
-
-    state.addMessage(indicatorMsg);
-    renderer.addMessage(indicatorMsg);
-    renderer.scrollToBottom();
   }
 
   // ============================================

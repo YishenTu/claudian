@@ -5,20 +5,18 @@
  * state tracking, and thinking indicator display.
  */
 
-import { isPlanModeTool, isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
   addSubagentToolCall,
   appendThinkingContent,
   type AsyncSubagentState,
-  createAskUserQuestionBlock,
   createAsyncSubagentBlock,
   createSubagentBlock,
   createThinkingBlock,
   createWriteEditBlock,
   type FileContextManager,
-  finalizeAskUserQuestionBlock,
   finalizeAsyncSubagent,
   finalizeSubagentBlock,
   finalizeThinkingBlock,
@@ -26,7 +24,6 @@ import {
   getToolLabel,
   isBlockedToolResult,
   markAsyncSubagentOrphaned,
-  parseAskUserQuestionInput,
   parseTodoInput,
   renderToolCall,
   type SubagentState,
@@ -49,8 +46,6 @@ export interface StreamControllerDeps {
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
-  /** Callback to set plan mode active (for UI toggle sync). */
-  setPlanModeActive: (active: boolean) => void;
 }
 
 /**
@@ -120,17 +115,6 @@ export class StreamController {
           break;
         }
 
-        if (chunk.name === TOOL_ASK_USER_QUESTION) {
-          this.handleAskUserQuestionToolUse(chunk, msg);
-          break;
-        }
-
-        // Handle plan mode tools (EnterPlanMode, ExitPlanMode)
-        if (isPlanModeTool(chunk.name)) {
-          // Skip rendering - these tools are invisible to the user
-          break;
-        }
-
         this.handleRegularToolUse(chunk, msg);
         break;
       }
@@ -184,13 +168,7 @@ export class StreamController {
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): void {
-    const { plugin, state } = this.deps;
-
-    // Skip rendering Write/Edit tools during plan mode (read-only mode)
-    const isPlanMode = plugin.settings.permissionMode === 'plan';
-    if (isPlanMode && isWriteEditTool(chunk.name)) {
-      return;
-    }
+    const { state } = this.deps;
 
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (existingToolCall) {
@@ -255,47 +233,6 @@ export class StreamController {
     }
   }
 
-  /** Handles AskUserQuestion tool_use chunks. */
-  private handleAskUserQuestionToolUse(
-    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
-    msg: ChatMessage
-  ): void {
-    const { state } = this.deps;
-    if (!state.currentContentEl) return;
-
-    // Check for existing AskUserQuestion (input update during streaming)
-    const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
-    if (existingToolCall) {
-      const newInput = chunk.input || {};
-      if (Object.keys(newInput).length > 0) {
-        // Update input so questions are available when finalized
-        existingToolCall.input = { ...existingToolCall.input, ...newInput };
-      }
-      return;
-    }
-
-    const toolCall: ToolCallInfo = {
-      id: chunk.id,
-      name: chunk.name,
-      input: chunk.input,
-      status: 'running',
-      isExpanded: false,
-    };
-    msg.toolCalls = msg.toolCalls || [];
-    msg.toolCalls.push(toolCall);
-
-    msg.contentBlocks = msg.contentBlocks || [];
-    msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
-
-    const askQuestionState = createAskUserQuestionBlock(state.currentContentEl, toolCall);
-    state.askUserQuestionStates.set(chunk.id, askQuestionState);
-    state.toolCallElements.set(chunk.id, askQuestionState.wrapperEl);
-
-    if (state.currentContentEl) {
-      this.showThinkingIndicator(state.currentContentEl);
-    }
-  }
-
   /** Handles tool_result chunks. */
   private handleToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
@@ -327,46 +264,6 @@ export class StreamController {
     }
 
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
-    const askQuestionState = state.askUserQuestionStates.get(chunk.id);
-
-    // Check if it's an AskUserQuestion result
-    if (existingToolCall?.name === TOOL_ASK_USER_QUESTION || askQuestionState) {
-      const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
-      if (existingToolCall) {
-        existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
-        existingToolCall.result = chunk.content;
-      }
-
-      // Get answers from stored map (set by ClaudianService callback)
-      const storedAnswers = plugin.agentService.getAskUserQuestionAnswers(chunk.id);
-      const parsed = existingToolCall ? parseAskUserQuestionInput(existingToolCall.input) : null;
-
-      // Use stored answers, or fall back to parsed from input
-      const answers = storedAnswers || parsed?.answers;
-
-      // Store answers back into input for session persistence
-      if (existingToolCall && answers) {
-        existingToolCall.input = { ...existingToolCall.input, answers };
-      }
-
-      if (askQuestionState && existingToolCall) {
-        finalizeAskUserQuestionBlock(
-          askQuestionState,
-          answers,
-          chunk.isError || isBlocked,
-          parsed?.questions
-        );
-      }
-
-      if (askQuestionState) {
-        state.askUserQuestionStates.delete(chunk.id);
-      }
-
-      if (state.currentContentEl) {
-        this.showThinkingIndicator(state.currentContentEl);
-      }
-      return;
-    }
 
     // Regular tool result
     const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);

@@ -9,7 +9,8 @@ import type {
   ClaudianMcpServer,
   PermissionMode,
   ThinkingBudget,
-  UsageInfo} from '../../core/types';
+  UsageInfo
+} from '../../core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
   THINKING_BUDGETS
@@ -24,7 +25,6 @@ export interface ToolbarSettings {
   model: ClaudeModel;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
-  lastNonPlanPermissionMode?: 'yolo' | 'normal';
 }
 
 /** Callback interface for toolbar changes. */
@@ -34,10 +34,6 @@ export interface ToolbarCallbacks {
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
-  /** Whether plan mode was initiated by the agent (EnterPlanMode tool). */
-  isAgentInitiatedPlanMode?: () => boolean;
-  /** Whether the user has requested plan mode (UI/prefix only). */
-  isPlanModeRequested?: () => boolean;
 }
 
 /** Model selector dropdown component. */
@@ -182,13 +178,12 @@ export class ThinkingBudgetSelector {
   }
 }
 
-/** Permission mode toggle (YOLO/Safe/Plan). */
+/** Permission mode toggle (YOLO/Safe). */
 export class PermissionToggle {
   private container: HTMLElement;
   private toggleEl: HTMLElement | null = null;
   private labelEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
-  private onPlanModeToggle: ((active: boolean) => void) | null = null;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -205,55 +200,11 @@ export class PermissionToggle {
     this.updateDisplay();
 
     this.toggleEl.addEventListener('click', () => this.toggle());
-    // Container click while in plan mode (do not allow exit)
-    this.container.addEventListener('click', (e) => {
-      if (this.isPlanModeLocked() && e.target !== this.toggleEl) {
-        new Notice('Plan mode is active until the plan is approved.');
-      }
-    });
-  }
-
-  /** Set callback for plan mode toggle. */
-  setOnPlanModeToggle(callback: (active: boolean) => void) {
-    this.onPlanModeToggle = callback;
-  }
-
-  /** Set plan mode active state. */
-  setPlanModeActive(_active: boolean) {
-    this.updateDisplay();
-  }
-
-  /** Check if plan mode is active. */
-  isPlanModeActive(): boolean {
-    return this.isPlanModeLocked() || this.isPlanModeRequested();
-  }
-
-  private isPlanModeLocked(): boolean {
-    return this.callbacks.getSettings().permissionMode === 'plan';
-  }
-
-  private isPlanModeRequested(): boolean {
-    return this.callbacks.isPlanModeRequested?.() ?? false;
   }
 
   updateDisplay() {
     if (!this.toggleEl || !this.labelEl) return;
 
-    // Plan mode takes precedence
-    if (this.isPlanModeActive()) {
-      this.toggleEl.removeClass('active');
-      this.container.addClass('plan-mode');
-      // Show pause icon (two vertical bars) + "Plan Mode"
-      this.labelEl.empty();
-      const iconEl = this.labelEl.createSpan({ cls: 'claudian-plan-mode-icon' });
-      iconEl.textContent = '▎▎';
-      iconEl.style.fontSize = '0.8em';
-      iconEl.style.letterSpacing = '-4px';
-      this.labelEl.createSpan({ text: 'Plan Mode' });
-      return;
-    }
-
-    this.container.removeClass('plan-mode');
     const isYolo = this.callbacks.getSettings().permissionMode === 'yolo';
 
     if (isYolo) {
@@ -266,26 +217,9 @@ export class PermissionToggle {
   }
 
   private async toggle() {
-    // If in plan mode, do not allow exit
-    if (this.isPlanModeLocked()) {
-      new Notice('Plan mode is active until the plan is approved.');
-      return;
-    }
-
     const current = this.callbacks.getSettings().permissionMode;
     const newMode: PermissionMode = current === 'yolo' ? 'normal' : 'yolo';
     await this.callbacks.onPermissionModeChange(newMode);
-    this.updateDisplay();
-  }
-
-  /** Toggle plan mode on/off. */
-  async togglePlanMode() {
-    if (this.isPlanModeLocked()) {
-      new Notice('Plan mode is active until the plan is approved.');
-      return;
-    }
-    const nextRequested = !this.isPlanModeRequested();
-    this.onPlanModeToggle?.(nextRequested);
     this.updateDisplay();
   }
 }

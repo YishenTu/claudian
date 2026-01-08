@@ -44,15 +44,6 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];
-  /** Whether this is a plan message (for distinct styling). */
-  isPlanMessage?: boolean;
-  /** Whether this message should be hidden from the UI. */
-  hidden?: boolean;
-  /** Approval indicator for plan mode decisions. */
-  approvalIndicator?: {
-    type: 'approve' | 'approve_new_session' | 'revise';
-    feedback?: string; // For revise
-  };
 }
 
 /** Persisted conversation with messages and session state. */
@@ -70,12 +61,6 @@ export interface Conversation {
   externalContextPaths?: string[];
   /** Context window usage information. */
   usage?: UsageInfo;
-  /** Approved implementation plan for this conversation. */
-  approvedPlan?: string;
-  /** Pending plan content awaiting user approval. */
-  pendingPlanContent?: string;
-  /** Whether this conversation is currently in plan mode (agent exploring/generating plan). */
-  isInPlanMode?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */

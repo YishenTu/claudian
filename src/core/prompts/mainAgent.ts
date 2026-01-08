@@ -13,10 +13,6 @@ export interface SystemPromptSettings {
   allowedExportPaths?: string[];
   vaultPath?: string;
   hasEditorContext?: boolean;
-  /** Whether this query is in plan mode (read-only exploration). */
-  planMode?: boolean;
-  /** Approved plan content to append (from plan mode approval). */
-  appendedPlan?: string;
 }
 
 /** Returns the base system prompt with core instructions. */
@@ -97,7 +93,7 @@ Examples:
 
 ## Tool Usage Guidelines
 
-Standard tools (Read, Write, Edit, Glob, Grep, LS, Bash, WebSearch, WebFetch, Skills, AskUserQuestion) work as expected.
+Standard tools (Read, Write, Edit, Glob, Grep, LS, Bash, WebSearch, WebFetch, Skills) work as expected.
 
 **Thinking Process:**
 Before taking action, explicitly THINK about:
@@ -283,37 +279,6 @@ cp ./note.md ~/Desktop/note.md
 }
 
 
-/** Returns plan mode instructions (only included during plan mode). */
-function getPlanModeInstructions(): string {
-  return `
-
-### Plan Mode (EnterPlanMode / ExitPlanMode)
-
-You are in **plan mode** - a read-only exploration phase before implementation.
-
-**Available tools:**
-- Read, Grep, Glob, LS (file exploration)
-- WebSearch, WebFetch (research)
-- TodoWrite (organize findings)
-
-**Disabled tools:** Write, Edit, Bash, NotebookEdit - you cannot modify files during planning.
-
-**Workflow:**
-1. Call \`EnterPlanMode\` to begin (already done if you see this)
-2. Explore the codebase to understand the task
-3. Create a detailed implementation plan
-4. Call \`ExitPlanMode\` when ready for user approval
-
-**Plan structure guidelines:**
-- Start with a brief summary of the task
-- List files to create/modify with specific changes
-- Note dependencies and order of operations
-- Identify potential risks or edge cases
-- Keep it actionable - each step should be concrete
-
-**After approval:** The plan is appended to your system prompt and you gain full tool access for implementation.`;
-}
-
 /** Builds the complete system prompt with optional custom settings. */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   let prompt = getBaseSystemPrompt(settings.vaultPath);
@@ -324,16 +289,6 @@ export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
 
   if (settings.customPrompt?.trim()) {
     prompt += '\n\n## Custom Instructions\n\n' + settings.customPrompt.trim();
-  }
-
-  // Plan mode instructions only for cold-start plan queries
-  if (settings.planMode) {
-    prompt += getPlanModeInstructions();
-  }
-
-  if (settings.appendedPlan?.trim()) {
-    prompt += '\n\n## Approved Implementation Plan\n\n<plan>\n' + settings.appendedPlan.trim() + '\n</plan>';
-    prompt += '\n\n**IMPORTANT:** Follow this plan exactly. The user has approved this implementation. Execute the steps in order.';
   }
 
   return prompt;

@@ -120,9 +120,6 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     getInstructionModeManager: () => null,
     getInstructionRefineService: () => null,
     getTitleGenerationService: () => null,
-    getComponent: () => ({} as any),
-    setPlanModeActive: jest.fn(),
-    getPlanBanner: () => null,
     generateId: () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     resetContextMeter: jest.fn(),
     ...overrides,
@@ -423,105 +420,6 @@ describe('InputController - Message Queue', () => {
       expect(queryOptions.mcpMentions).toBe(mcpMentions);
       expect(queryOptions.enabledMcpServers).toBe(enabledServers);
     });
-
-    it('should send hidden message with content override without clearing input', async () => {
-      deps.plugin.agentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
-      inputEl.value = 'draft message';
-
-      await controller.sendMessage({ hidden: true, content: 'Auto prompt' });
-
-      expect(inputEl.value).toBe('draft message');
-      expect(deps.state.messages[0].content).toBe('Auto prompt');
-      expect(deps.state.messages[0].hidden).toBe(true);
-      expect(deps.renderer.addMessage).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('Plan mode', () => {
-    it('clears stale plan file path when starting plan mode in plan permission', async () => {
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
-        createMockStream([{ type: 'done' }])
-      );
-      deps.plugin.settings.permissionMode = 'plan';
-      inputEl.value = 'Plan this';
-
-      await controller.sendPlanModeMessage();
-
-      expect(deps.plugin.agentService.setCurrentPlanFilePath).toHaveBeenCalledWith(null);
-    });
-
-    it('sends plan mode request prefix without switching permission', async () => {
-      deps.plugin.agentService.query = jest.fn().mockImplementation((prompt: string) => {
-        expect(prompt).toContain('User requested plan mode. Call EnterPlanMode before responding.');
-        return createMockStream([{ type: 'done' }]);
-      });
-      deps.plugin.settings.permissionMode = 'normal';
-      inputEl.value = 'Plan this';
-
-      await controller.sendPlanModeMessage();
-
-      expect(deps.plugin.settings.permissionMode).toBe('normal');
-      expect(deps.state.planModeState).toBeNull();
-      expect(deps.state.messages[0].content).toBe('Plan this');
-    });
-
-    it('routes queued messages through plan mode when permissionMode is plan', async () => {
-      jest.useFakeTimers();
-      try {
-        deps.plugin.settings.permissionMode = 'plan';
-        deps.state.queuedMessage = { content: 'Queued plan', images: undefined, editorContext: null };
-
-        const sendPlanModeSpy = jest
-          .spyOn(controller as any, 'sendMessageWithPlanMode')
-          .mockResolvedValue(undefined);
-        const sendSpy = jest.spyOn(controller, 'sendMessage').mockResolvedValue(undefined);
-
-        (controller as any).processQueuedMessage();
-        jest.runAllTimers();
-        await Promise.resolve();
-
-        expect(sendPlanModeSpy).toHaveBeenCalledWith(
-          expect.objectContaining({ content: 'Queued plan' })
-        );
-        expect(sendSpy).not.toHaveBeenCalled();
-      } finally {
-        jest.useRealTimers();
-      }
-    });
-
-    it('activates plan permission mode after EnterPlanMode is pending', async () => {
-      deps.plugin.agentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
-      deps.plugin.settings.permissionMode = 'normal';
-      inputEl.value = 'Original request';
-
-      await controller.handleEnterPlanMode();
-      expect(deps.state.planModeActivationPending).toBe(true);
-
-      await controller.sendMessage();
-
-      expect(deps.plugin.settings.permissionMode).toBe('plan');
-      expect(deps.plugin.saveSettings).toHaveBeenCalled();
-      expect(deps.state.planModeState?.isActive).toBe(true);
-      expect(deps.state.planModeState?.agentInitiated).toBe(true);
-    });
-
-    it('should send hidden plan mode message without rendering user bubble', async () => {
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
-        createMockStream([{ type: 'done' }])
-      );
-      deps.plugin.settings.permissionMode = 'plan';
-      const imageContextManager = deps.getImageContextManager()!;
-
-      await (controller as any).sendMessageWithPlanMode({
-        content: 'Revise plan',
-        hidden: true,
-        images: [],
-      });
-
-      expect(deps.state.messages[0].hidden).toBe(true);
-      expect(deps.renderer.addMessage).toHaveBeenCalledTimes(1);
-      expect(imageContextManager.clearImages).not.toHaveBeenCalled();
-    });
   });
 
   describe('Title generation', () => {
@@ -790,7 +688,7 @@ describe('InputController - Message Queue', () => {
       );
 
       // Don't populate assistant content (leave it empty)
-      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => {});
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => { });
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
       inputEl.value = 'Test message';

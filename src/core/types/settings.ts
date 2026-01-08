@@ -130,8 +130,7 @@ export function getDefaultCliPaths(): PlatformCliPaths {
 }
 
 /** Permission mode for tool execution. */
-export type PermissionMode = 'yolo' | 'normal' | 'plan';
-export type NonPlanPermissionMode = Exclude<PermissionMode, 'plan'>;
+export type PermissionMode = 'yolo' | 'normal';
 
 /**
  * Legacy permission format (pre-CC compatibility).
@@ -235,7 +234,6 @@ export interface ClaudianSettings {
   enableBlocklist: boolean;
   blockedCommands: PlatformBlockedCommands;
   permissionMode: PermissionMode;
-  lastNonPlanPermissionMode?: NonPlanPermissionMode;
 
   // Model & thinking (Claudian uses enum, CC uses full model ID string)
   model: ClaudeModel;
@@ -286,7 +284,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   enableBlocklist: true,
   blockedCommands: getDefaultBlockedCommands(),
   permissionMode: 'yolo',
-  lastNonPlanPermissionMode: 'yolo',
 
   // Model & thinking
   model: 'haiku',

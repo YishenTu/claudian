@@ -35,9 +35,6 @@ interface SessionMetaRecord {
   sessionId: string | null;
   currentNote?: string;
   usage?: UsageInfo;
-  approvedPlan?: string;
-  pendingPlanContent?: string;
-  isInPlanMode?: boolean;
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
 
@@ -51,7 +48,7 @@ interface SessionMessageRecord {
 type SessionRecord = SessionMetaRecord | SessionMessageRecord;
 
 export class SessionStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  constructor(private adapter: VaultFileAdapter) { }
 
   /** Load a conversation from its JSONL file. */
   async loadConversation(id: string): Promise<Conversation | null> {
@@ -234,9 +231,6 @@ export class SessionStorage {
       messages,
       currentNote: meta.currentNote,
       usage: meta.usage,
-      approvedPlan: meta.approvedPlan,
-      pendingPlanContent: meta.pendingPlanContent,
-      isInPlanMode: meta.isInPlanMode,
       titleGenerationStatus: meta.titleGenerationStatus,
     };
   }
@@ -256,9 +250,6 @@ export class SessionStorage {
       sessionId: conversation.sessionId,
       currentNote: conversation.currentNote,
       usage: conversation.usage,
-      approvedPlan: conversation.approvedPlan,
-      pendingPlanContent: conversation.pendingPlanContent,
-      isInPlanMode: conversation.isInPlanMode,
       titleGenerationStatus: conversation.titleGenerationStatus,
     };
     lines.push(JSON.stringify(meta));

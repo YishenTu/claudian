@@ -5,31 +5,17 @@
  * Tool result tracking and UI rendering are tested through integration tests.
  */
 
-import { TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '@/core/tools/toolNames';
+import { TOOL_TASK, TOOL_TODO_WRITE } from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
 // Mock UI module
 jest.mock('@/ui', () => {
-  const mockWrapperEl = {
-    addClass: jest.fn(),
-    removeClass: jest.fn(),
-  };
   return {
     createSubagentBlock: jest.fn().mockReturnValue({
       info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
     }),
-    createAskUserQuestionBlock: jest.fn().mockReturnValue({
-      wrapperEl: mockWrapperEl,
-      headerEl: {},
-      answerEl: {},
-      questions: [],
-    }),
-    parseAskUserQuestionInput: jest.fn().mockReturnValue({
-      questions: [],
-    }),
-    finalizeAskUserQuestionBlock: jest.fn(),
     createThinkingBlock: jest.fn().mockReturnValue({
       container: {},
       contentEl: {},
@@ -111,7 +97,6 @@ function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockElement();
   const agentService = {
-    getAskUserQuestionAnswers: jest.fn().mockReturnValue(undefined),
     getDiffData: jest.fn().mockReturnValue(undefined),
     getSessionId: jest.fn().mockReturnValue('session-1'),
   };
@@ -153,7 +138,6 @@ function createMockDeps(): StreamControllerDeps {
     getMessagesEl: () => messagesEl,
     getFileContextManager: () => fileContextManager as any,
     updateQueueIndicator: jest.fn(),
-    setPlanModeActive: jest.fn(),
   };
 }
 
@@ -319,47 +303,6 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls![0].result).toBe('ok');
     });
 
-    it('should persist AskUserQuestion answers and render block', async () => {
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockElement();
-
-      await controller.handleStreamChunk(
-        {
-          type: 'tool_use',
-          id: 'tool-ask-1',
-          name: TOOL_ASK_USER_QUESTION,
-          input: {
-            questions: [
-              {
-                question: 'Which option?',
-                header: 'Q1',
-                multiSelect: false,
-                options: [
-                  { label: 'A', description: '' },
-                  { label: 'B', description: '' },
-                ],
-              },
-            ],
-          },
-        },
-        msg
-      );
-
-      const agentService = (deps.plugin as any).agentService;
-      agentService.getAskUserQuestionAnswers.mockReturnValue({ 'Which option?': 'A' });
-
-      await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'tool-ask-1', content: 'ok' },
-        msg
-      );
-
-      expect(agentService.getAskUserQuestionAnswers).toHaveBeenCalledWith('tool-ask-1');
-      expect(msg.toolCalls![0].status).toBe('completed');
-      expect(msg.toolCalls![0].input).toMatchObject({
-        answers: { 'Which option?': 'A' },
-      });
-    });
-
     it('should add subagent entry to contentBlocks for Task tool', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockElement();
@@ -383,7 +326,7 @@ describe('StreamController - Text Content', () => {
     it('should render as raw tool call when TodoWrite parsing fails', async () => {
       const { parseTodoInput, renderToolCall } = jest.requireMock('@/ui');
       parseTodoInput.mockReturnValue(null); // Simulate parse failure
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockElement();

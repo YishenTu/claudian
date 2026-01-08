@@ -49,34 +49,3 @@
   transform: translateX(14px);
   background: #D97757;
 }
-
-/* Plan mode state */
-.claudian-permission-toggle.plan-mode {
-  cursor: pointer;
-}
-
-.claudian-permission-toggle.plan-mode .claudian-permission-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #00A89D;
-  font-weight: 500;
-  min-width: auto;
-}
-
-.claudian-permission-toggle.plan-mode .claudian-toggle-switch {
-  display: none;
-}
-
-.claudian-plan-mode-icon {
-  display: flex;
-  align-items: center;
-  font-size: 10px;
-  letter-spacing: 2px;
-  transform: scaleX(1.3);
-  margin-right: 2px;
-}
-
-.claudian-permission-toggle.plan-mode:hover .claudian-permission-label {
-  opacity: 0.8;
-}

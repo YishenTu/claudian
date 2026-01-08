@@ -6,7 +6,6 @@
 
 import {
   TOOL_AGENT_OUTPUT,
-  TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_EDIT,
@@ -40,7 +39,6 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_LS]: 'list',
   [TOOL_TODO_WRITE]: 'list-checks',
   [TOOL_TASK]: 'list-checks',
-  [TOOL_ASK_USER_QUESTION]: 'help-circle',
   [TOOL_LIST_MCP_RESOURCES]: 'list',
   [TOOL_READ_MCP_RESOURCE]: 'file-text',
   [TOOL_MCP]: 'wrench',

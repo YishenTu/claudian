@@ -6,13 +6,12 @@
  */
 
 import type { App, Component } from 'obsidian';
-import { MarkdownRenderer, setIcon } from 'obsidian';
+import { MarkdownRenderer } from 'obsidian';
 
 import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
-import { isWriteEditTool, TOOL_ASK_USER_QUESTION, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment } from '../../../core/types';
 import {
-  renderStoredAskUserQuestion,
   renderStoredAsyncSubagent,
   renderStoredSubagent,
   renderStoredThinkingBlock,
@@ -61,22 +60,6 @@ export class MessageRenderer {
    * Returns the message element for content updates.
    */
   addMessage(msg: ChatMessage): HTMLElement {
-    // Skip hidden messages
-    if (msg.hidden) {
-      this.ensureTodoPanelAtBottom();
-      this.scrollToBottom();
-      const lastChild = this.messagesEl.lastElementChild as HTMLElement;
-      return lastChild ?? this.messagesEl;
-    }
-
-    // Render approval indicator if present
-    if (msg.approvalIndicator) {
-      const indicatorEl = this.renderApprovalIndicator(msg.approvalIndicator);
-      this.ensureTodoPanelAtBottom();
-      this.scrollToBottom();
-      return indicatorEl;
-    }
-
     // Render images above message bubble for user messages
     if (msg.role === 'user' && msg.images && msg.images.length > 0) {
       this.renderMessageImages(this.messagesEl, msg.images);
@@ -146,17 +129,6 @@ export class MessageRenderer {
    * Renders a persisted message from history.
    */
   renderStoredMessage(msg: ChatMessage): void {
-    // Skip hidden messages
-    if (msg.hidden) {
-      return;
-    }
-
-    // Render approval indicator if present
-    if (msg.approvalIndicator) {
-      this.renderApprovalIndicator(msg.approvalIndicator);
-      return;
-    }
-
     // Render images above bubble for user messages
     if (msg.role === 'user' && msg.images && msg.images.length > 0) {
       this.renderMessageImages(this.messagesEl, msg.images);
@@ -174,11 +146,6 @@ export class MessageRenderer {
       cls: `claudian-message claudian-message-${msg.role}`,
     });
 
-    // Apply plan message styling if this is a plan message
-    if (msg.isPlanMessage) {
-      msgEl.classList.add('claudian-message-plan');
-    }
-
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
 
     if (msg.role === 'user') {
@@ -190,38 +157,6 @@ export class MessageRenderer {
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
     }
-  }
-
-  /**
-   * Renders an approval indicator for plan mode decisions.
-   */
-  private renderApprovalIndicator(indicator: NonNullable<ChatMessage['approvalIndicator']>): HTMLElement {
-    const indicatorEl = this.messagesEl.createDiv({
-      cls: 'claudian-approval-indicator',
-    });
-
-    const iconEl = indicatorEl.createSpan({ cls: 'claudian-approval-indicator-icon' });
-    const textEl = indicatorEl.createSpan({ cls: 'claudian-approval-indicator-text' });
-
-    switch (indicator.type) {
-      case 'approve':
-        indicatorEl.classList.add('claudian-approval-indicator-approve');
-        setIcon(iconEl, 'check');
-        textEl.textContent = 'User approved plan.';
-        break;
-      case 'approve_new_session':
-        indicatorEl.classList.add('claudian-approval-indicator-approve');
-        setIcon(iconEl, 'check');
-        textEl.textContent = 'User approved plan, implement in new session.';
-        break;
-      case 'revise':
-        indicatorEl.classList.add('claudian-approval-indicator-revise');
-        setIcon(iconEl, 'x');
-        textEl.textContent = indicator.feedback || 'User requested revision.';
-        break;
-    }
-
-    return indicatorEl;
   }
 
   /**
@@ -272,15 +207,13 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders a tool call with special handling for Write/Edit, and AskUserQuestion.
+   * Renders a tool call with special handling for Write/Edit.
    * TodoWrite is not rendered inline - it only shows in the bottom panel.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: { id: string; name: string; input: Record<string, unknown>; status?: string; result?: string }): void {
     if (toolCall.name === TOOL_TODO_WRITE) {
       // TodoWrite is not rendered inline - only in bottom panel
       return;
-    } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
-      renderStoredAskUserQuestion(contentEl, toolCall as any);
     } else if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall as any);
     } else {

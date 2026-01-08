@@ -24,7 +24,6 @@ import {
   type McpServerSelector,
   type ModelSelector,
   type PermissionToggle,
-  PlanBanner,
   SlashCommandDropdown,
   type ThinkingBudgetSelector,
   TodoPanel,
@@ -86,7 +85,6 @@ export class ClaudianView extends ItemView {
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private instructionModeManager: InstructionModeManager | null = null;
   private contextUsageMeter: ContextUsageMeter | null = null;
-  private planBanner: PlanBanner | null = null;
   private todoPanel: TodoPanel | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
@@ -121,13 +119,6 @@ export class ClaudianView extends ItemView {
     // Build header
     const header = container.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
-
-    // Create plan banner (mounted to container, inserts before messages)
-    this.planBanner = new PlanBanner({
-      app: this.plugin.app,
-      component: this,
-    });
-    this.planBanner.mount(container);
 
     // Build messages area
     this.messagesEl = container.createDiv({ cls: 'claudian-messages' });
@@ -177,7 +168,6 @@ export class ClaudianView extends ItemView {
 
     // Cleanup services
     this.plugin.agentService.setApprovalCallback(null);
-    this.plugin.agentService.setAskUserQuestionCallback(null);
 
     // Cleanup UI components
     this.fileContextManager?.destroy();
@@ -291,8 +281,8 @@ export class ClaudianView extends ItemView {
         inputContainerEl,
         this.inputEl,
         {
-          onSelect: () => {},
-          onHide: () => {},
+          onSelect: () => { },
+          onHide: () => { },
           getCommands: () => this.plugin.settings.slashCommands,
         }
       );
@@ -318,11 +308,8 @@ export class ClaudianView extends ItemView {
         model: this.plugin.settings.model,
         thinkingBudget: this.plugin.settings.thinkingBudget,
         permissionMode: this.plugin.settings.permissionMode,
-        lastNonPlanPermissionMode: this.plugin.settings.lastNonPlanPermissionMode,
       }),
       getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
-      isAgentInitiatedPlanMode: () => this.state.planModeState?.agentInitiated ?? false,
-      isPlanModeRequested: () => this.state.planModeRequested,
       onModelChange: async (model: ClaudeModel) => {
         this.plugin.settings.model = model;
         const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m: any) => m.value === model);
@@ -342,32 +329,8 @@ export class ClaudianView extends ItemView {
         await this.plugin.saveSettings();
       },
       onPermissionModeChange: async (mode) => {
-        const current = this.plugin.settings.permissionMode;
-        if (mode === 'plan') {
-          if (current !== 'plan') {
-            this.plugin.settings.lastNonPlanPermissionMode = current;
-          }
-        } else {
-          this.plugin.settings.lastNonPlanPermissionMode = mode;
-        }
         this.plugin.settings.permissionMode = mode;
         await this.plugin.saveSettings();
-
-        if (mode === 'plan') {
-          if (!this.state.planModeState?.isActive) {
-            this.state.planModeState = {
-              isActive: true,
-              planFilePath: null,
-              planContent: null,
-              originalQuery: null,
-              agentInitiated: true,
-            };
-          }
-        } else {
-          this.state.resetPlanModeState();
-        }
-
-        this.updatePlanModeUiState();
       },
     });
 
@@ -424,9 +387,6 @@ export class ClaudianView extends ItemView {
       getMessagesEl: () => this.messagesEl!,
       getFileContextManager: () => this.fileContextManager,
       updateQueueIndicator: () => this.inputController?.updateQueueIndicator(),
-      setPlanModeActive: (_active) => {
-        this.updatePlanModeUiState();
-      },
     });
 
     // Conversation controller
@@ -446,15 +406,7 @@ export class ClaudianView extends ItemView {
         getMcpServerSelector: () => this.mcpServerSelector,
         getExternalContextSelector: () => this.externalContextSelector,
         clearQueuedMessage: () => this.inputController?.clearQueuedMessage(),
-        getApprovedPlan: () => this.plugin.agentService.getApprovedPlanContent(),
-        setApprovedPlan: (plan) => this.plugin.agentService.setApprovedPlanContent(plan),
-        showPlanBanner: (content) => { void this.planBanner?.show(content); },
-        hidePlanBanner: () => this.planBanner?.hide(),
-        triggerPendingPlanApproval: (content) => this.inputController?.restorePendingPlanApproval(content),
         getTitleGenerationService: () => this.titleGenerationService,
-        setPlanModeActive: (_active) => {
-          this.updatePlanModeUiState();
-        },
         getTodoPanel: () => this.todoPanel,
       },
       {}
@@ -479,37 +431,13 @@ export class ClaudianView extends ItemView {
       getInstructionModeManager: () => this.instructionModeManager,
       getInstructionRefineService: () => this.instructionRefineService,
       getTitleGenerationService: () => this.titleGenerationService,
-      getComponent: () => this,
-      setPlanModeActive: (_active) => {
-        this.updatePlanModeUiState();
-      },
-      getPlanBanner: () => this.planBanner,
       generateId: () => this.generateId(),
       resetContextMeter: () => this.contextUsageMeter?.update(null),
-    });
-
-    this.permissionToggle?.setOnPlanModeToggle((active) => {
-      this.inputController?.setPlanModeRequested(active);
     });
 
     // Set approval callback
     this.plugin.agentService.setApprovalCallback(
       (toolName, input, description) => this.inputController!.handleApprovalRequest(toolName, input, description)
-    );
-
-    // Set AskUserQuestion callback
-    this.plugin.agentService.setAskUserQuestionCallback(
-      (input) => this.inputController!.handleAskUserQuestion(input)
-    );
-
-    // Set ExitPlanMode callback
-    this.plugin.agentService.setExitPlanModeCallback(
-      (planFilePath) => this.inputController!.handleExitPlanMode(planFilePath)
-    );
-
-    // Set EnterPlanMode callback
-    this.plugin.agentService.setEnterPlanModeCallback(
-      () => this.inputController!.handleEnterPlanMode()
     );
 
     // Navigation controller (vim-style keyboard navigation)
@@ -566,14 +494,7 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Shift+Tab: Toggle plan mode (capture phase for priority)
-    this.inputEl!.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab' && e.shiftKey && !this.state.isStreaming) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.permissionToggle?.togglePlanMode();
-      }
-    }, { capture: true });
+
 
     // Input events
     this.inputEl!.addEventListener('keydown', (e) => {
@@ -600,14 +521,10 @@ export class ClaudianView extends ItemView {
         return;
       }
 
-      // Enter: Send message (plan mode if active, normal otherwise)
+      // Enter: Send message
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        if (this.permissionToggle?.isPlanModeActive()) {
-          void this.inputController?.sendPlanModeMessage();
-        } else {
-          void this.inputController?.sendMessage();
-        }
+        void this.inputController?.sendMessage();
       }
     });
 
@@ -628,11 +545,4 @@ export class ClaudianView extends ItemView {
   private generateId(): string {
     return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
-
-  private updatePlanModeUiState(): void {
-    const isPlanMode = this.plugin.settings.permissionMode === 'plan';
-    const isPlanModeRequested = this.state.planModeRequested;
-    this.permissionToggle?.setPlanModeActive(isPlanMode || isPlanModeRequested);
-  }
-
 }

@@ -68,13 +68,13 @@ src/
 | | `inline-edit/` | Inline edit service |
 | | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
 | | `settings/` | Settings tab UI |
-| **ui** | `components/` | Input toolbar (with context meter), file/image context, slash command dropdown, AskUserQuestion panel, PlanBanner, PlanApprovalPanel |
+| **ui** | `components/` | Input toolbar (with context meter), file/image context, slash command dropdown |
 | | `components/file-context/` | Modular file context manager with submodules: |
 | | `  mention/` | MentionDropdownController - @-mention dropdown with MCP/vault/context file support |
 | | `  state/` | FileContextState, MarkdownFileCache |
 | | `  view/` | FileChipsView - current note chip UI |
 | | `modals/` | Approval, inline edit, instruction, MCP modals |
-| | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs, AskUserQuestion |
+| | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs |
 | | `settings/` | Env snippets, MCP settings, slash command settings |
 | **utils** | | Modular utilities: date, path, env, context, editor, session, markdown, mcp, slashCommand |
 | **style** | | Modular CSS (built into root `styles.css`) |
@@ -178,7 +178,7 @@ await MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, component
 | Web | `WebSearch`, `WebFetch` |
 | Task | `Task`, `TodoWrite` |
 | Skills | `Skill` |
-| Plan | `EnterPlanMode`, `ExitPlanMode` (internal, hidden from UI) |
+
 
 ## Settings
 
@@ -319,16 +319,7 @@ Extend Claude with external tools and data sources via MCP servers.
 - **Persistence**: Saved to session JSONL, restored on conversation switch
 - **Updates**: After each completed agent response (from SDK `result` message)
 
-### Plan Mode
-Read-only exploration mode with approval flow before implementation.
-- **Toggle**: `Shift+Tab` in input area toggles plan mode on/off
-- **Indicator**: Teal "Plan" badge next to YOLO/Safe toggle when active
-- **SDK**: `permissionMode: 'plan'` enforces read-only tools
-- **Tools**: `Read`, `Glob`, `Grep`, `LS`, `WebSearch`, `WebFetch`, `EnterPlanMode`, `ExitPlanMode`
-- **Plan file**: Written to `~/.claude/plans/` with tilde expansion
-- **Approval panel**: Approve / Approve + New Session / Revise options
-- **Implementation**: Approved plan appended to system prompt, auto-sends hidden implementation prompt
-- **UI components**: `PlanBanner` (teal indicator), `PlanApprovalPanel` (approval/revise flow)
+
 
 ### Auto Title Generation
 AI-powered conversation titles generated after first exchange.
@@ -337,7 +328,6 @@ AI-powered conversation titles generated after first exchange.
 - **Concurrent**: Each conversation has its own AbortController; multiple can generate simultaneously
 - **UI**: Loading spinner while generating, refresh icon if failed (click to retry)
 - **Constraints**: Max 50 characters, no quotes/punctuation, sentence case
-- **Plan prefix**: Plan conversations preserve `[Plan]` prefix
 - **Manual override**: User rename takes precedence; generation stops if renamed during progress
 - **Status tracking**: `titleGenerationStatus` field: `pending` | `success` | `failed`
 
@@ -380,7 +370,7 @@ CSS is modularized in `src/style/` and built into root `styles.css`:
 ```
 src/style/
 ├── base/           # container, animations (@keyframes)
-├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input, ask-user-question, context-footer (meter), plan-banner, plan-approval
+├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input, context-footer (meter)
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands
 ├── modals/         # approval, instruction, mcp-modal
@@ -409,8 +399,6 @@ All classes use `.claudian-` prefix. Key patterns:
 | Context meter | `-context-meter`, `-context-meter-gauge`, `-context-meter-percent`, `-meter-bg`, `-meter-fill` |
 | MCP | `-mcp-selector`, `-mcp-selector-icon`, `-mcp-selector-dropdown`, `-mcp-item` |
 | MCP Settings | `-mcp-header`, `-mcp-list`, `-mcp-status`, `-mcp-test-modal` |
-| AskUserQuestion | `-ask-panel`, `-ask-question-block`, `-ask-question-tree`, `-ask-question-q`, `-ask-question-a` |
-| Plan mode | `-plan-banner`, `-plan-approval-panel`, `-plan-approval-actions`, `-plan-badge` |
 | Modals | `-approval-modal`, `-instruction-modal`, `-mcp-modal` |
 
 ## Development Notes

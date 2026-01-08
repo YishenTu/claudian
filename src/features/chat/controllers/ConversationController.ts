@@ -38,20 +38,8 @@ export interface ConversationControllerDeps {
   getMcpServerSelector: () => McpServerSelector | null;
   getExternalContextSelector: () => ExternalContextSelector | null;
   clearQueuedMessage: () => void;
-  /** Get current approved plan content from agent service. */
-  getApprovedPlan: () => string | null;
-  /** Set approved plan content in agent service. */
-  setApprovedPlan: (plan: string | null) => void;
-  /** Show the plan banner with content. */
-  showPlanBanner: (content: string) => void;
-  /** Hide the plan banner. */
-  hidePlanBanner: () => void;
-  /** Trigger pending plan approval panel (for restore on load). */
-  triggerPendingPlanApproval: (content: string) => void;
   /** Get title generation service. */
   getTitleGenerationService: () => TitleGenerationService | null;
-  /** Set plan mode active state (updates UI toggle and file context). */
-  setPlanModeActive: (active: boolean) => void;
   /** Get TodoPanel for remounting after messagesEl.empty(). */
   getTodoPanel: () => TodoPanel | null;
 }
@@ -94,12 +82,6 @@ export class ConversationController {
     state.clearMessages();
     state.usage = null;
     state.currentTodos = null;
-
-    // Clear approved plan and pending plan for new conversation
-    this.deps.setApprovedPlan(null);
-    this.deps.hidePlanBanner();
-    state.pendingPlanContent = null;
-    this.restorePlanModeState();
 
     const messagesEl = this.deps.getMessagesEl();
     messagesEl.empty();
@@ -146,19 +128,6 @@ export class ConversationController {
 
     plugin.agentService.setSessionId(conversation.sessionId);
 
-    // Restore approved plan for this conversation
-    if (conversation.approvedPlan) {
-      this.deps.setApprovedPlan(conversation.approvedPlan);
-      this.deps.showPlanBanner(conversation.approvedPlan);
-    } else {
-      this.deps.setApprovedPlan(null);
-      this.deps.hidePlanBanner();
-    }
-
-    // Restore pending plan content
-    state.pendingPlanContent = conversation.pendingPlanContent ?? null;
-    this.restorePlanModeState();
-
     const hasMessages = state.messages.length > 0;
     const fileCtx = this.deps.getFileContextManager();
     fileCtx?.resetForLoadedConversation(hasMessages);
@@ -194,11 +163,6 @@ export class ConversationController {
     state.currentTodos = extractLastTodosFromMessages(state.messages);
 
     this.callbacks.onConversationLoaded?.();
-
-    // Trigger pending plan approval if there's pending content
-    if (conversation.pendingPlanContent && !conversation.approvedPlan) {
-      this.deps.triggerPendingPlanApproval(conversation.pendingPlanContent);
-    }
   }
 
   /** Switches to a different conversation. */
@@ -219,19 +183,6 @@ export class ConversationController {
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
-
-    // Restore approved plan for this conversation
-    if (conversation.approvedPlan) {
-      this.deps.setApprovedPlan(conversation.approvedPlan);
-      this.deps.showPlanBanner(conversation.approvedPlan);
-    } else {
-      this.deps.setApprovedPlan(null);
-      this.deps.hidePlanBanner();
-    }
-
-    // Restore pending plan content
-    state.pendingPlanContent = conversation.pendingPlanContent ?? null;
-    this.restorePlanModeState();
 
     this.deps.getInputEl().value = '';
     this.deps.clearQueuedMessage();
@@ -270,11 +221,6 @@ export class ConversationController {
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationSwitched?.();
-
-    // Trigger pending plan approval if there's pending content
-    if (conversation.pendingPlanContent && !conversation.approvedPlan) {
-      this.deps.triggerPendingPlanApproval(conversation.pendingPlanContent);
-    }
   }
 
   /** Saves the current conversation. */
@@ -287,7 +233,6 @@ export class ConversationController {
     const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const externalContextSelector = this.deps.getExternalContextSelector();
     const externalContextPaths = externalContextSelector?.getExternalContexts() ?? [];
-    const approvedPlan = this.deps.getApprovedPlan();
     const mcpServerSelector = this.deps.getMcpServerSelector();
     const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
@@ -297,9 +242,6 @@ export class ConversationController {
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,
-      approvedPlan: approvedPlan ?? undefined,
-      pendingPlanContent: state.pendingPlanContent ?? undefined,
-      isInPlanMode: state.planModeState?.isActive ?? undefined,
       enabledMcpServers: enabledMcpServers.length > 0 ? enabledMcpServers : undefined,
     };
 
@@ -337,32 +279,6 @@ export class ConversationController {
     }
   }
 
-  /**
-   * Restores plan mode state based on current permission mode.
-   * Resets transient flags and sets up planModeState appropriately.
-   */
-  private restorePlanModeState(): void {
-    const { plugin, state } = this.deps;
-
-    state.planModeRequested = false;
-    state.planModeActivationPending = false;
-
-    const isPlanMode = plugin.settings.permissionMode === 'plan';
-    if (isPlanMode) {
-      // Preserve agentInitiated status when staying in plan mode
-      const wasAgentInitiated = state.planModeState?.agentInitiated ?? false;
-      state.planModeState = {
-        isActive: true,
-        planFilePath: null,
-        planContent: null,
-        originalQuery: null,
-        agentInitiated: wasAgentInitiated,
-      };
-    } else {
-      state.resetPlanModeState();
-    }
-    this.deps.setPlanModeActive(isPlanMode);
-  }
 
   // ============================================
   // History Dropdown
@@ -521,23 +437,23 @@ export class ConversationController {
     // Day-specific greetings
     const dayGreetings: Record<number, string[]> = name
       ? {
-          0: [`Happy Sunday, ${name}`, 'Sunday session?', 'Welcome to the weekend'],
-          1: [`Happy Monday, ${name}`, `Back at it, ${name}`],
-          2: [`Happy Tuesday, ${name}`],
-          3: [`Happy Wednesday, ${name}`],
-          4: [`Happy Thursday, ${name}`],
-          5: [`Happy Friday, ${name}`, `That Friday feeling, ${name}`],
-          6: [`Happy Saturday, ${name}`, `Welcome to the weekend, ${name}`],
-        }
+        0: [`Happy Sunday, ${name}`, 'Sunday session?', 'Welcome to the weekend'],
+        1: [`Happy Monday, ${name}`, `Back at it, ${name}`],
+        2: [`Happy Tuesday, ${name}`],
+        3: [`Happy Wednesday, ${name}`],
+        4: [`Happy Thursday, ${name}`],
+        5: [`Happy Friday, ${name}`, `That Friday feeling, ${name}`],
+        6: [`Happy Saturday, ${name}`, `Welcome to the weekend, ${name}`],
+      }
       : {
-          0: ['Happy Sunday', 'Sunday session?', 'Welcome to the weekend'],
-          1: ['Happy Monday', 'Back at it!'],
-          2: ['Happy Tuesday'],
-          3: ['Happy Wednesday'],
-          4: ['Happy Thursday'],
-          5: ['Happy Friday', 'That Friday feeling'],
-          6: ['Happy Saturday!', 'Welcome to the weekend'],
-        };
+        0: ['Happy Sunday', 'Sunday session?', 'Welcome to the weekend'],
+        1: ['Happy Monday', 'Back at it!'],
+        2: ['Happy Tuesday'],
+        3: ['Happy Wednesday'],
+        4: ['Happy Thursday'],
+        5: ['Happy Friday', 'That Friday feeling'],
+        6: ['Happy Saturday!', 'Welcome to the weekend'],
+      };
 
     // Time-specific greetings
     const getTimeGreetings = (): string[] => {
@@ -563,20 +479,20 @@ export class ConversationController {
     // General greetings
     const generalGreetings = name
       ? [
-          `Hey there, ${name}`,
-          `Hi ${name}, how are you?`,
-          `How's it going, ${name}?`,
-          `Welcome Back!, ${name}`,
-          `What's new, ${name}?`,
-          `${name} returns!`,
-        ]
+        `Hey there, ${name}`,
+        `Hi ${name}, how are you?`,
+        `How's it going, ${name}?`,
+        `Welcome Back!, ${name}`,
+        `What's new, ${name}?`,
+        `${name} returns!`,
+      ]
       : [
-          'Hey there',
-          'Hi, how are you?',
-          "How's it going?",
-          'Welcome Back!',
-          "What's new?",
-        ];
+        'Hey there',
+        'Hi, how are you?',
+        "How's it going?",
+        'Welcome Back!',
+        "What's new?",
+      ];
 
     // Combine day + time + general greetings, pick randomly
     const allGreetings = [
@@ -639,9 +555,6 @@ export class ConversationController {
 
     if (!assistantText) return;
 
-    // Check if it's a plan conversation (title starts with [Plan])
-    const isPlan = fullConv.title.startsWith('[Plan]');
-
     // Store current title to check if user renames during generation
     const expectedTitle = fullConv.title;
 
@@ -663,8 +576,7 @@ export class ConversationController {
         const userManuallyRenamed = currentConv.title !== expectedTitle;
 
         if (result.success && result.title && !userManuallyRenamed) {
-          const newTitle = isPlan ? `[Plan] ${result.title}` : result.title;
-          await plugin.renameConversation(convId, newTitle);
+          await plugin.renameConversation(convId, result.title);
           await plugin.updateConversation(convId, { titleGenerationStatus: 'success' });
         } else if (!userManuallyRenamed) {
           // Keep existing title, mark as failed (only if user hasn't renamed)

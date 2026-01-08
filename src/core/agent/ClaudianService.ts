@@ -6,7 +6,7 @@
  *
  * Architecture:
  * - Persistent query for active chat conversation (eliminates cold-start latency)
- * - Cold-start queries for plan mode, inline edit, title generation
+ * - Cold-start queries for inline edit, title generation
  * - MessageChannel for message queueing and turn management
  * - Dynamic updates (model, thinking tokens, permission mode, MCP servers)
  */
@@ -15,20 +15,17 @@ import type {
   CanUseTool,
   McpServerConfig,
   Options,
-  PermissionMode as SDKPermissionMode,
   PermissionResult,
   Query,
   SDKMessage,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-import * as os from 'os';
-import * as path from 'path';
 
 import type ClaudianPlugin from '../../main';
 import { stripCurrentNotePrefix } from '../../utils/context';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../utils/env';
-import { getPathAccessType, getVaultPath, normalizePathForFilesystem } from '../../utils/path';
+import { getPathAccessType, getVaultPath } from '../../utils/path';
 import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
 import {
   createBlocklistHook,
@@ -46,10 +43,8 @@ import {
   ApprovalManager,
   getActionDescription,
 } from '../security';
-import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL } from '../tools/toolNames';
+import { TOOL_SKILL } from '../tools/toolNames';
 import type {
-  AskUserQuestionCallback,
-  AskUserQuestionInput,
   CCPermissions,
   ChatMessage,
   ClaudeModel,
@@ -60,18 +55,11 @@ import type {
 } from '../types';
 import { THINKING_BUDGETS } from '../types';
 
-/**
- * Tools that bypass the allowedTools restriction but have custom handling logic.
- * These are essential for agent-user interaction and plan mode flow.
- * Note: These tools may still return 'deny' based on their specific handlers
- * (e.g., AskUserQuestion on Escape, ExitPlanMode on cancel).
- * Used by both persistent query (canUseTool) and cold-start (options.tools).
- */
-const ALWAYS_ALLOWED_TOOLS = [
-  TOOL_ASK_USER_QUESTION,
-  TOOL_ENTER_PLAN_MODE,
-  TOOL_EXIT_PLAN_MODE,
-  TOOL_SKILL,
+/** SDK tools that require canUseTool interception (not supported in bypassPermissions mode). */
+const UNSUPPORTED_SDK_TOOLS = [
+  'AskUserQuestion',
+  'EnterPlanMode',
+  'ExitPlanMode',
 ] as const;
 
 /**
@@ -482,9 +470,7 @@ function computeSystemPromptKey(settings: SystemPromptSettings): string {
     settings.customPrompt || '',
     (settings.allowedExportPaths || []).sort().join('|'),
     settings.vaultPath || '',
-    // Note: hasEditorContext and planMode are per-message, not tracked here
-    // appendedPlan changes trigger restart
-    settings.appendedPlan || '',
+    // Note: hasEditorContext is per-message, not tracked here
   ];
   return parts.join('::');
 }
@@ -523,37 +509,17 @@ export interface QueryOptions {
   mcpMentions?: Set<string>;
   /** MCP servers enabled via UI selector (in addition to @-mentioned servers). */
   enabledMcpServers?: Set<string>;
-  /** Enable plan mode (read-only exploration). */
-  planMode?: boolean;
   /** Force cold-start query (bypass persistent query). */
   forceColdStart?: boolean;
   /** Session-specific external context paths (directories with full access). */
   externalContextPaths?: string[];
 }
 
-/** Decision returned after plan approval. */
-export type ExitPlanModeDecision =
-  | { decision: 'approve' }
-  | { decision: 'approve_new_session' }
-  | { decision: 'revise'; feedback: string }
-  | { decision: 'cancel' };
-
-/** Callback for ExitPlanMode tool - shows approval panel and returns decision. */
-export type ExitPlanModeCallback = (planContent: string) => Promise<ExitPlanModeDecision>;
-
-/** Callback for EnterPlanMode tool - notifies UI and triggers re-send with plan mode. */
-export type EnterPlanModeCallback = () => Promise<void>;
-
 /** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
   private approvalCallback: ApprovalCallback | null = null;
-  private askUserQuestionCallback: AskUserQuestionCallback | null = null;
-  private exitPlanModeCallback: ExitPlanModeCallback | null = null;
-  private enterPlanModeCallback: EnterPlanModeCallback | null = null;
-  private currentPlanFilePath: string | null = null;
-  private approvedPlanContent: string | null = null;
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
 
@@ -563,9 +529,6 @@ export class ClaudianService {
   private diffStore = new DiffStore();
   private mcpManager: McpServerManager;
   private ccPermissions: CCPermissions = { allow: [], deny: [], ask: [] };
-
-  // Store AskUserQuestion answers by tool_use_id
-  private askUserQuestionAnswers = new Map<string, Record<string, string | string[]>>();
 
   // ============================================
   // Persistent Query State (Phase 1)
@@ -588,9 +551,6 @@ export class ClaudianService {
   private lastSentMessage: SDKUserMessage | null = null;
   private lastSentQueryOptions: QueryOptions | null = null;
   private crashRecoveryAttempted = false;
-
-  // Deferred close: set when we want to close after current response ends (e.g., EnterPlanMode)
-  private pendingCloseReason: string | null = null;
 
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -737,7 +697,7 @@ export class ClaudianService {
     void this.persistentQuery.interrupt().catch((error) => {
       // Only silence expected abort/interrupt errors during shutdown
       if (error instanceof Error &&
-          (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
+        (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
         return;
       }
       console.warn('[ClaudianService] Unexpected error during shutdown interrupt:', error);
@@ -763,7 +723,6 @@ export class ClaudianService {
     if (!preserveHandlers) {
       this.responseHandlers = [];
       this.currentAllowedTools = null;
-      this.pendingCloseReason = null;
     }
 
     // Reset crash recovery flag for next session
@@ -829,7 +788,6 @@ export class ClaudianService {
       customPrompt: this.plugin.settings.systemPrompt,
       allowedExportPaths: this.plugin.settings.allowedExportPaths,
       vaultPath,
-      appendedPlan: this.approvedPlanContent ?? undefined,
     };
 
     const budgetSetting = this.plugin.settings.thinkingBudget;
@@ -870,15 +828,13 @@ export class ClaudianService {
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
 
-    // Build system prompt (editor context and plan mode are per-message)
+    // Build system prompt
     const systemPrompt = buildSystemPrompt({
       mediaFolder: this.plugin.settings.mediaFolder,
       customPrompt: this.plugin.settings.systemPrompt,
       allowedExportPaths: this.plugin.settings.allowedExportPaths,
       vaultPath,
       hasEditorContext: true, // Always include editor selection instructions
-      planMode: false, // Plan mode uses cold-start
-      appendedPlan: this.approvedPlanContent ?? undefined,
     });
 
     const options: Options = {
@@ -898,11 +854,12 @@ export class ClaudianService {
       includePartialMessages: true, // Enable streaming (Phase 4)
     };
 
-    // Pre-register all disabled MCP tools upfront (so @-mentions don't trigger restart)
-    const allDisallowedTools = this.mcpManager.getAllDisallowedMcpTools();
-    if (allDisallowedTools.length > 0) {
-      options.disallowedTools = allDisallowedTools;
-    }
+    // Pre-register all disabled MCP tools and hide unsupported SDK tools
+    const allDisallowedTools = [
+      ...this.mcpManager.getAllDisallowedMcpTools(),
+      ...UNSUPPORTED_SDK_TOOLS,
+    ];
+    options.disallowedTools = allDisallowedTools;
 
     // Set permission mode
     if (permissionMode === 'yolo') {
@@ -919,8 +876,10 @@ export class ClaudianService {
       options.maxThinkingTokens = budgetConfig.tokens;
     }
 
-    // Add unified tool callback (handles AskUserQuestion, plan mode tools, and permissions)
-    options.canUseTool = this.createUnifiedToolCallback(permissionMode);
+    // Add canUseTool for normal mode approval flow (YOLO mode bypasses this entirely)
+    if (permissionMode !== 'yolo') {
+      options.canUseTool = this.createApprovalCallback();
+    }
 
     // Add hooks
     const blocklistHook = createBlocklistHook(() => ({
@@ -941,12 +900,10 @@ export class ClaudianService {
     });
 
     const postCallback: FileEditPostCallback = {
-      trackEditedFile: async (name, input, isError) => {
-        if (name === 'Write' && !isError) {
-          const filePath = input?.file_path as string;
-          if (typeof filePath === 'string' && this.isPlanFilePath(filePath)) {
-            this.currentPlanFilePath = this.resolvePlanPath(filePath);
-          }
+      trackEditedFile: async (_name, _input, isError) => {
+        // File tracking is delegated to PreToolUse/PostToolUse hooks
+        if (isError) {
+          console.warn('[ClaudianService] trackEditedFile received error for tool:', _name);
         }
       },
     };
@@ -1108,13 +1065,6 @@ export class ClaudianService {
         handler.sawStreamText = false;
         handler.onDone();
       }
-
-      // Handle deferred close (e.g., after EnterPlanMode)
-      if (this.pendingCloseReason) {
-        const reason = this.pendingCloseReason;
-        this.pendingCloseReason = null;
-        this.closePersistentQuery(reason);
-      }
     }
   }
 
@@ -1143,9 +1093,9 @@ export class ClaudianService {
   /**
    * Sends a query to Claude and streams the response.
    *
-   * Query selection (Phase 1.5):
-   * - Persistent query: default chat (no planMode, no special restrictions)
-   * - Cold-start query: plan mode, inline edit, title generation, instruction refine
+   * Query selection:
+   * - Persistent query: default chat conversation
+   * - Cold-start query: only when forceColdStart is set
    */
   async *query(
     prompt: string,
@@ -1211,7 +1161,7 @@ export class ClaudianService {
     const shouldUsePersistent = this.shouldUsePersistentQuery(effectiveQueryOptions);
 
     if (shouldUsePersistent) {
-      // Start persistent query if not running (e.g., after plan mode ends)
+      // Start persistent query if not running
       if (!this.persistentQuery && !this.shuttingDown) {
         await this.startPersistentQuery(
           vaultPath,
@@ -1268,19 +1218,10 @@ export class ClaudianService {
 
   /**
    * Determines if the persistent query should be used.
-   * Cold-start is used for: plan mode only.
-   *
-   * Note: approved plan content is baked into system prompt when persistent query
-   * restarts (detected via systemPromptKey change in applyDynamicUpdates).
+   * Cold-start is only used when forceColdStart is set.
    */
   private shouldUsePersistentQuery(queryOptions?: QueryOptions): boolean {
-    // Plan mode uses cold-start (read-only exploration)
-    if (queryOptions?.planMode) return false;
     if (queryOptions?.forceColdStart) return false;
-
-    // Slash commands with tool restrictions - still use persistent but set allowedTools
-    // The restriction is enforced via canUseTool callback
-
     return true;
   }
 
@@ -1306,18 +1247,13 @@ export class ClaudianService {
     // Hydrate images
     const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
 
-    // Set allowed tools for canUseTool enforcement (Phase 1.7)
-    // Match cold-start logic: undefined = no restriction, [] = no tools, [...] = restricted
+    // Set allowed tools for canUseTool enforcement
+    // undefined = no restriction, [] = no tools, [...] = restricted
     if (queryOptions?.allowedTools !== undefined) {
-      if (queryOptions.allowedTools.length === 0) {
-        // Empty array: only always-allowed tools (handled in canUseTool)
-        this.currentAllowedTools = [];
-      } else {
-        // Non-empty: restrict to specified tools (include Skill for consistency)
-        this.currentAllowedTools = [...queryOptions.allowedTools, TOOL_SKILL];
-      }
+      this.currentAllowedTools = queryOptions.allowedTools.length > 0
+        ? [...queryOptions.allowedTools, TOOL_SKILL]
+        : [];
     } else {
-      // Undefined: no restriction
       this.currentAllowedTools = null;
     }
 
@@ -1552,10 +1488,9 @@ export class ClaudianService {
         }
         return;
       } else if (permissionMode !== 'yolo') {
-        // Can update via setPermissionMode
-        const sdkMode: SDKPermissionMode = permissionMode === 'plan' ? 'plan' : 'default';
-        console.log('[ClaudianService] Updating permission mode:', sdkMode);
-        await this.persistentQuery.setPermissionMode(sdkMode);
+        // Can update via setPermissionMode (normal mode uses 'default')
+        console.log('[ClaudianService] Updating permission mode: default');
+        await this.persistentQuery.setPermissionMode('default');
         this.currentConfig.permissionMode = permissionMode;
         this.currentConfig.allowDangerouslySkip = false;
       }
@@ -1689,8 +1624,6 @@ export class ClaudianService {
       allowedExportPaths: this.plugin.settings.allowedExportPaths,
       vaultPath: cwd,
       hasEditorContext,
-      planMode: queryOptions?.planMode,
-      appendedPlan: this.approvedPlanContent ?? undefined,
     });
 
 
@@ -1726,10 +1659,12 @@ export class ClaudianService {
       options.mcpServers = mcpServers;
     }
 
+    // Disallow MCP tools from inactive servers and unsupported SDK tools
     const disallowedMcpTools = this.mcpManager.getDisallowedMcpTools(combinedMentions);
-    if (disallowedMcpTools.length > 0) {
-      options.disallowedTools = disallowedMcpTools;
-    }
+    options.disallowedTools = [
+      ...disallowedMcpTools,
+      ...UNSUPPORTED_SDK_TOOLS,
+    ];
 
     // Create hooks for security enforcement
     const blocklistHook = createBlocklistHook(() => ({
@@ -1754,13 +1689,10 @@ export class ClaudianService {
 
     // Create file tracking callbacks
     const postCallback: FileEditPostCallback = {
-      trackEditedFile: async (name, input, isError) => {
-        // Track plan file writes (to ~/.claude/plans/)
-        if (name === 'Write' && !isError) {
-          const filePath = input?.file_path as string;
-          if (typeof filePath === 'string' && this.isPlanFilePath(filePath)) {
-            this.currentPlanFilePath = this.resolvePlanPath(filePath);
-          }
+      trackEditedFile: async (_name, _input, isError) => {
+        // File tracking is delegated to PreToolUse/PostToolUse hooks
+        if (isError) {
+          console.warn('[ClaudianService] trackEditedFile received error for tool:', _name);
         }
       },
     };
@@ -1777,24 +1709,20 @@ export class ClaudianService {
       postCallback
     );
 
-    // Apply permission mode
-    // Always use canUseTool for AskUserQuestion support in both modes
-    options.canUseTool = this.createUnifiedToolCallback(permissionMode);
-    options.hooks = {
-      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
-      PostToolUse: [fileHashPostHook],
-    };
-
-    // Set permission mode based on settings or plan mode
-    if (queryOptions?.planMode) {
-      // Plan mode: read-only exploration, no tool execution
-      options.permissionMode = 'plan';
-    } else if (permissionMode === 'yolo') {
+    // Set permission mode
+    if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
       options.allowDangerouslySkipPermissions = true;
     } else {
       options.permissionMode = 'default';
+      // Add canUseTool for normal mode approval flow
+      options.canUseTool = this.createApprovalCallback();
     }
+
+    options.hooks = {
+      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
+      PostToolUse: [fileHashPostHook],
+    };
 
     // Enable extended thinking based on thinking budget setting
     const budgetSetting = this.plugin.settings.thinkingBudget;
@@ -1803,21 +1731,14 @@ export class ClaudianService {
       options.maxThinkingTokens = budgetConfig.tokens;
     }
 
-    // Apply tool restriction for cold-start queries (Phase 1.7)
+    // Apply tool restriction for cold-start queries
     // Cold-start uses options.tools for hard restriction (not canUseTool)
-    // Note: We don't use options.allowedTools as it's an auto-allow list, not a restriction
-    if (queryOptions?.allowedTools !== undefined) {
-      if (queryOptions.allowedTools.length === 0) {
-        // Empty array: only essential tools (consistent with persistent query behavior)
-        options.tools = [...ALWAYS_ALLOWED_TOOLS];
-      } else {
-        // Non-empty: restrict to specified tools plus ALWAYS_ALLOWED_TOOLS
-        // ALWAYS_ALLOWED_TOOLS are essential for agent-user interaction (AskUserQuestion, etc.)
-        const toolSet = new Set([...queryOptions.allowedTools, ...ALWAYS_ALLOWED_TOOLS]);
-        options.tools = [...toolSet];
-      }
+    if (queryOptions?.allowedTools !== undefined && queryOptions.allowedTools.length > 0) {
+      // Include Skill tool for consistency
+      const toolSet = new Set([...queryOptions.allowedTools, TOOL_SKILL]);
+      options.tools = [...toolSet];
     }
-    // If undefined: no restriction (use default tools)
+    // If undefined or empty: no restriction (use default tools)
 
     // Resume previous session if we have a session ID
     const sessionId = this.sessionManager.getSessionId();
@@ -1883,7 +1804,7 @@ export class ClaudianService {
       void this.persistentQuery.interrupt().catch((error) => {
         // Only silence expected abort/interrupt errors
         if (error instanceof Error &&
-            (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
+          (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
           return;
         }
         console.warn('[ClaudianService] Unexpected error during cancel interrupt:', error);
@@ -1892,7 +1813,7 @@ export class ClaudianService {
   }
 
   /**
-   * Reset the conversation session (Phase 1.9).
+   * Reset the conversation session.
    * Closes the persistent query since session is changing.
    */
   resetSession() {
@@ -1902,8 +1823,6 @@ export class ClaudianService {
     this.sessionManager.reset();
     this.approvalManager.clearSessionPermissions();
     this.diffStore.clear();
-    this.approvedPlanContent = null;
-    this.currentPlanFilePath = null;
   }
 
   /** Get the current session ID. */
@@ -1913,16 +1832,13 @@ export class ClaudianService {
 
   /**
    * Set the session ID (for restoring from saved conversation).
-   * Closes the persistent query since session is switching (Phase 1.9).
+   * Closes the persistent query since session is switching.
    */
   setSessionId(id: string | null): void {
     // Close persistent query when switching sessions
     const currentId = this.sessionManager.getSessionId();
     if (currentId !== id) {
       this.closePersistentQuery('session switch');
-      // Clear session-specific state (approved plan is not persisted across sessions)
-      this.approvedPlanContent = null;
-      this.currentPlanFilePath = null;
     }
 
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
@@ -1946,46 +1862,6 @@ export class ClaudianService {
     this.approvalCallback = callback;
   }
 
-  /** Sets the AskUserQuestion callback for interactive questions. */
-  setAskUserQuestionCallback(callback: AskUserQuestionCallback | null) {
-    this.askUserQuestionCallback = callback;
-  }
-
-  /** Sets the ExitPlanMode callback for plan approval. */
-  setExitPlanModeCallback(callback: ExitPlanModeCallback | null) {
-    this.exitPlanModeCallback = callback;
-  }
-
-  /** Sets the EnterPlanMode callback for plan mode initiation. */
-  setEnterPlanModeCallback(callback: EnterPlanModeCallback | null) {
-    this.enterPlanModeCallback = callback;
-  }
-
-  /** Sets the current plan file path (for ExitPlanMode handling). */
-  setCurrentPlanFilePath(path: string | null) {
-    this.currentPlanFilePath = path;
-  }
-
-  /** Gets the current plan file path. */
-  getCurrentPlanFilePath(): string | null {
-    return this.currentPlanFilePath;
-  }
-
-  /** Sets the approved plan content to be included in future system prompts. */
-  setApprovedPlanContent(content: string | null) {
-    this.approvedPlanContent = content;
-  }
-
-  /** Gets the approved plan content. */
-  getApprovedPlanContent(): string | null {
-    return this.approvedPlanContent;
-  }
-
-  /** Clears the approved plan content. */
-  clearApprovedPlanContent() {
-    this.approvedPlanContent = null;
-  }
-
   /** Get pending diff data for a tool_use_id (and remove it from pending). */
   getDiffData(toolUseId: string): ToolDiffData | undefined {
     return this.diffStore.getDiffData(toolUseId);
@@ -1996,54 +1872,15 @@ export class ClaudianService {
     this.diffStore.clear();
   }
 
-  private resolvePlanPath(filePath: string): string {
-    const normalized = normalizePathForFilesystem(filePath);
-    return path.resolve(normalized);
-  }
-
-  private isPlanFilePath(filePath: string): boolean {
-    const plansDir = path.resolve(os.homedir(), '.claude', 'plans');
-    const resolved = this.resolvePlanPath(filePath);
-    const normalizedPlans = process.platform === 'win32' ? plansDir.toLowerCase() : plansDir;
-    const normalizedResolved = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-    return (
-      normalizedResolved === normalizedPlans ||
-      normalizedResolved.startsWith(normalizedPlans + path.sep)
-    );
-  }
-
   /**
-   * Create unified callback that handles both YOLO and normal modes.
-   * AskUserQuestion, EnterPlanMode, and ExitPlanMode have special handling regardless of mode.
-   *
-   * Tool restriction policy (Phase 1.7):
-   * - Always allow: AskUserQuestion, EnterPlanMode, ExitPlanMode, Skill
-   * - If currentAllowedTools is set, deny tools not in the list
-   *
-   * Note: Permission mode is read from this.plugin.settings at call time (not closured)
-   * to support dynamic mode switching via setPermissionMode.
+   * Create approval callback for normal mode.
+   * Enforces tool restrictions and handles approval flow.
    */
-  private createUnifiedToolCallback(_initialMode: PermissionMode): CanUseTool {
-    return async (toolName, input, context): Promise<PermissionResult> => {
-      // Special handling for AskUserQuestion - always prompt user
-      if (toolName === TOOL_ASK_USER_QUESTION) {
-        return this.handleAskUserQuestionTool(input, context?.toolUseID);
-      }
-
-      // Special handling for EnterPlanMode - mark plan mode activation after reply
-      if (toolName === TOOL_ENTER_PLAN_MODE) {
-        return this.handleEnterPlanModeTool();
-      }
-
-      // Special handling for ExitPlanMode - show plan approval UI
-      if (toolName === TOOL_EXIT_PLAN_MODE) {
-        return this.handleExitPlanModeTool(input, context?.toolUseID);
-      }
-
-      // Phase 1.7: Enforce allowedTools restriction via canUseTool
-      // ALWAYS_ALLOWED_TOOLS bypass the restriction (consistent with cold-start behavior)
-      if (this.currentAllowedTools !== null && !ALWAYS_ALLOWED_TOOLS.includes(toolName as typeof ALWAYS_ALLOWED_TOOLS[number])) {
-        if (!this.currentAllowedTools.includes(toolName)) {
+  private createApprovalCallback(): CanUseTool {
+    return async (toolName, input): Promise<PermissionResult> => {
+      // Enforce allowedTools restriction
+      if (this.currentAllowedTools !== null) {
+        if (!this.currentAllowedTools.includes(toolName) && toolName !== TOOL_SKILL) {
           const allowedList = this.currentAllowedTools.length > 0
             ? ` Allowed tools: ${this.currentAllowedTools.join(', ')}.`
             : ' No tools are allowed for this query type.';
@@ -2054,193 +1891,9 @@ export class ClaudianService {
         }
       }
 
-      // Read current permission mode from settings (not closured) to support dynamic switching
-      const currentMode = this.plugin.settings.permissionMode;
-
-      // YOLO mode: auto-approve everything else
-      if (currentMode === 'yolo') {
-        return { behavior: 'allow', updatedInput: input };
-      }
-
-      // Normal mode: use approval flow
+      // Use approval flow for normal mode
       return this.handleNormalModeApproval(toolName, input);
     };
-  }
-
-  /**
-   * Handle AskUserQuestion tool - shows panel and returns answers.
-   */
-  private async handleAskUserQuestionTool(
-    input: Record<string, unknown>,
-    toolUseId?: string
-  ): Promise<PermissionResult> {
-    if (!this.askUserQuestionCallback) {
-      return {
-        behavior: 'deny',
-        message: 'No question handler available.',
-      };
-    }
-
-    try {
-      const answers = await this.askUserQuestionCallback(input as unknown as AskUserQuestionInput);
-
-      if (answers === null) {
-        // User pressed Escape - interrupt the stream like in Claude Code
-        return {
-          behavior: 'deny',
-          message: 'User interrupted.',
-          interrupt: true,
-        };
-      }
-
-      // Store answers for later retrieval by StreamController
-      if (toolUseId) {
-        this.askUserQuestionAnswers.set(toolUseId, answers);
-      }
-
-      // Return updated input with answers
-      return {
-        behavior: 'allow',
-        updatedInput: { ...input, answers },
-      };
-    } catch (error) {
-      console.error('[ClaudianService] AskUserQuestion callback failed:', error);
-      return {
-        behavior: 'deny',
-        message: `Failed to get user response: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        interrupt: true,
-      };
-    }
-  }
-
-  /** Get stored AskUserQuestion answers for a tool_use_id. */
-  getAskUserQuestionAnswers(toolUseId: string): Record<string, string | string[]> | undefined {
-    const answers = this.askUserQuestionAnswers.get(toolUseId);
-    if (answers) {
-      this.askUserQuestionAnswers.delete(toolUseId);
-    }
-    return answers;
-  }
-
-  /**
-   * Handle EnterPlanMode tool - notifies UI to activate plan mode after the reply ends.
-   * Defers closing persistent query until response completes (Phase 3).
-   */
-  private async handleEnterPlanModeTool(): Promise<PermissionResult> {
-    // Defer close until result arrives - don't interrupt mid-response
-    // This allows the agent to finish its response after calling EnterPlanMode
-    this.pendingCloseReason = 'entering plan mode';
-
-    if (!this.enterPlanModeCallback) {
-      // No callback - just allow the tool (UI will handle via stream detection)
-      return { behavior: 'allow', updatedInput: {} };
-    }
-
-    try {
-      // Notify UI to update state and queue re-send with plan mode
-      await this.enterPlanModeCallback();
-    } catch (error) {
-      // Non-critical: UI can detect plan mode from stream, but log for debugging
-      console.warn('[ClaudianService] EnterPlanMode callback failed (UI will detect from stream):',
-        error instanceof Error ? error.message : String(error));
-    }
-    return { behavior: 'allow', updatedInput: {} };
-  }
-
-  /**
-   * Handle ExitPlanMode tool - shows plan approval UI and handles decision.
-   * Reads plan content from the persisted file in ~/.claude/plans/.
-   */
-  private async handleExitPlanModeTool(
-    input: Record<string, unknown>,
-    toolUseId?: string
-  ): Promise<PermissionResult> {
-    if (!this.exitPlanModeCallback) {
-      return {
-        behavior: 'deny',
-        message: 'No plan mode handler available.',
-      };
-    }
-
-    // Read plan content from the persisted file
-    let planContent: string | null = null;
-    if (this.currentPlanFilePath && this.isPlanFilePath(this.currentPlanFilePath)) {
-      const planPath = this.resolvePlanPath(this.currentPlanFilePath);
-      try {
-        const fs = await import('fs');
-        if (fs.existsSync(planPath)) {
-          planContent = fs.readFileSync(planPath, 'utf-8');
-        }
-      } catch (error) {
-        // Fall back to SDK input, but log the error for debugging
-        console.error('[ClaudianService] Failed to read plan file, falling back to SDK input:',
-          planPath, error instanceof Error ? error.message : String(error));
-      }
-    }
-
-    // Fall back to SDK's input.plan if file read failed
-    if (!planContent) {
-      planContent = typeof input.plan === 'string' ? input.plan : null;
-    }
-
-    if (!planContent) {
-      return {
-        behavior: 'deny',
-        message: 'No plan content available.',
-      };
-    }
-
-    try {
-      const decision = await this.exitPlanModeCallback(planContent);
-
-      switch (decision.decision) {
-        case 'approve':
-          // Plan approved - interrupt current plan mode query and let caller handle implementation
-          // We use 'deny' with a success message because the SDK would otherwise continue in plan mode
-          return {
-            behavior: 'deny',
-            message: 'PLAN APPROVED. Plan mode has ended. The user has approved your plan and it has been saved. Implementation will begin with a new query that has full tool access.',
-            interrupt: true,
-          };
-        case 'approve_new_session':
-          // Plan approved with fresh session - interrupt and let caller handle
-          return {
-            behavior: 'deny',
-            message: 'PLAN APPROVED WITH NEW SESSION. Plan mode has ended. Implementation will begin with a fresh session that has full tool access.',
-            interrupt: true,
-          };
-        case 'revise': {
-          const feedback = decision.feedback.trim();
-          const feedbackSection = feedback ? `\n\nUser feedback:\n${feedback}` : '';
-          // User wants to revise - deny to continue planning
-          return {
-            behavior: 'deny',
-            message: `Please revise the plan based on user feedback and call ExitPlanMode again when ready.${feedbackSection}`,
-            interrupt: false,
-          };
-        }
-        case 'cancel':
-          // User cancelled (Esc) - interrupt
-          return {
-            behavior: 'deny',
-            message: 'Plan cancelled by user.',
-            interrupt: true,
-          };
-        default:
-          return {
-            behavior: 'deny',
-            message: 'Unknown decision.',
-            interrupt: true,
-          };
-      }
-    } catch (error) {
-      console.error('[ClaudianService] ExitPlanMode callback failed:', error);
-      return {
-        behavior: 'deny',
-        message: `Failed to get plan approval: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        interrupt: true,
-      };
-    }
   }
 
   /**

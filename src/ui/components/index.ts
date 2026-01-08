@@ -1,12 +1,6 @@
 /** Claudian UI components - barrel export. */
 
 export {
-  AskUserQuestionPanel,
-  type AskUserQuestionPanelOptions,
-  type AskUserQuestionPanelResult,
-  showAskUserQuestionPanel,
-} from './AskUserQuestionPanel';
-export {
   type FileContextCallbacks,
   FileContextManager,
 } from './FileContext';
@@ -30,15 +24,6 @@ export {
   InstructionModeManager,
   type InstructionModeState,
 } from './InstructionModeManager';
-export {
-  PlanApprovalPanel,
-  type PlanApprovalPanelOptions,
-  showPlanApprovalPanel,
-} from './PlanApprovalPanel';
-export {
-  PlanBanner,
-  type PlanBannerOptions,
-} from './PlanBanner';
 export { hideSelectionHighlight, showSelectionHighlight } from './SelectionHighlight';
 export {
   SlashCommandDropdown,

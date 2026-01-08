@@ -38,25 +38,6 @@ describe('systemPrompt', () => {
       expect(prompt).toContain('- /tmp');
       expect(prompt).toContain('write-only');
     });
-
-    it('should include plan mode instructions when planMode is true', () => {
-      const prompt = buildSystemPrompt({ planMode: true });
-      expect(prompt).toContain('### Plan Mode');
-      expect(prompt).toContain('read-only exploration phase');
-      expect(prompt).toContain('EnterPlanMode');
-      expect(prompt).toContain('ExitPlanMode');
-      expect(prompt).toContain('Disabled tools:');
-    });
-
-    it('should not include plan mode instructions when planMode is false', () => {
-      const prompt = buildSystemPrompt({ planMode: false });
-      expect(prompt).not.toContain('### Plan Mode');
-    });
-
-    it('should not include plan mode instructions by default', () => {
-      const prompt = buildSystemPrompt({});
-      expect(prompt).not.toContain('### Plan Mode');
-    });
   });
 
   describe('media folder instructions', () => {
