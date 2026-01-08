@@ -10,7 +10,7 @@ import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
 import { getCliPlatformKey, getCurrentPlatformKey } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
-import { getAvailableLocales, getLocaleDisplayName,setLocale, t } from '../../i18n';
+import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
 import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from '../../ui';
@@ -81,7 +81,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
     containerEl.addClass('claudian-settings');
 
     // Update i18n locale from settings
-    setLocale(this.plugin.settings.locale);
+    if (!setLocale(this.plugin.settings.locale)) {
+      console.error(`[Settings] Invalid locale in settings: ${this.plugin.settings.locale}, using default`);
+    }
 
     // Language selector at the very top
     new Setting(containerEl)

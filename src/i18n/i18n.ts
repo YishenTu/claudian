@@ -2,7 +2,7 @@
  * i18n - Internationalization service for Claudian
  *
  * Provides translation functionality for all UI strings.
- * Supports English and Simplified Chinese by default.
+ * Supports 10 locales with English as the default fallback.
  */
 
 import * as de from './locales/de.json';
@@ -83,6 +83,9 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
 
 /**
  * Fallback to English translation
+ * @param key - Dot-notation translation key
+ * @param params - Optional parameters for string interpolation
+ * @returns English translation, or the key itself if not found
  */
 function tFallback(key: TranslationKey, params?: Record<string, string | number>): string {
   const dict = translations[DEFAULT_LOCALE];
@@ -93,11 +96,15 @@ function tFallback(key: TranslationKey, params?: Record<string, string | number>
     if (value && typeof value === 'object' && k in value) {
       value = value[k];
     } else {
+      console.error(`[i18n] CRITICAL: Missing translation for key "${key}" in default locale "${DEFAULT_LOCALE}"`);
       return key;
     }
   }
 
-  if (typeof value !== 'string') return key;
+  if (typeof value !== 'string') {
+    console.error(`[i18n] CRITICAL: Translation for key "${key}" is not a string in default locale`);
+    return key;
+  }
 
   if (params) {
     return value.replace(/\{(\w+)\}/g, (_, param) => {
