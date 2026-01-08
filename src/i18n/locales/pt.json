@@ -93,24 +93,6 @@
       "name": "Caminhos de exportação permitidos",
       "desc": "Caminhos fora do repositório onde arquivos podem ser exportados (um por linha). Suporta ~ para diretório home."
     },
-    "approvedActions": {
-      "name": "Ações aprovadas",
-      "desc": "Ações que foram aprovadas permanentemente (via \"Permitir sempre\"). Estas não exigem aprovação no modo seguro.",
-      "allowDesc": "Aprovada automaticamente sem confirmação no modo seguro.",
-      "empty": "Ainda não há ações aprovadas. Quando você clicar em \"Permitir sempre\" na caixa de diálogo de aprovação, as ações aparecerão aqui.",
-      "clearAll": "Limpar todas as ações aprovadas",
-      "clearAllDesc": "Remover todas as ações aprovadas permanentemente",
-      "clearAllBtn": "Limpar tudo",
-      "remove": "Remover"
-    },
-    "deniedActions": {
-      "name": "Ações negadas",
-      "desc": "Sempre bloqueada sem confirmação."
-    },
-    "alwaysAsk": {
-      "name": "Sempre perguntar",
-      "desc": "Sempre requer confirmação mesmo se corresponder a uma regra de permissão."
-    },
     "environment": "Ambiente",
     "customVariables": {
       "name": "Variáveis personalizadas",

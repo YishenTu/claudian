@@ -40,7 +40,6 @@
 
 /* Settings */
 @import "./settings/base.css";
-@import "./settings/approved-actions.css";
 @import "./settings/env-snippets.css";
 @import "./settings/slash-settings.css";
 @import "./settings/mcp-settings.css";

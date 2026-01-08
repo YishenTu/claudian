@@ -93,24 +93,6 @@
       "name": "Chemins d'exportation autorisés",
       "desc": "Chemins en dehors du coffre où les fichiers peuvent être exportés (un par ligne). Supporte ~ pour le répertoire home."
     },
-    "approvedActions": {
-      "name": "Actions approuvées",
-      "desc": "Actions qui ont été approuvées de manière permanente (via \"Toujours autoriser\"). Celles-ci n'ont pas besoin d'approbation en mode sécurisé.",
-      "allowDesc": "Approuvée automatiquement sans confirmation en mode sécurisé.",
-      "empty": "Pas encore d'actions approuvées. Lorsque vous cliquez sur \"Toujours autoriser\" dans la boîte de dialogue d'approbation, les actions apparaîtront ici.",
-      "clearAll": "Effacer toutes les actions approuvées",
-      "clearAllDesc": "Supprimer toutes les actions approuvées de manière permanente",
-      "clearAllBtn": "Tout effacer",
-      "remove": "Supprimer"
-    },
-    "deniedActions": {
-      "name": "Actions refusées",
-      "desc": "Toujours bloquée sans confirmation."
-    },
-    "alwaysAsk": {
-      "name": "Toujours demander",
-      "desc": "Nécessite toujours une confirmation même si une règle d'autorisation correspond."
-    },
     "environment": "Environnement",
     "customVariables": {
       "name": "Variables personnalisées",

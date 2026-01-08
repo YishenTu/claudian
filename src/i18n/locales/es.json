@@ -93,24 +93,6 @@
       "name": "Rutas de exportación permitidas",
       "desc": "Rutas fuera del depósito donde se pueden exportar archivos (una por línea). Soporta ~ para el directorio home."
     },
-    "approvedActions": {
-      "name": "Acciones aprobadas",
-      "desc": "Acciones que han sido aprobadas permanentemente (a través de \"Permitir siempre\"). Estas no requieren aprobación en modo seguro.",
-      "allowDesc": "Aprobada automáticamente sin confirmación en modo seguro.",
-      "empty": "Aún no hay acciones aprobadas. Cuando hagas clic en \"Permitir siempre\" en el diálogo de aprobación, las acciones aparecerán aquí.",
-      "clearAll": "Borrar todas las acciones aprobadas",
-      "clearAllDesc": "Eliminar todas las acciones aprobadas permanentemente",
-      "clearAllBtn": "Borrar todo",
-      "remove": "Eliminar"
-    },
-    "deniedActions": {
-      "name": "Acciones denegadas",
-      "desc": "Siempre bloqueada sin confirmación."
-    },
-    "alwaysAsk": {
-      "name": "Siempre preguntar",
-      "desc": "Siempre requiere confirmación aunque coincida con una regla de permiso."
-    },
     "environment": "Entorno",
     "customVariables": {
       "name": "Variables personalizadas",

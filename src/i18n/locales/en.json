@@ -93,24 +93,6 @@
       "name": "Allowed export paths",
       "desc": "Paths outside the vault where files can be exported (one per line). Supports ~ for home directory."
     },
-    "approvedActions": {
-      "name": "Approved actions",
-      "desc": "Actions that have been permanently approved (via \"Always Allow\"). These will not require approval in Safe mode.",
-      "allowDesc": "Auto-approved without prompting in Safe mode.",
-      "empty": "No approved actions yet. When you click \"Always Allow\" in the approval dialog, actions will appear here.",
-      "clearAll": "Clear all approved actions",
-      "clearAllDesc": "Remove all permanently approved actions",
-      "clearAllBtn": "Clear all",
-      "remove": "Remove"
-    },
-    "deniedActions": {
-      "name": "Denied actions",
-      "desc": "Always blocked without prompting."
-    },
-    "alwaysAsk": {
-      "name": "Always ask",
-      "desc": "Always require confirmation even if matching an allow rule."
-    },
     "environment": "Environment",
     "customVariables": {
       "name": "Custom variables",

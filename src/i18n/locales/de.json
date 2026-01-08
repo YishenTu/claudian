@@ -93,24 +93,6 @@
       "name": "Zugelassene Exportpfade",
       "desc": "Pfade außerhalb des Vaults, in die Dateien exportiert werden können (einer pro Zeile). Unterstützt ~ für Home-Verzeichnis."
     },
-    "approvedActions": {
-      "name": "Genehmigte Aktionen",
-      "desc": "Aktionen, die permanent genehmigt wurden (über \"Immer erlauben\"). Diese erfordern im Sicherheitsmodus keine erneute Genehmigung.",
-      "allowDesc": "Im Sicherheitsmodus ohne Bestätigung automatisch genehmigt.",
-      "empty": "Noch keine genehmigten Aktionen. Wenn du \"Immer erlauben\" im Genehmigungsdialog klickst, erscheinen die Aktionen hier.",
-      "clearAll": "Alle genehmigten Aktionen löschen",
-      "clearAllDesc": "Alle permanent genehmigten Aktionen entfernen",
-      "clearAllBtn": "Alle löschen",
-      "remove": "Entfernen"
-    },
-    "deniedActions": {
-      "name": "Abgelehnte Aktionen",
-      "desc": "Immer ohne Bestätigung blockiert."
-    },
-    "alwaysAsk": {
-      "name": "Immer fragen",
-      "desc": "Erfordert immer Bestätigung, auch wenn eine Erlaubnisregel zutrifft."
-    },
     "environment": "Umgebung",
     "customVariables": {
       "name": "Benutzerdefinierte Variablen",
