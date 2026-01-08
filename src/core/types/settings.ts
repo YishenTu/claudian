@@ -2,6 +2,7 @@
  * Settings type definitions.
  */
 
+import type { Locale } from '../../i18n/types';
 import type { ClaudeModel, ThinkingBudget } from './models';
 
 /** Platform-specific blocked commands (Unix). */
@@ -255,6 +256,9 @@ export interface ClaudianSettings {
   // UI settings
   keyboardNavigation: KeyboardNavigationSettings;
 
+  // Internationalization
+  locale: Locale;  // UI language setting
+
   // CLI paths (platform-specific)
   claudeCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
   claudeCliPaths: PlatformCliPaths;  // Platform-specific CLI paths (preferred)
@@ -308,6 +312,9 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
     scrollDownKey: 's',
     focusInputKey: 'i',
   },
+
+  // Internationalization
+  locale: 'en',  // Default to English
 
   // CLI paths
   claudeCliPath: '',  // Legacy field (empty = not migrated)

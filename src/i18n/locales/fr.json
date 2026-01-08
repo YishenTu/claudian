@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "add": "Ajouter",
+    "remove": "Supprimer",
+    "clear": "Effacer",
+    "clearAll": "Tout effacer",
+    "loading": "Chargement",
+    "error": "Erreur",
+    "success": "Succès",
+    "warning": "Avertissement",
+    "confirm": "Confirmer",
+    "settings": "Paramètres",
+    "advanced": "Avancé",
+    "enabled": "Activé",
+    "disabled": "Désactivé",
+    "platform": "Plateforme"
+  },
+  "settings": {
+    "title": "Paramètres Claudian",
+    "customization": "Personnalisation",
+    "userName": {
+      "name": "Comment Claudian doit-il vous appeler ?",
+      "desc": "Votre nom pour les salutations personnalisées (laisser vide pour les salutations génériques)"
+    },
+    "excludedTags": {
+      "name": "Tags exclus",
+      "desc": "Les notes avec ces tags ne seront pas chargées automatiquement comme contexte (un par ligne, sans #)"
+    },
+    "mediaFolder": {
+      "name": "Dossier des médias",
+      "desc": "Dossier contenant les pièces jointes/images. Lorsque les notes utilisent ![[image.jpg]], Claude cherchera ici. Laisser vide pour la racine du coffre."
+    },
+    "systemPrompt": {
+      "name": "Prompt système personnalisé",
+      "desc": "Instructions supplémentaires ajoutées au prompt système par défaut"
+    },
+    "autoTitle": {
+      "name": "Générer automatiquement les titres de conversation",
+      "desc": "Génère automatiquement les titres de conversation après le premier échange."
+    },
+    "titleModel": {
+      "name": "Modèle de génération de titre",
+      "desc": "Modèle utilisé pour générer automatiquement les titres de conversation.",
+      "auto": "Auto (Haiku)"
+    },
+    "navMappings": {
+      "name": "Mappages de navigation style Vim",
+      "desc": "Un mappage par ligne. Format : \"map <touche> <action>\" (actions : scrollUp, scrollDown, focusInput)."
+    },
+    "hotkeys": "Raccourcis clavier",
+    "inlineEditHotkey": {
+      "name": "Raccourci d'édition en ligne",
+      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
+      "descWithKey": "Actuel : {hotkey}",
+      "btnSet": "Définir le raccourci",
+      "btnChange": "Changer"
+    },
+    "openChatHotkey": {
+      "name": "Raccourci d'ouverture du chat",
+      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
+      "descWithKey": "Actuel : {hotkey}",
+      "btnSet": "Définir le raccourci",
+      "btnChange": "Changer"
+    },
+    "slashCommands": {
+      "name": "Commandes slash",
+      "desc": "Créez des modèles de prompts personnalisés déclenchés par /command. Utilisez $ARGUMENTS pour tous les arguments, $1/$2 pour les arguments positionnels, @file pour le contenu du fichier et !`bash` pour la sortie de commande."
+    },
+    "mcpServers": {
+      "name": "Serveurs MCP",
+      "desc": "Configurez les serveurs Model Context Protocol pour étendre les capacités de Claude avec des outils et sources de données externes. Les serveurs avec mode de sauvegarde de contexte nécessitent une @mention pour s'activer."
+    },
+    "safety": "Sécurité",
+    "loadUserSettings": {
+      "name": "Charger les paramètres utilisateur Claude",
+      "desc": "Charge ~/.claude/settings.json. Lorsqu'activé, les règles de permission de l'utilisateur peuvent contourner le mode sécurisé."
+    },
+    "enableBlocklist": {
+      "name": "Activer la liste noire de commandes",
+      "desc": "Bloque les commandes bash potentiellement dangereuses"
+    },
+    "blockedCommands": {
+      "name": "Commandes bloquées ({platform})",
+      "desc": "Modèles à bloquer sur {platform} (un par ligne). Supporte les expressions régulières.",
+      "unixName": "Commandes bloquées (Unix/Git Bash)",
+      "unixDesc": "Les modèles Unix sont également bloqués sur Windows car Git Bash peut les appeler."
+    },
+    "exportPaths": {
+      "name": "Chemins d'exportation autorisés",
+      "desc": "Chemins en dehors du coffre où les fichiers peuvent être exportés (un par ligne). Supporte ~ pour le répertoire home."
+    },
+    "approvedActions": {
+      "name": "Actions approuvées",
+      "desc": "Actions qui ont été approuvées de manière permanente (via \"Toujours autoriser\"). Celles-ci n'ont pas besoin d'approbation en mode sécurisé.",
+      "allowDesc": "Approuvée automatiquement sans confirmation en mode sécurisé.",
+      "empty": "Pas encore d'actions approuvées. Lorsque vous cliquez sur \"Toujours autoriser\" dans la boîte de dialogue d'approbation, les actions apparaîtront ici.",
+      "clearAll": "Effacer toutes les actions approuvées",
+      "clearAllDesc": "Supprimer toutes les actions approuvées de manière permanente",
+      "clearAllBtn": "Tout effacer",
+      "remove": "Supprimer"
+    },
+    "deniedActions": {
+      "name": "Actions refusées",
+      "desc": "Toujours bloquée sans confirmation."
+    },
+    "alwaysAsk": {
+      "name": "Toujours demander",
+      "desc": "Nécessite toujours une confirmation même si une règle d'autorisation correspond."
+    },
+    "environment": "Environnement",
+    "customVariables": {
+      "name": "Variables personnalisées",
+      "desc": "Variables d'environnement pour Claude SDK (format KEY=VALUE, une par ligne)"
+    },
+    "envSnippets": {
+      "name": "Extraits d'environnement",
+      "addBtn": "Ajouter un extrait",
+      "editBtn": "Éditer",
+      "deleteBtn": "Supprimer",
+      "useBtn": "Utiliser",
+      "noSnippets": "Aucun extrait d'environnement enregistré.",
+      "modal": {
+        "title": "Extrait d'environnement",
+        "name": "Nom",
+        "namePlaceholder": "ex : API de production",
+        "description": "Description",
+        "descPlaceholder": "Description optionnelle",
+        "envVars": "Variables d'environnement",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "Enregistrer",
+        "cancel": "Annuler"
+      }
+    },
+    "advanced": "Avancé",
+    "cliPath": {
+      "name": "Chemin CLI Claude",
+      "desc": "Chemin personnalisé vers Claude Code CLI. Laisser vide pour la détection automatique.",
+      "validation": {
+        "notExist": "Le chemin n'existe pas",
+        "isDirectory": "Le chemin est un répertoire, pas un fichier"
+      }
+    },
+    "language": {
+      "name": "Langue",
+      "desc": "Changer la langue d'affichage de l'interface du plugin",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}

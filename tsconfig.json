@@ -16,6 +16,7 @@
     "importHelpers": true,
     "isolatedModules": true,
     "strictNullChecks": true,
+    "resolveJsonModule": true,
     "lib": ["DOM", "ES6", "ES7"],
     "outDir": "./dist",
     "rootDir": "."

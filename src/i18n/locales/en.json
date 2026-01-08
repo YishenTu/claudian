@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "clear": "Clear",
+    "clearAll": "Clear all",
+    "loading": "Loading",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "confirm": "Confirm",
+    "settings": "Settings",
+    "advanced": "Advanced",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "platform": "Platform"
+  },
+  "settings": {
+    "title": "Claudian Settings",
+    "customization": "Customization",
+    "userName": {
+      "name": "What should Claudian call you?",
+      "desc": "Your name for personalized greetings (leave empty for generic greetings)"
+    },
+    "excludedTags": {
+      "name": "Excluded tags",
+      "desc": "Notes with these tags will not auto-load as context (one per line, without #)"
+    },
+    "mediaFolder": {
+      "name": "Media folder",
+      "desc": "Folder containing attachments/images. When notes use ![[image.jpg]], Claude will look here. Leave empty for vault root."
+    },
+    "systemPrompt": {
+      "name": "Custom system prompt",
+      "desc": "Additional instructions appended to the default system prompt"
+    },
+    "autoTitle": {
+      "name": "Auto-generate conversation titles",
+      "desc": "Automatically generate conversation titles after the first exchange."
+    },
+    "titleModel": {
+      "name": "Title generation model",
+      "desc": "Model used for auto-generating conversation titles.",
+      "auto": "Auto (Haiku)"
+    },
+    "navMappings": {
+      "name": "Vim-style navigation mappings",
+      "desc": "One mapping per line. Format: \"map <key> <action>\" (actions: scrollUp, scrollDown, focusInput)."
+    },
+    "hotkeys": "Hotkeys",
+    "inlineEditHotkey": {
+      "name": "Inline edit hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
+    "openChatHotkey": {
+      "name": "Open chat hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
+    "slashCommands": {
+      "name": "Slash Commands",
+      "desc": "Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output."
+    },
+    "mcpServers": {
+      "name": "MCP Servers",
+      "desc": "Configure Model Context Protocol servers to extend Claude's capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate."
+    },
+    "safety": "Safety",
+    "loadUserSettings": {
+      "name": "Load user Claude settings",
+      "desc": "Load ~/.claude/settings.json. When enabled, user's Claude Code permission rules may bypass Safe mode."
+    },
+    "enableBlocklist": {
+      "name": "Enable command blocklist",
+      "desc": "Block potentially dangerous bash commands"
+    },
+    "blockedCommands": {
+      "name": "Blocked commands ({platform})",
+      "desc": "Patterns to block on {platform} (one per line). Supports regex.",
+      "unixName": "Blocked commands (Unix/Git Bash)",
+      "unixDesc": "Unix patterns also blocked on Windows because Git Bash can invoke them."
+    },
+    "exportPaths": {
+      "name": "Allowed export paths",
+      "desc": "Paths outside the vault where files can be exported (one per line). Supports ~ for home directory."
+    },
+    "approvedActions": {
+      "name": "Approved actions",
+      "desc": "Actions that have been permanently approved (via \"Always Allow\"). These will not require approval in Safe mode.",
+      "allowDesc": "Auto-approved without prompting in Safe mode.",
+      "empty": "No approved actions yet. When you click \"Always Allow\" in the approval dialog, actions will appear here.",
+      "clearAll": "Clear all approved actions",
+      "clearAllDesc": "Remove all permanently approved actions",
+      "clearAllBtn": "Clear all",
+      "remove": "Remove"
+    },
+    "deniedActions": {
+      "name": "Denied actions",
+      "desc": "Always blocked without prompting."
+    },
+    "alwaysAsk": {
+      "name": "Always ask",
+      "desc": "Always require confirmation even if matching an allow rule."
+    },
+    "environment": "Environment",
+    "customVariables": {
+      "name": "Custom variables",
+      "desc": "Environment variables for Claude SDK (KEY=VALUE format, one per line)"
+    },
+    "envSnippets": {
+      "name": "Environment Snippets",
+      "addBtn": "Add snippet",
+      "editBtn": "Edit",
+      "deleteBtn": "Delete",
+      "useBtn": "Use",
+      "noSnippets": "No environment snippets saved yet.",
+      "modal": {
+        "title": "Environment Snippet",
+        "name": "Name",
+        "namePlaceholder": "e.g., Production API",
+        "description": "Description",
+        "descPlaceholder": "Optional description",
+        "envVars": "Environment Variables",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "Save",
+        "cancel": "Cancel"
+      }
+    },
+    "advanced": "Advanced",
+    "cliPath": {
+      "name": "Claude CLI path",
+      "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection.",
+      "validation": {
+        "notExist": "Path does not exist",
+        "isDirectory": "Path is a directory, not a file"
+      }
+    },
+    "language": {
+      "name": "Language",
+      "desc": "Change the display language of the plugin interface",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}

@@ -25,6 +25,7 @@ import {
 import { ClaudianView } from './features/chat/ClaudianView';
 import { McpService } from './features/mcp/McpService';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
+import { setLocale } from './i18n';
 import { type InlineEditContext, InlineEditModal } from './ui/modals/InlineEditModal';
 import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
@@ -185,6 +186,9 @@ export default class ClaudianPlugin extends Plugin {
         !this.conversations.find(c => c.id === this.activeConversationId)) {
       this.activeConversationId = null;
     }
+
+    // Initialize i18n with saved locale
+    setLocale(this.settings.locale);
 
     const backfilledConversations = this.backfillConversationResponseTimestamps();
 

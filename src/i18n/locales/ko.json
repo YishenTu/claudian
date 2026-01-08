@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "저장",
+    "cancel": "취소",
+    "delete": "삭제",
+    "edit": "편집",
+    "add": "추가",
+    "remove": "제거",
+    "clear": "지우기",
+    "clearAll": "모두 지우기",
+    "loading": "로딩 중",
+    "error": "오류",
+    "success": "성공",
+    "warning": "경고",
+    "confirm": "확인",
+    "settings": "설정",
+    "advanced": "고급",
+    "enabled": "활성화",
+    "disabled": "비활성화",
+    "platform": "플랫폼"
+  },
+  "settings": {
+    "title": "Claudian 설정",
+    "customization": "사용자 정의",
+    "userName": {
+      "name": "Claudian이 당신을 어떻게 불러야 합니까?",
+      "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"
+    },
+    "excludedTags": {
+      "name": "제외 태그",
+      "desc": "이 태그가 포함된 노트는 자동으로 컨텍스트로 로드되지 않습니다 (한 줄에 하나, # 제외)"
+    },
+    "mediaFolder": {
+      "name": "미디어 폴더",
+      "desc": "첨부 파일/이미지를 저장할 폴더. 노트가 ![[image.jpg]]를 사용할 때 Claude가 여기서 찾습니다. 비워두면 저장소 루트 사용."
+    },
+    "systemPrompt": {
+      "name": "커스텀 시스템 프롬프트",
+      "desc": "기본 시스템 프롬프트에 추가되는 추가 지침"
+    },
+    "autoTitle": {
+      "name": "대화 제목 자동 생성",
+      "desc": "첫 번째 교환 후 자동으로 대화 제목을 생성합니다."
+    },
+    "titleModel": {
+      "name": "제목 생성 모델",
+      "desc": "대화 제목을 자동 생성하는 데 사용되는 모델.",
+      "auto": "자동 (Haiku)"
+    },
+    "navMappings": {
+      "name": "Vim 스타일 네비게이션 매핑",
+      "desc": "한 줄에 하나의 매핑. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."
+    },
+    "hotkeys": "단축키",
+    "inlineEditHotkey": {
+      "name": "인라인 편집 단축키",
+      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
+      "descWithKey": "현재: {hotkey}",
+      "btnSet": "단축키 설정",
+      "btnChange": "변경"
+    },
+    "openChatHotkey": {
+      "name": "채팅 열기 단축키",
+      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
+      "descWithKey": "현재: {hotkey}",
+      "btnSet": "단축키 설정",
+      "btnChange": "변경"
+    },
+    "slashCommands": {
+      "name": "슬래시 명령어",
+      "desc": "/command로 트리거되는 커스텀 프롬프트 템플릿을 생성합니다. $ARGUMENTS로 모든 인자, $1/$2로 위치 인자, @file로 파일 내용, !`bash`로 명령어 출력을 가져올 수 있습니다."
+    },
+    "mcpServers": {
+      "name": "MCP 서버",
+      "desc": "모델 컨텍스트 프로토콜 서버를 설정하여 외부 도구와 데이터 소스로 Claude의 기능을 확장합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
+    },
+    "safety": "보안",
+    "loadUserSettings": {
+      "name": "사용자 Claude 설정 로드",
+      "desc": "~/.claude/settings.json을 로드합니다. 활성화하면 사용자의 Claude Code 허용 규칙이 보안 모드를 우회할 수 있습니다."
+    },
+    "enableBlocklist": {
+      "name": "명령어 블랙리스트 활성화",
+      "desc": "잠재적으로 위험한 bash 명령어 차단"
+    },
+    "blockedCommands": {
+      "name": "차단된 명령어 ({platform})",
+      "desc": "{platform}에서 차단할 패턴 (한 줄에 하나). 정규식 지원.",
+      "unixName": "차단된 명령어 (Unix/Git Bash)",
+      "unixDesc": "Git Bash가 호출할 수 있으므로 Unix 패턴도 Windows에서 차단됩니다."
+    },
+    "exportPaths": {
+      "name": "허용된 내보내기 경로",
+      "desc": "파일을 내보낼 수 있는 저장소 외부 경로 (한 줄에 하나). ~로 홈 디렉토리 지원."
+    },
+    "approvedActions": {
+      "name": "승인된 작업",
+      "desc": "영구적으로 승인된 작업 (\"항상 허용\"을 통해). 보안 모드에서 다시 승인할 필요가 없습니다.",
+      "allowDesc": "보안 모드에서 확인 없이 자동 승인됩니다.",
+      "empty": "승인된 작업이 아직 없습니다. 승인 대화상자에서 \"항상 허용\"을 클릭하면 작업이 여기에 표시됩니다.",
+      "clearAll": "모든 승인된 작업 지우기",
+      "clearAllDesc": "모든 영구 승인 작업 제거",
+      "clearAllBtn": "모두 지우기",
+      "remove": "제거"
+    },
+    "deniedActions": {
+      "name": "거부된 작업",
+      "desc": "확인 없이 항상 차단됩니다."
+    },
+    "alwaysAsk": {
+      "name": "항상 확인",
+      "desc": "허용 규칙과 일치하더라도 항상 확인이 필요합니다."
+    },
+    "environment": "환경",
+    "customVariables": {
+      "name": "커스텀 변수",
+      "desc": "Claude SDK 환경 변수 (KEY=VALUE 형식, 한 줄에 하나)"
+    },
+    "envSnippets": {
+      "name": "환경 변수 스니펫",
+      "addBtn": "스니펫 추가",
+      "editBtn": "편집",
+      "deleteBtn": "삭제",
+      "useBtn": "사용",
+      "noSnippets": "저장된 환경 변수 스니펫이 없습니다.",
+      "modal": {
+        "title": "환경 변수 스니펫",
+        "name": "이름",
+        "namePlaceholder": "예: 프로덕션 API",
+        "description": "설명",
+        "descPlaceholder": "선택적 설명",
+        "envVars": "환경 변수",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "저장",
+        "cancel": "취소"
+      }
+    },
+    "advanced": "고급",
+    "cliPath": {
+      "name": "Claude CLI 경로",
+      "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",
+      "validation": {
+        "notExist": "경로가 존재하지 않습니다",
+        "isDirectory": "경로가 디렉토리입니다 파일이 아닙니다"
+      }
+    },
+    "language": {
+      "name": "언어",
+      "desc": "플러그인 인터페이스의 표시 언어 변경",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}

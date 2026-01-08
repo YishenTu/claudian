@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "delete": "Excluir",
+    "edit": "Editar",
+    "add": "Adicionar",
+    "remove": "Remover",
+    "clear": "Limpar",
+    "clearAll": "Limpar tudo",
+    "loading": "Carregando",
+    "error": "Erro",
+    "success": "Sucesso",
+    "warning": "Aviso",
+    "confirm": "Confirmar",
+    "settings": "Configurações",
+    "advanced": "Avançado",
+    "enabled": "Ativado",
+    "disabled": "Desativado",
+    "platform": "Plataforma"
+  },
+  "settings": {
+    "title": "Configurações do Claudian",
+    "customization": "Personalização",
+    "userName": {
+      "name": "Como o Claudian deve chamá-lo?",
+      "desc": "Seu nome para saudações personalizadas (deixe vazio para saudações genéricas)"
+    },
+    "excludedTags": {
+      "name": "Tags excluídas",
+      "desc": "Notas com estas tags não serão carregadas automaticamente como contexto (uma por linha, sem #)"
+    },
+    "mediaFolder": {
+      "name": "Pasta de mídia",
+      "desc": "Pasta contendo anexos/imagens. Quando notas usam ![[image.jpg]], Claude procurará aqui. Deixe vazio para a raiz do repositório."
+    },
+    "systemPrompt": {
+      "name": "Prompt de sistema personalizado",
+      "desc": "Instruções adicionais anexadas ao prompt de sistema padrão"
+    },
+    "autoTitle": {
+      "name": "Gerar automaticamente títulos de conversa",
+      "desc": "Gera automaticamente títulos de conversa após o primeiro intercâmbio."
+    },
+    "titleModel": {
+      "name": "Modelo de geração de título",
+      "desc": "Modelo usado para gerar automaticamente títulos de conversa.",
+      "auto": "Auto (Haiku)"
+    },
+    "navMappings": {
+      "name": "Mapeamentos de navegação estilo Vim",
+      "desc": "Um mapeamento por linha. Formato: \"map <tecla> <ação>\" (ações: scrollUp, scrollDown, focusInput)."
+    },
+    "hotkeys": "Atalhos",
+    "inlineEditHotkey": {
+      "name": "Atalho de edição em linha",
+      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
+      "descWithKey": "Atual: {hotkey}",
+      "btnSet": "Definir atalho",
+      "btnChange": "Alterar"
+    },
+    "openChatHotkey": {
+      "name": "Atalho para abrir chat",
+      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
+      "descWithKey": "Atual: {hotkey}",
+      "btnSet": "Definir atalho",
+      "btnChange": "Alterar"
+    },
+    "slashCommands": {
+      "name": "Comandos slash",
+      "desc": "Crie modelos de prompts personalizados acionados por /command. Use $ARGUMENTS para todos os argumentos, $1/$2 para argumentos posicionais, @file para conteúdo de arquivo e !`bash` para saída de comando."
+    },
+    "mcpServers": {
+      "name": "Servidores MCP",
+      "desc": "Configure servidores Model Context Protocol para estender as capacidades do Claude com ferramentas e fontes de dados externas. Servidores com modo de salvamento de contexto exigem @mention para ativar."
+    },
+    "safety": "Segurança",
+    "loadUserSettings": {
+      "name": "Carregar configurações do usuário Claude",
+      "desc": "Carrega ~/.claude/settings.json. Quando habilitado, as regras de permissão do usuário podem ignorar o modo seguro."
+    },
+    "enableBlocklist": {
+      "name": "Habilitar lista negra de comandos",
+      "desc": "Bloqueia comandos bash potencialmente perigosos"
+    },
+    "blockedCommands": {
+      "name": "Comandos bloqueados ({platform})",
+      "desc": "Padrões para bloquear em {platform} (um por linha). Suporta expressões regulares.",
+      "unixName": "Comandos bloqueados (Unix/Git Bash)",
+      "unixDesc": "Padrões Unix também bloqueados no Windows porque Git Bash pode invocá-los."
+    },
+    "exportPaths": {
+      "name": "Caminhos de exportação permitidos",
+      "desc": "Caminhos fora do repositório onde arquivos podem ser exportados (um por linha). Suporta ~ para diretório home."
+    },
+    "approvedActions": {
+      "name": "Ações aprovadas",
+      "desc": "Ações que foram aprovadas permanentemente (via \"Permitir sempre\"). Estas não exigem aprovação no modo seguro.",
+      "allowDesc": "Aprovada automaticamente sem confirmação no modo seguro.",
+      "empty": "Ainda não há ações aprovadas. Quando você clicar em \"Permitir sempre\" na caixa de diálogo de aprovação, as ações aparecerão aqui.",
+      "clearAll": "Limpar todas as ações aprovadas",
+      "clearAllDesc": "Remover todas as ações aprovadas permanentemente",
+      "clearAllBtn": "Limpar tudo",
+      "remove": "Remover"
+    },
+    "deniedActions": {
+      "name": "Ações negadas",
+      "desc": "Sempre bloqueada sem confirmação."
+    },
+    "alwaysAsk": {
+      "name": "Sempre perguntar",
+      "desc": "Sempre requer confirmação mesmo se corresponder a uma regra de permissão."
+    },
+    "environment": "Ambiente",
+    "customVariables": {
+      "name": "Variáveis personalizadas",
+      "desc": "Variáveis de ambiente para Claude SDK (formato KEY=VALUE, uma por linha)"
+    },
+    "envSnippets": {
+      "name": "Snippets de ambiente",
+      "addBtn": "Adicionar snippet",
+      "editBtn": "Editar",
+      "deleteBtn": "Excluir",
+      "useBtn": "Usar",
+      "noSnippets": "Nenhum snippet de ambiente salvo.",
+      "modal": {
+        "title": "Snippet de ambiente",
+        "name": "Nome",
+        "namePlaceholder": "ex: API de Produção",
+        "description": "Descrição",
+        "descPlaceholder": "Descrição opcional",
+        "envVars": "Variáveis de ambiente",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "Salvar",
+        "cancel": "Cancelar"
+      }
+    },
+    "advanced": "Avançado",
+    "cliPath": {
+      "name": "Caminho CLI Claude",
+      "desc": "Caminho personalizado para Claude Code CLI. Deixe vazio para detecção automática.",
+      "validation": {
+        "notExist": "Caminho não existe",
+        "isDirectory": "Caminho é um diretório, não um arquivo"
+      }
+    },
+    "language": {
+      "name": "Idioma",
+      "desc": "Alterar o idioma de exibição da interface do plugin",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}

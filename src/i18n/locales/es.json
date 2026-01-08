@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "add": "Agregar",
+    "remove": "Eliminar",
+    "clear": "Limpiar",
+    "clearAll": "Limpiar todo",
+    "loading": "Cargando",
+    "error": "Error",
+    "success": "Éxito",
+    "warning": "Advertencia",
+    "confirm": "Confirmar",
+    "settings": "Configuración",
+    "advanced": "Avanzado",
+    "enabled": "Habilitado",
+    "disabled": "Deshabilitado",
+    "platform": "Plataforma"
+  },
+  "settings": {
+    "title": "Configuración de Claudian",
+    "customization": "Personalización",
+    "userName": {
+      "name": "¿Cómo debería Claudian llamarte?",
+      "desc": "Tu nombre para saludos personalizados (dejar vacío para saludos genéricos)"
+    },
+    "excludedTags": {
+      "name": "Etiquetas excluidas",
+      "desc": "Las notas con estas etiquetas no se cargarán automáticamente como contexto (una por línea, sin #)"
+    },
+    "mediaFolder": {
+      "name": "Carpeta de medios",
+      "desc": "Carpeta que contiene archivos adjuntos/imagenes. Cuando las notas usan ![[image.jpg]], Claude buscará aquí. Dejar vacío para la raíz del depósito."
+    },
+    "systemPrompt": {
+      "name": "Prompt de sistema personalizado",
+      "desc": "Instrucciones adicionales añadidas al prompt de sistema por defecto"
+    },
+    "autoTitle": {
+      "name": "Generar automáticamente títulos de conversación",
+      "desc": "Genera automáticamente títulos de conversación después del primer intercambio."
+    },
+    "titleModel": {
+      "name": "Modelo de generación de títulos",
+      "desc": "Modelo utilizado para generar automáticamente títulos de conversación.",
+      "auto": "Auto (Haiku)"
+    },
+    "navMappings": {
+      "name": "Mapeos de navegación estilo Vim",
+      "desc": "Un mapeo por línea. Formato: \"map <tecla> <acción>\" (acciones: scrollUp, scrollDown, focusInput)."
+    },
+    "hotkeys": "Atajos de teclado",
+    "inlineEditHotkey": {
+      "name": "Atajo de edición en línea",
+      "descNoKey": "No hay atajo configurado. Clic para configurar.",
+      "descWithKey": "Actual: {hotkey}",
+      "btnSet": "Configurar atajo",
+      "btnChange": "Cambiar"
+    },
+    "openChatHotkey": {
+      "name": "Atajo para abrir chat",
+      "descNoKey": "No hay atajo configurado. Clic para configurar.",
+      "descWithKey": "Actual: {hotkey}",
+      "btnSet": "Configurar atajo",
+      "btnChange": "Cambiar"
+    },
+    "slashCommands": {
+      "name": "Comandos slash",
+      "desc": "Crea plantillas de prompts personalizadas activadas por /command. Usa $ARGUMENTS para todos los argumentos, $1/$2 para argumentos posicionales, @file para contenido de archivo y !`bash` para salida de comandos."
+    },
+    "mcpServers": {
+      "name": "Servidores MCP",
+      "desc": "Configura servidores Model Context Protocol para extender las capacidades de Claude con herramientas y fuentes de datos externas. Los servidores con modo de guardado de contexto requieren @mention para activarse."
+    },
+    "safety": "Seguridad",
+    "loadUserSettings": {
+      "name": "Cargar configuración de usuario Claude",
+      "desc": "Carga ~/.claude/settings.json. Cuando está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
+    },
+    "enableBlocklist": {
+      "name": "Habilitar lista negra de comandos",
+      "desc": "Bloquea comandos bash potencialmente peligrosos"
+    },
+    "blockedCommands": {
+      "name": "Comandos bloqueados ({platform})",
+      "desc": "Patrones a bloquear en {platform} (uno por línea). Soporta expresiones regulares.",
+      "unixName": "Comandos bloqueados (Unix/Git Bash)",
+      "unixDesc": "Los patrones Unix también se bloquean en Windows porque Git Bash puede invocarlos."
+    },
+    "exportPaths": {
+      "name": "Rutas de exportación permitidas",
+      "desc": "Rutas fuera del depósito donde se pueden exportar archivos (una por línea). Soporta ~ para el directorio home."
+    },
+    "approvedActions": {
+      "name": "Acciones aprobadas",
+      "desc": "Acciones que han sido aprobadas permanentemente (a través de \"Permitir siempre\"). Estas no requieren aprobación en modo seguro.",
+      "allowDesc": "Aprobada automáticamente sin confirmación en modo seguro.",
+      "empty": "Aún no hay acciones aprobadas. Cuando hagas clic en \"Permitir siempre\" en el diálogo de aprobación, las acciones aparecerán aquí.",
+      "clearAll": "Borrar todas las acciones aprobadas",
+      "clearAllDesc": "Eliminar todas las acciones aprobadas permanentemente",
+      "clearAllBtn": "Borrar todo",
+      "remove": "Eliminar"
+    },
+    "deniedActions": {
+      "name": "Acciones denegadas",
+      "desc": "Siempre bloqueada sin confirmación."
+    },
+    "alwaysAsk": {
+      "name": "Siempre preguntar",
+      "desc": "Siempre requiere confirmación aunque coincida con una regla de permiso."
+    },
+    "environment": "Entorno",
+    "customVariables": {
+      "name": "Variables personalizadas",
+      "desc": "Variables de entorno para Claude SDK (formato KEY=VALUE, una por línea)"
+    },
+    "envSnippets": {
+      "name": "Fragmentos de entorno",
+      "addBtn": "Añadir fragmento",
+      "editBtn": "Editar",
+      "deleteBtn": "Eliminar",
+      "useBtn": "Usar",
+      "noSnippets": "No hay fragmentos de entorno guardados.",
+      "modal": {
+        "title": "Fragmento de entorno",
+        "name": "Nombre",
+        "namePlaceholder": "ej: API de producción",
+        "description": "Descripción",
+        "descPlaceholder": "Descripción opcional",
+        "envVars": "Variables de entorno",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "Guardar",
+        "cancel": "Cancelar"
+      }
+    },
+    "advanced": "Avanzado",
+    "cliPath": {
+      "name": "Ruta CLI Claude",
+      "desc": "Ruta personalizada a Claude Code CLI. Dejar vacío para detección automática.",
+      "validation": {
+        "notExist": "La ruta no existe",
+        "isDirectory": "La ruta es un directorio, no un archivo"
+      }
+    },
+    "language": {
+      "name": "Idioma",
+      "desc": "Cambiar el idioma de visualización de la interfaz del plugin",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "add": "添加",
+    "remove": "移除",
+    "clear": "清除",
+    "clearAll": "清除全部",
+    "loading": "加载中",
+    "error": "错误",
+    "success": "成功",
+    "warning": "警告",
+    "confirm": "确认",
+    "settings": "设置",
+    "advanced": "高级",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "platform": "平台"
+  },
+  "settings": {
+    "title": "Claudian 设置",
+    "customization": "个性化设置",
+    "userName": {
+      "name": "Claudian 应该如何称呼你？",
+      "desc": "用于个性化问候的用户名（留空使用通用问候）"
+    },
+    "excludedTags": {
+      "name": "排除的标签",
+      "desc": "包含这些标签的笔记不会自动加载为上下文（每行一个，不带 #）"
+    },
+    "mediaFolder": {
+      "name": "媒体文件夹",
+      "desc": "存放附件/图片的文件夹。当笔记使用 ![[image.jpg]] 时，Claude 会在此查找。留空使用仓库根目录。"
+    },
+    "systemPrompt": {
+      "name": "自定义系统提示词",
+      "desc": "附加到默认系统提示词的额外指令"
+    },
+    "autoTitle": {
+      "name": "自动生成对话标题",
+      "desc": "在首次对话后自动生成对话标题。"
+    },
+    "titleModel": {
+      "name": "标题生成模型",
+      "desc": "用于自动生成对话标题的模型。",
+      "auto": "自动 (Haiku)"
+    },
+    "navMappings": {
+      "name": "Vim 风格导航映射",
+      "desc": "每行一个映射。格式：\"map <键> <动作>\"（动作：scrollUp, scrollDown, focusInput）。"
+    },
+    "hotkeys": "快捷键",
+    "inlineEditHotkey": {
+      "name": "内联编辑快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
+    "openChatHotkey": {
+      "name": "打开聊天快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
+    "slashCommands": {
+      "name": "斜杠命令",
+      "desc": "创建由 /command 触发的自定义提示模板。使用 $ARGUMENTS 获取所有参数，$1/$2 获取位置参数，@file 获取文件内容，!`bash` 获取命令输出。"
+    },
+    "mcpServers": {
+      "name": "MCP 服务器",
+      "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"
+    },
+    "safety": "安全",
+    "loadUserSettings": {
+      "name": "加载用户 Claude 设置",
+      "desc": "加载 ~/.claude/settings.json。启用后，用户的 Claude Code 权限规则可能绕过安全模式。"
+    },
+    "enableBlocklist": {
+      "name": "启用命令黑名单",
+      "desc": "阻止潜在危险的 bash 命令"
+    },
+    "blockedCommands": {
+      "name": "阻止的命令 ({platform})",
+      "desc": "在 {platform} 上阻止的模式（每行一个）。支持正则表达式。",
+      "unixName": "阻止的命令 (Unix/Git Bash)",
+      "unixDesc": "Unix 模式在 Windows 上也会被阻止，因为 Git Bash 可以调用它们。"
+    },
+    "exportPaths": {
+      "name": "允许的导出路径",
+      "desc": "允许导出文件的仓库外部路径（每行一个）。支持 ~ 表示主目录。"
+    },
+    "approvedActions": {
+      "name": "已批准的操作",
+      "desc": "已永久批准的操作（通过 \"始终允许\"）。这些在安全模式下不需要再次批准。",
+      "allowDesc": "在安全模式下自动批准，无需提示。",
+      "empty": "尚无已批准的操作。当你在批准对话框中点击 \"始终允许\" 时，操作将显示在这里。",
+      "clearAll": "清除所有已批准的操作",
+      "clearAllDesc": "移除所有永久批准的操作",
+      "clearAllBtn": "清除全部",
+      "remove": "移除"
+    },
+    "deniedActions": {
+      "name": "已拒绝的操作",
+      "desc": "始终阻止，无需提示。"
+    },
+    "alwaysAsk": {
+      "name": "始终询问",
+      "desc": "即使匹配允许规则也始终需要确认。"
+    },
+    "environment": "环境",
+    "customVariables": {
+      "name": "自定义变量",
+      "desc": "Claude SDK 的环境变量（KEY=VALUE 格式，每行一个）"
+    },
+    "envSnippets": {
+      "name": "环境变量片段",
+      "addBtn": "添加片段",
+      "editBtn": "编辑",
+      "deleteBtn": "删除",
+      "useBtn": "使用",
+      "noSnippets": "尚无保存的环境变量片段。",
+      "modal": {
+        "title": "环境变量片段",
+        "name": "名称",
+        "namePlaceholder": "例如：生产环境 API",
+        "description": "描述",
+        "descPlaceholder": "可选描述",
+        "envVars": "环境变量",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "保存",
+        "cancel": "取消"
+      }
+    },
+    "advanced": "高级",
+    "cliPath": {
+      "name": "Claude CLI 路径",
+      "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",
+      "validation": {
+        "notExist": "路径不存在",
+        "isDirectory": "路径是目录，不是文件"
+      }
+    },
+    "language": {
+      "name": "语言",
+      "desc": "更改插件界面的显示语言",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}

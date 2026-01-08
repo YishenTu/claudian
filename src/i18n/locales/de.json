@@ -1,0 +1,162 @@
+{
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "add": "Hinzufügen",
+    "remove": "Entfernen",
+    "clear": "Löschen",
+    "clearAll": "Alle löschen",
+    "loading": "Lädt",
+    "error": "Fehler",
+    "success": "Erfolg",
+    "warning": "Warnung",
+    "confirm": "Bestätigen",
+    "settings": "Einstellungen",
+    "advanced": "Erweitert",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "platform": "Plattform"
+  },
+  "settings": {
+    "title": "Claudian Einstellungen",
+    "customization": "Anpassung",
+    "userName": {
+      "name": "Wie soll Claudian dich nennen?",
+      "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"
+    },
+    "excludedTags": {
+      "name": "Ausgeschlossene Tags",
+      "desc": "Notizen mit diesen Tags werden nicht automatisch als Kontext geladen (einer pro Zeile, ohne #)"
+    },
+    "mediaFolder": {
+      "name": "Medienordner",
+      "desc": "Ordner mit Anhängen/Bildern. Wenn Notizen ![[image.jpg]] verwenden, sucht Claude hier. Leer lassen für Vault-Stammverzeichnis."
+    },
+    "systemPrompt": {
+      "name": "Benutzerdefinierter System-Prompt",
+      "desc": "Zusätzliche Anweisungen, die an den Standard-System-Prompt angehängt werden"
+    },
+    "autoTitle": {
+      "name": "Konversationstitel automatisch generieren",
+      "desc": "Generiert automatisch Konversationstitel nach dem ersten Austausch."
+    },
+    "titleModel": {
+      "name": "Titel-Generierungsmodell",
+      "desc": "Modell zur automatischen Generierung von Konversationstiteln.",
+      "auto": "Automatisch (Haiku)"
+    },
+    "navMappings": {
+      "name": "Vim-Style Navigationszuordnungen",
+      "desc": "Eine Zuordnung pro Zeile. Format: \"map <Taste> <Aktion>\" (Aktionen: scrollUp, scrollDown, focusInput)."
+    },
+    "hotkeys": "Tastenkürzel",
+    "inlineEditHotkey": {
+      "name": "Inline-Bearbeitung Tastenkürzel",
+      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
+      "descWithKey": "Aktuell: {hotkey}",
+      "btnSet": "Tastenkürzel festlegen",
+      "btnChange": "Ändern"
+    },
+    "openChatHotkey": {
+      "name": "Chat öffnen Tastenkürzel",
+      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
+      "descWithKey": "Aktuell: {hotkey}",
+      "btnSet": "Tastenkürzel festlegen",
+      "btnChange": "Ändern"
+    },
+    "slashCommands": {
+      "name": "Schrägstrich-Befehle",
+      "desc": "Erstelle benutzerdefinierte Prompt-Vorlagen, die durch /command ausgelöst werden. Verwende $ARGUMENTS für alle Argumente, $1/$2 für Positionsargumente, @file für Dateiinhalt und !`bash` für Befehlsausgabe."
+    },
+    "mcpServers": {
+      "name": "MCP-Server",
+      "desc": "Konfiguriere Model Context Protocol Server, um Claude mit externen Tools und Datenquellen zu erweitern. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
+    },
+    "safety": "Sicherheit",
+    "loadUserSettings": {
+      "name": "Benutzer-Claude-Einstellungen laden",
+      "desc": "Lädt ~/.claude/settings.json. Wenn aktiviert, können Benutzer-Claude-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
+    },
+    "enableBlocklist": {
+      "name": "Befehlsblockliste aktivieren",
+      "desc": "Blockiert potenziell gefährliche Bash-Befehle"
+    },
+    "blockedCommands": {
+      "name": "Blockierte Befehle ({platform})",
+      "desc": "Muster zum Blockieren auf {platform} (einer pro Zeile). Unterstützt Regex.",
+      "unixName": "Blockierte Befehle (Unix/Git Bash)",
+      "unixDesc": "Unix-Muster werden auch auf Windows blockiert, da Git Bash sie aufrufen kann."
+    },
+    "exportPaths": {
+      "name": "Zugelassene Exportpfade",
+      "desc": "Pfade außerhalb des Vaults, in die Dateien exportiert werden können (einer pro Zeile). Unterstützt ~ für Home-Verzeichnis."
+    },
+    "approvedActions": {
+      "name": "Genehmigte Aktionen",
+      "desc": "Aktionen, die permanent genehmigt wurden (über \"Immer erlauben\"). Diese erfordern im Sicherheitsmodus keine erneute Genehmigung.",
+      "allowDesc": "Im Sicherheitsmodus ohne Bestätigung automatisch genehmigt.",
+      "empty": "Noch keine genehmigten Aktionen. Wenn du \"Immer erlauben\" im Genehmigungsdialog klickst, erscheinen die Aktionen hier.",
+      "clearAll": "Alle genehmigten Aktionen löschen",
+      "clearAllDesc": "Alle permanent genehmigten Aktionen entfernen",
+      "clearAllBtn": "Alle löschen",
+      "remove": "Entfernen"
+    },
+    "deniedActions": {
+      "name": "Abgelehnte Aktionen",
+      "desc": "Immer ohne Bestätigung blockiert."
+    },
+    "alwaysAsk": {
+      "name": "Immer fragen",
+      "desc": "Erfordert immer Bestätigung, auch wenn eine Erlaubnisregel zutrifft."
+    },
+    "environment": "Umgebung",
+    "customVariables": {
+      "name": "Benutzerdefinierte Variablen",
+      "desc": "Umgebungsvariablen für Claude SDK (KEY=VALUE-Format, eine pro Zeile)"
+    },
+    "envSnippets": {
+      "name": "Umgebungsvariablen-Snippets",
+      "addBtn": "Snippet hinzufügen",
+      "editBtn": "Bearbeiten",
+      "deleteBtn": "Löschen",
+      "useBtn": "Verwenden",
+      "noSnippets": "Keine gespeicherten Umgebungsvariablen-Snippets.",
+      "modal": {
+        "title": "Umgebungsvariablen-Snippet",
+        "name": "Name",
+        "namePlaceholder": "z.B. Produktions-API",
+        "description": "Beschreibung",
+        "descPlaceholder": "Optionale Beschreibung",
+        "envVars": "Umgebungsvariablen",
+        "envVarsPlaceholder": "ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com",
+        "save": "Speichern",
+        "cancel": "Abbrechen"
+      }
+    },
+    "advanced": "Erweitert",
+    "cliPath": {
+      "name": "Claude CLI-Pfad",
+      "desc": "Benutzerdefinierter Pfad zum Claude Code CLI. Leer lassen für automatische Erkennung.",
+      "validation": {
+        "notExist": "Pfad existiert nicht",
+        "isDirectory": "Pfad ist ein Verzeichnis, keine Datei"
+      }
+    },
+    "language": {
+      "name": "Sprache",
+      "desc": "Anzeigesprache der Plugin-Oberfläche ändern",
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文",
+      "ja": "日本語",
+      "ko": "한국어",
+      "de": "Deutsch",
+      "fr": "Français",
+      "es": "Español",
+      "ru": "Русский",
+      "pt": "Português"
+    }
+  }
+}
