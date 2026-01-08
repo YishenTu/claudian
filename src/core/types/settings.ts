@@ -248,6 +248,7 @@ export interface ClaudianSettings {
   mediaFolder: string;
   systemPrompt: string;
   allowedExportPaths: string[];
+  persistentExternalContextPaths: string[];  // Paths that persist across all sessions
 
   // Environment (string format, CC uses object format in settings.json)
   environmentVariables: string;
@@ -298,6 +299,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   mediaFolder: '',
   systemPrompt: '',
   allowedExportPaths: ['~/Desktop', '~/Downloads'],
+  persistentExternalContextPaths: [],
 
   // Environment
   environmentVariables: '',

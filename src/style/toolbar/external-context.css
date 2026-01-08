@@ -124,6 +124,38 @@
   white-space: nowrap;
 }
 
+.claudian-external-context-lock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0.4;
+  transition: all 0.15s ease;
+}
+
+.claudian-external-context-lock:hover {
+  background: var(--background-modifier-hover);
+  opacity: 0.8;
+}
+
+.claudian-external-context-lock.locked {
+  color: #D97757;
+  opacity: 0.9;
+}
+
+.claudian-external-context-lock.locked:hover {
+  opacity: 1;
+}
+
+.claudian-external-context-lock svg {
+  width: 12px;
+  height: 12px;
+}
+
 .claudian-external-context-remove {
   display: flex;
   align-items: center;

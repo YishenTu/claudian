@@ -390,6 +390,17 @@ export class ClaudianView extends ItemView {
     this.externalContextSelector.setOnChange(() => {
       this.fileContextManager?.preScanExternalContexts();
     });
+
+    // Initialize persistent paths from settings
+    this.externalContextSelector.setPersistentPaths(
+      this.plugin.settings.persistentExternalContextPaths || []
+    );
+
+    // Wire persistence changes to save to settings
+    this.externalContextSelector.setOnPersistenceChange(async (paths) => {
+      this.plugin.settings.persistentExternalContextPaths = paths;
+      await this.plugin.saveSettings();
+    });
   }
 
   // ============================================

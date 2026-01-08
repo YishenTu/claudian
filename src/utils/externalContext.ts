@@ -4,6 +4,8 @@
  * Utilities for external context validation, normalization, and conflict detection.
  */
 
+import * as fs from 'fs';
+
 import { normalizePathForComparison as normalizePathForComparisonImpl } from './path';
 
 /** Conflict detection result type. */
@@ -68,4 +70,38 @@ export function getFolderName(p: string): string {
   const normalized = normalizePathForDisplay(p);
   const segments = normalized.split('/');
   return segments[segments.length - 1] || normalized;
+}
+
+/**
+ * Checks if a path exists and is a directory.
+ * @param p - The path to check
+ * @returns true if path exists and is a directory, false otherwise
+ */
+export function isValidDirectoryPath(p: string): boolean {
+  try {
+    const stats = fs.statSync(p);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Filters an array of paths to only include valid directories.
+ * @param paths - Array of paths to validate
+ * @returns Array of paths that exist and are directories
+ */
+export function filterValidPaths(paths: string[]): string[] {
+  return paths.filter(isValidDirectoryPath);
+}
+
+/**
+ * Checks if a path is a duplicate of any existing paths (normalized comparison).
+ * @param newPath - The new path to check
+ * @param existingPaths - Array of existing paths
+ * @returns true if path is a duplicate, false otherwise
+ */
+export function isDuplicatePath(newPath: string, existingPaths: string[]): boolean {
+  const normalizedNew = normalizePathForComparison(newPath);
+  return existingPaths.some(existing => normalizePathForComparison(existing) === normalizedNew);
 }

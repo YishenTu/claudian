@@ -120,7 +120,10 @@ export class ConversationController {
 
     this.deps.getImageContextManager()?.clearImages();
     this.deps.getMcpServerSelector()?.clearEnabled();
-    this.deps.getExternalContextSelector()?.clearExternalContexts();
+    // Pass current settings to ensure we have the most up-to-date persistent paths
+    this.deps.getExternalContextSelector()?.clearExternalContexts(
+      plugin.settings.persistentExternalContextPaths || []
+    );
     this.deps.clearQueuedMessage();
 
     this.callbacks.onNewConversation?.();
@@ -166,12 +169,16 @@ export class ConversationController {
       fileCtx?.autoAttachActiveFile();
     }
 
-    // Restore external context paths (or clear for new conversation)
+    // External context paths: empty sessions (msg=0) get persistent paths, others restore saved paths
     const externalContextSelector = this.deps.getExternalContextSelector();
-    if (conversation.externalContextPaths && conversation.externalContextPaths.length > 0) {
-      externalContextSelector?.setExternalContexts(conversation.externalContextPaths);
+    if (isNewConversation || !hasMessages) {
+      // Empty session: use current persistent paths from settings
+      externalContextSelector?.clearExternalContexts(
+        plugin.settings.persistentExternalContextPaths || []
+      );
     } else {
-      externalContextSelector?.clearExternalContexts();
+      // Session with messages: restore exactly what was saved
+      externalContextSelector?.setExternalContexts(conversation.externalContextPaths || []);
     }
 
     // Restore enabled MCP servers (or clear for new conversation)
@@ -242,12 +249,16 @@ export class ConversationController {
       fileCtx?.setCurrentNote(conversation.currentNote);
     }
 
-    // Restore external context paths (or clear if none)
+    // External context paths: empty sessions (msg=0) get persistent paths, others restore saved paths
     const externalContextSelector = this.deps.getExternalContextSelector();
-    if (conversation.externalContextPaths && conversation.externalContextPaths.length > 0) {
-      externalContextSelector?.setExternalContexts(conversation.externalContextPaths);
+    if (state.messages.length === 0) {
+      // Empty session: treat as new, use current persistent paths
+      externalContextSelector?.clearExternalContexts(
+        plugin.settings.persistentExternalContextPaths || []
+      );
     } else {
-      externalContextSelector?.clearExternalContexts();
+      // Session with messages: restore exactly what was saved
+      externalContextSelector?.setExternalContexts(conversation.externalContextPaths || []);
     }
 
     // Restore enabled MCP servers (or clear if none)

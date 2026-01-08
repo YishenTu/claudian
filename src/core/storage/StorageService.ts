@@ -262,6 +262,7 @@ export class StorageService {
         envSnippets: oldSettings.envSnippets as StoredClaudianSettings['envSnippets'] ?? DEFAULT_SETTINGS.envSnippets,
         systemPrompt: oldSettings.systemPrompt ?? DEFAULT_SETTINGS.systemPrompt,
         allowedExportPaths: oldSettings.allowedExportPaths ?? DEFAULT_SETTINGS.allowedExportPaths,
+        persistentExternalContextPaths: DEFAULT_SETTINGS.persistentExternalContextPaths,
         keyboardNavigation: oldSettings.keyboardNavigation as StoredClaudianSettings['keyboardNavigation'] ?? DEFAULT_SETTINGS.keyboardNavigation,
         claudeCliPath: oldSettings.claudeCliPath ?? DEFAULT_SETTINGS.claudeCliPath,
         claudeCliPaths: normalizeCliPaths(oldSettings.claudeCliPaths),

@@ -32,6 +32,7 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
   'mediaFolder',
   'systemPrompt',
   'allowedExportPaths',
+  'persistentExternalContextPaths',
 
   // Environment (Claudian uses string format + snippets)
   'environmentVariables',
@@ -69,6 +70,7 @@ export const MIGRATABLE_CLAUDIAN_FIELDS = new Set([
   'mediaFolder',
   'systemPrompt',
   'allowedExportPaths',
+  'persistentExternalContextPaths',
   'environmentVariables',
   'envSnippets',
   'env', // Converted to environmentVariables
