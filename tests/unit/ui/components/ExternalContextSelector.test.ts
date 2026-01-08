@@ -214,13 +214,15 @@ describe('ExternalContextSelector', () => {
   });
 
   describe('Callbacks', () => {
-    // eslint-disable-next-line jest/expect-expect
-    it('should call onChange when external contexts change', () => {
+    it('should call onChange when paths are removed via removePath', () => {
       const onChange = jest.fn();
       selector.setOnChange(onChange);
 
-      // Note: onChange is typically called when paths are added via folder picker
-      // which is harder to test without mocking electron
+      selector.setExternalContexts(['/path/a', '/path/b']);
+      selector.removePath('/path/a');
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(['/path/b']);
     });
 
     it('should call onPersistenceChange when persistence is toggled', () => {
@@ -232,6 +234,55 @@ describe('ExternalContextSelector', () => {
 
       expect(onPersistenceChange).toHaveBeenCalledTimes(1);
       expect(onPersistenceChange).toHaveBeenCalledWith(['/path/a']);
+    });
+  })
+
+  describe('removePath', () => {
+    it('should remove path from external contexts', () => {
+      selector.setExternalContexts(['/path/a', '/path/b']);
+
+      selector.removePath('/path/a');
+
+      expect(selector.getExternalContexts()).toEqual(['/path/b']);
+    });
+
+    it('should remove path from persistent paths if it was persistent', () => {
+      const onPersistenceChange = jest.fn();
+      selector.setOnPersistenceChange(onPersistenceChange);
+
+      selector.setPersistentPaths(['/path/a', '/path/b']);
+
+      selector.removePath('/path/a');
+
+      expect(selector.getPersistentPaths()).toEqual(['/path/b']);
+      expect(selector.getExternalContexts()).toEqual(['/path/b']);
+      expect(onPersistenceChange).toHaveBeenCalledWith(['/path/b']);
+    });
+
+    it('should not call onPersistenceChange when removing non-persistent path', () => {
+      const onPersistenceChange = jest.fn();
+      selector.setOnPersistenceChange(onPersistenceChange);
+
+      selector.setPersistentPaths(['/path/a']);
+      selector.setExternalContexts(['/path/a', '/path/b']);
+
+      // Clear mock calls from setPersistentPaths
+      onPersistenceChange.mockClear();
+
+      selector.removePath('/path/b');
+
+      expect(selector.getExternalContexts()).toEqual(['/path/a']);
+      expect(onPersistenceChange).not.toHaveBeenCalled();
+    });
+
+    it('should call onChange callback when removing path', () => {
+      const onChange = jest.fn();
+      selector.setOnChange(onChange);
+
+      selector.setExternalContexts(['/path/a', '/path/b']);
+      selector.removePath('/path/a');
+
+      expect(onChange).toHaveBeenCalledWith(['/path/b']);
     });
   });
 

@@ -168,4 +168,48 @@ describe('StorageService migration', () => {
     expect(saved.activeConversationId).toBe('conv-1');
     expect(plugin.saveData).toHaveBeenCalledWith({});
   });
+
+  it('initializes persistentExternalContextPaths to empty array when migrating old settings', async () => {
+    // Legacy settings without persistentExternalContextPaths
+    const legacySettings = {
+      userName: 'Test User',
+      permissions: [],
+      allowedExportPaths: ['~/Desktop'],
+      // Note: no persistentExternalContextPaths
+    };
+
+    const { plugin, files } = createMockPlugin({
+      dataJson: null,
+      initialFiles: {
+        '.claude/settings.json': JSON.stringify(legacySettings),
+      },
+    });
+
+    const storage = new StorageService(plugin);
+    await storage.initialize();
+
+    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    expect(saved.persistentExternalContextPaths).toEqual([]);
+  });
+
+  it('preserves persistentExternalContextPaths from existing settings', async () => {
+    const existingSettings = {
+      userName: 'Test User',
+      permissions: [],
+      persistentExternalContextPaths: ['/path/a', '/path/b'],
+    };
+
+    const { plugin, files } = createMockPlugin({
+      dataJson: null,
+      initialFiles: {
+        '.claude/claudian-settings.json': JSON.stringify(existingSettings),
+      },
+    });
+
+    const storage = new StorageService(plugin);
+    await storage.initialize();
+
+    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    expect(saved.persistentExternalContextPaths).toEqual(['/path/a', '/path/b']);
+  });
 });

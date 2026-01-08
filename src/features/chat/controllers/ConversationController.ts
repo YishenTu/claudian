@@ -169,17 +169,11 @@ export class ConversationController {
       fileCtx?.autoAttachActiveFile();
     }
 
-    // External context paths: empty sessions (msg=0) get persistent paths, others restore saved paths
-    const externalContextSelector = this.deps.getExternalContextSelector();
-    if (isNewConversation || !hasMessages) {
-      // Empty session: use current persistent paths from settings
-      externalContextSelector?.clearExternalContexts(
-        plugin.settings.persistentExternalContextPaths || []
-      );
-    } else {
-      // Session with messages: restore exactly what was saved
-      externalContextSelector?.setExternalContexts(conversation.externalContextPaths || []);
-    }
+    // Restore external context paths based on session state
+    this.restoreExternalContextPaths(
+      conversation.externalContextPaths,
+      isNewConversation || !hasMessages
+    );
 
     // Restore enabled MCP servers (or clear for new conversation)
     const mcpServerSelector = this.deps.getMcpServerSelector();
@@ -249,17 +243,11 @@ export class ConversationController {
       fileCtx?.setCurrentNote(conversation.currentNote);
     }
 
-    // External context paths: empty sessions (msg=0) get persistent paths, others restore saved paths
-    const externalContextSelector = this.deps.getExternalContextSelector();
-    if (state.messages.length === 0) {
-      // Empty session: treat as new, use current persistent paths
-      externalContextSelector?.clearExternalContexts(
-        plugin.settings.persistentExternalContextPaths || []
-      );
-    } else {
-      // Session with messages: restore exactly what was saved
-      externalContextSelector?.setExternalContexts(conversation.externalContextPaths || []);
-    }
+    // Restore external context paths based on session state
+    this.restoreExternalContextPaths(
+      conversation.externalContextPaths,
+      state.messages.length === 0
+    );
 
     // Restore enabled MCP servers (or clear if none)
     const mcpServerSelector = this.deps.getMcpServerSelector();
@@ -320,6 +308,30 @@ export class ConversationController {
     }
 
     await plugin.updateConversation(state.currentConversationId, updates);
+  }
+
+  /**
+   * Restores external context paths based on session state.
+   * New or empty sessions get current persistent paths from settings.
+   * Sessions with messages restore exactly what was saved.
+   */
+  private restoreExternalContextPaths(
+    savedPaths: string[] | undefined,
+    isEmptySession: boolean
+  ): void {
+    const { plugin } = this.deps;
+    const externalContextSelector = this.deps.getExternalContextSelector();
+    if (!externalContextSelector) return;
+
+    if (isEmptySession) {
+      // Empty session: use current persistent paths from settings
+      externalContextSelector.clearExternalContexts(
+        plugin.settings.persistentExternalContextPaths || []
+      );
+    } else {
+      // Session with messages: restore exactly what was saved
+      externalContextSelector.setExternalContexts(savedPaths || []);
+    }
   }
 
   /**
