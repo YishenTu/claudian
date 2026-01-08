@@ -205,39 +205,6 @@ describe('ClaudianService', () => {
     service.cleanup();
   });
 
-  describe('plan mode approvals', () => {
-    it('includes revise feedback in ExitPlanMode response', async () => {
-      service.setExitPlanModeCallback(async () => ({
-        decision: 'revise',
-        feedback: 'Add coverage for edge cases.',
-      }));
-
-      const result = await (service as any).handleExitPlanModeTool({ plan: 'Plan draft' }, 'tool-1');
-
-      expect(result.behavior).toBe('deny');
-      expect(result.interrupt).toBe(false);
-      expect(result.message).toContain('Add coverage for edge cases.');
-    });
-
-    it('reads plan content from ~/.claude/plans with tilde expansion', async () => {
-      const planFromFile = 'Plan from file';
-      const planPath = path.resolve(os.homedir(), '.claude', 'plans', 'plan.md');
-
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.readFileSync as jest.Mock).mockReturnValue(planFromFile);
-
-      service.setCurrentPlanFilePath('~/.claude/plans/plan.md');
-      const callback = jest.fn().mockResolvedValue({ decision: 'cancel' });
-      service.setExitPlanModeCallback(callback);
-
-      await (service as any).handleExitPlanModeTool({ plan: 'Plan from input' }, 'tool-2');
-
-      expect(fs.existsSync).toHaveBeenCalledWith(planPath);
-      expect(fs.readFileSync).toHaveBeenCalledWith(planPath, 'utf-8');
-      expect(callback).toHaveBeenCalledWith(planFromFile);
-    });
-  });
-
   describe('shouldBlockCommand', () => {
     it('should block dangerous rm commands', async () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
@@ -1077,7 +1044,7 @@ describe('ClaudianService', () => {
       expect(handlersAfter).toBe(handlersBefore);
 
       // Clean up the promise (it will resolve/reject after close)
-      await queryPromise.catch(() => {});
+      await queryPromise.catch(() => { });
     });
 
     it('clears handlers when preserveHandlers is false (default)', async () => {
@@ -1101,7 +1068,7 @@ describe('ClaudianService', () => {
       expect(handlersAfter).toBe(0);
 
       // Clean up the promise
-      await queryPromise.catch(() => {});
+      await queryPromise.catch(() => { });
     });
   });
 
@@ -1160,7 +1127,7 @@ describe('ClaudianService', () => {
       expect(chunks1.length).toBeGreaterThan(0);
       expect((service as any).persistentQuery).not.toBeNull();
 
-      // Close the persistent query (simulating EnterPlanMode or session reset)
+      // Close the persistent query (simulating session reset)
       service.closePersistentQuery('test close');
       expect((service as any).persistentQuery).toBeNull();
       expect((service as any).shuttingDown).toBe(false); // Should be reset
@@ -2052,72 +2019,7 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('safe mode approvals', () => {
-    beforeEach(() => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin = createMockPlugin({ permissionMode: 'normal' });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-    });
-
-    it('should deny when no approval callback is set', async () => {
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-
-      const result = await canUse('Bash', { command: 'ls' }, {});
-
-      expect(result.behavior).toBe('deny');
-      expect(result.message).toContain('No approval handler available');
-    });
-
-    it('should allow and cache session approvals when user allows', async () => {
-      const approvalCallback = jest.fn().mockResolvedValue('allow');
-      service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-
-      const result = await canUse('Bash', { command: 'ls -la' }, {});
-
-      expect(result.behavior).toBe('allow');
-      expect(approvalCallback).toHaveBeenCalled();
-      // Access via approval manager's session permissions
-      const sessionPermissions = (service as any).approvalManager.getSessionPermissions();
-      expect(sessionPermissions.some((p: any) => p.rule === 'Bash(ls -la)' && p.type === 'allow')).toBe(true);
-    });
-
-    it('should persist always-allow approvals in CC settings', async () => {
-      const approvalCallback = jest.fn().mockResolvedValue('allow-always');
-      service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-
-      const result = await canUse('Read', { file_path: '/test/file.md' }, {});
-
-      expect(result.behavior).toBe('allow');
-      expect(mockPlugin._ccPermissions.allow).toContain('Read(/test/file.md)');
-      expect(mockPlugin.storage.addAllowRule).toHaveBeenCalledWith('Read(/test/file.md)');
-    });
-
-    it('should deny when user rejects approval', async () => {
-      const approvalCallback = jest.fn().mockResolvedValue('deny');
-      service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-
-      const result = await canUse('Bash', { command: 'rm -rf /' }, {});
-
-      expect(result.behavior).toBe('deny');
-      expect(result.message).toBe('User denied this action.');
-    });
-
-    it('should deny and interrupt when approval flow errors', async () => {
-      const approvalCallback = jest.fn().mockRejectedValue(new Error('boom'));
-      service.setApprovalCallback(approvalCallback);
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-
-      const result = await canUse('Read', { file_path: '/test/file.md' }, {});
-
-      expect(result.behavior).toBe('deny');
-      expect(result.interrupt).toBe(true);
-      expect(result.message).toContain('Approval request failed');
-      expect(result.message).toContain('boom');
-    });
-  });
+  // Note: safe mode approvals tests removed - createUnifiedToolCallback was part of plan mode
 
   describe('session expiration recovery', () => {
     beforeEach(() => {
@@ -2678,7 +2580,7 @@ describe('ClaudianService', () => {
     it('handles image read errors and path resolution branches', () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
         const base64 = readImageAttachmentBase64(mockPlugin.app, { filePath: 'x.png' } as any, '/test/vault');
@@ -2708,18 +2610,7 @@ describe('ClaudianService', () => {
       spy.mockRestore();
     });
 
-    it('allows pre-approved actions in safe mode callback', async () => {
-      mockPlugin = createMockPlugin({ permissionMode: 'normal' });
-      // Set up CC permissions with pre-approved rule
-      mockPlugin._ccPermissions.allow = ['Read(/test/file.md)'];
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-      // Load the CC permissions into the service
-      await service.loadCCPermissions();
-
-      const canUse = (service as any).createUnifiedToolCallback('normal');
-      const res = await canUse('Read', { file_path: '/test/file.md' }, {});
-      expect(res.behavior).toBe('allow');
-    });
+    // Note: 'allows pre-approved actions' test removed - createUnifiedToolCallback was part of plan mode
 
     it('returns continue for non-file tools in vault hook and null for unknown paths', async () => {
       // Create vault restriction hook using the exported function
@@ -2747,7 +2638,7 @@ describe('ClaudianService', () => {
     it('stores null original content when pre-hook stat fails', async () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
         // Create hooks using the exported functions
@@ -2777,7 +2668,7 @@ describe('ClaudianService', () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
       (fs.readFileSync as jest.Mock).mockReturnValueOnce('new');
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
         // Create hooks using the exported functions
@@ -2989,173 +2880,11 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('persistent query deferred close', () => {
-    it('sets pendingCloseReason when EnterPlanMode is called', async () => {
-      const serviceAny = service as any;
+  // Note: 'persistent query deferred close', 'tool restriction with allowed tools list', and
+  // 'persistent query permission mode transitions' tests removed - createUnifiedToolCallback/pendingCloseReason
+  // were part of plan mode
 
-      // Mock the callback
-      let callbackCalled = false;
-      service.setEnterPlanModeCallback(async () => {
-        callbackCalled = true;
-      });
 
-      // Call handleEnterPlanModeTool
-      const result = await serviceAny.handleEnterPlanModeTool();
-
-      expect(result.behavior).toBe('allow');
-      expect(callbackCalled).toBe(true);
-      expect(serviceAny.pendingCloseReason).toBe('entering plan mode');
-    });
-
-    it('clears pendingCloseReason after processing result message', async () => {
-      const serviceAny = service as any;
-
-      // Set up persistent query
-      await service.preWarm();
-
-      // Set pending close reason
-      serviceAny.pendingCloseReason = 'test reason';
-
-      // Close the query (simulates cleanup)
-      service.cleanup();
-
-      // After cleanup, pendingCloseReason should be cleared
-      expect(serviceAny.pendingCloseReason).toBeNull();
-    });
-  });
-
-  describe('tool restriction with allowed tools list', () => {
-    it('denies tools not in allowedTools list with helpful message', async () => {
-      const serviceAny = service as any;
-
-      // Set up allowed tools restriction
-      serviceAny.currentAllowedTools = ['Read', 'Grep'];
-
-      const canUse = serviceAny.createUnifiedToolCallback('yolo');
-      const result = await canUse('Write', { file_path: '/test.md' }, {});
-
-      expect(result.behavior).toBe('deny');
-      expect(result.message).toContain('Tool "Write" is not allowed');
-      expect(result.message).toContain('Allowed tools: Read, Grep');
-    });
-
-    it('allows always-allowed tools even with restrictions', async () => {
-      const serviceAny = service as any;
-
-      // Set up empty allowed tools (most restrictive)
-      serviceAny.currentAllowedTools = [];
-
-      const canUse = serviceAny.createUnifiedToolCallback('yolo');
-
-      // AskUserQuestion should still work
-      service.setAskUserQuestionCallback(async () => ({ answer: 'test' }));
-      const result = await canUse('AskUserQuestion', { questions: [] }, { toolUseID: 'test-id' });
-
-      // It should be allowed (behavior is 'allow' after callback returns)
-      expect(result.behavior).toBe('allow');
-    });
-  });
-
-  describe('persistent query permission mode transitions', () => {
-    it('restarts persistent query when switching from normal to YOLO mode', async () => {
-      // Start in normal mode
-      mockPlugin.settings.permissionMode = 'normal';
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-      service.setApprovalCallback(async () => 'allow');
-
-      const chunks1: any[] = [];
-      for await (const c of service.query('first')) chunks1.push(c);
-
-      const serviceAny = service as any;
-      const queryBefore = serviceAny.persistentQuery;
-      expect(queryBefore).not.toBeNull();
-
-      // Switch to YOLO mode - this should trigger a restart
-      mockPlugin.settings.permissionMode = 'yolo';
-
-      const chunks2: any[] = [];
-      for await (const c of service.query('second')) chunks2.push(c);
-
-      // A new persistent query should have been created (restart happened)
-      // We verify this by checking that the query object changed
-      const queryAfter = serviceAny.persistentQuery;
-      expect(queryAfter).not.toBeNull();
-      // The query should be different (restarted)
-      expect(queryAfter).not.toBe(queryBefore);
-    });
-
-    it('uses current permission mode in canUseTool callback (not closured)', async () => {
-      // Start in YOLO mode
-      mockPlugin.settings.permissionMode = 'yolo';
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-
-      const serviceAny = service as any;
-
-      // Create the callback (captures initial mode reference)
-      const canUse = serviceAny.createUnifiedToolCallback('yolo');
-
-      // In YOLO mode, should auto-approve
-      let result = await canUse('Write', { file_path: '/test1.md' }, {});
-      expect(result.behavior).toBe('allow');
-
-      // Change to normal mode without recreating callback
-      mockPlugin.settings.permissionMode = 'normal';
-
-      // Without approval callback, should deny
-      result = await canUse('Write', { file_path: '/test2.md' }, {});
-      expect(result.behavior).toBe('deny');
-      expect(result.message).toContain('No approval handler');
-
-      // Set approval callback to allow
-      service.setApprovalCallback(async () => 'allow');
-      result = await canUse('Write', { file_path: '/test3.md' }, {});
-      expect(result.behavior).toBe('allow');
-
-      // Set approval callback to deny (use different path to avoid session cache)
-      service.setApprovalCallback(async () => 'deny');
-      result = await canUse('Write', { file_path: '/test4.md' }, {});
-      expect(result.behavior).toBe('deny');
-    });
-  });
-
-  describe('persistent query deferred close behavior', () => {
-    it('closes persistent query when result message arrives with pendingCloseReason set', async () => {
-      const serviceAny = service as any;
-
-      // Start a persistent query
-      await service.preWarm();
-      expect(serviceAny.persistentQuery).not.toBeNull();
-
-      // Set pending close reason (simulating EnterPlanMode was called)
-      serviceAny.pendingCloseReason = 'entering plan mode';
-
-      // Simulate routing a result message
-      const resultMessage = { type: 'result', result: 'completed' };
-      await serviceAny.routeMessage(resultMessage);
-
-      // After result message with pendingCloseReason, query should be closed
-      expect(serviceAny.persistentQuery).toBeNull();
-      expect(serviceAny.pendingCloseReason).toBeNull();
-    });
-
-    it('does not close persistent query on result message without pendingCloseReason', async () => {
-      const serviceAny = service as any;
-
-      // Start a persistent query
-      await service.preWarm();
-      expect(serviceAny.persistentQuery).not.toBeNull();
-
-      // Ensure no pending close reason
-      serviceAny.pendingCloseReason = null;
-
-      // Simulate routing a result message
-      const resultMessage = { type: 'result', result: 'completed' };
-      await serviceAny.routeMessage(resultMessage);
-
-      // Query should still be running
-      expect(serviceAny.persistentQuery).not.toBeNull();
-    });
-  });
 
   describe('persistent query crash recovery behavior', () => {
     it('restarts persistent query after consumer error to prepare for next query', async () => {

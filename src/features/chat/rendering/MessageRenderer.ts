@@ -9,10 +9,9 @@ import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, setIcon } from 'obsidian';
 
 import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
-import { isWriteEditTool, TOOL_ASK_USER_QUESTION, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment } from '../../../core/types';
 import {
-  renderStoredAskUserQuestion,
   renderStoredAsyncSubagent,
   renderStoredSubagent,
   renderStoredThinkingBlock,
@@ -193,7 +192,7 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders an approval indicator for plan mode decisions.
+   * Renders an approval indicator for user decisions.
    */
   private renderApprovalIndicator(indicator: NonNullable<ChatMessage['approvalIndicator']>): HTMLElement {
     const indicatorEl = this.messagesEl.createDiv({
@@ -272,15 +271,13 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders a tool call with special handling for Write/Edit, and AskUserQuestion.
+   * Renders a tool call with special handling for Write/Edit.
    * TodoWrite is not rendered inline - it only shows in the bottom panel.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: { id: string; name: string; input: Record<string, unknown>; status?: string; result?: string }): void {
     if (toolCall.name === TOOL_TODO_WRITE) {
       // TodoWrite is not rendered inline - only in bottom panel
       return;
-    } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
-      renderStoredAskUserQuestion(contentEl, toolCall as any);
     } else if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall as any);
     } else {

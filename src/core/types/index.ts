@@ -58,7 +58,6 @@ export {
   type LegacyPermission,
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
-  type NonPlanPermissionMode,
   parseCCPermissionRule,
   type Permission,
   type PermissionMode,
@@ -94,10 +93,3 @@ export {
   type ParsedMcpConfig,
 } from './mcp';
 
-// AskUserQuestion types
-export {
-  type AskUserQuestionCallback,
-  type AskUserQuestionInput,
-  type AskUserQuestionOption,
-  type AskUserQuestionQuestion,
-} from './askUserQuestion';

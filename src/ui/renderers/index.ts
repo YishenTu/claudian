@@ -1,13 +1,6 @@
 /** Claudian UI renderers - barrel export. */
 
 export {
-  type AskUserQuestionState,
-  createAskUserQuestionBlock,
-  finalizeAskUserQuestionBlock,
-  parseAskUserQuestionInput,
-  renderStoredAskUserQuestion,
-} from './AskUserQuestionRenderer';
-export {
   computeLineDiff,
   countLineChanges,
   type DiffHunk,

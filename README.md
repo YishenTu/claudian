@@ -15,8 +15,9 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget. Monitor context window usage with a real-time gauge.
-- ~~**Plan Mode**: Toggle read-only exploration with Shift+Tab before implementation. Agent explores codebase, presents a plan, then implements after approval.~~
-- **Robust Security**: Implement permission modes (YOLO/Safe), a safety blocklist, and vault confinement with symlink-safe checks.
+- **Security**: Permission modes (YOLO/Safe), safety blocklist, and vault confinement with symlink-safe checks.
+
+> **Note**: `Plan Mode` has been temporarily removed. The SDK does not natively support `permissionMode: 'plan'`, and the previous implementation had significant limitations. It will be re-added when there's a better approach.
 
 ## Requirements
 
@@ -90,7 +91,6 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Inline Edit**: Select text + hotkey to edit directly in notes with word-level diff preview
 - **Slash Commands**: Type `/` for custom prompt templates (Settings → Slash Commands)
 - **Instruction Mode**: Type `#` to add refined instructions to system prompt
-- ~~**Plan Mode**: `Shift+Tab` for read-only exploration before implementation~~
 - **Skills**: Add `SKILL.md` files to `~/.claude/skills/` or `{vault}/.claude/skills/`
 - **MCP**: Add external tools via Settings → MCP Servers; use `@server-name` in chat to activate
 
@@ -224,9 +224,9 @@ src/
 │   ├── mcp/                     # MCP @-mention detection and connection testing
 │   └── settings/                # Settings tab (ClaudianSettings)
 ├── ui/                          # UI components
-│   ├── components/              # Input toolbar, file/image context, dropdowns, AskUserQuestion panel
+│   ├── components/              # Input toolbar, file/image context, dropdowns
 │   ├── modals/                  # Approval, inline edit, instruction, MCP modals
-│   ├── renderers/               # Thinking blocks, tool calls, diffs, subagents, AskUserQuestion
+│   ├── renderers/               # Thinking blocks, tool calls, diffs, subagents
 │   └── settings/                # Env snippets, MCP settings, slash commands
 ├── utils/                       # Modular utility functions
 └── style/                       # Modular CSS (→ styles.css)
@@ -260,10 +260,8 @@ src/
 - [x] Windows platform support (MSYS paths, PowerShell blocklist, env vars)
 - [x] MCP (Model Context Protocol) server support with context-saving mode
 - [x] Context window usage display
-- [x] Plan mode (Shift+Tab toggle, read-only exploration, approval flow)
 - [x] Auto title generation (AI-powered, concurrent, with regenerate option)
 - [x] External context @-mention (`@folder/` to filter files from external directories)
-- [ ] Plan Mode refactor. The SDK does not support plan mode natively, current approach has limitations and technical debt, potential simplification is in order.
 - [ ] Hooks and other advanced features
 
 ## License

@@ -127,13 +127,7 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
       clearExternalContexts: jest.fn(),
     }) as any,
     clearQueuedMessage: jest.fn(),
-    getApprovedPlan: jest.fn().mockReturnValue(null),
-    setApprovedPlan: jest.fn(),
-    showPlanBanner: jest.fn(),
-    hidePlanBanner: jest.fn(),
-    triggerPendingPlanApproval: jest.fn(),
     getTitleGenerationService: () => null,
-    setPlanModeActive: jest.fn(),
     getTodoPanel: () => ({
       remount: jest.fn(),
     }) as any,
@@ -302,49 +296,6 @@ describe('ConversationController - Queue Management', () => {
       await controller.switchTo('new-conv');
 
       expect(dropdown.hasClass('visible')).toBe(false);
-    });
-  });
-
-  describe('Plan mode restore', () => {
-    it('should restore plan mode state on loadActive', async () => {
-      const conversation = {
-        id: 'conv-1',
-        messages: [],
-        sessionId: null,
-        isInPlanMode: false,
-      };
-      deps.plugin.settings.permissionMode = 'plan';
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue(conversation);
-
-      await controller.loadActive();
-
-      expect(deps.state.planModeState?.isActive).toBe(true);
-      expect(deps.setPlanModeActive).toHaveBeenCalledWith(true);
-    });
-
-    it('should restore plan mode state on switch', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      deps.plugin.settings.permissionMode = 'plan';
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'new-conv',
-        messages: [],
-        sessionId: null,
-        isInPlanMode: false,
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(deps.state.planModeState?.isActive).toBe(true);
-      expect(deps.setPlanModeActive).toHaveBeenCalledWith(true);
-    });
-
-    it('should keep plan mode active when creating new conversation', async () => {
-      deps.plugin.settings.permissionMode = 'plan';
-
-      await controller.createNew();
-
-      expect(deps.state.planModeState?.isActive).toBe(true);
-      expect(deps.setPlanModeActive).toHaveBeenCalledWith(true);
     });
   });
 
@@ -580,10 +531,10 @@ describe('ConversationController - Title Generation', () => {
       );
     });
 
-    it('should preserve [Plan] prefix for plan conversations', async () => {
+    it('should rename conversation with generated title', async () => {
       (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
         id: 'conv-1',
-        title: '[Plan] Old Title',
+        title: 'Old Title',
         messages: [
           { role: 'user', content: 'Create a plan' },
           { role: 'assistant', content: 'Here is the plan...' },
@@ -597,21 +548,11 @@ describe('ConversationController - Title Generation', () => {
         }
       );
 
-      // Also mock getConversationById to return the expected title for the callback check
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
-        id: 'conv-1',
-        title: '[Plan] Old Title',
-        messages: [
-          { role: 'user', content: 'Create a plan' },
-          { role: 'assistant', content: 'Here is the plan...' },
-        ],
-      });
-
       (deps.plugin.renameConversation as any) = jest.fn().mockResolvedValue(undefined);
 
       await controller.regenerateTitle('conv-1');
 
-      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', '[Plan] New Generated Title');
+      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'New Generated Title');
     });
 
     it('should extract text from contentBlocks if content is empty', async () => {
