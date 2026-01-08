@@ -25,7 +25,6 @@ export interface QueuedMessage {
   content: string;
   images?: ImageAttachment[];
   editorContext: EditorSelectionContext | null;
-  hidden?: boolean;
   promptPrefix?: string;
 }
 

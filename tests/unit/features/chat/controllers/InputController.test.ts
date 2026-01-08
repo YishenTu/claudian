@@ -420,18 +420,6 @@ describe('InputController - Message Queue', () => {
       expect(queryOptions.mcpMentions).toBe(mcpMentions);
       expect(queryOptions.enabledMcpServers).toBe(enabledServers);
     });
-
-    it('should send hidden message with content override without clearing input', async () => {
-      deps.plugin.agentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
-      inputEl.value = 'draft message';
-
-      await controller.sendMessage({ hidden: true, content: 'Auto prompt' });
-
-      expect(inputEl.value).toBe('draft message');
-      expect(deps.state.messages[0].content).toBe('Auto prompt');
-      expect(deps.state.messages[0].hidden).toBe(true);
-      expect(deps.renderer.addMessage).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('Title generation', () => {

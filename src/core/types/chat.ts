@@ -44,15 +44,6 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];
-  /** Whether this is a plan message (for distinct styling). */
-  isPlanMessage?: boolean;
-  /** Whether this message should be hidden from the UI. */
-  hidden?: boolean;
-  /** Approval indicator for user decisions. */
-  approvalIndicator?: {
-    type: 'approve' | 'approve_new_session' | 'revise';
-    feedback?: string; // For revise
-  };
 }
 
 /** Persisted conversation with messages and session state. */

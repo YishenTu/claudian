@@ -55,8 +55,8 @@ import type {
 } from '../types';
 import { THINKING_BUDGETS } from '../types';
 
-/** Tools hidden from the agent (SDK tools not supported without canUseTool intercept). */
-const DISALLOWED_PLAN_MODE_TOOLS = [
+/** SDK tools that require canUseTool interception (not supported in bypassPermissions mode). */
+const UNSUPPORTED_SDK_TOOLS = [
   'AskUserQuestion',
   'EnterPlanMode',
   'ExitPlanMode',
@@ -857,7 +857,7 @@ export class ClaudianService {
     // Pre-register all disabled MCP tools and hide unsupported SDK tools
     const allDisallowedTools = [
       ...this.mcpManager.getAllDisallowedMcpTools(),
-      ...DISALLOWED_PLAN_MODE_TOOLS,
+      ...UNSUPPORTED_SDK_TOOLS,
     ];
     options.disallowedTools = allDisallowedTools;
 
@@ -900,8 +900,11 @@ export class ClaudianService {
     });
 
     const postCallback: FileEditPostCallback = {
-      trackEditedFile: async () => {
-        // File tracking is now handled by hooks only
+      trackEditedFile: async (_name, _input, isError) => {
+        // File tracking is delegated to PreToolUse/PostToolUse hooks
+        if (isError) {
+          console.warn('[ClaudianService] trackEditedFile received error for tool:', _name);
+        }
       },
     };
 
@@ -1660,7 +1663,7 @@ export class ClaudianService {
     const disallowedMcpTools = this.mcpManager.getDisallowedMcpTools(combinedMentions);
     options.disallowedTools = [
       ...disallowedMcpTools,
-      ...DISALLOWED_PLAN_MODE_TOOLS,
+      ...UNSUPPORTED_SDK_TOOLS,
     ];
 
     // Create hooks for security enforcement
@@ -1686,8 +1689,11 @@ export class ClaudianService {
 
     // Create file tracking callbacks
     const postCallback: FileEditPostCallback = {
-      trackEditedFile: async () => {
-        // File tracking is now handled by hooks only
+      trackEditedFile: async (_name, _input, isError) => {
+        // File tracking is delegated to PreToolUse/PostToolUse hooks
+        if (isError) {
+          console.warn('[ClaudianService] trackEditedFile received error for tool:', _name);
+        }
       },
     };
 

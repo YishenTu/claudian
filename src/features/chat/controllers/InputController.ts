@@ -74,7 +74,6 @@ export class InputController {
   /** Sends a message with optional editor context override. */
   async sendMessage(options?: {
     editorContextOverride?: EditorSelectionContext | null;
-    hidden?: boolean;
     content?: string;
     promptPrefix?: string;
   }): Promise<void> {
@@ -115,8 +114,6 @@ export class InputController {
           state.queuedMessage.images = [...(state.queuedMessage.images || []), ...images];
         }
         state.queuedMessage.editorContext = editorContext;
-        // Preserve hidden flag (once hidden, always hidden)
-        state.queuedMessage.hidden = state.queuedMessage.hidden || options?.hidden;
         if (promptPrefix) {
           state.queuedMessage.promptPrefix = state.queuedMessage.promptPrefix ?? promptPrefix;
         }
@@ -125,7 +122,6 @@ export class InputController {
           content,
           images,
           editorContext,
-          hidden: options?.hidden,
           promptPrefix,
         };
       }
@@ -248,12 +244,9 @@ export class InputController {
       timestamp: Date.now(),
       currentNote: currentNoteForMessage,
       images: imagesForMessage,
-      hidden: options?.hidden,
     };
     state.addMessage(userMsg);
-    if (!options?.hidden) {
-      renderer.addMessage(userMsg);
-    }
+    renderer.addMessage(userMsg);
 
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
@@ -392,7 +385,7 @@ export class InputController {
     const { state } = this.deps;
     if (!state.queuedMessage) return;
 
-    const { content, images, editorContext, hidden, promptPrefix } = state.queuedMessage;
+    const { content, images, editorContext, promptPrefix } = state.queuedMessage;
     state.queuedMessage = null;
     this.updateQueueIndicator();
 
@@ -402,7 +395,7 @@ export class InputController {
       this.deps.getImageContextManager()?.setImages(images);
     }
 
-    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, hidden, promptPrefix }), 0);
+    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, promptPrefix }), 0);
   }
 
   // ============================================
