@@ -940,7 +940,7 @@ ${content}
     toolName: string,
     input: Record<string, unknown>,
     description: string
-  ): Promise<'allow' | 'allow-always' | 'deny' | 'cancel'> {
+  ): Promise<'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel'> {
     const { plugin } = this.deps;
     return new Promise((resolve) => {
       const modal = new ApprovalModal(plugin.app, toolName, input, description, resolve);
@@ -959,7 +959,7 @@ ${content}
         { command },
         description,
         (decision) => resolve(decision === 'allow' || decision === 'allow-always'),
-        { showAlwaysAllow: false, title: 'Inline bash execution' }
+        { showAlwaysAllow: false, showAlwaysDeny: false, title: 'Inline bash execution' }
       );
       modal.open();
     });

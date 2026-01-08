@@ -125,7 +125,14 @@ function createMockMcpManager() {
 }
 
 // Create a mock plugin
-function createMockPlugin(settings = {}) {
+function createMockPlugin(settings: Record<string, unknown> = {}) {
+  // CC permissions storage (allow/deny/ask arrays)
+  const ccPermissions = {
+    allow: [] as string[],
+    deny: [] as string[],
+    ask: [] as string[],
+  };
+
   const mockPlugin = {
     settings: {
       enableBlocklist: true,
@@ -144,7 +151,7 @@ function createMockPlugin(settings = {}) {
           'Format-Volume',
         ],
       },
-      permissions: [],
+      permissions: [], // Legacy field (for backwards compat tests)
       permissionMode: 'yolo',
       allowedExportPaths: [],
       loadUserClaudeSettings: false,
@@ -161,6 +168,17 @@ function createMockPlugin(settings = {}) {
         },
       },
     },
+    storage: {
+      getPermissions: jest.fn().mockImplementation(async () => ccPermissions),
+      addAllowRule: jest.fn().mockImplementation(async (rule: string) => {
+        ccPermissions.allow.push(rule);
+      }),
+      addDenyRule: jest.fn().mockImplementation(async (rule: string) => {
+        ccPermissions.deny.push(rule);
+      }),
+    },
+    // Expose ccPermissions for test assertions
+    _ccPermissions: ccPermissions,
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
     getResolvedClaudeCliPath: jest.fn().mockReturnValue('/mock/claude'),
@@ -1965,18 +1983,18 @@ describe('ClaudianService', () => {
       expect(isApproved).toBe(false);
     });
 
-    it('should store permanent approved actions in settings', async () => {
+    it('should store permanent approved actions in CC settings', async () => {
       await (service as any).approvalManager.approveAction('Read', { file_path: '/test/file.md' }, 'always');
 
-      expect(mockPlugin.settings.permissions.length).toBe(1);
-      expect(mockPlugin.settings.permissions[0].toolName).toBe('Read');
-      expect(mockPlugin.settings.permissions[0].pattern).toBe('/test/file.md');
+      expect(mockPlugin._ccPermissions.allow.length).toBe(1);
+      expect(mockPlugin._ccPermissions.allow[0]).toBe('Read(/test/file.md)');
     });
 
     it('should recognize permanently approved actions', async () => {
-      mockPlugin.settings.permissions = [
-        { toolName: 'Read', pattern: '/test/file.md', approvedAt: Date.now(), scope: 'always' },
-      ];
+      // Set up CC permissions with allow rule
+      mockPlugin._ccPermissions.allow = ['Read(/test/file.md)'];
+      // Reload permissions into service
+      await service.loadCCPermissions();
 
       const isApproved = (service as any).approvalManager.isActionApproved('Read', { file_path: '/test/file.md' });
       expect(isApproved).toBe(true);
@@ -1993,9 +2011,9 @@ describe('ClaudianService', () => {
     });
 
     it('should match file paths with prefix', async () => {
-      mockPlugin.settings.permissions = [
-        { toolName: 'Read', pattern: '/test/vault/', approvedAt: Date.now(), scope: 'always' },
-      ];
+      // Set up CC permissions with allow rule (trailing slash for directory)
+      mockPlugin._ccPermissions.allow = ['Read(/test/vault/)'];
+      await service.loadCCPermissions();
 
       // Path starting with approved prefix should match
       expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/test/vault/notes/file.md' })).toBe(true);
@@ -2004,10 +2022,10 @@ describe('ClaudianService', () => {
       expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/other/path/file.md' })).toBe(false);
     });
 
-    it('should not match non-segment prefixes for file paths', () => {
-      mockPlugin.settings.permissions = [
-        { toolName: 'Read', pattern: '/test/vault/notes', approvedAt: Date.now(), scope: 'always' },
-      ];
+    it('should not match non-segment prefixes for file paths', async () => {
+      // Set up CC permissions with allow rule (no trailing slash)
+      mockPlugin._ccPermissions.allow = ['Read(/test/vault/notes)'];
+      await service.loadCCPermissions();
 
       expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/test/vault/notes/file.md' })).toBe(true);
       expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/test/vault/notes2/file.md' })).toBe(false);
@@ -2059,22 +2077,21 @@ describe('ClaudianService', () => {
 
       expect(result.behavior).toBe('allow');
       expect(approvalCallback).toHaveBeenCalled();
-      // Access via approval manager's session approvals
-      const sessionApprovals = (service as any).approvalManager.getSessionApprovals();
-      expect(sessionApprovals.some((a: any) => a.toolName === 'Bash')).toBe(true);
+      // Access via approval manager's session permissions
+      const sessionPermissions = (service as any).approvalManager.getSessionPermissions();
+      expect(sessionPermissions.some((p: any) => p.rule === 'Bash(ls -la)' && p.type === 'allow')).toBe(true);
     });
 
-    it('should persist always-allow approvals and save settings', async () => {
+    it('should persist always-allow approvals in CC settings', async () => {
       const approvalCallback = jest.fn().mockResolvedValue('allow-always');
       service.setApprovalCallback(approvalCallback);
       const canUse = (service as any).createUnifiedToolCallback('normal');
-      const saveSpy = jest.spyOn(mockPlugin, 'saveSettings');
 
       const result = await canUse('Read', { file_path: '/test/file.md' }, {});
 
       expect(result.behavior).toBe('allow');
-      expect(mockPlugin.settings.permissions.some((a: any) => a.toolName === 'Read' && a.pattern === '/test/file.md')).toBe(true);
-      expect(saveSpy).toHaveBeenCalled();
+      expect(mockPlugin._ccPermissions.allow).toContain('Read(/test/file.md)');
+      expect(mockPlugin.storage.addAllowRule).toHaveBeenCalledWith('Read(/test/file.md)');
     });
 
     it('should deny when user rejects approval', async () => {
@@ -2692,10 +2709,12 @@ describe('ClaudianService', () => {
     });
 
     it('allows pre-approved actions in safe mode callback', async () => {
-      mockPlugin = createMockPlugin({ permissionMode: 'normal', permissions: [
-        { toolName: 'Read', pattern: '/test/file.md', approvedAt: Date.now(), scope: 'always' },
-      ] });
+      mockPlugin = createMockPlugin({ permissionMode: 'normal' });
+      // Set up CC permissions with pre-approved rule
+      mockPlugin._ccPermissions.allow = ['Read(/test/file.md)'];
       service = new ClaudianService(mockPlugin, createMockMcpManager());
+      // Load the CC permissions into the service
+      await service.loadCCPermissions();
 
       const canUse = (service as any).createUnifiedToolCallback('normal');
       const res = await canUse('Read', { file_path: '/test/file.md' }, {});

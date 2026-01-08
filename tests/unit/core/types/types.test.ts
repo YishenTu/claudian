@@ -3,13 +3,18 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
-  EnvSnippet,  StreamChunk,
+  EnvSnippet,
+  LegacyPermission,
+  StreamChunk,
   ToolCallInfo} from '@/core/types';
 import {
   DEFAULT_SETTINGS,
   getCliPlatformDisplayName,
   getCliPlatformKey,
   getDefaultCliPaths,
+  legacyPermissionsToCCPermissions,
+  legacyPermissionToCCRule,
+  parseCCPermissionRule,
   VIEW_TYPE_CLAUDIAN} from '@/core/types';
 
 describe('types.ts', () => {
@@ -85,7 +90,6 @@ describe('types.ts', () => {
         titleGenerationModel: '',
         thinkingBudget: 'off',
         permissionMode: 'yolo',
-        permissions: [],
         excludedTags: [],
         mediaFolder: '',
         environmentVariables: '',
@@ -97,6 +101,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
+        activeConversationId: null,
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -114,7 +119,6 @@ describe('types.ts', () => {
         titleGenerationModel: '',
         thinkingBudget: 'medium',
         permissionMode: 'normal',
-        permissions: [],
         excludedTags: ['private'],
         mediaFolder: 'attachments',
         environmentVariables: 'API_KEY=test',
@@ -126,6 +130,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
+        activeConversationId: null,
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -143,7 +148,6 @@ describe('types.ts', () => {
         lastCustomModel: 'custom/model',
         thinkingBudget: 'high',
         permissionMode: 'yolo',
-        permissions: [],
         excludedTags: [],
         mediaFolder: '',
         environmentVariables: '',
@@ -155,6 +159,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
+        activeConversationId: null,
       };
 
       expect(settings.lastClaudeModel).toBe('opus');
@@ -487,6 +492,136 @@ describe('types.ts', () => {
         expect(DEFAULT_SETTINGS.claudeCliPaths.macos).toBe('');
         expect(DEFAULT_SETTINGS.claudeCliPaths.linux).toBe('');
         expect(DEFAULT_SETTINGS.claudeCliPaths.windows).toBe('');
+      });
+    });
+  });
+
+  describe('Permission Conversion Utilities', () => {
+    describe('legacyPermissionToCCRule', () => {
+      it('should convert Bash permission with pattern', () => {
+        const legacy: LegacyPermission = {
+          toolName: 'Bash',
+          pattern: 'git status',
+          approvedAt: Date.now(),
+          scope: 'always',
+        };
+        expect(legacyPermissionToCCRule(legacy)).toBe('Bash(git status)');
+      });
+
+      it('should convert Read permission with file path', () => {
+        const legacy: LegacyPermission = {
+          toolName: 'Read',
+          pattern: '/path/to/file.txt',
+          approvedAt: Date.now(),
+          scope: 'always',
+        };
+        expect(legacyPermissionToCCRule(legacy)).toBe('Read(/path/to/file.txt)');
+      });
+
+      it('should return just tool name for wildcard pattern', () => {
+        const legacy: LegacyPermission = {
+          toolName: 'WebSearch',
+          pattern: '*',
+          approvedAt: Date.now(),
+          scope: 'always',
+        };
+        expect(legacyPermissionToCCRule(legacy)).toBe('WebSearch');
+      });
+
+      it('should return just tool name for empty pattern', () => {
+        const legacy: LegacyPermission = {
+          toolName: 'Glob',
+          pattern: '',
+          approvedAt: Date.now(),
+          scope: 'always',
+        };
+        expect(legacyPermissionToCCRule(legacy)).toBe('Glob');
+      });
+
+      it('should return just tool name for JSON object pattern (legacy format)', () => {
+        const legacy: LegacyPermission = {
+          toolName: 'CustomTool',
+          pattern: '{"key":"value"}',
+          approvedAt: Date.now(),
+          scope: 'always',
+        };
+        expect(legacyPermissionToCCRule(legacy)).toBe('CustomTool');
+      });
+    });
+
+    describe('legacyPermissionsToCCPermissions', () => {
+      it('should convert array of legacy permissions to CC format', () => {
+        const legacy: LegacyPermission[] = [
+          { toolName: 'Bash', pattern: 'git *', approvedAt: Date.now(), scope: 'always' },
+          { toolName: 'Read', pattern: '/vault', approvedAt: Date.now(), scope: 'always' },
+        ];
+        const result = legacyPermissionsToCCPermissions(legacy);
+        expect(result.allow).toEqual(['Bash(git *)', 'Read(/vault)']);
+        expect(result.deny).toEqual([]);
+        expect(result.ask).toEqual([]);
+      });
+
+      it('should skip session-scoped permissions', () => {
+        const legacy: LegacyPermission[] = [
+          { toolName: 'Bash', pattern: 'npm test', approvedAt: Date.now(), scope: 'always' },
+          { toolName: 'Bash', pattern: 'rm temp.txt', approvedAt: Date.now(), scope: 'session' },
+        ];
+        const result = legacyPermissionsToCCPermissions(legacy);
+        expect(result.allow).toEqual(['Bash(npm test)']);
+      });
+
+      it('should deduplicate rules', () => {
+        const legacy: LegacyPermission[] = [
+          { toolName: 'Read', pattern: '*', approvedAt: Date.now(), scope: 'always' },
+          { toolName: 'Read', pattern: '*', approvedAt: Date.now() + 1000, scope: 'always' },
+        ];
+        const result = legacyPermissionsToCCPermissions(legacy);
+        expect(result.allow).toEqual(['Read']);
+      });
+
+      it('should return empty arrays for empty input', () => {
+        const result = legacyPermissionsToCCPermissions([]);
+        expect(result.allow).toEqual([]);
+        expect(result.deny).toEqual([]);
+        expect(result.ask).toEqual([]);
+      });
+    });
+
+    describe('parseCCPermissionRule', () => {
+      it('should parse rule with pattern', () => {
+        const result = parseCCPermissionRule('Bash(git status)');
+        expect(result.tool).toBe('Bash');
+        expect(result.pattern).toBe('git status');
+      });
+
+      it('should parse rule with complex pattern', () => {
+        const result = parseCCPermissionRule('WebFetch(domain:github.com)');
+        expect(result.tool).toBe('WebFetch');
+        expect(result.pattern).toBe('domain:github.com');
+      });
+
+      it('should parse rule without pattern', () => {
+        const result = parseCCPermissionRule('Read');
+        expect(result.tool).toBe('Read');
+        expect(result.pattern).toBeUndefined();
+      });
+
+      it('should handle nested parentheses in pattern', () => {
+        const result = parseCCPermissionRule('Bash(echo "hello (world)")');
+        expect(result.tool).toBe('Bash');
+        expect(result.pattern).toBe('echo "hello (world)"');
+      });
+
+      it('should handle path patterns', () => {
+        const result = parseCCPermissionRule('Read(/Users/test/vault/notes)');
+        expect(result.tool).toBe('Read');
+        expect(result.pattern).toBe('/Users/test/vault/notes');
+      });
+
+      it('should return rule as tool for malformed input', () => {
+        const result = parseCCPermissionRule('not-valid-format');
+        expect(result.tool).toBe('not-valid-format');
+        expect(result.pattern).toBeUndefined();
       });
     });
   });

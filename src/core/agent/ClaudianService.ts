@@ -50,10 +50,10 @@ import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL
 import type {
   AskUserQuestionCallback,
   AskUserQuestionInput,
+  CCPermissions,
   ChatMessage,
   ClaudeModel,
   ImageAttachment,
-  Permission,
   PermissionMode,
   StreamChunk,
   ToolDiffData,
@@ -73,6 +73,19 @@ const ALWAYS_ALLOWED_TOOLS = [
   TOOL_EXIT_PLAN_MODE,
   TOOL_SKILL,
 ] as const;
+
+/**
+ * Check if an SDK message signals turn completion.
+ * - 'result' is the normal completion signal
+ * - 'error' may also complete the turn when SDK emits an error without result
+ *
+ * Note: We cast to string because TypeScript's SDK types may not include 'error'
+ * but it can occur at runtime.
+ */
+function isTurnCompleteMessage(message: SDKMessage): boolean {
+  const messageType = message.type as string;
+  return messageType === 'result' || messageType === 'error';
+}
 
 // ============================================
 // Session Management (inlined)
@@ -500,7 +513,7 @@ export type ApprovalCallback = (
   toolName: string,
   input: Record<string, unknown>,
   description: string
-) => Promise<'allow' | 'allow-always' | 'deny' | 'cancel'>;
+) => Promise<'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel'>;
 
 /** Options for query execution with optional overrides. */
 export interface QueryOptions {
@@ -549,6 +562,7 @@ export class ClaudianService {
   private approvalManager: ApprovalManager;
   private diffStore = new DiffStore();
   private mcpManager: McpServerManager;
+  private ccPermissions: CCPermissions = { allow: [], deny: [], ask: [] };
 
   // Store AskUserQuestion answers by tool_use_id
   private askUserQuestionAnswers = new Map<string, Record<string, string | string[]>>();
@@ -582,16 +596,39 @@ export class ClaudianService {
     this.plugin = plugin;
     this.mcpManager = mcpManager;
 
-    // Initialize approval manager with access to persistent approvals
+    // Initialize approval manager with access to CC permissions
     this.approvalManager = new ApprovalManager(
-      () => this.plugin.settings.permissions
+      () => this.ccPermissions
     );
 
-    // Set up persistence callback for permanent approvals
-    this.approvalManager.setPersistCallback(async (action: Permission) => {
-      this.plugin.settings.permissions.push(action);
-      await this.plugin.saveSettings();
+    // Set up callbacks for persisting permissions to CC settings
+    this.approvalManager.setAddAllowRuleCallback(async (rule) => {
+      try {
+        await this.plugin.storage.addAllowRule(rule);
+        await this.loadCCPermissions();
+      } catch (error) {
+        console.error('[ClaudianService] Failed to persist allow rule:', rule, error);
+        // Rule is still in session permissions via ApprovalManager, so action continues
+      }
     });
+
+    this.approvalManager.setAddDenyRuleCallback(async (rule) => {
+      try {
+        await this.plugin.storage.addDenyRule(rule);
+        await this.loadCCPermissions();
+      } catch (error) {
+        console.error('[ClaudianService] Failed to persist deny rule:', rule, error);
+        // Rule is still in session permissions via ApprovalManager, so action continues
+      }
+    });
+  }
+
+  /**
+   * Load CC permissions from storage.
+   * Called during initialization and after permission changes.
+   */
+  async loadCCPermissions(): Promise<void> {
+    this.ccPermissions = await this.plugin.storage.getPermissions();
   }
 
   /** Load MCP server configurations from storage. */
@@ -1061,8 +1098,8 @@ export class ClaudianService {
       }
     }
 
-    // Check for turn completion (result includes error subtypes)
-    if (message.type === 'result') {
+    // Check for turn completion
+    if (isTurnCompleteMessage(message)) {
       // Signal turn complete to message channel
       this.messageChannel?.onTurnComplete();
 
@@ -1297,6 +1334,11 @@ export class ClaudianService {
     // (e.g., CLI path not found, vault path missing)
     if (!this.persistentQuery || !this.messageChannel) {
       console.warn('[ClaudianService] Persistent query lost after applyDynamicUpdates, falling back to cold-start');
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      return;
+    }
+    if (!this.responseConsumerRunning) {
+      console.warn('[ClaudianService] Response consumer not running, falling back to cold-start');
       yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
       return;
     }
@@ -1858,7 +1900,7 @@ export class ClaudianService {
     this.closePersistentQuery('session reset');
 
     this.sessionManager.reset();
-    this.approvalManager.clearSessionApprovals();
+    this.approvalManager.clearSessionPermissions();
     this.diffStore.clear();
     this.approvedPlanContent = null;
     this.currentPlanFilePath = null;
@@ -2238,7 +2280,18 @@ export class ClaudianService {
       }
 
       if (decision === 'deny') {
-        // User explicitly clicked Deny button - continue with denial
+        // User explicitly clicked Deny button - continue with denial (session only)
+        await this.approvalManager.denyAction(toolName, input, 'session');
+        return {
+          behavior: 'deny',
+          message: 'User denied this action.',
+          interrupt: false,
+        };
+      }
+
+      if (decision === 'deny-always') {
+        // User clicked Always Deny - persist the denial
+        await this.approvalManager.denyAction(toolName, input, 'always');
         return {
           behavior: 'deny',
           message: 'User denied this action.',

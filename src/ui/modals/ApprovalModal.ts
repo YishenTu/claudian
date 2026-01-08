@@ -7,10 +7,11 @@ import { Modal, setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../core/tools/toolIcons';
 
-export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'cancel';
+export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
 
 export interface ApprovalModalOptions {
   showAlwaysAllow?: boolean;
+  showAlwaysDeny?: boolean;
   title?: string;
 }
 
@@ -65,6 +66,16 @@ export class ApprovalModal extends Modal {
     });
     denyBtn.addEventListener('click', () => this.handleDecision('deny'));
 
+    let alwaysDenyBtn: HTMLButtonElement | null = null;
+    if (this.options.showAlwaysDeny ?? true) {
+      alwaysDenyBtn = buttonsEl.createEl('button', {
+        text: 'Always deny',
+        cls: 'claudian-approval-btn claudian-always-deny-btn',
+        attr: { 'aria-label': `Always deny ${this.toolName} actions` }
+      });
+      alwaysDenyBtn.addEventListener('click', () => this.handleDecision('deny-always'));
+    }
+
     const allowBtn = buttonsEl.createEl('button', {
       text: 'Allow once',
       cls: 'claudian-approval-btn claudian-allow-btn',
@@ -72,19 +83,23 @@ export class ApprovalModal extends Modal {
     });
     allowBtn.addEventListener('click', () => this.handleDecision('allow'));
 
-    let alwaysBtn: HTMLButtonElement | null = null;
+    let alwaysAllowBtn: HTMLButtonElement | null = null;
     if (this.options.showAlwaysAllow ?? true) {
-      alwaysBtn = buttonsEl.createEl('button', {
+      alwaysAllowBtn = buttonsEl.createEl('button', {
         text: 'Always allow',
         cls: 'claudian-approval-btn claudian-always-btn',
         attr: { 'aria-label': `Always allow ${this.toolName} actions` }
       });
-      alwaysBtn.addEventListener('click', () => this.handleDecision('allow-always'));
+      alwaysAllowBtn.addEventListener('click', () => this.handleDecision('allow-always'));
     }
 
-    this.buttons = [denyBtn, allowBtn];
-    if (alwaysBtn) {
-      this.buttons.push(alwaysBtn);
+    this.buttons = [denyBtn];
+    if (alwaysDenyBtn) {
+      this.buttons.push(alwaysDenyBtn);
+    }
+    this.buttons.push(allowBtn);
+    if (alwaysAllowBtn) {
+      this.buttons.push(alwaysAllowBtn);
     }
     this.currentButtonIndex = 0;
     this.focusCurrentButton();

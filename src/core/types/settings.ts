@@ -133,12 +133,60 @@ export function getDefaultCliPaths(): PlatformCliPaths {
 export type PermissionMode = 'yolo' | 'normal' | 'plan';
 export type NonPlanPermissionMode = Exclude<PermissionMode, 'plan'>;
 
-/** Permanently approved tool permission (like Claude Code). */
-export interface Permission {
+/**
+ * Legacy permission format (pre-CC compatibility).
+ * @deprecated Use CCPermissions instead
+ */
+export interface LegacyPermission {
   toolName: string;
   pattern: string;
   approvedAt: number;
   scope: 'session' | 'always';
+}
+
+/**
+ * CC-compatible permission rule string.
+ * Format: "Tool(pattern)" or "Tool" for all
+ * Examples: "Bash(git *)", "Read(*.md)", "WebFetch(domain:github.com)"
+ */
+export type PermissionRule = string;
+
+/**
+ * CC-compatible permissions object.
+ * Stored in .claude/settings.json for interoperability with Claude Code CLI.
+ */
+export interface CCPermissions {
+  /** Rules that auto-approve tool actions */
+  allow?: PermissionRule[];
+  /** Rules that auto-deny tool actions (highest priority) */
+  deny?: PermissionRule[];
+  /** Rules that always prompt for confirmation */
+  ask?: PermissionRule[];
+  /** Default permission mode */
+  defaultMode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'plan';
+  /** Additional directories to include in permission scope */
+  additionalDirectories?: string[];
+}
+
+/**
+ * CC-compatible settings stored in .claude/settings.json.
+ * These settings are shared with Claude Code CLI.
+ */
+export interface CCSettings {
+  /** JSON Schema reference */
+  $schema?: string;
+  /** Tool permissions (CC format) */
+  permissions?: CCPermissions;
+  /** Model override */
+  model?: string;
+  /** Environment variables (object format) */
+  env?: Record<string, string>;
+  /** MCP server settings */
+  enableAllProjectMcpServers?: boolean;
+  enabledMcpjsonServers?: string[];
+  disabledMcpjsonServers?: string[];
+  /** Allow additional properties for CC compatibility */
+  [key: string]: unknown;
 }
 
 /** Saved environment variable configuration. */
@@ -167,64 +215,123 @@ export interface KeyboardNavigationSettings {
   focusInputKey: string;       // Key to focus input (default: 'i', like vim insert mode)
 }
 
-/** Plugin settings persisted to disk. */
+/**
+ * Claudian-specific settings stored in .claude/claudian-settings.json.
+ * These settings are NOT shared with Claude Code CLI.
+ */
 export interface ClaudianSettings {
+  // User preferences
   userName: string;
+
+  // Security (Claudian-specific, CC uses permissions.deny instead)
   enableBlocklist: boolean;
   blockedCommands: PlatformBlockedCommands;
-  model: ClaudeModel;
-  enableAutoTitleGeneration: boolean;
-  titleGenerationModel: string;  // Model for auto title generation (empty = auto)
-  lastClaudeModel?: ClaudeModel;
-  lastCustomModel?: ClaudeModel;
-  lastEnvHash?: string;
-  thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
   lastNonPlanPermissionMode?: NonPlanPermissionMode;
-  permissions: Permission[];
+
+  // Model & thinking (Claudian uses enum, CC uses full model ID string)
+  model: ClaudeModel;
+  thinkingBudget: ThinkingBudget;
+  enableAutoTitleGeneration: boolean;
+  titleGenerationModel: string;  // Model for auto title generation (empty = auto)
+
+  // Content settings
   excludedTags: string[];
   mediaFolder: string;
-  environmentVariables: string;
-  envSnippets: EnvSnippet[];
   systemPrompt: string;
   allowedExportPaths: string[];
-  slashCommands: SlashCommand[];
+
+  // Environment (string format, CC uses object format in settings.json)
+  environmentVariables: string;
+  envSnippets: EnvSnippet[];
+
+  // UI settings
   keyboardNavigation: KeyboardNavigationSettings;
+
+  // CLI paths (platform-specific)
   claudeCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
   claudeCliPaths: PlatformCliPaths;  // Platform-specific CLI paths (preferred)
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
+
+  // State (merged from data.json)
+  activeConversationId: string | null;
+  lastClaudeModel?: ClaudeModel;
+  lastCustomModel?: ClaudeModel;
+  lastEnvHash?: string;
+
+  // Slash commands (loaded separately from .claude/commands/)
+  slashCommands: SlashCommand[];
 }
 
-/** Default plugin settings. */
+/**
+ * @deprecated Use LegacyPermission instead. Kept for backward compatibility.
+ */
+export type Permission = LegacyPermission;
+
+/** Default Claudian-specific settings. */
 export const DEFAULT_SETTINGS: ClaudianSettings = {
+  // User preferences
   userName: '',
+
+  // Security
   enableBlocklist: true,
   blockedCommands: getDefaultBlockedCommands(),
-  model: 'haiku',
-  enableAutoTitleGeneration: true,
-  titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  lastClaudeModel: 'haiku',
-  lastCustomModel: '',
-  lastEnvHash: '',
-  thinkingBudget: 'off',
   permissionMode: 'yolo',
   lastNonPlanPermissionMode: 'yolo',
-  permissions: [],
+
+  // Model & thinking
+  model: 'haiku',
+  thinkingBudget: 'off',
+  enableAutoTitleGeneration: true,
+  titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
+
+  // Content settings
   excludedTags: [],
   mediaFolder: '',
-  environmentVariables: '',
-  envSnippets: [],
   systemPrompt: '',
   allowedExportPaths: ['~/Desktop', '~/Downloads'],
-  slashCommands: [],
+
+  // Environment
+  environmentVariables: '',
+  envSnippets: [],
+
+  // UI settings
   keyboardNavigation: {
     scrollUpKey: 'w',
     scrollDownKey: 's',
     focusInputKey: 'i',
   },
+
+  // CLI paths
   claudeCliPath: '',  // Legacy field (empty = not migrated)
   claudeCliPaths: getDefaultCliPaths(),  // Platform-specific paths
   loadUserClaudeSettings: true,  // Default on for compatibility
+
+  // State (merged from data.json)
+  activeConversationId: null,
+  lastClaudeModel: 'haiku',
+  lastCustomModel: '',
+  lastEnvHash: '',
+
+  // Slash commands (loaded separately)
+  slashCommands: [],
+};
+
+/** Default CC-compatible settings. */
+export const DEFAULT_CC_SETTINGS: CCSettings = {
+  $schema: 'https://json.schemastore.org/claude-code-settings.json',
+  permissions: {
+    allow: [],
+    deny: [],
+    ask: [],
+  },
+};
+
+/** Default CC permissions. */
+export const DEFAULT_CC_PERMISSIONS: CCPermissions = {
+  allow: [],
+  deny: [],
+  ask: [],
 };
 
 /** Result from instruction refinement agent query. */
@@ -233,4 +340,75 @@ export interface InstructionRefineResult {
   refinedInstruction?: string;  // The refined instruction text
   clarification?: string;       // Agent's clarifying question (if any)
   error?: string;               // Error message (if failed)
+}
+
+// ============================================================================
+// Permission Conversion Utilities
+// ============================================================================
+
+/**
+ * Convert a legacy permission to CC permission rule format.
+ * Examples:
+ *   { toolName: "Bash", pattern: "git *" } → "Bash(git *)"
+ *   { toolName: "Read", pattern: "/path/to/file" } → "Read(/path/to/file)"
+ *   { toolName: "WebSearch", pattern: "*" } → "WebSearch"
+ */
+export function legacyPermissionToCCRule(legacy: LegacyPermission): PermissionRule {
+  const pattern = legacy.pattern.trim();
+
+  // If pattern is empty, wildcard, or JSON object (old format), just use tool name
+  if (!pattern || pattern === '*' || pattern.startsWith('{')) {
+    return legacy.toolName;
+  }
+
+  return `${legacy.toolName}(${pattern})`;
+}
+
+/**
+ * Convert legacy permissions array to CC permissions object.
+ * Only 'always' scope permissions are converted (session = ephemeral).
+ */
+export function legacyPermissionsToCCPermissions(
+  legacyPermissions: LegacyPermission[]
+): CCPermissions {
+  const allow: PermissionRule[] = [];
+  let skippedSessionCount = 0;
+
+  for (const perm of legacyPermissions) {
+    if (perm.scope === 'always') {
+      allow.push(legacyPermissionToCCRule(perm));
+    } else {
+      skippedSessionCount++;
+    }
+  }
+
+  if (skippedSessionCount > 0) {
+    console.debug(`[Claudian] Skipped ${skippedSessionCount} session-scoped permission(s) during migration`);
+  }
+
+  return {
+    allow: [...new Set(allow)],  // Deduplicate
+    deny: [],
+    ask: [],
+  };
+}
+
+/**
+ * Parse a CC permission rule into tool name and pattern.
+ * Examples:
+ *   "Bash(git *)" → { tool: "Bash", pattern: "git *" }
+ *   "Read" → { tool: "Read", pattern: undefined }
+ *   "WebFetch(domain:github.com)" → { tool: "WebFetch", pattern: "domain:github.com" }
+ */
+export function parseCCPermissionRule(rule: PermissionRule): {
+  tool: string;
+  pattern?: string;
+} {
+  const match = rule.match(/^(\w+)(?:\((.+)\))?$/);
+  if (!match) {
+    return { tool: rule };
+  }
+
+  const [, tool, pattern] = match;
+  return { tool, pattern };
 }

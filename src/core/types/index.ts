@@ -37,8 +37,12 @@ export {
 
 // Settings types
 export {
+  type CCPermissions,
+  type CCSettings,
   type ClaudianSettings,
   type CliPlatformKey,
+  DEFAULT_CC_PERMISSIONS,
+  DEFAULT_CC_SETTINGS,
   DEFAULT_SETTINGS,
   type EnvSnippet,
   getBashToolBlockedCommands,
@@ -50,9 +54,14 @@ export {
   getDefaultCliPaths,
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
+  type LegacyPermission,
+  legacyPermissionsToCCPermissions,
+  legacyPermissionToCCRule,
   type NonPlanPermissionMode,
+  parseCCPermissionRule,
   type Permission,
   type PermissionMode,
+  type PermissionRule,
   type PlatformBlockedCommands,
   type PlatformCliPaths,
   type SlashCommand,

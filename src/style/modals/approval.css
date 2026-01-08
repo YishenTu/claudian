@@ -62,6 +62,18 @@
   opacity: 0.9;
 }
 
+.claudian-always-deny-btn {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  /* Use error-hover if available, fallback to slightly darker error color */
+  border: 1px solid var(--background-modifier-error-hover, var(--background-modifier-error));
+}
+
+.claudian-always-deny-btn:hover {
+  background: var(--background-modifier-error-hover, var(--background-modifier-error));
+  filter: brightness(0.9);
+}
+
 .claudian-allow-btn {
   background: var(--background-secondary);
   color: var(--text-normal);

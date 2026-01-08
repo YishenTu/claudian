@@ -103,10 +103,11 @@ describe('ClaudianPlugin', () => {
     it('should migrate legacy cli path to platform-specific paths', async () => {
       const legacyPath = '/legacy/claude';
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/settings.json';
+        // claudeCliPath is now in claudian-settings.json
+        return path === '.claude/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/settings.json') {
+        if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({ claudeCliPath: legacyPath });
         }
         return '';
@@ -173,12 +174,12 @@ describe('ClaudianPlugin', () => {
 
   describe('loadSettings', () => {
     it('should merge saved data with defaults', async () => {
-      // Mock settings file exists with custom values
+      // Mock claudian-settings.json exists with custom values (Claudian-specific settings)
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/settings.json';
+        return path === '.claude/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/settings.json') {
+        if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({
             enableBlocklist: false,
           });
@@ -194,12 +195,12 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should normalize blockedCommands when stored value is partial', async () => {
-      // Mock settings file exists with partial blockedCommands
+      // Mock claudian-settings.json exists with partial blockedCommands
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/settings.json';
+        return path === '.claude/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/settings.json') {
+        if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({
             blockedCommands: { unix: ['rm -rf', '  '] },
           });
@@ -234,12 +235,12 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should reconcile model from environment and persist when changed', async () => {
-      // Mock settings file with environment variables
+      // Mock claudian-settings.json with environment variables
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/settings.json';
+        return path === '.claude/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/settings.json') {
+        if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({
             environmentVariables: 'ANTHROPIC_MODEL=custom-model',
             lastEnvHash: '',
@@ -257,27 +258,31 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('saveSettings', () => {
-    it('should save settings to file and minimal data to data.json', async () => {
+    it('should save settings to file', async () => {
       await plugin.onload();
 
       plugin.settings.enableBlocklist = false;
 
       await plugin.saveSettings();
 
-      // Settings should be written to .claude/settings.json via vault adapter
+      // Claudian-specific settings should be written to .claude/claudian-settings.json
       expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
-        '.claude/settings.json',
+        '.claude/claudian-settings.json',
         expect.stringContaining('"enableBlocklist": false')
       );
 
-      // Plugin state should be saved to data.json (machine-specific only)
-      const savedData = (plugin.saveData as jest.Mock).mock.calls[0][0];
-      expect(savedData).toHaveProperty('activeConversationId');
-      expect(savedData).toHaveProperty('lastEnvHash');
-      expect(savedData).toHaveProperty('lastClaudeModel');
-      expect(savedData).toHaveProperty('lastCustomModel');
-      // permissions is now in settings.json, not data.json
-      expect(savedData).not.toHaveProperty('permissions');
+      // The written content should include state fields like activeConversationId
+      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+        ([path]) => path === '.claude/claudian-settings.json'
+      );
+      expect(writeCall).toBeDefined();
+      const content = JSON.parse(writeCall[1]);
+      expect(content).toHaveProperty('activeConversationId');
+      expect(content).toHaveProperty('lastEnvHash');
+      expect(content).toHaveProperty('lastClaudeModel');
+      expect(content).toHaveProperty('lastCustomModel');
+      // Permissions are now in .claude/settings.json (CC format), not claudian-settings.json
+      expect(content).not.toHaveProperty('permissions');
     });
   });
 
@@ -599,9 +604,17 @@ describe('ClaudianPlugin', () => {
         sessionId: 'saved-session',
       });
 
-      // Mock session file exists
+      // Mock files exist
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.jsonl';
+        // Session files
+        if (path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.jsonl') {
+          return true;
+        }
+        // claudian-settings.json exists with activeConversationId
+        if (path === '.claude/claudian-settings.json') {
+          return true;
+        }
+        return false;
       });
       mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
         if (path === '.claude/sessions') {
@@ -613,14 +626,15 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/sessions/conv-saved-1.jsonl') {
           return sessionJsonl;
         }
+        if (path === '.claude/claudian-settings.json') {
+          // activeConversationId is now stored in claudian-settings.json
+          return JSON.stringify({ activeConversationId: 'conv-saved-1' });
+        }
         return '';
       });
 
-      // Mock minimal data.json with activeConversationId
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        activeConversationId: 'conv-saved-1',
-        migrationVersion: 2,
-      });
+      // data.json is minimal (no state - already migrated)
+      (plugin.loadData as jest.Mock).mockResolvedValue({});
 
       await plugin.loadSettings();
 
@@ -641,7 +655,7 @@ describe('ClaudianPlugin', () => {
       });
 
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/settings.json' ||
+        return path === '.claude/claudian-settings.json' ||
           path === '.claude/sessions' ||
           path === '.claude/sessions/conv-saved-1.jsonl';
       });
@@ -652,8 +666,11 @@ describe('ClaudianPlugin', () => {
         return { files: [], folders: [] };
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/settings.json') {
+        if (path === '.claude/claudian-settings.json') {
+          // All these fields are now in claudian-settings.json
           return JSON.stringify({
+            activeConversationId: 'conv-saved-1',
+            lastEnvHash: 'old-hash',
             environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
           });
         }
@@ -663,11 +680,8 @@ describe('ClaudianPlugin', () => {
         return '';
       });
 
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        activeConversationId: 'conv-saved-1',
-        lastEnvHash: 'old-hash',
-        migrationVersion: 2,
-      });
+      // data.json is minimal (already migrated)
+      (plugin.loadData as jest.Mock).mockResolvedValue({});
 
       await plugin.loadSettings();
 

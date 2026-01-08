@@ -57,6 +57,9 @@ export default class ClaudianPlugin extends Plugin {
     // Initialize agent service with the MCP manager
     this.agentService = new ClaudianService(this, this.mcpService.getManager());
 
+    // Load CC permissions into the agent service
+    await this.agentService.loadCCPermissions();
+
     // Pre-warm the persistent query with the active conversation's session ID (Phase 5)
     const activeConv = this.getActiveConversation();
     const sessionId = activeConv?.sessionId;
@@ -146,19 +149,16 @@ export default class ClaudianPlugin extends Plugin {
   async loadSettings() {
     // Initialize storage service (handles migration if needed)
     this.storage = new StorageService(this);
-    const { settings, state } = await this.storage.initialize();
+    const { claudian } = await this.storage.initialize();
 
     // Load slash commands from files
     const slashCommands = await this.storage.commands.loadAll();
 
-    // Merge settings with defaults, state fields, and slashCommands
+    // Merge settings with defaults and slashCommands
+    // Note: claudian already contains state fields (activeConversationId, lastEnvHash, etc.)
     this.settings = {
       ...DEFAULT_SETTINGS,
-      ...settings,
-      // State fields from data.json
-      lastEnvHash: state.lastEnvHash,
-      lastClaudeModel: state.lastClaudeModel,
-      lastCustomModel: state.lastCustomModel,
+      ...claudian,
       slashCommands,
     };
 
@@ -178,7 +178,7 @@ export default class ClaudianPlugin extends Plugin {
 
     // Load all conversations from session files
     this.conversations = await this.storage.sessions.loadAllConversations();
-    this.activeConversationId = state.activeConversationId;
+    this.activeConversationId = claudian.activeConversationId;
 
     // Validate active conversation exists
     if (this.activeConversationId &&
@@ -222,23 +222,16 @@ export default class ClaudianPlugin extends Plugin {
 
   /** Persists settings to storage. */
   async saveSettings() {
-    // Save settings (excluding state fields and slashCommands)
+    // Save settings (excluding slashCommands which are stored separately)
     const {
       slashCommands: _,
-      lastEnvHash: __,
-      lastClaudeModel: ___,
-      lastCustomModel: ____,
       ...settingsToSave
     } = this.settings;
-    await this.storage.settings.save(settingsToSave);
 
-    // Save state fields to data.json
-    await this.storage.saveState({
-      activeConversationId: this.activeConversationId,
-      lastEnvHash: this.settings.lastEnvHash || '',
-      lastClaudeModel: this.settings.lastClaudeModel || 'haiku',
-      lastCustomModel: this.settings.lastCustomModel || '',
-    });
+    // Update activeConversationId from plugin state
+    settingsToSave.activeConversationId = this.activeConversationId;
+
+    await this.storage.saveClaudianSettings(settingsToSave);
   }
 
   /** Updates and persists environment variables, notifying if restart is needed. */
@@ -423,7 +416,7 @@ export default class ClaudianPlugin extends Plugin {
 
     // Save new conversation to session file
     await this.storage.sessions.saveConversation(conversation);
-    await this.storage.updateState({ activeConversationId: this.activeConversationId });
+    await this.storage.setActiveConversationId(this.activeConversationId);
 
     return conversation;
   }
@@ -436,7 +429,7 @@ export default class ClaudianPlugin extends Plugin {
     this.activeConversationId = id;
     this.agentService.setSessionId(conversation.sessionId);
 
-    await this.storage.updateState({ activeConversationId: this.activeConversationId });
+    await this.storage.setActiveConversationId(this.activeConversationId);
     return conversation;
   }
 

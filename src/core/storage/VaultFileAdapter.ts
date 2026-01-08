@@ -107,13 +107,15 @@ export class VaultFileAdapter {
     await this.app.vault.adapter.rename(oldPath, newPath);
   }
 
-  /** Get file stats (mtime, size). */
+  /** Get file stats (mtime, size). Returns null if file doesn't exist or on error. */
   async stat(path: string): Promise<{ mtime: number; size: number } | null> {
     try {
       const stat = await this.app.vault.adapter.stat(path);
       if (!stat) return null;
       return { mtime: stat.mtime, size: stat.size };
-    } catch {
+    } catch (error) {
+      // Log error but return null - callers expect null for non-existent files
+      console.debug('[Claudian] Could not stat file:', path, error);
       return null;
     }
   }

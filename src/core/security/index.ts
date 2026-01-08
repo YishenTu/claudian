@@ -3,11 +3,14 @@
  */
 
 export {
+  type AddAllowRuleCallback,
+  type AddDenyRuleCallback,
   ApprovalManager,
+  generatePermissionRule,
   getActionDescription,
   getActionPattern,
-  matchesPattern,
-  type PersistApprovalCallback,
+  matchesRulePattern,
+  type PermissionCheckResult,
 } from './ApprovalManager';
 export {
   checkBashPathAccess,

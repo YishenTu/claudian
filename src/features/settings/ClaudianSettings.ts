@@ -383,61 +383,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.cols = 40;
       });
 
-    const approvedDesc = containerEl.createDiv({ cls: 'claudian-approved-desc' });
-    approvedDesc.createEl('p', {
-      text: 'Actions that have been permanently approved (via "Always Allow"). These will not require approval in Safe mode.',
-      cls: 'setting-item-description',
-    });
-
-    const permissions = this.plugin.settings.permissions;
-
-    if (permissions.length === 0) {
-      const emptyEl = containerEl.createDiv({ cls: 'claudian-approved-empty' });
-      emptyEl.setText('No approved actions yet. When you click "Always Allow" in the approval dialog, actions will appear here.');
-    } else {
-      const listEl = containerEl.createDiv({ cls: 'claudian-approved-list' });
-
-      for (const action of permissions) {
-        const itemEl = listEl.createDiv({ cls: 'claudian-approved-item' });
-
-        const infoEl = itemEl.createDiv({ cls: 'claudian-approved-item-info' });
-
-        const toolEl = infoEl.createSpan({ cls: 'claudian-approved-item-tool' });
-        toolEl.setText(action.toolName);
-
-        const patternEl = infoEl.createDiv({ cls: 'claudian-approved-item-pattern' });
-        patternEl.setText(action.pattern);
-
-        const dateEl = infoEl.createSpan({ cls: 'claudian-approved-item-date' });
-        dateEl.setText(new Date(action.approvedAt).toLocaleDateString());
-
-        const removeBtn = itemEl.createEl('button', {
-          text: 'Remove',
-          cls: 'claudian-approved-remove-btn',
-        });
-        removeBtn.addEventListener('click', async () => {
-          this.plugin.settings.permissions =
-            this.plugin.settings.permissions.filter((a) => a !== action);
-          await this.plugin.saveSettings();
-          this.display(); // Refresh
-        });
-      }
-
-      // Clear all button
-      new Setting(containerEl)
-        .setName('Clear all approved actions')
-        .setDesc('Remove all permanently approved actions')
-        .addButton((button) =>
-          button
-            .setButtonText('Clear all')
-            .setWarning()
-            .onClick(async () => {
-              this.plugin.settings.permissions = [];
-              await this.plugin.saveSettings();
-              this.display(); // Refresh
-            })
-        );
-    }
+    // Permission Rules section (CC-compatible)
+    // Note: Async rendering - section will be added when permissions load
+    this.renderPermissionRulesSection(containerEl);
 
     // Environment Variables section
     new Setting(containerEl).setName('Environment').setHeading();
@@ -544,5 +492,122 @@ export class ClaudianSettingTab extends PluginSettingTab {
       }
     });
 
+  }
+
+  /**
+   * Render the Permission Rules section (CC-compatible format).
+   */
+  private async renderPermissionRulesSection(containerEl: HTMLElement): Promise<void> {
+    const permissions = await this.plugin.storage.getPermissions();
+
+    const desc = containerEl.createDiv({ cls: 'claudian-approved-desc' });
+    desc.createEl('p', {
+      text: 'Permission rules control which tool actions are automatically allowed, denied, or always require confirmation.',
+      cls: 'setting-item-description',
+    });
+
+    // Allow list
+    this.renderPermissionList(
+      containerEl,
+      'Allowed actions',
+      'Auto-approved without prompting in Safe mode.',
+      permissions.allow ?? [],
+      async (rule) => {
+        await this.plugin.storage.removePermissionRule(rule);
+        this.display();
+      },
+      async () => {
+        const perms = await this.plugin.storage.getPermissions();
+        perms.allow = [];
+        await this.plugin.storage.updatePermissions(perms);
+        this.display();
+      }
+    );
+
+    // Deny list
+    this.renderPermissionList(
+      containerEl,
+      'Denied actions',
+      'Always blocked without prompting.',
+      permissions.deny ?? [],
+      async (rule) => {
+        await this.plugin.storage.removePermissionRule(rule);
+        this.display();
+      },
+      async () => {
+        const perms = await this.plugin.storage.getPermissions();
+        perms.deny = [];
+        await this.plugin.storage.updatePermissions(perms);
+        this.display();
+      }
+    );
+
+    // Ask list
+    this.renderPermissionList(
+      containerEl,
+      'Always ask',
+      'Always require confirmation even if matching an allow rule.',
+      permissions.ask ?? [],
+      async (rule) => {
+        await this.plugin.storage.removePermissionRule(rule);
+        this.display();
+      },
+      async () => {
+        const perms = await this.plugin.storage.getPermissions();
+        perms.ask = [];
+        await this.plugin.storage.updatePermissions(perms);
+        this.display();
+      }
+    );
+  }
+
+  /**
+   * Render a single permission list (allow, deny, or ask).
+   */
+  private renderPermissionList(
+    containerEl: HTMLElement,
+    title: string,
+    description: string,
+    rules: string[],
+    onRemove: (rule: string) => Promise<void>,
+    onClearAll: () => Promise<void>
+  ): void {
+    const sectionEl = containerEl.createDiv({ cls: 'claudian-permission-section' });
+
+    const headerEl = sectionEl.createDiv({ cls: 'claudian-permission-header' });
+    headerEl.createSpan({ text: title, cls: 'claudian-permission-title' });
+
+    const descEl = sectionEl.createDiv({ cls: 'setting-item-description' });
+    descEl.setText(description);
+
+    if (rules.length === 0) {
+      const emptyEl = sectionEl.createDiv({ cls: 'claudian-approved-empty' });
+      emptyEl.setText('No rules configured.');
+    } else {
+      const listEl = sectionEl.createDiv({ cls: 'claudian-approved-list' });
+
+      for (const rule of rules) {
+        const itemEl = listEl.createDiv({ cls: 'claudian-approved-item' });
+
+        const ruleEl = itemEl.createDiv({ cls: 'claudian-approved-item-pattern' });
+        ruleEl.setText(rule);
+
+        const removeBtn = itemEl.createEl('button', {
+          text: 'Remove',
+          cls: 'claudian-approved-remove-btn',
+        });
+        removeBtn.addEventListener('click', () => onRemove(rule));
+      }
+
+      // Clear all button
+      new Setting(sectionEl)
+        .setName(`Clear all ${title.toLowerCase()}`)
+        .addButton((button) =>
+          button
+            .setButtonText('Clear all')
+            .setWarning()
+            .onClick(() => onClearAll())
+        );
+    }
   }
 }

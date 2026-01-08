@@ -1,8 +1,8 @@
 /**
  * Approval Manager
  *
- * Manages approved tool actions for Safe mode permission handling.
- * Handles both session-scoped and persistent approvals.
+ * Manages tool action permissions for Safe mode handling.
+ * Uses CC-compatible permission format (allow/deny/ask arrays).
  */
 
 import {
@@ -14,10 +14,23 @@ import {
   TOOL_READ,
   TOOL_WRITE,
 } from '../tools/toolNames';
-import type { Permission } from '../types';
+import type { CCPermissions, PermissionRule } from '../types';
+import { parseCCPermissionRule } from '../types';
 
-/** Callback to persist approved actions to settings. */
-export type PersistApprovalCallback = (action: Permission) => Promise<void>;
+/** Session-scoped permission (not persisted). */
+interface SessionPermission {
+  rule: PermissionRule;
+  type: 'allow' | 'deny';
+}
+
+/** Callback to add a rule to allow list. */
+export type AddAllowRuleCallback = (rule: PermissionRule) => Promise<void>;
+
+/** Callback to add a rule to deny list. */
+export type AddDenyRuleCallback = (rule: PermissionRule) => Promise<void>;
+
+/** Permission check result. */
+export type PermissionCheckResult = 'allow' | 'deny' | 'ask';
 
 /**
  * Generate a pattern from tool input for matching.
@@ -39,6 +52,25 @@ export function getActionPattern(toolName: string, input: Record<string, unknown
     default:
       return JSON.stringify(input);
   }
+}
+
+/**
+ * Generate a CC permission rule from tool name and input.
+ * Examples: "Bash(git status)", "Read(/path/to/file)"
+ *
+ * Note: If pattern is empty, wildcard, or a JSON object string (legacy format
+ * from tools that serialized their input), the rule falls back to just the
+ * tool name, matching all actions for that tool.
+ */
+export function generatePermissionRule(toolName: string, input: Record<string, unknown>): PermissionRule {
+  const pattern = getActionPattern(toolName, input);
+
+  // If pattern is empty, wildcard, or JSON object (legacy), just use tool name
+  if (!pattern || pattern === '*' || pattern.startsWith('{')) {
+    return toolName;
+  }
+
+  return `${toolName}(${pattern})`;
 }
 
 /**
@@ -64,39 +96,58 @@ export function getActionDescription(toolName: string, input: Record<string, unk
 }
 
 /**
- * Check if a pattern matches an approved pattern.
- * Bash commands require exact match; file tools allow prefix matching.
+ * Check if an action pattern matches a permission rule pattern.
+ * Bash commands use prefix matching with wildcard support.
+ * File tools use path prefix matching.
  */
-export function matchesPattern(
+export function matchesRulePattern(
   toolName: string,
   actionPattern: string,
-  approvedPattern: string
+  rulePattern: string | undefined
 ): boolean {
-  if (toolName === TOOL_BASH) {
-    return actionPattern === approvedPattern;
-  }
+  // No pattern means match all
+  if (!rulePattern) return true;
 
   const normalizedAction = normalizeMatchPattern(actionPattern);
-  const normalizedApproved = normalizeMatchPattern(approvedPattern);
+  const normalizedRule = normalizeMatchPattern(rulePattern);
 
   // Wildcard matches everything
-  if (normalizedApproved === '*') return true;
+  if (normalizedRule === '*') return true;
 
   // Exact match
-  if (normalizedAction === normalizedApproved) return true;
+  if (normalizedAction === normalizedRule) return true;
 
-  // File tools: prefix match with path-segment boundary awareness.
+  // Bash: Only exact match (handled above) or explicit wildcard patterns are allowed.
+  // This is intentional - Bash commands require explicit wildcards for security.
+  // Supported formats:
+  //   - "git *" matches "git status", "git commit", etc.
+  //   - "npm:*" matches "npm install", "npm run", etc. (CC format)
+  if (toolName === TOOL_BASH) {
+    if (normalizedRule.endsWith('*')) {
+      const prefix = normalizedRule.slice(0, -1);
+      return normalizedAction.startsWith(prefix);
+    }
+    // Support trailing ":*" format from CC (e.g., "git:*" or "npm run:*")
+    if (normalizedRule.endsWith(':*')) {
+      const prefix = normalizedRule.slice(0, -2);  // Remove trailing ":*"
+      return normalizedAction.startsWith(prefix);
+    }
+    // No wildcard present and exact match failed above - reject
+    return false;
+  }
+
+  // File tools: prefix match with path-segment boundary awareness
   if (
     toolName === TOOL_READ ||
     toolName === TOOL_WRITE ||
     toolName === TOOL_EDIT ||
     toolName === TOOL_NOTEBOOK_EDIT
   ) {
-    return isPathPrefixMatch(normalizedAction, normalizedApproved);
+    return isPathPrefixMatch(normalizedAction, normalizedRule);
   }
 
-  // Other tools: allow simple prefix matching.
-  if (normalizedAction.startsWith(normalizedApproved)) return true;
+  // Other tools: allow simple prefix matching
+  if (normalizedAction.startsWith(normalizedRule)) return true;
 
   return false;
 }
@@ -122,80 +173,173 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
 }
 
 /**
- * Manages approved actions for Safe mode permission handling.
+ * Check if an action matches any rule in a list.
+ * Uses short-circuit evaluation for performance (returns on first match).
+ */
+function matchesAnyRule(
+  rules: PermissionRule[] | undefined,
+  toolName: string,
+  actionPattern: string
+): boolean {
+  if (!rules || rules.length === 0) return false;
+
+  // Early return on first match for performance
+  return rules.some(rule => {
+    const { tool, pattern } = parseCCPermissionRule(rule);
+    if (tool !== toolName) return false;
+    return matchesRulePattern(toolName, actionPattern, pattern);
+  });
+}
+
+/**
+ * Manages tool action permissions for Safe mode.
  */
 export class ApprovalManager {
-  private sessionApprovedActions: Permission[] = [];
-  private persistCallback: PersistApprovalCallback | null = null;
-  private getPermanentApprovals: () => Permission[];
+  private sessionPermissions: SessionPermission[] = [];
+  private addAllowRuleCallback: AddAllowRuleCallback | null = null;
+  private addDenyRuleCallback: AddDenyRuleCallback | null = null;
+  private getPermissions: () => CCPermissions;
 
-  constructor(getPermanentApprovals: () => Permission[]) {
-    this.getPermanentApprovals = getPermanentApprovals;
+  constructor(getPermissions: () => CCPermissions) {
+    this.getPermissions = getPermissions;
   }
 
   /**
-   * Set callback for persisting permanent approvals.
+   * Set callback for adding rules to allow list.
    */
-  setPersistCallback(callback: PersistApprovalCallback | null): void {
-    this.persistCallback = callback;
+  setAddAllowRuleCallback(callback: AddAllowRuleCallback | null): void {
+    this.addAllowRuleCallback = callback;
   }
 
   /**
-   * Check if an action is pre-approved (either session or permanent).
+   * Set callback for adding rules to deny list.
+   */
+  setAddDenyRuleCallback(callback: AddDenyRuleCallback | null): void {
+    this.addDenyRuleCallback = callback;
+  }
+
+  /**
+   * Check permission for an action.
+   *
+   * Priority (highest to lowest):
+   * 1. Session deny (ephemeral, this session only)
+   * 2. Permanent deny (persisted in settings.json)
+   * 3. Permanent ask (forces prompt even if allow rule exists)
+   * 4. Session allow (ephemeral, this session only)
+   * 5. Permanent allow (persisted in settings.json)
+   * 6. Fallback to ask (no matching rule found)
+   *
+   * @returns 'allow' | 'deny' | 'ask'
+   */
+  checkPermission(toolName: string, input: Record<string, unknown>): PermissionCheckResult {
+    const actionPattern = getActionPattern(toolName, input);
+    const permissions = this.getPermissions();
+
+    // 1. Check session denies first (highest priority)
+    const sessionDenied = this.sessionPermissions.some(
+      sp => sp.type === 'deny' && this.matchesSessionPermission(sp.rule, toolName, actionPattern)
+    );
+    if (sessionDenied) return 'deny';
+
+    // 2. Check permanent denies
+    if (matchesAnyRule(permissions.deny, toolName, actionPattern)) {
+      return 'deny';
+    }
+
+    // 3. Check ask list (overrides allow)
+    if (matchesAnyRule(permissions.ask, toolName, actionPattern)) {
+      return 'ask';
+    }
+
+    // 4. Check session allows
+    const sessionAllowed = this.sessionPermissions.some(
+      sp => sp.type === 'allow' && this.matchesSessionPermission(sp.rule, toolName, actionPattern)
+    );
+    if (sessionAllowed) return 'allow';
+
+    // 5. Check permanent allows
+    if (matchesAnyRule(permissions.allow, toolName, actionPattern)) {
+      return 'allow';
+    }
+
+    // 6. Fallback to ask
+    return 'ask';
+  }
+
+  /**
+   * Legacy method for compatibility.
+   * @deprecated Use checkPermission instead
    */
   isActionApproved(toolName: string, input: Record<string, unknown>): boolean {
-    const pattern = getActionPattern(toolName, input);
-
-    // Check session-scoped approvals
-    const sessionApproved = this.sessionApprovedActions.some(
-      action => action.toolName === toolName && matchesPattern(toolName, pattern, action.pattern)
-    );
-    if (sessionApproved) return true;
-
-    // Check permanent approvals
-    const permanentApprovals = this.getPermanentApprovals();
-    const permanentApproved = permanentApprovals.some(
-      action => action.toolName === toolName && matchesPattern(toolName, pattern, action.pattern)
-    );
-    return permanentApproved;
+    return this.checkPermission(toolName, input) === 'allow';
   }
 
   /**
-   * Add an action to the approved list.
+   * Check if a session permission matches an action.
+   */
+  private matchesSessionPermission(
+    rule: PermissionRule,
+    toolName: string,
+    actionPattern: string
+  ): boolean {
+    const { tool, pattern } = parseCCPermissionRule(rule);
+    if (tool !== toolName) return false;
+    return matchesRulePattern(toolName, actionPattern, pattern);
+  }
+
+  /**
+   * Approve an action (add to allow list).
+   * @throws Error if scope is 'always' but no callback is registered
    */
   async approveAction(
     toolName: string,
     input: Record<string, unknown>,
     scope: 'session' | 'always'
   ): Promise<void> {
-    const pattern = getActionPattern(toolName, input);
-    const action: Permission = {
-      toolName,
-      pattern,
-      approvedAt: Date.now(),
-      scope,
-    };
+    const rule = generatePermissionRule(toolName, input);
 
     if (scope === 'session') {
-      this.sessionApprovedActions.push(action);
+      this.sessionPermissions.push({ rule, type: 'allow' });
     } else {
-      if (this.persistCallback) {
-        await this.persistCallback(action);
+      if (!this.addAllowRuleCallback) {
+        throw new Error('[ApprovalManager] Cannot persist allow rule: addAllowRuleCallback not registered');
       }
+      await this.addAllowRuleCallback(rule);
     }
   }
 
   /**
-   * Clear session-scoped approvals.
+   * Deny an action (add to deny list).
+   * @throws Error if scope is 'always' but no callback is registered
    */
-  clearSessionApprovals(): void {
-    this.sessionApprovedActions = [];
+  async denyAction(
+    toolName: string,
+    input: Record<string, unknown>,
+    scope: 'session' | 'always'
+  ): Promise<void> {
+    const rule = generatePermissionRule(toolName, input);
+
+    if (scope === 'session') {
+      this.sessionPermissions.push({ rule, type: 'deny' });
+    } else {
+      if (!this.addDenyRuleCallback) {
+        throw new Error('[ApprovalManager] Cannot persist deny rule: addDenyRuleCallback not registered');
+      }
+      await this.addDenyRuleCallback(rule);
+    }
   }
 
   /**
-   * Get session-scoped approvals (for testing/debugging).
+   * Clear session-scoped permissions.
    */
-  getSessionApprovals(): Permission[] {
-    return [...this.sessionApprovedActions];
+  clearSessionPermissions(): void {
+    this.sessionPermissions = [];
+  }
+
+  /**
+   * Get session-scoped permissions (for testing/debugging).
+   */
+  getSessionPermissions(): SessionPermission[] {
+    return [...this.sessionPermissions];
   }
 }
