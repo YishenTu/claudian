@@ -321,7 +321,10 @@ export class ConversationController {
   ): void {
     const { plugin } = this.deps;
     const externalContextSelector = this.deps.getExternalContextSelector();
-    if (!externalContextSelector) return;
+    if (!externalContextSelector) {
+      console.warn('[ConversationController] External context selector not available, skipping path restoration');
+      return;
+    }
 
     if (isEmptySession) {
       // Empty session: use current persistent paths from settings

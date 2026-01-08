@@ -17,7 +17,7 @@ import {
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../features/chat/constants';
 import type { McpService } from '../../features/mcp/McpService';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
-import { filterValidPaths, findConflictingPath, isDuplicatePath } from '../../utils/externalContext';
+import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath } from '../../utils/externalContext';
 
 /** Settings access interface for toolbar components. */
 export interface ToolbarSettings {
@@ -361,6 +361,11 @@ export class ExternalContextSelector {
     if (this.persistentPaths.has(path)) {
       this.persistentPaths.delete(path);
     } else {
+      // Validate path still exists before persisting
+      if (!isValidDirectoryPath(path)) {
+        new Notice(`Cannot persist "${this.shortenPath(path)}" - directory no longer exists`, 4000);
+        return;
+      }
       this.persistentPaths.add(path);
     }
     this.onPersistenceChangeCallback?.([...this.persistentPaths]);
@@ -457,6 +462,7 @@ export class ExternalContextSelector {
 
         // Check for duplicate (normalized comparison for cross-platform support)
         if (isDuplicatePath(selectedPath, this.externalContextPaths)) {
+          new Notice('This folder is already added as an external context.', 3000);
           return;
         }
 
