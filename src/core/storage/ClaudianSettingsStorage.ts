@@ -85,46 +85,40 @@ export function normalizeCliPaths(value: unknown): PlatformCliPaths {
 }
 
 export class ClaudianSettingsStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  constructor(private adapter: VaultFileAdapter) { }
 
   /**
-   * Load Claudian settings from .claude/claudian-settings.json.
-   * Returns default settings if file doesn't exist.
-   */
+  * Load Claudian settings from .claude/claudian-settings.json.
+  * Returns default settings if file doesn't exist.
+  * Throws if file exists but cannot be read or parsed.
+  */
   async load(): Promise<StoredClaudianSettings> {
-    try {
-      if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
-        return this.getDefaults();
-      }
-
-      const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
-      const stored = JSON.parse(content) as Record<string, unknown>;
-
-      // Normalize complex fields
-      const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
-      const cliPaths = normalizeCliPaths(stored.claudeCliPaths);
-      const legacyCliPath = typeof stored.claudeCliPath === 'string' ? stored.claudeCliPath : '';
-
-      return {
-        ...this.getDefaults(),
-        ...stored,
-        blockedCommands,
-        claudeCliPath: legacyCliPath,
-        claudeCliPaths: cliPaths,
-        // Ensure activeConversationId is properly typed (preserve explicit null)
-        activeConversationId:
-          stored.activeConversationId === null
-            ? null
-            : typeof stored.activeConversationId === 'string'
-              ? stored.activeConversationId
-              : null,
-      } as StoredClaudianSettings;
-    } catch (error) {
-      // Log error with context - returning defaults may cause user's settings to be lost
-      console.error('[Claudian] Failed to load Claudian settings, using defaults:', error);
-      console.warn('[Claudian] User settings may not be loaded. Check .claude/claudian-settings.json for corruption.');
+    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
       return this.getDefaults();
     }
+
+    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const stored = JSON.parse(content) as Record<string, unknown>;
+
+    // Normalize complex fields
+    const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
+    const cliPaths = normalizeCliPaths(stored.claudeCliPaths);
+    const legacyCliPath = typeof stored.claudeCliPath === 'string' ? stored.claudeCliPath : '';
+
+    return {
+      ...this.getDefaults(),
+      ...stored,
+      blockedCommands,
+      claudeCliPath: legacyCliPath,
+      claudeCliPaths: cliPaths,
+      // Ensure activeConversationId is properly typed (preserve explicit null)
+      activeConversationId:
+        stored.activeConversationId === null
+          ? null
+          : typeof stored.activeConversationId === 'string'
+            ? stored.activeConversationId
+            : null,
+    } as StoredClaudianSettings;
   }
 
   /**

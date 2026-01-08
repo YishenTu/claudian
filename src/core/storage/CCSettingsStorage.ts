@@ -8,7 +8,6 @@
  * - permissions (allow/deny/ask)
  * - model (optional override)
  * - env (optional environment variables)
- * - MCP server settings
  *
  * Claudian-specific settings go in claudian-settings.json.
  */
@@ -71,9 +70,9 @@ function normalizePermissions(permissions: unknown): CCPermissions {
 
   const p = permissions as Record<string, unknown>;
   return {
-    allow: Array.isArray(p.allow) ? p.allow.filter((r): r is string => typeof r === 'string') : [],
-    deny: Array.isArray(p.deny) ? p.deny.filter((r): r is string => typeof r === 'string') : [],
-    ask: Array.isArray(p.ask) ? p.ask.filter((r): r is string => typeof r === 'string') : [],
+    allow: Array.isArray(p.allow) ? p.allow.filter((r): r is string => typeof r === 'string').map(r => r as PermissionRule) : [],
+    deny: Array.isArray(p.deny) ? p.deny.filter((r): r is string => typeof r === 'string').map(r => r as PermissionRule) : [],
+    ask: Array.isArray(p.ask) ? p.ask.filter((r): r is string => typeof r === 'string').map(r => r as PermissionRule) : [],
     defaultMode: typeof p.defaultMode === 'string' ? p.defaultMode as CCPermissions['defaultMode'] : undefined,
     additionalDirectories: Array.isArray(p.additionalDirectories)
       ? p.additionalDirectories.filter((d): d is string => typeof d === 'string')
@@ -89,46 +88,40 @@ function normalizePermissions(permissions: unknown): CCPermissions {
  * In practice this is fine since user interactions are sequential.
  */
 export class CCSettingsStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  constructor(private adapter: VaultFileAdapter) { }
 
   /**
    * Load CC settings from .claude/settings.json.
    * Returns default settings if file doesn't exist.
+   * Throws if file exists but cannot be read or parsed.
    */
   async load(): Promise<CCSettings> {
-    try {
-      if (!(await this.adapter.exists(CC_SETTINGS_PATH))) {
-        return { ...DEFAULT_CC_SETTINGS };
-      }
+    if (!(await this.adapter.exists(CC_SETTINGS_PATH))) {
+      return { ...DEFAULT_CC_SETTINGS };
+    }
 
-      const content = await this.adapter.read(CC_SETTINGS_PATH);
-      const stored = JSON.parse(content) as Record<string, unknown>;
+    const content = await this.adapter.read(CC_SETTINGS_PATH);
+    const stored = JSON.parse(content) as Record<string, unknown>;
 
-      // Check for legacy format and migrate if needed
-      if (isLegacyPermissionsFormat(stored)) {
-        const legacyPerms = stored.permissions as LegacyPermission[];
-        const ccPerms = legacyPermissionsToCCPermissions(legacyPerms);
+    // Check for legacy format and migrate if needed
+    if (isLegacyPermissionsFormat(stored)) {
+      const legacyPerms = stored.permissions as LegacyPermission[];
+      const ccPerms = legacyPermissionsToCCPermissions(legacyPerms);
 
-        // Return migrated permissions but keep other CC fields
-        return {
-          $schema: CC_SETTINGS_SCHEMA,
-          ...stored,
-          permissions: ccPerms,
-        };
-      }
-
-      // Normalize permissions
+      // Return migrated permissions but keep other CC fields
       return {
         $schema: CC_SETTINGS_SCHEMA,
         ...stored,
-        permissions: normalizePermissions(stored.permissions),
+        permissions: ccPerms,
       };
-    } catch (error) {
-      // Log error with context - returning defaults may cause user's permissions to be lost
-      console.error('[Claudian] Failed to load CC settings, using defaults:', error);
-      console.warn('[Claudian] User permissions may not be loaded. Check .claude/settings.json for corruption.');
-      return { ...DEFAULT_CC_SETTINGS };
     }
+
+    // Normalize permissions
+    return {
+      $schema: CC_SETTINGS_SCHEMA,
+      ...stored,
+      permissions: normalizePermissions(stored.permissions),
+    };
   }
 
   /**

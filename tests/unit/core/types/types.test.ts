@@ -6,8 +6,10 @@ import type {
   EnvSnippet,
   LegacyPermission,
   StreamChunk,
-  ToolCallInfo} from '@/core/types';
+  ToolCallInfo
+} from '@/core/types';
 import {
+  createPermissionRule,
   DEFAULT_SETTINGS,
   getCliPlatformDisplayName,
   getCliPlatformKey,
@@ -15,7 +17,8 @@ import {
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
-  VIEW_TYPE_CLAUDIAN} from '@/core/types';
+  VIEW_TYPE_CLAUDIAN
+} from '@/core/types';
 
 describe('types.ts', () => {
   describe('VIEW_TYPE_CLAUDIAN', () => {
@@ -589,37 +592,37 @@ describe('types.ts', () => {
 
     describe('parseCCPermissionRule', () => {
       it('should parse rule with pattern', () => {
-        const result = parseCCPermissionRule('Bash(git status)');
+        const result = parseCCPermissionRule(createPermissionRule('Bash(git status)'));
         expect(result.tool).toBe('Bash');
         expect(result.pattern).toBe('git status');
       });
 
       it('should parse rule with complex pattern', () => {
-        const result = parseCCPermissionRule('WebFetch(domain:github.com)');
+        const result = parseCCPermissionRule(createPermissionRule('WebFetch(domain:github.com)'));
         expect(result.tool).toBe('WebFetch');
         expect(result.pattern).toBe('domain:github.com');
       });
 
       it('should parse rule without pattern', () => {
-        const result = parseCCPermissionRule('Read');
+        const result = parseCCPermissionRule(createPermissionRule('Read'));
         expect(result.tool).toBe('Read');
         expect(result.pattern).toBeUndefined();
       });
 
       it('should handle nested parentheses in pattern', () => {
-        const result = parseCCPermissionRule('Bash(echo "hello (world)")');
+        const result = parseCCPermissionRule(createPermissionRule('Bash(echo "hello (world)")'));
         expect(result.tool).toBe('Bash');
         expect(result.pattern).toBe('echo "hello (world)"');
       });
 
       it('should handle path patterns', () => {
-        const result = parseCCPermissionRule('Read(/Users/test/vault/notes)');
+        const result = parseCCPermissionRule(createPermissionRule('Read(/Users/test/vault/notes)'));
         expect(result.tool).toBe('Read');
         expect(result.pattern).toBe('/Users/test/vault/notes');
       });
 
       it('should return rule as tool for malformed input', () => {
-        const result = parseCCPermissionRule('not-valid-format');
+        const result = parseCCPermissionRule(createPermissionRule('not-valid-format'));
         expect(result.tool).toBe('not-valid-format');
         expect(result.pattern).toBeUndefined();
       });

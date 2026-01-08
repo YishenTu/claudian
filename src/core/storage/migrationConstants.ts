@@ -36,7 +36,6 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
   // Environment (Claudian uses string format + snippets)
   'environmentVariables',
   'envSnippets',
-  'env', // CC format - converted to environmentVariables during migration
 
   // UI settings
   'keyboardNavigation',

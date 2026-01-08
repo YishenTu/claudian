@@ -41,6 +41,7 @@ export {
   type CCSettings,
   type ClaudianSettings,
   type CliPlatformKey,
+  createPermissionRule,
   DEFAULT_CC_PERMISSIONS,
   DEFAULT_CC_SETTINGS,
   DEFAULT_SETTINGS,

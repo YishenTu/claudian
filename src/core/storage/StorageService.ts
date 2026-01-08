@@ -25,6 +25,7 @@ import type {
   SlashCommand,
 } from '../types';
 import {
+  createPermissionRule,
   DEFAULT_CC_PERMISSIONS,
   DEFAULT_SETTINGS,
   legacyPermissionsToCCPermissions,
@@ -473,21 +474,21 @@ export class StorageService {
    * Add a rule to allow list.
    */
   async addAllowRule(rule: string): Promise<void> {
-    return this.ccSettings.addAllowRule(rule);
+    return this.ccSettings.addAllowRule(createPermissionRule(rule));
   }
 
   /**
    * Add a rule to deny list.
    */
   async addDenyRule(rule: string): Promise<void> {
-    return this.ccSettings.addDenyRule(rule);
+    return this.ccSettings.addDenyRule(createPermissionRule(rule));
   }
 
   /**
    * Remove a permission rule from all lists.
    */
   async removePermissionRule(rule: string): Promise<void> {
-    return this.ccSettings.removeRule(rule);
+    return this.ccSettings.removeRule(createPermissionRule(rule));
   }
 
   /**

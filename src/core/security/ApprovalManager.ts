@@ -15,7 +15,7 @@ import {
   TOOL_WRITE,
 } from '../tools/toolNames';
 import type { CCPermissions, PermissionRule } from '../types';
-import { parseCCPermissionRule } from '../types';
+import { createPermissionRule, parseCCPermissionRule } from '../types';
 
 /** Session-scoped permission (not persisted). */
 interface SessionPermission {
@@ -67,10 +67,10 @@ export function generatePermissionRule(toolName: string, input: Record<string, u
 
   // If pattern is empty, wildcard, or JSON object (legacy), just use tool name
   if (!pattern || pattern === '*' || pattern.startsWith('{')) {
-    return toolName;
+    return createPermissionRule(toolName);
   }
 
-  return `${toolName}(${pattern})`;
+  return createPermissionRule(`${toolName}(${pattern})`);
 }
 
 /**

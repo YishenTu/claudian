@@ -149,7 +149,15 @@ export interface LegacyPermission {
  * Format: "Tool(pattern)" or "Tool" for all
  * Examples: "Bash(git *)", "Read(*.md)", "WebFetch(domain:github.com)"
  */
-export type PermissionRule = string;
+export type PermissionRule = string & { readonly __brand: 'PermissionRule' };
+
+/**
+ * Create a PermissionRule from a string.
+ * @internal Use generatePermissionRule or legacyPermissionToCCRule instead.
+ */
+export function createPermissionRule(rule: string): PermissionRule {
+  return rule as PermissionRule;
+}
 
 /**
  * CC-compatible permissions object.
@@ -158,7 +166,7 @@ export type PermissionRule = string;
 export interface CCPermissions {
   /** Rules that auto-approve tool actions */
   allow?: PermissionRule[];
-  /** Rules that auto-deny tool actions (highest priority) */
+  /** Rules that auto-deny tool actions (highest persistent priority) */
   deny?: PermissionRule[];
   /** Rules that always prompt for confirmation */
   ask?: PermissionRule[];
@@ -358,10 +366,10 @@ export function legacyPermissionToCCRule(legacy: LegacyPermission): PermissionRu
 
   // If pattern is empty, wildcard, or JSON object (old format), just use tool name
   if (!pattern || pattern === '*' || pattern.startsWith('{')) {
-    return legacy.toolName;
+    return createPermissionRule(legacy.toolName);
   }
 
-  return `${legacy.toolName}(${pattern})`;
+  return createPermissionRule(`${legacy.toolName}(${pattern})`);
 }
 
 /**
