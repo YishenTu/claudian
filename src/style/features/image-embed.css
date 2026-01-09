@@ -1,0 +1,40 @@
+/* Image embed styles - displays ![[image.png]] wikilinks as actual images */
+
+.claudian-embedded-image {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0.5em 0;
+  vertical-align: middle;
+}
+
+.claudian-embedded-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.claudian-embedded-image img:hover {
+  opacity: 0.9;
+}
+
+/* When image is inline with text */
+.claudian-text-block p .claudian-embedded-image {
+  margin: 0.25em 0;
+}
+
+/* Block-level image (standalone on its own line) */
+.claudian-text-block p > .claudian-embedded-image:only-child {
+  display: block;
+  margin: 0.75em 0;
+}
+
+/* Fallback when image file not found */
+.claudian-embedded-image-fallback {
+  color: var(--text-muted);
+  font-style: italic;
+  background: var(--background-modifier-hover);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-s);
+}

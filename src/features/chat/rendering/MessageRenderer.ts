@@ -11,6 +11,7 @@ import { MarkdownRenderer } from 'obsidian';
 import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
 import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import type ClaudianPlugin from '../../../main';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -19,6 +20,7 @@ import {
   renderStoredWriteEdit,
 } from '../../../ui';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
+import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 
 /** Render content function type for callbacks. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
@@ -30,15 +32,17 @@ export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<voi
  */
 export class MessageRenderer {
   private app: App;
+  private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
 
   constructor(
-    app: App,
+    plugin: ClaudianPlugin,
     component: Component,
     messagesEl: HTMLElement
   ) {
-    this.app = app;
+    this.app = plugin.app;
+    this.plugin = plugin;
     this.component = component;
     this.messagesEl = messagesEl;
 
@@ -307,7 +311,14 @@ export class MessageRenderer {
    */
   async renderContent(el: HTMLElement, markdown: string): Promise<void> {
     el.empty();
-    await MarkdownRenderer.renderMarkdown(markdown, el, '', this.component);
+
+    // Replace image embeds with HTML img tags before rendering
+    const processedMarkdown = replaceImageEmbedsWithHtml(
+      markdown,
+      this.app,
+      this.plugin.settings.mediaFolder
+    );
+    await MarkdownRenderer.renderMarkdown(processedMarkdown, el, '', this.component);
 
     // Wrap pre elements and move buttons outside scroll area
     el.querySelectorAll('pre').forEach((pre) => {
