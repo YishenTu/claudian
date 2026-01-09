@@ -84,15 +84,15 @@ export class SlashCommandManager {
   /**
    * Detects if input starts with a slash command.
    * Returns the command name and arguments if found.
+   * Command must be at position 0 (no leading whitespace).
    */
   detectCommand(input: string): DetectedCommand | null {
-    const trimmed = input.trimStart();
-    if (!trimmed.startsWith('/')) return null;
+    if (!input.startsWith('/')) return null;
 
     // Extract command name (everything after / until first whitespace)
     // Allows nested paths like /code/review
     // Use [\s\S]* instead of .* with s flag for ES5 compatibility
-    const match = trimmed.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
+    const match = input.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
     if (!match) return null;
 
     const commandName = match[1];
@@ -151,8 +151,21 @@ export class SlashCommandManager {
   /**
    * Replaces argument placeholders in content.
    * Handles $ARGUMENTS (all args) and $1, $2, etc. (positional).
+   * If no placeholders exist, appends args at the end.
    */
   private replaceArgumentPlaceholders(content: string, args: string): string {
+    // If no args provided, return content as-is
+    if (!args.trim()) return content;
+
+    // Check if any placeholders exist
+    const hasArgumentsPlaceholder = content.includes('$ARGUMENTS');
+    const hasPositionalPlaceholder = /\$\d+/.test(content);
+
+    // If no placeholders, append args at the end
+    if (!hasArgumentsPlaceholder && !hasPositionalPlaceholder) {
+      return content + '\n\n' + args;
+    }
+
     // Split args respecting quotes
     const argParts = this.parseArguments(args);
 
