@@ -108,6 +108,20 @@ describe('replaceImageEmbedsWithHtml', () => {
         expect(result).toContain(`src="app://local/image.${ext}"`);
       });
     });
+
+    it('handles uppercase extensions (case-insensitive)', () => {
+      const app = createMockApp(new Map([['photo.PNG', 'app://local/photo.PNG']]));
+      const result = replaceImageEmbedsWithHtml('![[photo.PNG]]', app);
+
+      expect(result).toContain('<img');
+    });
+
+    it('handles mixed case extensions', () => {
+      const app = createMockApp(new Map([['image.JpG', 'app://local/image.JpG']]));
+      const result = replaceImageEmbedsWithHtml('![[image.JpG]]', app);
+
+      expect(result).toContain('<img');
+    });
   });
 
   describe('non-image embeds (should pass through)', () => {
@@ -247,6 +261,30 @@ describe('replaceImageEmbedsWithHtml', () => {
       expect(result).toBe('![[incomplete');
     });
 
+    it('handles multiple sequential calls (regex lastIndex reset)', () => {
+      const app = createMockApp(new Map([['a.png', 'app://local/a.png']]));
+
+      // First call
+      const result1 = replaceImageEmbedsWithHtml('![[a.png]]', app);
+      // Second call - would fail without lastIndex reset
+      const result2 = replaceImageEmbedsWithHtml('![[a.png]]', app);
+
+      expect(result1).toContain('<img');
+      expect(result2).toContain('<img');
+    });
+
+    it('replaces image embeds in multiline content', () => {
+      const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
+      const result = replaceImageEmbedsWithHtml(
+        'First paragraph\n\n![[test.png]]\n\nThird paragraph',
+        app
+      );
+
+      expect(result).toContain('<img');
+      expect(result).toContain('First paragraph');
+      expect(result).toContain('Third paragraph');
+    });
+
     it('handles special characters in filename', () => {
       const filename = 'photo (2024-01-01).png';
       const app = createMockApp(new Map([[filename, `app://local/${filename}`]]));
@@ -276,6 +314,48 @@ describe('replaceImageEmbedsWithHtml', () => {
       const result = replaceImageEmbedsWithHtml('![[test.png]]', app);
 
       expect(result).toContain('loading="lazy"');
+    });
+  });
+
+  describe('error handling', () => {
+    it('returns unchanged markdown when app is not initialized', () => {
+      // @ts-expect-error - testing invalid input
+      const result = replaceImageEmbedsWithHtml('![[image.png]]', null);
+
+      expect(result).toBe('![[image.png]]');
+    });
+
+    it('returns unchanged markdown when vault is missing', () => {
+      const app = { metadataCache: {} } as unknown as App;
+      const result = replaceImageEmbedsWithHtml('![[image.png]]', app);
+
+      expect(result).toBe('![[image.png]]');
+    });
+
+    it('returns unchanged markdown when metadataCache is missing', () => {
+      const app = { vault: {} } as unknown as App;
+      const result = replaceImageEmbedsWithHtml('![[image.png]]', app);
+
+      expect(result).toBe('![[image.png]]');
+    });
+
+    it('returns fallback when getResourcePath throws', () => {
+      const mockFile = { path: 'test.png', basename: 'test' } as TFile;
+      const app = {
+        vault: {
+          getFileByPath: () => mockFile,
+          getResourcePath: () => {
+            throw new Error('Resource path failed');
+          },
+        },
+        metadataCache: {
+          getFirstLinkpathDest: () => null,
+        },
+      } as unknown as App;
+
+      const result = replaceImageEmbedsWithHtml('![[test.png]]', app);
+
+      expect(result).toContain('class="claudian-embedded-image-fallback"');
     });
   });
 

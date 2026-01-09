@@ -118,9 +118,12 @@ function createFallbackHtml(wikilink: string): string {
  * Replaces image embeds with HTML img tags in markdown content.
  * This should be called before MarkdownRenderer.renderMarkdown().
  *
+ * Non-image embeds (e.g., ![[note.md]]) pass through unchanged.
+ * Missing image files render as styled fallback text.
+ *
  * @param markdown The raw markdown content
  * @param app Obsidian App instance
- * @param mediaFolder The configured media folder path
+ * @param mediaFolder The configured media folder path (defaults to empty string)
  * @returns Markdown with image embeds replaced by HTML img tags
  */
 export function replaceImageEmbedsWithHtml(
@@ -128,26 +131,37 @@ export function replaceImageEmbedsWithHtml(
   app: App,
   mediaFolder: string = ''
 ): string {
+  // Defensive check for app state
+  if (!app?.vault || !app?.metadataCache) {
+    console.warn('[imageEmbed] App not fully initialized, skipping embed processing');
+    return markdown;
+  }
+
   // Reset lastIndex to avoid issues with global regex
   IMAGE_EMBED_PATTERN.lastIndex = 0;
 
   return markdown.replace(
     IMAGE_EMBED_PATTERN,
     (match, imagePath: string, altText: string | undefined) => {
-      // Not an image, leave as-is for MarkdownRenderer
-      if (!isImagePath(imagePath)) {
-        return match;
-      }
+      try {
+        // Not an image, leave as-is for MarkdownRenderer
+        if (!isImagePath(imagePath)) {
+          return match;
+        }
 
-      // Resolve the image file
-      const file = resolveImageFile(app, imagePath, mediaFolder);
-      if (!file) {
-        // File not found, show fallback
+        // Resolve the image file
+        const file = resolveImageFile(app, imagePath, mediaFolder);
+        if (!file) {
+          console.debug('[imageEmbed] Image not found:', imagePath);
+          return createFallbackHtml(match);
+        }
+
+        // Create img tag with resolved file
+        return createImageHtml(app, file, altText);
+      } catch (error) {
+        console.warn('[imageEmbed] Failed to process embed:', imagePath, error);
         return createFallbackHtml(match);
       }
-
-      // Create img tag with resolved file
-      return createImageHtml(app, file, altText);
     }
   );
 }

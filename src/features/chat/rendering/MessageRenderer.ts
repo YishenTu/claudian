@@ -312,52 +312,60 @@ export class MessageRenderer {
   async renderContent(el: HTMLElement, markdown: string): Promise<void> {
     el.empty();
 
-    // Replace image embeds with HTML img tags before rendering
-    const processedMarkdown = replaceImageEmbedsWithHtml(
-      markdown,
-      this.app,
-      this.plugin.settings.mediaFolder
-    );
-    await MarkdownRenderer.renderMarkdown(processedMarkdown, el, '', this.component);
+    try {
+      // Replace image embeds with HTML img tags before rendering
+      const processedMarkdown = replaceImageEmbedsWithHtml(
+        markdown,
+        this.app,
+        this.plugin.settings.mediaFolder
+      );
+      await MarkdownRenderer.renderMarkdown(processedMarkdown, el, '', this.component);
 
-    // Wrap pre elements and move buttons outside scroll area
-    el.querySelectorAll('pre').forEach((pre) => {
-      // Skip if already wrapped
-      if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
+      // Wrap pre elements and move buttons outside scroll area
+      el.querySelectorAll('pre').forEach((pre) => {
+        // Skip if already wrapped
+        if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
 
-      // Create wrapper
-      const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
-      pre.parentElement?.insertBefore(wrapper, pre);
-      wrapper.appendChild(pre);
+        // Create wrapper
+        const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
+        pre.parentElement?.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
 
-      // Check for language class and add label
-      const code = pre.querySelector('code[class*="language-"]');
-      if (code) {
-        const match = code.className.match(/language-(\w+)/);
-        if (match) {
-          wrapper.classList.add('has-language');
-          const label = createEl('span', {
-            cls: 'claudian-code-lang-label',
-            text: match[1],
-          });
-          wrapper.appendChild(label);
-          label.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(code.textContent || '');
-            label.setText('copied!');
-            setTimeout(() => label.setText(match[1]), 1500);
-          });
+        // Check for language class and add label
+        const code = pre.querySelector('code[class*="language-"]');
+        if (code) {
+          const match = code.className.match(/language-(\w+)/);
+          if (match) {
+            wrapper.classList.add('has-language');
+            const label = createEl('span', {
+              cls: 'claudian-code-lang-label',
+              text: match[1],
+            });
+            wrapper.appendChild(label);
+            label.addEventListener('click', async () => {
+              await navigator.clipboard.writeText(code.textContent || '');
+              label.setText('copied!');
+              setTimeout(() => label.setText(match[1]), 1500);
+            });
+          }
         }
-      }
 
-      // Move Obsidian's copy button outside pre into wrapper
-      const copyBtn = pre.querySelector('.copy-code-button');
-      if (copyBtn) {
-        wrapper.appendChild(copyBtn);
-      }
-    });
+        // Move Obsidian's copy button outside pre into wrapper
+        const copyBtn = pre.querySelector('.copy-code-button');
+        if (copyBtn) {
+          wrapper.appendChild(copyBtn);
+        }
+      });
 
-    // Process file paths to make them clickable links
-    processFileLinks(this.app, el);
+      // Process file paths to make them clickable links
+      processFileLinks(this.app, el);
+    } catch (error) {
+      console.error('[MessageRenderer] Failed to render content:', error);
+      el.createDiv({
+        cls: 'claudian-render-error',
+        text: 'Failed to render message content.',
+      });
+    }
   }
 
   // ============================================
