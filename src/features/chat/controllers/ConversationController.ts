@@ -494,7 +494,7 @@ export class ConversationController {
         `Hey there, ${name}`,
         `Hi ${name}, how are you?`,
         `How's it going, ${name}?`,
-        `Welcome Back!, ${name}`,
+        `Welcome back, ${name}!`,
         `What's new, ${name}?`,
         `${name} returns!`,
       ]
@@ -502,7 +502,7 @@ export class ConversationController {
         'Hey there',
         'Hi, how are you?',
         "How's it going?",
-        'Welcome Back!',
+        'Welcome back!',
         "What's new?",
       ];
 
