@@ -54,23 +54,16 @@ export class SlashCommandDropdown {
     const cursorPos = this.getCursorPosition();
     const textBeforeCursor = text.substring(0, cursorPos);
 
-    // Find the last / before cursor
-    const lastSlashIndex = textBeforeCursor.lastIndexOf('/');
-
-    if (lastSlashIndex === -1) {
+    // Only show dropdown if / is at position 0
+    if (text.charAt(0) !== '/') {
       this.hide();
       return;
     }
 
-    // Check if / is at start or preceded by whitespace
-    const charBeforeSlash = lastSlashIndex > 0 ? textBeforeCursor[lastSlashIndex - 1] : ' ';
-    if (!/\s/.test(charBeforeSlash) && lastSlashIndex !== 0) {
-      this.hide();
-      return;
-    }
+    const slashIndex = 0;
 
     // Get search text after /
-    const searchText = textBeforeCursor.substring(lastSlashIndex + 1);
+    const searchText = textBeforeCursor.substring(slashIndex + 1);
 
     // Hide if there's whitespace in the search text (command already selected)
     if (/\s/.test(searchText)) {
@@ -78,7 +71,7 @@ export class SlashCommandDropdown {
       return;
     }
 
-    this.slashStartIndex = lastSlashIndex;
+    this.slashStartIndex = slashIndex;
     this.showDropdown(searchText);
   }
 
