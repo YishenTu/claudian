@@ -24,14 +24,13 @@ jest.mock('@/core/types', () => {
 
 // Now import after all mocks are set up
 import { ClaudianService } from '@/core/agent/ClaudianService';
-import { createFileHashPostHook, createFileHashPreHook, type DiffContentEntry } from '@/core/hooks/DiffTrackingHooks';
+import { clearDiffState, createFileHashPostHook, createFileHashPreHook, getDiffData } from '@/core/hooks/DiffTrackingHooks';
 import { createVaultRestrictionHook } from '@/core/hooks/SecurityHooks';
 import { hydrateImagesData, readImageAttachmentBase64, resolveImageFilePath } from '@/core/images/imageLoader';
 import { transformSDKMessage } from '@/core/sdk';
 import { getActionDescription, getActionPattern } from '@/core/security/ApprovalManager';
 import { extractPathCandidates } from '@/core/security/BashPathValidator';
 import { getPathFromToolInput } from '@/core/tools/toolInput';
-import type { ToolDiffData } from '@/core/types';
 import { resolveClaudeCliPath } from '@/utils/claudeCli';
 import {
   buildContextFromHistory,
@@ -73,42 +72,6 @@ function createTextUserMessage(content: string) {
     parent_tool_use_id: null,
     session_id: '',
   };
-}
-
-function createImageUserMessage(data = 'image-data') {
-  return {
-    type: 'user',
-    message: {
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: 'image/png',
-            data,
-          },
-        },
-      ],
-    },
-    parent_tool_use_id: null,
-    session_id: '',
-  };
-}
-
-async function createTestMessageChannel(
-  service: ClaudianService,
-  onWarning: (message: string) => void
-) {
-  await service.preWarm();
-  const channelCtor = (service as any).messageChannel?.constructor as
-    | (new (onWarning?: (message: string) => void) => any)
-    | undefined;
-  service.closePersistentQuery('test message channel setup');
-  if (!channelCtor) {
-    throw new Error('MessageChannel constructor not available');
-  }
-  return new channelCtor(onWarning);
 }
 
 // Create a mock MCP server manager
@@ -788,203 +751,7 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('persistent query message channel', () => {
-    it('merges queued text messages and stamps the session ID', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-      const iterator = channel[Symbol.asyncIterator]();
-
-      const firstPromise = iterator.next();
-      channel.enqueue(createTextUserMessage('first'));
-      const first = await firstPromise;
-
-      expect(first.value.message.content).toBe('first');
-
-      channel.enqueue(createTextUserMessage('second'));
-      channel.enqueue(createTextUserMessage('third'));
-      channel.setSessionId('session-abc');
-      channel.onTurnComplete();
-
-      const merged = await iterator.next();
-      expect(merged.value.message.content).toBe('second\n\nthird');
-      expect(merged.value.session_id).toBe('session-abc');
-      expect(warnings).toHaveLength(0);
-
-      channel.close();
-    });
-
-    it('defers attachment messages and keeps the latest one', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-      const iterator = channel[Symbol.asyncIterator]();
-
-      const firstPromise = iterator.next();
-      channel.enqueue(createTextUserMessage('first'));
-      await firstPromise;
-
-      const attachmentOne = createImageUserMessage('image-one');
-      const attachmentTwo = createImageUserMessage('image-two');
-
-      channel.enqueue(attachmentOne);
-      channel.enqueue(attachmentTwo);
-
-      channel.onTurnComplete();
-
-      const queued = await iterator.next();
-      expect(queued.value.message.content).toEqual(attachmentTwo.message.content);
-      expect(warnings.some((msg) => msg.includes('Attachment message replaced'))).toBe(true);
-
-      channel.close();
-    });
-
-    it('drops merged text when it exceeds the max length', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-      const iterator = channel[Symbol.asyncIterator]();
-
-      const firstPromise = iterator.next();
-      channel.enqueue(createTextUserMessage('first'));
-      await firstPromise;
-
-      const longText = 'x'.repeat(12000);
-      channel.enqueue(createTextUserMessage('short'));
-      channel.enqueue(createTextUserMessage(longText));
-
-      channel.onTurnComplete();
-
-      const merged = await iterator.next();
-      expect(merged.value.message.content).toBe('short');
-      expect(warnings.some((msg) => msg.includes('Merged content exceeds'))).toBe(true);
-
-      channel.close();
-    });
-
-    it('delivers message when enqueue is called before next (no deadlock)', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-
-      // Enqueue BEFORE calling next() - this used to cause a deadlock
-      channel.enqueue(createTextUserMessage('early message'));
-
-      // Now call next() - it should pick up the queued message
-      const iterator = channel[Symbol.asyncIterator]();
-      const result = await iterator.next();
-
-      expect(result.done).toBe(false);
-      expect(result.value.message.content).toBe('early message');
-
-      channel.close();
-    });
-
-    it('handles multiple enqueues before first next (queued separately)', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-
-      // Enqueue multiple messages before any next() call
-      // When turnActive=false, messages queue separately (no merging)
-      channel.enqueue(createTextUserMessage('first'));
-      channel.enqueue(createTextUserMessage('second'));
-
-      const iterator = channel[Symbol.asyncIterator]();
-
-      // First next() gets first message, turns on turnActive
-      const first = await iterator.next();
-      expect(first.done).toBe(false);
-      expect(first.value.message.content).toBe('first');
-
-      // Complete turn so second message can be delivered
-      channel.onTurnComplete();
-
-      // Second next() gets second message
-      const second = await iterator.next();
-      expect(second.done).toBe(false);
-      expect(second.value.message.content).toBe('second');
-
-      channel.close();
-    });
-
-    it('throws error when enqueueing to closed channel', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-
-      // Close the channel
-      channel.close();
-
-      // Attempting to enqueue should throw
-      expect(() => channel.enqueue(createTextUserMessage('test'))).toThrow('MessageChannel is closed');
-    });
-
-    it('drops newest messages when queue is full before consumer starts', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-
-      // Queue many messages before starting iteration (turnActive=false)
-      // When turn is inactive, queue limit is still enforced
-      for (let i = 0; i < 10; i++) {
-        channel.enqueue(createTextUserMessage(`msg-${i}`));
-      }
-
-      // Queue full warning should be triggered
-      expect(warnings.filter((msg) => msg.includes('Queue full'))).not.toHaveLength(0);
-
-      // Verify the queue length is capped
-      expect(channel.getQueueLength()).toBe(8);
-
-      channel.close();
-    });
-
-    it('triggers queue full warning when adding text to full queue during active turn', async () => {
-      const warnings: string[] = [];
-      const channel = await createTestMessageChannel(service, (message) => warnings.push(message));
-
-      // Pre-fill queue with 8 messages while turn is inactive
-      for (let i = 0; i < 8; i++) {
-        channel.enqueue(createTextUserMessage(`msg-${i}`));
-      }
-
-      const iterator = channel[Symbol.asyncIterator]();
-
-      // Consume first message to start turn
-      const first = await iterator.next();
-      expect(first.value.message.content).toBe('msg-0');
-
-      // Now turn is active, queue has 7 remaining items
-      // Queue another message - since existing texts are still in queue, they merge
-      // To trigger the "no existing text" path, we need to complete the turn
-      // and have the queue be full of attachment-only items
-
-      // Actually, the queue full check path is very narrow:
-      // - Turn must be active
-      // - Adding text message
-      // - No existing text in queue to merge with
-      // - Queue already at MAX_QUEUED_MESSAGES
-
-      // Since text messages merge and attachments replace, the practical max is 2 items
-      // The queue full check is defensive for edge cases or future message types
-
-      // Complete the turn to dequeue remaining messages
-      for (let i = 0; i < 7; i++) {
-        channel.onTurnComplete();
-        await iterator.next();
-      }
-
-      // Now queue is empty, turn should still be active
-      // Add an attachment first (creates non-text entry)
-      channel.enqueue(createImageUserMessage('img-1'));
-
-      // Queue is now [attachment], size = 1
-      // Add text - no existing text, so check queue.length >= 8? No, only 1 item
-      channel.enqueue(createTextUserMessage('text-1'));
-
-      // Due to the merging behavior, we can't easily trigger the queue full warning
-      // in normal usage. The check is defensive for edge cases.
-
-      // Verify no queue full warning in normal usage
-      expect(warnings.filter((msg) => msg.includes('Queue full'))).toHaveLength(0);
-
-      channel.close();
-    });
-  });
+  // MessageChannel tests moved to tests/unit/core/agent/MessageChannel.test.ts
 
   describe('persistent query updates', () => {
     it('updates model on the active persistent query', async () => {
@@ -1188,36 +955,8 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('resetSession', () => {
-    it('should reset session without throwing', () => {
-      expect(() => service.resetSession()).not.toThrow();
-    });
-
-    it('should clear session ID', () => {
-      service.setSessionId('some-session');
-      expect(service.getSessionId()).toBe('some-session');
-
-      service.resetSession();
-      expect(service.getSessionId()).toBeNull();
-    });
-  });
-
-  describe('getSessionId and setSessionId', () => {
-    it('should initially return null', () => {
-      expect(service.getSessionId()).toBeNull();
-    });
-
-    it('should set and get session ID', () => {
-      service.setSessionId('test-session-123');
-      expect(service.getSessionId()).toBe('test-session-123');
-    });
-
-    it('should allow setting session ID to null', () => {
-      service.setSessionId('some-session');
-      service.setSessionId(null);
-      expect(service.getSessionId()).toBeNull();
-    });
-  });
+  // SessionManager tests (resetSession, getSessionId, setSessionId) moved to:
+  // tests/unit/core/agent/SessionManager.test.ts
 
   describe('cleanup', () => {
     it('should call cancel and resetSession', () => {
@@ -2202,56 +1941,7 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('query options construction', () => {
-    beforeEach(() => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-    });
-
-    it('should set yolo mode options', async () => {
-      mockPlugin = createMockPlugin({ permissionMode: 'yolo', thinkingBudget: 'off' });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } },
-        { type: 'result' },
-      ]);
-
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      for await (const _chunk of service.query('hello')) {
-        // drain
-      }
-
-      const options = getLastOptions();
-      expect(options?.permissionMode).toBe('bypassPermissions');
-      expect(options?.allowDangerouslySkipPermissions).toBe(true);
-    });
-
-    it('should set safe mode, resume, and thinking tokens', async () => {
-      mockPlugin = createMockPlugin({ permissionMode: 'normal', thinkingBudget: 'high' });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
-      service.setSessionId('resume-id');
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'new-session' },
-        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } },
-        { type: 'result' },
-      ]);
-
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      for await (const _chunk of service.query('hello')) {
-        // drain
-      }
-
-      const options = getLastOptions();
-      expect(options?.permissionMode).toBe('default');
-      expect(options?.resume).toBe('resume-id');
-      expect(options?.maxThinkingTokens).toBe(16000);
-      expect(typeof options?.canUseTool).toBe('function');
-    });
-  });
+  // QueryOptionsBuilder tests moved to tests/unit/core/agent/QueryOptionsBuilder.test.ts
 
   describe('transformSDKMessage additional branches', () => {
     it('should transform tool_result blocks inside user content', () => {
@@ -2442,77 +2132,8 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('file hash hooks and diff data', () => {
-    beforeEach(() => {
-      (fs.existsSync as jest.Mock).mockReset();
-      (fs.statSync as jest.Mock).mockReset();
-      (fs.readFileSync as jest.Mock).mockReset();
-
-      mockPlugin = createMockPlugin({ permissionMode: 'yolo' });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-      (service as any).vaultPath = '/test/vault/path';
-    });
-
-    it('captures original content and computes diff for small file', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
-      (fs.readFileSync as jest.Mock)
-        .mockReturnValueOnce('old')
-        .mockReturnValueOnce('new');
-
-      // Create hooks using the exported functions
-      const originalContents = new Map<string, DiffContentEntry>();
-      const pendingDiffData = new Map<string, ToolDiffData>();
-      const vaultPath = '/test/vault/path';
-
-      const preHook = createFileHashPreHook(vaultPath, originalContents);
-      const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
-
-      await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'note.md' } } as any, 'tool-1', {} as any);
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'note.md' }, tool_result: {} } as any, 'tool-1', {} as any);
-
-      const diff = pendingDiffData.get('tool-1');
-      expect(diff).toEqual({ filePath: 'note.md', originalContent: 'old', newContent: 'new' });
-    });
-
-    it('skips diff when original file is too large', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.statSync as jest.Mock).mockReturnValue({ size: 200 * 1024 });
-
-      // Create hooks using the exported functions
-      const originalContents = new Map<string, DiffContentEntry>();
-      const pendingDiffData = new Map<string, ToolDiffData>();
-      const vaultPath = '/test/vault/path';
-
-      const preHook = createFileHashPreHook(vaultPath, originalContents);
-      const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
-
-      await preHook.hooks[0]({ tool_name: 'Edit', tool_input: { file_path: 'big.md' } } as any, 'tool-big', {} as any);
-      await postHook.hooks[0]({ tool_name: 'Edit', tool_input: { file_path: 'big.md' }, tool_result: {} } as any, 'tool-big', {} as any);
-
-      const diff = pendingDiffData.get('tool-big');
-      expect(diff).toEqual({ filePath: 'big.md', skippedReason: 'too_large' });
-    });
-
-    it('marks diff unavailable when edited file is missing', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
-      (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
-
-      // Create hooks using the exported functions
-      const originalContents = new Map<string, DiffContentEntry>();
-      const pendingDiffData = new Map<string, ToolDiffData>();
-      const vaultPath = '/test/vault/path';
-
-      const preHook = createFileHashPreHook(vaultPath, originalContents);
-      const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
-
-      await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'new.md' } } as any, 'tool-new', {} as any);
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'new.md' }, tool_result: {} } as any, 'tool-new', {} as any);
-
-      const diff = pendingDiffData.get('tool-new');
-      expect(diff).toEqual({ filePath: 'new.md', skippedReason: 'unavailable' });
-    });
-  });
+  // DiffTrackingHooks tests (file hash hooks and diff data) moved to:
+  // tests/unit/core/hooks/DiffTrackingHooks.test.ts
 
   describe('remaining business branches', () => {
     beforeEach(() => {
@@ -2635,25 +2256,23 @@ describe('ClaudianService', () => {
       expect(getActionDescription('Other', { foo: 'bar' })).toContain('foo');
     });
 
-    it('stores null original content when pre-hook stat fails', async () => {
+    it('marks diff unavailable when pre-hook stat fails', async () => {
+      clearDiffState();
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
-        // Create hooks using the exported functions
-        const originalContents = new Map<string, DiffContentEntry>();
-        const pendingDiffData = new Map<string, ToolDiffData>();
         const vaultPath = '/test/vault/path';
 
-        const preHook = createFileHashPreHook(vaultPath, originalContents);
+        const preHook = createFileHashPreHook(vaultPath);
         await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' } } as any, 'tool-bad', {} as any);
 
-        expect(originalContents.get('tool-bad')?.content).toBeNull();
-
-        const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
+        const postHook = createFileHashPostHook(vaultPath);
         await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' }, tool_result: {} } as any, 'tool-bad', {} as any);
-        expect(pendingDiffData.get('tool-bad')).toEqual({ filePath: 'bad.md', skippedReason: 'unavailable' });
+
+        const diff = getDiffData('tool-bad');
+        expect(diff).toEqual({ filePath: 'bad.md', skippedReason: 'unavailable' });
         expect(warnSpy).toHaveBeenCalledWith(
           'Failed to capture original file contents:',
           '/test/vault/path/bad.md',
@@ -2661,31 +2280,48 @@ describe('ClaudianService', () => {
         );
       } finally {
         warnSpy.mockRestore();
+        clearDiffState();
       }
     });
 
-    it('skips diff when post-hook lacks original entry or hits read error', async () => {
+    it('marks diff unavailable when post-hook lacks original entry', async () => {
+      clearDiffState();
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
       (fs.readFileSync as jest.Mock).mockReturnValueOnce('new');
+
+      const vaultPath = '/test/vault/path';
+
+      // Call post-hook without calling pre-hook (no original entry)
+      const postHook = createFileHashPostHook(vaultPath);
+      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'no-orig.md' }, tool_result: {} } as any, 'tool-no-orig', {} as any);
+
+      const diff = getDiffData('tool-no-orig');
+      expect(diff).toEqual({ filePath: 'no-orig.md', skippedReason: 'unavailable' });
+      clearDiffState();
+    });
+
+    it('marks diff unavailable when post-hook read fails', async () => {
+      clearDiffState();
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
+      (fs.readFileSync as jest.Mock)
+        .mockReturnValueOnce('original') // pre-hook reads successfully
+        .mockImplementation(() => { throw new Error('boom'); }); // post-hook fails
+
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
-        // Create hooks using the exported functions
-        const originalContents = new Map<string, DiffContentEntry>();
-        const pendingDiffData = new Map<string, ToolDiffData>();
         const vaultPath = '/test/vault/path';
 
-        const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
-        await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'no-orig.md' }, tool_result: {} } as any, 'tool-no-orig', {} as any);
-        expect(pendingDiffData.get('tool-no-orig')).toEqual({ filePath: 'no-orig.md', skippedReason: 'unavailable' });
+        const preHook = createFileHashPreHook(vaultPath);
+        await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'err.md' } } as any, 'tool-read-err', {} as any);
 
-        // Now force read error in post-hook
-        originalContents.set('tool-read-err', { filePath: 'err.md', content: '' });
-        (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-
+        const postHook = createFileHashPostHook(vaultPath);
         await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'err.md' }, tool_result: {} } as any, 'tool-read-err', {} as any);
-        expect(pendingDiffData.get('tool-read-err')).toEqual({ filePath: 'err.md', skippedReason: 'unavailable' });
+
+        const diff = getDiffData('tool-read-err');
+        expect(diff).toEqual({ filePath: 'err.md', skippedReason: 'unavailable' });
         expect(warnSpy).toHaveBeenCalledWith(
           'Failed to capture updated file contents:',
           '/test/vault/path/err.md',
@@ -2693,27 +2329,28 @@ describe('ClaudianService', () => {
         );
       } finally {
         warnSpy.mockRestore();
+        clearDiffState();
       }
     });
 
     it('marks too_large when post-hook sees large new file', async () => {
+      clearDiffState();
       (fs.existsSync as jest.Mock).mockReturnValue(false);
 
-      // Create hooks using the exported functions
-      const originalContents = new Map<string, DiffContentEntry>();
-      const pendingDiffData = new Map<string, ToolDiffData>();
       const vaultPath = '/test/vault/path';
 
-      const preHook = createFileHashPreHook(vaultPath, originalContents);
+      const preHook = createFileHashPreHook(vaultPath);
       await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'large.md' } } as any, 'tool-large', {} as any);
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockReturnValue({ size: 200 * 1024 });
 
-      const postHook = createFileHashPostHook(vaultPath, originalContents, pendingDiffData);
+      const postHook = createFileHashPostHook(vaultPath);
       await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'large.md' }, tool_result: {} } as any, 'tool-large', {} as any);
 
-      expect(pendingDiffData.get('tool-large')).toEqual({ filePath: 'large.md', skippedReason: 'too_large' });
+      const diff = getDiffData('tool-large');
+      expect(diff).toEqual({ filePath: 'large.md', skippedReason: 'too_large' });
+      clearDiffState();
     });
   });
 

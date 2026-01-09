@@ -8,7 +8,8 @@
 import type { Editor,MarkdownView } from 'obsidian';
 import { Notice,Plugin } from 'obsidian';
 
-import { ClaudianService } from './core/agent/ClaudianService';
+import { ClaudianService } from './core/agent';
+import { clearDiffState } from './core/hooks';
 import { deleteCachedImages } from './core/images/imageCache';
 import { StorageService } from './core/storage';
 import type {
@@ -325,6 +326,7 @@ export default class ClaudianPlugin extends Plugin {
     // Invalidate session so next query rebuilds full context from history.
     // Note: agentService may not exist yet during initial plugin load.
     this.agentService?.resetSession();
+    clearDiffState(); // Clear UI diff state (not SDK-related)
 
     // Clear sessionId from all conversations since they belong to the old provider.
     // Sessions are provider-specific (contain signed thinking blocks, etc.).
@@ -417,6 +419,7 @@ export default class ClaudianPlugin extends Plugin {
     this.conversations.unshift(conversation);
     this.activeConversationId = conversation.id;
     this.agentService.resetSession();
+    clearDiffState(); // Clear UI diff state (not SDK-related)
 
     // Save new conversation to session file
     await this.storage.sessions.saveConversation(conversation);

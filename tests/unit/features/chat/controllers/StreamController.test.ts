@@ -97,7 +97,6 @@ function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockElement();
   const agentService = {
-    getDiffData: jest.fn().mockReturnValue(undefined),
     getSessionId: jest.fn().mockReturnValue('session-1'),
   };
   const fileContextManager = {

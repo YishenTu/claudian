@@ -2,6 +2,7 @@
  * Diff Tracking Hooks
  *
  * Pre/Post ToolUse hooks for capturing file content before and after edits.
+ * Owns the DiffStore internally - consumers use getDiffData() and clearDiffState().
  */
 
 import type { HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
@@ -33,13 +34,75 @@ export interface DiffContentEntry {
   skippedReason?: 'too_large' | 'unavailable';
 }
 
+// ============================================
+// Private DiffStore - module-level singleton
+// ============================================
+
+/**
+ * Internal storage for diff tracking.
+ * Not exported - consumers use getDiffData() and clearDiffState().
+ */
+class DiffStore {
+  private originalContents = new Map<string, DiffContentEntry>();
+  private pendingDiffData = new Map<string, ToolDiffData>();
+
+  getOriginalContents(): Map<string, DiffContentEntry> {
+    return this.originalContents;
+  }
+
+  getPendingDiffData(): Map<string, ToolDiffData> {
+    return this.pendingDiffData;
+  }
+
+  getDiffData(toolUseId: string): ToolDiffData | undefined {
+    const data = this.pendingDiffData.get(toolUseId);
+    if (data) {
+      this.pendingDiffData.delete(toolUseId);
+    }
+    return data;
+  }
+
+  clear(): void {
+    this.originalContents.clear();
+    this.pendingDiffData.clear();
+  }
+}
+
+/** Module-level singleton instance. */
+const diffStore = new DiffStore();
+
+// ============================================
+// Public Read API
+// ============================================
+
+/**
+ * Get pending diff data for a tool_use_id (and remove it from pending).
+ * Call this after tool execution to retrieve the diff for rendering.
+ */
+export function getDiffData(toolUseId: string): ToolDiffData | undefined {
+  return diffStore.getDiffData(toolUseId);
+}
+
+/**
+ * Clear all diff-related state.
+ * Call this when resetting the session or cleaning up.
+ */
+export function clearDiffState(): void {
+  diffStore.clear();
+}
+
+// ============================================
+// Hook Factories
+// ============================================
+
 /**
  * Create a PreToolUse hook to capture original file content before editing.
  */
 export function createFileHashPreHook(
-  vaultPath: string | null,
-  originalContents: Map<string, DiffContentEntry>
+  vaultPath: string | null
 ): HookCallbackMatcher {
+  const originalContents = diffStore.getOriginalContents();
+
   return {
     matcher: 'Write|Edit|NotebookEdit',
     hooks: [
@@ -92,10 +155,11 @@ export function createFileHashPreHook(
  */
 export function createFileHashPostHook(
   vaultPath: string | null,
-  originalContents: Map<string, DiffContentEntry>,
-  pendingDiffData: Map<string, ToolDiffData>,
   postCallback?: FileEditPostCallback
 ): HookCallbackMatcher {
+  const originalContents = diffStore.getOriginalContents();
+  const pendingDiffData = diffStore.getPendingDiffData();
+
   return {
     matcher: 'Write|Edit|NotebookEdit',
     hooks: [

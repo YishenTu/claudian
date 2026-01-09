@@ -5,6 +5,7 @@
  * state tracking, and thinking indicator display.
  */
 
+import { getDiffData } from '../../../core/hooks';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -238,7 +239,7 @@ export class StreamController {
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     msg: ChatMessage
   ): void {
-    const { plugin, state } = this.deps;
+    const { state } = this.deps;
 
     // Check if it's a sync subagent result
     const subagentState = state.activeSubagents.get(chunk.id);
@@ -275,7 +276,7 @@ export class StreamController {
       const writeEditState = state.writeEditStates.get(chunk.id);
       if (writeEditState && isWriteEditTool(existingToolCall.name)) {
         if (!chunk.isError && !isBlocked) {
-          const diffData = plugin.agentService.getDiffData(chunk.id);
+          const diffData = getDiffData(chunk.id);
           if (diffData) {
             existingToolCall.diffData = diffData;
             updateWriteEditWithDiff(writeEditState, diffData);
@@ -444,7 +445,7 @@ export class StreamController {
           toolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
           toolCall.result = chunk.content;
           updateSubagentToolResult(subagentState, chunk.id, toolCall);
-          this.deps.plugin.agentService.getDiffData(chunk.id);
+          getDiffData(chunk.id);
         }
         break;
       }

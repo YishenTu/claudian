@@ -3,10 +3,12 @@
  */
 
 export {
+  clearDiffState,
   createFileHashPostHook,
   createFileHashPreHook,
   type DiffContentEntry,
   type FileEditPostCallback,
+  getDiffData,
   MAX_DIFF_SIZE,
 } from './DiffTrackingHooks';
 export {
