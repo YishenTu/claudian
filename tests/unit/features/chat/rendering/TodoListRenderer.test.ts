@@ -186,7 +186,7 @@ describe('TodoListRenderer', () => {
 
       expect(result).toBeNull();
       expect(warnSpy).toHaveBeenCalledWith(
-        '[TodoListRenderer] Failed to parse TodoWrite from saved conversation',
+        '[TodoTools] Failed to parse TodoWrite from saved conversation',
         expect.objectContaining({
           messageIndex: 0,
           toolCallIndex: 0,
