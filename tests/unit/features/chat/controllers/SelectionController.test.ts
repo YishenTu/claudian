@@ -3,9 +3,9 @@
  */
 
 import { SelectionController } from '@/features/chat/controllers/SelectionController';
-import { hideSelectionHighlight, showSelectionHighlight } from '@/ui';
+import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 
-jest.mock('@/ui', () => ({
+jest.mock('@/shared/components/SelectionHighlight', () => ({
   showSelectionHighlight: jest.fn(),
   hideSelectionHighlight: jest.fn(),
 }));

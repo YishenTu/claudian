@@ -575,6 +575,27 @@ export function isPathWithinVault(candidatePath: string, vaultPath: string): boo
   return resolvedCandidate === vaultReal || resolvedCandidate.startsWith(vaultReal + '/');
 }
 
+/** Normalizes a path to vault-relative with forward slashes when inside the vault. */
+export function normalizePathForVault(
+  rawPath: string | undefined | null,
+  vaultPath: string | null | undefined
+): string | null {
+  if (!rawPath) return null;
+
+  const normalizedRaw = normalizePathForFilesystem(rawPath);
+  if (!normalizedRaw) return null;
+
+  if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+    const absolute = path.isAbsolute(normalizedRaw)
+      ? normalizedRaw
+      : path.resolve(vaultPath, normalizedRaw);
+    const relative = path.relative(vaultPath, absolute);
+    return relative ? relative.replace(/\\/g, '/') : null;
+  }
+
+  return normalizedRaw.replace(/\\/g, '/');
+}
+
 /** Checks whether a candidate path is within any of the allowed export paths. */
 export function isPathInAllowedExportPaths(
   candidatePath: string,

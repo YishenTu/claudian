@@ -2,6 +2,11 @@
  * Tools barrel export.
  */
 
+export {
+  extractLastTodosFromMessages,
+  parseTodoInput,
+  type TodoItem,
+} from './todo';
 export { getToolIcon } from './toolIcons';
 export { getPathFromToolInput } from './toolInput';
 export {

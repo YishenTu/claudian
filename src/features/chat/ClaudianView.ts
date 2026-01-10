@@ -12,8 +12,22 @@ import { SlashCommandManager } from '../../core/commands';
 import type { ClaudeModel, ThinkingBudget } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
+import { SlashCommandDropdown } from '../../shared/components/SlashCommandDropdown';
+import { getVaultPath } from '../../utils/path';
+import { LOGO_SVG } from './constants';
 import {
-  cleanupThinkingBlock,
+  ConversationController,
+  InputController,
+  NavigationController,
+  SelectionController,
+  StreamController,
+} from './controllers';
+import { cleanupThinkingBlock, MessageRenderer } from './rendering';
+import { AsyncSubagentManager } from './services/AsyncSubagentManager';
+import { InstructionRefineService } from './services/InstructionRefineService';
+import { TitleGenerationService } from './services/TitleGenerationService';
+import { ChatState } from './state';
+import {
   type ContextUsageMeter,
   createInputToolbar,
   type ExternalContextSelector,
@@ -24,24 +38,9 @@ import {
   type McpServerSelector,
   type ModelSelector,
   type PermissionToggle,
-  SlashCommandDropdown,
   type ThinkingBudgetSelector,
   TodoPanel,
-} from '../../ui';
-import { getVaultPath } from '../../utils/path';
-import { LOGO_SVG } from './constants';
-import {
-  ConversationController,
-  InputController,
-  NavigationController,
-  SelectionController,
-  StreamController,
-} from './controllers';
-import { MessageRenderer } from './rendering';
-import { AsyncSubagentManager } from './services/AsyncSubagentManager';
-import { InstructionRefineService } from './services/InstructionRefineService';
-import { TitleGenerationService } from './services/TitleGenerationService';
-import { ChatState } from './state';
+} from './ui';
 
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {

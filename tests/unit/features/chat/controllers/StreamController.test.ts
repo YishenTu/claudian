@@ -10,9 +10,19 @@ import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
-// Mock UI module
-jest.mock('@/ui', () => {
+// Mock core tools module
+jest.mock('@/core/tools', () => {
   return {
+    parseTodoInput: jest.fn(),
+  };
+});
+
+// Mock chat rendering module
+jest.mock('@/features/chat/rendering', () => {
+  return {
+    addSubagentToolCall: jest.fn(),
+    appendThinkingContent: jest.fn(),
+    createAsyncSubagentBlock: jest.fn().mockReturnValue({}),
     createSubagentBlock: jest.fn().mockReturnValue({
       info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
     }),
@@ -22,12 +32,19 @@ jest.mock('@/ui', () => {
       content: '',
       startTime: Date.now(),
     }),
-    appendThinkingContent: jest.fn(),
+    createWriteEditBlock: jest.fn().mockReturnValue({}),
+    finalizeAsyncSubagent: jest.fn(),
+    finalizeSubagentBlock: jest.fn(),
     finalizeThinkingBlock: jest.fn().mockReturnValue(0),
-    renderToolCall: jest.fn(),
-    updateToolCallResult: jest.fn(),
+    finalizeWriteEditBlock: jest.fn(),
+    getToolLabel: jest.fn().mockReturnValue('Tool'),
     isBlockedToolResult: jest.fn().mockReturnValue(false),
-    parseTodoInput: jest.fn(),
+    markAsyncSubagentOrphaned: jest.fn(),
+    renderToolCall: jest.fn(),
+    updateAsyncSubagentRunning: jest.fn(),
+    updateSubagentToolResult: jest.fn(),
+    updateToolCallResult: jest.fn(),
+    updateWriteEditWithDiff: jest.fn(),
   };
 });
 
@@ -323,7 +340,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should render as raw tool call when TodoWrite parsing fails', async () => {
-      const { parseTodoInput, renderToolCall } = jest.requireMock('@/ui');
+      const { parseTodoInput } = jest.requireMock('@/core/tools');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
       parseTodoInput.mockReturnValue(null); // Simulate parse failure
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 

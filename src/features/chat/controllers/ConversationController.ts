@@ -7,13 +7,14 @@
 
 import { setIcon } from 'obsidian';
 
+import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import { type ExternalContextSelector, extractLastTodosFromMessages, type FileContextManager, type ImageContextManager, type McpServerSelector, type TodoPanel } from '../../../ui';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
+import type { ExternalContextSelector, FileContextManager, ImageContextManager, McpServerSelector, TodoPanel } from '../ui';
 
 /** Callbacks for conversation events. */
 export interface ConversationCallbacks {

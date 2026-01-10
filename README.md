@@ -176,7 +176,7 @@ src/
 │   ├── agent/                   # Claude Agent SDK wrapper (ClaudianService)
 │   ├── hooks/                   # PreToolUse/PostToolUse hooks
 │   ├── images/                  # Image caching and loading
-│   ├── mcp/                     # MCP server config management (McpServerManager)
+│   ├── mcp/                     # MCP server config, service, and testing
 │   ├── prompts/                 # System prompts for agents
 │   ├── sdk/                     # SDK message transformation
 │   ├── security/                # Approval, blocklist, path validation
@@ -184,15 +184,14 @@ src/
 │   ├── tools/                   # Tool constants and utilities
 │   └── types/                   # Type definitions
 ├── features/                    # Feature modules
-│   ├── chat/                    # Main chat view with modular controllers
-│   ├── inline-edit/             # Inline edit service
-│   ├── mcp/                     # MCP @-mention detection and connection testing
-│   └── settings/                # Settings tab (ClaudianSettings)
-├── ui/                          # UI components
-│   ├── components/              # Input toolbar, file/image context, dropdowns
-│   ├── modals/                  # Approval, inline edit, instruction, MCP modals
-│   ├── renderers/               # Thinking blocks, tool calls, diffs, subagents
-│   └── settings/                # Env snippets, MCP settings, slash commands
+│   ├── chat/                    # Main chat view + UI, rendering, controllers
+│   ├── inline-edit/             # Inline edit service + UI
+│   └── settings/                # Settings tab UI
+├── shared/                      # Shared UI components and modals
+│   ├── components/              # Input toolbar bits, dropdowns, selection highlight
+│   ├── mention/                 # @-mention dropdown controller
+│   ├── modals/                  # Approval + instruction modals
+│   └── icons.ts                 # Shared SVG icons
 ├── utils/                       # Modular utility functions
 └── style/                       # Modular CSS (→ styles.css)
 ```

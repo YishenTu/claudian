@@ -13,14 +13,8 @@ import { TOOL_BASH } from '../../../core/tools/toolNames';
 import type { ChatMessage } from '../../../core/types';
 import { getBashToolBlockedCommands } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import {
-  ApprovalModal,
-  type FileContextManager,
-  type ImageContextManager,
-  InstructionModal,
-  type InstructionModeManager,
-  type McpServerSelector,
-} from '../../../ui';
+import { ApprovalModal } from '../../../shared/modals/ApprovalModal';
+import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { prependCurrentNote } from '../../../utils/context';
 import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
@@ -30,6 +24,7 @@ import type { InstructionRefineService } from '../services/InstructionRefineServ
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
+import type { FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector } from '../ui';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';

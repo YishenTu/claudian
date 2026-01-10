@@ -9,7 +9,7 @@ import type { EditorView } from '@codemirror/view';
 import type { App } from 'obsidian';
 import { MarkdownView } from 'obsidian';
 
-import { hideSelectionHighlight, showSelectionHighlight } from '../../../ui';
+import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import type { StoredSelection } from '../state/types';
 

@@ -4,19 +4,22 @@
 
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import {
-  renderStoredAsyncSubagent,
-  renderStoredSubagent,
-  renderStoredThinkingBlock,
-  renderStoredToolCall,
-  renderStoredWriteEdit,
-} from '@/ui';
+import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/rendering/SubagentRenderer';
+import { renderStoredThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
+import { renderStoredToolCall } from '@/features/chat/rendering/ToolCallRenderer';
+import { renderStoredWriteEdit } from '@/features/chat/rendering/WriteEditRenderer';
 
-jest.mock('@/ui', () => ({
+jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
   renderStoredAsyncSubagent: jest.fn(),
   renderStoredSubagent: jest.fn(),
+}));
+jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
   renderStoredThinkingBlock: jest.fn(),
+}));
+jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
   renderStoredToolCall: jest.fn(),
+}));
+jest.mock('@/features/chat/rendering/WriteEditRenderer', () => ({
   renderStoredWriteEdit: jest.fn(),
 }));
 

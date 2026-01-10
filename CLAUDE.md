@@ -14,8 +14,10 @@ src/
 │   │   └── ClaudianService.ts
 │   ├── hooks/                   # PreToolUse/PostToolUse hooks
 │   ├── images/                  # Image caching and loading
-│   ├── mcp/                     # MCP server config management
-│   │   └── McpServerManager.ts
+│   ├── mcp/                     # MCP server config, service, and testing
+│   │   ├── McpServerManager.ts
+│   │   ├── McpService.ts
+│   │   └── McpTester.ts
 │   ├── prompts/                 # System prompts for agents
 │   ├── sdk/                     # SDK message transformation
 │   ├── security/                # Approval, blocklist, path validation
@@ -28,22 +30,20 @@ src/
 │   │   ├── constants.ts         # FLAVOR_TEXTS, LOGO_SVG
 │   │   ├── state/               # Centralized state (ChatState)
 │   │   ├── controllers/         # ConversationController, StreamController, InputController, SelectionController
-│   │   ├── rendering/           # MessageRenderer
-│   │   └── services/            # TitleGenerationService, AsyncSubagentManager, InstructionRefineService
+│   │   ├── rendering/           # MessageRenderer and render helpers
+│   │   ├── services/            # TitleGenerationService, AsyncSubagentManager, InstructionRefineService
+│   │   └── ui/                  # Chat UI components (toolbar, file context, panels)
 │   ├── inline-edit/             # Inline edit feature
-│   ├── mcp/                     # MCP @-mention detection and UI helpers
-│   │   ├── McpService.ts
-│   │   └── McpTester.ts
+│   │   ├── InlineEditService.ts
+│   │   └── ui/                  # Inline edit modal
 │   └── settings/                # Settings tab
-├── ui/                          # UI components
-│   ├── components/              # Reusable UI components
-│   │   └── file-context/        # File context manager (modular)
-│   │       ├── mention/         # @-mention dropdown controller
-│   │       ├── state/           # State management (session, cache, MCP mentions)
-│   │       └── view/            # File chips UI
-│   ├── modals/                  # Modal dialogs
-│   ├── renderers/               # Content renderers
-│   └── settings/                # Settings UI components
+│       ├── ClaudianSettings.ts
+│       └── ui/                  # Settings UI components
+├── shared/                      # Shared UI components and modals
+│   ├── components/              # Dropdowns, selection highlight
+│   ├── mention/                 # @-mention dropdown controller
+│   ├── modals/                  # Approval + instruction modals
+│   └── icons.ts                 # Shared SVG icons
 ├── utils/                       # Modular utility functions
 └── style/                       # Modular CSS (→ styles.css)
 ```
@@ -53,7 +53,7 @@ src/
 | **core** | `agent/` | Claude Agent SDK wrapper (ClaudianService) |
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
-| | `mcp/` | MCP server config loading and filtering (McpServerManager) |
+| | `mcp/` | MCP server config, service, and testing |
 | | `prompts/` | System prompts (main agent, inline edit, instruction refine, title generation) |
 | | `sdk/` | SDK message transformation |
 | | `security/` | Approval, blocklist, path validation |
@@ -65,17 +65,15 @@ src/
 | | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
 | | `chat/rendering/` | Message DOM rendering (MessageRenderer) |
 | | `chat/services/` | TitleGenerationService, AsyncSubagentManager, InstructionRefineService |
+| | `chat/ui/` | Chat UI components (toolbar, file context, panels) |
 | | `inline-edit/` | Inline edit service |
-| | `mcp/` | MCP @-mention detection, UI helpers, connection testing |
-| | `settings/` | Settings tab UI |
-| **ui** | `components/` | Input toolbar (with context meter), file/image context, slash command dropdown |
-| | `components/file-context/` | Modular file context manager with submodules: |
-| | `  mention/` | MentionDropdownController - @-mention dropdown with MCP/vault/context file support |
-| | `  state/` | FileContextState, MarkdownFileCache |
-| | `  view/` | FileChipsView - current note chip UI |
-| | `modals/` | Approval, inline edit, instruction, MCP modals |
-| | `renderers/` | Thinking blocks, tool calls, todo lists, subagents, diffs |
-| | `settings/` | Env snippets, MCP settings, slash command settings |
+| | `inline-edit/ui/` | Inline edit modal UI |
+| | `settings/` | Settings tab logic |
+| | `settings/ui/` | Settings UI components |
+| **shared** | `components/` | Dropdowns, selection highlight |
+| | `mention/` | @-mention dropdown controller |
+| | `modals/` | Approval + instruction modals |
+| | `icons.ts` | Shared SVG icons |
 | **utils** | | Modular utilities: date, path, env, context, editor, session, markdown, mcp, slashCommand |
 | **style** | | Modular CSS (built into root `styles.css`) |
 
@@ -101,7 +99,7 @@ tests/
   unit/
     core/
     features/
-    ui/
+    shared/
     utils/
   integration/
     core/

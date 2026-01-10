@@ -2,7 +2,7 @@
  * McpServerManager - Core MCP server configuration management.
  *
  * Infrastructure layer for loading and filtering MCP server configurations.
- * No UI or @-mention logic - those belong in features/mcp/.
+ * No UI or @-mention logic - those belong in McpService and shared UI.
  */
 
 import type { ClaudianMcpServer, McpServerConfig } from '../types';

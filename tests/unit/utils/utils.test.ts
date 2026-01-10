@@ -13,6 +13,7 @@ import {
   isPathInAllowedExportPaths,
   isPathWithinVault,
   normalizePathForFilesystem,
+  normalizePathForVault,
   translateMsysPath,
 } from '@/utils/path';
 
@@ -360,6 +361,24 @@ describe('utils.ts', () => {
         }
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
+    });
+  });
+
+  describe('normalizePathForVault', () => {
+    it('returns vault-relative path for absolute input inside vault', () => {
+      expect(normalizePathForVault('/vault/notes/a.md', '/vault')).toBe('notes/a.md');
+    });
+
+    it('returns vault-relative path for relative input inside vault', () => {
+      expect(normalizePathForVault('notes/a.md', '/vault')).toBe('notes/a.md');
+    });
+
+    it('returns normalized path for external input', () => {
+      expect(normalizePathForVault('/outside/file.md', '/vault')).toBe('/outside/file.md');
+    });
+
+    it('returns null for empty input', () => {
+      expect(normalizePathForVault('', '/vault')).toBeNull();
     });
   });
 

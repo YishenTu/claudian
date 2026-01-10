@@ -4,6 +4,7 @@
 
 import type { EditorView } from '@codemirror/view';
 
+import type { TodoItem } from '../../../core/tools';
 import type {
   ChatMessage,
   ImageAttachment,
@@ -11,14 +12,13 @@ import type {
   ToolCallInfo,
   UsageInfo,
 } from '../../../core/types';
+import type { EditorSelectionContext } from '../../../utils/editor';
 import type {
   AsyncSubagentState,
   SubagentState,
   ThinkingBlockState,
   WriteEditState,
-} from '../../../ui';
-import type { TodoItem } from '../../../ui/renderers/TodoListRenderer';
-import type { EditorSelectionContext } from '../../../utils/editor';
+} from '../rendering';
 
 /** Queued message waiting to be sent after current streaming completes. */
 export interface QueuedMessage {

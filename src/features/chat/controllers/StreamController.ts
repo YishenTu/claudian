@@ -6,9 +6,11 @@
  */
 
 import { getDiffData } from '../../../core/hooks';
+import { parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { FLAVOR_TEXTS } from '../constants';
 import {
   addSubagentToolCall,
   appendThinkingContent,
@@ -17,7 +19,6 @@ import {
   createSubagentBlock,
   createThinkingBlock,
   createWriteEditBlock,
-  type FileContextManager,
   finalizeAsyncSubagent,
   finalizeSubagentBlock,
   finalizeThinkingBlock,
@@ -25,18 +26,17 @@ import {
   getToolLabel,
   isBlockedToolResult,
   markAsyncSubagentOrphaned,
-  parseTodoInput,
   renderToolCall,
   type SubagentState,
   updateAsyncSubagentRunning,
   updateSubagentToolResult,
   updateToolCallResult,
   updateWriteEditWithDiff,
-} from '../../../ui';
-import { FLAVOR_TEXTS } from '../constants';
+} from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { ChatState } from '../state/ChatState';
+import type { FileContextManager } from '../ui';
 
 /** Dependencies for StreamController. */
 export interface StreamControllerDeps {

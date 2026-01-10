@@ -11,6 +11,8 @@ import { Notice,Plugin } from 'obsidian';
 import { ClaudianService } from './core/agent';
 import { clearDiffState } from './core/hooks';
 import { deleteCachedImages } from './core/images/imageCache';
+import { McpServerManager } from './core/mcp';
+import { McpService } from './core/mcp/McpService';
 import { StorageService } from './core/storage';
 import type {
   ClaudianSettings,
@@ -24,10 +26,9 @@ import {
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
 import { ClaudianView } from './features/chat/ClaudianView';
-import { McpService } from './features/mcp/McpService';
+import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
-import { type InlineEditContext, InlineEditModal } from './ui/modals/InlineEditModal';
 import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
@@ -52,12 +53,13 @@ export default class ClaudianPlugin extends Plugin {
 
     this.cliResolver = new ClaudeCliResolver();
 
-    // Initialize MCP service first (creates McpServerManager internally)
-    this.mcpService = new McpService(this);
+    // Initialize MCP service first (shared manager for agent + UI)
+    const mcpManager = new McpServerManager(this.storage.mcp);
+    this.mcpService = new McpService(mcpManager);
     await this.mcpService.loadServers();
 
     // Initialize agent service with the MCP manager
-    this.agentService = new ClaudianService(this, this.mcpService.getManager());
+    this.agentService = new ClaudianService(this, mcpManager);
 
     // Load CC permissions into the agent service
     await this.agentService.loadCCPermissions();

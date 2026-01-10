@@ -12,15 +12,12 @@ import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
 import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import {
-  renderStoredAsyncSubagent,
-  renderStoredSubagent,
-  renderStoredThinkingBlock,
-  renderStoredToolCall,
-  renderStoredWriteEdit,
-} from '../../../ui';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { renderStoredAsyncSubagent, renderStoredSubagent } from './SubagentRenderer';
+import { renderStoredThinkingBlock } from './ThinkingBlockRenderer';
+import { renderStoredToolCall } from './ToolCallRenderer';
+import { renderStoredWriteEdit } from './WriteEditRenderer';
 
 /** Render content function type for callbacks. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
