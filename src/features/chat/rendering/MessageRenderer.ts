@@ -176,7 +176,7 @@ export class MessageRenderer {
         } else if (block.type === 'text') {
           const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
           void this.renderContent(textEl, block.content);
-          this.addTextCopyButton(textEl);
+          this.addTextCopyButton(textEl, block.content);
         } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
@@ -199,7 +199,7 @@ export class MessageRenderer {
       if (msg.content) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, msg.content);
-        this.addTextCopyButton(textEl);
+        this.addTextCopyButton(textEl, msg.content);
       }
       if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
@@ -381,11 +381,10 @@ export class MessageRenderer {
   /**
    * Adds a copy button to a text block.
    * Button shows clipboard icon on hover, changes to "copied!" on click.
+   * @param textEl The rendered text element
+   * @param markdown The original markdown content to copy
    */
-  private addTextCopyButton(textEl: HTMLElement): void {
-    // Capture text content before adding button to avoid contamination
-    const originalText = textEl.textContent || '';
-
+  private addTextCopyButton(textEl: HTMLElement, markdown: string): void {
     const copyBtn = textEl.createSpan({ cls: 'claudian-text-copy-btn' });
     copyBtn.innerHTML = MessageRenderer.COPY_ICON;
 
@@ -395,7 +394,7 @@ export class MessageRenderer {
       e.stopPropagation();
 
       try {
-        await navigator.clipboard.writeText(originalText);
+        await navigator.clipboard.writeText(markdown);
       } catch {
         // Clipboard API may fail in non-secure contexts
         return;
