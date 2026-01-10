@@ -11,10 +11,12 @@ describe('ClaudianPlugin', () => {
   let plugin: ClaudianPlugin;
   let mockApp: any;
   let mockManifest: any;
+  let consoleWarnSpy: jest.SpyInstance;
 
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     mockApp = {
       vault: {
@@ -48,6 +50,10 @@ describe('ClaudianPlugin', () => {
     // Create plugin instance with mocked app
     plugin = new ClaudianPlugin(mockApp, mockManifest);
     (plugin.loadData as jest.Mock).mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    consoleWarnSpy.mockRestore();
   });
 
   describe('onload', () => {

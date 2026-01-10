@@ -71,6 +71,8 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   sessionId?: string;
+  /** Optional model override for cold-start queries. */
+  modelOverride?: string;
   /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
   /** Pre-built hooks array. */
@@ -228,7 +230,7 @@ export class QueryOptionsBuilder {
    * - When persistent query is not available
    */
   static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
-    const selectedModel = ctx.settings.model;
+    const selectedModel = ctx.modelOverride ?? ctx.settings.model;
     const permissionMode = ctx.settings.permissionMode;
 
     // Build system prompt with settings

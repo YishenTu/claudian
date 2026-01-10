@@ -90,6 +90,16 @@ function createMockPlugin(options: {
 }
 
 describe('StorageService migration', () => {
+  let consoleLogSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+  });
+
   it('clears data.json after successful legacy content migration', async () => {
     const command: SlashCommand = {
       id: 'cmd-review',

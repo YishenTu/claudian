@@ -1067,6 +1067,7 @@ export class ClaudianService {
       ...baseContext,
       abortController: this.abortController ?? undefined,
       sessionId: this.sessionManager.getSessionId() ?? undefined,
+      modelOverride: queryOptions?.model,
       canUseTool: permissionMode !== 'yolo' ? this.createApprovalCallback() : undefined,
       hooks,
       mcpMentions: queryOptions?.mcpMentions,

@@ -301,6 +301,21 @@ describe('QueryOptionsBuilder', () => {
       expect(options.mcpServers?.['test-server']).toBeDefined();
     });
 
+    it('uses model override when provided', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ model: 'claude-sonnet-4-5' }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+        modelOverride: 'claude-opus-4-5',
+        hasEditorContext: false,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.model).toBe('claude-opus-4-5');
+    });
+
     it('applies tool restriction when allowedTools is provided', () => {
       const ctx = {
         ...createMockContext(),
