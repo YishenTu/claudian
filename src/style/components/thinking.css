@@ -40,6 +40,7 @@
   gap: 8px;
   padding: 4px 0;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .claudian-thinking-label {

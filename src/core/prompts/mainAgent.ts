@@ -86,10 +86,12 @@ When mentioning vault files in your responses, use wikilink format so users can 
 - ✓ Use: \`[[folder/note.md]]\` or \`[[note]]\`
 - ✗ Avoid: plain paths like \`folder/note.md\` (not clickable)
 
+**Image embeds:** Use \`![[image.png]]\` to display images directly in chat. Images render visually, making it easy to show diagrams, screenshots, or visual content you're discussing.
+
 Examples:
 - "I found your notes in [[30.areas/finance/Investment lessons/2024.Current trading lessons.md]]"
 - "See [[daily notes/2024-01-15]] for more details"
-- "The config is in [[.obsidian/plugins/my-plugin/data.json]]"
+- "Here's the diagram: ![[attachments/architecture.png]]"
 
 ## Tool Usage Guidelines
 

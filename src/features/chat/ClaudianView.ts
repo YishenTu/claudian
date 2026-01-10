@@ -136,7 +136,7 @@ export class ClaudianView extends ItemView {
 
     // Initialize renderer
     this.renderer = new MessageRenderer(
-      this.plugin.app,
+      this.plugin,
       this,
       this.messagesEl
     );

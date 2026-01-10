@@ -11,6 +11,7 @@ import { MarkdownRenderer } from 'obsidian';
 import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
 import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import type ClaudianPlugin from '../../../main';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -19,6 +20,7 @@ import {
   renderStoredWriteEdit,
 } from '../../../ui';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
+import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 
 /** Render content function type for callbacks. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
@@ -30,15 +32,17 @@ export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<voi
  */
 export class MessageRenderer {
   private app: App;
+  private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
 
   constructor(
-    app: App,
+    plugin: ClaudianPlugin,
     component: Component,
     messagesEl: HTMLElement
   ) {
-    this.app = app;
+    this.app = plugin.app;
+    this.plugin = plugin;
     this.component = component;
     this.messagesEl = messagesEl;
 
@@ -307,46 +311,61 @@ export class MessageRenderer {
    */
   async renderContent(el: HTMLElement, markdown: string): Promise<void> {
     el.empty();
-    await MarkdownRenderer.renderMarkdown(markdown, el, '', this.component);
 
-    // Wrap pre elements and move buttons outside scroll area
-    el.querySelectorAll('pre').forEach((pre) => {
-      // Skip if already wrapped
-      if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
+    try {
+      // Replace image embeds with HTML img tags before rendering
+      const processedMarkdown = replaceImageEmbedsWithHtml(
+        markdown,
+        this.app,
+        this.plugin.settings.mediaFolder
+      );
+      await MarkdownRenderer.renderMarkdown(processedMarkdown, el, '', this.component);
 
-      // Create wrapper
-      const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
-      pre.parentElement?.insertBefore(wrapper, pre);
-      wrapper.appendChild(pre);
+      // Wrap pre elements and move buttons outside scroll area
+      el.querySelectorAll('pre').forEach((pre) => {
+        // Skip if already wrapped
+        if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
 
-      // Check for language class and add label
-      const code = pre.querySelector('code[class*="language-"]');
-      if (code) {
-        const match = code.className.match(/language-(\w+)/);
-        if (match) {
-          wrapper.classList.add('has-language');
-          const label = createEl('span', {
-            cls: 'claudian-code-lang-label',
-            text: match[1],
-          });
-          wrapper.appendChild(label);
-          label.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(code.textContent || '');
-            label.setText('copied!');
-            setTimeout(() => label.setText(match[1]), 1500);
-          });
+        // Create wrapper
+        const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
+        pre.parentElement?.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+
+        // Check for language class and add label
+        const code = pre.querySelector('code[class*="language-"]');
+        if (code) {
+          const match = code.className.match(/language-(\w+)/);
+          if (match) {
+            wrapper.classList.add('has-language');
+            const label = createEl('span', {
+              cls: 'claudian-code-lang-label',
+              text: match[1],
+            });
+            wrapper.appendChild(label);
+            label.addEventListener('click', async () => {
+              await navigator.clipboard.writeText(code.textContent || '');
+              label.setText('copied!');
+              setTimeout(() => label.setText(match[1]), 1500);
+            });
+          }
         }
-      }
 
-      // Move Obsidian's copy button outside pre into wrapper
-      const copyBtn = pre.querySelector('.copy-code-button');
-      if (copyBtn) {
-        wrapper.appendChild(copyBtn);
-      }
-    });
+        // Move Obsidian's copy button outside pre into wrapper
+        const copyBtn = pre.querySelector('.copy-code-button');
+        if (copyBtn) {
+          wrapper.appendChild(copyBtn);
+        }
+      });
 
-    // Process file paths to make them clickable links
-    processFileLinks(this.app, el);
+      // Process file paths to make them clickable links
+      processFileLinks(this.app, el);
+    } catch (error) {
+      console.error('[MessageRenderer] Failed to render content:', error);
+      el.createDiv({
+        cls: 'claudian-render-error',
+        text: 'Failed to render message content.',
+      });
+    }
   }
 
   // ============================================

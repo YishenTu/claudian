@@ -31,7 +31,9 @@ describe('SlashCommandManager', () => {
       manager.setCommands(commands);
 
       expect(manager.detectCommand('/test one two')).toEqual({ commandName: 'test', args: 'one two' });
-      expect(manager.detectCommand('   /review-code  a   b ')).toEqual({ commandName: 'review-code', args: 'a   b' });
+      expect(manager.detectCommand('/review-code  a   b ')).toEqual({ commandName: 'review-code', args: 'a   b' });
+      expect(manager.detectCommand('   /review-code arg')).toBeNull(); // Leading whitespace not allowed
+      expect(manager.detectCommand('@note.md /test')).toBeNull(); // Command not at start
       expect(manager.detectCommand('/unknown arg')).toBeNull();
     });
   });
@@ -73,6 +75,48 @@ describe('SlashCommandManager', () => {
 
       const result = await manager.expandCommand(command, 'one "two words"');
       expect(result.expandedPrompt).toBe('All: one "two words"\nFirst: one\nSecond: two words\nThird:');
+    });
+
+    it('should auto-append args when no placeholders exist', async () => {
+      const app = createMockApp({ 'note.md': 'Note content here' });
+      const manager = new SlashCommandManager(app, '/vault');
+
+      const command: SlashCommand = {
+        id: '1',
+        name: 'summary',
+        content: 'Summarize this:',
+      };
+
+      const result = await manager.expandCommand(command, '@note.md');
+      expect(result.expandedPrompt).toBe('Summarize this:\n\nNote content here');
+    });
+
+    it('should not auto-append when args are empty', async () => {
+      const app = createMockApp({});
+      const manager = new SlashCommandManager(app, '/vault');
+
+      const command: SlashCommand = {
+        id: '1',
+        name: 'status',
+        content: 'Show status',
+      };
+
+      const result = await manager.expandCommand(command, '');
+      expect(result.expandedPrompt).toBe('Show status');
+    });
+
+    it('should not auto-append when $ARGUMENTS placeholder exists', async () => {
+      const app = createMockApp({ 'note.md': 'Note content' });
+      const manager = new SlashCommandManager(app, '/vault');
+
+      const command: SlashCommand = {
+        id: '1',
+        name: 'review',
+        content: 'Review: $ARGUMENTS\nEnd.',
+      };
+
+      const result = await manager.expandCommand(command, '@note.md');
+      expect(result.expandedPrompt).toBe('Review: Note content\nEnd.');
     });
 
     it('should resolve @file references with boundary rules', async () => {

@@ -27,6 +27,7 @@
   cursor: pointer;
   user-select: none;
   background: transparent;
+  overflow: hidden;
 }
 
 .claudian-write-edit-icon {

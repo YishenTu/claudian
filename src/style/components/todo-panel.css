@@ -19,6 +19,7 @@
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.15s ease;
+  overflow: hidden;
 }
 
 .claudian-todo-panel-header:hover {

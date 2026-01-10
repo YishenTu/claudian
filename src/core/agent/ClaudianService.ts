@@ -135,8 +135,7 @@ export class ClaudianService {
       try {
         await this.plugin.storage.addAllowRule(rule);
         await this.loadCCPermissions();
-      } catch (error) {
-        console.error('[ClaudianService] Failed to persist allow rule:', rule, error);
+      } catch {
         // Rule is still in session permissions via ApprovalManager, so action continues
       }
     });
@@ -145,8 +144,7 @@ export class ClaudianService {
       try {
         await this.plugin.storage.addDenyRule(rule);
         await this.loadCCPermissions();
-      } catch (error) {
-        console.error('[ClaudianService] Failed to persist deny rule:', rule, error);
+      } catch {
         // Rule is still in session permissions via ApprovalManager, so action continues
       }
     });
@@ -180,19 +178,16 @@ export class ClaudianService {
    */
   async preWarm(resumeSessionId?: string): Promise<void> {
     if (this.persistentQuery) {
-      console.log('[ClaudianService] Persistent query already running');
       return;
     }
 
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
-      console.warn('[ClaudianService] Cannot pre-warm: vault path not available');
       return;
     }
 
     const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
     if (!resolvedClaudePath) {
-      console.warn('[ClaudianService] Cannot pre-warm: Claude CLI not found');
       return;
     }
 
@@ -208,7 +203,6 @@ export class ClaudianService {
     resumeSessionId?: string
   ): Promise<void> {
     if (this.persistentQuery) {
-      console.warn('[ClaudianService] Persistent query already started');
       return;
     }
 
@@ -216,10 +210,7 @@ export class ClaudianService {
     this.vaultPath = vaultPath;
 
     // Create message channel
-    this.messageChannel = new MessageChannel((msg) => {
-      console.warn(msg);
-      // TODO: Could surface this warning to UI
-    });
+    this.messageChannel = new MessageChannel();
 
     // Create abort controller for the persistent query
     this.queryAbortController = new AbortController();
@@ -239,23 +230,17 @@ export class ClaudianService {
 
     // Start the response consumer loop
     this.startResponseConsumer();
-
-    console.log('[ClaudianService] Persistent query started', {
-      resumeSessionId: resumeSessionId ?? 'new',
-    });
   }
 
   /**
    * Closes the persistent query and cleans up resources.
    */
-  closePersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): void {
+  closePersistentQuery(_reason?: string, options?: ClosePersistentQueryOptions): void {
     if (!this.persistentQuery) {
       return;
     }
 
     const preserveHandlers = options?.preserveHandlers ?? false;
-
-    console.log('[ClaudianService] Closing persistent query', { reason });
 
     this.shuttingDown = true;
 
@@ -263,13 +248,8 @@ export class ClaudianService {
     this.messageChannel?.close();
 
     // Interrupt the query
-    void this.persistentQuery.interrupt().catch((error) => {
-      // Only silence expected abort/interrupt errors during shutdown
-      if (error instanceof Error &&
-        (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
-        return;
-      }
-      console.warn('[ClaudianService] Unexpected error during shutdown interrupt:', error);
+    void this.persistentQuery.interrupt().catch(() => {
+      // Silence abort/interrupt errors during shutdown
     });
 
     // Abort as backup
@@ -306,8 +286,6 @@ export class ClaudianService {
    * Restarts the persistent query (e.g., after configuration change).
    */
   async restartPersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): Promise<void> {
-    console.log('[ClaudianService] Restarting persistent query', { reason });
-
     const sessionId = this.sessionManager.getSessionId();
     this.closePersistentQuery(reason, options);
 
@@ -316,12 +294,6 @@ export class ClaudianService {
 
     if (vaultPath && cliPath) {
       await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined);
-    } else {
-      console.warn('[ClaudianService] Cannot restart persistent query:', {
-        hasVaultPath: !!vaultPath,
-        hasCliPath: !!cliPath,
-        reason,
-      });
     }
   }
 
@@ -413,10 +385,8 @@ export class ClaudianService {
     });
 
     const postCallback: FileEditPostCallback = {
-      trackEditedFile: async (_name, _input, isError) => {
-        if (isError) {
-          console.warn('[ClaudianService] trackEditedFile received error for tool:', _name);
-        }
+      trackEditedFile: async () => {
+        // File tracking is delegated to PreToolUse/PostToolUse hooks
       },
     };
 
@@ -438,7 +408,6 @@ export class ClaudianService {
    */
   private startResponseConsumer(): void {
     if (this.responseConsumerRunning) {
-      console.warn('[ClaudianService] Response consumer already running');
       return;
     }
 
@@ -458,7 +427,6 @@ export class ClaudianService {
         }
       } catch (error) {
         if (!this.shuttingDown) {
-          console.error('[ClaudianService] Response consumer error:', error);
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
           const errorInstance = error instanceof Error ? error : new Error(String(error));
           const messageToReplay = this.lastSentMessage;
@@ -473,8 +441,7 @@ export class ClaudianService {
               await this.applyDynamicUpdates(this.lastSentQueryOptions ?? undefined, { preserveHandlers: true });
               this.messageChannel.enqueue(messageToReplay);
               return;
-            } catch (restartError) {
-              console.error('[ClaudianService] Failed to restart after consumer error:', restartError);
+            } catch {
               handler.onError(errorInstance);
               return;
             }
@@ -490,8 +457,8 @@ export class ClaudianService {
             this.crashRecoveryAttempted = true;
             try {
               await this.restartPersistentQuery('consumer error');
-            } catch (restartError) {
-              console.error('[ClaudianService] Failed to restart after consumer error:', restartError);
+            } catch {
+              // Restart failed - next query will start fresh
             }
           }
         }
@@ -538,16 +505,6 @@ export class ClaudianService {
           } else {
             handler.onChunk(event);
           }
-        } else {
-          // This indicates a timing issue - chunks arriving without a registered handler
-          console.error('[ClaudianService] Chunk discarded - no handler registered:', {
-            type: event.type,
-            handlerCount: this.responseHandlers.length,
-            channelClosed: this.messageChannel?.isClosed() ?? 'no channel',
-            turnActive: this.messageChannel?.isTurnActive() ?? 'no channel',
-            shuttingDown: this.shuttingDown,
-            sessionId: this.sessionManager.getSessionId(),
-          });
         }
       }
     }
@@ -735,7 +692,6 @@ export class ClaudianService {
   ): AsyncGenerator<StreamChunk> {
     if (!this.persistentQuery || !this.messageChannel) {
       // Fallback to cold-start if persistent query not available
-      console.warn('[ClaudianService] Persistent query not available, falling back to cold-start');
       const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
       yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
       return;
@@ -766,12 +722,10 @@ export class ClaudianService {
     // Check if applyDynamicUpdates triggered a restart that failed
     // (e.g., CLI path not found, vault path missing)
     if (!this.persistentQuery || !this.messageChannel) {
-      console.warn('[ClaudianService] Persistent query lost after applyDynamicUpdates, falling back to cold-start');
       yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
       return;
     }
     if (!this.responseConsumerRunning) {
-      console.warn('[ClaudianService] Response consumer not running, falling back to cold-start');
       yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
       return;
     }
@@ -833,7 +787,6 @@ export class ClaudianService {
         this.messageChannel.enqueue(message);
       } catch (error) {
         if (error instanceof Error && error.message.includes('closed')) {
-          console.warn('[ClaudianService] MessageChannel closed during enqueue, falling back to cold-start');
           yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
           return;
         }
@@ -937,12 +890,10 @@ export class ClaudianService {
 
     // Guard against null vaultPath/cliPath (shouldn't happen if persistentQuery exists, but be safe)
     if (!this.vaultPath) {
-      console.warn('[ClaudianService] applyDynamicUpdates called without vaultPath');
       return;
     }
     const cliPath = this.plugin.getResolvedClaudeCliPath();
     if (!cliPath) {
-      console.warn('[ClaudianService] applyDynamicUpdates called without CLI path');
       return;
     }
 
@@ -954,7 +905,6 @@ export class ClaudianService {
 
     // Update model if changed
     if (this.currentConfig && selectedModel !== this.currentConfig.model) {
-      console.log('[ClaudianService] Updating model:', selectedModel);
       await this.persistentQuery.setModel(selectedModel);
       this.currentConfig.model = selectedModel;
     }
@@ -962,7 +912,6 @@ export class ClaudianService {
     // Update thinking tokens if changed
     const currentThinking = this.currentConfig?.thinkingTokens ?? null;
     if (thinkingTokens !== currentThinking) {
-      console.log('[ClaudianService] Updating thinking tokens:', thinkingTokens);
       await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
       if (this.currentConfig) {
         this.currentConfig.thinkingTokens = thinkingTokens;
@@ -975,7 +924,6 @@ export class ClaudianService {
     if (this.currentConfig && permissionMode !== this.currentConfig.permissionMode) {
       if (permissionMode === 'yolo' && this.currentConfig.permissionMode !== 'yolo') {
         // Switching TO YOLO requires restart
-        console.log('[ClaudianService] Permission mode change to YOLO requires restart');
         if (!allowRestart) {
           return;
         }
@@ -986,7 +934,6 @@ export class ClaudianService {
         return;
       } else if (permissionMode !== 'yolo') {
         // Can update via setPermissionMode (normal mode uses 'default')
-        console.log('[ClaudianService] Updating permission mode: default');
         await this.persistentQuery.setPermissionMode('default');
         this.currentConfig.permissionMode = permissionMode;
         this.currentConfig.allowDangerouslySkip = false;
@@ -1002,7 +949,6 @@ export class ClaudianService {
     const mcpServersKey = JSON.stringify(mcpServers);
 
     if (this.currentConfig && mcpServersKey !== this.currentConfig.mcpServersKey) {
-      console.log('[ClaudianService] Updating MCP servers');
       // Convert to McpServerConfig format
       const serverConfigs: Record<string, McpServerConfig> = {};
       for (const [name, config] of Object.entries(mcpServers)) {
@@ -1021,7 +967,6 @@ export class ClaudianService {
     // Check for other changes that require restart
     const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath);
     if (this.needsRestart(newConfig)) {
-      console.log('[ClaudianService] Configuration change requires restart');
       if (!allowRestart) {
         return;
       }
@@ -1187,13 +1132,8 @@ export class ClaudianService {
 
     // Interrupt persistent query (Phase 1.9)
     if (this.persistentQuery && !this.shuttingDown) {
-      void this.persistentQuery.interrupt().catch((error) => {
-        // Only silence expected abort/interrupt errors
-        if (error instanceof Error &&
-          (error.name === 'AbortError' || error.message.includes('abort') || error.message.includes('interrupt'))) {
-          return;
-        }
-        console.warn('[ClaudianService] Unexpected error during cancel interrupt:', error);
+      void this.persistentQuery.interrupt().catch(() => {
+        // Silence abort/interrupt errors
       });
     }
   }
@@ -1336,7 +1276,6 @@ export class ClaudianService {
 
       return { behavior: 'allow', updatedInput: input };
     } catch (error) {
-      console.error('[ClaudianService] Approval callback failed:', error);
       return {
         behavior: 'deny',
         message: `Approval request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

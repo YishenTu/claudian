@@ -215,158 +215,112 @@ export class StorageService {
    * - Preserves existing CC permissions if already in CC format
    */
   private async migrateFromOldSettingsJson(): Promise<void> {
-    try {
-      const content = await this.adapter.read(CC_SETTINGS_PATH);
-      const oldSettings = JSON.parse(content) as LegacySettingsJson;
+    const content = await this.adapter.read(CC_SETTINGS_PATH);
+    const oldSettings = JSON.parse(content) as LegacySettingsJson;
 
-      // Check if this has Claudian-specific fields
-      const hasClaudianFields = Array.from(CLAUDIAN_ONLY_FIELDS).some(
-        field => (oldSettings as Record<string, unknown>)[field] !== undefined
-      );
+    // Check if this has Claudian-specific fields
+    const hasClaudianFields = Array.from(CLAUDIAN_ONLY_FIELDS).some(
+      field => (oldSettings as Record<string, unknown>)[field] !== undefined
+    );
 
-      if (!hasClaudianFields) {
-        console.log('[Claudian] settings.json is already CC-compatible, no migration needed');
-        return;
-      }
-
-      console.log('[Claudian] Migrating old settings.json to split format...');
-
-      // Log what we're migrating for debugging
-      const fieldsToMigrate = Array.from(CLAUDIAN_ONLY_FIELDS).filter(
-        field => (oldSettings as Record<string, unknown>)[field] !== undefined
-      );
-      console.log('[Claudian] Fields to migrate:', fieldsToMigrate);
-
-      // Handle environment variables: merge Claudian string format with CC object format
-      let environmentVariables = oldSettings.environmentVariables ?? '';
-      if (oldSettings.env && typeof oldSettings.env === 'object') {
-        const envFromCC = convertEnvObjectToString(oldSettings.env);
-        if (envFromCC) {
-          console.log('[Claudian] Converting CC env object to environmentVariables');
-          environmentVariables = mergeEnvironmentVariables(environmentVariables, envFromCC);
-        }
-      }
-
-      // Extract Claudian-specific fields
-      const claudianFields: Partial<StoredClaudianSettings> = {
-        userName: oldSettings.userName ?? DEFAULT_SETTINGS.userName,
-        enableBlocklist: oldSettings.enableBlocklist ?? DEFAULT_SETTINGS.enableBlocklist,
-        blockedCommands: normalizeBlockedCommands(oldSettings.blockedCommands),
-        model: (oldSettings.model as ClaudeModel) ?? DEFAULT_SETTINGS.model,
-        thinkingBudget: (oldSettings.thinkingBudget as StoredClaudianSettings['thinkingBudget']) ?? DEFAULT_SETTINGS.thinkingBudget,
-        permissionMode: (oldSettings.permissionMode as StoredClaudianSettings['permissionMode']) ?? DEFAULT_SETTINGS.permissionMode,
-        excludedTags: oldSettings.excludedTags ?? DEFAULT_SETTINGS.excludedTags,
-        mediaFolder: oldSettings.mediaFolder ?? DEFAULT_SETTINGS.mediaFolder,
-        environmentVariables, // Merged from both sources
-        envSnippets: oldSettings.envSnippets as StoredClaudianSettings['envSnippets'] ?? DEFAULT_SETTINGS.envSnippets,
-        systemPrompt: oldSettings.systemPrompt ?? DEFAULT_SETTINGS.systemPrompt,
-        allowedExportPaths: oldSettings.allowedExportPaths ?? DEFAULT_SETTINGS.allowedExportPaths,
-        persistentExternalContextPaths: DEFAULT_SETTINGS.persistentExternalContextPaths,
-        keyboardNavigation: oldSettings.keyboardNavigation as StoredClaudianSettings['keyboardNavigation'] ?? DEFAULT_SETTINGS.keyboardNavigation,
-        claudeCliPath: oldSettings.claudeCliPath ?? DEFAULT_SETTINGS.claudeCliPath,
-        claudeCliPaths: normalizeCliPaths(oldSettings.claudeCliPaths),
-        loadUserClaudeSettings: oldSettings.loadUserClaudeSettings ?? DEFAULT_SETTINGS.loadUserClaudeSettings,
-        enableAutoTitleGeneration: oldSettings.enableAutoTitleGeneration ?? DEFAULT_SETTINGS.enableAutoTitleGeneration,
-        titleGenerationModel: oldSettings.titleGenerationModel ?? DEFAULT_SETTINGS.titleGenerationModel,
-        activeConversationId: null,
-        lastClaudeModel: DEFAULT_SETTINGS.lastClaudeModel,
-        lastCustomModel: DEFAULT_SETTINGS.lastCustomModel,
-        lastEnvHash: DEFAULT_SETTINGS.lastEnvHash,
-      };
-
-      // Save Claudian settings FIRST (before stripping from settings.json)
-      await this.claudianSettings.save(claudianFields as StoredClaudianSettings);
-
-      // Verify Claudian settings were saved
-      const savedClaudian = await this.claudianSettings.load();
-      if (!savedClaudian || savedClaudian.userName === undefined) {
-        throw new Error('Failed to verify claudian-settings.json was saved correctly');
-      }
-      console.log('[Claudian] Verified claudian-settings.json saved successfully');
-
-      // Handle permissions: convert legacy format OR preserve existing CC format
-      let ccPermissions: CCPermissions;
-      if (isLegacyPermissionsFormat(oldSettings)) {
-        console.log('[Claudian] Converting legacy permissions to CC format');
-        ccPermissions = legacyPermissionsToCCPermissions(oldSettings.permissions);
-      } else if (oldSettings.permissions && typeof oldSettings.permissions === 'object' && !Array.isArray(oldSettings.permissions)) {
-        // Already in CC format - preserve it including defaultMode and additionalDirectories
-        console.log('[Claudian] Preserving existing CC format permissions');
-        const existingPerms = oldSettings.permissions as unknown as CCPermissions;
-        ccPermissions = {
-          allow: existingPerms.allow ?? [],
-          deny: existingPerms.deny ?? [],
-          ask: existingPerms.ask ?? [],
-          defaultMode: existingPerms.defaultMode,
-          additionalDirectories: existingPerms.additionalDirectories,
-        };
-      } else {
-        console.log('[Claudian] No permissions found, using defaults');
-        ccPermissions = { ...DEFAULT_CC_PERMISSIONS };
-      }
-
-      // Rewrite settings.json with only CC fields
-      const ccSettings: CCSettings = {
-        $schema: 'https://json.schemastore.org/claude-code-settings.json',
-        permissions: ccPermissions,
-      };
-
-      // Pass true to strip Claudian-only fields during migration
-      await this.ccSettings.save(ccSettings, true);
-
-      // Verify settings.json was cleaned
-      const savedCC = await this.ccSettings.load();
-      console.log('[Claudian] Migration complete. Permissions:', {
-        allow: savedCC.permissions?.allow?.length ?? 0,
-        deny: savedCC.permissions?.deny?.length ?? 0,
-        ask: savedCC.permissions?.ask?.length ?? 0,
-      });
-    } catch (error) {
-      console.error('[Claudian] Failed to migrate old settings.json:', error);
-      // Re-throw to prevent silent data loss - caller must handle migration failure
-      throw error;
+    if (!hasClaudianFields) {
+      return;
     }
+
+    // Handle environment variables: merge Claudian string format with CC object format
+    let environmentVariables = oldSettings.environmentVariables ?? '';
+    if (oldSettings.env && typeof oldSettings.env === 'object') {
+      const envFromCC = convertEnvObjectToString(oldSettings.env);
+      if (envFromCC) {
+        environmentVariables = mergeEnvironmentVariables(environmentVariables, envFromCC);
+      }
+    }
+
+    // Extract Claudian-specific fields
+    const claudianFields: Partial<StoredClaudianSettings> = {
+      userName: oldSettings.userName ?? DEFAULT_SETTINGS.userName,
+      enableBlocklist: oldSettings.enableBlocklist ?? DEFAULT_SETTINGS.enableBlocklist,
+      blockedCommands: normalizeBlockedCommands(oldSettings.blockedCommands),
+      model: (oldSettings.model as ClaudeModel) ?? DEFAULT_SETTINGS.model,
+      thinkingBudget: (oldSettings.thinkingBudget as StoredClaudianSettings['thinkingBudget']) ?? DEFAULT_SETTINGS.thinkingBudget,
+      permissionMode: (oldSettings.permissionMode as StoredClaudianSettings['permissionMode']) ?? DEFAULT_SETTINGS.permissionMode,
+      excludedTags: oldSettings.excludedTags ?? DEFAULT_SETTINGS.excludedTags,
+      mediaFolder: oldSettings.mediaFolder ?? DEFAULT_SETTINGS.mediaFolder,
+      environmentVariables, // Merged from both sources
+      envSnippets: oldSettings.envSnippets as StoredClaudianSettings['envSnippets'] ?? DEFAULT_SETTINGS.envSnippets,
+      systemPrompt: oldSettings.systemPrompt ?? DEFAULT_SETTINGS.systemPrompt,
+      allowedExportPaths: oldSettings.allowedExportPaths ?? DEFAULT_SETTINGS.allowedExportPaths,
+      persistentExternalContextPaths: DEFAULT_SETTINGS.persistentExternalContextPaths,
+      keyboardNavigation: oldSettings.keyboardNavigation as StoredClaudianSettings['keyboardNavigation'] ?? DEFAULT_SETTINGS.keyboardNavigation,
+      claudeCliPath: oldSettings.claudeCliPath ?? DEFAULT_SETTINGS.claudeCliPath,
+      claudeCliPaths: normalizeCliPaths(oldSettings.claudeCliPaths),
+      loadUserClaudeSettings: oldSettings.loadUserClaudeSettings ?? DEFAULT_SETTINGS.loadUserClaudeSettings,
+      enableAutoTitleGeneration: oldSettings.enableAutoTitleGeneration ?? DEFAULT_SETTINGS.enableAutoTitleGeneration,
+      titleGenerationModel: oldSettings.titleGenerationModel ?? DEFAULT_SETTINGS.titleGenerationModel,
+      activeConversationId: null,
+      lastClaudeModel: DEFAULT_SETTINGS.lastClaudeModel,
+      lastCustomModel: DEFAULT_SETTINGS.lastCustomModel,
+      lastEnvHash: DEFAULT_SETTINGS.lastEnvHash,
+    };
+
+    // Save Claudian settings FIRST (before stripping from settings.json)
+    await this.claudianSettings.save(claudianFields as StoredClaudianSettings);
+
+    // Verify Claudian settings were saved
+    const savedClaudian = await this.claudianSettings.load();
+    if (!savedClaudian || savedClaudian.userName === undefined) {
+      throw new Error('Failed to verify claudian-settings.json was saved correctly');
+    }
+
+    // Handle permissions: convert legacy format OR preserve existing CC format
+    let ccPermissions: CCPermissions;
+    if (isLegacyPermissionsFormat(oldSettings)) {
+      ccPermissions = legacyPermissionsToCCPermissions(oldSettings.permissions);
+    } else if (oldSettings.permissions && typeof oldSettings.permissions === 'object' && !Array.isArray(oldSettings.permissions)) {
+      // Already in CC format - preserve it including defaultMode and additionalDirectories
+      const existingPerms = oldSettings.permissions as unknown as CCPermissions;
+      ccPermissions = {
+        allow: existingPerms.allow ?? [],
+        deny: existingPerms.deny ?? [],
+        ask: existingPerms.ask ?? [],
+        defaultMode: existingPerms.defaultMode,
+        additionalDirectories: existingPerms.additionalDirectories,
+      };
+    } else {
+      ccPermissions = { ...DEFAULT_CC_PERMISSIONS };
+    }
+
+    // Rewrite settings.json with only CC fields
+    const ccSettings: CCSettings = {
+      $schema: 'https://json.schemastore.org/claude-code-settings.json',
+      permissions: ccPermissions,
+    };
+
+    // Pass true to strip Claudian-only fields during migration
+    await this.ccSettings.save(ccSettings, true);
   }
 
   /**
    * Migrate state from data.json to claudian-settings.json.
    */
   private async migrateFromDataJson(dataJson: LegacyDataJson): Promise<void> {
-    try {
-      console.log('[Claudian] Migrating state from data.json to claudian-settings.json...');
+    const claudian = await this.claudianSettings.load();
 
-      const claudian = await this.claudianSettings.load();
-
-      // Only migrate if not already set (claudian-settings.json takes precedence)
-      if (dataJson.activeConversationId !== undefined && !claudian.activeConversationId) {
-        claudian.activeConversationId = dataJson.activeConversationId;
-      } else if (dataJson.activeConversationId !== undefined) {
-        console.debug('[Claudian] Skipping activeConversationId migration: already set in claudian-settings.json');
-      }
-      if (dataJson.lastEnvHash !== undefined && !claudian.lastEnvHash) {
-        claudian.lastEnvHash = dataJson.lastEnvHash;
-      } else if (dataJson.lastEnvHash !== undefined) {
-        console.debug('[Claudian] Skipping lastEnvHash migration: already set in claudian-settings.json');
-      }
-      if (dataJson.lastClaudeModel !== undefined && !claudian.lastClaudeModel) {
-        claudian.lastClaudeModel = dataJson.lastClaudeModel;
-      } else if (dataJson.lastClaudeModel !== undefined) {
-        console.debug('[Claudian] Skipping lastClaudeModel migration: already set in claudian-settings.json');
-      }
-      if (dataJson.lastCustomModel !== undefined && !claudian.lastCustomModel) {
-        claudian.lastCustomModel = dataJson.lastCustomModel;
-      } else if (dataJson.lastCustomModel !== undefined) {
-        console.debug('[Claudian] Skipping lastCustomModel migration: already set in claudian-settings.json');
-      }
-
-      await this.claudianSettings.save(claudian);
-
-      console.log('[Claudian] State migration from data.json complete');
-    } catch (error) {
-      console.error('[Claudian] Failed to migrate data.json state:', error);
-      // Re-throw to prevent silent state loss - caller must handle migration failure
-      throw error;
+    // Only migrate if not already set (claudian-settings.json takes precedence)
+    if (dataJson.activeConversationId !== undefined && !claudian.activeConversationId) {
+      claudian.activeConversationId = dataJson.activeConversationId;
     }
+    if (dataJson.lastEnvHash !== undefined && !claudian.lastEnvHash) {
+      claudian.lastEnvHash = dataJson.lastEnvHash;
+    }
+    if (dataJson.lastClaudeModel !== undefined && !claudian.lastClaudeModel) {
+      claudian.lastClaudeModel = dataJson.lastClaudeModel;
+    }
+    if (dataJson.lastCustomModel !== undefined && !claudian.lastCustomModel) {
+      claudian.lastCustomModel = dataJson.lastCustomModel;
+    }
+
+    await this.claudianSettings.save(claudian);
   }
 
   /**
@@ -384,9 +338,8 @@ export class StorageService {
             continue;
           }
           await this.commands.save(command);
-        } catch (error) {
+        } catch {
           hadErrors = true;
-          console.error(`[Claudian] Failed to migrate command ${command.name}:`, error);
         }
       }
     }
@@ -400,15 +353,10 @@ export class StorageService {
             continue;
           }
           await this.sessions.saveConversation(conversation);
-        } catch (error) {
+        } catch {
           hadErrors = true;
-          console.error(`[Claudian] Failed to migrate conversation ${conversation.id}:`, error);
         }
       }
-    }
-
-    if (!hadErrors && (dataJson.slashCommands?.length || dataJson.conversations?.length)) {
-      console.log('[Claudian] Legacy content migration complete');
     }
 
     return { hadErrors };
@@ -419,7 +367,6 @@ export class StorageService {
    */
   private async clearLegacyDataJson(): Promise<void> {
     await this.plugin.saveData({});
-    console.log('[Claudian] Cleared legacy data.json');
   }
 
   /**
@@ -429,9 +376,8 @@ export class StorageService {
     try {
       const data = await this.plugin.loadData();
       return data || null;
-    } catch (error) {
-      // Log but don't throw - data.json may not exist on fresh installs
-      console.warn('[Claudian] Could not load data.json:', error);
+    } catch {
+      // data.json may not exist on fresh installs
       return null;
     }
   }

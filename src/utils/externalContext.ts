@@ -81,13 +81,7 @@ export function isValidDirectoryPath(p: string): boolean {
   try {
     const stats = fs.statSync(p);
     return stats.isDirectory();
-  } catch (error: unknown) {
-    // ENOENT (path doesn't exist) is expected - don't log
-    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return false;
-    }
-    // Log unexpected errors (permissions, I/O, etc.) for debugging
-    console.warn(`[ExternalContext] Failed to validate path "${p}":`, error);
+  } catch {
     return false;
   }
 }

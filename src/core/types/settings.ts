@@ -386,18 +386,11 @@ export function legacyPermissionsToCCPermissions(
   legacyPermissions: LegacyPermission[]
 ): CCPermissions {
   const allow: PermissionRule[] = [];
-  let skippedSessionCount = 0;
 
   for (const perm of legacyPermissions) {
     if (perm.scope === 'always') {
       allow.push(legacyPermissionToCCRule(perm));
-    } else {
-      skippedSessionCount++;
     }
-  }
-
-  if (skippedSessionCount > 0) {
-    console.debug(`[Claudian] Skipped ${skippedSessionCount} session-scoped permission(s) during migration`);
   }
 
   return {

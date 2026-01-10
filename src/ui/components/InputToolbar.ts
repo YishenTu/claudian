@@ -285,7 +285,6 @@ export class ExternalContextSelector {
     if (invalidPaths.length > 0) {
       const pathNames = invalidPaths.map(p => this.shortenPath(p)).join(', ');
       new Notice(`Removed ${invalidPaths.length} invalid external context path(s): ${pathNames}`, 5000);
-      console.warn('[ExternalContext] Removed invalid paths:', invalidPaths);
       this.onPersistenceChangeCallback?.([...this.persistentPaths]);
     }
   }
