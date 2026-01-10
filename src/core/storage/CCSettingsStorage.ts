@@ -151,7 +151,6 @@ export class CCSettingsStorage {
             if (Array.isArray(existing.permissions)) {
               delete existing.permissions;
             }
-            console.log('[Claudian] Stripped Claudian-only fields from settings.json');
           } else {
             existing = parsed;
           }

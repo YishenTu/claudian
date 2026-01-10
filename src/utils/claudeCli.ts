@@ -81,13 +81,9 @@ export function resolveClaudeCliPath(
         if (stat.isFile()) {
           return expandedPath;
         }
-        console.warn(`Claudian: Platform CLI path is a directory, not a file: ${expandedPath}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Claudian: Platform CLI path not accessible: ${expandedPath} (${message})`);
+      } catch {
+        // Ignore and fall back to legacy path detection.
       }
-    } else {
-      console.warn(`Claudian: Platform CLI path not found: ${expandedPath}`);
     }
   }
 
@@ -101,13 +97,9 @@ export function resolveClaudeCliPath(
         if (stat.isFile()) {
           return expandedPath;
         }
-        console.warn(`Claudian: Legacy CLI path is a directory, not a file: ${expandedPath}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Claudian: Legacy CLI path not accessible: ${expandedPath} (${message})`);
+      } catch {
+        // Ignore and fall back to auto-detection.
       }
-    } else {
-      console.warn(`Claudian: Legacy CLI path not found: ${expandedPath}`);
     }
   }
 
