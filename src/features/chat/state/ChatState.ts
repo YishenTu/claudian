@@ -180,23 +180,23 @@ export class ChatState {
   }
 
   // ============================================
-  // Tool and Subagent Tracking Maps
+  // Tool and Subagent Tracking Maps (mutable references)
   // ============================================
 
   get toolCallElements(): Map<string, HTMLElement> {
-    return new Map(this.state.toolCallElements);
+    return this.state.toolCallElements;
   }
 
   get activeSubagents(): Map<string, SubagentState> {
-    return new Map(this.state.activeSubagents);
+    return this.state.activeSubagents;
   }
 
   get asyncSubagentStates(): Map<string, AsyncSubagentState> {
-    return new Map(this.state.asyncSubagentStates);
+    return this.state.asyncSubagentStates;
   }
 
   get writeEditStates(): Map<string, WriteEditState> {
-    return new Map(this.state.writeEditStates);
+    return this.state.writeEditStates;
   }
 
   // ============================================
