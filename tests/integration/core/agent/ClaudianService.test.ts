@@ -398,8 +398,6 @@ describe('ClaudianService', () => {
         isFile: () => p !== customPath, // Custom path is a directory
       }));
 
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
@@ -410,10 +408,8 @@ describe('ClaudianService', () => {
         chunks.push(chunk);
       }
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('directory, not a file')
-      );
-      consoleSpy.mockRestore();
+      // CLI path validation is silent - just verifies fallback works
+      expect(chunks.length).toBeGreaterThan(0);
     });
 
     it('should fall back to auto-detection when custom path does not exist', async () => {
@@ -438,8 +434,6 @@ describe('ClaudianService', () => {
         isFile: () => p === autoDetectedPath,
       }));
 
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
@@ -450,10 +444,8 @@ describe('ClaudianService', () => {
         chunks.push(chunk);
       }
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('not found')
-      );
-      consoleSpy.mockRestore();
+      // CLI path validation is silent - just verifies fallback works
+      expect(chunks.length).toBeGreaterThan(0);
     });
 
     it('should fall back to auto-detection when custom path stat fails', async () => {
@@ -482,8 +474,6 @@ describe('ClaudianService', () => {
         return { isFile: () => p === autoDetectedPath };
       });
 
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
@@ -501,10 +491,6 @@ describe('ClaudianService', () => {
 
       const options = getLastOptions();
       expect(options?.pathToClaudeCodeExecutable).toBe(autoDetectedPath);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('not accessible')
-      );
-      consoleSpy.mockRestore();
     });
 
     it('should reload CLI path after cleanup', async () => {

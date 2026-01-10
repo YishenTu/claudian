@@ -113,7 +113,7 @@ export class QueryOptionsBuilder {
     if (currentConfig.settingSources !== newConfig.settingSources) return true;
     if (currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
 
-    // Note: allowDangerouslySkip (YOLO mode) is handled in ensurePersistentQuery's
+    // Note: allowDangerouslySkip (YOLO mode) is handled in ClaudianService's applyDynamicUpdates
     // permission mode section via restart (normal→YOLO) or setPermissionMode (YOLO→normal)
 
     // Export paths affect system prompt

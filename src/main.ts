@@ -435,6 +435,7 @@ export default class ClaudianPlugin extends Plugin {
 
     this.activeConversationId = id;
     this.agentService.setSessionId(conversation.sessionId);
+    clearDiffState(); // Clear UI diff state when switching conversations
 
     await this.storage.setActiveConversationId(this.activeConversationId);
     return conversation;
