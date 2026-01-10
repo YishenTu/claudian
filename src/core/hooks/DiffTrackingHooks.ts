@@ -40,7 +40,10 @@ export interface DiffContentEntry {
 
 /**
  * Internal storage for diff tracking.
- * Not exported - consumers use getDiffData() and clearDiffState().
+ *
+ * Design: Uses a module-level singleton so hooks and consumers can share state
+ * without passing the store through the call stack. Consumers use the public
+ * functions getDiffData() and clearDiffState() rather than accessing this directly.
  */
 class DiffStore {
   private originalContents = new Map<string, DiffContentEntry>();

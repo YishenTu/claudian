@@ -16,6 +16,11 @@ import type { SessionState } from './types';
  * - Session model: The model used for this session
  * - Pending model: Model to use when session is captured
  * - Interrupted state: Whether the session was interrupted
+ *
+ * Typical flow:
+ * 1. setPendingModel() - before starting a query
+ * 2. captureSession() - when session_id received from SDK
+ * 3. invalidateSession() - when session expires or errors occur
  */
 export class SessionManager {
   private state: SessionState = {

@@ -93,6 +93,10 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
 
 /**
  * Static builder for SDK Options and configuration objects.
+ *
+ * Design: Uses static methods rather than instance methods because the builder
+ * is stateless - all state comes from the context parameter. This makes the
+ * code easier to test and avoids needing to instantiate a builder object.
  */
 export class QueryOptionsBuilder {
   /**
@@ -227,7 +231,9 @@ export class QueryOptionsBuilder {
    * Cold-start queries are used for:
    * - Inline edit (separate context)
    * - Title generation (lightweight)
+   * - Session recovery (interrupted or expired sessions)
    * - When persistent query is not available
+   * - When forceColdStart option is set
    */
   static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;

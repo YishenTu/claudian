@@ -37,15 +37,17 @@ export type SDKContentBlock = TextContentBlock | ImageContentBlock;
  * MAX_QUEUED_MESSAGES: Maximum pending messages before dropping.
  * This prevents memory buildup from rapid user input. 8 allows
  * reasonable queuing while protecting against runaway scenarios.
+ * When exceeded, the newest message is dropped with a warning.
  *
- * MAX_MERGED_CHARS: Maximum merged text content size.
+ * MAX_MERGED_CHARS: Maximum merged text content size (~3k tokens).
  * Text messages are merged to reduce API calls. 12000 chars allows
- * substantial batching while staying well under token limits.
+ * substantial batching while staying well under context limits.
+ * When exceeded, the merge is rejected and the newest message is dropped.
  */
 export const MESSAGE_CHANNEL_CONFIG = {
   MAX_QUEUED_MESSAGES: 8,
   MAX_MERGED_CHARS: 12000,
-};
+} as const;
 
 /** Pending message in the queue (text-only for merging). */
 export interface PendingTextMessage {

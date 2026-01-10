@@ -268,4 +268,59 @@ describe('DiffTrackingHooks file operations', () => {
 
     expect(getDiffData('tool-a')).toBeUndefined();
   });
+
+  it('getDiffData removes data after retrieval (consume-once)', async () => {
+    existsSpy.mockReturnValue(true);
+    statSpy.mockReturnValue({ size: 10 });
+    readSpy.mockReturnValueOnce('old').mockReturnValueOnce('new');
+
+    const preHook = createFileHashPreHook(vaultPath);
+    const postHook = createFileHashPostHook(vaultPath);
+
+    await preHook.hooks[0](
+      { tool_name: 'Write', tool_input: { file_path: 'consume.md' } } as any,
+      'tool-consume',
+      {} as any
+    );
+    await postHook.hooks[0](
+      { tool_name: 'Write', tool_input: { file_path: 'consume.md' }, tool_result: {} } as any,
+      'tool-consume',
+      {} as any
+    );
+
+    // First get should return the data
+    const firstGet = getDiffData('tool-consume');
+    expect(firstGet).toBeDefined();
+    expect(firstGet?.originalContent).toBe('old');
+    expect(firstGet?.newContent).toBe('new');
+
+    // Second get should return undefined (consumed)
+    const secondGet = getDiffData('tool-consume');
+    expect(secondGet).toBeUndefined();
+  });
+
+  it('ignores NotebookEdit for diff capture (matches but skips)', async () => {
+    existsSpy.mockReturnValue(true);
+    statSpy.mockReturnValue({ size: 10 });
+    readSpy.mockReturnValue('content');
+
+    const preHook = createFileHashPreHook(vaultPath);
+    const postHook = createFileHashPostHook(vaultPath);
+
+    // NotebookEdit should match the hook but not capture diff
+    await preHook.hooks[0](
+      { tool_name: 'NotebookEdit', tool_input: { notebook_path: 'notebook.ipynb' } } as any,
+      'tool-notebook',
+      {} as any
+    );
+    await postHook.hooks[0](
+      { tool_name: 'NotebookEdit', tool_input: { notebook_path: 'notebook.ipynb' }, tool_result: {} } as any,
+      'tool-notebook',
+      {} as any
+    );
+
+    // NotebookEdit is explicitly excluded from diff capture
+    const diff = getDiffData('tool-notebook');
+    expect(diff).toBeUndefined();
+  });
 });
