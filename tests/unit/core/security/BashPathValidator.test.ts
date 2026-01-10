@@ -119,6 +119,46 @@ describe('BashPathValidator', () => {
       const result = getBashSegmentCommandName(['sudo', 'env']);
       expect(result).toEqual({ cmdName: '', cmdIndex: 2 });
     });
+
+    it('skips multiple VAR=value tokens', () => {
+      const result = getBashSegmentCommandName(['env', 'A=1', 'B=2', 'C=3', 'cat']);
+      expect(result).toEqual({ cmdName: 'cat', cmdIndex: 4 });
+    });
+
+    it('skips VAR=value tokens even without env prefix', () => {
+      // Inline env vars: VAR=value command
+      const result = getBashSegmentCommandName(['PATH=/bin', 'ls']);
+      expect(result).toEqual({ cmdName: 'ls', cmdIndex: 1 });
+    });
+
+    it('handles segment with only VAR=value tokens', () => {
+      const result = getBashSegmentCommandName(['VAR1=val1', 'VAR2=val2']);
+      expect(result).toEqual({ cmdName: '', cmdIndex: 2 });
+    });
+
+    it('does not skip flags with equals signs', () => {
+      // --option=value is a flag, not an env var assignment - cmdIndex should be 0
+      // cmdName is path.basename() of the token, which extracts 'path' from '--output=/path'
+      const result = getBashSegmentCommandName(['--output=/path', 'command']);
+      expect(result.cmdIndex).toBe(0);
+    });
+
+    it('does not skip short flags with equals signs', () => {
+      // -o=value starts with -, so it's not skipped - cmdIndex should be 0
+      const result = getBashSegmentCommandName(['-o=output.txt', 'command']);
+      expect(result.cmdIndex).toBe(0);
+    });
+
+    it('handles token with equals at start', () => {
+      // =value contains = but doesn't start with -, so it's treated as VAR=value
+      const result = getBashSegmentCommandName(['=value', 'cat']);
+      expect(result).toEqual({ cmdName: 'cat', cmdIndex: 1 });
+    });
+
+    it('handles empty value assignment', () => {
+      const result = getBashSegmentCommandName(['env', 'VAR=', 'cat']);
+      expect(result).toEqual({ cmdName: 'cat', cmdIndex: 2 });
+    });
   });
 
   describe('Bash redirect operators', () => {
@@ -262,6 +302,25 @@ describe('BashPathValidator', () => {
 
     it('returns null for whitespace only', () => {
       expect(cleanPathToken('   ')).toBeNull();
+    });
+
+    it('strips nested quotes after delimiters', () => {
+      // After stripping outer delimiters, quotes may remain
+      expect(cleanPathToken('("path/to/file")')).toBe('path/to/file');
+      expect(cleanPathToken("['path/to/file']")).toBe('path/to/file');
+      expect(cleanPathToken('{`path/to/file`}')).toBe('path/to/file');
+    });
+
+    it('handles empty string after quote stripping', () => {
+      expect(cleanPathToken('""')).toBeNull();
+      expect(cleanPathToken("''")).toBeNull();
+      expect(cleanPathToken('``')).toBeNull();
+    });
+
+    it('handles mismatched quotes (does not strip)', () => {
+      // Mismatched quotes are not stripped - token passes through
+      expect(cleanPathToken("\"path'")).toBe("\"path'");
+      expect(cleanPathToken("'path\"")).toBe("'path\"");
     });
   });
 
