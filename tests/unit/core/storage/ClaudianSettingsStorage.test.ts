@@ -1,0 +1,450 @@
+import {
+  CLAUDIAN_SETTINGS_PATH,
+  ClaudianSettingsStorage,
+  normalizeBlockedCommands,
+  normalizeCliPaths,
+} from '@/core/storage/ClaudianSettingsStorage';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import { DEFAULT_SETTINGS, getDefaultBlockedCommands, getDefaultCliPaths } from '@/core/types';
+
+// Mock VaultFileAdapter
+const mockAdapter = {
+  exists: jest.fn(),
+  read: jest.fn(),
+  write: jest.fn(),
+} as unknown as VaultFileAdapter;
+
+describe('ClaudianSettingsStorage', () => {
+  let storage: ClaudianSettingsStorage;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Reset mock implementations to default resolved values
+    (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+    (mockAdapter.read as jest.Mock).mockResolvedValue('{}');
+    (mockAdapter.write as jest.Mock).mockResolvedValue(undefined);
+    storage = new ClaudianSettingsStorage(mockAdapter);
+  });
+
+  describe('load', () => {
+    it('should return defaults when file does not exist', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+
+      const result = await storage.load();
+
+      expect(result.model).toBe(DEFAULT_SETTINGS.model);
+      expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
+      expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
+      expect(mockAdapter.read).not.toHaveBeenCalled();
+    });
+
+    it('should parse valid JSON and merge with defaults', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        model: 'claude-opus-4-5',
+        userName: 'TestUser',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.model).toBe('claude-opus-4-5');
+      expect(result.userName).toBe('TestUser');
+      // Defaults should still be present for unspecified fields
+      expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
+    });
+
+    it('should normalize blockedCommands from loaded data', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        blockedCommands: {
+          unix: ['custom-unix-cmd'],
+          windows: ['custom-win-cmd'],
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.blockedCommands.unix).toContain('custom-unix-cmd');
+      expect(result.blockedCommands.windows).toContain('custom-win-cmd');
+    });
+
+    it('should normalize claudeCliPaths from loaded data', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        claudeCliPaths: {
+          macos: '/custom/macos/path',
+          linux: '/custom/linux/path',
+          windows: 'C:\\custom\\windows\\path',
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.claudeCliPaths.macos).toBe('/custom/macos/path');
+      expect(result.claudeCliPaths.linux).toBe('/custom/linux/path');
+      expect(result.claudeCliPaths.windows).toBe('C:\\custom\\windows\\path');
+    });
+
+    it('should preserve legacy claudeCliPath field', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        claudeCliPath: '/legacy/path',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.claudeCliPath).toBe('/legacy/path');
+    });
+
+    it('should handle activeConversationId as null', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        activeConversationId: null,
+      }));
+
+      const result = await storage.load();
+
+      expect(result.activeConversationId).toBeNull();
+    });
+
+    it('should handle activeConversationId as string', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        activeConversationId: 'conv-123',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.activeConversationId).toBe('conv-123');
+    });
+
+    it('should default activeConversationId to null for invalid types', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        activeConversationId: 123, // Invalid type
+      }));
+
+      const result = await storage.load();
+
+      expect(result.activeConversationId).toBeNull();
+    });
+
+    it('should throw on JSON parse error', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue('invalid json');
+
+      await expect(storage.load()).rejects.toThrow();
+    });
+
+    it('should throw on read error', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockRejectedValue(new Error('Read failed'));
+
+      await expect(storage.load()).rejects.toThrow('Read failed');
+    });
+  });
+
+  describe('save', () => {
+    it('should write settings to file', async () => {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        model: 'claude-opus-4-5' as const,
+        claudeCliPaths: getDefaultCliPaths(),
+      };
+      // Remove slashCommands as it's stored separately
+      const { slashCommands: _, ...storedSettings } = settings;
+
+      await storage.save(storedSettings);
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        CLAUDIAN_SETTINGS_PATH,
+        expect.any(String)
+      );
+      const writtenContent = JSON.parse((mockAdapter.write as jest.Mock).mock.calls[0][1]);
+      expect(writtenContent.model).toBe('claude-opus-4-5');
+    });
+
+    it('should throw on write error', async () => {
+      (mockAdapter.write as jest.Mock).mockRejectedValue(new Error('Write failed'));
+
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        claudeCliPaths: getDefaultCliPaths(),
+      };
+      const { slashCommands: _, ...storedSettings } = settings;
+
+      await expect(storage.save(storedSettings)).rejects.toThrow('Write failed');
+    });
+  });
+
+  describe('exists', () => {
+    it('should return true when file exists', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+
+      const result = await storage.exists();
+
+      expect(result).toBe(true);
+      expect(mockAdapter.exists).toHaveBeenCalledWith(CLAUDIAN_SETTINGS_PATH);
+    });
+
+    it('should return false when file does not exist', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+
+      const result = await storage.exists();
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('update', () => {
+    it('should merge updates with existing settings', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        model: 'claude-haiku-4-5',
+        userName: 'ExistingUser',
+      }));
+
+      await storage.update({ model: 'claude-opus-4-5' });
+
+      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1]);
+      expect(writtenContent.model).toBe('claude-opus-4-5');
+      expect(writtenContent.userName).toBe('ExistingUser');
+    });
+  });
+
+  describe('setActiveConversationId', () => {
+    it('should update active conversation ID', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({}));
+
+      await storage.setActiveConversationId('new-conv-id');
+
+      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1]);
+      expect(writtenContent.activeConversationId).toBe('new-conv-id');
+    });
+
+    it('should set active conversation ID to null', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        activeConversationId: 'existing-id',
+      }));
+
+      await storage.setActiveConversationId(null);
+
+      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1]);
+      expect(writtenContent.activeConversationId).toBeNull();
+    });
+  });
+
+  describe('setLastModel', () => {
+    it('should update lastClaudeModel for non-custom models', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({}));
+
+      await storage.setLastModel('claude-sonnet-4-5', false);
+
+      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1]);
+      expect(writtenContent.lastClaudeModel).toBe('claude-sonnet-4-5');
+      // lastCustomModel keeps its default value (empty string)
+    });
+
+    it('should update lastCustomModel for custom models', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({}));
+
+      await storage.setLastModel('custom-model-id', true);
+
+      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1]);
+      expect(writtenContent.lastCustomModel).toBe('custom-model-id');
+      // lastClaudeModel keeps its default value
+    });
+  });
+
+  describe('setLastEnvHash', () => {
+    it('should update environment hash', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({}));
+
+      await storage.setLastEnvHash('abc123');
+
+      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1]);
+      expect(writtenContent.lastEnvHash).toBe('abc123');
+    });
+  });
+});
+
+describe('normalizeBlockedCommands', () => {
+  const defaults = getDefaultBlockedCommands();
+
+  it('should return defaults for null input', () => {
+    const result = normalizeBlockedCommands(null);
+
+    expect(result.unix).toEqual(defaults.unix);
+    expect(result.windows).toEqual(defaults.windows);
+  });
+
+  it('should return defaults for undefined input', () => {
+    const result = normalizeBlockedCommands(undefined);
+
+    expect(result.unix).toEqual(defaults.unix);
+    expect(result.windows).toEqual(defaults.windows);
+  });
+
+  it('should migrate old string[] format to platform-keyed structure', () => {
+    const oldFormat = ['custom-cmd-1', 'custom-cmd-2'];
+
+    const result = normalizeBlockedCommands(oldFormat);
+
+    expect(result.unix).toEqual(['custom-cmd-1', 'custom-cmd-2']);
+    expect(result.windows).toEqual(defaults.windows);
+  });
+
+  it('should normalize valid platform-keyed object', () => {
+    const input = {
+      unix: ['unix-cmd'],
+      windows: ['windows-cmd'],
+    };
+
+    const result = normalizeBlockedCommands(input);
+
+    expect(result.unix).toEqual(['unix-cmd']);
+    expect(result.windows).toEqual(['windows-cmd']);
+  });
+
+  it('should filter out non-string entries', () => {
+    const input = {
+      unix: ['valid', 123, null, 'also-valid'] as unknown[],
+      windows: [true, 'windows-cmd', {}] as unknown[],
+    };
+
+    const result = normalizeBlockedCommands(input);
+
+    expect(result.unix).toEqual(['valid', 'also-valid']);
+    expect(result.windows).toEqual(['windows-cmd']);
+  });
+
+  it('should trim whitespace from commands', () => {
+    const input = {
+      unix: ['  cmd1  ', 'cmd2  '],
+      windows: ['  win-cmd  '],
+    };
+
+    const result = normalizeBlockedCommands(input);
+
+    expect(result.unix).toEqual(['cmd1', 'cmd2']);
+    expect(result.windows).toEqual(['win-cmd']);
+  });
+
+  it('should filter out empty strings after trimming', () => {
+    const input = {
+      unix: ['cmd1', '   ', '', 'cmd2'],
+      windows: ['', 'win-cmd'],
+    };
+
+    const result = normalizeBlockedCommands(input);
+
+    expect(result.unix).toEqual(['cmd1', 'cmd2']);
+    expect(result.windows).toEqual(['win-cmd']);
+  });
+
+  it('should use defaults for missing platform keys', () => {
+    const input = {
+      unix: ['custom-unix'],
+      // windows is missing
+    };
+
+    const result = normalizeBlockedCommands(input);
+
+    expect(result.unix).toEqual(['custom-unix']);
+    expect(result.windows).toEqual(defaults.windows);
+  });
+
+  it('should handle non-object, non-array input', () => {
+    expect(normalizeBlockedCommands('string')).toEqual(defaults);
+    expect(normalizeBlockedCommands(123)).toEqual(defaults);
+    expect(normalizeBlockedCommands(true)).toEqual(defaults);
+  });
+});
+
+describe('normalizeCliPaths', () => {
+  const defaults = getDefaultCliPaths();
+
+  it('should return defaults for null input', () => {
+    const result = normalizeCliPaths(null);
+
+    expect(result).toEqual(defaults);
+  });
+
+  it('should return defaults for undefined input', () => {
+    const result = normalizeCliPaths(undefined);
+
+    expect(result).toEqual(defaults);
+  });
+
+  it('should return defaults for non-object input', () => {
+    expect(normalizeCliPaths('string')).toEqual(defaults);
+    expect(normalizeCliPaths(123)).toEqual(defaults);
+    expect(normalizeCliPaths([])).toEqual(defaults);
+  });
+
+  it('should normalize valid platform paths', () => {
+    const input = {
+      macos: '/custom/macos/path',
+      linux: '/custom/linux/path',
+      windows: 'C:\\custom\\windows\\path',
+    };
+
+    const result = normalizeCliPaths(input);
+
+    expect(result.macos).toBe('/custom/macos/path');
+    expect(result.linux).toBe('/custom/linux/path');
+    expect(result.windows).toBe('C:\\custom\\windows\\path');
+  });
+
+  it('should trim whitespace from paths', () => {
+    const input = {
+      macos: '  /path/with/spaces  ',
+      linux: '/linux/path  ',
+      windows: '  C:\\windows\\path',
+    };
+
+    const result = normalizeCliPaths(input);
+
+    expect(result.macos).toBe('/path/with/spaces');
+    expect(result.linux).toBe('/linux/path');
+    expect(result.windows).toBe('C:\\windows\\path');
+  });
+
+  it('should use defaults for missing platform keys', () => {
+    const input = {
+      macos: '/custom/macos',
+      // linux and windows missing
+    };
+
+    const result = normalizeCliPaths(input);
+
+    expect(result.macos).toBe('/custom/macos');
+    expect(result.linux).toBe(defaults.linux);
+    expect(result.windows).toBe(defaults.windows);
+  });
+
+  it('should use defaults for non-string values', () => {
+    const input = {
+      macos: 123,
+      linux: null,
+      windows: { path: 'invalid' },
+    } as unknown as Record<string, unknown>;
+
+    const result = normalizeCliPaths(input);
+
+    expect(result.macos).toBe(defaults.macos);
+    expect(result.linux).toBe(defaults.linux);
+    expect(result.windows).toBe(defaults.windows);
+  });
+});
