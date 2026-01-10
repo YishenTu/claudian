@@ -268,7 +268,12 @@ export class SlashCommandSettings {
     });
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', async () => {
-      await this.deleteCommand(cmd);
+      try {
+        await this.deleteCommand(cmd);
+      } catch (error) {
+        console.error('[SlashCommandSettings] Failed to delete command:', error);
+        new Notice('Failed to delete slash command');
+      }
     });
   }
 

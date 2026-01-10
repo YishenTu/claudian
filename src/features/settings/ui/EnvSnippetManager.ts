@@ -181,7 +181,12 @@ export class EnvSnippetManager {
       });
       setIcon(restoreBtn, 'clipboard-paste');
       restoreBtn.addEventListener('click', async () => {
-        await this.insertSnippet(snippet);
+        try {
+          await this.insertSnippet(snippet);
+        } catch (error) {
+          console.error('[EnvSnippetManager] Failed to insert snippet:', error);
+          new Notice('Failed to insert snippet');
+        }
       });
 
       // Edit button
@@ -201,8 +206,13 @@ export class EnvSnippetManager {
       });
       setIcon(deleteBtn, 'trash-2');
       deleteBtn.addEventListener('click', async () => {
-        if (confirm(`Delete environment snippet "${snippet.name}"?`)) {
-          await this.deleteSnippet(snippet);
+        try {
+          if (confirm(`Delete environment snippet "${snippet.name}"?`)) {
+            await this.deleteSnippet(snippet);
+          }
+        } catch (error) {
+          console.error('[EnvSnippetManager] Failed to delete snippet:', error);
+          new Notice('Failed to delete snippet');
         }
       });
     }

@@ -23,6 +23,6 @@ export class MarkdownFileCache {
       this.cachedFiles = this.app.vault.getMarkdownFiles();
       this.dirty = false;
     }
-    return this.cachedFiles;
+    return [...this.cachedFiles];
   }
 }

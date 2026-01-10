@@ -63,7 +63,7 @@ export class ChatState {
   // ============================================
 
   get messages(): ChatMessage[] {
-    return this.state.messages;
+    return [...this.state.messages];
   }
 
   set messages(value: ChatMessage[]) {
@@ -184,19 +184,19 @@ export class ChatState {
   // ============================================
 
   get toolCallElements(): Map<string, HTMLElement> {
-    return this.state.toolCallElements;
+    return new Map(this.state.toolCallElements);
   }
 
   get activeSubagents(): Map<string, SubagentState> {
-    return this.state.activeSubagents;
+    return new Map(this.state.activeSubagents);
   }
 
   get asyncSubagentStates(): Map<string, AsyncSubagentState> {
-    return this.state.asyncSubagentStates;
+    return new Map(this.state.asyncSubagentStates);
   }
 
   get writeEditStates(): Map<string, WriteEditState> {
-    return this.state.writeEditStates;
+    return new Map(this.state.writeEditStates);
   }
 
   // ============================================
@@ -233,7 +233,7 @@ export class ChatState {
   // ============================================
 
   get currentTodos(): TodoItem[] | null {
-    return this.state.currentTodos;
+    return this.state.currentTodos ? [...this.state.currentTodos] : null;
   }
 
   set currentTodos(value: TodoItem[] | null) {

@@ -86,12 +86,51 @@ export interface ClosePersistentQueryOptions {
  * - sawStreamText prevents duplicate text from non-streamed assistant messages
  */
 export interface ResponseHandler {
+  readonly id: string;
+  onChunk: (chunk: StreamChunk) => void;
+  onDone: () => void;
+  onError: (error: Error) => void;
+  /** Whether a stream text event was seen (read-only, use markStreamTextSeen/resetStreamText). */
+  readonly sawStreamText: boolean;
+  /** Whether any chunk was seen (read-only, use markChunkSeen). */
+  readonly sawAnyChunk: boolean;
+  /** Mark that a stream text event was seen. */
+  markStreamTextSeen(): void;
+  /** Reset the stream text flag (call after turn completion). */
+  resetStreamText(): void;
+  /** Mark that a chunk was seen (for crash recovery detection). */
+  markChunkSeen(): void;
+}
+
+/** Options for creating a ResponseHandler. */
+export interface ResponseHandlerOptions {
   id: string;
   onChunk: (chunk: StreamChunk) => void;
   onDone: () => void;
   onError: (error: Error) => void;
-  sawStreamText: boolean;
-  sawAnyChunk: boolean;
+}
+
+/**
+ * Factory function to create a ResponseHandler with encapsulated state.
+ *
+ * This provides proper encapsulation of the mutable sawStreamText and sawAnyChunk flags,
+ * exposing them as read-only properties with explicit mutation methods.
+ */
+export function createResponseHandler(options: ResponseHandlerOptions): ResponseHandler {
+  let _sawStreamText = false;
+  let _sawAnyChunk = false;
+
+  return {
+    id: options.id,
+    onChunk: options.onChunk,
+    onDone: options.onDone,
+    onError: options.onError,
+    get sawStreamText() { return _sawStreamText; },
+    get sawAnyChunk() { return _sawAnyChunk; },
+    markStreamTextSeen() { _sawStreamText = true; },
+    resetStreamText() { _sawStreamText = false; },
+    markChunkSeen() { _sawAnyChunk = true; },
+  };
 }
 
 // ============================================

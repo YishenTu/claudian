@@ -342,9 +342,13 @@ export class MessageRenderer {
             });
             wrapper.appendChild(label);
             label.addEventListener('click', async () => {
-              await navigator.clipboard.writeText(code.textContent || '');
-              label.setText('copied!');
-              setTimeout(() => label.setText(match[1]), 1500);
+              try {
+                await navigator.clipboard.writeText(code.textContent || '');
+                label.setText('copied!');
+                setTimeout(() => label.setText(match[1]), 1500);
+              } catch {
+                // Clipboard API may fail in non-secure contexts
+              }
             });
           }
         }

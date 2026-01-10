@@ -59,6 +59,7 @@ import {
 import { SessionManager } from './SessionManager';
 import {
   type ClosePersistentQueryOptions,
+  createResponseHandler,
   isTurnCompleteMessage,
   type PersistentQueryConfig,
   type ResponseHandler,
@@ -135,8 +136,10 @@ export class ClaudianService {
       try {
         await this.plugin.storage.addAllowRule(rule);
         await this.loadCCPermissions();
-      } catch {
-        // Rule is still in session permissions via ApprovalManager, so action continues
+      } catch (error) {
+        // Rule is still in session permissions via ApprovalManager, so action continues.
+        // Log for debugging but don't block the action.
+        console.warn('[ClaudianService] Failed to persist allow rule:', error);
       }
     });
 
@@ -144,8 +147,10 @@ export class ClaudianService {
       try {
         await this.plugin.storage.addDenyRule(rule);
         await this.loadCCPermissions();
-      } catch {
-        // Rule is still in session permissions via ApprovalManager, so action continues
+      } catch (error) {
+        // Rule is still in session permissions via ApprovalManager, so action continues.
+        // Log for debugging but don't block the action.
+        console.warn('[ClaudianService] Failed to persist deny rule:', error);
       }
     });
   }
@@ -441,7 +446,8 @@ export class ClaudianService {
               await this.applyDynamicUpdates(this.lastSentQueryOptions ?? undefined, { preserveHandlers: true });
               this.messageChannel.enqueue(messageToReplay);
               return;
-            } catch {
+            } catch (restartError) {
+              console.warn('[ClaudianService] Crash recovery restart failed:', restartError);
               handler.onError(errorInstance);
               return;
             }
@@ -457,8 +463,10 @@ export class ClaudianService {
             this.crashRecoveryAttempted = true;
             try {
               await this.restartPersistentQuery('consumer error');
-            } catch {
-              // Restart failed - next query will start fresh
+            } catch (restartError) {
+              // Restart failed - next query will start fresh.
+              // Log for debugging but don't propagate since we've already notified the handler.
+              console.warn('[ClaudianService] Post-error restart failed:', restartError);
             }
           }
         }
@@ -485,7 +493,7 @@ export class ClaudianService {
     // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
     if (handler && this.isStreamTextEvent(message)) {
-      handler.sawStreamText = true;
+      handler.markStreamTextSeen();
     }
 
     // Transform SDK message to StreamChunks
@@ -516,7 +524,7 @@ export class ClaudianService {
 
       // Notify handler
       if (handler) {
-        handler.sawStreamText = false;
+        handler.resetStreamText();
         handler.onDone();
       }
     }
@@ -743,10 +751,10 @@ export class ClaudianService {
     };
 
     const handlerId = `handler-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const handler: ResponseHandler = {
+    const handler = createResponseHandler({
       id: handlerId,
       onChunk: (chunk) => {
-        handler.sawAnyChunk = true;
+        handler.markChunkSeen();
         if (state.resolveChunk) {
           state.resolveChunk(chunk);
           state.resolveChunk = null;
@@ -769,9 +777,7 @@ export class ClaudianService {
           state.resolveChunk = null;
         }
       },
-      sawStreamText: false,
-      sawAnyChunk: false,
-    };
+    });
 
     this.registerResponseHandler(handler);
 

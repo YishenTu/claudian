@@ -324,3 +324,69 @@ describe('DiffTrackingHooks file operations', () => {
     expect(diff).toBeUndefined();
   });
 });
+
+describe('DiffTrackingHooks public API', () => {
+  beforeEach(() => {
+    clearDiffState();
+  });
+
+  afterEach(() => {
+    clearDiffState();
+  });
+
+  describe('getDiffData', () => {
+    it('returns undefined for non-existent toolUseId', () => {
+      const result = getDiffData('non-existent-tool-id');
+      expect(result).toBeUndefined();
+    });
+
+    it('returns undefined for empty string toolUseId', () => {
+      const result = getDiffData('');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('clearDiffState', () => {
+    it('is idempotent - can be called multiple times safely', () => {
+      // Call clear multiple times on empty store
+      expect(() => {
+        clearDiffState();
+        clearDiffState();
+        clearDiffState();
+      }).not.toThrow();
+    });
+
+    it('clears state after being called once', async () => {
+      const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const statSpy = jest.spyOn(fs, 'statSync').mockReturnValue({ size: 10 } as any);
+      const readSpy = jest.spyOn(fs, 'readFileSync').mockReturnValue('content');
+
+      const preHook = createFileHashPreHook('/vault');
+      const postHook = createFileHashPostHook('/vault');
+
+      // Add some data
+      await preHook.hooks[0](
+        { tool_name: 'Write', tool_input: { file_path: 'test.md' } } as any,
+        'tool-clear-test',
+        {} as any
+      );
+      await postHook.hooks[0](
+        { tool_name: 'Write', tool_input: { file_path: 'test.md' }, tool_result: {} } as any,
+        'tool-clear-test',
+        {} as any
+      );
+
+      // Clear and verify
+      clearDiffState();
+      expect(getDiffData('tool-clear-test')).toBeUndefined();
+
+      // Clear again should still work
+      clearDiffState();
+      expect(getDiffData('tool-clear-test')).toBeUndefined();
+
+      existsSpy.mockRestore();
+      statSpy.mockRestore();
+      readSpy.mockRestore();
+    });
+  });
+});

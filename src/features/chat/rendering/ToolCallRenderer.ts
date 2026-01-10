@@ -11,7 +11,7 @@ import type { ToolCallInfo } from '../../../core/types';
 import { MCP_ICON_SVG } from '../../../shared/icons';
 import { setupCollapsible } from './collapsible';
 
-// Note: getToolIcon is now exported from src/tools/index.ts
+// Note: getToolIcon is now exported from src/core/tools/index.ts
 // This module uses it internally but does not re-export it.
 
 /** Set the tool icon on an element. */
