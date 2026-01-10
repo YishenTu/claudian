@@ -179,6 +179,7 @@ export class MessageRenderer {
         } else if (block.type === 'text') {
           const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
           void this.renderContent(textEl, block.content);
+          this.addTextCopyButton(textEl);
         } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
@@ -201,6 +202,7 @@ export class MessageRenderer {
       if (msg.content) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, msg.content);
+        this.addTextCopyButton(textEl);
       }
       if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
@@ -366,6 +368,54 @@ export class MessageRenderer {
         text: 'Failed to render message content.',
       });
     }
+  }
+
+  // ============================================
+  // Copy Button
+  // ============================================
+
+  /** Clipboard icon SVG for copy button. */
+  private static readonly COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+
+  /**
+   * Adds a copy button to a text block.
+   * Button shows clipboard icon on hover, changes to "copied!" on click.
+   */
+  private addTextCopyButton(textEl: HTMLElement): void {
+    // Capture text content before adding button to avoid contamination
+    const originalText = textEl.textContent || '';
+
+    const copyBtn = textEl.createSpan({ cls: 'claudian-text-copy-btn' });
+    copyBtn.innerHTML = MessageRenderer.COPY_ICON;
+
+    let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+
+      try {
+        await navigator.clipboard.writeText(originalText);
+      } catch {
+        // Clipboard API may fail in non-secure contexts
+        return;
+      }
+
+      // Clear any pending timeout from rapid clicks
+      if (feedbackTimeout) {
+        clearTimeout(feedbackTimeout);
+      }
+
+      // Show "copied!" feedback
+      copyBtn.innerHTML = '';
+      copyBtn.setText('copied!');
+      copyBtn.classList.add('copied');
+
+      feedbackTimeout = setTimeout(() => {
+        copyBtn.innerHTML = MessageRenderer.COPY_ICON;
+        copyBtn.classList.remove('copied');
+        feedbackTimeout = null;
+      }, 1500);
+    });
   }
 
   // ============================================

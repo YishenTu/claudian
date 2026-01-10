@@ -66,6 +66,8 @@
   max-width: 100%;
   border-bottom-left-radius: 4px;
   text-align: left;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* Message content */
@@ -86,7 +88,49 @@
 
 /* Text blocks within message content */
 .claudian-text-block {
+  position: relative;
   margin: 0;
+}
+
+/* Copy button for text blocks */
+.claudian-text-copy-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--font-monospace);
+  background: var(--background-primary);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  border-radius: 3px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.claudian-text-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Show copy button on hover */
+.claudian-text-block:hover .claudian-text-copy-btn {
+  opacity: 1;
+}
+
+.claudian-text-copy-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Copied state - only affects color, visibility still controlled by hover */
+.claudian-text-copy-btn.copied {
+  color: var(--text-accent);
 }
 
 .claudian-text-block+.claudian-tool-call {
