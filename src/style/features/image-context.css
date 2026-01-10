@@ -64,23 +64,44 @@
 
 /* Remove button */
 .claudian-image-remove {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
+  position: relative;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   cursor: pointer;
-  color: var(--text-muted);
-  font-size: 16px;
-  line-height: 1;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease;
   flex-shrink: 0;
+  font-size: 0; /* Hide text character */
+}
+
+.claudian-image-remove::before,
+.claudian-image-remove::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  background: var(--text-muted);
+  border-radius: 1px;
+  transition: background 0.15s ease;
+}
+
+.claudian-image-remove::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.claudian-image-remove::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .claudian-image-remove:hover {
   background: var(--background-modifier-error);
-  color: var(--text-on-accent);
+}
+
+.claudian-image-remove:hover::before,
+.claudian-image-remove:hover::after {
+  background: var(--text-on-accent);
 }
 
 /* Drop overlay - inside input wrapper */

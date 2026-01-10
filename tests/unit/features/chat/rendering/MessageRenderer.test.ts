@@ -68,6 +68,7 @@ function createMockElement() {
     querySelector: jest.fn().mockReturnValue(null),
     querySelectorAll: jest.fn().mockReturnValue([]),
     setText: jest.fn((text: string) => { element.textContent = text; }),
+    addEventListener: jest.fn(),
   };
 
   return element;

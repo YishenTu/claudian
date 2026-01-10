@@ -69,8 +69,17 @@ export function splitBashTokensIntoSegments(tokens: string[]): string[][] {
 export function getBashSegmentCommandName(segment: string[]): { cmdName: string; cmdIndex: number } {
   const wrappers = new Set(['command', 'env', 'sudo']);
   let cmdIndex = 0;
-  while (cmdIndex < segment.length && wrappers.has(segment[cmdIndex])) {
-    cmdIndex += 1;
+  while (cmdIndex < segment.length) {
+    const token = segment[cmdIndex];
+    if (wrappers.has(token)) {
+      cmdIndex += 1;
+      continue;
+    }
+    if (!token.startsWith('-') && token.includes('=')) {
+      cmdIndex += 1;
+      continue;
+    }
+    break;
   }
 
   const rawCmd = segment[cmdIndex] || '';
@@ -122,7 +131,17 @@ export function cleanPathToken(raw: string): string | null {
   }
 
   if (!token) return null;
-  if (token === '.' || token === '/' || token === '\\') return null;
+
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'")) ||
+    (token.startsWith('`') && token.endsWith('`'))
+  ) {
+    token = token.slice(1, -1).trim();
+  }
+
+  if (!token) return null;
+  if (token === '.' || token === '/' || token === '\\' || token === '--') return null;
   return token;
 }
 

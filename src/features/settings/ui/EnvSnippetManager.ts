@@ -4,11 +4,12 @@
  * Manages saving and restoring environment variable configurations.
  */
 
-import type { App} from 'obsidian';
+import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { EnvSnippet } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import type { ClaudianView } from '../../chat/ClaudianView';
 
 /** Modal for creating/editing environment variable snippets. */
 export class EnvSnippetModal extends Modal {
@@ -234,11 +235,8 @@ export class EnvSnippetManager {
       await this.plugin.applyEnvironmentVariables(snippetContent);
 
       // Trigger model selector refresh if it exists
-      const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as any;
-      if (view?.modelSelector) {
-        view.modelSelector.updateDisplay();
-        view.modelSelector.renderOptions();
-      }
+      const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
+      view?.refreshModelSelector();
 
     } else {
       // Fallback: directly replace in settings if textarea not found
@@ -246,11 +244,8 @@ export class EnvSnippetManager {
       this.render();
 
       // Trigger model selector refresh if it exists
-      const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as any;
-      if (view?.modelSelector) {
-        view.modelSelector.updateDisplay();
-        view.modelSelector.renderOptions();
-      }
+      const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
+      view?.refreshModelSelector();
 
     }
   }

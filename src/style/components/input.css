@@ -12,20 +12,26 @@
   background: var(--background-primary);
 }
 
+/* Context row (file chip left, selection indicator right) */
+.claudian-context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 0;
+  margin-bottom: 4px;
+}
+
 /* Selection indicator (shown when text is selected in editor) */
 .claudian-selection-indicator {
-  position: absolute;
-  top: 4px;
-  right: 8px;
   color: #7abaff;
   font-size: 11px;
   opacity: 0.9;
   pointer-events: none;
   white-space: nowrap;
-  z-index: 1;
-  background: var(--background-primary);
   padding: 2px 6px;
   border-radius: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .claudian-input {
@@ -69,8 +75,6 @@
   display: none;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 4px 0;
-  margin-bottom: 8px;
 }
 
 .claudian-file-chip {

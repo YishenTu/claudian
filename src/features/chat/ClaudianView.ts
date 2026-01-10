@@ -110,6 +110,12 @@ export class ClaudianView extends ItemView {
     return 'bot';
   }
 
+  /** Refreshes the model selector display (used after env var changes). */
+  refreshModelSelector(): void {
+    this.modelSelector?.updateDisplay();
+    this.modelSelector?.renderOptions();
+  }
+
   async onOpen() {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
@@ -234,10 +240,6 @@ export class ClaudianView extends ItemView {
   private buildInputArea(inputContainerEl: HTMLElement) {
     this.inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
 
-    // Selection indicator
-    this.selectionIndicatorEl = this.inputWrapper.createDiv({ cls: 'claudian-selection-indicator' });
-    this.selectionIndicatorEl.style.display = 'none';
-
     // Input textarea
     this.inputEl = this.inputWrapper.createEl('textarea', {
       cls: 'claudian-input',
@@ -260,7 +262,7 @@ export class ClaudianView extends ItemView {
     );
     this.fileContextManager.setMcpService(this.plugin.mcpService);
 
-    // Image context manager
+    // Image context manager (must be before context row wrapper)
     this.imageContextManager = new ImageContextManager(
       this.plugin.app,
       inputContainerEl,
@@ -269,6 +271,20 @@ export class ClaudianView extends ItemView {
         onImagesChanged: () => this.renderer?.scrollToBottomIfNeeded(),
       }
     );
+
+    // Context row wrapper (holds file chip and selection indicator)
+    // Created after ImageContextManager so it sees the original DOM structure
+    const fileIndicatorEl = inputContainerEl.querySelector('.claudian-file-indicator');
+    if (fileIndicatorEl) {
+      const contextRowEl = inputContainerEl.createDiv({ cls: 'claudian-context-row' });
+      inputContainerEl.insertBefore(contextRowEl, fileIndicatorEl);
+      contextRowEl.appendChild(fileIndicatorEl);
+      this.selectionIndicatorEl = contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
+    } else {
+      // Fallback: create indicator directly if file indicator was not created
+      this.selectionIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-selection-indicator' });
+    }
+    this.selectionIndicatorEl.style.display = 'none';
 
     // Slash command manager
     const vaultPath = getVaultPath(this.plugin.app);

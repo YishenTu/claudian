@@ -5,12 +5,11 @@
  * selection context for prompts.
  */
 
-import type { EditorView } from '@codemirror/view';
 import type { App } from 'obsidian';
 import { MarkdownView } from 'obsidian';
 
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
-import type { EditorSelectionContext } from '../../../utils/editor';
+import { type EditorSelectionContext, getEditorView } from '../../../utils/editor';
 import type { StoredSelection } from '../state/types';
 
 /** Polling interval for editor selection (ms). */
@@ -69,7 +68,7 @@ export class SelectionController {
     if (!view) return;
 
     const editor = view.editor;
-    const editorView = (editor as any).cm as EditorView;
+    const editorView = getEditorView(editor);
     if (!editorView) return;
 
     const selectedText = editor.getSelection();
