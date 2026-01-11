@@ -70,7 +70,7 @@ export class SlashCommandManager {
     return this.commands.get(name.toLowerCase());
   }
 
-  /** Gets filtered commands matching a prefix. */
+  /** Gets filtered commands matching a prefix, sorted alphabetically. */
   getMatchingCommands(prefix: string): SlashCommand[] {
     const prefixLower = prefix.toLowerCase();
     return this.getCommands()
@@ -78,6 +78,7 @@ export class SlashCommandManager {
         cmd.name.toLowerCase().includes(prefixLower) ||
         cmd.description?.toLowerCase().includes(prefixLower)
       )
+      .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 10);
   }
 
@@ -90,9 +91,9 @@ export class SlashCommandManager {
     if (!input.startsWith('/')) return null;
 
     // Extract command name (everything after / until first whitespace)
-    // Allows nested paths like /code/review
+    // Allows nested paths like /code/review and plugin namespaces like /plugin:cmd
     // Use [\s\S]* instead of .* with s flag for ES5 compatibility
-    const match = input.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
+    const match = input.match(/^\/([a-zA-Z0-9_/:-]+)(?:\s+([\s\S]*))?$/);
     if (!match) return null;
 
     const commandName = match[1];

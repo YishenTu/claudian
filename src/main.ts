@@ -13,6 +13,7 @@ import { clearDiffState } from './core/hooks';
 import { deleteCachedImages } from './core/images/imageCache';
 import { McpServerManager } from './core/mcp';
 import { McpService } from './core/mcp/McpService';
+import { loadPluginCommands, PluginManager, PluginStorage } from './core/plugins';
 import { StorageService } from './core/storage';
 import type {
   ClaudianSettings,
@@ -41,6 +42,7 @@ export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   agentService: ClaudianService;
   mcpService: McpService;
+  pluginManager: PluginManager;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
   private conversations: Conversation[] = [];
@@ -57,6 +59,27 @@ export default class ClaudianPlugin extends Plugin {
     const mcpManager = new McpServerManager(this.storage.mcp);
     this.mcpService = new McpService(mcpManager);
     await this.mcpService.loadServers();
+
+    // Initialize plugin manager
+    const vaultPath = (this.app.vault.adapter as any).basePath;
+    const pluginStorage = new PluginStorage(vaultPath);
+    this.pluginManager = new PluginManager(pluginStorage);
+    this.pluginManager.setEnabledPluginIds(this.settings.enabledPlugins);
+    await this.pluginManager.loadPlugins();
+
+    // Clean up unavailable plugins from settings and notify user
+    const unavailablePlugins = this.pluginManager.getUnavailableEnabledPlugins();
+    if (unavailablePlugins.length > 0) {
+      this.settings.enabledPlugins = this.settings.enabledPlugins
+        .filter(id => !unavailablePlugins.includes(id));
+      await this.saveSettings();
+
+      const count = unavailablePlugins.length;
+      new Notice(`${count} plugin${count > 1 ? 's' : ''} became unavailable and ${count > 1 ? 'were' : 'was'} disabled`);
+    }
+
+    // Load slash commands from enabled plugins and merge with vault commands
+    this.loadPluginSlashCommands();
 
     // Initialize agent service with the MCP manager
     this.agentService = new ClaudianService(this, mcpManager);
@@ -239,6 +262,26 @@ export default class ClaudianPlugin extends Plugin {
     settingsToSave.activeConversationId = this.activeConversationId;
 
     await this.storage.saveClaudianSettings(settingsToSave);
+  }
+
+  /**
+   * Loads slash commands from enabled plugins and merges them with vault commands.
+   * Plugin commands are namespaced with the plugin name (e.g., "plugin-name:command").
+   */
+  loadPluginSlashCommands(): void {
+    // Get vault commands (already loaded in settings)
+    const vaultCommands = this.settings.slashCommands.filter(
+      cmd => !cmd.id.startsWith('plugin-')
+    );
+
+    // Load commands from enabled plugins
+    const pluginPaths = this.pluginManager.getPluginCommandPaths();
+    const pluginCommands = pluginPaths.flatMap(
+      ({ pluginName, commandsPath }) => loadPluginCommands(commandsPath, pluginName)
+    );
+
+    // Merge vault commands with plugin commands
+    this.settings.slashCommands = [...vaultCommands, ...pluginCommands];
   }
 
   /** Updates and persists environment variables, notifying if restart is needed. */

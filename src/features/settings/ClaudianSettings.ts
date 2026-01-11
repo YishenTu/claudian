@@ -18,6 +18,7 @@ import { expandHomePath } from '../../utils/path';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
+import { PluginSettingsManager } from './ui/PluginSettingsManager';
 import { SlashCommandSettings } from './ui/SlashCommandSettings';
 
 /** Format a hotkey for display (e.g., "Cmd+Shift+E" on Mac, "Ctrl+Shift+E" on Windows). */
@@ -319,6 +320,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     const mcpContainer = containerEl.createDiv({ cls: 'claudian-mcp-container' });
     new McpSettingsManager(mcpContainer, this.plugin);
+
+    // Claude Code Plugins section
+    new Setting(containerEl).setName(t('settings.plugins.name')).setHeading();
+
+    const pluginsDesc = containerEl.createDiv({ cls: 'claudian-plugin-settings-desc' });
+    pluginsDesc.createEl('p', {
+      text: t('settings.plugins.desc'),
+      cls: 'setting-item-description',
+    });
+
+    const pluginsContainer = containerEl.createDiv({ cls: 'claudian-plugins-container' });
+    new PluginSettingsManager(pluginsContainer, this.plugin);
 
     // Safety section
     new Setting(containerEl).setName(t('settings.safety')).setHeading();

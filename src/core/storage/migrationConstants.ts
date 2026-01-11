@@ -50,6 +50,9 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
   'allowedContextPaths',
   'showToolUse',
   'toolCallExpandedByDefault',
+
+  // Claude Code plugins
+  'enabledPlugins',
 ]);
 
 /**
@@ -78,6 +81,7 @@ export const MIGRATABLE_CLAUDIAN_FIELDS = new Set([
   'claudeCliPath',
   'claudeCliPaths',
   'loadUserClaudeSettings',
+  'enabledPlugins',
 ]);
 
 /**

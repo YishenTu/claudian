@@ -16,6 +16,24 @@ function createMockMcpManager() {
   } as any;
 }
 
+// Create a mock plugin manager
+function createMockPluginManager() {
+  return {
+    setEnabledPluginIds: jest.fn(),
+    loadPlugins: jest.fn().mockResolvedValue(undefined),
+    getPlugins: jest.fn().mockReturnValue([]),
+    getActivePluginConfigs: jest.fn().mockReturnValue([]),
+    getUnavailableEnabledPlugins: jest.fn().mockReturnValue([]),
+    hasEnabledPlugins: jest.fn().mockReturnValue(false),
+    getEnabledCount: jest.fn().mockReturnValue(0),
+    getPluginsKey: jest.fn().mockReturnValue(''),
+    togglePlugin: jest.fn().mockReturnValue([]),
+    enablePlugin: jest.fn().mockReturnValue([]),
+    disablePlugin: jest.fn().mockReturnValue([]),
+    hasPlugins: jest.fn().mockReturnValue(false),
+  } as any;
+}
+
 // Create a mock settings object
 function createMockSettings(overrides: Partial<ClaudianSettings> = {}): ClaudianSettings {
   return {
@@ -56,6 +74,7 @@ function createMockContext(overrides: Partial<QueryOptionsContext> = {}): QueryO
     customEnv: {},
     enhancedPath: '/usr/bin:/mock/bin',
     mcpManager: createMockMcpManager(),
+    pluginManager: createMockPluginManager(),
     ...overrides,
   };
 }
@@ -71,6 +90,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',
@@ -89,6 +109,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',
@@ -107,6 +128,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',
@@ -126,6 +148,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',
@@ -145,6 +168,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',
@@ -164,6 +188,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: ['/path/a'],
         settingSources: 'project',
@@ -183,6 +208,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',
@@ -190,6 +216,26 @@ describe('QueryOptionsBuilder', () => {
       };
 
       const newConfig = { ...currentConfig, settingSources: 'user,project' };
+      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
+    });
+
+    it('returns true when pluginsKey changes', () => {
+      const currentConfig: PersistentQueryConfig = {
+        model: 'claude-sonnet-4-5',
+        thinkingTokens: null,
+        permissionMode: 'yolo',
+        allowDangerouslySkip: true,
+        systemPromptKey: 'key1',
+        disallowedToolsKey: '',
+        mcpServersKey: '',
+        pluginsKey: '',
+        externalContextPaths: [],
+        allowedExportPaths: [],
+        settingSources: 'project',
+        claudeCliPath: '/mock/claude',
+      };
+
+      const newConfig = { ...currentConfig, pluginsKey: 'plugin-a:/path/a|plugin-b:/path/b' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
@@ -202,6 +248,7 @@ describe('QueryOptionsBuilder', () => {
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
+        pluginsKey: '',
         externalContextPaths: [],
         allowedExportPaths: [],
         settingSources: 'project',

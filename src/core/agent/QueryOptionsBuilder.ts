@@ -17,6 +17,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import type { McpServerManager } from '../mcp';
+import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudianSettings, PermissionMode } from '../types';
 import { THINKING_BUDGETS } from '../types';
@@ -47,6 +48,8 @@ export interface QueryOptionsContext {
   enhancedPath: string;
   /** MCP server manager for server configuration. */
   mcpManager: McpServerManager;
+  /** Plugin manager for Claude Code plugins. */
+  pluginManager: PluginManager;
 }
 
 /**
@@ -114,6 +117,7 @@ export class QueryOptionsBuilder {
     // These require restart (cannot be updated dynamically)
     if (currentConfig.systemPromptKey !== newConfig.systemPromptKey) return true;
     if (currentConfig.disallowedToolsKey !== newConfig.disallowedToolsKey) return true;
+    if (currentConfig.pluginsKey !== newConfig.pluginsKey) return true;
     if (currentConfig.settingSources !== newConfig.settingSources) return true;
     if (currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
 
@@ -150,6 +154,9 @@ export class QueryOptionsBuilder {
     const allDisallowedTools = ctx.mcpManager.getAllDisallowedMcpTools();
     const disallowedToolsKey = allDisallowedTools.join('|');
 
+    // Compute pluginsKey from active plugins
+    const pluginsKey = ctx.pluginManager.getPluginsKey();
+
     return {
       model: ctx.settings.model,
       thinkingTokens: thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null,
@@ -158,6 +165,7 @@ export class QueryOptionsBuilder {
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
       disallowedToolsKey,
       mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
+      pluginsKey,
       externalContextPaths: [],
       allowedExportPaths: ctx.settings.allowedExportPaths,
       settingSources: ctx.settings.loadUserClaudeSettings ? 'user,project' : 'project',
@@ -207,6 +215,12 @@ export class QueryOptionsBuilder {
       ...UNSUPPORTED_SDK_TOOLS,
     ];
     options.disallowedTools = allDisallowedTools;
+
+    // Add plugins
+    const pluginConfigs = ctx.pluginManager.getActivePluginConfigs();
+    if (pluginConfigs.length > 0) {
+      options.plugins = pluginConfigs;
+    }
 
     // Set permission mode
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
@@ -285,6 +299,12 @@ export class QueryOptionsBuilder {
       ...disallowedMcpTools,
       ...UNSUPPORTED_SDK_TOOLS,
     ];
+
+    // Add plugins
+    const pluginConfigs = ctx.pluginManager.getActivePluginConfigs();
+    if (pluginConfigs.length > 0) {
+      options.plugins = pluginConfigs;
+    }
 
     // Set permission mode
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);

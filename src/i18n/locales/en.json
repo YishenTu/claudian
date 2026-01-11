@@ -74,6 +74,10 @@
       "name": "MCP Servers",
       "desc": "Configure Model Context Protocol servers to extend Claude's capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate."
     },
+    "plugins": {
+      "name": "Claude Code Plugins",
+      "desc": "Enable or disable Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault."
+    },
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude settings",

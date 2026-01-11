@@ -93,3 +93,16 @@ export {
   type ParsedMcpConfig,
 } from './mcp';
 
+// Plugin types
+export {
+  type ClaudianPlugin,
+  type InstalledPluginEntry,
+  type InstalledPluginsFile,
+  type MarketplaceManifest,
+  type MarketplacePluginEntry,
+  type PluginManifest,
+  type PluginScope,
+  type PluginStatus,
+  type SdkPluginConfig,
+} from './plugins';
+

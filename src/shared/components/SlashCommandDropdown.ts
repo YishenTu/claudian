@@ -149,7 +149,7 @@ export class SlashCommandDropdown {
     const builtInCommands = getBuiltInCommandsForDropdown();
     const searchLower = searchText.toLowerCase();
 
-    // Merge built-in commands (first) with user commands
+    // Merge built-in commands with user commands
     const allCommands = [...builtInCommands, ...userCommands];
 
     this.filteredCommands = allCommands
@@ -157,6 +157,7 @@ export class SlashCommandDropdown {
         cmd.name.toLowerCase().includes(searchLower) ||
         cmd.description?.toLowerCase().includes(searchLower)
       )
+      .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 10);
 
     if (searchText.length > 0 && this.filteredCommands.length === 0) {

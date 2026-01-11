@@ -148,6 +148,12 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
     // Mock getView to return null (tests don't have real view)
     // This allows optional chaining to work safely
     getView: jest.fn().mockReturnValue(null),
+    // Mock pluginManager for QueryOptionsBuilder
+    pluginManager: {
+      getPluginsKey: jest.fn().mockReturnValue(''),
+      getActivePluginConfigs: jest.fn().mockReturnValue([]),
+      hasEnabledPlugins: jest.fn().mockReturnValue(false),
+    },
   } as any;
   return mockPlugin;
 }

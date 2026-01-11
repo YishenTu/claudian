@@ -25,6 +25,7 @@
 /* Custom section descriptions - align with items */
 .claudian-slash-settings-desc,
 .claudian-mcp-settings-desc,
+.claudian-plugin-settings-desc,
 .claudian-approved-desc {
   padding: 0 12px;
 }
