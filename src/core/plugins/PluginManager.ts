@@ -25,7 +25,8 @@ export class PluginManager {
 
   /**
    * Set the list of enabled plugin IDs.
-   * Call this before loadPlugins() to apply enabled state.
+   * Can be called before or after loadPlugins() - enabled state is applied immediately
+   * to any already-loaded plugins and remembered for future loads.
    */
   setEnabledPluginIds(ids: string[]): void {
     this.enabledPluginIds = new Set(ids);
@@ -49,7 +50,7 @@ export class PluginManager {
 
   /**
    * Get all discovered plugins.
-   * Sorted: project/local first, then user.
+   * Returns a copy of the plugins array (sorted by PluginStorage: project/local first, then user).
    */
   getPlugins(): ClaudianPlugin[] {
     return [...this.plugins];
@@ -76,14 +77,14 @@ export class PluginManager {
   }
 
   /**
-   * Check if any plugins are enabled.
+   * Check if any plugins are enabled and available.
    */
   hasEnabledPlugins(): boolean {
     return this.getActivePlugins().length > 0;
   }
 
   /**
-   * Get the count of enabled plugins.
+   * Get the count of enabled and available plugins.
    */
   getEnabledCount(): number {
     return this.getActivePlugins().length;
@@ -159,13 +160,14 @@ export class PluginManager {
   }
 
   /**
-   * Get command directories for enabled and available plugins.
-   * Returns array of { pluginName, commandsPath } for plugins that have commands.
+   * Get install paths for enabled and available plugins.
+   * Returns array of { pluginName, commandsPath } for each active plugin.
+   * Note: Actual command existence is verified by loadPluginCommands().
    */
   getPluginCommandPaths(): Array<{ pluginName: string; commandsPath: string }> {
     return this.getActivePlugins().map((plugin) => ({
       pluginName: plugin.name,
-      commandsPath: plugin.installPath, // Commands are at {installPath}/commands/
+      commandsPath: plugin.installPath, // The commands subdirectory is appended by loadPluginCommands()
     }));
   }
 }

@@ -219,6 +219,26 @@ describe('QueryOptionsBuilder', () => {
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
+    it('returns true when pluginsKey changes', () => {
+      const currentConfig: PersistentQueryConfig = {
+        model: 'claude-sonnet-4-5',
+        thinkingTokens: null,
+        permissionMode: 'yolo',
+        allowDangerouslySkip: true,
+        systemPromptKey: 'key1',
+        disallowedToolsKey: '',
+        mcpServersKey: '',
+        pluginsKey: '',
+        externalContextPaths: [],
+        allowedExportPaths: [],
+        settingSources: 'project',
+        claudeCliPath: '/mock/claude',
+      };
+
+      const newConfig = { ...currentConfig, pluginsKey: 'plugin-a:/path/a|plugin-b:/path/b' };
+      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
+    });
+
     it('returns false when only model changes (dynamic update)', () => {
       const currentConfig: PersistentQueryConfig = {
         model: 'claude-sonnet-4-5',

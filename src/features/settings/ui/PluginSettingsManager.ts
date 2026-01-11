@@ -146,35 +146,50 @@ export class PluginSettingsManager {
   }
 
   private async togglePlugin(pluginId: string) {
-    const newEnabledIds = this.plugin.pluginManager.togglePlugin(pluginId);
-    this.plugin.settings.enabledPlugins = newEnabledIds;
-    await this.plugin.saveSettings();
-
-    // Reload plugin slash commands
-    this.plugin.loadPluginSlashCommands();
-
-    // Restart persistent query to apply plugin changes
-    await this.plugin.agentService.restartPersistentQuery();
-
     const plugin = this.plugin.pluginManager.getPlugins().find(p => p.id === pluginId);
-    if (plugin) {
-      new Notice(`Plugin "${plugin.name}" ${plugin.enabled ? 'enabled' : 'disabled'}`);
-    }
+    const wasEnabled = plugin?.enabled ?? false;
 
-    this.render();
+    try {
+      const newEnabledIds = this.plugin.pluginManager.togglePlugin(pluginId);
+      this.plugin.settings.enabledPlugins = newEnabledIds;
+      await this.plugin.saveSettings();
+
+      // Reload plugin slash commands
+      this.plugin.loadPluginSlashCommands();
+
+      // Restart persistent query to apply plugin changes
+      await this.plugin.agentService.restartPersistentQuery();
+
+      if (plugin) {
+        new Notice(`Plugin "${plugin.name}" ${wasEnabled ? 'disabled' : 'enabled'}`);
+      }
+    } catch (err) {
+      // Revert the toggle on failure
+      this.plugin.pluginManager.togglePlugin(pluginId);
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      new Notice(`Failed to toggle plugin: ${message}`);
+    } finally {
+      this.render();
+    }
   }
 
   private async refreshPlugins() {
-    await this.plugin.pluginManager.loadPlugins();
+    try {
+      await this.plugin.pluginManager.loadPlugins();
 
-    // Reload plugin slash commands to pick up new/updated/removed plugins
-    this.plugin.loadPluginSlashCommands();
+      // Reload plugin slash commands to pick up new/updated/removed plugins
+      this.plugin.loadPluginSlashCommands();
 
-    // Restart persistent query to apply plugin tool changes
-    await this.plugin.agentService.restartPersistentQuery();
+      // Restart persistent query to apply plugin tool changes
+      await this.plugin.agentService.restartPersistentQuery();
 
-    this.render();
-    new Notice('Plugin list refreshed');
+      new Notice('Plugin list refreshed');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      new Notice(`Failed to refresh plugins: ${message}`);
+    } finally {
+      this.render();
+    }
   }
 
   /** Refresh the plugin list (call after external changes). */

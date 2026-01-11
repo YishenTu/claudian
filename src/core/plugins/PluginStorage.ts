@@ -35,30 +35,64 @@ const MARKETPLACE_MANIFEST_FILE = 'marketplace.json';
 const PLUGIN_DIR_NAME = '.claude-plugin';
 
 /**
- * Parse an installed_plugins.json file.
+ * Validate a single plugin entry from the registry.
  */
-function parseInstalledPluginsFile(content: string): InstalledPluginsFile | null {
+function isValidPluginEntry(entry: unknown): entry is InstalledPluginEntry {
+  if (typeof entry !== 'object' || entry === null) return false;
+  const e = entry as Record<string, unknown>;
+  return (
+    typeof e.installPath === 'string' &&
+    typeof e.version === 'string' &&
+    typeof e.installedAt === 'string' &&
+    (e.scope === undefined || ['user', 'project', 'local'].includes(e.scope as string))
+  );
+}
+
+/**
+ * Parse an installed_plugins.json file.
+ * Returns { data, error } to distinguish parse failures from missing/empty files.
+ */
+function parseInstalledPluginsFile(content: string): { data: InstalledPluginsFile | null; error?: string } {
   try {
     const data = JSON.parse(content);
-    if (typeof data !== 'object' || data === null) return null;
-    if (typeof data.version !== 'number') return null;
-    if (typeof data.plugins !== 'object' || data.plugins === null) return null;
-    return data as InstalledPluginsFile;
-  } catch {
-    return null;
+    if (typeof data !== 'object' || data === null) {
+      return { data: null, error: 'Invalid format: expected object at root' };
+    }
+    if (typeof data.version !== 'number') {
+      return { data: null, error: 'Invalid format: missing or invalid version field' };
+    }
+    if (typeof data.plugins !== 'object' || data.plugins === null) {
+      return { data: null, error: 'Invalid format: missing or invalid plugins field' };
+    }
+
+    // Validate and filter individual plugin entries
+    for (const [pluginId, entries] of Object.entries(data.plugins)) {
+      if (!Array.isArray(entries)) {
+        continue;
+      }
+      // Filter out invalid entries silently
+      data.plugins[pluginId] = entries.filter((entry) => isValidPluginEntry(entry));
+    }
+
+    return { data: data as InstalledPluginsFile };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown parse error';
+    return { data: null, error: `JSON parse error: ${message}` };
   }
 }
 
 /**
  * Read and parse a JSON file safely.
+ * Returns { data, error } to enable callers to distinguish missing files from parse errors.
  */
-function readJsonFile<T>(filePath: string): T | null {
+function readJsonFile<T>(filePath: string): { data: T | null; error?: string } {
   try {
-    if (!fs.existsSync(filePath)) return null;
+    if (!fs.existsSync(filePath)) return { data: null };
     const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content) as T;
-  } catch {
-    return null;
+    return { data: JSON.parse(content) as T };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return { data: null, error: errorMessage };
   }
 }
 
@@ -167,11 +201,18 @@ function loadPluginManifest(installPath: string, pluginId: string): {
   // Try single-plugin manifest first
   const singleManifestPath = path.join(pluginDir, PLUGIN_MANIFEST_FILE);
   if (fs.existsSync(singleManifestPath)) {
-    const manifest = readJsonFile<PluginManifest>(singleManifestPath);
+    const { data: manifest, error } = readJsonFile<PluginManifest>(singleManifestPath);
     if (manifest) {
       return {
         manifest,
         pluginPath: pluginDir,
+      };
+    }
+    if (error) {
+      return {
+        manifest: null,
+        pluginPath: '',
+        error: `Failed to read plugin.json: ${error}`,
       };
     }
   }
@@ -179,7 +220,14 @@ function loadPluginManifest(installPath: string, pluginId: string): {
   // Try marketplace manifest (multi-plugin)
   const marketplaceManifestPath = path.join(pluginDir, MARKETPLACE_MANIFEST_FILE);
   if (fs.existsSync(marketplaceManifestPath)) {
-    const marketplaceManifest = readJsonFile<MarketplaceManifest>(marketplaceManifestPath);
+    const { data: marketplaceManifest, error } = readJsonFile<MarketplaceManifest>(marketplaceManifestPath);
+    if (error) {
+      return {
+        manifest: null,
+        pluginPath: '',
+        error: `Failed to read marketplace.json: ${error}`,
+      };
+    }
     if (marketplaceManifest?.plugins) {
       // Find the matching plugin entry by pluginId
       // Plugin ID format: "name@marketplace" - we need to match by name
@@ -248,9 +296,8 @@ export class PluginStorage {
       return [];
     }
 
-    const pluginsFile = parseInstalledPluginsFile(content);
+    const { data: pluginsFile } = parseInstalledPluginsFile(content);
     if (!pluginsFile) {
-      console.error('[PluginStorage] Failed to parse installed_plugins.json');
       return [];
     }
 
@@ -312,8 +359,7 @@ export class PluginStorage {
         return null;
       }
       return fs.readFileSync(INSTALLED_PLUGINS_PATH, 'utf-8');
-    } catch (err) {
-      console.error('[PluginStorage] Failed to read installed_plugins.json:', err);
+    } catch {
       return null;
     }
   }
@@ -344,12 +390,12 @@ export function loadPluginCommands(
         if (command) {
           commands.push(command);
         }
-      } catch (error) {
-        console.error(`[PluginStorage] Failed to load plugin command from ${filePath}:`, error);
+      } catch {
+        // Skip invalid command files gracefully
       }
     }
-  } catch (error) {
-    console.error(`[PluginStorage] Failed to list plugin commands in ${commandsDir}:`, error);
+  } catch {
+    // Return empty array if directory listing fails
   }
 
   return commands;

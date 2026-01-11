@@ -338,7 +338,7 @@ describe('FileContextManager', () => {
     manager.destroy();
   });
 
-  it('shows vault-relative path in @ dropdown and inserts filename on selection', () => {
+  it('shows vault-relative path in @ dropdown and inserts full path on selection', () => {
     const app = createMockApp({
       files: ['clipping/file.md'],
     });
@@ -359,7 +359,8 @@ describe('FileContextManager', () => {
 
     manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
 
-    expect(inputEl.value).toBe('@file.md ');
+    // Now inserts full vault-relative path (WYSIWYG)
+    expect(inputEl.value).toBe('@clipping/file.md ');
     const attached = (manager as any).state.getAttachedFiles();
     expect(attached.has('clipping/file.md')).toBe(true);
 
