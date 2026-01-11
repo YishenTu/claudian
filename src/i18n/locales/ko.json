@@ -74,6 +74,10 @@
       "name": "MCP 서버",
       "desc": "모델 컨텍스트 프로토콜 서버를 설정하여 외부 도구와 데이터 소스로 Claude의 기능을 확장합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
     },
+    "plugins": {
+      "name": "Claude Code 플러그인",
+      "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 활성화 또는 비활성화합니다. 활성화된 플러그인은 볼트별로 저장됩니다."
+    },
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude 설정 로드",

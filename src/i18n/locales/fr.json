@@ -74,6 +74,10 @@
       "name": "Serveurs MCP",
       "desc": "Configurez les serveurs Model Context Protocol pour étendre les capacités de Claude avec des outils et sources de données externes. Les serveurs avec mode de sauvegarde de contexte nécessitent une @mention pour s'activer."
     },
+    "plugins": {
+      "name": "Plugins Claude Code",
+      "desc": "Activez ou désactivez les plugins Claude Code découverts dans ~/.claude/plugins. Les plugins activés sont stockés par coffre."
+    },
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur Claude",

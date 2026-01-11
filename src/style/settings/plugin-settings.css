@@ -1,0 +1,173 @@
+/* Plugin Settings */
+.claudian-plugin-settings-desc {
+  margin-bottom: 12px;
+}
+
+.claudian-plugins-container {
+  margin-top: 8px;
+}
+
+.claudian-plugin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 0 12px;
+}
+
+.claudian-plugin-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.claudian-plugin-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.claudian-plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.claudian-plugin-section-header {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding: 8px 12px 4px;
+  font-weight: 600;
+}
+
+.claudian-plugin-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.claudian-plugin-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-plugin-item-disabled {
+  opacity: 0.6;
+}
+
+.claudian-plugin-item-error {
+  opacity: 0.8;
+}
+
+.claudian-plugin-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.claudian-plugin-status-enabled {
+  background: var(--color-green);
+}
+
+.claudian-plugin-status-disabled {
+  background: var(--text-muted);
+}
+
+.claudian-plugin-status-error {
+  background: var(--text-error);
+}
+
+.claudian-plugin-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-plugin-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.claudian-plugin-name {
+  font-weight: 600;
+}
+
+.claudian-plugin-version-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.claudian-plugin-scope-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.claudian-plugin-error-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--text-error);
+  color: var(--text-on-accent);
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.claudian-plugin-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-plugin-preview-error {
+  color: var(--text-error);
+}
+
+.claudian-plugin-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.claudian-plugin-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-plugin-action-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-plugin-action-btn svg {
+  width: 14px;
+  height: 14px;
+}

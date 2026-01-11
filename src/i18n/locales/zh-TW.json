@@ -74,6 +74,10 @@
       "name": "MCP 伺服器",
       "desc": "設定模型上下文協定伺服器，透過外部工具和資料來源擴展 Claude 的能力。啟用上下文保存模式的伺服器需要 @ 提及才能啟用。"
     },
+    "plugins": {
+      "name": "Claude Code 外掛程式",
+      "desc": "啟用或停用從 ~/.claude/plugins 發現的 Claude Code 外掛程式。已啟用的外掛程式按儲存庫儲存。"
+    },
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude 設定",

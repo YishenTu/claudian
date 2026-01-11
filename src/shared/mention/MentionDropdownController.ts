@@ -463,14 +463,15 @@ export class MentionDropdownController {
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
     } else {
       const file = selectedItem.file;
-      if (file) {
-        const normalizedPath = this.callbacks.normalizePathForVault(file.path);
-        if (normalizedPath) {
-          this.callbacks.onAttachFile(normalizedPath);
-        }
-      } else if (selectedItem.path) {
-        const normalizedPath = this.callbacks.normalizePathForVault(selectedItem.path);
-        if (normalizedPath) {
+      const rawPath = file?.path ?? selectedItem.path;
+      const normalizedPath = this.callbacks.normalizePathForVault(rawPath);
+
+      if (normalizedPath) {
+        // Use display name (@filename) but map to full vault-relative path for transformation
+        const displayName = `@${selectedItem.name}`;
+        if (this.callbacks.onAttachContextFile) {
+          this.callbacks.onAttachContextFile(displayName, normalizedPath);
+        } else {
           this.callbacks.onAttachFile(normalizedPath);
         }
       }

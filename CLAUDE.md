@@ -18,6 +18,9 @@ src/
 │   │   ├── McpServerManager.ts
 │   │   ├── McpService.ts
 │   │   └── McpTester.ts
+│   ├── plugins/                 # Claude Code plugin discovery and management
+│   │   ├── PluginManager.ts
+│   │   └── PluginStorage.ts
 │   ├── prompts/                 # System prompts for agents
 │   ├── sdk/                     # SDK message transformation
 │   ├── security/                # Approval, blocklist, path validation
@@ -54,12 +57,13 @@ src/
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
 | | `mcp/` | MCP server config, service, and testing |
+| | `plugins/` | Claude Code plugin discovery, management, and command loading |
 | | `prompts/` | System prompts (main agent, inline edit, instruction refine, title generation) |
 | | `sdk/` | SDK message transformation |
 | | `security/` | Approval, blocklist, path validation |
 | | `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
 | | `tools/` | Tool names, icons, input parsing |
-| | `types/` | Type definitions (includes MCP types) |
+| | `types/` | Type definitions (includes MCP and plugin types) |
 | **features** | `chat/` | Main chat view with modular controllers |
 | | `chat/state/` | Centralized chat state management (ChatState) |
 | | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
@@ -195,13 +199,14 @@ interface ClaudianSettings {
   envSnippets: EnvSnippet[];
   systemPrompt: string;
   allowedExportPaths: string[];      // Write-only paths outside vault
-  slashCommands: SlashCommand[];     // Loaded from .claude/commands/*.md
+  slashCommands: SlashCommand[];     // Loaded from .claude/commands/*.md + enabled plugins
   keyboardNavigation: {             // Vim-style navigation key bindings
     scrollUpKey: string;
     scrollDownKey: string;
     focusInputKey: string;
   };
   claudeCliPath: string;             // Custom Claude CLI path (empty = auto-detect)
+  enabledPlugins: string[];          // IDs of enabled Claude Code plugins (per vault)
 }
 
 // Per-conversation state (session-only, not global settings)
@@ -309,6 +314,18 @@ Extend Claude with external tools and data sources via MCP servers.
 - **Context-saving mode**: Hide server tools unless `@`-mentioned (saves context window)
 - **UI**: Settings page for add/edit/delete, connection tester, toolbar selector with glow effect
 
+### Claude Code Plugins
+Discover and enable Claude Code plugins installed via the CLI.
+- **Registry**: Reads from `~/.claude/plugins/installed_plugins.json`
+- **Scopes**:
+  - **User scope**: `projectPath` = home directory → available in all vaults
+  - **Project scope**: `projectPath` = specific directory → only in matching vault
+- **Features supported**: Skills, slash commands (namespaced as `plugin-name:command`)
+- **Settings UI**: Enable/disable toggle per plugin, grouped by scope
+- **Manifest formats**: Single-plugin (`plugin.json`) and marketplace (`marketplace.json`)
+
+**Plugin commands**: Commands from enabled plugins are automatically loaded from `{installPath}/commands/*.md` and namespaced with the plugin name. Example: A plugin "Code Review" with `commands/pr.md` becomes `/code-review:pr`.
+
 ### Context Window Usage
 240° arc gauge showing context usage in the input toolbar.
 - **Location**: Between thinking selector and folder icon
@@ -372,7 +389,7 @@ src/style/
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands
 ├── modals/         # approval, instruction, mcp-modal
-├── settings/       # base, approved-actions, env-snippets, slash-settings, mcp-settings
+├── settings/       # base, approved-actions, env-snippets, slash-settings, mcp-settings, plugin-settings
 ├── accessibility.css
 └── index.css       # Build order (@import list)
 ```
@@ -397,6 +414,7 @@ All classes use `.claudian-` prefix. Key patterns:
 | Context meter | `-context-meter`, `-context-meter-gauge`, `-context-meter-percent`, `-meter-bg`, `-meter-fill` |
 | MCP | `-mcp-selector`, `-mcp-selector-icon`, `-mcp-selector-dropdown`, `-mcp-item` |
 | MCP Settings | `-mcp-header`, `-mcp-list`, `-mcp-status`, `-mcp-test-modal` |
+| Plugin Settings | `-plugin-header`, `-plugin-list`, `-plugin-item`, `-plugin-status`, `-plugin-scope-badge` |
 | Modals | `-approval-modal`, `-instruction-modal`, `-mcp-modal` |
 
 ## Development Notes

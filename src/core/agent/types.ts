@@ -146,6 +146,7 @@ export interface PersistentQueryConfig {
   systemPromptKey: string;
   disallowedToolsKey: string;
   mcpServersKey: string;
+  pluginsKey: string;
   externalContextPaths: string[];
   allowedExportPaths: string[];
   settingSources: string;

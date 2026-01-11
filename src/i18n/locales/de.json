@@ -74,6 +74,10 @@
       "name": "MCP-Server",
       "desc": "Konfiguriere Model Context Protocol Server, um Claude mit externen Tools und Datenquellen zu erweitern. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
     },
+    "plugins": {
+      "name": "Claude Code Plugins",
+      "desc": "Aktiviere oder deaktiviere Claude Code Plugins aus ~/.claude/plugins. Aktivierte Plugins werden pro Vault gespeichert."
+    },
     "safety": "Sicherheit",
     "loadUserSettings": {
       "name": "Benutzer-Claude-Einstellungen laden",

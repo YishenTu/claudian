@@ -74,6 +74,10 @@
       "name": "MCP 服务器",
       "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"
     },
+    "plugins": {
+      "name": "Claude Code 插件",
+      "desc": "启用或禁用从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储。"
+    },
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude 设置",

@@ -44,6 +44,7 @@
 @import "./settings/env-snippets.css";
 @import "./settings/slash-settings.css";
 @import "./settings/mcp-settings.css";
+@import "./settings/plugin-settings.css";
 
 /* Accessibility */
 @import "./accessibility.css";

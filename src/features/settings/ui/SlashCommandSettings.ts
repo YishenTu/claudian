@@ -11,6 +11,11 @@ import type { SlashCommand } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { parseSlashCommandContent } from '../../../utils/slashCommand';
 
+/** Check if a command is a user-defined command (not from a plugin). */
+function isUserCommand(cmd: SlashCommand): boolean {
+  return !cmd.id.startsWith('plugin-');
+}
+
 /** Modal for creating/editing slash commands. */
 export class SlashCommandModal extends Modal {
   private plugin: ClaudianPlugin;
@@ -125,7 +130,7 @@ export class SlashCommandModal extends Modal {
         return;
       }
 
-      // Validate name (alphanumeric, hyphens, underscores, slashes only for nested commands)
+      // Validate name (alphanumeric, hyphens, underscores, slashes only - colons reserved for plugins)
       if (!/^[a-zA-Z0-9_/-]+$/.test(name)) {
         new Notice('Command name can only contain letters, numbers, hyphens, underscores, and slashes');
         return;
@@ -218,7 +223,8 @@ export class SlashCommandSettings {
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.openCommandModal(null));
 
-    const commands = this.plugin.settings.slashCommands;
+    // Filter out plugin commands (they're managed in the plugins section)
+    const commands = this.plugin.settings.slashCommands.filter(isUserCommand);
 
     if (commands.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-slash-empty-state' });
@@ -323,7 +329,8 @@ export class SlashCommandSettings {
   }
 
   private exportCommands(): void {
-    const commands = this.plugin.settings.slashCommands;
+    // Filter out plugin commands (they're managed separately)
+    const commands = this.plugin.settings.slashCommands.filter(isUserCommand);
     if (commands.length === 0) {
       new Notice('No slash commands to export');
       return;
@@ -371,8 +378,8 @@ export class SlashCommandSettings {
             continue;
           }
 
-          // Validate name (alphanumeric, hyphens, underscores, slashes only)
-          if (!/^[a-zA-Z0-9_/-]+$/.test(cmd.name)) {
+          // Validate name (alphanumeric, hyphens, underscores, slashes, colons)
+          if (!/^[a-zA-Z0-9_/:-]+$/.test(cmd.name)) {
             continue;
           }
 

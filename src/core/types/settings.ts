@@ -272,6 +272,9 @@ export interface ClaudianSettings {
 
   // Slash commands (loaded separately from .claude/commands/)
   slashCommands: SlashCommand[];
+
+  // Claude Code plugins
+  enabledPlugins: string[];  // IDs of enabled plugins (per vault)
 }
 
 /**
@@ -329,6 +332,9 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // Slash commands (loaded separately)
   slashCommands: [],
+
+  // Claude Code plugins
+  enabledPlugins: [],
 };
 
 /** Default CC-compatible settings. */

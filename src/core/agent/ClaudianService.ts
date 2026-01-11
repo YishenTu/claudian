@@ -332,6 +332,7 @@ export class ClaudianService {
       customEnv,
       enhancedPath,
       mcpManager: this.mcpManager,
+      pluginManager: this.plugin.pluginManager,
     };
   }
 

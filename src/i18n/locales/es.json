@@ -74,6 +74,10 @@
       "name": "Servidores MCP",
       "desc": "Configura servidores Model Context Protocol para extender las capacidades de Claude con herramientas y fuentes de datos externas. Los servidores con modo de guardado de contexto requieren @mention para activarse."
     },
+    "plugins": {
+      "name": "Plugins de Claude Code",
+      "desc": "Habilita o deshabilita plugins de Claude Code descubiertos desde ~/.claude/plugins. Los plugins habilitados se almacenan por bóveda."
+    },
     "safety": "Seguridad",
     "loadUserSettings": {
       "name": "Cargar configuración de usuario Claude",

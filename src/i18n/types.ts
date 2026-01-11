@@ -70,6 +70,10 @@ export type TranslationKey =
   | 'settings.mcpServers.name'
   | 'settings.mcpServers.desc'
 
+  // Settings - Plugins
+  | 'settings.plugins.name'
+  | 'settings.plugins.desc'
+
   // Settings - Safety
   | 'settings.safety'
   | 'settings.loadUserSettings.name'

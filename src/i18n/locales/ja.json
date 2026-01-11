@@ -74,6 +74,10 @@
       "name": "MCP サーバー",
       "desc": "モデルコンテキストプロトコルサーバーを設定し、外部ツールやデータソースで Claude の機能を拡張します。コンテキスト保存モードのサーバーは @mention でアクティブにする必要があります。"
     },
+    "plugins": {
+      "name": "Claude Code プラグイン",
+      "desc": "~/.claude/plugins から検出された Claude Code プラグインを有効化または無効化します。有効化されたプラグインは保管庫ごとに保存されます。"
+    },
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーClaude設定を読み込む",
