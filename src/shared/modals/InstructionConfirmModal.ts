@@ -94,7 +94,8 @@ export class InstructionModal extends Modal {
     this.responseTextarea.inputEl.placeholder = 'Provide more details...';
 
     this.responseTextarea.inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey && !this.isSubmitting) {
+      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.isSubmitting) {
         e.preventDefault();
         this.submitClarification();
       }

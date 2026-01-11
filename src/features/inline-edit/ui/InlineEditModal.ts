@@ -339,9 +339,9 @@ class InlineEditController {
       this.attachSelectionListeners();
     }
 
-    // Escape handler
+    // Escape handler (check !e.isComposing for IME support)
     this.escHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.isComposing) {
         this.reject();
       }
     };

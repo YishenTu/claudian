@@ -93,7 +93,8 @@ export class InstructionModeManager {
   handleKeydown(e: KeyboardEvent): boolean {
     if (!this.state.active) return false;
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       // Don't handle if instruction is empty
       if (!this.state.rawInstruction.trim()) {
         return false;
@@ -104,7 +105,8 @@ export class InstructionModeManager {
       return true;
     }
 
-    if (e.key === 'Escape') {
+    // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+    if (e.key === 'Escape' && !e.isComposing) {
       e.preventDefault();
       this.cancel();
       return true;

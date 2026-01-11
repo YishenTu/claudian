@@ -483,7 +483,8 @@ export class ClaudianView extends ItemView {
     });
 
     this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && this.state.isStreaming) {
+      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+      if (e.key === 'Escape' && !e.isComposing && this.state.isStreaming) {
         e.preventDefault();
         this.inputController?.cancelStreaming();
       }
@@ -530,7 +531,8 @@ export class ClaudianView extends ItemView {
         return;
       }
 
-      if (e.key === 'Escape' && this.state.isStreaming) {
+      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+      if (e.key === 'Escape' && !e.isComposing && this.state.isStreaming) {
         e.preventDefault();
         this.inputController?.cancelStreaming();
         return;

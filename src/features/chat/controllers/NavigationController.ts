@@ -149,6 +149,9 @@ export class NavigationController {
   private handleInputKeydown(e: KeyboardEvent): void {
     if (e.key !== 'Escape') return;
 
+    // Ignore if composing (IME support for Chinese, Japanese, Korean, etc.)
+    if (e.isComposing) return;
+
     // If streaming, let existing handler interrupt (don't interfere)
     if (this.deps.isStreaming()) {
       return;

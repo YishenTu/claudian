@@ -36,11 +36,12 @@ export class EnvSnippetModal extends Modal {
     let envVarsEl: HTMLTextAreaElement;
 
     // Add keyboard shortcuts for name/description fields
+    // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         saveSnippet();
-      } else if (e.key === 'Escape') {
+      } else if (e.key === 'Escape' && !e.isComposing) {
         e.preventDefault();
         this.close();
       }

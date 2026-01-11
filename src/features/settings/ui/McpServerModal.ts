@@ -251,10 +251,11 @@ export class McpServerModal extends Modal {
   }
 
   private handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       this.save();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === 'Escape' && !e.isComposing) {
       e.preventDefault();
       this.close();
     }
