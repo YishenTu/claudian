@@ -176,6 +176,46 @@ describe('PluginStorage', () => {
       expect(plugins[0].installPath).toContain('test-plugin-new');
     });
 
+    it('prefers higher semantic version when timestamps are equal', () => {
+      const installedPlugins = {
+        version: 1,
+        plugins: {
+          'test-plugin@marketplace': [
+            {
+              scope: 'user',
+              projectPath: homeDir,
+              installPath: '/Users/testuser/.claude/plugins/test-plugin-v2',
+              version: '2.0.0',
+              installedAt: '2024-01-01T00:00:00Z',
+            },
+            {
+              scope: 'user',
+              projectPath: homeDir,
+              installPath: '/Users/testuser/.claude/plugins/test-plugin-v10',
+              version: '10.0.0',
+              installedAt: '2024-01-01T00:00:00Z',
+            },
+          ],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        const pathStr = String(p);
+        if (pathStr === installedPluginsPath) return true;
+        if (pathStr.endsWith('.claude-plugin')) return true;
+        if (pathStr.includes('test-plugin-v2') || pathStr.includes('test-plugin-v10')) return true;
+        return false;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const storage = new PluginStorage(vaultPath);
+      const plugins = storage.loadPlugins();
+
+      expect(plugins.length).toBe(1);
+      expect(plugins[0].version).toBe('10.0.0');
+      expect(plugins[0].installPath).toContain('test-plugin-v10');
+    });
+
     it('marks plugin as unavailable when install path does not exist', () => {
       const installedPlugins = {
         version: 1,

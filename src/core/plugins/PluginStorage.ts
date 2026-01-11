@@ -100,6 +100,94 @@ function readJsonFile<T>(filePath: string): { data: T | null; error?: string } {
  * Pick the newest entry from a list of plugin entries.
  * Order: lastUpdated > installedAt > version
  */
+type SemverIdentifier = number | string;
+
+type ParsedSemver = {
+  core: number[];
+  prerelease: SemverIdentifier[];
+  valid: boolean;
+};
+
+const NUMERIC_IDENTIFIER_RE = /^[0-9]+$/;
+
+function parseSemver(version: string): ParsedSemver {
+  const trimmed = version.trim();
+  const normalized = trimmed.startsWith('v') || trimmed.startsWith('V') ? trimmed.slice(1) : trimmed;
+  const [coreAndPre] = normalized.split('+', 1);
+  const [corePart, prereleasePart] = coreAndPre.split('-', 2);
+
+  if (!corePart) {
+    return { core: [], prerelease: [], valid: false };
+  }
+
+  const coreSegments = corePart.split('.');
+  const core: number[] = [];
+
+  for (const segment of coreSegments) {
+    if (!segment || !NUMERIC_IDENTIFIER_RE.test(segment)) {
+      return { core: [], prerelease: [], valid: false };
+    }
+    core.push(Number(segment));
+  }
+
+  const prerelease = prereleasePart
+    ? prereleasePart.split('.').map((id) => (NUMERIC_IDENTIFIER_RE.test(id) ? Number(id) : id))
+    : [];
+
+  return { core, prerelease, valid: true };
+}
+
+function comparePrerelease(
+  a: SemverIdentifier[],
+  b: SemverIdentifier[]
+): number {
+  if (a.length === 0 && b.length === 0) return 0;
+  if (a.length === 0) return 1;
+  if (b.length === 0) return -1;
+
+  const maxLen = Math.max(a.length, b.length);
+  for (let i = 0; i < maxLen; i++) {
+    const aId = a[i];
+    const bId = b[i];
+
+    if (aId === undefined) return -1;
+    if (bId === undefined) return 1;
+    if (aId === bId) continue;
+
+    const aIsNumber = typeof aId === 'number';
+    const bIsNumber = typeof bId === 'number';
+
+    if (aIsNumber && bIsNumber) {
+      return aId > bId ? 1 : -1;
+    }
+    if (aIsNumber !== bIsNumber) {
+      return aIsNumber ? -1 : 1;
+    }
+    return String(aId).localeCompare(String(bId));
+  }
+
+  return 0;
+}
+
+function compareSemver(a: string, b: string): number {
+  const parsedA = parseSemver(a);
+  const parsedB = parseSemver(b);
+
+  if (!parsedA.valid || !parsedB.valid) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  const maxLen = Math.max(3, parsedA.core.length, parsedB.core.length);
+  for (let i = 0; i < maxLen; i++) {
+    const aVal = parsedA.core[i] ?? 0;
+    const bVal = parsedB.core[i] ?? 0;
+    if (aVal > bVal) return 1;
+    if (aVal < bVal) return -1;
+  }
+
+  return comparePrerelease(parsedA.prerelease, parsedB.prerelease);
+}
+
 function pickNewestEntry(entries: InstalledPluginEntry[]): InstalledPluginEntry | null {
   if (entries.length === 0) return null;
   if (entries.length === 1) return entries[0];
@@ -113,7 +201,7 @@ function pickNewestEntry(entries: InstalledPluginEntry[]): InstalledPluginEntry 
     if (currentDate < newestDate) return newest;
 
     // Fall back to version comparison
-    return current.version > newest.version ? current : newest;
+    return compareSemver(current.version, newest.version) > 0 ? current : newest;
   });
 }
 
