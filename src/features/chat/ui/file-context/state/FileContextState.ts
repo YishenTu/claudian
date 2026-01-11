@@ -12,7 +12,7 @@ export class FileContextState {
   private sessionStarted = false;
   private mentionedMcpServers: Set<string> = new Set();
   private currentNoteSent = false;
-  /** Maps display name (e.g., "@folder/file.ts") to absolute path for context files. */
+  /** Maps display name to absolute path for external context files only. */
   private contextFileMap: Map<string, string> = new Map();
 
   getAttachedFiles(): Set<string> {
@@ -62,7 +62,7 @@ export class FileContextState {
     this.attachedFiles.add(path);
   }
 
-  /** Attach a context file with display name to absolute path mapping. */
+  /** Attach an external context file with display name to absolute path mapping. */
   attachContextFile(displayName: string, absolutePath: string): void {
     this.attachedFiles.add(absolutePath);
     this.contextFileMap.set(displayName, absolutePath);
@@ -77,11 +77,11 @@ export class FileContextState {
     this.contextFileMap.clear();
   }
 
-  /** Transform text by replacing context file display names with absolute paths. */
+  /** Transform text by replacing external context file display names with absolute paths. */
   transformContextMentions(text: string): string {
     let result = text;
     for (const [displayName, absolutePath] of this.contextFileMap) {
-      // Replace @folder/file.ts with absolute path
+      // Replace @contextFolder/file.ts with absolute path
       result = result.replace(new RegExp(escapeRegExp(displayName), 'g'), absolutePath);
     }
     return result;

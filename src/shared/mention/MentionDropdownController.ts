@@ -467,16 +467,12 @@ export class MentionDropdownController {
       const normalizedPath = this.callbacks.normalizePathForVault(rawPath);
 
       if (normalizedPath) {
-        // Use display name (@filename) but map to full vault-relative path for transformation
-        const displayName = `@${selectedItem.name}`;
-        if (this.callbacks.onAttachContextFile) {
-          this.callbacks.onAttachContextFile(displayName, normalizedPath);
-        } else {
-          this.callbacks.onAttachFile(normalizedPath);
-        }
+        // Use full vault-relative path directly - no mapping needed
+        this.callbacks.onAttachFile(normalizedPath);
       }
 
-      const replacement = `@${selectedItem.name} `;
+      // Insert full path so what user sees is what Claude gets
+      const replacement = `@${normalizedPath ?? selectedItem.name} `;
       this.inputEl.value = beforeAt + replacement + afterCursor;
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
     }
