@@ -1,5 +1,0 @@
-{
-    "scripts": {
-        "run": "cd $CONDUCTOR_ROOT_PATH && git checkout $(git rev-parse --abbrev-ref HEAD) -- . && npm run build; git reset --hard HEAD"
-    }
-}
