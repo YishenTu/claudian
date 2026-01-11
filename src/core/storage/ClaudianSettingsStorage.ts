@@ -125,13 +125,8 @@ export class ClaudianSettingsStorage {
    * Save Claudian settings to .claude/claudian-settings.json.
    */
   async save(settings: StoredClaudianSettings): Promise<void> {
-    try {
-      const content = JSON.stringify(settings, null, 2);
-      await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
-    } catch (error) {
-      console.error('[Claudian] Failed to save Claudian settings:', error);
-      throw error;
-    }
+    const content = JSON.stringify(settings, null, 2);
+    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
   }
 
   /**
