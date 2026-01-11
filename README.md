@@ -90,10 +90,10 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 ### Features
 
 - **Inline Edit**: Select text + hotkey to edit directly in notes with word-level diff preview
-- **Slash Commands**: Type `/` for custom prompt templates (Settings → Slash Commands)
 - **Instruction Mode**: Type `#` to add refined instructions to system prompt
-- **Skills**: Add `SKILL.md` files to `~/.claude/skills/` or `{vault}/.claude/skills/`
-- **Claude Code Plugins**: Enable plugins via Settings → Claude Code Plugins
+- **Slash Commands**: Type `/` for custom prompt templates (Settings → Slash Commands)
+- **Skills**: Add `SKILL.md` files to `~/.claude/skills/` or `{vault}/.claude/skills/`, recommended to use Claude Code to manage skills
+- **Claude Code Plugins**: Enable plugins via Settings → Claude Code Plugins, recommended to use Claude Code to manage plugins
 - **MCP**: Add external tools via Settings → MCP Servers; use `@mcp-server` in chat to activate
 
 ## Configuration
