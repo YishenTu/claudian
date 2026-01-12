@@ -26,7 +26,12 @@ import type ClaudianPlugin from '../../main';
 import { stripCurrentNotePrefix } from '../../utils/context';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../utils/env';
 import { getPathAccessType, getVaultPath } from '../../utils/path';
-import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
+import {
+  buildContextFromHistory,
+  buildPromptWithHistoryContext,
+  getLastUserMessage,
+  isSessionExpiredError,
+} from '../../utils/session';
 import {
   createBlocklistHook,
   createFileHashPostHook,
@@ -609,15 +614,8 @@ export class ClaudianService {
     // Inject history to restore context without forcing cold-start
     if (this.sessionManager.needsHistoryRebuild() && conversationHistory && conversationHistory.length > 0) {
       const historyContext = buildContextFromHistory(conversationHistory);
-      if (historyContext) {
-        // Avoid duplicating the current prompt if it's already the last user message in history
-        const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        promptToSend = shouldAppendPrompt
-          ? `${historyContext}\n\nUser: ${prompt}`
-          : historyContext;
-      }
+      const actualPrompt = stripCurrentNotePrefix(prompt);
+      promptToSend = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
       this.sessionManager.clearHistoryRebuild();
     }
 
@@ -625,17 +623,9 @@ export class ClaudianService {
       conversationHistory && conversationHistory.length > 0;
 
     if (noSessionButHasHistory) {
-      if (conversationHistory && conversationHistory.length > 0) {
-        const historyContext = buildContextFromHistory(conversationHistory);
-        const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        promptToSend = historyContext
-          ? shouldAppendPrompt
-            ? `${historyContext}\n\nUser: ${prompt}`
-            : historyContext
-          : prompt;
-      }
+      const historyContext = buildContextFromHistory(conversationHistory!);
+      const actualPrompt = stripCurrentNotePrefix(prompt);
+      promptToSend = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory!);
 
       // Note: Do NOT call invalidateSession() here. The cold-start will capture
       // a new session ID anyway, and invalidating would break any persistent query
@@ -686,15 +676,10 @@ export class ClaudianService {
         this.sessionManager.invalidateSession();
 
         const historyContext = buildContextFromHistory(conversationHistory);
-        const lastUserMessage = getLastUserMessage(conversationHistory);
         const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        const fullPrompt = historyContext
-          ? shouldAppendPrompt
-            ? `${historyContext}\n\nUser: ${prompt}`
-            : historyContext
-          : prompt;
+        const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
 
+        const lastUserMessage = getLastUserMessage(conversationHistory);
         const retryImages = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
 
         try {

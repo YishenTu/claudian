@@ -146,10 +146,8 @@ function formatThinkingBlocks(message: ChatMessage): string[] {
     0
   );
 
-  if (totalDuration > 0) {
-    return [`[Thinking: ${thinkingBlocks.length} block(s), ${totalDuration.toFixed(1)}s total]`];
-  }
-  return [`[Thinking: ${thinkingBlocks.length} block(s)]`];
+  const durationPart = totalDuration > 0 ? `, ${totalDuration.toFixed(1)}s total` : '';
+  return [`[Thinking: ${thinkingBlocks.length} block(s)${durationPart}]`];
 }
 
 /**
@@ -216,4 +214,25 @@ export function getLastUserMessage(messages: ChatMessage[]): ChatMessage | undef
     }
   }
   return undefined;
+}
+
+/**
+ * Builds a prompt with history context for session recovery.
+ * Avoids duplicating the current prompt if it's already the last user message.
+ */
+export function buildPromptWithHistoryContext(
+  historyContext: string | null,
+  prompt: string,
+  actualPrompt: string,
+  conversationHistory: ChatMessage[]
+): string {
+  if (!historyContext) return prompt;
+
+  const lastUserMessage = getLastUserMessage(conversationHistory);
+  const shouldAppendPrompt = !lastUserMessage ||
+    lastUserMessage.content.trim() !== actualPrompt.trim();
+
+  return shouldAppendPrompt
+    ? `${historyContext}\n\nUser: ${prompt}`
+    : historyContext;
 }
