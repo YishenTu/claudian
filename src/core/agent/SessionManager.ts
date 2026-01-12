@@ -28,6 +28,7 @@ export class SessionManager {
     sessionModel: null,
     pendingSessionModel: null,
     wasInterrupted: false,
+    needsHistoryRebuild: false,
   };
 
   getSessionId(): string | null {
@@ -37,6 +38,8 @@ export class SessionManager {
   setSessionId(id: string | null, defaultModel?: ClaudeModel): void {
     this.state.sessionId = id;
     this.state.sessionModel = id ? (defaultModel ?? null) : null;
+    // Clear rebuild flag when switching sessions to prevent carrying over to different conversation
+    this.state.needsHistoryRebuild = false;
   }
 
   wasInterrupted(): boolean {
@@ -59,10 +62,32 @@ export class SessionManager {
     this.state.pendingSessionModel = null;
   }
 
+  /**
+   * Captures a session ID from SDK response.
+   * Detects mismatch if we had a different session ID before (context lost).
+   */
   captureSession(sessionId: string): void {
+    // Detect mismatch: we had a session, but SDK gave us a different one
+    const hadSession = this.state.sessionId !== null;
+    const isDifferent = this.state.sessionId !== sessionId;
+    if (hadSession && isDifferent) {
+      // SDK lost our session context - need to rebuild history on next message
+      this.state.needsHistoryRebuild = true;
+    }
+
     this.state.sessionId = sessionId;
     this.state.sessionModel = this.state.pendingSessionModel;
     this.state.pendingSessionModel = null;
+  }
+
+  /** Check if history rebuild is needed due to session mismatch. */
+  needsHistoryRebuild(): boolean {
+    return this.state.needsHistoryRebuild;
+  }
+
+  /** Clear the history rebuild flag after injecting history. */
+  clearHistoryRebuild(): void {
+    this.state.needsHistoryRebuild = false;
   }
 
   invalidateSession(): void {
@@ -76,6 +101,7 @@ export class SessionManager {
       sessionModel: null,
       pendingSessionModel: null,
       wasInterrupted: false,
+      needsHistoryRebuild: false,
     };
   }
 }

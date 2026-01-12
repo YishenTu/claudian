@@ -73,6 +73,10 @@ export class InputController {
     promptPrefix?: string;
   }): Promise<void> {
     const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
+
+    // During conversation creation/switching, don't send - input is preserved so user can retry
+    if (state.isCreatingConversation || state.isSwitchingConversation) return;
+
     const inputEl = this.deps.getInputEl();
     const imageContextManager = this.deps.getImageContextManager();
     const fileContextManager = this.deps.getFileContextManager();

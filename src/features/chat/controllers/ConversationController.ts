@@ -65,51 +65,60 @@ export class ConversationController {
   async createNew(): Promise<void> {
     const { plugin, state, asyncSubagentManager } = this.deps;
     if (state.isStreaming) return;
+    if (state.isCreatingConversation) return;
+    if (state.isSwitchingConversation) return;
 
-    if (state.messages.length > 0) {
-      await this.save();
+    // Set flag to block message sending during creation
+    state.isCreatingConversation = true;
+
+    try {
+      if (state.messages.length > 0) {
+        await this.save();
+      }
+
+      asyncSubagentManager.orphanAllActive();
+      state.asyncSubagentStates.clear();
+
+      // Check for existing empty conversation to reuse
+      const emptyConv = plugin.findEmptyConversation();
+      const conversation = emptyConv
+        ? await plugin.switchConversation(emptyConv.id) ?? await plugin.createConversation()
+        : await plugin.createConversation();
+
+      state.currentConversationId = conversation.id;
+      state.clearMessages();
+      state.usage = null;
+      state.currentTodos = null;
+
+      const messagesEl = this.deps.getMessagesEl();
+      messagesEl.empty();
+
+      // Remount TodoPanel after clearing (messagesEl.empty() removes it from DOM)
+      this.deps.getTodoPanel()?.remount();
+
+      // Recreate welcome element after clearing messages
+      const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
+      welcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: this.getGreeting() });
+      this.deps.setWelcomeEl(welcomeEl);
+
+      this.deps.getInputEl().value = '';
+
+      const fileCtx = this.deps.getFileContextManager();
+      fileCtx?.resetForNewConversation();
+      fileCtx?.autoAttachActiveFile();
+
+      this.deps.getImageContextManager()?.clearImages();
+      this.deps.getMcpServerSelector()?.clearEnabled();
+      // Pass current settings to ensure we have the most up-to-date persistent paths
+      this.deps.getExternalContextSelector()?.clearExternalContexts(
+        plugin.settings.persistentExternalContextPaths || []
+      );
+      this.deps.clearQueuedMessage();
+
+      this.callbacks.onNewConversation?.();
+    } finally {
+      state.isCreatingConversation = false;
     }
-
-    asyncSubagentManager.orphanAllActive();
-    state.asyncSubagentStates.clear();
-
-    // Check for existing empty conversation to reuse
-    const emptyConv = plugin.findEmptyConversation();
-    const conversation = emptyConv
-      ? await plugin.switchConversation(emptyConv.id) ?? await plugin.createConversation()
-      : await plugin.createConversation();
-
-    state.currentConversationId = conversation.id;
-    state.clearMessages();
-    state.usage = null;
-    state.currentTodos = null;
-
-    const messagesEl = this.deps.getMessagesEl();
-    messagesEl.empty();
-
-    // Remount TodoPanel after clearing (messagesEl.empty() removes it from DOM)
-    this.deps.getTodoPanel()?.remount();
-
-    // Recreate welcome element after clearing messages
-    const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
-    welcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: this.getGreeting() });
-    this.deps.setWelcomeEl(welcomeEl);
-
-    this.deps.getInputEl().value = '';
-
-    const fileCtx = this.deps.getFileContextManager();
-    fileCtx?.resetForNewConversation();
-    fileCtx?.autoAttachActiveFile();
-
-    this.deps.getImageContextManager()?.clearImages();
-    this.deps.getMcpServerSelector()?.clearEnabled();
-    // Pass current settings to ensure we have the most up-to-date persistent paths
-    this.deps.getExternalContextSelector()?.clearExternalContexts(
-      plugin.settings.persistentExternalContextPaths || []
-    );
-    this.deps.clearQueuedMessage();
-
-    this.callbacks.onNewConversation?.();
   }
 
   /** Loads the active conversation or creates a new one. */
@@ -172,56 +181,66 @@ export class ConversationController {
 
     if (id === state.currentConversationId) return;
     if (state.isStreaming) return;
+    if (state.isSwitchingConversation) return;
+    if (state.isCreatingConversation) return;
 
-    await this.save();
+    state.isSwitchingConversation = true;
 
-    asyncSubagentManager.orphanAllActive();
-    state.asyncSubagentStates.clear();
+    try {
+      await this.save();
 
-    const conversation = await plugin.switchConversation(id);
-    if (!conversation) return;
+      asyncSubagentManager.orphanAllActive();
+      state.asyncSubagentStates.clear();
 
-    state.currentConversationId = conversation.id;
-    state.messages = [...conversation.messages];
-    state.usage = conversation.usage ?? null;
+      const conversation = await plugin.switchConversation(id);
+      if (!conversation) {
+        return;
+      }
 
-    this.deps.getInputEl().value = '';
-    this.deps.clearQueuedMessage();
+      state.currentConversationId = conversation.id;
+      state.messages = [...conversation.messages];
+      state.usage = conversation.usage ?? null;
 
-    const fileCtx = this.deps.getFileContextManager();
-    fileCtx?.resetForLoadedConversation(state.messages.length > 0);
+      this.deps.getInputEl().value = '';
+      this.deps.clearQueuedMessage();
 
-    if (conversation.currentNote) {
-      fileCtx?.setCurrentNote(conversation.currentNote);
+      const fileCtx = this.deps.getFileContextManager();
+      fileCtx?.resetForLoadedConversation(state.messages.length > 0);
+
+      if (conversation.currentNote) {
+        fileCtx?.setCurrentNote(conversation.currentNote);
+      }
+
+      // Restore external context paths based on session state
+      this.restoreExternalContextPaths(
+        conversation.externalContextPaths,
+        state.messages.length === 0
+      );
+
+      // Restore enabled MCP servers (or clear if none)
+      const mcpServerSelector = this.deps.getMcpServerSelector();
+      if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
+        mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
+      } else {
+        mcpServerSelector?.clearEnabled();
+      }
+
+      const welcomeEl = renderer.renderMessages(
+        state.messages,
+        () => this.getGreeting()
+      );
+      this.deps.setWelcomeEl(welcomeEl);
+
+      // Restore todo panel from switched conversation
+      state.currentTodos = extractLastTodosFromMessages(state.messages);
+
+      this.deps.getHistoryDropdown()?.removeClass('visible');
+      this.updateWelcomeVisibility();
+
+      this.callbacks.onConversationSwitched?.();
+    } finally {
+      state.isSwitchingConversation = false;
     }
-
-    // Restore external context paths based on session state
-    this.restoreExternalContextPaths(
-      conversation.externalContextPaths,
-      state.messages.length === 0
-    );
-
-    // Restore enabled MCP servers (or clear if none)
-    const mcpServerSelector = this.deps.getMcpServerSelector();
-    if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
-      mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
-    } else {
-      mcpServerSelector?.clearEnabled();
-    }
-
-    const welcomeEl = renderer.renderMessages(
-      state.messages,
-      () => this.getGreeting()
-    );
-    this.deps.setWelcomeEl(welcomeEl);
-
-    // Restore todo panel from switched conversation
-    state.currentTodos = extractLastTodosFromMessages(state.messages);
-
-    this.deps.getHistoryDropdown()?.removeClass('visible');
-    this.updateWelcomeVisibility();
-
-    this.callbacks.onConversationSwitched?.();
   }
 
   /** Saves the current conversation. */

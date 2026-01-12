@@ -73,7 +73,23 @@ describe('session utilities', () => {
   });
 
   describe('formatToolCallForContext', () => {
-    it('formats tool call with status only when no result', () => {
+    it('formats successful tool call with input but without result', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Read',
+        input: { file_path: '/path/to/file.md' },
+        status: 'completed',
+        result: 'File contents here - this should NOT be included',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      // Successful tools show input but no result (Claude can re-execute if needed)
+      expect(result).toBe('[Tool Read input: file_path=/path/to/file.md status=completed]');
+      expect(result).not.toContain('File contents');
+    });
+
+    it('formats tool call without input', () => {
       const toolCall: ToolCallInfo = {
         id: 'tool-1',
         name: 'Read',
@@ -86,42 +102,72 @@ describe('session utilities', () => {
       expect(result).toBe('[Tool Read status=completed]');
     });
 
-    it('formats tool call with result', () => {
+    it('formats failed tool call with input and error message', () => {
       const toolCall: ToolCallInfo = {
         id: 'tool-1',
         name: 'Read',
-        input: {},
-        status: 'completed',
-        result: 'File contents here',
+        input: { file_path: '/path/to/missing.txt' },
+        status: 'error',
+        result: 'File not found',
       };
 
       const result = formatToolCallForContext(toolCall);
 
-      expect(result).toBe('[Tool Read status=completed] result: File contents here');
+      expect(result).toBe('[Tool Read input: file_path=/path/to/missing.txt status=error] error: File not found');
     });
 
-    it('truncates long results to default 800 chars', () => {
-      const longResult = 'x'.repeat(1000);
+    it('formats blocked tool call with input and error message', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Bash',
+        input: { command: 'rm -rf /' },
+        status: 'blocked',
+        result: 'Command blocked by security policy',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      expect(result).toBe('[Tool Bash input: command=rm -rf / status=blocked] error: Command blocked by security policy');
+    });
+
+    it('truncates long input values', () => {
+      const longPath = '/very/long/path/' + 'x'.repeat(150);
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Read',
+        input: { file_path: longPath },
+        status: 'completed',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      // Long values truncated to 100 chars (/very/long/path/ = 16 chars, so 84 x's + ...)
+      expect(result).toContain('file_path=/very/long/path/' + 'x'.repeat(84) + '...');
+      expect(result).not.toContain(longPath);
+    });
+
+    it('truncates long error messages to default 500 chars', () => {
+      const longError = 'x'.repeat(700);
       const toolCall: ToolCallInfo = {
         id: 'tool-1',
         name: 'Bash',
         input: {},
-        status: 'completed',
-        result: longResult,
+        status: 'error',
+        result: longError,
       };
 
       const result = formatToolCallForContext(toolCall);
 
-      expect(result).toContain('x'.repeat(800));
+      expect(result).toContain('x'.repeat(500));
       expect(result).toContain('(truncated)');
     });
 
-    it('truncates to custom max length', () => {
+    it('truncates to custom max length for errors', () => {
       const toolCall: ToolCallInfo = {
         id: 'tool-1',
         name: 'Bash',
         input: {},
-        status: 'completed',
+        status: 'error',
         result: 'x'.repeat(500),
       };
 
@@ -144,7 +190,7 @@ describe('session utilities', () => {
       expect(result).toBe('[Tool Write status=completed]');
     });
 
-    it('handles empty result string', () => {
+    it('handles empty result string for successful tool', () => {
       const toolCall: ToolCallInfo = {
         id: 'tool-1',
         name: 'Edit',
@@ -158,7 +204,21 @@ describe('session utilities', () => {
       expect(result).toBe('[Tool Edit status=completed]');
     });
 
-    it('handles whitespace-only result', () => {
+    it('handles empty result string for failed tool', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Edit',
+        input: {},
+        status: 'error',
+        result: '',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      expect(result).toBe('[Tool Edit status=error]');
+    });
+
+    it('handles whitespace-only result for successful tool', () => {
       const toolCall: ToolCallInfo = {
         id: 'tool-1',
         name: 'Glob',
@@ -180,22 +240,22 @@ describe('session utilities', () => {
     });
 
     it('returns unchanged result when exactly at max length', () => {
-      const result = truncateToolResult('x'.repeat(800), 800);
-      expect(result).toBe('x'.repeat(800));
+      const result = truncateToolResult('x'.repeat(500), 500);
+      expect(result).toBe('x'.repeat(500));
     });
 
     it('truncates and adds indicator when over max length', () => {
-      const longResult = 'x'.repeat(1000);
-      const result = truncateToolResult(longResult, 800);
+      const longResult = 'x'.repeat(700);
+      const result = truncateToolResult(longResult, 500);
 
-      expect(result).toBe('x'.repeat(800) + '... (truncated)');
+      expect(result).toBe('x'.repeat(500) + '... (truncated)');
     });
 
-    it('uses default max length of 800', () => {
-      const longResult = 'x'.repeat(1000);
+    it('uses default max length of 500', () => {
+      const longResult = 'x'.repeat(700);
       const result = truncateToolResult(longResult);
 
-      expect(result).toBe('x'.repeat(800) + '... (truncated)');
+      expect(result).toBe('x'.repeat(500) + '... (truncated)');
     });
   });
 
@@ -255,7 +315,7 @@ describe('session utilities', () => {
       expect(result).toContain('Assistant: Hi there!');
     });
 
-    it('includes tool call results in assistant messages', () => {
+    it('includes tool calls without results for successful tools', () => {
       const messages: ChatMessage[] = [
         { id: 'msg-1', role: 'user', content: 'Read file', timestamp: 1000 },
         {
@@ -274,7 +334,27 @@ describe('session utilities', () => {
       expect(result).toContain('User: Read file');
       expect(result).toContain('Assistant: Let me read that file.');
       expect(result).toContain('[Tool Read status=completed]');
-      expect(result).toContain('file contents');
+      // Successful tools don't include results (Claude can re-execute if needed)
+      expect(result).not.toContain('file contents');
+    });
+
+    it('includes error messages for failed tool calls', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Read file', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Let me read that file.',
+          timestamp: 2000,
+          toolCalls: [
+            { id: 'tool-1', name: 'Read', input: {}, status: 'error', result: 'File not found' },
+          ],
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('[Tool Read status=error] error: File not found');
     });
 
     it('includes currentNote context for user messages', () => {
@@ -368,7 +448,7 @@ describe('session utilities', () => {
       expect(result).toContain('\n\n');
     });
 
-    it('filters out tool calls with empty results', () => {
+    it('shows all tool calls but only error results', () => {
       const messages: ChatMessage[] = [
         { id: 'msg-1', role: 'user', content: 'Test', timestamp: 1000 },
         {
@@ -377,17 +457,100 @@ describe('session utilities', () => {
           content: 'Response',
           timestamp: 2000,
           toolCalls: [
-            { id: 'tool-1', name: 'Empty', input: {}, status: 'completed', result: '' },
-            { id: 'tool-2', name: 'HasResult', input: {}, status: 'completed', result: 'data' },
+            { id: 'tool-1', name: 'Success', input: {}, status: 'completed', result: 'data' },
+            { id: 'tool-2', name: 'Failed', input: {}, status: 'error', result: 'error msg' },
           ],
         },
       ];
 
       const result = buildContextFromHistory(messages);
 
-      // Tool with empty result should still appear (formatToolCallForContext handles this)
-      expect(result).toContain('[Tool Empty status=completed]');
-      expect(result).toContain('[Tool HasResult status=completed] result: data');
+      // Successful tool shows status only (no result)
+      expect(result).toContain('[Tool Success status=completed]');
+      expect(result).not.toContain('data');
+      // Failed tool shows error message
+      expect(result).toContain('[Tool Failed status=error] error: error msg');
+    });
+
+    it('includes thinking block summary', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Think about this', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Here is my response',
+          timestamp: 2000,
+          contentBlocks: [
+            { type: 'thinking', content: 'Let me think...', durationSeconds: 5.5 },
+            { type: 'text', content: 'Here is my response' },
+          ],
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('[Thinking: 1 block(s), 5.5s total]');
+      // Thinking content is NOT included (Claude will think anew)
+      expect(result).not.toContain('Let me think');
+    });
+
+    it('includes thinking summary for multiple blocks', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Complex problem', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Response',
+          timestamp: 2000,
+          contentBlocks: [
+            { type: 'thinking', content: 'First thought', durationSeconds: 3.0 },
+            { type: 'thinking', content: 'Second thought', durationSeconds: 2.5 },
+          ],
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('[Thinking: 2 block(s), 5.5s total]');
+    });
+
+    it('includes thinking summary without duration if not available', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Question', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Answer',
+          timestamp: 2000,
+          contentBlocks: [
+            { type: 'thinking', content: 'Thinking...' },
+          ],
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('[Thinking: 1 block(s)]');
+      expect(result).not.toContain('total]');
+    });
+
+    it('includes tool input in history', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Read my file', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Let me read it',
+          timestamp: 2000,
+          toolCalls: [
+            { id: 'tool-1', name: 'Read', input: { file_path: '/notes/todo.md' }, status: 'completed', result: 'file contents' },
+          ],
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('[Tool Read input: file_path=/notes/todo.md status=completed]');
     });
   });
 

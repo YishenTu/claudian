@@ -422,6 +422,45 @@ describe('InputController - Message Queue', () => {
     });
   });
 
+  describe('Conversation operation guards', () => {
+    it('should not send message when isCreatingConversation is true', async () => {
+      deps.state.isCreatingConversation = true;
+      inputEl.value = 'test message';
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.agentService.query).not.toHaveBeenCalled();
+      // Input should be preserved for retry
+      expect(inputEl.value).toBe('test message');
+    });
+
+    it('should not send message when isSwitchingConversation is true', async () => {
+      deps.state.isSwitchingConversation = true;
+      inputEl.value = 'test message';
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.agentService.query).not.toHaveBeenCalled();
+      // Input should be preserved for retry
+      expect(inputEl.value).toBe('test message');
+    });
+
+    it('should preserve images when blocked by conversation operation', async () => {
+      deps.state.isCreatingConversation = true;
+      inputEl.value = 'test message';
+      const mockImages = [{ id: 'img1', name: 'test.png' }];
+      const imageContextManager = deps.getImageContextManager()!;
+      (imageContextManager.hasImages as jest.Mock).mockReturnValue(true);
+      (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue(mockImages);
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.agentService.query).not.toHaveBeenCalled();
+      // Images should NOT be cleared
+      expect(imageContextManager.clearImages).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Title generation', () => {
     it('should set pending status and fallback title after first exchange', async () => {
       const mockTitleService = {

@@ -724,6 +724,158 @@ describe('ConversationController - MCP Server Persistence', () => {
   });
 });
 
+describe('ConversationController - Race Condition Guards', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  describe('createNew guards', () => {
+    it('should not create when isCreatingConversation is already true', async () => {
+      deps.state.isCreatingConversation = true;
+
+      await controller.createNew();
+
+      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
+      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+    });
+
+    it('should not create when isSwitchingConversation is true', async () => {
+      deps.state.isSwitchingConversation = true;
+
+      await controller.createNew();
+
+      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
+    });
+
+    it('should reset isCreatingConversation flag even on error', async () => {
+      (deps.plugin.createConversation as jest.Mock).mockRejectedValue(new Error('Creation failed'));
+
+      await expect(controller.createNew()).rejects.toThrow('Creation failed');
+
+      expect(deps.state.isCreatingConversation).toBe(false);
+    });
+
+    it('should set isCreatingConversation flag during creation', async () => {
+      let flagDuringCreation = false;
+      (deps.plugin.createConversation as jest.Mock).mockImplementation(async () => {
+        flagDuringCreation = deps.state.isCreatingConversation;
+        return {
+          id: 'new-conv',
+          title: 'New Conversation',
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      });
+
+      await controller.createNew();
+
+      expect(flagDuringCreation).toBe(true);
+      expect(deps.state.isCreatingConversation).toBe(false);
+    });
+  });
+
+  describe('switchTo guards', () => {
+    it('should not switch when isSwitchingConversation is already true', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      deps.state.isSwitchingConversation = true;
+
+      await controller.switchTo('new-conv');
+
+      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+    });
+
+    it('should not switch when isCreatingConversation is true', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      deps.state.isCreatingConversation = true;
+
+      await controller.switchTo('new-conv');
+
+      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+    });
+
+    it('should reset isSwitchingConversation flag even on error', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      (deps.plugin.switchConversation as jest.Mock).mockRejectedValue(new Error('Switch failed'));
+
+      await expect(controller.switchTo('new-conv')).rejects.toThrow('Switch failed');
+
+      expect(deps.state.isSwitchingConversation).toBe(false);
+    });
+
+    it('should reset isSwitchingConversation flag when conversation not found', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(null);
+
+      await controller.switchTo('non-existent');
+
+      expect(deps.state.isSwitchingConversation).toBe(false);
+    });
+
+    it('should set isSwitchingConversation flag during switch', async () => {
+      deps.state.currentConversationId = 'old-conv';
+      let flagDuringSwitch = false;
+      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async () => {
+        flagDuringSwitch = deps.state.isSwitchingConversation;
+        return {
+          id: 'new-conv',
+          title: 'New Conversation',
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      });
+
+      await controller.switchTo('new-conv');
+
+      expect(flagDuringSwitch).toBe(true);
+      expect(deps.state.isSwitchingConversation).toBe(false);
+    });
+  });
+
+  describe('mutual exclusion', () => {
+    it('should prevent createNew during switchTo', async () => {
+      deps.state.currentConversationId = 'old-conv';
+
+      // Simulate switchTo in progress
+      let switchPromiseResolve: () => void;
+      const switchPromise = new Promise<void>((resolve) => {
+        switchPromiseResolve = resolve;
+      });
+
+      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async () => {
+        // During switch, try to createNew
+        const createPromise = controller.createNew();
+
+        // createNew should be blocked because isSwitchingConversation is true
+        expect(deps.plugin.createConversation).not.toHaveBeenCalled();
+
+        switchPromiseResolve!();
+        await createPromise;
+
+        return {
+          id: 'new-conv',
+          messages: [],
+          sessionId: null,
+        };
+      });
+
+      await controller.switchTo('new-conv');
+      await switchPromise;
+
+      // createConversation should never have been called
+      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
+    });
+  });
+});
+
 describe('ConversationController - Persistent External Context Paths', () => {
   let controller: ConversationController;
   let deps: ConversationControllerDeps;

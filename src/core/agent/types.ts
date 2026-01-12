@@ -162,6 +162,8 @@ export interface SessionState {
   sessionModel: ClaudeModel | null;
   pendingSessionModel: ClaudeModel | null;
   wasInterrupted: boolean;
+  /** Set when SDK returns a different session ID than expected (context lost). */
+  needsHistoryRebuild: boolean;
 }
 
 // ============================================

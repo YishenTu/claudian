@@ -234,7 +234,9 @@ export class ClaudianView extends ItemView {
     const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
     setIcon(newBtn, 'plus');
     newBtn.setAttribute('aria-label', 'New conversation');
-    newBtn.addEventListener('click', () => this.conversationController?.createNew());
+    newBtn.addEventListener('click', async () => {
+      await this.conversationController?.createNew();
+    });
   }
 
   private buildInputArea(inputContainerEl: HTMLElement) {

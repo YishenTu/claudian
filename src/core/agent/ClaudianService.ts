@@ -26,7 +26,12 @@ import type ClaudianPlugin from '../../main';
 import { stripCurrentNotePrefix } from '../../utils/context';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../utils/env';
 import { getPathAccessType, getVaultPath } from '../../utils/path';
-import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
+import {
+  buildContextFromHistory,
+  buildPromptWithHistoryContext,
+  getLastUserMessage,
+  isSessionExpiredError,
+} from '../../utils/session';
 import {
   createBlocklistHook,
   createFileHashPostHook,
@@ -121,6 +126,7 @@ export class ClaudianService {
   private lastSentMessage: SDKUserMessage | null = null;
   private lastSentQueryOptions: QueryOptions | null = null;
   private crashRecoveryAttempted = false;
+  private coldStartInProgress = false;  // Prevent consumer error restarts during cold-start
 
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -216,6 +222,11 @@ export class ClaudianService {
 
     // Create message channel
     this.messageChannel = new MessageChannel();
+
+    // Pre-set session ID on channel if resuming
+    if (resumeSessionId) {
+      this.messageChannel.setSessionId(resumeSessionId);
+    }
 
     // Create abort controller for the persistent query
     this.queryAbortController = new AbortController();
@@ -432,7 +443,8 @@ export class ClaudianService {
           await this.routeMessage(message);
         }
       } catch (error) {
-        if (!this.shuttingDown) {
+        // Skip restart if cold-start is in progress (it will handle session capture)
+        if (!this.shuttingDown && !this.coldStartInProgress) {
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
           const errorInstance = error instanceof Error ? error : new Error(String(error));
           const messageToReplay = this.lastSentMessage;
@@ -448,6 +460,11 @@ export class ClaudianService {
               this.messageChannel.enqueue(messageToReplay);
               return;
             } catch (restartError) {
+              // If restart failed due to session expiration, invalidate session
+              // so next query triggers noSessionButHasHistory → history rebuild
+              if (isSessionExpiredError(restartError)) {
+                this.sessionManager.invalidateSession();
+              }
               console.warn('[ClaudianService] Crash recovery restart failed:', restartError);
               handler.onError(errorInstance);
               return;
@@ -465,6 +482,11 @@ export class ClaudianService {
             try {
               await this.restartPersistentQuery('consumer error');
             } catch (restartError) {
+              // If restart failed due to session expiration, invalidate session
+              // so next query triggers noSessionButHasHistory → history rebuild
+              if (isSessionExpiredError(restartError)) {
+                this.sessionManager.invalidateSession();
+              }
               // Restart failed - next query will start fresh.
               // Log for debugging but don't propagate since we've already notified the handler.
               console.warn('[ClaudianService] Post-error restart failed:', restartError);
@@ -582,33 +604,32 @@ export class ClaudianService {
     let promptToSend = prompt;
     let forceColdStart = false;
 
-    if (this.sessionManager.wasInterrupted() && conversationHistory && conversationHistory.length > 0) {
-      const historyContext = buildContextFromHistory(conversationHistory);
-      if (historyContext) {
-        promptToSend = `${historyContext}\n\nUser: ${prompt}`;
-      }
-      this.sessionManager.invalidateSession();
+    // Clear interrupted flag - persistent query handles interruption gracefully,
+    // no need to force cold-start just because user cancelled previous response
+    if (this.sessionManager.wasInterrupted()) {
       this.sessionManager.clearInterrupted();
-      forceColdStart = true;
+    }
+
+    // Session mismatch recovery: SDK returned a different session ID (context lost)
+    // Inject history to restore context without forcing cold-start
+    if (this.sessionManager.needsHistoryRebuild() && conversationHistory && conversationHistory.length > 0) {
+      const historyContext = buildContextFromHistory(conversationHistory);
+      const actualPrompt = stripCurrentNotePrefix(prompt);
+      promptToSend = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
+      this.sessionManager.clearHistoryRebuild();
     }
 
     const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
       conversationHistory && conversationHistory.length > 0;
 
     if (noSessionButHasHistory) {
-      if (conversationHistory && conversationHistory.length > 0) {
-        const historyContext = buildContextFromHistory(conversationHistory);
-        const lastUserMessage = getLastUserMessage(conversationHistory);
-        const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        promptToSend = historyContext
-          ? shouldAppendPrompt
-            ? `${historyContext}\n\nUser: ${prompt}`
-            : historyContext
-          : prompt;
-      }
+      const historyContext = buildContextFromHistory(conversationHistory!);
+      const actualPrompt = stripCurrentNotePrefix(prompt);
+      promptToSend = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory!);
 
-      this.sessionManager.invalidateSession();
+      // Note: Do NOT call invalidateSession() here. The cold-start will capture
+      // a new session ID anyway, and invalidating would break any persistent query
+      // restart that happens during the cold-start (causing SESSION MISMATCH).
       forceColdStart = true;
     }
 
@@ -617,6 +638,8 @@ export class ClaudianService {
       : queryOptions;
 
     if (forceColdStart) {
+      // Set flag BEFORE closing to prevent consumer error from triggering restart
+      this.coldStartInProgress = true;
       this.closePersistentQuery('session invalidated');
     }
 
@@ -641,26 +664,22 @@ export class ClaudianService {
     }
 
     // Cold-start path (existing logic)
+    // Set flag to prevent consumer error restarts from interfering
+    this.coldStartInProgress = true;
     this.abortController = new AbortController();
 
-    const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
-
     try {
+      const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
       yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, hydratedImages, effectiveQueryOptions);
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionManager.invalidateSession();
 
         const historyContext = buildContextFromHistory(conversationHistory);
-        const lastUserMessage = getLastUserMessage(conversationHistory);
         const actualPrompt = stripCurrentNotePrefix(prompt);
-        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
-        const fullPrompt = historyContext
-          ? shouldAppendPrompt
-            ? `${historyContext}\n\nUser: ${prompt}`
-            : historyContext
-          : prompt;
+        const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
 
+        const lastUserMessage = getLastUserMessage(conversationHistory);
         const retryImages = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
 
         try {
@@ -675,6 +694,7 @@ export class ClaudianService {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', content: msg };
     } finally {
+      this.coldStartInProgress = false;
       this.abortController = null;
     }
   }
@@ -840,6 +860,7 @@ export class ClaudianService {
    */
   private buildSDKUserMessage(prompt: string, images?: ImageAttachment[]): SDKUserMessage {
     const validImages = (images || []).filter(img => !!img.data);
+    const sessionId = this.sessionManager.getSessionId() || '';
 
     if (validImages.length === 0) {
       return {
@@ -849,7 +870,7 @@ export class ClaudianService {
           content: prompt,
         },
         parent_tool_use_id: null,
-        session_id: this.sessionManager.getSessionId() || '',
+        session_id: sessionId,
       };
     }
 
@@ -881,7 +902,7 @@ export class ClaudianService {
         content,
       },
       parent_tool_use_id: null,
-      session_id: this.sessionManager.getSessionId() || '',
+      session_id: sessionId,
     };
   }
 
