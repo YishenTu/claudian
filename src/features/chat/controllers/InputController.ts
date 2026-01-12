@@ -74,7 +74,7 @@ export class InputController {
   }): Promise<void> {
     const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
 
-    // Block message sending during conversation creation to prevent race condition
+    // During conversation creation, don't send - input is preserved so user can retry
     if (state.isCreatingConversation) return;
 
     const inputEl = this.deps.getInputEl();

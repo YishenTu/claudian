@@ -589,16 +589,10 @@ export class ClaudianService {
     let promptToSend = prompt;
     let forceColdStart = false;
 
-    if (this.sessionManager.wasInterrupted() && conversationHistory && conversationHistory.length > 0) {
-      const historyContext = buildContextFromHistory(conversationHistory);
-      if (historyContext) {
-        promptToSend = `${historyContext}\n\nUser: ${prompt}`;
-      }
-      // Note: Do NOT call invalidateSession() here. The cold-start will capture
-      // a new session ID anyway, and invalidating would break any persistent query
-      // restart that happens during the cold-start (causing SESSION MISMATCH).
+    // Clear interrupted flag - persistent query handles interruption gracefully,
+    // no need to force cold-start just because user cancelled previous response
+    if (this.sessionManager.wasInterrupted()) {
       this.sessionManager.clearInterrupted();
-      forceColdStart = true;
     }
 
     const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
