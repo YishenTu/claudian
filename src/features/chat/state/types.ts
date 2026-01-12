@@ -48,6 +48,7 @@ export interface ChatStateData {
   isStreaming: boolean;
   cancelRequested: boolean;
   isCreatingConversation: boolean;
+  isSwitchingConversation: boolean;
 
   // Conversation identity
   currentConversationId: string | null;
