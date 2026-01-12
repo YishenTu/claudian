@@ -610,7 +610,13 @@ export class ClaudianService {
     if (this.sessionManager.needsHistoryRebuild() && conversationHistory && conversationHistory.length > 0) {
       const historyContext = buildContextFromHistory(conversationHistory);
       if (historyContext) {
-        promptToSend = `${historyContext}\n\nUser: ${prompt}`;
+        // Avoid duplicating the current prompt if it's already the last user message in history
+        const lastUserMessage = getLastUserMessage(conversationHistory);
+        const actualPrompt = stripCurrentNotePrefix(prompt);
+        const shouldAppendPrompt = !lastUserMessage || lastUserMessage.content.trim() !== actualPrompt.trim();
+        promptToSend = shouldAppendPrompt
+          ? `${historyContext}\n\nUser: ${prompt}`
+          : historyContext;
       }
       this.sessionManager.clearHistoryRebuild();
     }
@@ -672,9 +678,8 @@ export class ClaudianService {
     this.coldStartInProgress = true;
     this.abortController = new AbortController();
 
-    const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
-
     try {
+      const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
       yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, hydratedImages, effectiveQueryOptions);
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {

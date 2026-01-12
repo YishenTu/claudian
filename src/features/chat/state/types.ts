@@ -47,7 +47,9 @@ export interface ChatStateData {
   // Streaming control
   isStreaming: boolean;
   cancelRequested: boolean;
+  /** Guards against concurrent operations during conversation creation. */
   isCreatingConversation: boolean;
+  /** Guards against concurrent operations during conversation switching. */
   isSwitchingConversation: boolean;
 
   // Conversation identity

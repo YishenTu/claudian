@@ -53,28 +53,32 @@ export function isSessionExpiredError(error: unknown): boolean {
 
 /**
  * Formats tool input for inclusion in rebuilt context.
- * Only includes key parameters, truncates long values.
+ * Includes all non-null parameters, truncates long string values.
  */
 function formatToolInput(input: Record<string, unknown>, maxLength = 200): string {
   if (!input || Object.keys(input).length === 0) return '';
 
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(input)) {
-    if (value === undefined || value === null) continue;
+  try {
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(input)) {
+      if (value === undefined || value === null) continue;
 
-    let valueStr: string;
-    if (typeof value === 'string') {
-      valueStr = value.length > 100 ? `${value.slice(0, 100)}...` : value;
-    } else if (typeof value === 'object') {
-      valueStr = '[object]';
-    } else {
-      valueStr = String(value);
+      let valueStr: string;
+      if (typeof value === 'string') {
+        valueStr = value.length > 100 ? `${value.slice(0, 100)}...` : value;
+      } else if (typeof value === 'object') {
+        valueStr = '[object]';
+      } else {
+        valueStr = String(value);
+      }
+      parts.push(`${key}=${valueStr}`);
     }
-    parts.push(`${key}=${valueStr}`);
-  }
 
-  const result = parts.join(', ');
-  return result.length > maxLength ? `${result.slice(0, maxLength)}...` : result;
+    const result = parts.join(', ');
+    return result.length > maxLength ? `${result.slice(0, maxLength)}...` : result;
+  } catch {
+    return '[input formatting error]';
+  }
 }
 
 /**

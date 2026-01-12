@@ -38,6 +38,8 @@ export class SessionManager {
   setSessionId(id: string | null, defaultModel?: ClaudeModel): void {
     this.state.sessionId = id;
     this.state.sessionModel = id ? (defaultModel ?? null) : null;
+    // Clear rebuild flag when switching sessions to prevent carrying over to different conversation
+    this.state.needsHistoryRebuild = false;
   }
 
   wasInterrupted(): boolean {

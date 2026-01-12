@@ -140,5 +140,28 @@ describe('SessionManager', () => {
       // This is a mismatch - SDK gave different session than we expected
       expect(manager.needsHistoryRebuild()).toBe(true);
     });
+
+    it('should clear rebuild flag when setSessionId is called (session switch)', () => {
+      // Scenario: mismatch occurs in conversation A, user switches to conversation B
+      manager.captureSession('session-a');
+      manager.captureSession('different-session'); // Mismatch detected
+      expect(manager.needsHistoryRebuild()).toBe(true);
+
+      // User switches to conversation B via setSessionId
+      manager.setSessionId('session-b');
+
+      // Flag should be cleared to prevent incorrectly prepending B's history
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
+
+    it('should clear rebuild flag when setSessionId is called with null', () => {
+      manager.captureSession('session-a');
+      manager.captureSession('different-session'); // Mismatch detected
+      expect(manager.needsHistoryRebuild()).toBe(true);
+
+      manager.setSessionId(null);
+
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
   });
 });
