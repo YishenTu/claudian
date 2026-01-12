@@ -73,6 +73,10 @@ export class InputController {
     promptPrefix?: string;
   }): Promise<void> {
     const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
+
+    // Block message sending during conversation creation to prevent race condition
+    if (state.isCreatingConversation) return;
+
     const inputEl = this.deps.getInputEl();
     const imageContextManager = this.deps.getImageContextManager();
     const fileContextManager = this.deps.getFileContextManager();

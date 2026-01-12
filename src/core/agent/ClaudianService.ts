@@ -121,6 +121,7 @@ export class ClaudianService {
   private lastSentMessage: SDKUserMessage | null = null;
   private lastSentQueryOptions: QueryOptions | null = null;
   private crashRecoveryAttempted = false;
+  private coldStartInProgress = false;  // Prevent consumer error restarts during cold-start
 
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -216,6 +217,11 @@ export class ClaudianService {
 
     // Create message channel
     this.messageChannel = new MessageChannel();
+
+    // Pre-set session ID on channel if resuming
+    if (resumeSessionId) {
+      this.messageChannel.setSessionId(resumeSessionId);
+    }
 
     // Create abort controller for the persistent query
     this.queryAbortController = new AbortController();
@@ -432,7 +438,8 @@ export class ClaudianService {
           await this.routeMessage(message);
         }
       } catch (error) {
-        if (!this.shuttingDown) {
+        // Skip restart if cold-start is in progress (it will handle session capture)
+        if (!this.shuttingDown && !this.coldStartInProgress) {
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
           const errorInstance = error instanceof Error ? error : new Error(String(error));
           const messageToReplay = this.lastSentMessage;
@@ -587,7 +594,9 @@ export class ClaudianService {
       if (historyContext) {
         promptToSend = `${historyContext}\n\nUser: ${prompt}`;
       }
-      this.sessionManager.invalidateSession();
+      // Note: Do NOT call invalidateSession() here. The cold-start will capture
+      // a new session ID anyway, and invalidating would break any persistent query
+      // restart that happens during the cold-start (causing SESSION MISMATCH).
       this.sessionManager.clearInterrupted();
       forceColdStart = true;
     }
@@ -608,7 +617,9 @@ export class ClaudianService {
           : prompt;
       }
 
-      this.sessionManager.invalidateSession();
+      // Note: Do NOT call invalidateSession() here. The cold-start will capture
+      // a new session ID anyway, and invalidating would break any persistent query
+      // restart that happens during the cold-start (causing SESSION MISMATCH).
       forceColdStart = true;
     }
 
@@ -617,6 +628,8 @@ export class ClaudianService {
       : queryOptions;
 
     if (forceColdStart) {
+      // Set flag BEFORE closing to prevent consumer error from triggering restart
+      this.coldStartInProgress = true;
       this.closePersistentQuery('session invalidated');
     }
 
@@ -641,6 +654,8 @@ export class ClaudianService {
     }
 
     // Cold-start path (existing logic)
+    // Set flag to prevent consumer error restarts from interfering
+    this.coldStartInProgress = true;
     this.abortController = new AbortController();
 
     const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
@@ -675,6 +690,7 @@ export class ClaudianService {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', content: msg };
     } finally {
+      this.coldStartInProgress = false;
       this.abortController = null;
     }
   }
@@ -840,6 +856,7 @@ export class ClaudianService {
    */
   private buildSDKUserMessage(prompt: string, images?: ImageAttachment[]): SDKUserMessage {
     const validImages = (images || []).filter(img => !!img.data);
+    const sessionId = this.sessionManager.getSessionId() || '';
 
     if (validImages.length === 0) {
       return {
@@ -849,7 +866,7 @@ export class ClaudianService {
           content: prompt,
         },
         parent_tool_use_id: null,
-        session_id: this.sessionManager.getSessionId() || '',
+        session_id: sessionId,
       };
     }
 
