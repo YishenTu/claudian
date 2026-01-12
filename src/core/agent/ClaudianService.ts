@@ -455,6 +455,11 @@ export class ClaudianService {
               this.messageChannel.enqueue(messageToReplay);
               return;
             } catch (restartError) {
+              // If restart failed due to session expiration, invalidate session
+              // so next query triggers noSessionButHasHistory → history rebuild
+              if (isSessionExpiredError(restartError)) {
+                this.sessionManager.invalidateSession();
+              }
               console.warn('[ClaudianService] Crash recovery restart failed:', restartError);
               handler.onError(errorInstance);
               return;
@@ -472,6 +477,11 @@ export class ClaudianService {
             try {
               await this.restartPersistentQuery('consumer error');
             } catch (restartError) {
+              // If restart failed due to session expiration, invalidate session
+              // so next query triggers noSessionButHasHistory → history rebuild
+              if (isSessionExpiredError(restartError)) {
+                this.sessionManager.invalidateSession();
+              }
               // Restart failed - next query will start fresh.
               // Log for debugging but don't propagate since we've already notified the handler.
               console.warn('[ClaudianService] Post-error restart failed:', restartError);
