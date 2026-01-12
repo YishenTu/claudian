@@ -66,6 +66,7 @@ export class ConversationController {
     const { plugin, state, asyncSubagentManager } = this.deps;
     if (state.isStreaming) return;
     if (state.isCreatingConversation) return;
+    if (state.isSwitchingConversation) return;
 
     // Set flag to block message sending during creation
     state.isCreatingConversation = true;
@@ -181,6 +182,7 @@ export class ConversationController {
     if (id === state.currentConversationId) return;
     if (state.isStreaming) return;
     if (state.isSwitchingConversation) return;
+    if (state.isCreatingConversation) return;
 
     state.isSwitchingConversation = true;
 

@@ -92,4 +92,53 @@ describe('SessionManager', () => {
       expect(manager.getSessionId()).toBeNull();
     });
   });
+
+  describe('session mismatch recovery', () => {
+    it('should initially not need history rebuild', () => {
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
+
+    it('should not set rebuild flag when capturing first session', () => {
+      manager.captureSession('first-session');
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
+
+    it('should not set rebuild flag when same session ID is captured', () => {
+      manager.captureSession('same-session');
+      manager.captureSession('same-session');
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
+
+    it('should set rebuild flag when different session ID is captured', () => {
+      manager.captureSession('old-session');
+      manager.captureSession('new-session');
+      expect(manager.needsHistoryRebuild()).toBe(true);
+    });
+
+    it('should clear rebuild flag with clearHistoryRebuild', () => {
+      manager.captureSession('old-session');
+      manager.captureSession('new-session');
+      expect(manager.needsHistoryRebuild()).toBe(true);
+
+      manager.clearHistoryRebuild();
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
+
+    it('should clear rebuild flag on reset', () => {
+      manager.captureSession('old-session');
+      manager.captureSession('new-session');
+      expect(manager.needsHistoryRebuild()).toBe(true);
+
+      manager.reset();
+      expect(manager.needsHistoryRebuild()).toBe(false);
+    });
+
+    it('should not set rebuild flag after setSessionId (external restore)', () => {
+      // setSessionId is for restoring from saved conversation, not SDK response
+      manager.setSessionId('restored-session');
+      manager.captureSession('different-session');
+      // This is a mismatch - SDK gave different session than we expected
+      expect(manager.needsHistoryRebuild()).toBe(true);
+    });
+  });
 });

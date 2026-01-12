@@ -605,6 +605,16 @@ export class ClaudianService {
       this.sessionManager.clearInterrupted();
     }
 
+    // Session mismatch recovery: SDK returned a different session ID (context lost)
+    // Inject history to restore context without forcing cold-start
+    if (this.sessionManager.needsHistoryRebuild() && conversationHistory && conversationHistory.length > 0) {
+      const historyContext = buildContextFromHistory(conversationHistory);
+      if (historyContext) {
+        promptToSend = `${historyContext}\n\nUser: ${prompt}`;
+      }
+      this.sessionManager.clearHistoryRebuild();
+    }
+
     const noSessionButHasHistory = !this.sessionManager.getSessionId() &&
       conversationHistory && conversationHistory.length > 0;
 
@@ -902,7 +912,7 @@ export class ClaudianService {
         content,
       },
       parent_tool_use_id: null,
-      session_id: this.sessionManager.getSessionId() || '',
+      session_id: sessionId,
     };
   }
 

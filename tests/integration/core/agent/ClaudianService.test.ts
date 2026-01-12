@@ -1787,7 +1787,7 @@ describe('ClaudianService', () => {
       expect(context).toContain('User: How are you?');
     });
 
-    it('should include tool call info in context', () => {
+    it('should include tool call info with input (status only for success)', () => {
       const messages = [
         { id: 'msg-1', role: 'user' as const, content: 'Read a file', timestamp: Date.now() },
         {
@@ -1804,8 +1804,29 @@ describe('ClaudianService', () => {
       // Now test the standalone function directly
       const context = buildContextFromHistory(messages);
 
-      expect(context).toContain('[Tool Read status=completed]');
-      expect(context).toContain('File contents');
+      // Successful tools show input but no result (Claude can re-read if needed)
+      expect(context).toContain('[Tool Read input: file_path=/test.md status=completed]');
+      expect(context).not.toContain('File contents');
+    });
+
+    it('should include error messages for failed tool calls with input', () => {
+      const messages = [
+        { id: 'msg-1', role: 'user' as const, content: 'Read a file', timestamp: Date.now() },
+        {
+          id: 'msg-2',
+          role: 'assistant' as const,
+          content: 'Reading file...',
+          timestamp: Date.now(),
+          toolCalls: [
+            { id: 'tool-1', name: 'Read', input: { file_path: '/missing.md' }, status: 'error' as const, result: 'File not found' },
+          ],
+        },
+      ];
+
+      const context = buildContextFromHistory(messages);
+
+      // Failed tools include input AND error message so Claude knows what went wrong
+      expect(context).toContain('[Tool Read input: file_path=/missing.md status=error] error: File not found');
     });
 
     it('should include current note in rebuilt history', () => {
