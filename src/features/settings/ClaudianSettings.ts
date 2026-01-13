@@ -14,7 +14,7 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i
 import type { Locale } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
-import { expandHomePath } from '../../utils/path';
+import { expandHomePath, hasShellCommandSubstitution } from '../../utils/path';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
@@ -477,6 +477,29 @@ export class ClaudianSettingTab extends PluginSettingTab {
       const trimmed = value.trim();
       if (!trimmed) return null; // Empty is valid (auto-detect)
 
+      // If contains shell command substitution, try to validate the expanded result
+      if (hasShellCommandSubstitution(trimmed)) {
+        const expandedPath = expandHomePath(trimmed);
+        // If the shell command failed to expand, show warning but allow it
+        if (expandedPath === trimmed) {
+          return null; // Allow saving, will be validated at runtime
+        }
+        // Try to validate the expanded path
+        if (fs.existsSync(expandedPath)) {
+          try {
+            const stat = fs.statSync(expandedPath);
+            if (!stat.isFile()) {
+              return t('settings.cliPath.validation.isDirectory');
+            }
+          } catch {
+            // Ignore stat errors, allow saving
+          }
+        }
+        // If expanded path doesn't exist, allow it (may be resolved later)
+        return null;
+      }
+
+      // Normal path validation
       const expandedPath = expandHomePath(trimmed);
 
       if (!fs.existsSync(expandedPath)) {
@@ -490,10 +513,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
     };
 
     cliPathSetting.addText((text) => {
-      // Platform-aware placeholder
+      // Platform-aware placeholder with shell command examples
       const placeholder = process.platform === 'win32'
-        ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
-        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+        ? '$(where claude) or D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
+        : '$(which claude) or /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
 
       // Read from platform-specific path
       const currentValue = this.plugin.settings.claudeCliPaths[cliPlatformKey] || '';

@@ -124,9 +124,9 @@
     "advanced": "Advanced",
     "cliPath": {
       "name": "Claude CLI path",
-      "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection.",
+      "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection. Supports shell commands like $(which claude) on Unix or $(where claude) on Windows.",
       "descWindows": "For the native installer, use claude.exe. For npm/pnpm/yarn or other package manager installs, use the cli.js path (not claude.cmd).",
-      "descUnix": "Paste the output of \"which claude\" — works for both native and npm/pnpm/yarn installs.",
+      "descUnix": "Paste the output of \"which claude\" or use $(which claude) directly — works for both native and npm/pnpm/yarn installs.",
       "validation": {
         "notExist": "Path does not exist",
         "isDirectory": "Path is a directory, not a file"

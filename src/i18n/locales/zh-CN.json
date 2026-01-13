@@ -124,9 +124,9 @@
     "advanced": "高级",
     "cliPath": {
       "name": "Claude CLI 路径",
-      "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",
+      "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。支持 shell 命令，如 Unix 上的 $(which claude) 或 Windows 上的 $(where claude)。",
       "descWindows": "对于原生安装程序，使用 claude.exe。对于 npm/pnpm/yarn 或其他包管理器安装，使用 cli.js 路径（不是 claude.cmd）。",
-      "descUnix": "粘贴 \"which claude\" 的输出 - 适用于原生安装和 npm/pnpm/yarn 安装。",
+      "descUnix": "粘贴 \"which claude\" 的输出或直接使用 $(which claude) - 适用于原生安装和 npm/pnpm/yarn 安装。",
       "validation": {
         "notExist": "路径不存在",
         "isDirectory": "路径是目录，不是文件"
