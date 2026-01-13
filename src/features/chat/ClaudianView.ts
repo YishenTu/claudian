@@ -26,6 +26,7 @@ export class ClaudianView extends ItemView {
 
   // Header elements
   private historyDropdown: HTMLElement | null = null;
+  private newTabBtnEl: HTMLElement | null = null;
 
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
@@ -157,6 +158,14 @@ export class ClaudianView extends ItemView {
       this.toggleHistoryDropdown();
     });
 
+    // New tab button (visible when tab bar is hidden, i.e., only 1 tab)
+    this.newTabBtnEl = headerActions.createDiv({ cls: 'claudian-header-btn' });
+    setIcon(this.newTabBtnEl, 'plus');
+    this.newTabBtnEl.setAttribute('aria-label', 'New tab');
+    this.newTabBtnEl.addEventListener('click', async () => {
+      await this.handleNewTab();
+    });
+
     // New conversation button (square-pen icon - new conversation in current tab)
     const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
     setIcon(newBtn, 'square-pen');
@@ -202,7 +211,13 @@ export class ClaudianView extends ItemView {
 
     // Hide tab bar when only 1 tab, show when 2+
     const tabCount = this.tabManager.getTabCount();
-    this.tabBarContainerEl.style.display = tabCount >= 2 ? 'flex' : 'none';
+    const showTabBar = tabCount >= 2;
+    this.tabBarContainerEl.style.display = showTabBar ? 'flex' : 'none';
+
+    // Show new tab button in header when tab bar is hidden
+    if (this.newTabBtnEl) {
+      this.newTabBtnEl.style.display = showTabBar ? 'none' : 'flex';
+    }
   }
 
   // ============================================

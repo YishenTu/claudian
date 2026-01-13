@@ -515,7 +515,7 @@ export function wireTabInputEvents(tab: TabData): void {
  * Activates a tab (shows it and starts services).
  */
 export function activateTab(tab: TabData): void {
-  tab.dom.contentEl.style.display = 'block';
+  tab.dom.contentEl.style.display = 'flex';
   tab.controllers.selectionController?.start();
 }
 
