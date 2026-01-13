@@ -464,4 +464,45 @@ export class StorageService {
   async loadClaudianSettings(): Promise<StoredClaudianSettings> {
     return this.claudianSettings.load();
   }
+
+  // ============================================================================
+  // Tab Manager State Persistence
+  // ============================================================================
+
+  /**
+   * Get tab manager state from data.json.
+   */
+  async getTabManagerState(): Promise<TabManagerPersistedState | null> {
+    try {
+      const data = await this.plugin.loadData();
+      if (data?.tabManagerState) {
+        return data.tabManagerState as TabManagerPersistedState;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Set tab manager state in data.json.
+   */
+  async setTabManagerState(state: TabManagerPersistedState): Promise<void> {
+    try {
+      const data = (await this.plugin.loadData()) || {};
+      data.tabManagerState = state;
+      await this.plugin.saveData(data);
+    } catch (error) {
+      console.error('[StorageService] Failed to save tab manager state:', error);
+    }
+  }
+}
+
+/**
+ * Persisted state for the tab manager.
+ * Stored in data.json (machine-specific, not shared).
+ */
+export interface TabManagerPersistedState {
+  openTabs: Array<{ tabId: string; conversationId: string | null }>;
+  activeTabId: string | null;
 }

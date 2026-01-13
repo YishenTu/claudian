@@ -1,101 +1,38 @@
 /**
  * Claudian - Sidebar chat view
  *
- * Main chat interface for interacting with Claude. This is a thin shell that
- * delegates to specialized controllers for different concerns.
+ * Thin shell that coordinates TabManager for multi-tab support.
+ * All per-conversation state is managed by individual tabs.
  */
 
-import type { WorkspaceLeaf } from 'obsidian';
+import type { EventRef, WorkspaceLeaf } from 'obsidian';
 import { ItemView, setIcon } from 'obsidian';
 
-import { SlashCommandManager } from '../../core/commands';
-import type { ClaudeModel, ThinkingBudget } from '../../core/types';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, VIEW_TYPE_CLAUDIAN } from '../../core/types';
+import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
-import { SlashCommandDropdown } from '../../shared/components/SlashCommandDropdown';
-import { getVaultPath } from '../../utils/path';
 import { LOGO_SVG } from './constants';
-import {
-  ConversationController,
-  InputController,
-  NavigationController,
-  SelectionController,
-  StreamController,
-} from './controllers';
-import { cleanupThinkingBlock, MessageRenderer } from './rendering';
-import { AsyncSubagentManager } from './services/AsyncSubagentManager';
-import { InstructionRefineService } from './services/InstructionRefineService';
-import { TitleGenerationService } from './services/TitleGenerationService';
-import { ChatState } from './state';
-import {
-  type ContextUsageMeter,
-  createInputToolbar,
-  type ExternalContextSelector,
-  FileContextManager,
-  ImageContextManager,
-  type InstructionModeManager,
-  InstructionModeManager as InstructionModeManagerClass,
-  type McpServerSelector,
-  type ModelSelector,
-  type PermissionToggle,
-  type ThinkingBudgetSelector,
-  TodoPanel,
-} from './ui';
+import { TabBar, TabManager } from './tabs';
+import type { TabData, TabId } from './tabs/types';
 
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {
   private plugin: ClaudianPlugin;
 
-  // State - public for test access
-  public readonly state: ChatState;
+  // Tab management
+  private tabManager: TabManager | null = null;
+  private tabBar: TabBar | null = null;
+  private tabBarContainerEl: HTMLElement | null = null;
+  private tabContentEl: HTMLElement | null = null;
 
-  // Controllers
-  private selectionController: SelectionController | null = null;
-  private conversationController: ConversationController | null = null;
-  private streamController: StreamController | null = null;
-  private inputController: InputController | null = null;
-  private navigationController: NavigationController | null = null;
-
-  // Rendering
-  private renderer: MessageRenderer | null = null;
-
-  // Services
-  private asyncSubagentManager: AsyncSubagentManager;
-  private instructionRefineService: InstructionRefineService | null = null;
-  private titleGenerationService: TitleGenerationService | null = null;
-
-  // DOM Elements
-  private messagesEl: HTMLElement | null = null;
-  private inputEl: HTMLTextAreaElement | null = null;
-  private inputWrapper: HTMLElement | null = null;
+  // Header elements
   private historyDropdown: HTMLElement | null = null;
-  private welcomeEl: HTMLElement | null = null;
-  private selectionIndicatorEl: HTMLElement | null = null;
 
-  // UI Components
-  public fileContextManager: FileContextManager | null = null;
-  private imageContextManager: ImageContextManager | null = null;
-  private modelSelector: ModelSelector | null = null;
-  private thinkingBudgetSelector: ThinkingBudgetSelector | null = null;
-  private externalContextSelector: ExternalContextSelector | null = null;
-  private mcpServerSelector: McpServerSelector | null = null;
-  private permissionToggle: PermissionToggle | null = null;
-  private slashCommandManager: SlashCommandManager | null = null;
-  private slashCommandDropdown: SlashCommandDropdown | null = null;
-  private instructionModeManager: InstructionModeManager | null = null;
-  private contextUsageMeter: ContextUsageMeter | null = null;
-  private todoPanel: TodoPanel | null = null;
+  // Event refs for cleanup
+  private eventRefs: EventRef[] = [];
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.state = new ChatState({
-      onUsageChanged: (usage) => this.contextUsageMeter?.update(usage),
-      onTodosChanged: (todos) => this.todoPanel?.updateTodos(todos),
-    });
-    this.asyncSubagentManager = new AsyncSubagentManager(
-      (subagent) => this.streamController?.onAsyncSubagentStateChange(subagent)
-    );
   }
 
   getViewType(): string {
@@ -112,8 +49,9 @@ export class ClaudianView extends ItemView {
 
   /** Refreshes the model selector display (used after env var changes). */
   refreshModelSelector(): void {
-    this.modelSelector?.updateDisplay();
-    this.modelSelector?.renderOptions();
+    const activeTab = this.tabManager?.getActiveTab();
+    activeTab?.ui.modelSelector?.updateDisplay();
+    activeTab?.ui.modelSelector?.renderOptions();
   }
 
   async onOpen() {
@@ -121,79 +59,58 @@ export class ClaudianView extends ItemView {
     container.empty();
     container.addClass('claudian-container');
 
-    // Build header
+    // Build header (includes tab bar)
     const header = container.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
 
-    // Build messages area
-    this.messagesEl = container.createDiv({ cls: 'claudian-messages' });
+    // Tab content container (TabManager will populate this)
+    this.tabContentEl = container.createDiv({ cls: 'claudian-tab-content-container' });
 
-    // Welcome message
-    this.welcomeEl = this.messagesEl.createDiv({ cls: 'claudian-welcome' });
-
-    // Create todo panel (mounts to messages area, shows at bottom)
-    this.todoPanel = new TodoPanel();
-    this.todoPanel.mount(this.messagesEl);
-
-    // Build input area
-    const inputContainerEl = container.createDiv({ cls: 'claudian-input-container' });
-    this.buildInputArea(inputContainerEl);
-
-    // Initialize renderer
-    this.renderer = new MessageRenderer(
+    // Initialize TabManager
+    this.tabManager = new TabManager(
       this.plugin,
+      this.plugin.mcpService.getManager(),
+      this.tabContentEl,
       this,
-      this.messagesEl
+      {
+        onTabCreated: () => this.updateTabBar(),
+        onTabSwitched: () => {
+          this.updateTabBar();
+          this.updateHistoryDropdown();
+        },
+        onTabClosed: () => this.updateTabBar(),
+        onTabStreamingChanged: () => this.updateTabBar(),
+        onTabTitleChanged: () => this.updateTabBar(),
+      }
     );
 
-    // Initialize controllers
-    this.initializeControllers();
-
-    // Wire up event handlers
+    // Wire up view-level event handlers
     this.wireEventHandlers();
 
-    // Start selection polling
-    this.selectionController?.start();
+    // Restore tabs from persisted state or create default tab
+    await this.restoreOrCreateTabs();
 
-    // Load conversation
-    await this.conversationController?.loadActive();
+    // Update tab bar visibility
+    this.updateTabBarVisibility();
   }
 
   async onClose() {
-    // Stop polling
-    this.selectionController?.stop();
-    this.selectionController?.clear();
+    // Cleanup event refs
+    for (const ref of this.eventRefs) {
+      this.plugin.app.vault.offref(ref);
+    }
+    this.eventRefs = [];
 
-    // Cleanup navigation controller
-    this.navigationController?.dispose();
+    // Persist tab state before cleanup
+    await this.persistTabState();
 
-    // Cleanup thinking state
-    cleanupThinkingBlock(this.state.currentThinkingState);
-    this.state.currentThinkingState = null;
+    // Destroy tab manager and all tabs
+    await this.tabManager?.destroy();
+    this.tabManager = null;
 
-    // Cleanup services
-    this.plugin.agentService.setApprovalCallback(null);
-
-    // Cleanup UI components
-    this.fileContextManager?.destroy();
-    this.slashCommandDropdown?.destroy();
-    this.slashCommandDropdown = null;
-    this.slashCommandManager = null;
-    this.instructionModeManager?.destroy();
-    this.instructionModeManager = null;
-    this.instructionRefineService?.cancel();
-    this.instructionRefineService = null;
-    this.titleGenerationService?.cancel();
-    this.titleGenerationService = null;
-    this.todoPanel?.destroy();
-    this.todoPanel = null;
-
-    // Cleanup async subagents
-    this.asyncSubagentManager.orphanAllActive();
-    this.state.asyncSubagentStates.clear();
-
-    // Save conversation
-    await this.conversationController?.save();
+    // Cleanup tab bar
+    this.tabBar?.destroy();
+    this.tabBar = null;
   }
 
   // ============================================
@@ -201,6 +118,7 @@ export class ClaudianView extends ItemView {
   // ============================================
 
   private buildHeader(header: HTMLElement) {
+    // Left: Logo and title
     const titleContainer = header.createDiv({ cls: 'claudian-title' });
     const logoEl = titleContainer.createSpan({ cls: 'claudian-logo' });
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -215,353 +133,222 @@ export class ClaudianView extends ItemView {
     logoEl.appendChild(svg);
     titleContainer.createEl('h4', { text: 'Claudian' });
 
+    // Center: Tab bar (hidden when only 1 tab)
+    this.tabBarContainerEl = header.createDiv({ cls: 'claudian-tab-bar-container' });
+    this.tabBar = new TabBar(this.tabBarContainerEl, {
+      onTabClick: (tabId) => this.handleTabClick(tabId),
+      onTabClose: (tabId) => this.handleTabClose(tabId),
+      onNewTab: () => this.handleNewTab(),
+    });
+
+    // Right: Header actions
     const headerActions = header.createDiv({ cls: 'claudian-header-actions' });
 
     // History dropdown
     const historyContainer = headerActions.createDiv({ cls: 'claudian-history-container' });
-    const trigger = historyContainer.createDiv({ cls: 'claudian-header-btn' });
-    setIcon(trigger, 'history');
-    trigger.setAttribute('aria-label', 'Chat history');
+    const historyBtn = historyContainer.createDiv({ cls: 'claudian-header-btn' });
+    setIcon(historyBtn, 'history');
+    historyBtn.setAttribute('aria-label', 'Chat history');
 
     this.historyDropdown = historyContainer.createDiv({ cls: 'claudian-history-menu' });
 
-    trigger.addEventListener('click', (e) => {
+    historyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.conversationController?.toggleHistoryDropdown();
+      this.toggleHistoryDropdown();
     });
 
-    // New conversation button
+    // New conversation button (square-pen icon - new conversation in current tab)
     const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
-    setIcon(newBtn, 'plus');
+    setIcon(newBtn, 'square-pen');
     newBtn.setAttribute('aria-label', 'New conversation');
     newBtn.addEventListener('click', async () => {
-      await this.conversationController?.createNew();
+      await this.tabManager?.createNewConversation();
+      this.updateHistoryDropdown();
     });
   }
 
-  private buildInputArea(inputContainerEl: HTMLElement) {
-    this.inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
+  // ============================================
+  // Tab Management
+  // ============================================
 
-    // Input textarea
-    this.inputEl = this.inputWrapper.createEl('textarea', {
-      cls: 'claudian-input',
-      attr: {
-        placeholder: 'How can I help you today?',
-        rows: '3',
-      },
-    });
+  private handleTabClick(tabId: TabId): void {
+    this.tabManager?.switchToTab(tabId);
+  }
 
-    // File context manager
-    this.fileContextManager = new FileContextManager(
-      this.plugin.app,
-      inputContainerEl,
-      this.inputEl,
-      {
-        getExcludedTags: () => this.plugin.settings.excludedTags,
-        onChipsChanged: () => this.renderer?.scrollToBottomIfNeeded(),
-        getExternalContexts: () => this.externalContextSelector?.getExternalContexts() || [],
-      }
-    );
-    this.fileContextManager.setMcpService(this.plugin.mcpService);
+  private async handleTabClose(tabId: TabId): Promise<void> {
+    const tab = this.tabManager?.getTab(tabId);
+    if (tab?.state.isStreaming) {
+      // TODO: Show confirmation dialog for closing streaming tab
+      return;
+    }
+    await this.tabManager?.closeTab(tabId);
+    this.updateTabBarVisibility();
+  }
 
-    // Image context manager (must be before context row wrapper)
-    this.imageContextManager = new ImageContextManager(
-      this.plugin.app,
-      inputContainerEl,
-      this.inputEl,
-      {
-        onImagesChanged: () => this.renderer?.scrollToBottomIfNeeded(),
-      }
-    );
+  private async handleNewTab(): Promise<void> {
+    await this.tabManager?.createTab();
+    this.updateTabBarVisibility();
+  }
 
-    // Context row wrapper (holds file chip and selection indicator)
-    // Created after ImageContextManager so it sees the original DOM structure
-    const fileIndicatorEl = inputContainerEl.querySelector('.claudian-file-indicator');
-    if (fileIndicatorEl) {
-      const contextRowEl = inputContainerEl.createDiv({ cls: 'claudian-context-row' });
-      inputContainerEl.insertBefore(contextRowEl, fileIndicatorEl);
-      contextRowEl.appendChild(fileIndicatorEl);
-      this.selectionIndicatorEl = contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
+  private updateTabBar(): void {
+    if (!this.tabManager || !this.tabBar) return;
+    const items = this.tabManager.getTabBarItems();
+    this.tabBar.update(items);
+    this.updateTabBarVisibility();
+  }
+
+  private updateTabBarVisibility(): void {
+    if (!this.tabBarContainerEl || !this.tabManager) return;
+
+    // Hide tab bar when only 1 tab, show when 2+
+    const tabCount = this.tabManager.getTabCount();
+    this.tabBarContainerEl.style.display = tabCount >= 2 ? 'flex' : 'none';
+  }
+
+  // ============================================
+  // History Dropdown
+  // ============================================
+
+  private toggleHistoryDropdown(): void {
+    if (!this.historyDropdown) return;
+
+    const isVisible = this.historyDropdown.hasClass('visible');
+    if (isVisible) {
+      this.historyDropdown.removeClass('visible');
     } else {
-      // Fallback: create indicator directly if file indicator was not created
-      this.selectionIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-selection-indicator' });
+      this.updateHistoryDropdown();
+      this.historyDropdown.addClass('visible');
     }
-    this.selectionIndicatorEl.style.display = 'none';
-
-    // Slash command manager
-    const vaultPath = getVaultPath(this.plugin.app);
-    if (vaultPath) {
-      this.slashCommandManager = new SlashCommandManager(this.plugin.app, vaultPath);
-      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
-
-      this.slashCommandDropdown = new SlashCommandDropdown(
-        inputContainerEl,
-        this.inputEl,
-        {
-          onSelect: () => { },
-          onHide: () => { },
-          getCommands: () => this.plugin.settings.slashCommands,
-        }
-      );
-    }
-
-    // Instruction mode manager
-    this.instructionRefineService = new InstructionRefineService(this.plugin);
-    this.titleGenerationService = new TitleGenerationService(this.plugin);
-    this.instructionModeManager = new InstructionModeManagerClass(
-      this.inputEl,
-      {
-        onSubmit: async (rawInstruction) => {
-          await this.inputController?.handleInstructionSubmit(rawInstruction);
-        },
-        getInputWrapper: () => this.inputWrapper,
-      }
-    );
-
-    // Input toolbar
-    const inputToolbar = this.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
-    const toolbarComponents = createInputToolbar(inputToolbar, {
-      getSettings: () => ({
-        model: this.plugin.settings.model,
-        thinkingBudget: this.plugin.settings.thinkingBudget,
-        permissionMode: this.plugin.settings.permissionMode,
-      }),
-      getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
-      onModelChange: async (model: ClaudeModel) => {
-        this.plugin.settings.model = model;
-        const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m: any) => m.value === model);
-        if (isDefaultModel) {
-          this.plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
-          this.plugin.settings.lastClaudeModel = model;
-        } else {
-          this.plugin.settings.lastCustomModel = model;
-        }
-        await this.plugin.saveSettings();
-        this.thinkingBudgetSelector?.updateDisplay();
-        this.modelSelector?.updateDisplay();
-        this.modelSelector?.renderOptions();
-      },
-      onThinkingBudgetChange: async (budget: ThinkingBudget) => {
-        this.plugin.settings.thinkingBudget = budget;
-        await this.plugin.saveSettings();
-      },
-      onPermissionModeChange: async (mode) => {
-        this.plugin.settings.permissionMode = mode;
-        await this.plugin.saveSettings();
-      },
-    });
-
-    this.modelSelector = toolbarComponents.modelSelector;
-    this.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
-    this.contextUsageMeter = toolbarComponents.contextUsageMeter;
-    this.externalContextSelector = toolbarComponents.externalContextSelector;
-    this.mcpServerSelector = toolbarComponents.mcpServerSelector;
-    this.permissionToggle = toolbarComponents.permissionToggle;
-
-    // Wire MCP service
-    this.mcpServerSelector.setMcpService(this.plugin.mcpService);
-
-    // Sync @-mentions to UI selector so icon glows when MCP is mentioned
-    this.fileContextManager?.setOnMcpMentionChange((servers) => {
-      this.mcpServerSelector?.addMentionedServers(servers);
-    });
-
-    // Wire external context changes to pre-scan files
-    this.externalContextSelector.setOnChange(() => {
-      this.fileContextManager?.preScanExternalContexts();
-    });
-
-    // Initialize persistent paths from settings
-    this.externalContextSelector.setPersistentPaths(
-      this.plugin.settings.persistentExternalContextPaths || []
-    );
-
-    // Wire persistence changes to save to settings
-    this.externalContextSelector.setOnPersistenceChange(async (paths) => {
-      this.plugin.settings.persistentExternalContextPaths = paths;
-      await this.plugin.saveSettings();
-    });
   }
 
-  // ============================================
-  // Controller Initialization
-  // ============================================
+  private updateHistoryDropdown(): void {
+    if (!this.historyDropdown) return;
+    this.historyDropdown.empty();
 
-  private initializeControllers() {
-    // Selection controller
-    this.selectionController = new SelectionController(
-      this.plugin.app,
-      this.selectionIndicatorEl!,
-      this.inputEl!
-    );
+    const activeTab = this.tabManager?.getActiveTab();
+    const conversationController = activeTab?.controllers.conversationController;
 
-    // Stream controller
-    this.streamController = new StreamController({
-      plugin: this.plugin,
-      state: this.state,
-      renderer: this.renderer!,
-      asyncSubagentManager: this.asyncSubagentManager,
-      getMessagesEl: () => this.messagesEl!,
-      getFileContextManager: () => this.fileContextManager,
-      updateQueueIndicator: () => this.inputController?.updateQueueIndicator(),
-    });
+    if (conversationController) {
+      conversationController.renderHistoryDropdown(this.historyDropdown, {
+        onSelectConversation: async (conversationId) => {
+          // Check if conversation is already open in another tab
+          const existingTab = this.findTabWithConversation(conversationId);
+          if (existingTab) {
+            // Switch to existing tab instead of opening in current tab
+            await this.tabManager?.switchToTab(existingTab.id);
+          } else {
+            // Open in current tab
+            await this.tabManager?.openConversation(conversationId);
+          }
+          this.historyDropdown?.removeClass('visible');
+        },
+      });
+    }
+  }
 
-    // Conversation controller
-    this.conversationController = new ConversationController(
-      {
-        plugin: this.plugin,
-        state: this.state,
-        renderer: this.renderer!,
-        asyncSubagentManager: this.asyncSubagentManager,
-        getHistoryDropdown: () => this.historyDropdown,
-        getWelcomeEl: () => this.welcomeEl,
-        setWelcomeEl: (el) => { this.welcomeEl = el; },
-        getMessagesEl: () => this.messagesEl!,
-        getInputEl: () => this.inputEl!,
-        getFileContextManager: () => this.fileContextManager,
-        getImageContextManager: () => this.imageContextManager,
-        getMcpServerSelector: () => this.mcpServerSelector,
-        getExternalContextSelector: () => this.externalContextSelector,
-        clearQueuedMessage: () => this.inputController?.clearQueuedMessage(),
-        getTitleGenerationService: () => this.titleGenerationService,
-        getTodoPanel: () => this.todoPanel,
-      },
-      {}
-    );
-
-    // Input controller
-    this.inputController = new InputController({
-      plugin: this.plugin,
-      state: this.state,
-      renderer: this.renderer!,
-      streamController: this.streamController,
-      selectionController: this.selectionController,
-      conversationController: this.conversationController,
-      getInputEl: () => this.inputEl!,
-      getWelcomeEl: () => this.welcomeEl,
-      getMessagesEl: () => this.messagesEl!,
-      getFileContextManager: () => this.fileContextManager,
-      getImageContextManager: () => this.imageContextManager,
-      getSlashCommandManager: () => this.slashCommandManager,
-      getMcpServerSelector: () => this.mcpServerSelector,
-      getExternalContextSelector: () => this.externalContextSelector,
-      getInstructionModeManager: () => this.instructionModeManager,
-      getInstructionRefineService: () => this.instructionRefineService,
-      getTitleGenerationService: () => this.titleGenerationService,
-      generateId: () => this.generateId(),
-      resetContextMeter: () => this.contextUsageMeter?.update(null),
-    });
-
-    // Set approval callback
-    this.plugin.agentService.setApprovalCallback(
-      (toolName, input, description) => this.inputController!.handleApprovalRequest(toolName, input, description)
-    );
-
-    // Navigation controller (vim-style keyboard navigation)
-    this.navigationController = new NavigationController({
-      getMessagesEl: () => this.messagesEl!,
-      getInputEl: () => this.inputEl!,
-      getSettings: () => this.plugin.settings.keyboardNavigation,
-      isStreaming: () => this.state.isStreaming,
-      shouldSkipEscapeHandling: () => {
-        // Skip if instruction mode, slash dropdown, or mention dropdown is active
-        if (this.instructionModeManager?.isActive()) return true;
-        if (this.slashCommandDropdown?.isVisible()) return true;
-        if (this.fileContextManager?.isMentionDropdownVisible()) return true;
-        return false;
-      },
-    });
-    this.navigationController.initialize();
+  private findTabWithConversation(conversationId: string): TabData | null {
+    const tabs = this.tabManager?.getAllTabs() ?? [];
+    return tabs.find(tab => tab.conversationId === conversationId) ?? null;
   }
 
   // ============================================
   // Event Wiring
   // ============================================
 
-  private wireEventHandlers() {
-    // Document-level events
+  private wireEventHandlers(): void {
+    // Document-level click to close dropdowns
     this.registerDomEvent(document, 'click', () => {
       this.historyDropdown?.removeClass('visible');
     });
 
+    // Document-level escape to cancel streaming
     this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
-      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
-      if (e.key === 'Escape' && !e.isComposing && this.state.isStreaming) {
-        e.preventDefault();
-        this.inputController?.cancelStreaming();
+      if (e.key === 'Escape' && !e.isComposing) {
+        const activeTab = this.tabManager?.getActiveTab();
+        if (activeTab?.state.isStreaming) {
+          e.preventDefault();
+          activeTab.controllers.inputController?.cancelStreaming();
+        }
       }
     });
 
-    // File context manager events
-    this.registerEvent(this.plugin.app.vault.on('create', () => this.fileContextManager?.markFilesCacheDirty()));
-    this.registerEvent(this.plugin.app.vault.on('delete', () => this.fileContextManager?.markFilesCacheDirty()));
-    this.registerEvent(this.plugin.app.vault.on('rename', () => this.fileContextManager?.markFilesCacheDirty()));
-    this.registerEvent(this.plugin.app.vault.on('modify', () => this.fileContextManager?.markFilesCacheDirty()));
+    // Vault events - forward to active tab's file context manager
+    const createRef = this.plugin.app.vault.on('create', () => {
+      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
+    });
+    this.eventRefs.push(createRef);
 
+    const deleteRef = this.plugin.app.vault.on('delete', () => {
+      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
+    });
+    this.eventRefs.push(deleteRef);
+
+    const renameRef = this.plugin.app.vault.on('rename', () => {
+      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
+    });
+    this.eventRefs.push(renameRef);
+
+    const modifyRef = this.plugin.app.vault.on('modify', () => {
+      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
+    });
+    this.eventRefs.push(modifyRef);
+
+    // File open event
     this.registerEvent(
       this.plugin.app.workspace.on('file-open', (file) => {
         if (file) {
-          this.fileContextManager?.handleFileOpen(file);
+          this.tabManager?.getActiveTab()?.ui.fileContextManager?.handleFileOpen(file);
         }
       })
     );
 
+    // Click outside to close mention dropdown
     this.registerDomEvent(document, 'click', (e) => {
-      if (!this.fileContextManager?.containsElement(e.target as Node) && e.target !== this.inputEl) {
-        this.fileContextManager?.hideMentionDropdown();
+      const activeTab = this.tabManager?.getActiveTab();
+      if (activeTab) {
+        const fcm = activeTab.ui.fileContextManager;
+        if (fcm && !fcm.containsElement(e.target as Node) && e.target !== activeTab.dom.inputEl) {
+          fcm.hideMentionDropdown();
+        }
       }
-    });
-
-
-
-    // Input events
-    this.inputEl!.addEventListener('keydown', (e) => {
-      // Check for # trigger first (empty input + # keystroke)
-      if (this.instructionModeManager?.handleTriggerKey(e)) {
-        return;
-      }
-
-      if (this.instructionModeManager?.handleKeydown(e)) {
-        return;
-      }
-
-      if (this.slashCommandDropdown?.handleKeydown(e)) {
-        return;
-      }
-
-      if (this.fileContextManager?.handleMentionKeydown(e)) {
-        return;
-      }
-
-      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
-      if (e.key === 'Escape' && !e.isComposing && this.state.isStreaming) {
-        e.preventDefault();
-        this.inputController?.cancelStreaming();
-        return;
-      }
-
-      // Enter: Send message
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-        e.preventDefault();
-        void this.inputController?.sendMessage();
-      }
-    });
-
-    this.inputEl!.addEventListener('input', () => {
-      this.fileContextManager?.handleInputChange();
-      this.instructionModeManager?.handleInputChange();
-    });
-
-    this.inputEl!.addEventListener('focus', () => {
-      this.selectionController?.showHighlight();
     });
   }
 
   // ============================================
-  // Utilities
+  // Persistence
   // ============================================
 
-  private generateId(): string {
-    return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  private async restoreOrCreateTabs(): Promise<void> {
+    if (!this.tabManager) return;
+
+    // Try to restore from persisted state
+    const persistedState = await this.plugin.storage.getTabManagerState();
+    if (persistedState && persistedState.openTabs.length > 0) {
+      await this.tabManager.restoreState(persistedState);
+    } else {
+      // No persisted state - create a tab with the active conversation
+      const activeConvId = this.plugin.getActiveConversation()?.id;
+      await this.tabManager.createTab(activeConvId);
+    }
+  }
+
+  private async persistTabState(): Promise<void> {
+    if (!this.tabManager) return;
+    const state = this.tabManager.getPersistedState();
+    await this.plugin.storage.setTabManagerState(state);
+  }
+
+  // ============================================
+  // Public API
+  // ============================================
+
+  /** Gets the currently active tab. */
+  getActiveTab(): TabData | null {
+    return this.tabManager?.getActiveTab() ?? null;
+  }
+
+  /** Gets the tab manager. */
+  getTabManager(): TabManager | null {
+    return this.tabManager;
   }
 }

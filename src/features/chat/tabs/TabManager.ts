@@ -16,6 +16,7 @@ import {
   initializeTabControllers,
   initializeTabService,
   initializeTabUI,
+  wireTabInputEvents,
 } from './Tab';
 import {
   MAX_TABS,
@@ -93,6 +94,9 @@ export class TabManager {
 
     // Initialize controllers
     initializeTabControllers(tab, this.plugin, this.view);
+
+    // Wire input event handlers
+    wireTabInputEvents(tab);
 
     this.tabs.set(tab.id, tab);
     this.callbacks.onTabCreated?.(tab);

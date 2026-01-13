@@ -410,6 +410,7 @@ export function initializeTabControllers(
       clearQueuedMessage: () => tab.controllers.inputController?.clearQueuedMessage(),
       getTitleGenerationService: () => services.titleGenerationService,
       getTodoPanel: () => ui.todoPanel,
+      getAgentService: () => tab.service, // Use tab's service instead of plugin's
     },
     {}
   );
@@ -455,6 +456,58 @@ export function initializeTabControllers(
     },
   });
   tab.controllers.navigationController.initialize();
+}
+
+/**
+ * Wires up input event handlers for a tab.
+ * Call this after controllers are initialized.
+ */
+export function wireTabInputEvents(tab: TabData): void {
+  const { dom, ui, state, controllers } = tab;
+
+  // Input keydown handler
+  dom.inputEl.addEventListener('keydown', (e) => {
+    // Check for # trigger first (empty input + # keystroke)
+    if (ui.instructionModeManager?.handleTriggerKey(e)) {
+      return;
+    }
+
+    if (ui.instructionModeManager?.handleKeydown(e)) {
+      return;
+    }
+
+    if (ui.slashCommandDropdown?.handleKeydown(e)) {
+      return;
+    }
+
+    if (ui.fileContextManager?.handleMentionKeydown(e)) {
+      return;
+    }
+
+    // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
+    if (e.key === 'Escape' && !e.isComposing && state.isStreaming) {
+      e.preventDefault();
+      controllers.inputController?.cancelStreaming();
+      return;
+    }
+
+    // Enter: Send message
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      void controllers.inputController?.sendMessage();
+    }
+  });
+
+  // Input change handler
+  dom.inputEl.addEventListener('input', () => {
+    ui.fileContextManager?.handleInputChange();
+    ui.instructionModeManager?.handleInputChange();
+  });
+
+  // Input focus handler
+  dom.inputEl.addEventListener('focus', () => {
+    controllers.selectionController?.showHighlight();
+  });
 }
 
 /**

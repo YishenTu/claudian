@@ -7,6 +7,7 @@
 
 import { setIcon } from 'obsidian';
 
+import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -43,6 +44,8 @@ export interface ConversationControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   /** Get TodoPanel for remounting after messagesEl.empty(). */
   getTodoPanel: () => TodoPanel | null;
+  /** Get the agent service (for multi-tab, returns tab's service). */
+  getAgentService?: () => ClaudianService | null;
 }
 
 /**
@@ -55,6 +58,11 @@ export class ConversationController {
   constructor(deps: ConversationControllerDeps, callbacks: ConversationCallbacks = {}) {
     this.deps = deps;
     this.callbacks = callbacks;
+  }
+
+  /** Gets the agent service (tab's service if available, otherwise plugin's). */
+  private getAgentService(): ClaudianService {
+    return this.deps.getAgentService?.() ?? this.deps.plugin.agentService;
   }
 
   // ============================================
@@ -136,7 +144,7 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
 
-    plugin.agentService.setSessionId(conversation.sessionId);
+    this.getAgentService().setSessionId(conversation.sessionId);
 
     const hasMessages = state.messages.length > 0;
     const fileCtx = this.deps.getFileContextManager();
@@ -248,7 +256,7 @@ export class ConversationController {
     const { plugin, state } = this.deps;
     if (!state.currentConversationId) return;
 
-    const sessionId = plugin.agentService.getSessionId();
+    const sessionId = this.getAgentService().getSessionId();
     const fileCtx = this.deps.getFileContextManager();
     const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const externalContextSelector = this.deps.getExternalContextSelector();
@@ -632,5 +640,114 @@ export class ConversationController {
       return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
     }
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  // ============================================
+  // History Dropdown Rendering (for ClaudianView)
+  // ============================================
+
+  /**
+   * Renders the history dropdown content to a provided container.
+   * Used by ClaudianView to render the dropdown with custom selection callback.
+   */
+  renderHistoryDropdown(
+    container: HTMLElement,
+    options: { onSelectConversation: (id: string) => Promise<void> }
+  ): void {
+    const { plugin, state } = this.deps;
+
+    container.empty();
+
+    const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
+    dropdownHeader.createSpan({ text: 'Conversations' });
+
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    const allConversations = plugin.getConversationList();
+
+    if (allConversations.length === 0) {
+      list.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
+      return;
+    }
+
+    // Sort by lastResponseAt (fallback to createdAt) descending
+    const conversations = [...allConversations].sort((a, b) => {
+      return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
+    });
+
+    for (const conv of conversations) {
+      const isCurrent = conv.id === state.currentConversationId;
+      const item = list.createDiv({
+        cls: `claudian-history-item${isCurrent ? ' active' : ''}`,
+      });
+
+      const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
+      setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
+
+      const content = item.createDiv({ cls: 'claudian-history-item-content' });
+      const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
+      titleEl.setAttribute('title', conv.title);
+      content.createDiv({
+        cls: 'claudian-history-item-date',
+        text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),
+      });
+
+      if (!isCurrent) {
+        content.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await options.onSelectConversation(conv.id);
+          } catch (error) {
+            console.error('[ConversationController] Failed to select conversation:', error);
+          }
+        });
+      }
+
+      const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
+
+      // Show regenerate button if title generation failed, or loading indicator if pending
+      if (conv.titleGenerationStatus === 'pending') {
+        const loadingEl = actions.createEl('span', { cls: 'claudian-action-btn claudian-action-loading' });
+        setIcon(loadingEl, 'loader-2');
+        loadingEl.setAttribute('aria-label', 'Generating title...');
+      } else if (conv.titleGenerationStatus === 'failed') {
+        const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+        setIcon(regenerateBtn, 'refresh-cw');
+        regenerateBtn.setAttribute('aria-label', 'Regenerate title');
+        regenerateBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await this.regenerateTitle(conv.id);
+          } catch (error) {
+            console.error('[ConversationController] Failed to regenerate title:', error);
+          }
+        });
+      }
+
+      const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+      setIcon(renameBtn, 'pencil');
+      renameBtn.setAttribute('aria-label', 'Rename');
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showRenameInput(item, conv.id, conv.title);
+      });
+
+      const deleteBtn = actions.createEl('button', { cls: 'claudian-action-btn claudian-delete-btn' });
+      setIcon(deleteBtn, 'trash-2');
+      deleteBtn.setAttribute('aria-label', 'Delete');
+      deleteBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (state.isStreaming) return;
+        try {
+          await plugin.deleteConversation(conv.id);
+          this.renderHistoryDropdown(container, options); // Re-render after delete
+
+          if (conv.id === state.currentConversationId) {
+            await this.loadActive();
+          }
+        } catch (error) {
+          console.error('[ConversationController] Failed to delete conversation:', error);
+        }
+      });
+    }
   }
 }
