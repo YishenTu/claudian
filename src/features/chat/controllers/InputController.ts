@@ -7,6 +7,7 @@
 
 import { Notice } from 'obsidian';
 
+import type { ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand, type SlashCommandManager } from '../../../core/commands';
 import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
 import { TOOL_BASH } from '../../../core/tools/toolNames';
@@ -51,6 +52,10 @@ export interface InputControllerDeps {
   generateId: () => string;
   resetContextMeter: () => void;
   resetInputHeight: () => void;
+  /** Get the agent service from the tab. */
+  getAgentService?: () => ClaudianService | null;
+  /** Ensures the agent service is initialized (lazy loading). Returns true if ready. */
+  ensureServiceInitialized?: () => Promise<boolean>;
 }
 
 /**
@@ -61,6 +66,11 @@ export class InputController {
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
+  }
+
+  /** Gets the agent service from the tab. */
+  private getAgentService(): ClaudianService | null {
+    return this.deps.getAgentService?.() ?? null;
   }
 
   // ============================================
@@ -144,6 +154,7 @@ export class InputController {
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
     state.subagentsSpawnedThisStream = 0; // Reset subagent counter for new query
+    const streamGeneration = state.bumpStreamGeneration();
 
     // Hide welcome message when sending first message
     const welcomeEl = this.deps.getWelcomeEl();
@@ -295,8 +306,30 @@ export class InputController {
     }
 
     let wasInterrupted = false;
+    let wasInvalidated = false;
+
+    // Lazy initialization: ensure service is ready before first query
+    if (this.deps.ensureServiceInitialized) {
+      const ready = await this.deps.ensureServiceInitialized();
+      if (!ready) {
+        new Notice('Failed to initialize agent service. Please try again.');
+        streamController.hideThinkingIndicator();
+        state.isStreaming = false;
+        return;
+      }
+    }
+
+    const agentService = this.getAgentService();
+    if (!agentService) {
+      new Notice('Agent service not available. Please reload the plugin.');
+      return;
+    }
     try {
-      for await (const chunk of plugin.agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
+      for await (const chunk of agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
+        if (state.streamGeneration !== streamGeneration) {
+          wasInvalidated = true;
+          break;
+        }
         if (state.cancelRequested) {
           wasInterrupted = true;
           break;
@@ -307,24 +340,27 @@ export class InputController {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
     } finally {
-      if (wasInterrupted) {
-        await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
+      // Skip cleanup if stream was invalidated (tab closed or conversation switched)
+      if (!wasInvalidated && state.streamGeneration === streamGeneration) {
+        if (wasInterrupted) {
+          await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
+        }
+        streamController.hideThinkingIndicator();
+        state.isStreaming = false;
+        state.cancelRequested = false;
+        state.currentContentEl = null;
+
+        streamController.finalizeCurrentThinkingBlock(assistantMsg);
+        streamController.finalizeCurrentTextBlock(assistantMsg);
+        state.activeSubagents.clear();
+
+        await conversationController.save(true);
+
+        // Generate AI title after first complete exchange (user + assistant)
+        await this.triggerTitleGeneration();
+
+        this.processQueuedMessage();
       }
-      streamController.hideThinkingIndicator();
-      state.isStreaming = false;
-      state.cancelRequested = false;
-      state.currentContentEl = null;
-
-      streamController.finalizeCurrentThinkingBlock(assistantMsg);
-      streamController.finalizeCurrentTextBlock(assistantMsg);
-      state.activeSubagents.clear();
-
-      await conversationController.save(true);
-
-      // Generate AI title after first complete exchange (user + assistant)
-      await this.triggerTitleGeneration();
-
-      this.processQueuedMessage();
     }
   }
 
@@ -381,6 +417,22 @@ export class InputController {
     const { state } = this.deps;
     state.queuedMessage = null;
     this.updateQueueIndicator();
+  }
+
+  /** Restores the queued message to the input field without sending. */
+  private restoreQueuedMessageToInput(): void {
+    const { state } = this.deps;
+    if (!state.queuedMessage) return;
+
+    const { content, images } = state.queuedMessage;
+    state.queuedMessage = null;
+    this.updateQueueIndicator();
+
+    const inputEl = this.deps.getInputEl();
+    inputEl.value = content;
+    if (images && images.length > 0) {
+      this.deps.getImageContextManager()?.setImages(images);
+    }
   }
 
   /** Processes the queued message. */
@@ -491,11 +543,12 @@ export class InputController {
 
   /** Cancels the current streaming operation. */
   cancelStreaming(): void {
-    const { plugin, state, streamController } = this.deps;
+    const { state, streamController } = this.deps;
     if (!state.isStreaming) return;
     state.cancelRequested = true;
-    this.clearQueuedMessage();
-    plugin.agentService.cancel();
+    // Restore queued message to input instead of discarding
+    this.restoreQueuedMessageToInput();
+    this.getAgentService()?.cancel();
     streamController.hideThinkingIndicator();
   }
 

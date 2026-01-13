@@ -1,64 +1,9 @@
-import { WorkspaceLeaf } from 'obsidian';
-
 import type { ChatMessage, ImageAttachment } from '@/core/types';
-import { ClaudianView } from '@/features/chat/ClaudianView';
+import { ChatState } from '@/features/chat/state';
 
-function createMockPlugin() {
-  return {
-    settings: {
-      enableBlocklist: true,
-      blockedCommands: { unix: [], windows: [] },
-      model: 'haiku',
-      thinkingBudget: 'off',
-      permissionMode: 'yolo',
-      permissions: [],
-      excludedTags: [],
-      mediaFolder: '',
-    },
-    app: {
-      vault: {
-        adapter: {
-          basePath: '/test/vault',
-        },
-      },
-      workspace: {
-        getLeavesOfType: jest.fn().mockReturnValue([]),
-        getRightLeaf: jest.fn().mockReturnValue(null),
-        revealLeaf: jest.fn(),
-        on: jest.fn(),
-      },
-      metadataCache: {
-        on: jest.fn(),
-        getFileCache: jest.fn().mockReturnValue(null),
-      },
-    },
-    agentService: {
-      query: jest.fn(),
-      cancel: jest.fn(),
-      resetSession: jest.fn(),
-      setApprovalCallback: jest.fn(),
-      setSessionId: jest.fn(),
-      getSessionId: jest.fn().mockReturnValue(null),
-    },
-    saveSettings: jest.fn().mockResolvedValue(undefined),
-    createConversation: jest.fn().mockResolvedValue({
-      id: 'conv-1',
-      title: 'Test',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      sessionId: null,
-      messages: [],
-    }),
-    switchConversation: jest.fn().mockResolvedValue(null),
-    updateConversation: jest.fn().mockResolvedValue(undefined),
-    getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-  } as any;
-}
-
-describe('ClaudianView persistence', () => {
+describe('ChatState persistence', () => {
   it('strips base64 data when persisting messages but keeps references', () => {
-    const plugin = createMockPlugin();
-    const view = new ClaudianView(new WorkspaceLeaf(), plugin);
+    const state = new ChatState();
 
     const images: ImageAttachment[] = [
       {
@@ -83,9 +28,9 @@ describe('ClaudianView persistence', () => {
       },
     ];
 
-    view.state.messages = messages;
+    state.messages = messages;
 
-    const persisted = view.state.getPersistedMessages();
+    const persisted = state.getPersistedMessages();
 
     expect(persisted[0].images?.[0].data).toBeUndefined();
     expect(persisted[0].images?.[0].cachePath).toBe('.claudian-cache/images/cached.png');

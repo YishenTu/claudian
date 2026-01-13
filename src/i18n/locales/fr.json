@@ -66,6 +66,27 @@
       "btnSet": "Définir le raccourci",
       "btnChange": "Changer"
     },
+    "newTabHotkey": {
+      "name": "Raccourci nouvel onglet",
+      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
+      "descWithKey": "Actuel : {hotkey}",
+      "btnSet": "Définir le raccourci",
+      "btnChange": "Changer"
+    },
+    "newSessionHotkey": {
+      "name": "Raccourci nouvelle session",
+      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
+      "descWithKey": "Actuel : {hotkey}",
+      "btnSet": "Définir le raccourci",
+      "btnChange": "Changer"
+    },
+    "closeTabHotkey": {
+      "name": "Raccourci fermer l'onglet",
+      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
+      "descWithKey": "Actuel : {hotkey}",
+      "btnSet": "Définir le raccourci",
+      "btnChange": "Changer"
+    },
     "slashCommands": {
       "name": "Commandes slash",
       "desc": "Créez des modèles de prompts personnalisés déclenchés par /command. Utilisez $ARGUMENTS pour tous les arguments, $1/$2 pour les arguments positionnels, @file pour le contenu du fichier et !`bash` pour la sortie de commande."
@@ -122,6 +143,12 @@
       }
     },
     "advanced": "Avancé",
+    "maxTabs": {
+      "name": "Maximum d'onglets de chat",
+      "desc": "Nombre maximum d'onglets de chat simultanés (3-10). Chaque onglet utilise une session Claude séparée.",
+      "warning": "Plus de 5 onglets peut affecter les performances et l'utilisation de la mémoire.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Chemin CLI Claude",
       "desc": "Chemin personnalisé vers Claude Code CLI. Laisser vide pour la détection automatique.",

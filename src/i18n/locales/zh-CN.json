@@ -66,6 +66,27 @@
       "btnSet": "设置快捷键",
       "btnChange": "更改"
     },
+    "newTabHotkey": {
+      "name": "新建标签页快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
+    "newSessionHotkey": {
+      "name": "新建会话快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
+    "closeTabHotkey": {
+      "name": "关闭标签页快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
     "slashCommands": {
       "name": "斜杠命令",
       "desc": "创建由 /command 触发的自定义提示模板。使用 $ARGUMENTS 获取所有参数，$1/$2 获取位置参数，@file 获取文件内容，!`bash` 获取命令输出。"
@@ -122,6 +143,12 @@
       }
     },
     "advanced": "高级",
+    "maxTabs": {
+      "name": "最大聊天标签数",
+      "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",
+      "warning": "超过 5 个标签可能会影响性能和内存使用。",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。支持 shell 命令，如 Unix 上的 $(which claude) 或 Windows 上的 $(where claude)。",

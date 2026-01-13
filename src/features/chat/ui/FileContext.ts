@@ -26,7 +26,8 @@ export interface FileContextCallbacks {
 export class FileContextManager {
   private app: App;
   private callbacks: FileContextCallbacks;
-  private containerEl: HTMLElement;
+  private chipsContainerEl: HTMLElement;
+  private dropdownContainerEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private state: FileContextState;
   private fileCache: MarkdownFileCache;
@@ -44,19 +45,21 @@ export class FileContextManager {
 
   constructor(
     app: App,
-    containerEl: HTMLElement,
+    chipsContainerEl: HTMLElement,
     inputEl: HTMLTextAreaElement,
-    callbacks: FileContextCallbacks
+    callbacks: FileContextCallbacks,
+    dropdownContainerEl?: HTMLElement
   ) {
     this.app = app;
-    this.containerEl = containerEl;
+    this.chipsContainerEl = chipsContainerEl;
+    this.dropdownContainerEl = dropdownContainerEl ?? chipsContainerEl;
     this.inputEl = inputEl;
     this.callbacks = callbacks;
 
     this.state = new FileContextState();
     this.fileCache = new MarkdownFileCache(this.app);
 
-    this.chipsView = new FileChipsView(this.containerEl, {
+    this.chipsView = new FileChipsView(this.chipsContainerEl, {
       onRemoveAttachment: (filePath) => {
         if (filePath === this.currentNotePath) {
           this.currentNotePath = null;
@@ -79,7 +82,7 @@ export class FileContextManager {
     });
 
     this.mentionDropdown = new MentionDropdownController(
-      this.containerEl,
+      this.dropdownContainerEl,
       this.inputEl,
       {
         onAttachFile: (filePath) => this.state.attachFile(filePath),

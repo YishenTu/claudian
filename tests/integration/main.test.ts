@@ -59,11 +59,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
     });
 
-    it('should initialize agentService', async () => {
-      await plugin.onload();
-
-      expect(plugin.agentService).toBeDefined();
-    });
+    // Note: With multi-tab, agentService is per-tab via TabManager, not on plugin
 
     it('should register the view', async () => {
       await plugin.onload();
@@ -122,14 +118,11 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('onunload', () => {
-    it('should call cleanup on agentService', async () => {
+    // Note: With multi-tab, cleanup is handled per-tab via ClaudianView.onClose()
+    it('should complete without error', async () => {
       await plugin.onload();
 
-      const cleanupSpy = jest.spyOn(plugin.agentService, 'cleanup');
-
-      plugin.onunload();
-
-      expect(cleanupSpy).toHaveBeenCalled();
+      expect(() => plugin.onunload()).not.toThrow();
     });
   });
 
@@ -271,13 +264,13 @@ describe('ClaudianPlugin', () => {
         expect.stringContaining('"enableBlocklist": false')
       );
 
-      // The written content should include state fields like activeConversationId
+      // The written content should include state fields
       const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
         ([path]) => path === '.claude/claudian-settings.json'
       );
       expect(writeCall).toBeDefined();
       const content = JSON.parse(writeCall[1]);
-      expect(content).toHaveProperty('activeConversationId');
+      expect(content).not.toHaveProperty('activeConversationId');
       expect(content).toHaveProperty('lastEnvHash');
       expect(content).toHaveProperty('lastClaudeModel');
       expect(content).toHaveProperty('lastCustomModel');
@@ -341,13 +334,13 @@ describe('ClaudianPlugin', () => {
       expect(conv.sessionId).toBeNull();
     });
 
-    it('should set new conversation as active', async () => {
+    it('should allow retrieving created conversation by ID', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
-      const active = plugin.getActiveConversation();
+      const fetched = plugin.getConversationById(conv.id);
 
-      expect(active?.id).toBe(conv.id);
+      expect(fetched?.id).toBe(conv.id);
     });
 
     it('should generate default title with timestamp', async () => {
@@ -360,15 +353,7 @@ describe('ClaudianPlugin', () => {
       expect(conv.title.length).toBeGreaterThan(0);
     });
 
-    it('should reset agent service session', async () => {
-      await plugin.onload();
-
-      const resetSessionSpy = jest.spyOn(plugin.agentService, 'resetSession');
-
-      await plugin.createConversation();
-
-      expect(resetSessionSpy).toHaveBeenCalled();
-    });
+    // Note: Session management is now per-tab via TabManager
   });
 
   describe('switchConversation', () => {
@@ -376,29 +361,14 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       const conv1 = await plugin.createConversation();
-      const conv2 = await plugin.createConversation();
+      await plugin.createConversation(); // Create second conversation to switch from
 
-      expect(plugin.getActiveConversation()?.id).toBe(conv2.id);
+      const result = await plugin.switchConversation(conv1.id);
 
-      await plugin.switchConversation(conv1.id);
-
-      expect(plugin.getActiveConversation()?.id).toBe(conv1.id);
+      expect(result?.id).toBe(conv1.id);
     });
 
-    it('should restore session ID when switching', async () => {
-      await plugin.onload();
-
-      const conv1 = await plugin.createConversation();
-      await plugin.updateConversation(conv1.id, { sessionId: 'session-123' });
-
-      await plugin.createConversation();
-
-      const setSessionIdSpy = jest.spyOn(plugin.agentService, 'setSessionId');
-
-      await plugin.switchConversation(conv1.id);
-
-      expect(setSessionIdSpy).toHaveBeenCalledWith('session-123');
-    });
+    // Note: Session ID restoration is now handled per-tab via TabManager
 
     it('should return null for non-existent conversation', async () => {
       await plugin.onload();
@@ -425,32 +395,14 @@ describe('ClaudianPlugin', () => {
       expect(list.find(c => c.id === convId)).toBeUndefined();
     });
 
-    it('should create new conversation if deleted active and no others exist', async () => {
+    it('should allow deleting last conversation without recreating', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
-
       await plugin.deleteConversation(conv.id);
 
-      // Should have created a new conversation
-      const active = plugin.getActiveConversation();
-      expect(active).not.toBeNull();
-      expect(active?.id).not.toBe(conv.id);
-    });
-
-    it('should switch to first conversation if deleted active', async () => {
-      await plugin.onload();
-
-      const conv1 = await plugin.createConversation();
-      const conv2 = await plugin.createConversation();
-
-      // Active is conv2
-      expect(plugin.getActiveConversation()?.id).toBe(conv2.id);
-
-      await plugin.deleteConversation(conv2.id);
-
-      // Should switch to conv1
-      expect(plugin.getActiveConversation()?.id).toBe(conv1.id);
+      const list = plugin.getConversationList();
+      expect(list.find(c => c.id === conv.id)).toBeUndefined();
     });
   });
 
@@ -502,7 +454,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.renameConversation(conv.id, 'New Title');
 
-      const updated = plugin.getActiveConversation();
+      const updated = plugin.getConversationById(conv.id);
       expect(updated?.title).toBe('New Title');
     });
 
@@ -513,7 +465,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.renameConversation(conv.id, '   ');
 
-      const updated = plugin.getActiveConversation();
+      const updated = plugin.getConversationById(conv.id);
       expect(updated?.title).toBeTruthy();
     });
   });
@@ -529,7 +481,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.updateConversation(conv.id, { messages });
 
-      const updated = plugin.getActiveConversation();
+      const updated = plugin.getConversationById(conv.id);
       expect(updated?.messages).toEqual(messages);
     });
 
@@ -540,7 +492,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.updateConversation(conv.id, { sessionId: 'new-session-id' });
 
-      const updated = plugin.getActiveConversation();
+      const updated = plugin.getConversationById(conv.id);
       expect(updated?.sessionId).toBe('new-session-id');
     });
 
@@ -555,7 +507,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.updateConversation(conv.id, { title: 'Changed' });
 
-      const updated = plugin.getActiveConversation();
+      const updated = plugin.getConversationById(conv.id);
       expect(updated?.updatedAt).toBeGreaterThan(originalUpdatedAt);
     });
   });
@@ -610,7 +562,7 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.jsonl') {
           return true;
         }
-        // claudian-settings.json exists with activeConversationId
+        // claudian-settings.json exists
         if (path === '.claude/claudian-settings.json') {
           return true;
         }
@@ -627,8 +579,7 @@ describe('ClaudianPlugin', () => {
           return sessionJsonl;
         }
         if (path === '.claude/claudian-settings.json') {
-          // activeConversationId is now stored in claudian-settings.json
-          return JSON.stringify({ activeConversationId: 'conv-saved-1' });
+          return JSON.stringify({});
         }
         return '';
       });
@@ -638,9 +589,9 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      const active = plugin.getActiveConversation();
-      expect(active?.id).toBe('conv-saved-1');
-      expect(active?.title).toBe('Saved Chat');
+      const loaded = plugin.getConversationById('conv-saved-1');
+      expect(loaded?.id).toBe('conv-saved-1');
+      expect(loaded?.title).toBe('Saved Chat');
     });
 
     it('should clear session IDs when provider base URL changes', async () => {
@@ -669,7 +620,6 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/claudian-settings.json') {
           // All these fields are now in claudian-settings.json
           return JSON.stringify({
-            activeConversationId: 'conv-saved-1',
             lastEnvHash: 'old-hash',
             environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
           });
@@ -685,8 +635,8 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      const active = plugin.getActiveConversation();
-      expect(active?.sessionId).toBeNull();
+      const loaded = plugin.getConversationById('conv-saved-1');
+      expect(loaded?.sessionId).toBeNull();
 
       const sessionWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
         ([path]) => path === '.claude/sessions/conv-saved-1.jsonl'
@@ -697,7 +647,7 @@ describe('ClaudianPlugin', () => {
       expect(meta.sessionId).toBeNull();
     });
 
-    it('should handle invalid activeConversationId', async () => {
+    it('should ignore legacy activeConversationId when no sessions exist', async () => {
       // No sessions exist
       mockApp.vault.adapter.exists.mockResolvedValue(false);
       mockApp.vault.adapter.list.mockResolvedValue({ files: [], folders: [] });
@@ -709,9 +659,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      plugin.getConversationList();
-      // Should have cleared the invalid ID
-      expect(plugin.getActiveConversation()).toBeNull();
+      expect(plugin.getConversationList()).toHaveLength(0);
     });
   });
 

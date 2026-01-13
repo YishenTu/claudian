@@ -8,7 +8,6 @@
 import type { Editor,MarkdownView } from 'obsidian';
 import { Notice,Plugin } from 'obsidian';
 
-import { ClaudianService } from './core/agent';
 import { clearDiffState } from './core/hooks';
 import { deleteCachedImages } from './core/images/imageCache';
 import { McpServerManager } from './core/mcp';
@@ -40,13 +39,11 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
  */
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
-  agentService: ClaudianService;
   mcpService: McpService;
   pluginManager: PluginManager;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
   private conversations: Conversation[] = [];
-  private activeConversationId: string | null = null;
   private runtimeEnvironmentVariables = '';
   private hasNotifiedEnvChange = false;
 
@@ -80,20 +77,6 @@ export default class ClaudianPlugin extends Plugin {
 
     // Load slash commands from enabled plugins and merge with vault commands
     this.loadPluginSlashCommands();
-
-    // Initialize agent service with the MCP manager
-    this.agentService = new ClaudianService(this, mcpManager);
-
-    // Load CC permissions into the agent service
-    await this.agentService.loadCCPermissions();
-
-    // Pre-warm the persistent query with the active conversation's session ID (Phase 5)
-    const activeConv = this.getActiveConversation();
-    const sessionId = activeConv?.sessionId;
-    this.agentService.preWarm(sessionId ?? undefined).catch((error) => {
-      console.warn('[Claudian] Pre-warm failed, first query will use cold-start:',
-        error instanceof Error ? error.message : String(error));
-    });
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
@@ -144,11 +127,86 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'new-tab',
+      name: 'New tab',
+      checkCallback: (checking: boolean) => {
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        // Only enable command when we can create more tabs
+        if (!tabManager.canCreateTab()) return false;
+
+        if (!checking) {
+          tabManager.createTab();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: 'new-session',
+      name: 'New session (in current tab)',
+      checkCallback: (checking: boolean) => {
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        const activeTab = tabManager.getActiveTab();
+        if (!activeTab) return false;
+
+        // Don't allow new session while streaming
+        if (activeTab.state.isStreaming) return false;
+
+        if (!checking) {
+          tabManager.createNewConversation();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: 'close-current-tab',
+      name: 'Close current tab',
+      checkCallback: (checking: boolean) => {
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        if (!checking) {
+          const activeTabId = tabManager.getActiveTabId();
+          if (activeTabId) {
+            // When closing the last tab, TabManager will create a new empty one
+            tabManager.closeTab(activeTabId);
+          }
+        }
+        return true;
+      },
+    });
+
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
-  onunload() {
-    this.agentService.cleanup();
+  async onunload() {
+    // Persist tab state for all views before unloading
+    // This ensures state is saved even if Obsidian quits without calling onClose()
+    for (const view of this.getAllViews()) {
+      const tabManager = view.getTabManager();
+      if (tabManager) {
+        const state = tabManager.getPersistedState();
+        await this.storage.setTabManagerState(state);
+      }
+    }
   }
 
   /** Opens the Claudian sidebar view, creating it if necessary. */
@@ -182,7 +240,6 @@ export default class ClaudianPlugin extends Plugin {
     const slashCommands = await this.storage.commands.loadAll();
 
     // Merge settings with defaults and slashCommands
-    // Note: claudian already contains state fields (activeConversationId, lastEnvHash, etc.)
     this.settings = {
       ...DEFAULT_SETTINGS,
       ...claudian,
@@ -205,14 +262,6 @@ export default class ClaudianPlugin extends Plugin {
 
     // Load all conversations from session files
     this.conversations = await this.storage.sessions.loadAllConversations();
-    this.activeConversationId = claudian.activeConversationId;
-
-    // Validate active conversation exists
-    if (this.activeConversationId &&
-        !this.conversations.find(c => c.id === this.activeConversationId)) {
-      this.activeConversationId = null;
-    }
-
     // Initialize i18n with saved locale
     setLocale(this.settings.locale);
 
@@ -257,9 +306,6 @@ export default class ClaudianPlugin extends Plugin {
       slashCommands: _,
       ...settingsToSave
     } = this.settings;
-
-    // Update activeConversationId from plugin state
-    settingsToSave.activeConversationId = this.activeConversationId;
 
     await this.storage.saveClaudianSettings(settingsToSave);
   }
@@ -368,9 +414,7 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     // Hash changed - model or provider may have changed.
-    // Invalidate session so next query rebuilds full context from history.
-    // Note: agentService may not exist yet during initial plugin load.
-    this.agentService?.resetSession();
+    // Session invalidation is now handled per-tab by TabManager.
     clearDiffState(); // Clear UI diff state (not SDK-related)
 
     // Clear sessionId from all conversations since they belong to the old provider.
@@ -462,13 +506,11 @@ export default class ClaudianPlugin extends Plugin {
     };
 
     this.conversations.unshift(conversation);
-    this.activeConversationId = conversation.id;
-    this.agentService.resetSession();
+    // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state (not SDK-related)
 
     // Save new conversation to session file
     await this.storage.sessions.saveConversation(conversation);
-    await this.storage.setActiveConversationId(this.activeConversationId);
 
     return conversation;
   }
@@ -478,15 +520,13 @@ export default class ClaudianPlugin extends Plugin {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
 
-    this.activeConversationId = id;
-    this.agentService.setSessionId(conversation.sessionId);
+    // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state when switching conversations
 
-    await this.storage.setActiveConversationId(this.activeConversationId);
     return conversation;
   }
 
-  /** Deletes a conversation and switches to another if necessary. */
+  /** Deletes a conversation and resets any tabs using it. */
   async deleteConversation(id: string): Promise<void> {
     const index = this.conversations.findIndex(c => c.id === id);
     if (index === -1) return;
@@ -498,13 +538,21 @@ export default class ClaudianPlugin extends Plugin {
     // Delete the session file
     await this.storage.sessions.deleteConversation(id);
 
-    if (this.activeConversationId === id) {
-      if (this.conversations.length > 0) {
-        await this.switchConversation(this.conversations[0].id);
-      } else {
-        await this.createConversation();
+    // Notify all views/tabs that have this conversation open
+    // They need to reset to a new conversation
+    for (const view of this.getAllViews()) {
+      const tabManager = view.getTabManager();
+      if (!tabManager) continue;
+
+      for (const tab of tabManager.getAllTabs()) {
+        if (tab.conversationId === id) {
+          // Reset this tab to a new conversation
+          tab.controllers.inputController?.cancelStreaming();
+          await tab.controllers.conversationController?.createNew({ force: true });
+        }
       }
     }
+
   }
 
   /** Renames a conversation. */
@@ -524,11 +572,6 @@ export default class ClaudianPlugin extends Plugin {
 
     Object.assign(conversation, updates, { updatedAt: Date.now() });
     await this.storage.sessions.saveConversation(conversation);
-  }
-
-  /** Returns the current active conversation. */
-  getActiveConversation(): Conversation | null {
-    return this.conversations.find(c => c.id === this.activeConversationId) || null;
   }
 
   /** Gets a conversation by ID from the in-memory cache. */
@@ -560,6 +603,31 @@ export default class ClaudianPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     if (leaves.length > 0) {
       return leaves[0].view as ClaudianView;
+    }
+    return null;
+  }
+
+  /** Returns all open Claudian views in the workspace. */
+  getAllViews(): ClaudianView[] {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
+    return leaves.map(leaf => leaf.view as ClaudianView);
+  }
+
+  /**
+   * Checks if a conversation is open in any Claudian view.
+   * Returns the view and tab if found, null otherwise.
+   */
+  findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {
+    for (const view of this.getAllViews()) {
+      const tabManager = view.getTabManager();
+      if (!tabManager) continue;
+
+      const tabs = tabManager.getAllTabs();
+      for (const tab of tabs) {
+        if (tab.conversationId === conversationId) {
+          return { view, tabId: tab.id };
+        }
+      }
     }
     return null;
   }

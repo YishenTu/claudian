@@ -17,6 +17,7 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, and fine-tune thinking budget.
 - **Security**: Permission modes (YOLO/Safe), safety blocklist, and vault confinement with symlink-safe checks.
+- **Multi-Tab Support**: Run multiple concurrent chat sessions with independent streaming, lazy service initialization, and configurable tab limits (3-10 tabs).
 
 > **Note**: `Plan Mode` has been temporarily removed. The SDK does not natively support `permissionMode: plan`, and the previous implementation had significant limitations. It will be re-added when there's a better approach.
 
@@ -205,7 +206,7 @@ src/
 │   ├── tools/                   # Tool constants and utilities
 │   └── types/                   # Type definitions
 ├── features/                    # Feature modules
-│   ├── chat/                    # Main chat view + UI, rendering, controllers
+│   ├── chat/                    # Main chat view + UI, rendering, controllers, tabs
 │   ├── inline-edit/             # Inline edit service + UI
 │   └── settings/                # Settings tab UI
 ├── shared/                      # Shared UI components and modals

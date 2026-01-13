@@ -66,6 +66,27 @@
       "btnSet": "Tastenkürzel festlegen",
       "btnChange": "Ändern"
     },
+    "newTabHotkey": {
+      "name": "Neuer Tab Tastenkürzel",
+      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
+      "descWithKey": "Aktuell: {hotkey}",
+      "btnSet": "Tastenkürzel festlegen",
+      "btnChange": "Ändern"
+    },
+    "newSessionHotkey": {
+      "name": "Neue Sitzung Tastenkürzel",
+      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
+      "descWithKey": "Aktuell: {hotkey}",
+      "btnSet": "Tastenkürzel festlegen",
+      "btnChange": "Ändern"
+    },
+    "closeTabHotkey": {
+      "name": "Tab schließen Tastenkürzel",
+      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
+      "descWithKey": "Aktuell: {hotkey}",
+      "btnSet": "Tastenkürzel festlegen",
+      "btnChange": "Ändern"
+    },
     "slashCommands": {
       "name": "Schrägstrich-Befehle",
       "desc": "Erstelle benutzerdefinierte Prompt-Vorlagen, die durch /command ausgelöst werden. Verwende $ARGUMENTS für alle Argumente, $1/$2 für Positionsargumente, @file für Dateiinhalt und !`bash` für Befehlsausgabe."
@@ -122,6 +143,12 @@
       }
     },
     "advanced": "Erweitert",
+    "maxTabs": {
+      "name": "Maximale Chat-Tabs",
+      "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",
+      "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI-Pfad",
       "desc": "Benutzerdefinierter Pfad zum Claude Code CLI. Leer lassen für automatische Erkennung.",

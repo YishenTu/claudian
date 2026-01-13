@@ -1,0 +1,76 @@
+/* Tab Badges - Minimal numbered badge navigation */
+
+/* Outer container in nav row */
+.claudian-tab-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Inner container for tab badges */
+.claudian-tab-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Individual badge */
+.claudian-tab-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid var(--background-modifier-border);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.claudian-tab-badge:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Active tab - accent color border */
+.claudian-tab-badge-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+/* Streaming tab (background work) - brand color border */
+.claudian-tab-badge-streaming {
+  border-color: var(--claudian-brand, #da7756);
+}
+
+/* Attention needed - red border */
+.claudian-tab-badge-attention {
+  border-color: var(--text-error);
+}
+
+/* Idle tab - muted border (default) */
+.claudian-tab-badge-idle {
+  border-color: var(--background-modifier-border);
+}
+
+/* Tab content container (wrapper for all tabs) */
+.claudian-tab-content-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Per-tab content area */
+.claudian-tab-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

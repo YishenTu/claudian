@@ -61,6 +61,21 @@ export type TranslationKey =
   | 'settings.openChatHotkey.descWithKey'
   | 'settings.openChatHotkey.btnSet'
   | 'settings.openChatHotkey.btnChange'
+  | 'settings.newTabHotkey.name'
+  | 'settings.newTabHotkey.descNoKey'
+  | 'settings.newTabHotkey.descWithKey'
+  | 'settings.newTabHotkey.btnSet'
+  | 'settings.newTabHotkey.btnChange'
+  | 'settings.newSessionHotkey.name'
+  | 'settings.newSessionHotkey.descNoKey'
+  | 'settings.newSessionHotkey.descWithKey'
+  | 'settings.newSessionHotkey.btnSet'
+  | 'settings.newSessionHotkey.btnChange'
+  | 'settings.closeTabHotkey.name'
+  | 'settings.closeTabHotkey.descNoKey'
+  | 'settings.closeTabHotkey.descWithKey'
+  | 'settings.closeTabHotkey.btnSet'
+  | 'settings.closeTabHotkey.btnChange'
 
   // Settings - Slash Commands
   | 'settings.slashCommands.name'
@@ -109,6 +124,10 @@ export type TranslationKey =
 
   // Settings - Advanced
   | 'settings.advanced'
+  | 'settings.maxTabs.name'
+  | 'settings.maxTabs.desc'
+  | 'settings.maxTabs.warning'
+  | 'settings.maxTabs.range'
   | 'settings.cliPath.name'
   | 'settings.cliPath.desc'
   | 'settings.cliPath.descWindows'

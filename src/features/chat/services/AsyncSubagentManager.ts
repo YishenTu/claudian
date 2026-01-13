@@ -27,6 +27,11 @@ export class AsyncSubagentManager {
     this.onStateChange = onStateChange;
   }
 
+  /** Updates the state change callback. Used for deferred wiring after construction. */
+  public setCallback(callback: AsyncSubagentStateChangeCallback): void {
+    this.onStateChange = callback;
+  }
+
   /** Checks if a Task tool input indicates async mode (run_in_background=true). */
   public isAsyncTask(taskInput: Record<string, unknown>): boolean {
     return taskInput.run_in_background === true;

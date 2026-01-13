@@ -35,6 +35,7 @@ src/
 │   │   ├── controllers/         # ConversationController, StreamController, InputController, SelectionController
 │   │   ├── rendering/           # MessageRenderer and render helpers
 │   │   ├── services/            # TitleGenerationService, AsyncSubagentManager, InstructionRefineService
+│   │   ├── tabs/                # Multi-tab infrastructure (Tab, TabManager, TabBar)
 │   │   └── ui/                  # Chat UI components (toolbar, file context, panels)
 │   ├── inline-edit/             # Inline edit feature
 │   │   ├── InlineEditService.ts
@@ -69,6 +70,7 @@ src/
 | | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
 | | `chat/rendering/` | Message DOM rendering (MessageRenderer) |
 | | `chat/services/` | TitleGenerationService, AsyncSubagentManager, InstructionRefineService |
+| | `chat/tabs/` | Multi-tab infrastructure (Tab, TabManager, TabBar, types) |
 | | `chat/ui/` | Chat UI components (toolbar, file context, panels) |
 | | `inline-edit/` | Inline edit service |
 | | `inline-edit/ui/` | Inline edit modal UI |
@@ -207,6 +209,7 @@ interface ClaudianSettings {
   };
   claudeCliPath: string;             // Custom Claude CLI path (empty = auto-detect)
   enabledPlugins: string[];          // IDs of enabled Claude Code plugins (per vault)
+  maxTabs: number;                   // Maximum concurrent tabs (3-10, default: 3)
 }
 
 // Per-conversation state (session-only, not global settings)
@@ -230,7 +233,7 @@ vault/.claude/
     └── {conv-id}.jsonl        # Meta line + message lines
 
 .obsidian/plugins/claudian/
-└── data.json                  # Machine state only
+└── data.json                  # Machine state only (tabManagerState, etc.)
 ```
 
 | File | Contents |
@@ -239,7 +242,7 @@ vault/.claude/
 | `mcp.json` | MCP server configs with `_claudian` metadata (Claude Code compatible) |
 | `commands/*.md` | Slash commands with YAML frontmatter |
 | `sessions/*.jsonl` | Conversations (meta + messages per line) |
-| `data.json` | `activeConversationId`, `lastEnvHash`, model tracking |
+| `data.json` | `tabManagerState`, other machine-only state |
 
 **Command ID encoding**: `-` → `-_`, `/` → `--` (reversible, no collisions)
 
@@ -254,6 +257,15 @@ vault/.claude/
 Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`
 
 ## Features
+
+### Multi-Tab Support
+Run multiple concurrent chat sessions in the sidebar.
+- **Independent streaming**: Each tab has its own ClaudianService instance
+- **Lazy initialization**: Services only start when tab is first used (on first query)
+- **Tab limit**: Configurable 3-10 tabs via settings (`maxTabs`)
+- **Persistence**: Tab state saved to `data.json` and restored on reload
+- **Tab bar**: Badges show tab index, streaming status, and attention indicators
+- **Hotkeys**: `Cmd/Ctrl+1-9` to switch tabs, `Cmd/Ctrl+W` to close
 
 ### Image Support
 - Drag/drop or paste images into the chat input
@@ -422,4 +434,4 @@ All classes use `.claudian-` prefix. Key patterns:
 - Test Driven Development
 - Generated docs go in `dev/`, move docs to `dev/archive` before commit
 - Generated agents communication notes in `.agents/`, move notes to `.agents/archive` before commit, do not check in any docs under `.agents/` or `.agents/archive`(already gitignored)
-- Run `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test` after editing
+- Run `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build` after editing

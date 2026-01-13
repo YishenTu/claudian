@@ -66,6 +66,27 @@
       "btnSet": "Set hotkey",
       "btnChange": "Change"
     },
+    "newTabHotkey": {
+      "name": "New tab hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
+    "newSessionHotkey": {
+      "name": "New session hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
+    "closeTabHotkey": {
+      "name": "Close tab hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
     "slashCommands": {
       "name": "Slash Commands",
       "desc": "Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output."
@@ -122,6 +143,12 @@
       }
     },
     "advanced": "Advanced",
+    "maxTabs": {
+      "name": "Maximum chat tabs",
+      "desc": "Maximum number of concurrent chat tabs (3-10). Each tab uses a separate Claude session.",
+      "warning": "More than 5 tabs may impact performance and memory usage.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI path",
       "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection. Supports shell commands like $(which claude) on Unix or $(where claude) on Windows.",

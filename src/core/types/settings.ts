@@ -265,7 +265,6 @@ export interface ClaudianSettings {
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
 
   // State (merged from data.json)
-  activeConversationId: string | null;
   lastClaudeModel?: ClaudeModel;
   lastCustomModel?: ClaudeModel;
   lastEnvHash?: string;
@@ -275,6 +274,9 @@ export interface ClaudianSettings {
 
   // Claude Code plugins
   enabledPlugins: string[];  // IDs of enabled plugins (per vault)
+
+  // UI preferences
+  maxTabs: number;  // Maximum number of chat tabs (3-10, default 3)
 }
 
 /**
@@ -324,8 +326,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   claudeCliPaths: getDefaultCliPaths(),  // Platform-specific paths
   loadUserClaudeSettings: true,  // Default on for compatibility
 
-  // State (merged from data.json)
-  activeConversationId: null,
   lastClaudeModel: 'haiku',
   lastCustomModel: '',
   lastEnvHash: '',
@@ -335,6 +335,9 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // Claude Code plugins
   enabledPlugins: [],
+
+  // UI preferences
+  maxTabs: 3,  // Default to 3 tabs (safe resource usage)
 };
 
 /** Default CC-compatible settings. */

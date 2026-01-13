@@ -66,6 +66,27 @@
       "btnSet": "Definir atalho",
       "btnChange": "Alterar"
     },
+    "newTabHotkey": {
+      "name": "Atalho nova aba",
+      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
+      "descWithKey": "Atual: {hotkey}",
+      "btnSet": "Definir atalho",
+      "btnChange": "Alterar"
+    },
+    "newSessionHotkey": {
+      "name": "Atalho nova sessão",
+      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
+      "descWithKey": "Atual: {hotkey}",
+      "btnSet": "Definir atalho",
+      "btnChange": "Alterar"
+    },
+    "closeTabHotkey": {
+      "name": "Atalho fechar aba",
+      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
+      "descWithKey": "Atual: {hotkey}",
+      "btnSet": "Definir atalho",
+      "btnChange": "Alterar"
+    },
     "slashCommands": {
       "name": "Comandos slash",
       "desc": "Crie modelos de prompts personalizados acionados por /command. Use $ARGUMENTS para todos os argumentos, $1/$2 para argumentos posicionais, @file para conteúdo de arquivo e !`bash` para saída de comando."
@@ -122,6 +143,12 @@
       }
     },
     "advanced": "Avançado",
+    "maxTabs": {
+      "name": "Máximo de abas de chat",
+      "desc": "Número máximo de abas de chat simultâneas (3-10). Cada aba usa uma sessão Claude separada.",
+      "warning": "Mais de 5 abas pode afetar o desempenho e o uso de memória.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Caminho CLI Claude",
       "desc": "Caminho personalizado para Claude Code CLI. Deixe vazio para detecção automática.",

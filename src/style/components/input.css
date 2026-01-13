@@ -4,31 +4,55 @@
   padding: 12px 0 0 0;
 }
 
-/* Input wrapper (border container) */
+/* Input wrapper (border container) - flex column so textarea expands when no chips */
+/* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   background: var(--background-primary);
 }
 
-/* Context row (file chip left, selection indicator right) */
+/* Context row (file chip left, selection indicator right) - inside input wrapper at top */
+/* Collapsed by default; expanded via .has-content class; textarea fills remaining space */
 .claudian-context-row {
+  display: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 6px 10px 0 10px;
+  gap: 8px;
+}
+
+/* Show context row when it has visible content */
+.claudian-context-row.has-content {
+  display: flex;
+}
+
+/* Nav row (tab badges left, header icons right) - above input wrapper */
+.claudian-input-nav-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 0 8px 0;
   min-height: 0;
-  margin-bottom: 4px;
 }
 
 /* Selection indicator (shown when text is selected in editor) */
+/* Match file chip height (24px): chip has 16px remove button + 6px padding + 2px border */
+/* Indicator: 12px text + 10px padding (5+5) + 2px border = 24px */
 .claudian-selection-indicator {
   color: #7abaff;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1;
   opacity: 0.9;
   pointer-events: none;
   white-space: nowrap;
-  padding: 2px 6px;
+  padding: 5px 6px;
+  border: 1px solid transparent;
   border-radius: 4px;
   margin-left: auto;
   flex-shrink: 0;
@@ -36,10 +60,11 @@
 
 .claudian-input {
   width: 100%;
+  flex: 1 1 0;
   min-height: 60px;
   /* max-height dynamically set by JS: max(150px, 55% of view height) */
   resize: none;
-  padding: 10px;
+  padding: 8px 10px 10px 10px;
   border: none !important;
   border-radius: 6px;
   background: transparent !important;
@@ -49,14 +74,6 @@
   line-height: 1.4;
   box-shadow: none !important;
   overflow-y: auto;
-  transition: height 150ms ease-out;
-}
-
-/* Respect reduced motion preference */
-@media (prefers-reduced-motion: reduce) {
-  .claudian-input {
-    transition: none;
-  }
 }
 
 .claudian-input:hover,
@@ -76,6 +93,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  flex-shrink: 0;
   padding: 4px 6px 6px 6px;
 }
 
@@ -95,6 +113,7 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 12px;
   font-size: 12px;
+  line-height: 1;
   max-width: 200px;
   cursor: pointer;
 }

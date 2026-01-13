@@ -84,7 +84,6 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }),
-      getActiveConversation: jest.fn().mockReturnValue(null),
       getConversationById: jest.fn().mockReturnValue(null),
       getConversationList: jest.fn().mockReturnValue([]),
       findEmptyConversation: jest.fn().mockReturnValue(null),
@@ -193,52 +192,33 @@ describe('ConversationController - Queue Management', () => {
       expect(deps.state.currentTodos).toBeNull();
     });
 
-    it('should switch to existing empty conversation instead of creating new one', async () => {
-      const emptyConv = {
-        id: 'empty-conv',
-        title: 'Empty Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      (deps.plugin.findEmptyConversation as jest.Mock).mockReturnValue(emptyConv);
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(emptyConv);
-
+    it('should reset to entry point state (null conversationId) instead of creating conversation', async () => {
+      // Entry point model: createNew() resets to blank state without creating conversation
+      // Conversation is created lazily on first message send
       await controller.createNew();
 
-      expect(deps.plugin.findEmptyConversation).toHaveBeenCalled();
-      expect(deps.plugin.switchConversation).toHaveBeenCalledWith('empty-conv');
+      // Should NOT call findEmptyConversation or createConversation
+      expect(deps.plugin.findEmptyConversation).not.toHaveBeenCalled();
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-      expect(deps.state.currentConversationId).toBe('empty-conv');
-    });
-
-    it('should create new conversation if no empty conversation exists', async () => {
-      (deps.plugin.findEmptyConversation as jest.Mock).mockReturnValue(null);
-
-      await controller.createNew();
-
-      expect(deps.plugin.findEmptyConversation).toHaveBeenCalled();
-      expect(deps.plugin.createConversation).toHaveBeenCalled();
       expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+
+      // Should be at entry point state
+      expect(deps.state.currentConversationId).toBeNull();
     });
 
-    it('should fallback to createConversation if switchConversation fails', async () => {
-      const emptyConv = {
-        id: 'empty-conv',
-        title: 'Empty Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      (deps.plugin.findEmptyConversation as jest.Mock).mockReturnValue(emptyConv);
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(null);
+    it('should clear messages and reset state when creating new', async () => {
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+      deps.state.currentConversationId = 'old-conv';
+
+      // Mock clearMessages to track if it was called
+      const clearMessagesSpy = jest.spyOn(deps.state, 'clearMessages');
 
       await controller.createNew();
 
-      expect(deps.plugin.switchConversation).toHaveBeenCalledWith('empty-conv');
-      expect(deps.plugin.createConversation).toHaveBeenCalled();
+      expect(clearMessagesSpy).toHaveBeenCalled();
+      expect(deps.state.currentConversationId).toBeNull();
+
+      clearMessagesSpy.mockRestore();
     });
   });
 
@@ -335,6 +315,51 @@ describe('ConversationController - Queue Management', () => {
       const welcomeEl = deps.getWelcomeEl()!;
       expect(welcomeEl.style.display).toBe('none');
     });
+  });
+});
+
+describe('ConversationController - initializeWelcome', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should initialize file context for new tab', () => {
+    const fileContextManager = deps.getFileContextManager()!;
+
+    controller.initializeWelcome();
+
+    expect(fileContextManager.resetForNewConversation).toHaveBeenCalled();
+    expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
+  });
+
+  it('should not throw if welcomeEl is null', () => {
+    const depsWithNullWelcome = createMockDeps({
+      getWelcomeEl: () => null,
+    });
+    const controllerWithNullWelcome = new ConversationController(depsWithNullWelcome);
+
+    expect(() => controllerWithNullWelcome.initializeWelcome()).not.toThrow();
+  });
+
+  it('should only add greeting if not already present', () => {
+    const welcomeEl = deps.getWelcomeEl()!;
+    const createDivSpy = jest.spyOn(welcomeEl, 'createDiv');
+
+    // First call should add greeting
+    controller.initializeWelcome();
+    expect(createDivSpy).toHaveBeenCalledTimes(1);
+
+    // Mock querySelector to return an element (greeting already exists)
+    welcomeEl.querySelector = jest.fn().mockReturnValue(createMockElement());
+
+    // Second call should not add another greeting
+    controller.initializeWelcome();
+    expect(createDivSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
   });
 });
 
@@ -656,7 +681,8 @@ describe('ConversationController - MCP Server Persistence', () => {
 
   describe('loadActive', () => {
     it('should restore enabled MCP servers from conversation', async () => {
-      (deps.plugin.getActiveConversation as jest.Mock).mockReturnValue({
+      deps.state.currentConversationId = 'conv-1';
+      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
         id: 'conv-1',
         messages: [],
         sessionId: null,
@@ -672,7 +698,8 @@ describe('ConversationController - MCP Server Persistence', () => {
     });
 
     it('should clear MCP servers when conversation has none', async () => {
-      (deps.plugin.getActiveConversation as jest.Mock).mockReturnValue({
+      deps.state.currentConversationId = 'conv-1';
+      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
         id: 'conv-1',
         messages: [],
         sessionId: null,
@@ -752,31 +779,32 @@ describe('ConversationController - Race Condition Guards', () => {
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
     });
 
-    it('should reset isCreatingConversation flag even on error', async () => {
-      (deps.plugin.createConversation as jest.Mock).mockRejectedValue(new Error('Creation failed'));
+    it('should reset even when streaming if force is true', async () => {
+      deps.state.isStreaming = true;
+      deps.state.cancelRequested = false;
+      const initialGeneration = deps.state.streamGeneration;
 
-      await expect(controller.createNew()).rejects.toThrow('Creation failed');
+      await controller.createNew({ force: true });
 
-      expect(deps.state.isCreatingConversation).toBe(false);
+      expect(deps.state.isStreaming).toBe(false);
+      expect(deps.state.cancelRequested).toBe(true);
+      expect(deps.state.streamGeneration).toBe(initialGeneration + 1);
+      expect(deps.state.currentConversationId).toBeNull();
     });
 
-    it('should set isCreatingConversation flag during creation', async () => {
-      let flagDuringCreation = false;
-      (deps.plugin.createConversation as jest.Mock).mockImplementation(async () => {
-        flagDuringCreation = deps.state.isCreatingConversation;
-        return {
-          id: 'new-conv',
-          title: 'New Conversation',
-          messages: [],
-          sessionId: null,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+    it('should set and reset isCreatingConversation flag during entry point reset', async () => {
+      // Entry point model: createNew() just resets state, doesn't create conversation
+      // But isCreatingConversation flag should still be set during the reset
+      let flagDuringExecution = false;
+
+      // Override clearMessages to capture flag state during execution
+      deps.state.clearMessages = jest.fn(() => {
+        flagDuringExecution = deps.state.isCreatingConversation;
       });
 
       await controller.createNew();
 
-      expect(flagDuringCreation).toBe(true);
+      expect(flagDuringExecution).toBe(true);
       expect(deps.state.isCreatingConversation).toBe(false);
     });
   });
@@ -916,7 +944,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
   describe('loadActive', () => {
     it('should use persistent paths for new conversation (no existing conversation)', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue(null);
+      deps.state.currentConversationId = null;
 
       await controller.loadActive();
 
@@ -926,7 +954,8 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
 
     it('should use persistent paths for empty conversation (msg=0)', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue({
+      deps.state.currentConversationId = 'existing-conv';
+      deps.plugin.getConversationById = jest.fn().mockReturnValue({
         id: 'existing-conv',
         messages: [],
         sessionId: null,
@@ -940,7 +969,8 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
 
     it('should restore saved paths for conversation with messages (msg>0)', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue({
+      deps.state.currentConversationId = 'existing-conv';
+      deps.plugin.getConversationById = jest.fn().mockReturnValue({
         id: 'existing-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
@@ -954,7 +984,8 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
 
     it('should restore empty paths for conversation with messages but no saved paths', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue({
+      deps.state.currentConversationId = 'existing-conv';
+      deps.plugin.getConversationById = jest.fn().mockReturnValue({
         id: 'existing-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
@@ -1027,7 +1058,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
       // Step 1: Session 0 is empty, persistent paths = [A]
       (deps.plugin.settings as any).persistentExternalContextPaths = ['/path/a'];
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue(null);
+      deps.state.currentConversationId = null;
       await controller.loadActive();
 
       expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(['/path/a']);

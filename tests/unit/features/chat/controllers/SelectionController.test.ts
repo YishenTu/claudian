@@ -17,11 +17,21 @@ function createMockIndicator() {
   } as any;
 }
 
+function createMockContextRow() {
+  return {
+    classList: {
+      toggle: jest.fn(),
+    },
+    querySelector: jest.fn().mockReturnValue(null),
+  } as any;
+}
+
 describe('SelectionController', () => {
   let controller: SelectionController;
   let app: any;
   let indicatorEl: any;
   let inputEl: any;
+  let contextRowEl: any;
   let editor: any;
   let editorView: any;
   let originalDocument: any;
@@ -33,6 +43,7 @@ describe('SelectionController', () => {
 
     indicatorEl = createMockIndicator();
     inputEl = {};
+    contextRowEl = createMockContextRow();
 
     editorView = { id: 'editor-view' };
     editor = {
@@ -52,7 +63,7 @@ describe('SelectionController', () => {
       },
     };
 
-    controller = new SelectionController(app, indicatorEl, inputEl);
+    controller = new SelectionController(app, indicatorEl, inputEl, contextRowEl);
 
     originalDocument = (global as any).document;
     (global as any).document = { activeElement: null };

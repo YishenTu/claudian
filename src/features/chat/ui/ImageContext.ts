@@ -31,6 +31,7 @@ export class ImageContextManager {
   private app: App;
   private callbacks: ImageContextCallbacks;
   private containerEl: HTMLElement;
+  private previewContainerEl: HTMLElement;
   private imagePreviewEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private dropOverlay: HTMLElement | null = null;
@@ -40,17 +41,20 @@ export class ImageContextManager {
     app: App,
     containerEl: HTMLElement,
     inputEl: HTMLTextAreaElement,
-    callbacks: ImageContextCallbacks
+    callbacks: ImageContextCallbacks,
+    previewContainerEl?: HTMLElement
   ) {
     this.app = app;
     this.containerEl = containerEl;
+    this.previewContainerEl = previewContainerEl ?? containerEl;
     this.inputEl = inputEl;
     this.callbacks = callbacks;
 
-    const fileIndicator = this.containerEl.querySelector('.claudian-file-indicator');
-    this.imagePreviewEl = this.containerEl.createDiv({ cls: 'claudian-image-preview' });
-    if (fileIndicator) {
-      this.containerEl.insertBefore(this.imagePreviewEl, fileIndicator);
+    // Create image preview in previewContainerEl, before file indicator if present
+    const fileIndicator = this.previewContainerEl.querySelector('.claudian-file-indicator');
+    this.imagePreviewEl = this.previewContainerEl.createDiv({ cls: 'claudian-image-preview' });
+    if (fileIndicator && fileIndicator.parentElement === this.previewContainerEl) {
+      this.previewContainerEl.insertBefore(this.imagePreviewEl, fileIndicator);
     }
 
     this.setupDragAndDrop();

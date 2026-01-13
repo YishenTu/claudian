@@ -66,6 +66,27 @@
       "btnSet": "設定快捷鍵",
       "btnChange": "更改"
     },
+    "newTabHotkey": {
+      "name": "新建分頁快捷鍵",
+      "descNoKey": "未設定快捷鍵。點擊配置。",
+      "descWithKey": "目前：{hotkey}",
+      "btnSet": "設定快捷鍵",
+      "btnChange": "更改"
+    },
+    "newSessionHotkey": {
+      "name": "新建對話快捷鍵",
+      "descNoKey": "未設定快捷鍵。點擊配置。",
+      "descWithKey": "目前：{hotkey}",
+      "btnSet": "設定快捷鍵",
+      "btnChange": "更改"
+    },
+    "closeTabHotkey": {
+      "name": "關閉分頁快捷鍵",
+      "descNoKey": "未設定快捷鍵。點擊配置。",
+      "descWithKey": "目前：{hotkey}",
+      "btnSet": "設定快捷鍵",
+      "btnChange": "更改"
+    },
     "slashCommands": {
       "name": "斜線命令",
       "desc": "建立由 /command 觸發的自訂提示範本。使用 $ARGUMENTS 獲取所有參數，$1/$2 獲取位置參數，@file 獲取檔案內容，!`bash` 獲取命令輸出。"
@@ -122,6 +143,12 @@
       }
     },
     "advanced": "進階",
+    "maxTabs": {
+      "name": "最大聊天標籤數",
+      "desc": "同時開啟的最大聊天標籤數（3-10）。每個標籤使用獨立的 Claude 對話。",
+      "warning": "超過 5 個標籤可能會影響效能和記憶體使用。",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI 路徑",
       "desc": "Claude Code CLI 的自訂路徑。留空使用自動檢測。",

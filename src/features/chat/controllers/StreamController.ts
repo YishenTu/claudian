@@ -5,6 +5,7 @@
  * state tracking, and thinking indicator display.
  */
 
+import type { ClaudianService } from '../../../core/agent';
 import { getDiffData } from '../../../core/hooks';
 import { parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
@@ -47,6 +48,8 @@ export interface StreamControllerDeps {
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
+  /** Get the agent service from the tab. */
+  getAgentService?: () => ClaudianService | null;
 }
 
 /**
@@ -65,7 +68,7 @@ export class StreamController {
 
   /** Processes a stream chunk and updates the message. */
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
-    const { state, plugin } = this.deps;
+    const { state } = this.deps;
 
     // Route subagent chunks
     if ('parentToolUseId' in chunk && chunk.parentToolUseId) {
@@ -138,7 +141,7 @@ export class StreamController {
 
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
-        const currentSessionId = plugin.agentService.getSessionId();
+        const currentSessionId = this.deps.getAgentService?.()?.getSessionId() ?? null;
         const chunkSessionId = chunk.sessionId ?? null;
         if (
           (chunkSessionId && currentSessionId && chunkSessionId !== currentSessionId) ||

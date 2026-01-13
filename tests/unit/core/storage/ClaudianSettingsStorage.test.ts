@@ -96,39 +96,6 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.claudeCliPath).toBe('/legacy/path');
     });
 
-    it('should handle activeConversationId as null', async () => {
-      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
-      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
-        activeConversationId: null,
-      }));
-
-      const result = await storage.load();
-
-      expect(result.activeConversationId).toBeNull();
-    });
-
-    it('should handle activeConversationId as string', async () => {
-      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
-      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
-        activeConversationId: 'conv-123',
-      }));
-
-      const result = await storage.load();
-
-      expect(result.activeConversationId).toBe('conv-123');
-    });
-
-    it('should default activeConversationId to null for invalid types', async () => {
-      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
-      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
-        activeConversationId: 123, // Invalid type
-      }));
-
-      const result = await storage.load();
-
-      expect(result.activeConversationId).toBeNull();
-    });
-
     it('should throw on JSON parse error', async () => {
       (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
       (mockAdapter.read as jest.Mock).mockResolvedValue('invalid json');
@@ -213,29 +180,42 @@ describe('ClaudianSettingsStorage', () => {
     });
   });
 
-  describe('setActiveConversationId', () => {
-    it('should update active conversation ID', async () => {
-      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
-      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({}));
-
-      await storage.setActiveConversationId('new-conv-id');
-
-      const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
-      const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.activeConversationId).toBe('new-conv-id');
-    });
-
-    it('should set active conversation ID to null', async () => {
+  describe('legacy activeConversationId', () => {
+    it('should read legacy activeConversationId when present', async () => {
       (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
       (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
-        activeConversationId: 'existing-id',
+        activeConversationId: 'conv-123',
       }));
 
-      await storage.setActiveConversationId(null);
+      const legacyId = await storage.getLegacyActiveConversationId();
+
+      expect(legacyId).toBe('conv-123');
+    });
+
+    it('should return null when legacy activeConversationId is missing', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        model: 'claude-haiku-4-5',
+      }));
+
+      const legacyId = await storage.getLegacyActiveConversationId();
+
+      expect(legacyId).toBeNull();
+    });
+
+    it('should clear legacy activeConversationId from file', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        activeConversationId: 'conv-123',
+        model: 'claude-haiku-4-5',
+      }));
+
+      await storage.clearLegacyActiveConversationId();
 
       const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
       const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.activeConversationId).toBeNull();
+      expect(writtenContent.activeConversationId).toBeUndefined();
+      expect(writtenContent.model).toBe('claude-haiku-4-5');
     });
   });
 

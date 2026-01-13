@@ -99,6 +99,7 @@ export class ClaudianSettingsStorage {
 
     const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
+    const { activeConversationId: _activeConversationId, ...storedWithoutLegacy } = stored;
 
     // Normalize complex fields
     const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
@@ -107,17 +108,10 @@ export class ClaudianSettingsStorage {
 
     return {
       ...this.getDefaults(),
-      ...stored,
+      ...storedWithoutLegacy,
       blockedCommands,
       claudeCliPath: legacyCliPath,
       claudeCliPaths: cliPaths,
-      // Ensure activeConversationId is properly typed (preserve explicit null)
-      activeConversationId:
-        stored.activeConversationId === null
-          ? null
-          : typeof stored.activeConversationId === 'string'
-            ? stored.activeConversationId
-            : null,
     } as StoredClaudianSettings;
   }
 
@@ -145,10 +139,43 @@ export class ClaudianSettingsStorage {
   }
 
   /**
-   * Update active conversation ID.
+   * Read legacy activeConversationId from claudian-settings.json, if present.
+   * Used only for one-time migration to tabManagerState.
    */
-  async setActiveConversationId(id: string | null): Promise<void> {
-    await this.update({ activeConversationId: id });
+  async getLegacyActiveConversationId(): Promise<string | null> {
+    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+      return null;
+    }
+
+    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const stored = JSON.parse(content) as Record<string, unknown>;
+    const value = stored.activeConversationId;
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    return null;
+  }
+
+  /**
+   * Remove legacy activeConversationId from claudian-settings.json.
+   */
+  async clearLegacyActiveConversationId(): Promise<void> {
+    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+      return;
+    }
+
+    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const stored = JSON.parse(content) as Record<string, unknown>;
+
+    if (!('activeConversationId' in stored)) {
+      return;
+    }
+
+    delete stored.activeConversationId;
+    const nextContent = JSON.stringify(stored, null, 2);
+    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, nextContent);
   }
 
   /**

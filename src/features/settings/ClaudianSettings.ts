@@ -297,6 +297,45 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onClick(() => openHotkeySettings(this.app))
       );
 
+    const newSessionCommandId = 'claudian:new-session';
+    const newSessionHotkey = getHotkeyForCommand(this.app, newSessionCommandId);
+    new Setting(containerEl)
+      .setName(t('settings.newSessionHotkey.name'))
+      .setDesc(newSessionHotkey
+        ? t('settings.newSessionHotkey.descWithKey', { hotkey: newSessionHotkey })
+        : t('settings.newSessionHotkey.descNoKey'))
+      .addButton((button) =>
+        button
+          .setButtonText(newSessionHotkey ? t('settings.newSessionHotkey.btnChange') : t('settings.newSessionHotkey.btnSet'))
+          .onClick(() => openHotkeySettings(this.app))
+      );
+
+    const newTabCommandId = 'claudian:new-tab';
+    const newTabHotkey = getHotkeyForCommand(this.app, newTabCommandId);
+    new Setting(containerEl)
+      .setName(t('settings.newTabHotkey.name'))
+      .setDesc(newTabHotkey
+        ? t('settings.newTabHotkey.descWithKey', { hotkey: newTabHotkey })
+        : t('settings.newTabHotkey.descNoKey'))
+      .addButton((button) =>
+        button
+          .setButtonText(newTabHotkey ? t('settings.newTabHotkey.btnChange') : t('settings.newTabHotkey.btnSet'))
+          .onClick(() => openHotkeySettings(this.app))
+      );
+
+    const closeTabCommandId = 'claudian:close-current-tab';
+    const closeTabHotkey = getHotkeyForCommand(this.app, closeTabCommandId);
+    new Setting(containerEl)
+      .setName(t('settings.closeTabHotkey.name'))
+      .setDesc(closeTabHotkey
+        ? t('settings.closeTabHotkey.descWithKey', { hotkey: closeTabHotkey })
+        : t('settings.closeTabHotkey.descNoKey'))
+      .addButton((button) =>
+        button
+          .setButtonText(closeTabHotkey ? t('settings.closeTabHotkey.btnChange') : t('settings.closeTabHotkey.btnSet'))
+          .onClick(() => openHotkeySettings(this.app))
+      );
+
     // Slash Commands section
     new Setting(containerEl).setName(t('settings.slashCommands.name')).setHeading();
 
@@ -454,6 +493,38 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Advanced section
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
 
+    // Max tabs setting
+    const maxTabsSetting = new Setting(containerEl)
+      .setName(t('settings.maxTabs.name'))
+      .setDesc(t('settings.maxTabs.desc'));
+
+    // Warning element for high tab count
+    const maxTabsWarningEl = containerEl.createDiv({ cls: 'claudian-max-tabs-warning' });
+    maxTabsWarningEl.style.color = 'var(--text-warning)';
+    maxTabsWarningEl.style.fontSize = '0.85em';
+    maxTabsWarningEl.style.marginTop = '-0.5em';
+    maxTabsWarningEl.style.marginBottom = '0.5em';
+    maxTabsWarningEl.style.display = 'none';
+    maxTabsWarningEl.setText(t('settings.maxTabs.warning'));
+
+    const updateMaxTabsWarning = (value: number): void => {
+      maxTabsWarningEl.style.display = value > 5 ? 'block' : 'none';
+    };
+
+    maxTabsSetting.addSlider((slider) => {
+      slider
+        .setLimits(3, 10, 1)
+        .setValue(this.plugin.settings.maxTabs ?? 3)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.maxTabs = value;
+          await this.plugin.saveSettings();
+          updateMaxTabsWarning(value);
+        });
+      // Show warning on initial load if needed
+      updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
+    });
+
     // Get current platform key for platform-specific CLI path storage
     const cliPlatformKey = getCliPlatformKey();
 
@@ -543,7 +614,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           // Clear cached path so next query will use the new path
           this.plugin.cliResolver?.reset();
-          this.plugin.agentService?.cleanup();
+          // Cleanup all tab services so they restart with the new CLI path
+          const view = this.plugin.getView();
+          await view?.getTabManager()?.broadcastToAllTabs(
+            (service) => Promise.resolve(service.cleanup())
+          );
         });
       text.inputEl.addClass('claudian-settings-cli-path-input');
       text.inputEl.style.width = '100%';
