@@ -53,6 +53,8 @@ export {
   getCurrentPlatformKey,
   getDefaultBlockedCommands,
   getDefaultCliPaths,
+  getHostnameKey,
+  type HostnameCliPaths,
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
   type LegacyPermission,
