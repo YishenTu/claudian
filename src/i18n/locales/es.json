@@ -66,6 +66,27 @@
       "btnSet": "Configurar atajo",
       "btnChange": "Cambiar"
     },
+    "newTabHotkey": {
+      "name": "Atajo nueva pestaña",
+      "descNoKey": "No hay atajo configurado. Clic para configurar.",
+      "descWithKey": "Actual: {hotkey}",
+      "btnSet": "Configurar atajo",
+      "btnChange": "Cambiar"
+    },
+    "newSessionHotkey": {
+      "name": "Atajo nueva sesión",
+      "descNoKey": "No hay atajo configurado. Clic para configurar.",
+      "descWithKey": "Actual: {hotkey}",
+      "btnSet": "Configurar atajo",
+      "btnChange": "Cambiar"
+    },
+    "closeTabHotkey": {
+      "name": "Atajo cerrar pestaña",
+      "descNoKey": "No hay atajo configurado. Clic para configurar.",
+      "descWithKey": "Actual: {hotkey}",
+      "btnSet": "Configurar atajo",
+      "btnChange": "Cambiar"
+    },
     "slashCommands": {
       "name": "Comandos slash",
       "desc": "Crea plantillas de prompts personalizadas activadas por /command. Usa $ARGUMENTS para todos los argumentos, $1/$2 para argumentos posicionales, @file para contenido de archivo y !`bash` para salida de comandos."

@@ -1,145 +1,61 @@
-/* Tab Bar */
+/* Tab Badges - Minimal numbered badge navigation */
 
-/* Outer container in header (controls visibility) */
+/* Outer container in header */
 .claudian-tab-bar-container {
   display: flex;
   align-items: center;
-  flex: 1;
-  margin: 0 12px;
-  overflow: hidden;
-  min-width: 0;
+  gap: 4px;
+  margin-left: 12px;
 }
 
-/* Inner container for tab bar elements */
-.claudian-tab-bar {
+/* Inner container for tab badges */
+.claudian-tab-badges {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1;
-  overflow: hidden;
-  min-width: 0;
 }
 
-/* Container for tab items */
-.claudian-tab-bar-tabs {
+/* Individual badge */
+.claudian-tab-badge {
   display: flex;
   align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  flex: 1;
-  min-width: 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.claudian-tab-bar-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-/* Individual tab */
-.claudian-tab-bar-tab {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border-radius: 4px;
-  cursor: pointer;
-  background: transparent;
-  color: var(--text-muted);
+  border: 2px solid var(--background-modifier-border);
   font-size: 12px;
-  white-space: nowrap;
-  min-width: 0;
-  max-width: 150px;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.claudian-tab-bar-tab:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-/* Active tab */
-.claudian-tab-bar-tab-active {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-/* Tab content (title + spinner) */
-.claudian-tab-bar-tab-content {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-/* Tab title */
-.claudian-tab-bar-tab-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Close button */
-.claudian-tab-bar-tab-close {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border-radius: 2px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.claudian-tab-bar-tab:hover .claudian-tab-bar-tab-close {
-  display: flex;
-}
-
-.claudian-tab-bar-tab-close:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.claudian-tab-bar-tab-close svg {
-  width: 12px;
-  height: 12px;
-}
-
-/* Streaming spinner */
-.claudian-tab-bar-spinner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.claudian-tab-bar-spinner svg {
-  width: 12px;
-  height: 12px;
-  animation: claudian-spin 1s linear infinite;
-}
-
-/* New tab button */
-.claudian-tab-bar-new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  border-radius: 4px;
+  font-weight: 500;
   cursor: pointer;
   color: var(--text-muted);
-  flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease;
+  background: var(--background-primary);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.claudian-tab-bar-new:hover {
+.claudian-tab-badge:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-tab-bar-new svg {
-  width: 14px;
-  height: 14px;
+/* Active tab - accent color border */
+.claudian-tab-badge-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+/* Streaming tab (background work) - brand color border */
+.claudian-tab-badge-streaming {
+  border-color: var(--claudian-brand, #da7756);
+}
+
+/* Attention needed - red border */
+.claudian-tab-badge-attention {
+  border-color: var(--text-error);
+}
+
+/* Idle tab - muted border (default) */
+.claudian-tab-badge-idle {
+  border-color: var(--background-modifier-border);
 }
 
 /* Tab content container (wrapper for all tabs) */

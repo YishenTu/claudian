@@ -297,6 +297,45 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onClick(() => openHotkeySettings(this.app))
       );
 
+    const newSessionCommandId = 'claudian:new-session';
+    const newSessionHotkey = getHotkeyForCommand(this.app, newSessionCommandId);
+    new Setting(containerEl)
+      .setName(t('settings.newSessionHotkey.name'))
+      .setDesc(newSessionHotkey
+        ? t('settings.newSessionHotkey.descWithKey', { hotkey: newSessionHotkey })
+        : t('settings.newSessionHotkey.descNoKey'))
+      .addButton((button) =>
+        button
+          .setButtonText(newSessionHotkey ? t('settings.newSessionHotkey.btnChange') : t('settings.newSessionHotkey.btnSet'))
+          .onClick(() => openHotkeySettings(this.app))
+      );
+
+    const newTabCommandId = 'claudian:new-tab';
+    const newTabHotkey = getHotkeyForCommand(this.app, newTabCommandId);
+    new Setting(containerEl)
+      .setName(t('settings.newTabHotkey.name'))
+      .setDesc(newTabHotkey
+        ? t('settings.newTabHotkey.descWithKey', { hotkey: newTabHotkey })
+        : t('settings.newTabHotkey.descNoKey'))
+      .addButton((button) =>
+        button
+          .setButtonText(newTabHotkey ? t('settings.newTabHotkey.btnChange') : t('settings.newTabHotkey.btnSet'))
+          .onClick(() => openHotkeySettings(this.app))
+      );
+
+    const closeTabCommandId = 'claudian:close-current-tab';
+    const closeTabHotkey = getHotkeyForCommand(this.app, closeTabCommandId);
+    new Setting(containerEl)
+      .setName(t('settings.closeTabHotkey.name'))
+      .setDesc(closeTabHotkey
+        ? t('settings.closeTabHotkey.descWithKey', { hotkey: closeTabHotkey })
+        : t('settings.closeTabHotkey.descNoKey'))
+      .addButton((button) =>
+        button
+          .setButtonText(closeTabHotkey ? t('settings.closeTabHotkey.btnChange') : t('settings.closeTabHotkey.btnSet'))
+          .onClick(() => openHotkeySettings(this.app))
+      );
+
     // Slash Commands section
     new Setting(containerEl).setName(t('settings.slashCommands.name')).setHeading();
 

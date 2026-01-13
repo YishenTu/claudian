@@ -4,12 +4,23 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 12px 12px 12px;
+  gap: 8px;
+}
+
+/* Left section: Logo, title, and tab badges */
+.claudian-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .claudian-title {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .claudian-logo {
@@ -23,11 +34,12 @@
   font-weight: 600;
 }
 
-/* Header actions (right side) */
+/* Header actions (right side - fixed) */
 .claudian-header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 /* Header icon buttons (history, new, etc.) */

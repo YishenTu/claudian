@@ -101,13 +101,13 @@ export class ConversationController {
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
 
-      // Remount TodoPanel after clearing (messagesEl.empty() removes it from DOM)
-      this.deps.getTodoPanel()?.remount();
-
-      // Recreate welcome element after clearing messages
+      // Recreate welcome element first (before TodoPanel for consistent ordering)
       const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
       welcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: this.getGreeting() });
       this.deps.setWelcomeEl(welcomeEl);
+
+      // Remount TodoPanel after welcome (messagesEl.empty() removes it from DOM)
+      this.deps.getTodoPanel()?.remount();
 
       this.deps.getInputEl().value = '';
 
@@ -555,6 +555,22 @@ export class ConversationController {
     } else {
       welcomeEl.style.display = 'none';
     }
+  }
+
+  /**
+   * Initializes the welcome greeting for a new tab without a conversation.
+   * Called when a new tab is activated and has no conversation loaded.
+   */
+  initializeWelcome(): void {
+    const welcomeEl = this.deps.getWelcomeEl();
+    if (!welcomeEl) return;
+
+    // Only add greeting if not already present
+    if (!welcomeEl.querySelector('.claudian-welcome-greeting')) {
+      welcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: this.getGreeting() });
+    }
+
+    this.updateWelcomeVisibility();
   }
 
   // ============================================

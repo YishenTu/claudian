@@ -128,6 +128,76 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'new-tab',
+      name: 'New tab',
+      checkCallback: (checking: boolean) => {
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        // Only enable command when we can create more tabs
+        if (!tabManager.canCreateTab()) return false;
+
+        if (!checking) {
+          tabManager.createTab();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: 'new-session',
+      name: 'New session (in current tab)',
+      checkCallback: (checking: boolean) => {
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        const activeTab = tabManager.getActiveTab();
+        if (!activeTab) return false;
+
+        // Don't allow new session while streaming
+        if (activeTab.state.isStreaming) return false;
+
+        if (!checking) {
+          tabManager.createNewConversation();
+        }
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: 'close-current-tab',
+      name: 'Close current tab',
+      checkCallback: (checking: boolean) => {
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        // Only enable command when 2+ tabs
+        const tabCount = tabManager.getTabCount();
+        if (tabCount < 2) return false;
+
+        if (!checking) {
+          const activeTabId = tabManager.getActiveTabId();
+          if (activeTabId) {
+            tabManager.closeTab(activeTabId);
+          }
+        }
+        return true;
+      },
+    });
+
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 

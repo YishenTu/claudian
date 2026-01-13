@@ -66,6 +66,27 @@
       "btnSet": "단축키 설정",
       "btnChange": "변경"
     },
+    "newTabHotkey": {
+      "name": "새 탭 단축키",
+      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
+      "descWithKey": "현재: {hotkey}",
+      "btnSet": "단축키 설정",
+      "btnChange": "변경"
+    },
+    "newSessionHotkey": {
+      "name": "새 세션 단축키",
+      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
+      "descWithKey": "현재: {hotkey}",
+      "btnSet": "단축키 설정",
+      "btnChange": "변경"
+    },
+    "closeTabHotkey": {
+      "name": "탭 닫기 단축키",
+      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
+      "descWithKey": "현재: {hotkey}",
+      "btnSet": "단축키 설정",
+      "btnChange": "변경"
+    },
     "slashCommands": {
       "name": "슬래시 명령어",
       "desc": "/command로 트리거되는 커스텀 프롬프트 템플릿을 생성합니다. $ARGUMENTS로 모든 인자, $1/$2로 위치 인자, @file로 파일 내용, !`bash`로 명령어 출력을 가져올 수 있습니다."

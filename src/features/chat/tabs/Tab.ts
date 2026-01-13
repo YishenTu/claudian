@@ -61,6 +61,9 @@ export interface TabCreateOptions {
 
   /** Callback when conversation title changes. */
   onTitleChanged?: (title: string) => void;
+
+  /** Callback when attention state changes (approval pending, etc.). */
+  onAttentionChanged?: (needsAttention: boolean) => void;
 }
 
 /**
@@ -72,6 +75,7 @@ export function createTab(options: TabCreateOptions): TabData {
     conversation,
     tabId,
     onStreamingChanged,
+    onAttentionChanged,
   } = options;
 
   const id = tabId ?? generateTabId();
@@ -84,6 +88,9 @@ export function createTab(options: TabCreateOptions): TabData {
   const state = new ChatState({
     onStreamingStateChanged: (isStreaming) => {
       onStreamingChanged?.(isStreaming);
+    },
+    onAttentionChanged: (needsAttention) => {
+      onAttentionChanged?.(needsAttention);
     },
   });
 

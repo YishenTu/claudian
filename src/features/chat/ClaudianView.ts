@@ -26,10 +26,10 @@ export class ClaudianView extends ItemView {
 
   // Header elements
   private historyDropdown: HTMLElement | null = null;
-  private newTabBtnEl: HTMLElement | null = null;
 
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
+
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
@@ -82,6 +82,7 @@ export class ClaudianView extends ItemView {
         onTabClosed: () => this.updateTabBar(),
         onTabStreamingChanged: () => this.updateTabBar(),
         onTabTitleChanged: () => this.updateTabBar(),
+        onTabAttentionChanged: () => this.updateTabBar(),
       }
     );
 
@@ -119,8 +120,11 @@ export class ClaudianView extends ItemView {
   // ============================================
 
   private buildHeader(header: HTMLElement) {
-    // Left: Logo and title
-    const titleContainer = header.createDiv({ cls: 'claudian-title' });
+    // Left section: Logo, title, and tab badges
+    const leftSection = header.createDiv({ cls: 'claudian-header-left' });
+
+    // Logo and title
+    const titleContainer = leftSection.createDiv({ cls: 'claudian-title' });
     const logoEl = titleContainer.createSpan({ cls: 'claudian-logo' });
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', LOGO_SVG.viewBox);
@@ -134,16 +138,33 @@ export class ClaudianView extends ItemView {
     logoEl.appendChild(svg);
     titleContainer.createEl('h4', { text: 'Claudian' });
 
-    // Center: Tab bar (hidden when only 1 tab)
-    this.tabBarContainerEl = header.createDiv({ cls: 'claudian-tab-bar-container' });
+    // Tab badges (hidden when only 1 tab)
+    this.tabBarContainerEl = leftSection.createDiv({ cls: 'claudian-tab-bar-container' });
     this.tabBar = new TabBar(this.tabBarContainerEl, {
       onTabClick: (tabId) => this.handleTabClick(tabId),
       onTabClose: (tabId) => this.handleTabClose(tabId),
       onNewTab: () => this.handleNewTab(),
     });
 
-    // Right: Header actions
+    // Right section: Header actions (fixed)
     const headerActions = header.createDiv({ cls: 'claudian-header-actions' });
+
+    // New tab button (plus icon)
+    const newTabBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
+    setIcon(newTabBtn, 'plus');
+    newTabBtn.setAttribute('aria-label', 'New tab');
+    newTabBtn.addEventListener('click', async () => {
+      await this.handleNewTab();
+    });
+
+    // New conversation button (square-pen icon - new conversation in current tab)
+    const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
+    setIcon(newBtn, 'square-pen');
+    newBtn.setAttribute('aria-label', 'New conversation');
+    newBtn.addEventListener('click', async () => {
+      await this.tabManager?.createNewConversation();
+      this.updateHistoryDropdown();
+    });
 
     // History dropdown
     const historyContainer = headerActions.createDiv({ cls: 'claudian-history-container' });
@@ -156,23 +177,6 @@ export class ClaudianView extends ItemView {
     historyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.toggleHistoryDropdown();
-    });
-
-    // New tab button (visible when tab bar is hidden, i.e., only 1 tab)
-    this.newTabBtnEl = headerActions.createDiv({ cls: 'claudian-header-btn' });
-    setIcon(this.newTabBtnEl, 'plus');
-    this.newTabBtnEl.setAttribute('aria-label', 'New tab');
-    this.newTabBtnEl.addEventListener('click', async () => {
-      await this.handleNewTab();
-    });
-
-    // New conversation button (square-pen icon - new conversation in current tab)
-    const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
-    setIcon(newBtn, 'square-pen');
-    newBtn.setAttribute('aria-label', 'New conversation');
-    newBtn.addEventListener('click', async () => {
-      await this.tabManager?.createNewConversation();
-      this.updateHistoryDropdown();
     });
   }
 
@@ -209,15 +213,10 @@ export class ClaudianView extends ItemView {
   private updateTabBarVisibility(): void {
     if (!this.tabBarContainerEl || !this.tabManager) return;
 
-    // Hide tab bar when only 1 tab, show when 2+
+    // Hide tab badges when only 1 tab, show when 2+
     const tabCount = this.tabManager.getTabCount();
     const showTabBar = tabCount >= 2;
     this.tabBarContainerEl.style.display = showTabBar ? 'flex' : 'none';
-
-    // Show new tab button in header when tab bar is hidden
-    if (this.newTabBtnEl) {
-      this.newTabBtnEl.style.display = showTabBar ? 'none' : 'flex';
-    }
   }
 
   // ============================================

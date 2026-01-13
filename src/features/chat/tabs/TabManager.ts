@@ -88,6 +88,9 @@ export class TabManager {
       onTitleChanged: (title) => {
         this.callbacks.onTabTitleChanged?.(tab.id, title);
       },
+      onAttentionChanged: (needsAttention) => {
+        this.callbacks.onTabAttentionChanged?.(tab.id, needsAttention);
+      },
     });
 
     // Initialize UI components
@@ -151,6 +154,9 @@ export class TabManager {
     // Load conversation if not already loaded
     if (tab.conversationId && tab.state.messages.length === 0) {
       await tab.controllers.conversationController?.switchTo(tab.conversationId);
+    } else if (!tab.conversationId && tab.state.messages.length === 0) {
+      // New tab with no conversation - initialize welcome greeting
+      tab.controllers.conversationController?.initializeWelcome();
     }
 
     this.callbacks.onTabSwitched?.(previousTabId, tabId);
@@ -241,13 +247,16 @@ export class TabManager {
   /** Gets data for rendering the tab bar. */
   getTabBarItems(): TabBarItem[] {
     const items: TabBarItem[] = [];
+    let index = 1;
 
     for (const tab of this.tabs.values()) {
       items.push({
         id: tab.id,
+        index: index++,
         title: getTabTitle(tab, this.plugin),
         isActive: tab.id === this.activeTabId,
         isStreaming: tab.state.isStreaming,
+        needsAttention: tab.state.needsAttention,
         canClose: this.tabs.size > 1 || !tab.state.isStreaming,
       });
     }
@@ -293,6 +302,8 @@ export class TabManager {
     const activeTab = this.getActiveTab();
     if (activeTab) {
       await activeTab.controllers.conversationController?.createNew();
+      // Sync tab.conversationId with the newly created conversation
+      activeTab.conversationId = activeTab.state.currentConversationId;
     }
   }
 

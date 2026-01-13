@@ -66,6 +66,27 @@
       "btnSet": "設定快捷鍵",
       "btnChange": "更改"
     },
+    "newTabHotkey": {
+      "name": "新建分頁快捷鍵",
+      "descNoKey": "未設定快捷鍵。點擊配置。",
+      "descWithKey": "目前：{hotkey}",
+      "btnSet": "設定快捷鍵",
+      "btnChange": "更改"
+    },
+    "newSessionHotkey": {
+      "name": "新建對話快捷鍵",
+      "descNoKey": "未設定快捷鍵。點擊配置。",
+      "descWithKey": "目前：{hotkey}",
+      "btnSet": "設定快捷鍵",
+      "btnChange": "更改"
+    },
+    "closeTabHotkey": {
+      "name": "關閉分頁快捷鍵",
+      "descNoKey": "未設定快捷鍵。點擊配置。",
+      "descWithKey": "目前：{hotkey}",
+      "btnSet": "設定快捷鍵",
+      "btnChange": "更改"
+    },
     "slashCommands": {
       "name": "斜線命令",
       "desc": "建立由 /command 觸發的自訂提示範本。使用 $ARGUMENTS 獲取所有參數，$1/$2 獲取位置參數，@file 獲取檔案內容，!`bash` 獲取命令輸出。"

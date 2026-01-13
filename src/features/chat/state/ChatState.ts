@@ -42,6 +42,7 @@ function createInitialState(): ChatStateData {
     ignoreUsageUpdates: false,
     subagentsSpawnedThisStream: 0,
     currentTodos: null,
+    needsAttention: false,
   };
 }
 
@@ -269,6 +270,19 @@ export class ChatState {
     const normalizedValue = (value && value.length > 0) ? value : null;
     this.state.currentTodos = normalizedValue;
     this._callbacks.onTodosChanged?.(normalizedValue);
+  }
+
+  // ============================================
+  // Attention State (approval pending, error, etc.)
+  // ============================================
+
+  get needsAttention(): boolean {
+    return this.state.needsAttention;
+  }
+
+  set needsAttention(value: boolean) {
+    this.state.needsAttention = value;
+    this._callbacks.onAttentionChanged?.(value);
   }
 
   // ============================================

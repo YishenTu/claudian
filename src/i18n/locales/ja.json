@@ -66,6 +66,27 @@
       "btnSet": "ホットキーを設定",
       "btnChange": "変更"
     },
+    "newTabHotkey": {
+      "name": "新しいタブのホットキー",
+      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
+      "descWithKey": "現在：{hotkey}",
+      "btnSet": "ホットキーを設定",
+      "btnChange": "変更"
+    },
+    "newSessionHotkey": {
+      "name": "新しいセッションのホットキー",
+      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
+      "descWithKey": "現在：{hotkey}",
+      "btnSet": "ホットキーを設定",
+      "btnChange": "変更"
+    },
+    "closeTabHotkey": {
+      "name": "タブを閉じるホットキー",
+      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
+      "descWithKey": "現在：{hotkey}",
+      "btnSet": "ホットキーを設定",
+      "btnChange": "変更"
+    },
     "slashCommands": {
       "name": "スラッシュコマンド",
       "desc": "/command でトリガーされるカスタムプロンプトテンプレートを作成します。$ARGUMENTS ですべての引数、$1/$2 で位置引数、@file でファイル内容、!`bash` でコマンド出力を取得できます。"

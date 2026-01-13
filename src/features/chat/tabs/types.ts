@@ -166,6 +166,9 @@ export interface TabManagerCallbacks {
 
   /** Called when tab title changes. */
   onTabTitleChanged?: (tabId: TabId, title: string) => void;
+
+  /** Called when tab attention state changes (approval pending, etc.). */
+  onTabAttentionChanged?: (tabId: TabId, needsAttention: boolean) => void;
 }
 
 /**
@@ -173,8 +176,11 @@ export interface TabManagerCallbacks {
  */
 export interface TabBarItem {
   id: TabId;
+  /** 1-based index for display. */
+  index: number;
   title: string;
   isActive: boolean;
   isStreaming: boolean;
+  needsAttention: boolean;
   canClose: boolean;
 }

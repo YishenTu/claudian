@@ -66,6 +66,27 @@
       "btnSet": "Set hotkey",
       "btnChange": "Change"
     },
+    "newTabHotkey": {
+      "name": "New tab hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
+    "newSessionHotkey": {
+      "name": "New session hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
+    "closeTabHotkey": {
+      "name": "Close tab hotkey",
+      "descNoKey": "No hotkey set. Click to configure.",
+      "descWithKey": "Current: {hotkey}",
+      "btnSet": "Set hotkey",
+      "btnChange": "Change"
+    },
     "slashCommands": {
       "name": "Slash Commands",
       "desc": "Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output."

@@ -66,6 +66,27 @@
       "btnSet": "设置快捷键",
       "btnChange": "更改"
     },
+    "newTabHotkey": {
+      "name": "新建标签页快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
+    "newSessionHotkey": {
+      "name": "新建会话快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
+    "closeTabHotkey": {
+      "name": "关闭标签页快捷键",
+      "descNoKey": "未设置快捷键。点击配置。",
+      "descWithKey": "当前：{hotkey}",
+      "btnSet": "设置快捷键",
+      "btnChange": "更改"
+    },
     "slashCommands": {
       "name": "斜杠命令",
       "desc": "创建由 /command 触发的自定义提示模板。使用 $ARGUMENTS 获取所有参数，$1/$2 获取位置参数，@file 获取文件内容，!`bash` 获取命令输出。"

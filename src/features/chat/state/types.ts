@@ -81,6 +81,9 @@ export interface ChatStateData {
 
   // Current todo items for the persistent bottom panel
   currentTodos: TodoItem[] | null;
+
+  // Attention state (approval pending, error, etc.)
+  needsAttention: boolean;
 }
 
 /** Callbacks for ChatState changes. */
@@ -90,6 +93,7 @@ export interface ChatStateCallbacks {
   onConversationChanged?: (id: string | null) => void;
   onUsageChanged?: (usage: UsageInfo | null) => void;
   onTodosChanged?: (todos: TodoItem[] | null) => void;
+  onAttentionChanged?: (needsAttention: boolean) => void;
 }
 
 /** Options for query execution. */
