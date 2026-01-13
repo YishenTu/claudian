@@ -37,7 +37,7 @@
 .claudian-input {
   width: 100%;
   min-height: 60px;
-  max-height: 200px;
+  /* max-height dynamically set by JS: max(150px, 55% of view height) */
   resize: none;
   padding: 10px;
   border: none !important;
@@ -48,6 +48,15 @@
   font-size: 14px;
   line-height: 1.4;
   box-shadow: none !important;
+  overflow-y: auto;
+  transition: height 150ms ease-out;
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .claudian-input {
+    transition: none;
+  }
 }
 
 .claudian-input:hover,

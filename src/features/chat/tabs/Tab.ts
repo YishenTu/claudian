@@ -473,6 +473,9 @@ export function initializeTabControllers(
     getTitleGenerationService: () => services.titleGenerationService,
     generateId,
     resetContextMeter: () => ui.contextUsageMeter?.update(null),
+    resetInputHeight: () => {
+      // Per-tab input height is managed by CSS, no dynamic adjustment needed
+    },
     // Override to use tab's service instead of plugin.agentService
     getAgentService: () => tab.service,
   });

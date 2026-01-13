@@ -25,12 +25,14 @@ export class ClaudianView extends ItemView {
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
 
+  // DOM Elements
+  private viewContainerEl: HTMLElement | null = null;
+
   // Header elements
   private historyDropdown: HTMLElement | null = null;
 
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
-
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
@@ -57,16 +59,16 @@ export class ClaudianView extends ItemView {
   }
 
   async onOpen() {
-    const container = this.containerEl.children[1] as HTMLElement;
-    container.empty();
-    container.addClass('claudian-container');
+    this.viewContainerEl = this.containerEl.children[1] as HTMLElement;
+    this.viewContainerEl.empty();
+    this.viewContainerEl.addClass('claudian-container');
 
     // Build header (includes tab bar)
-    const header = container.createDiv({ cls: 'claudian-header' });
+    const header = this.viewContainerEl.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
 
     // Tab content container (TabManager will populate this)
-    this.tabContentEl = container.createDiv({ cls: 'claudian-tab-content-container' });
+    this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
 
     // Initialize TabManager
     this.tabManager = new TabManager(
