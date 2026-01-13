@@ -34,6 +34,9 @@ export class ClaudianView extends ItemView {
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
 
+  // Debouncing for tab bar updates
+  private pendingTabBarUpdate: number | null = null;
+
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
@@ -100,6 +103,12 @@ export class ClaudianView extends ItemView {
   }
 
   async onClose() {
+    // Cancel any pending tab bar update
+    if (this.pendingTabBarUpdate !== null) {
+      cancelAnimationFrame(this.pendingTabBarUpdate);
+      this.pendingTabBarUpdate = null;
+    }
+
     // Cleanup event refs
     for (const ref of this.eventRefs) {
       this.plugin.app.vault.offref(ref);
@@ -210,9 +219,20 @@ export class ClaudianView extends ItemView {
 
   private updateTabBar(): void {
     if (!this.tabManager || !this.tabBar) return;
-    const items = this.tabManager.getTabBarItems();
-    this.tabBar.update(items);
-    this.updateTabBarVisibility();
+
+    // Debounce tab bar updates using requestAnimationFrame
+    if (this.pendingTabBarUpdate !== null) {
+      cancelAnimationFrame(this.pendingTabBarUpdate);
+    }
+
+    this.pendingTabBarUpdate = requestAnimationFrame(() => {
+      this.pendingTabBarUpdate = null;
+      if (!this.tabManager || !this.tabBar) return;
+
+      const items = this.tabManager.getTabBarItems();
+      this.tabBar.update(items);
+      this.updateTabBarVisibility();
+    });
   }
 
   private updateTabBarVisibility(): void {

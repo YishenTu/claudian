@@ -44,6 +44,9 @@ export class TabManager implements TabManagerInterface {
   private activeTabId: TabId | null = null;
   private callbacks: TabManagerCallbacks;
 
+  /** Guard to prevent concurrent tab switches. */
+  private isSwitchingTab = false;
+
   constructor(
     plugin: ClaudianPlugin,
     mcpManager: McpServerManager,
@@ -130,42 +133,57 @@ export class TabManager implements TabManagerInterface {
       return;
     }
 
+    // Guard against concurrent tab switches
+    if (this.isSwitchingTab) {
+      return;
+    }
+
+    this.isSwitchingTab = true;
     const previousTabId = this.activeTabId;
 
-    // Deactivate current tab
-    if (previousTabId && previousTabId !== tabId) {
-      const currentTab = this.tabs.get(previousTabId);
-      if (currentTab) {
-        deactivateTab(currentTab);
+    try {
+      // Deactivate current tab
+      if (previousTabId && previousTabId !== tabId) {
+        const currentTab = this.tabs.get(previousTabId);
+        if (currentTab) {
+          deactivateTab(currentTab);
+        }
       }
-    }
 
-    // Activate new tab
-    this.activeTabId = tabId;
-    activateTab(tab);
+      // Activate new tab
+      this.activeTabId = tabId;
+      activateTab(tab);
 
-    // Initialize service if not already done (lazy initialization)
-    if (!tab.serviceInitialized) {
-      await initializeTabService(tab, this.plugin, this.mcpManager);
+      // Initialize service if not already done (lazy initialization)
+      if (!tab.serviceInitialized) {
+        try {
+          await initializeTabService(tab, this.plugin, this.mcpManager);
 
-      // Set approval callback for this tab's service
-      if (tab.service) {
-        tab.service.setApprovalCallback(
-          (toolName, input, description) =>
-            tab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
-        );
+          // Set approval callback for this tab's service
+          if (tab.service) {
+            tab.service.setApprovalCallback(
+              (toolName, input, description) =>
+                tab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
+            );
+          }
+        } catch {
+          // Service initialization failed - tab is still visible but won't function
+          // Continue with tab switch - user can still see the tab and retry
+        }
       }
-    }
 
-    // Load conversation if not already loaded
-    if (tab.conversationId && tab.state.messages.length === 0) {
-      await tab.controllers.conversationController?.switchTo(tab.conversationId);
-    } else if (!tab.conversationId && tab.state.messages.length === 0) {
-      // New tab with no conversation - initialize welcome greeting
-      tab.controllers.conversationController?.initializeWelcome();
-    }
+      // Load conversation if not already loaded
+      if (tab.conversationId && tab.state.messages.length === 0) {
+        await tab.controllers.conversationController?.switchTo(tab.conversationId);
+      } else if (!tab.conversationId && tab.state.messages.length === 0) {
+        // New tab with no conversation - initialize welcome greeting
+        tab.controllers.conversationController?.initializeWelcome();
+      }
 
-    this.callbacks.onTabSwitched?.(previousTabId, tabId);
+      this.callbacks.onTabSwitched?.(previousTabId, tabId);
+    } finally {
+      this.isSwitchingTab = false;
+    }
   }
 
   /**
@@ -291,8 +309,9 @@ export class TabManager implements TabManagerInterface {
     }
 
     // Check if conversation is open in another view (split workspace scenario)
+    // Compare view references directly (more robust than leaf comparison)
     const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
-    const isSameView = crossViewResult?.view.leaf === this.view.leaf;
+    const isSameView = crossViewResult?.view === this.view;
     if (crossViewResult && !isSameView) {
       // Focus the other view and switch to its tab instead of opening duplicate
       this.plugin.app.workspace.revealLeaf(crossViewResult.view.leaf);

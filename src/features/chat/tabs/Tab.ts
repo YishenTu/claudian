@@ -190,6 +190,9 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 /**
  * Initializes the tab's ClaudianService (lazy initialization).
  * Call this when the tab becomes active or when the first message is sent.
+ *
+ * Ensures consistent state: if initialization fails, tab.service is null
+ * and tab.serviceInitialized remains false for retry.
  */
 export async function initializeTabService(
   tab: TabData,
@@ -200,36 +203,50 @@ export async function initializeTabService(
     return;
   }
 
-  // Create per-tab ClaudianService
-  tab.service = new ClaudianService(plugin, mcpManager);
+  let service: ClaudianService | null = null;
 
-  // Load Claude Code permissions with error handling
   try {
-    await tab.service.loadCCPermissions();
-  } catch (error) {
-    console.warn(
-      `[Tab ${tab.id}] Failed to load CC permissions:`,
-      error instanceof Error ? error.message : String(error)
-    );
-    // Continue without permissions - service can still function
-  }
+    // Create per-tab ClaudianService
+    service = new ClaudianService(plugin, mcpManager);
 
-  // Pre-warm if we have a conversation with a session ID
-  const conversation = tab.conversationId
-    ? plugin.getConversationById(tab.conversationId)
-    : null;
-  const sessionId = conversation?.sessionId;
-
-  if (sessionId) {
-    tab.service.preWarm(sessionId).catch((error) => {
+    // Load Claude Code permissions with error handling
+    try {
+      await service.loadCCPermissions();
+    } catch (error) {
       console.warn(
-        `[Tab ${tab.id}] Pre-warm failed:`,
+        `[Tab ${tab.id}] Failed to load CC permissions:`,
         error instanceof Error ? error.message : String(error)
       );
-    });
-  }
+      // Continue without permissions - service can still function
+    }
 
-  tab.serviceInitialized = true;
+    // Pre-warm if we have a conversation with a session ID
+    const conversation = tab.conversationId
+      ? plugin.getConversationById(tab.conversationId)
+      : null;
+    const sessionId = conversation?.sessionId;
+
+    if (sessionId) {
+      service.preWarm(sessionId).catch((error) => {
+        console.warn(
+          `[Tab ${tab.id}] Pre-warm failed:`,
+          error instanceof Error ? error.message : String(error)
+        );
+      });
+    }
+
+    // Only set tab state after successful initialization
+    tab.service = service;
+    tab.serviceInitialized = true;
+  } catch (error) {
+    // Clean up partial state on failure
+    service?.closePersistentQuery('initialization failed');
+    tab.service = null;
+    tab.serviceInitialized = false;
+
+    // Re-throw to let caller handle (e.g., show error to user)
+    throw error;
+  }
 }
 
 /**

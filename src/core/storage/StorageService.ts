@@ -509,18 +509,60 @@ export class StorageService {
   // ============================================================================
 
   /**
-   * Get tab manager state from data.json.
+   * Get tab manager state from data.json with runtime validation.
    */
   async getTabManagerState(): Promise<TabManagerPersistedState | null> {
     try {
       const data = await this.plugin.loadData();
       if (data?.tabManagerState) {
-        return data.tabManagerState as TabManagerPersistedState;
+        return this.validateTabManagerState(data.tabManagerState);
       }
       return null;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Validates and sanitizes tab manager state from storage.
+   * Returns null if the data is invalid or corrupted.
+   */
+  private validateTabManagerState(data: unknown): TabManagerPersistedState | null {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+
+    const state = data as Record<string, unknown>;
+
+    // Validate openTabs
+    if (!Array.isArray(state.openTabs)) {
+      return null;
+    }
+
+    const validatedTabs: Array<{ tabId: string; conversationId: string | null }> = [];
+    for (const tab of state.openTabs) {
+      if (!tab || typeof tab !== 'object') {
+        continue; // Skip invalid entries
+      }
+      const tabObj = tab as Record<string, unknown>;
+      if (typeof tabObj.tabId !== 'string') {
+        continue; // Skip entries without valid tabId
+      }
+      validatedTabs.push({
+        tabId: tabObj.tabId,
+        conversationId:
+          typeof tabObj.conversationId === 'string' ? tabObj.conversationId : null,
+      });
+    }
+
+    // Validate activeTabId
+    const activeTabId =
+      typeof state.activeTabId === 'string' ? state.activeTabId : null;
+
+    return {
+      openTabs: validatedTabs,
+      activeTabId,
+    };
   }
 
   /**
