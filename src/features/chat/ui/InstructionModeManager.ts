@@ -9,6 +9,7 @@
 export interface InstructionModeCallbacks {
   onSubmit: (rawInstruction: string) => Promise<void>;
   getInputWrapper: () => HTMLElement | null;
+  resetInputHeight?: () => void;
 }
 
 /** State for instruction mode. */
@@ -145,12 +146,14 @@ export class InstructionModeManager {
   private cancel(): void {
     this.inputEl.value = '';
     this.exitMode();
+    this.callbacks.resetInputHeight?.();
   }
 
   /** Clears the input and resets state (called after successful submission). */
   clear(): void {
     this.inputEl.value = '';
     this.exitMode();
+    this.callbacks.resetInputHeight?.();
   }
 
   /** Cleans up event listeners. */

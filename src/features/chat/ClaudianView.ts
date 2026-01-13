@@ -315,6 +315,7 @@ export class ClaudianView extends ItemView {
           await this.inputController?.handleInstructionSubmit(rawInstruction);
         },
         getInputWrapper: () => this.inputWrapper,
+        resetInputHeight: () => this.adjustInputHeight(),
       }
     );
 
@@ -450,6 +451,7 @@ export class ClaudianView extends ItemView {
       getTitleGenerationService: () => this.titleGenerationService,
       generateId: () => this.generateId(),
       resetContextMeter: () => this.contextUsageMeter?.update(null),
+      resetInputHeight: () => this.adjustInputHeight(),
     });
 
     // Set approval callback
@@ -548,6 +550,7 @@ export class ClaudianView extends ItemView {
     });
 
     this.inputEl!.addEventListener('input', () => {
+      this.adjustInputHeight();
       this.fileContextManager?.handleInputChange();
       this.instructionModeManager?.handleInputChange();
     });
@@ -563,5 +566,27 @@ export class ClaudianView extends ItemView {
 
   private generateId(): string {
     return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  /**
+   * Adjusts textarea height based on content.
+   * Auto-expands up to maxHeight = max(150, viewHeight * 0.55).
+   */
+  private adjustInputHeight(): void {
+    if (!this.inputEl || !this.messagesEl) return;
+
+    const container = this.containerEl.children[1] as HTMLElement;
+    const viewHeight = container.clientHeight;
+
+    // Calculate max height: 55% of view, minimum 150px
+    const maxHeight = Math.max(150, viewHeight * 0.55);
+
+    // Reset height to auto to get accurate scrollHeight
+    this.inputEl.style.height = 'auto';
+
+    // Calculate new height (clamp between min and max)
+    const newHeight = Math.min(Math.max(60, this.inputEl.scrollHeight), maxHeight);
+
+    this.inputEl.style.height = `${newHeight}px`;
   }
 }

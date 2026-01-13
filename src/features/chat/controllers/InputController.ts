@@ -50,6 +50,7 @@ export interface InputControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   generateId: () => string;
   resetContextMeter: () => void;
+  resetInputHeight: () => void;
 }
 
 /**
@@ -95,6 +96,7 @@ export class InputController {
     if (builtInCmd) {
       if (shouldUseInput) {
         inputEl.value = '';
+        this.deps.resetInputHeight();
       }
       await this.executeBuiltInCommand(builtInCmd.action);
       return;
@@ -127,6 +129,7 @@ export class InputController {
 
       if (shouldUseInput) {
         inputEl.value = '';
+        this.deps.resetInputHeight();
       }
       imageContextManager?.clearImages();
       this.updateQueueIndicator();
@@ -135,6 +138,7 @@ export class InputController {
 
     if (shouldUseInput) {
       inputEl.value = '';
+      this.deps.resetInputHeight();
     }
     state.isStreaming = true;
     state.cancelRequested = false;
