@@ -2,18 +2,19 @@
  * Tests for Tab - Individual tab state and lifecycle management.
  */
 
-import {
-  createTab,
-  destroyTab,
-  activateTab,
-  deactivateTab,
-  initializeTabService,
-  wireTabInputEvents,
-  getTabTitle,
-  type TabCreateOptions,
-} from '@/features/chat/tabs/Tab';
-import type { TabData } from '@/features/chat/tabs/types';
 import { ChatState } from '@/features/chat/state/ChatState';
+import {
+  activateTab,
+  createTab,
+  deactivateTab,
+  destroyTab,
+  getTabTitle,
+  initializeTabControllers,
+  initializeTabService,
+  initializeTabUI,
+  type TabCreateOptions,
+  wireTabInputEvents,
+} from '@/features/chat/tabs/Tab';
 
 // Mock ClaudianService
 jest.mock('@/core/agent', () => ({
@@ -31,12 +32,210 @@ jest.mock('@/core/commands', () => ({
   })),
 }));
 
+// Mock factories must be defined before jest.mock calls due to hoisting
+// These will be initialized fresh in beforeEach
+const createMockFileContextManager = () => ({
+  setMcpService: jest.fn(),
+  setOnMcpMentionChange: jest.fn(),
+  preScanExternalContexts: jest.fn(),
+  handleInputChange: jest.fn(),
+  handleMentionKeydown: jest.fn().mockReturnValue(false),
+  isMentionDropdownVisible: jest.fn().mockReturnValue(false),
+  destroy: jest.fn(),
+});
+
+const createMockImageContextManager = () => ({
+  destroy: jest.fn(),
+});
+
+const createMockSlashCommandDropdown = () => ({
+  handleKeydown: jest.fn().mockReturnValue(false),
+  isVisible: jest.fn().mockReturnValue(false),
+  destroy: jest.fn(),
+});
+
+const createMockInstructionModeManager = () => ({
+  handleTriggerKey: jest.fn().mockReturnValue(false),
+  handleKeydown: jest.fn().mockReturnValue(false),
+  handleInputChange: jest.fn(),
+  isActive: jest.fn().mockReturnValue(false),
+  destroy: jest.fn(),
+});
+
+const createMockTodoPanel = () => ({
+  mount: jest.fn(),
+  updateTodos: jest.fn(),
+  destroy: jest.fn(),
+});
+
+const createMockModelSelector = () => ({
+  updateDisplay: jest.fn(),
+  renderOptions: jest.fn(),
+});
+
+const createMockThinkingBudgetSelector = () => ({
+  updateDisplay: jest.fn(),
+});
+
+const createMockContextUsageMeter = () => ({
+  update: jest.fn(),
+});
+
+const createMockExternalContextSelector = () => ({
+  getExternalContexts: jest.fn().mockReturnValue([]),
+  setOnChange: jest.fn(),
+  setPersistentPaths: jest.fn(),
+  setOnPersistenceChange: jest.fn(),
+});
+
+const createMockMcpServerSelector = () => ({
+  setMcpService: jest.fn(),
+  addMentionedServers: jest.fn(),
+});
+
+const createMockPermissionToggle = () => ({});
+
+// Shared mock instances (reset in beforeEach)
+let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
+let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
+let mockSlashCommandDropdown: ReturnType<typeof createMockSlashCommandDropdown>;
+let mockInstructionModeManager: ReturnType<typeof createMockInstructionModeManager>;
+let mockTodoPanel: ReturnType<typeof createMockTodoPanel>;
+let mockModelSelector: ReturnType<typeof createMockModelSelector>;
+let mockThinkingBudgetSelector: ReturnType<typeof createMockThinkingBudgetSelector>;
+let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
+let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
+let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
+let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
+let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock };
+let mockSelectionController: ReturnType<typeof createMockSelectionController>;
+let mockStreamController: { onAsyncSubagentStateChange: jest.Mock };
+let mockConversationController: { save: jest.Mock };
+let mockInputController: ReturnType<typeof createMockInputController>;
+let mockNavigationController: { initialize: jest.Mock; dispose: jest.Mock };
+
+const createMockSelectionController = () => ({
+  start: jest.fn(),
+  stop: jest.fn(),
+  clear: jest.fn(),
+  showHighlight: jest.fn(),
+});
+
+const createMockInputController = () => ({
+  sendMessage: jest.fn(),
+  cancelStreaming: jest.fn(),
+  handleInstructionSubmit: jest.fn(),
+  updateQueueIndicator: jest.fn(),
+});
+
+jest.mock('@/features/chat/ui', () => ({
+  FileContextManager: jest.fn().mockImplementation(() => {
+    mockFileContextManager = createMockFileContextManager();
+    return mockFileContextManager;
+  }),
+  ImageContextManager: jest.fn().mockImplementation(() => {
+    mockImageContextManager = createMockImageContextManager();
+    return mockImageContextManager;
+  }),
+  InstructionModeManager: jest.fn().mockImplementation(() => {
+    mockInstructionModeManager = createMockInstructionModeManager();
+    return mockInstructionModeManager;
+  }),
+  TodoPanel: jest.fn().mockImplementation(() => {
+    mockTodoPanel = createMockTodoPanel();
+    return mockTodoPanel;
+  }),
+  createInputToolbar: jest.fn().mockImplementation(() => {
+    mockModelSelector = createMockModelSelector();
+    mockThinkingBudgetSelector = createMockThinkingBudgetSelector();
+    mockContextUsageMeter = createMockContextUsageMeter();
+    mockExternalContextSelector = createMockExternalContextSelector();
+    mockMcpServerSelector = createMockMcpServerSelector();
+    mockPermissionToggle = createMockPermissionToggle();
+    return {
+      modelSelector: mockModelSelector,
+      thinkingBudgetSelector: mockThinkingBudgetSelector,
+      contextUsageMeter: mockContextUsageMeter,
+      externalContextSelector: mockExternalContextSelector,
+      mcpServerSelector: mockMcpServerSelector,
+      permissionToggle: mockPermissionToggle,
+    };
+  }),
+}));
+
+jest.mock('@/shared/components/SlashCommandDropdown', () => ({
+  SlashCommandDropdown: jest.fn().mockImplementation(() => {
+    mockSlashCommandDropdown = createMockSlashCommandDropdown();
+    return mockSlashCommandDropdown;
+  }),
+}));
+
+// Mock rendering
+jest.mock('@/features/chat/rendering', () => ({
+  MessageRenderer: jest.fn().mockImplementation(() => {
+    mockMessageRenderer = { scrollToBottomIfNeeded: jest.fn() };
+    return mockMessageRenderer;
+  }),
+  cleanupThinkingBlock: jest.fn(),
+}));
+
+// Mock controllers
+jest.mock('@/features/chat/controllers', () => ({
+  SelectionController: jest.fn().mockImplementation(() => {
+    mockSelectionController = createMockSelectionController();
+    return mockSelectionController;
+  }),
+  StreamController: jest.fn().mockImplementation(() => {
+    mockStreamController = { onAsyncSubagentStateChange: jest.fn() };
+    return mockStreamController;
+  }),
+  ConversationController: jest.fn().mockImplementation(() => {
+    mockConversationController = { save: jest.fn().mockResolvedValue(undefined) };
+    return mockConversationController;
+  }),
+  InputController: jest.fn().mockImplementation(() => {
+    mockInputController = createMockInputController();
+    return mockInputController;
+  }),
+  NavigationController: jest.fn().mockImplementation(() => {
+    mockNavigationController = { initialize: jest.fn(), dispose: jest.fn() };
+    return mockNavigationController;
+  }),
+}));
+
+// Mock services
+jest.mock('@/features/chat/services/AsyncSubagentManager', () => ({
+  AsyncSubagentManager: jest.fn().mockImplementation(() => ({
+    orphanAllActive: jest.fn(),
+  })),
+}));
+
+jest.mock('@/features/chat/services/InstructionRefineService', () => ({
+  InstructionRefineService: jest.fn().mockImplementation(() => ({
+    cancel: jest.fn(),
+  })),
+}));
+
+jest.mock('@/features/chat/services/TitleGenerationService', () => ({
+  TitleGenerationService: jest.fn().mockImplementation(() => ({
+    cancel: jest.fn(),
+  })),
+}));
+
+// Mock path util
+jest.mock('@/utils/path', () => ({
+  getVaultPath: jest.fn().mockReturnValue('/test/vault'),
+}));
+
+// Type for event handlers
+type EventHandler = (...args: unknown[]) => void;
+
 // Helper to create mock DOM element
 function createMockElement(): any {
   const style: Record<string, string> = {};
   const classList = new Set<string>();
   const children: any[] = [];
-  const eventListeners: Map<string, Function[]> = new Map();
+  const eventListeners: Map<string, EventHandler[]> = new Map();
 
   const el: any = {
     style,
@@ -62,13 +261,13 @@ function createMockElement(): any {
     querySelector: jest.fn().mockReturnValue(null),
     insertBefore: jest.fn(),
     remove: jest.fn(),
-    addEventListener: (event: string, handler: Function) => {
+    addEventListener: (event: string, handler: EventHandler) => {
       if (!eventListeners.has(event)) {
         eventListeners.set(event, []);
       }
       eventListeners.get(event)!.push(handler);
     },
-    removeEventListener: (event: string, handler: Function) => {
+    removeEventListener: (event: string, handler: EventHandler) => {
       const handlers = eventListeners.get(event);
       if (handlers) {
         const index = handlers.indexOf(handler);
@@ -247,8 +446,8 @@ describe('Tab - Service Initialization', () => {
     });
 
     it('should handle loadCCPermissions errors gracefully', async () => {
-      const { ClaudianService } = require('@/core/agent');
-      ClaudianService.mockImplementationOnce(() => ({
+      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
+      agentModule.ClaudianService.mockImplementationOnce(() => ({
         loadCCPermissions: jest.fn().mockRejectedValue(new Error('Permission load failed')),
         preWarm: jest.fn().mockResolvedValue(undefined),
       }));
@@ -265,8 +464,8 @@ describe('Tab - Service Initialization', () => {
 
     it('should pre-warm when conversation has sessionId', async () => {
       const mockPreWarm = jest.fn().mockResolvedValue(undefined);
-      const { ClaudianService } = require('@/core/agent');
-      ClaudianService.mockImplementationOnce(() => ({
+      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
+      agentModule.ClaudianService.mockImplementationOnce(() => ({
         loadCCPermissions: jest.fn().mockResolvedValue(undefined),
         preWarm: mockPreWarm,
       }));
@@ -332,8 +531,8 @@ describe('Tab - Event Wiring', () => {
 
       wireTabInputEvents(tab);
 
-      // Check that event listeners were added
-      const listeners = tab.dom.inputEl.getEventListeners();
+      // Check that event listeners were added (cast to any to access mock method)
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
       expect(listeners.get('keydown')).toBeDefined();
       expect(listeners.get('input')).toBeDefined();
       expect(listeners.get('focus')).toBeDefined();
@@ -501,5 +700,566 @@ describe('Tab - Title', () => {
 
       expect(title).toBe('New Chat');
     });
+  });
+});
+
+describe('Tab - UI Initialization', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('initializeTabUI', () => {
+    it('should create FileContextManager', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.fileContextManager).toBeDefined();
+    });
+
+    it('should wire FileContextManager to MCP service', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(mockFileContextManager.setMcpService).toHaveBeenCalledWith(options.plugin.mcpService);
+    });
+
+    it('should create ImageContextManager', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.imageContextManager).toBeDefined();
+    });
+
+    it('should create selection indicator element', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.dom.selectionIndicatorEl).toBeDefined();
+      expect(tab.dom.selectionIndicatorEl!.style.display).toBe('none');
+    });
+
+    it('should create SlashCommandManager when vault path exists', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.slashCommandManager).toBeDefined();
+    });
+
+    it('should create SlashCommandDropdown', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.slashCommandDropdown).toBeDefined();
+    });
+
+    it('should create InstructionRefineService', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.services.instructionRefineService).toBeDefined();
+    });
+
+    it('should create TitleGenerationService', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.services.titleGenerationService).toBeDefined();
+    });
+
+    it('should create InstructionModeManager', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.instructionModeManager).toBeDefined();
+    });
+
+    it('should create and mount TodoPanel', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.todoPanel).toBeDefined();
+      expect(mockTodoPanel.mount).toHaveBeenCalledWith(tab.dom.messagesEl);
+    });
+
+    it('should create input toolbar components', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(tab.ui.modelSelector).toBeDefined();
+      expect(tab.ui.thinkingBudgetSelector).toBeDefined();
+      expect(tab.ui.contextUsageMeter).toBeDefined();
+      expect(tab.ui.externalContextSelector).toBeDefined();
+      expect(tab.ui.mcpServerSelector).toBeDefined();
+      expect(tab.ui.permissionToggle).toBeDefined();
+    });
+
+    it('should wire MCP server selector to MCP service', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(mockMcpServerSelector.setMcpService).toHaveBeenCalledWith(options.plugin.mcpService);
+    });
+
+    it('should wire external context selector onChange', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(mockExternalContextSelector.setOnChange).toHaveBeenCalled();
+    });
+
+    it('should initialize persistent paths from settings', () => {
+      const plugin = createMockPlugin({
+        settings: {
+          ...createMockPlugin().settings,
+          persistentExternalContextPaths: ['/path/1', '/path/2'],
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      initializeTabUI(tab, plugin);
+
+      expect(mockExternalContextSelector.setPersistentPaths).toHaveBeenCalledWith(['/path/1', '/path/2']);
+    });
+
+    it('should update ChatState callbacks for UI updates', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Verify callbacks are set by checking the state
+      expect(tab.state.callbacks.onUsageChanged).toBeDefined();
+      expect(tab.state.callbacks.onTodosChanged).toBeDefined();
+    });
+  });
+});
+
+describe('Tab - Controller Initialization', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('initializeTabControllers', () => {
+    it('should create MessageRenderer', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(tab.renderer).toBeDefined();
+    });
+
+    it('should create SelectionController', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(tab.controllers.selectionController).toBeDefined();
+    });
+
+    it('should create StreamController', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(tab.controllers.streamController).toBeDefined();
+    });
+
+    it('should create ConversationController', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(tab.controllers.conversationController).toBeDefined();
+    });
+
+    it('should create InputController', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(tab.controllers.inputController).toBeDefined();
+    });
+
+    it('should create and initialize NavigationController', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(tab.controllers.navigationController).toBeDefined();
+      expect(mockNavigationController.initialize).toHaveBeenCalled();
+    });
+
+    it('should update AsyncSubagentManager with StreamController callback', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      // The async subagent manager should be recreated with the new callback
+      expect(tab.services.asyncSubagentManager).toBeDefined();
+    });
+  });
+});
+
+describe('Tab - Event Handler Behavior', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('wireTabInputEvents - keydown handlers', () => {
+    it('should handle instruction mode trigger key', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set up UI managers
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      // Make instruction mode handle the trigger
+      mockInstructionModeManager.handleTriggerKey.mockReturnValueOnce(true);
+
+      wireTabInputEvents(tab);
+
+      // Simulate keydown
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: '#', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockInstructionModeManager.handleTriggerKey).toHaveBeenCalled();
+    });
+
+    it('should handle instruction mode keydown', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      // Make instruction mode handle keydown
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValueOnce(true);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'Tab', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockInstructionModeManager.handleKeydown).toHaveBeenCalled();
+    });
+
+    it('should handle slash command dropdown keydown', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValueOnce(true);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'ArrowDown', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockSlashCommandDropdown.handleKeydown).toHaveBeenCalled();
+    });
+
+    it('should handle file context mention keydown', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
+      mockFileContextManager.handleMentionKeydown.mockReturnValueOnce(true);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'ArrowUp', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockFileContextManager.handleMentionKeydown).toHaveBeenCalled();
+    });
+
+    it('should cancel streaming on Escape when streaming', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+      tab.state.isStreaming = true;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'Escape', isComposing: false, preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(mockInputController.cancelStreaming).toHaveBeenCalled();
+    });
+
+    it('should not cancel streaming on Escape when isComposing (IME)', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+      tab.state.isStreaming = true;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'Escape', isComposing: true, preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(mockInputController.cancelStreaming).not.toHaveBeenCalled();
+    });
+
+    it('should send message on Enter (without Shift)', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'Enter', shiftKey: false, isComposing: false, preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(mockInputController.sendMessage).toHaveBeenCalled();
+    });
+
+    it('should not send message on Shift+Enter (newline)', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'Enter', shiftKey: true, isComposing: false, preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(mockInputController.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('should not send message on Enter when isComposing (IME)', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'Enter', shiftKey: false, isComposing: true, preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(mockInputController.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('wireTabInputEvents - input handler', () => {
+    it('should trigger file context input change', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const inputHandler = listeners.get('input')[0];
+      inputHandler();
+
+      expect(mockFileContextManager.handleInputChange).toHaveBeenCalled();
+      expect(mockInstructionModeManager.handleInputChange).toHaveBeenCalled();
+    });
+  });
+
+  describe('wireTabInputEvents - focus handler', () => {
+    it('should show selection highlight on focus', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.controllers.selectionController = mockSelectionController as any;
+      tab.controllers.inputController = mockInputController as any;
+
+      wireTabInputEvents(tab);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const focusHandler = listeners.get('focus')[0];
+      focusHandler();
+
+      expect(mockSelectionController.showHighlight).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('Tab - ChatState Callback Integration', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should invoke onStreamingChanged callback when streaming state changes', () => {
+    const onStreamingChanged = jest.fn();
+    const options = createMockOptions({ onStreamingChanged });
+    const tab = createTab(options);
+
+    // Trigger the callback through ChatState
+    tab.state.callbacks.onStreamingStateChanged?.(true);
+
+    expect(onStreamingChanged).toHaveBeenCalledWith(true);
+  });
+
+  it('should invoke onAttentionChanged callback when attention state changes', () => {
+    const onAttentionChanged = jest.fn();
+    const options = createMockOptions({ onAttentionChanged });
+    const tab = createTab(options);
+
+    // Trigger the callback through ChatState
+    tab.state.callbacks.onAttentionChanged?.(true);
+
+    expect(onAttentionChanged).toHaveBeenCalledWith(true);
+  });
+
+  it('should invoke onConversationIdChanged callback when conversation changes', () => {
+    const onConversationIdChanged = jest.fn();
+    const options = createMockOptions({ onConversationIdChanged });
+    const tab = createTab(options);
+
+    // Trigger the callback through ChatState
+    tab.state.callbacks.onConversationChanged?.('new-conv-id');
+
+    expect(onConversationIdChanged).toHaveBeenCalledWith('new-conv-id');
   });
 });

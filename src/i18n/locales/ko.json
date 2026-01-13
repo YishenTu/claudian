@@ -143,6 +143,12 @@
       }
     },
     "advanced": "고급",
+    "maxTabs": {
+      "name": "최대 채팅 탭 수",
+      "desc": "동시에 열 수 있는 최대 채팅 탭 수(3-10). 각 탭은 별도의 Claude 세션을 사용합니다.",
+      "warning": "5개 탭을 초과하면 성능 및 메모리 사용량에 영향을 줄 수 있습니다.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI 경로",
       "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",

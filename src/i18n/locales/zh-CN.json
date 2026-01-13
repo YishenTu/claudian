@@ -143,6 +143,12 @@
       }
     },
     "advanced": "高级",
+    "maxTabs": {
+      "name": "最大聊天标签数",
+      "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",
+      "warning": "超过 5 个标签可能会影响性能和内存使用。",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",

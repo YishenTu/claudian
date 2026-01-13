@@ -3,19 +3,19 @@
   position: relative;
 }
 
-/* History dropdown menu */
+/* History dropup menu (opens upward since it's at bottom of view) */
 .claudian-history-menu {
   display: none;
   position: absolute;
-  top: 100%;
+  bottom: 100%;
   right: 0;
-  margin-top: 4px;
+  margin-bottom: 4px;
   background: var(--background-secondary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
   z-index: 1000;
   max-height: 400px;
   overflow: hidden;

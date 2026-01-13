@@ -1,19 +1,8 @@
-/* Header */
+/* Header - just logo and title */
 .claudian-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 12px 12px 12px;
-  gap: 8px;
-}
-
-/* Left section: Logo, title, and tab badges */
-.claudian-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
 }
 
 .claudian-title {
@@ -34,12 +23,13 @@
   font-weight: 600;
 }
 
-/* Header actions (right side - fixed) */
+/* Header actions (right side - always stays right via margin-left: auto) */
 .claudian-header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* Header icon buttons (history, new, etc.) */

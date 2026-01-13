@@ -54,6 +54,8 @@ export interface InputControllerDeps {
   resetInputHeight: () => void;
   /** Get the agent service from the tab. */
   getAgentService?: () => ClaudianService | null;
+  /** Ensures the agent service is initialized (lazy loading). Returns true if ready. */
+  ensureServiceInitialized?: () => Promise<boolean>;
 }
 
 /**
@@ -305,6 +307,18 @@ export class InputController {
 
     let wasInterrupted = false;
     let wasInvalidated = false;
+
+    // Lazy initialization: ensure service is ready before first query
+    if (this.deps.ensureServiceInitialized) {
+      const ready = await this.deps.ensureServiceInitialized();
+      if (!ready) {
+        new Notice('Failed to initialize agent service. Please try again.');
+        streamController.hideThinkingIndicator();
+        state.isStreaming = false;
+        return;
+      }
+    }
+
     const agentService = this.getAgentService();
     if (!agentService) {
       new Notice('Agent service not available. Please reload the plugin.');

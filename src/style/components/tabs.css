@@ -1,11 +1,10 @@
 /* Tab Badges - Minimal numbered badge navigation */
 
-/* Outer container in header */
+/* Outer container in nav row */
 .claudian-tab-bar-container {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: 12px;
 }
 
 /* Inner container for tab badges */

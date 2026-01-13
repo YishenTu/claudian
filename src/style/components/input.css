@@ -12,13 +12,23 @@
   background: var(--background-primary);
 }
 
-/* Context row (file chip left, selection indicator right) */
+/* Context row (file chip left, selection indicator right) - inside input wrapper at top */
 .claudian-context-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 0;
-  margin-bottom: 4px;
+  padding: 8px 10px 0 10px;
+  gap: 8px;
+}
+
+/* Nav row (tab badges left, header icons right) - above input wrapper */
+.claudian-input-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 8px 0;
+  min-height: 0;
 }
 
 /* Selection indicator (shown when text is selected in editor) */

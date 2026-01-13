@@ -493,6 +493,38 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Advanced section
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
 
+    // Max tabs setting
+    const maxTabsSetting = new Setting(containerEl)
+      .setName(t('settings.maxTabs.name'))
+      .setDesc(t('settings.maxTabs.desc'));
+
+    // Warning element for high tab count
+    const maxTabsWarningEl = containerEl.createDiv({ cls: 'claudian-max-tabs-warning' });
+    maxTabsWarningEl.style.color = 'var(--text-warning)';
+    maxTabsWarningEl.style.fontSize = '0.85em';
+    maxTabsWarningEl.style.marginTop = '-0.5em';
+    maxTabsWarningEl.style.marginBottom = '0.5em';
+    maxTabsWarningEl.style.display = 'none';
+    maxTabsWarningEl.setText(t('settings.maxTabs.warning'));
+
+    const updateMaxTabsWarning = (value: number): void => {
+      maxTabsWarningEl.style.display = value > 5 ? 'block' : 'none';
+    };
+
+    maxTabsSetting.addSlider((slider) => {
+      slider
+        .setLimits(3, 10, 1)
+        .setValue(this.plugin.settings.maxTabs ?? 3)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.maxTabs = value;
+          await this.plugin.saveSettings();
+          updateMaxTabsWarning(value);
+        });
+      // Show warning on initial load if needed
+      updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
+    });
+
     // Get current platform key for platform-specific CLI path storage
     const cliPlatformKey = getCliPlatformKey();
 

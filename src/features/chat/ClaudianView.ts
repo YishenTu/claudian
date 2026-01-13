@@ -24,6 +24,7 @@ export class ClaudianView extends ItemView {
   private tabBar: TabBar | null = null;
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
+  private navRowContent: HTMLElement | null = null;
 
   // DOM Elements
   private viewContainerEl: HTMLElement | null = null;
@@ -36,6 +37,9 @@ export class ClaudianView extends ItemView {
 
   // Debouncing for tab bar updates
   private pendingTabBarUpdate: number | null = null;
+
+  // Debouncing for tab state persistence
+  private pendingPersist: ReturnType<typeof setTimeout> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
@@ -66,9 +70,12 @@ export class ClaudianView extends ItemView {
     this.viewContainerEl.empty();
     this.viewContainerEl.addClass('claudian-container');
 
-    // Build header (includes tab bar)
+    // Build header (logo only, tab bar and actions moved to nav row)
     const header = this.viewContainerEl.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
+
+    // Build nav row content (tab badges + header actions)
+    this.navRowContent = this.buildNavRowContent();
 
     // Tab content container (TabManager will populate this)
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
@@ -80,15 +87,27 @@ export class ClaudianView extends ItemView {
       this.tabContentEl,
       this,
       {
-        onTabCreated: () => this.updateTabBar(),
+        onTabCreated: () => {
+          this.updateTabBar();
+          this.updateNavRowLocation();
+          this.persistTabState();
+        },
         onTabSwitched: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
+          this.updateNavRowLocation();
+          this.persistTabState();
         },
-        onTabClosed: () => this.updateTabBar(),
+        onTabClosed: () => {
+          this.updateTabBar();
+          this.persistTabState();
+        },
         onTabStreamingChanged: () => this.updateTabBar(),
         onTabTitleChanged: () => this.updateTabBar(),
         onTabAttentionChanged: () => this.updateTabBar(),
+        onTabConversationChanged: () => {
+          this.persistTabState();
+        },
       }
     );
 
@@ -98,8 +117,9 @@ export class ClaudianView extends ItemView {
     // Restore tabs from persisted state or create default tab
     await this.restoreOrCreateTabs();
 
-    // Update tab bar visibility
+    // Update tab bar visibility and nav row location
     this.updateTabBarVisibility();
+    this.updateNavRowLocation();
   }
 
   async onClose() {
@@ -115,8 +135,8 @@ export class ClaudianView extends ItemView {
     }
     this.eventRefs = [];
 
-    // Persist tab state before cleanup
-    await this.persistTabState();
+    // Persist tab state before cleanup (immediate, not debounced)
+    await this.persistTabStateImmediate();
 
     // Destroy tab manager and all tabs
     await this.tabManager?.destroy();
@@ -132,11 +152,9 @@ export class ClaudianView extends ItemView {
   // ============================================
 
   private buildHeader(header: HTMLElement) {
-    // Left section: Logo, title, and tab badges
-    const leftSection = header.createDiv({ cls: 'claudian-header-left' });
-
-    // Logo and title
-    const titleContainer = leftSection.createDiv({ cls: 'claudian-title' });
+    // Header only contains logo and title now
+    // Tab badges and header actions are in nav row (above input)
+    const titleContainer = header.createDiv({ cls: 'claudian-title' });
     const logoEl = titleContainer.createSpan({ cls: 'claudian-logo' });
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', LOGO_SVG.viewBox);
@@ -149,17 +167,29 @@ export class ClaudianView extends ItemView {
     svg.appendChild(path);
     logoEl.appendChild(svg);
     titleContainer.createEl('h4', { text: 'Claudian' });
+  }
 
-    // Tab badges (hidden when only 1 tab)
-    this.tabBarContainerEl = leftSection.createDiv({ cls: 'claudian-tab-bar-container' });
+  /**
+   * Builds the nav row content (tab badges + header actions).
+   * This is called once and the content is moved between tabs.
+   */
+  private buildNavRowContent(): HTMLElement {
+    // Create a fragment to hold nav row content
+    const fragment = document.createDocumentFragment();
+
+    // Tab badges (left side)
+    this.tabBarContainerEl = document.createElement('div');
+    this.tabBarContainerEl.className = 'claudian-tab-bar-container';
     this.tabBar = new TabBar(this.tabBarContainerEl, {
       onTabClick: (tabId) => this.handleTabClick(tabId),
       onTabClose: (tabId) => this.handleTabClose(tabId),
       onNewTab: () => this.handleNewTab(),
     });
+    fragment.appendChild(this.tabBarContainerEl);
 
-    // Right section: Header actions (fixed)
-    const headerActions = header.createDiv({ cls: 'claudian-header-actions' });
+    // Header actions (right side)
+    const headerActions = document.createElement('div');
+    headerActions.className = 'claudian-header-actions';
 
     // New tab button (plus icon)
     const newTabBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
@@ -190,6 +220,25 @@ export class ClaudianView extends ItemView {
       e.stopPropagation();
       this.toggleHistoryDropdown();
     });
+
+    fragment.appendChild(headerActions);
+
+    // Create a wrapper div to hold the fragment
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'contents';
+    wrapper.appendChild(fragment);
+    return wrapper;
+  }
+
+  /**
+   * Moves nav row content to the active tab's nav row.
+   */
+  private updateNavRowLocation(): void {
+    const activeTab = this.tabManager?.getActiveTab();
+    if (!activeTab || !this.navRowContent) return;
+
+    // Move nav row content to active tab's navRowEl
+    activeTab.dom.navRowEl.appendChild(this.navRowContent);
   }
 
   // ============================================
@@ -398,7 +447,28 @@ export class ClaudianView extends ItemView {
     await this.plugin.storage.clearLegacyActiveConversationId();
   }
 
-  private async persistTabState(): Promise<void> {
+  private persistTabState(): void {
+    // Debounce persistence to avoid rapid writes (300ms delay)
+    if (this.pendingPersist !== null) {
+      clearTimeout(this.pendingPersist);
+    }
+    this.pendingPersist = setTimeout(() => {
+      this.pendingPersist = null;
+      if (!this.tabManager) return;
+      const state = this.tabManager.getPersistedState();
+      this.plugin.storage.setTabManagerState(state).catch((error) => {
+        console.warn('[ClaudianView] Failed to persist tab state:', error);
+      });
+    }, 300);
+  }
+
+  /** Force immediate persistence (for onClose/onunload). */
+  private async persistTabStateImmediate(): Promise<void> {
+    // Cancel any pending debounced persist
+    if (this.pendingPersist !== null) {
+      clearTimeout(this.pendingPersist);
+      this.pendingPersist = null;
+    }
     if (!this.tabManager) return;
     const state = this.tabManager.getPersistedState();
     await this.plugin.storage.setTabManagerState(state);

@@ -143,6 +143,12 @@
       }
     },
     "advanced": "Erweitert",
+    "maxTabs": {
+      "name": "Maximale Chat-Tabs",
+      "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",
+      "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI-Pfad",
       "desc": "Benutzerdefinierter Pfad zum Claude Code CLI. Leer lassen für automatische Erkennung.",

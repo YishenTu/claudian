@@ -124,6 +124,10 @@ export type TranslationKey =
 
   // Settings - Advanced
   | 'settings.advanced'
+  | 'settings.maxTabs.name'
+  | 'settings.maxTabs.desc'
+  | 'settings.maxTabs.warning'
+  | 'settings.maxTabs.range'
   | 'settings.cliPath.name'
   | 'settings.cliPath.desc'
   | 'settings.cliPath.descWindows'

@@ -143,6 +143,12 @@
       }
     },
     "advanced": "進階",
+    "maxTabs": {
+      "name": "最大聊天標籤數",
+      "desc": "同時開啟的最大聊天標籤數（3-10）。每個標籤使用獨立的 Claude 對話。",
+      "warning": "超過 5 個標籤可能會影響效能和記憶體使用。",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Claude CLI 路徑",
       "desc": "Claude Code CLI 的自訂路徑。留空使用自動檢測。",

@@ -20,7 +20,9 @@ import {
   wireTabInputEvents,
 } from './Tab';
 import {
+  DEFAULT_MAX_TABS,
   MAX_TABS,
+  MIN_TABS,
   type PersistedTabManagerState,
   type PersistedTabState,
   type TabBarItem,
@@ -47,6 +49,15 @@ export class TabManager implements TabManagerInterface {
   /** Guard to prevent concurrent tab switches. */
   private isSwitchingTab = false;
 
+  /**
+   * Gets the current max tabs limit from settings.
+   * Clamps to MIN_TABS and MAX_TABS bounds.
+   */
+  private getMaxTabs(): number {
+    const settingsValue = this.plugin.settings.maxTabs ?? DEFAULT_MAX_TABS;
+    return Math.max(MIN_TABS, Math.min(MAX_TABS, settingsValue));
+  }
+
   constructor(
     plugin: ClaudianPlugin,
     mcpManager: McpServerManager,
@@ -72,8 +83,9 @@ export class TabManager implements TabManagerInterface {
    * @returns The created tab, or null if max tabs reached.
    */
   async createTab(conversationId?: string | null, tabId?: TabId): Promise<TabData | null> {
-    if (this.tabs.size >= MAX_TABS) {
-      console.warn(`[TabManager] Max tabs (${MAX_TABS}) reached`);
+    const maxTabs = this.getMaxTabs();
+    if (this.tabs.size >= maxTabs) {
+      console.warn(`[TabManager] Max tabs (${maxTabs}) reached`);
       return null;
     }
 
@@ -99,14 +111,15 @@ export class TabManager implements TabManagerInterface {
       onConversationIdChanged: (conversationId) => {
         // Sync tab.conversationId when conversation is lazily created
         tab.conversationId = conversationId;
+        this.callbacks.onTabConversationChanged?.(tab.id, conversationId);
       },
     });
 
     // Initialize UI components
     initializeTabUI(tab, this.plugin);
 
-    // Initialize controllers
-    initializeTabControllers(tab, this.plugin, this.view);
+    // Initialize controllers (pass mcpManager for lazy service initialization)
+    initializeTabControllers(tab, this.plugin, this.view, this.mcpManager);
 
     // Wire input event handlers
     wireTabInputEvents(tab);
@@ -152,23 +165,8 @@ export class TabManager implements TabManagerInterface {
       this.activeTabId = tabId;
       activateTab(tab);
 
-      // Initialize service if not already done (lazy initialization)
-      if (!tab.serviceInitialized) {
-        try {
-          await initializeTabService(tab, this.plugin, this.mcpManager);
-
-          // Set approval callback for this tab's service
-          if (tab.service) {
-            tab.service.setApprovalCallback(
-              (toolName, input, description) =>
-                tab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
-            );
-          }
-        } catch {
-          // Service initialization failed - tab is still visible but won't function
-          // Continue with tab switch - user can still see the tab and retry
-        }
-      }
+      // Service initialization is now truly lazy - happens on first query via
+      // ensureServiceInitialized() in InputController.sendMessage()
 
       // Load conversation if not already loaded
       if (tab.conversationId && tab.state.messages.length === 0) {
@@ -198,6 +196,13 @@ export class TabManager implements TabManagerInterface {
 
     // Don't close if streaming unless forced
     if (tab.state.isStreaming && !force) {
+      return false;
+    }
+
+    // If this is the last tab and it's already empty (no conversation),
+    // don't close it - it's already a fresh session with a warm service.
+    // Closing and recreating would waste the pre-warmed connection.
+    if (this.tabs.size === 1 && !tab.conversationId && tab.state.messages.length === 0) {
       return false;
     }
 
@@ -261,7 +266,7 @@ export class TabManager implements TabManagerInterface {
 
   /** Checks if more tabs can be created. */
   canCreateTab(): boolean {
-    return this.tabs.size < MAX_TABS;
+    return this.tabs.size < this.getMaxTabs();
   }
 
   // ============================================
@@ -395,6 +400,37 @@ export class TabManager implements TabManagerInterface {
     // If no tabs were restored, create a default one
     if (this.tabs.size === 0) {
       await this.createTab();
+    }
+
+    // Pre-initialize the active tab's service so it's ready immediately
+    // Other tabs stay lazy until first query
+    await this.initializeActiveTabService();
+  }
+
+  /**
+   * Initializes the active tab's service if not already done.
+   * Called after restore to ensure the visible tab is ready immediately.
+   */
+  private async initializeActiveTabService(): Promise<void> {
+    const activeTab = this.getActiveTab();
+    if (!activeTab || activeTab.serviceInitialized) {
+      return;
+    }
+
+    try {
+      await initializeTabService(activeTab, this.plugin, this.mcpManager);
+      if (activeTab.service) {
+        activeTab.service.setApprovalCallback(
+          (toolName, input, description) =>
+            activeTab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[TabManager] Failed to pre-initialize active tab service:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      // Non-fatal - service will be initialized on first query
     }
   }
 

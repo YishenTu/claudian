@@ -36,14 +36,31 @@ import type {
 } from '../ui';
 
 /**
- * Maximum number of tabs allowed.
+ * Default number of tabs allowed.
  *
  * Set to 3 to balance usability with resource usage:
  * - Each tab has its own ClaudianService and persistent query
  * - More tabs = more memory and potential SDK processes
  * - 3 tabs allows multi-tasking without excessive overhead
  */
-export const MAX_TABS = 3;
+export const DEFAULT_MAX_TABS = 3;
+
+/**
+ * Minimum number of tabs allowed (settings floor).
+ */
+export const MIN_TABS = 3;
+
+/**
+ * Maximum number of tabs allowed (settings ceiling).
+ * Users can configure up to this many tabs via settings.
+ */
+export const MAX_TABS = 10;
+
+/**
+ * Threshold above which a warning is shown about resource usage.
+ * More than this many tabs may impact performance.
+ */
+export const HIGH_TAB_WARNING_THRESHOLD = 5;
 
 /**
  * Minimal interface for the ClaudianView methods used by TabManager and Tab.
@@ -127,6 +144,13 @@ export interface TabDOMElements {
   inputContainerEl: HTMLElement;
   inputWrapper: HTMLElement;
   inputEl: HTMLTextAreaElement;
+
+  /** Nav row for tab badges and header icons (above input wrapper). */
+  navRowEl: HTMLElement;
+
+  /** Context row for file chips and selection indicator (inside input wrapper). */
+  contextRowEl: HTMLElement;
+
   selectionIndicatorEl: HTMLElement | null;
 
   /** Cleanup functions for event listeners (prevents memory leaks). */
@@ -206,6 +230,9 @@ export interface TabManagerCallbacks {
 
   /** Called when tab attention state changes (approval pending, etc.). */
   onTabAttentionChanged?: (tabId: TabId, needsAttention: boolean) => void;
+
+  /** Called when a tab's conversation changes (loaded different conversation in same tab). */
+  onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;
 }
 
 /**

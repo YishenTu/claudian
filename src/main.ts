@@ -197,8 +197,16 @@ export default class ClaudianPlugin extends Plugin {
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
-  onunload() {
-    // Tab cleanup is handled by ClaudianView.onClose()
+  async onunload() {
+    // Persist tab state for all views before unloading
+    // This ensures state is saved even if Obsidian quits without calling onClose()
+    for (const view of this.getAllViews()) {
+      const tabManager = view.getTabManager();
+      if (tabManager) {
+        const state = tabManager.getPersistedState();
+        await this.storage.setTabManagerState(state);
+      }
+    }
   }
 
   /** Opens the Claudian sidebar view, creating it if necessary. */

@@ -143,6 +143,12 @@
       }
     },
     "advanced": "Avancé",
+    "maxTabs": {
+      "name": "Maximum d'onglets de chat",
+      "desc": "Nombre maximum d'onglets de chat simultanés (3-10). Chaque onglet utilise une session Claude séparée.",
+      "warning": "Plus de 5 onglets peut affecter les performances et l'utilisation de la mémoire.",
+      "range": "{min} - {max}"
+    },
     "cliPath": {
       "name": "Chemin CLI Claude",
       "desc": "Chemin personnalisé vers Claude Code CLI. Laisser vide pour la détection automatique.",

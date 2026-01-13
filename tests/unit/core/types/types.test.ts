@@ -107,6 +107,7 @@ describe('types.ts', () => {
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
         enabledPlugins: [],
+        maxTabs: 3,
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -138,6 +139,7 @@ describe('types.ts', () => {
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
         enabledPlugins: [],
+        maxTabs: 3,
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -169,6 +171,7 @@ describe('types.ts', () => {
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
         enabledPlugins: [],
+        maxTabs: 5,
       };
 
       expect(settings.lastClaudeModel).toBe('opus');

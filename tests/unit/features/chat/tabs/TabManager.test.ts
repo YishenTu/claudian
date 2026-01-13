@@ -4,7 +4,7 @@
 
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import {
-  MAX_TABS,
+  DEFAULT_MAX_TABS,
   type PersistedTabManagerState,
   type TabManagerCallbacks,
 } from '@/features/chat/tabs/types';
@@ -53,6 +53,10 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       workspace: {
         revealLeaf: jest.fn(),
       },
+    },
+    settings: {
+      maxTabs: DEFAULT_MAX_TABS,
+      ...(overrides.settings || {}),
     },
     getConversationById: jest.fn().mockReturnValue(null),
     findConversationAcrossViews: jest.fn().mockReturnValue(null),
@@ -173,14 +177,15 @@ describe('TabManager - Tab Lifecycle', () => {
       await manager.createTab();
 
       expect(mockActivateTab).toHaveBeenCalled();
-      expect(mockInitializeTabService).toHaveBeenCalled();
+      // Service initialization is now lazy (on first query), not on switch
+      expect(mockInitializeTabService).not.toHaveBeenCalled();
     });
 
     it('should enforce max tabs limit', async () => {
       const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
 
-      // Create MAX_TABS tabs
-      for (let i = 0; i < MAX_TABS; i++) {
+      // Create DEFAULT_MAX_TABS tabs
+      for (let i = 0; i < DEFAULT_MAX_TABS; i++) {
         await manager.createTab();
       }
 
@@ -188,7 +193,7 @@ describe('TabManager - Tab Lifecycle', () => {
       const extraTab = await manager.createTab();
 
       expect(extraTab).toBeNull();
-      expect(manager.getTabCount()).toBe(MAX_TABS);
+      expect(manager.getTabCount()).toBe(DEFAULT_MAX_TABS);
     });
 
     it('should use provided tab ID for restoration', async () => {
@@ -236,12 +241,13 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(mockActivateTab).not.toHaveBeenCalled();
     });
 
-    it('should initialize service on first switch', async () => {
+    it('should NOT initialize service on switch (lazy until first query)', async () => {
       const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
 
       await manager.createTab();
 
-      expect(mockInitializeTabService).toHaveBeenCalled();
+      // Service initialization is now lazy (on first query), not on switch
+      expect(mockInitializeTabService).not.toHaveBeenCalled();
     });
   });
 
@@ -295,8 +301,9 @@ describe('TabManager - Tab Lifecycle', () => {
     it('should switch to another tab after closing active tab', async () => {
       const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
 
-      const tab1 = await manager.createTab();
-      const tab2 = await manager.createTab();
+      // Create two tabs (variables intentionally unused - we just need tabs to exist)
+      await manager.createTab();
+      await manager.createTab();
 
       // Close active tab
       await manager.closeTab(manager.getActiveTabId()!);
@@ -407,7 +414,7 @@ describe('TabManager - Tab Queries', () => {
     });
 
     it('should return false when at limit', async () => {
-      for (let i = 1; i < MAX_TABS; i++) {
+      for (let i = 1; i < DEFAULT_MAX_TABS; i++) {
         await manager.createTab();
       }
       expect(manager.canCreateTab()).toBe(false);

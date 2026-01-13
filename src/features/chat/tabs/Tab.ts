@@ -164,7 +164,14 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 
   // Input container
   const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
+
+  // Nav row (for tab badges and header icons, populated by ClaudianView)
+  const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
+
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
+
+  // Context row inside input wrapper (file chips + selection indicator)
+  const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
 
   // Input textarea
   const inputEl = inputWrapper.createEl('textarea', {
@@ -182,6 +189,8 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     inputContainerEl,
     inputWrapper,
     inputEl,
+    navRowEl,
+    contextRowEl,
     selectionIndicatorEl: null,
     eventCleanups: [],
   };
@@ -260,39 +269,33 @@ export function initializeTabUI(
   const { dom, state } = tab;
   const app = plugin.app;
 
-  // File context manager
+  // File context manager - chips in contextRowEl, dropdown in inputContainerEl
   tab.ui.fileContextManager = new FileContextManager(
     app,
-    dom.inputContainerEl,
+    dom.contextRowEl,
     dom.inputEl,
     {
       getExcludedTags: () => plugin.settings.excludedTags,
       onChipsChanged: () => tab.renderer?.scrollToBottomIfNeeded(),
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
-    }
+    },
+    dom.inputContainerEl
   );
   tab.ui.fileContextManager.setMcpService(plugin.mcpService);
 
-  // Image context manager
+  // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(
     app,
     dom.inputContainerEl,
     dom.inputEl,
     {
       onImagesChanged: () => tab.renderer?.scrollToBottomIfNeeded(),
-    }
+    },
+    dom.contextRowEl
   );
 
-  // Context row wrapper
-  const fileIndicatorEl = dom.inputContainerEl.querySelector('.claudian-file-indicator');
-  if (fileIndicatorEl) {
-    const contextRowEl = dom.inputContainerEl.createDiv({ cls: 'claudian-context-row' });
-    dom.inputContainerEl.insertBefore(contextRowEl, fileIndicatorEl);
-    contextRowEl.appendChild(fileIndicatorEl);
-    dom.selectionIndicatorEl = contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
-  } else {
-    dom.selectionIndicatorEl = dom.inputContainerEl.createDiv({ cls: 'claudian-selection-indicator' });
-  }
+  // Selection indicator - add to contextRowEl
+  dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
 
   // Slash command manager
@@ -412,7 +415,8 @@ export function initializeTabUI(
 export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
-  component: Component
+  component: Component,
+  mcpManager: McpServerManager
 ): void {
   const { dom, state, services, ui } = tab;
 
@@ -495,6 +499,26 @@ export function initializeTabControllers(
     },
     // Override to use tab's service instead of plugin.agentService
     getAgentService: () => tab.service,
+    // Lazy initialization: ensure service is ready before first query
+    ensureServiceInitialized: async () => {
+      if (tab.serviceInitialized) {
+        return true;
+      }
+      try {
+        await initializeTabService(tab, plugin, mcpManager);
+        // Set approval callback after initialization
+        if (tab.service) {
+          tab.service.setApprovalCallback(
+            (toolName, input, description) =>
+              tab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
+          );
+        }
+        return true;
+      } catch (error) {
+        console.warn(`[Tab ${tab.id}] Service initialization failed:`, error);
+        return false;
+      }
+    },
   });
 
   // Navigation controller
