@@ -37,7 +37,7 @@
 .claudian-input {
   width: 100%;
   min-height: 60px;
-  /* max-height controlled by JS for auto-expand */
+  /* max-height dynamically set by JS: max(150px, 55% of view height) */
   resize: none;
   padding: 10px;
   border: none !important;

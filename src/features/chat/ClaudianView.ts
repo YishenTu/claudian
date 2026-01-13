@@ -42,6 +42,11 @@ import {
   TodoPanel,
 } from './ui';
 
+// Input height constants
+const MIN_INPUT_HEIGHT = 60;
+const MAX_INPUT_HEIGHT_FALLBACK = 150;
+const MAX_INPUT_HEIGHT_RATIO = 0.55;
+
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {
   private plugin: ClaudianPlugin;
@@ -85,6 +90,10 @@ export class ClaudianView extends ItemView {
   private instructionModeManager: InstructionModeManager | null = null;
   private contextUsageMeter: ContextUsageMeter | null = null;
   private todoPanel: TodoPanel | null = null;
+
+  // Input height management
+  private resizeObserver: ResizeObserver | null = null;
+  private rafId: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
@@ -155,14 +164,29 @@ export class ClaudianView extends ItemView {
     // Start selection polling
     this.selectionController?.start();
 
+    // Setup ResizeObserver to handle container resize
+    this.resizeObserver = new ResizeObserver(() => this.adjustInputHeight());
+    this.resizeObserver.observe(container);
+
     // Load conversation
     await this.conversationController?.loadActive();
+
+    // Initial input height adjustment (after conversation loads)
+    this.adjustInputHeight();
   }
 
   async onClose() {
     // Stop polling
     this.selectionController?.stop();
     this.selectionController?.clear();
+
+    // Cleanup ResizeObserver and pending RAF
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
 
     // Cleanup navigation controller
     this.navigationController?.dispose();
@@ -427,7 +451,10 @@ export class ClaudianView extends ItemView {
         getTitleGenerationService: () => this.titleGenerationService,
         getTodoPanel: () => this.todoPanel,
       },
-      {}
+      {
+        onConversationLoaded: () => this.adjustInputHeight(),
+        onConversationSwitched: () => this.adjustInputHeight(),
+      }
     );
 
     // Input controller
@@ -570,23 +597,31 @@ export class ClaudianView extends ItemView {
 
   /**
    * Adjusts textarea height based on content.
-   * Auto-expands up to maxHeight = max(150, viewHeight * 0.55).
+   * Auto-expands up to maxHeight = max(MAX_INPUT_HEIGHT_FALLBACK, viewHeight * MAX_INPUT_HEIGHT_RATIO).
+   * Uses requestAnimationFrame to avoid layout thrashing on rapid input events.
    */
   private adjustInputHeight(): void {
-    if (!this.inputEl || !this.messagesEl) return;
+    if (this.rafId) return; // Already scheduled
 
-    const container = this.containerEl.children[1] as HTMLElement;
-    const viewHeight = container.clientHeight;
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null;
+      if (!this.inputEl || !this.messagesEl) return;
 
-    // Calculate max height: 55% of view, minimum 150px
-    const maxHeight = Math.max(150, viewHeight * 0.55);
+      const container = this.containerEl.children[1] as HTMLElement;
+      if (!container) return;
 
-    // Reset height to auto to get accurate scrollHeight
-    this.inputEl.style.height = 'auto';
+      const viewHeight = container.clientHeight;
 
-    // Calculate new height (clamp between min and max)
-    const newHeight = Math.min(Math.max(60, this.inputEl.scrollHeight), maxHeight);
+      // Calculate max height: MAX_INPUT_HEIGHT_RATIO of view, minimum MAX_INPUT_HEIGHT_FALLBACK
+      const maxHeight = Math.max(MAX_INPUT_HEIGHT_FALLBACK, viewHeight * MAX_INPUT_HEIGHT_RATIO);
 
-    this.inputEl.style.height = `${newHeight}px`;
+      // Reset height to auto to get accurate scrollHeight
+      this.inputEl.style.height = 'auto';
+
+      // Calculate new height (clamp between min and max)
+      const newHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, this.inputEl.scrollHeight), maxHeight);
+
+      this.inputEl.style.height = `${newHeight}px`;
+    });
   }
 }
