@@ -305,9 +305,11 @@ export class TabManager implements TabManagerInterface {
       await this.createTab(conversationId);
     } else {
       // Open in current tab
+      // Note: Don't set tab.conversationId here - the onConversationIdChanged callback
+      // will sync it after successful switch. Setting it before switchTo() would cause
+      // incorrect tab metadata if switchTo() returns early (streaming/switching/creating).
       const activeTab = this.getActiveTab();
       if (activeTab) {
-        activeTab.conversationId = conversationId;
         await activeTab.controllers.conversationController?.switchTo(conversationId);
       }
     }
