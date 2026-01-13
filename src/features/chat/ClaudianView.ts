@@ -70,6 +70,7 @@ export class ClaudianView extends ItemView {
   private titleGenerationService: TitleGenerationService | null = null;
 
   // DOM Elements
+  private viewContainerEl: HTMLElement | null = null;
   private messagesEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | null = null;
   private inputWrapper: HTMLElement | null = null;
@@ -126,16 +127,16 @@ export class ClaudianView extends ItemView {
   }
 
   async onOpen() {
-    const container = this.containerEl.children[1] as HTMLElement;
-    container.empty();
-    container.addClass('claudian-container');
+    this.viewContainerEl = this.containerEl.children[1] as HTMLElement;
+    this.viewContainerEl.empty();
+    this.viewContainerEl.addClass('claudian-container');
 
     // Build header
-    const header = container.createDiv({ cls: 'claudian-header' });
+    const header = this.viewContainerEl.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
 
     // Build messages area
-    this.messagesEl = container.createDiv({ cls: 'claudian-messages' });
+    this.messagesEl = this.viewContainerEl.createDiv({ cls: 'claudian-messages' });
 
     // Welcome message
     this.welcomeEl = this.messagesEl.createDiv({ cls: 'claudian-welcome' });
@@ -145,7 +146,7 @@ export class ClaudianView extends ItemView {
     this.todoPanel.mount(this.messagesEl);
 
     // Build input area
-    const inputContainerEl = container.createDiv({ cls: 'claudian-input-container' });
+    const inputContainerEl = this.viewContainerEl.createDiv({ cls: 'claudian-input-container' });
     this.buildInputArea(inputContainerEl);
 
     // Initialize renderer
@@ -166,7 +167,7 @@ export class ClaudianView extends ItemView {
 
     // Setup ResizeObserver to handle container resize
     this.resizeObserver = new ResizeObserver(() => this.adjustInputHeight());
-    this.resizeObserver.observe(container);
+    this.resizeObserver.observe(this.viewContainerEl);
 
     // Load conversation
     await this.conversationController?.loadActive();
@@ -605,12 +606,9 @@ export class ClaudianView extends ItemView {
 
     this.rafId = requestAnimationFrame(() => {
       this.rafId = null;
-      if (!this.inputEl || !this.messagesEl) return;
+      if (!this.inputEl || !this.viewContainerEl) return;
 
-      const container = this.containerEl.children[1] as HTMLElement;
-      if (!container) return;
-
-      const viewHeight = container.clientHeight;
+      const viewHeight = this.viewContainerEl.clientHeight;
 
       // Calculate max height: MAX_INPUT_HEIGHT_RATIO of view, minimum MAX_INPUT_HEIGHT_FALLBACK
       const maxHeight = Math.max(MAX_INPUT_HEIGHT_FALLBACK, viewHeight * MAX_INPUT_HEIGHT_RATIO);
