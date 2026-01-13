@@ -69,34 +69,38 @@ export class ConversationController {
   // Conversation Lifecycle
   // ============================================
 
-  /** Creates a new conversation, or switches to an existing empty one. */
+  /**
+   * Resets to entry point state (New Chat).
+   *
+   * Entry point is a blank UI state - no conversation is created until the
+   * first message is sent. This prevents empty conversations cluttering history.
+   */
   async createNew(): Promise<void> {
     const { plugin, state, asyncSubagentManager } = this.deps;
     if (state.isStreaming) return;
     if (state.isCreatingConversation) return;
     if (state.isSwitchingConversation) return;
 
-    // Set flag to block message sending during creation
+    // Set flag to block message sending during reset
     state.isCreatingConversation = true;
 
     try {
-      if (state.messages.length > 0) {
+      // Save current conversation if it has messages
+      if (state.currentConversationId && state.messages.length > 0) {
         await this.save();
       }
 
       asyncSubagentManager.orphanAllActive();
       state.asyncSubagentStates.clear();
 
-      // Check for existing empty conversation to reuse
-      const emptyConv = plugin.findEmptyConversation();
-      const conversation = emptyConv
-        ? await plugin.switchConversation(emptyConv.id) ?? await plugin.createConversation()
-        : await plugin.createConversation();
-
-      state.currentConversationId = conversation.id;
+      // Reset to entry point state - no conversation created yet
+      state.currentConversationId = null;
       state.clearMessages();
       state.usage = null;
       state.currentTodos = null;
+
+      // Reset agent service session (no session ID for entry point)
+      this.getAgentService()?.setSessionId(null);
 
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
@@ -129,17 +133,49 @@ export class ConversationController {
     }
   }
 
-  /** Loads the active conversation or creates a new one. */
+  /**
+   * Loads the active conversation, or starts at entry point if none.
+   *
+   * Entry point (no active conversation) shows welcome screen without
+   * creating a conversation. Conversation is created lazily on first message.
+   */
   async loadActive(): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
-    let conversation = plugin.getActiveConversation();
-    const isNewConversation = !conversation;
+    const conversation = plugin.getActiveConversation();
 
+    // No active conversation - start at entry point
     if (!conversation) {
-      conversation = await plugin.createConversation();
+      state.currentConversationId = null;
+      state.clearMessages();
+      state.usage = null;
+      state.currentTodos = null;
+
+      this.getAgentService()?.setSessionId(null);
+
+      const fileCtx = this.deps.getFileContextManager();
+      fileCtx?.resetForNewConversation();
+      fileCtx?.autoAttachActiveFile();
+
+      // Initialize external contexts with persistent paths from settings
+      this.deps.getExternalContextSelector()?.clearExternalContexts(
+        plugin.settings.persistentExternalContextPaths || []
+      );
+
+      this.deps.getMcpServerSelector()?.clearEnabled();
+
+      const welcomeEl = renderer.renderMessages(
+        [],
+        () => this.getGreeting()
+      );
+      this.deps.setWelcomeEl(welcomeEl);
+      this.updateWelcomeVisibility();
+
+      this.callbacks.onConversationLoaded?.();
+      return;
     }
 
+    // Load existing conversation
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
@@ -152,14 +188,14 @@ export class ConversationController {
 
     if (conversation.currentNote) {
       fileCtx?.setCurrentNote(conversation.currentNote);
-    } else if (isNewConversation || !hasMessages) {
+    } else if (!hasMessages) {
       fileCtx?.autoAttachActiveFile();
     }
 
     // Restore external context paths based on session state
     this.restoreExternalContextPaths(
       conversation.externalContextPaths,
-      isNewConversation || !hasMessages
+      !hasMessages
     );
 
     // Restore enabled MCP servers (or clear for new conversation)
@@ -251,10 +287,25 @@ export class ConversationController {
     }
   }
 
-  /** Saves the current conversation. */
+  /**
+   * Saves the current conversation.
+   *
+   * If we're at an entry point (no conversation yet) and have messages,
+   * creates a new conversation first (lazy creation).
+   */
   async save(updateLastResponse = false): Promise<void> {
     const { plugin, state } = this.deps;
-    if (!state.currentConversationId) return;
+
+    // Entry point with no messages - nothing to save
+    if (!state.currentConversationId && state.messages.length === 0) {
+      return;
+    }
+
+    // Entry point with messages - create conversation lazily
+    if (!state.currentConversationId && state.messages.length > 0) {
+      const conversation = await plugin.createConversation();
+      state.currentConversationId = conversation.id;
+    }
 
     const sessionId = this.getAgentService()?.getSessionId() ?? null;
     const fileCtx = this.deps.getFileContextManager();
@@ -277,7 +328,9 @@ export class ConversationController {
       updates.lastResponseAt = Date.now();
     }
 
-    await plugin.updateConversation(state.currentConversationId, updates);
+    // At this point, currentConversationId is guaranteed to be set
+    // (either existed before or was created lazily above)
+    await plugin.updateConversation(state.currentConversationId!, updates);
   }
 
   /**

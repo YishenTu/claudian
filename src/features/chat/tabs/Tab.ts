@@ -64,6 +64,9 @@ export interface TabCreateOptions {
 
   /** Callback when attention state changes (approval pending, etc.). */
   onAttentionChanged?: (needsAttention: boolean) => void;
+
+  /** Callback when conversation ID changes (for lazy creation sync). */
+  onConversationIdChanged?: (conversationId: string | null) => void;
 }
 
 /**
@@ -76,6 +79,7 @@ export function createTab(options: TabCreateOptions): TabData {
     tabId,
     onStreamingChanged,
     onAttentionChanged,
+    onConversationIdChanged,
   } = options;
 
   const id = tabId ?? generateTabId();
@@ -91,6 +95,9 @@ export function createTab(options: TabCreateOptions): TabData {
     },
     onAttentionChanged: (needsAttention) => {
       onAttentionChanged?.(needsAttention);
+    },
+    onConversationChanged: (conversationId) => {
+      onConversationIdChanged?.(conversationId);
     },
   });
 

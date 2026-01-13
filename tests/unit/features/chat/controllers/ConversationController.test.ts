@@ -193,52 +193,33 @@ describe('ConversationController - Queue Management', () => {
       expect(deps.state.currentTodos).toBeNull();
     });
 
-    it('should switch to existing empty conversation instead of creating new one', async () => {
-      const emptyConv = {
-        id: 'empty-conv',
-        title: 'Empty Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      (deps.plugin.findEmptyConversation as jest.Mock).mockReturnValue(emptyConv);
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(emptyConv);
-
+    it('should reset to entry point state (null conversationId) instead of creating conversation', async () => {
+      // Entry point model: createNew() resets to blank state without creating conversation
+      // Conversation is created lazily on first message send
       await controller.createNew();
 
-      expect(deps.plugin.findEmptyConversation).toHaveBeenCalled();
-      expect(deps.plugin.switchConversation).toHaveBeenCalledWith('empty-conv');
+      // Should NOT call findEmptyConversation or createConversation
+      expect(deps.plugin.findEmptyConversation).not.toHaveBeenCalled();
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-      expect(deps.state.currentConversationId).toBe('empty-conv');
-    });
-
-    it('should create new conversation if no empty conversation exists', async () => {
-      (deps.plugin.findEmptyConversation as jest.Mock).mockReturnValue(null);
-
-      await controller.createNew();
-
-      expect(deps.plugin.findEmptyConversation).toHaveBeenCalled();
-      expect(deps.plugin.createConversation).toHaveBeenCalled();
       expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+
+      // Should be at entry point state
+      expect(deps.state.currentConversationId).toBeNull();
     });
 
-    it('should fallback to createConversation if switchConversation fails', async () => {
-      const emptyConv = {
-        id: 'empty-conv',
-        title: 'Empty Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      (deps.plugin.findEmptyConversation as jest.Mock).mockReturnValue(emptyConv);
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(null);
+    it('should clear messages and reset state when creating new', async () => {
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+      deps.state.currentConversationId = 'old-conv';
+
+      // Mock clearMessages to track if it was called
+      const clearMessagesSpy = jest.spyOn(deps.state, 'clearMessages');
 
       await controller.createNew();
 
-      expect(deps.plugin.switchConversation).toHaveBeenCalledWith('empty-conv');
-      expect(deps.plugin.createConversation).toHaveBeenCalled();
+      expect(clearMessagesSpy).toHaveBeenCalled();
+      expect(deps.state.currentConversationId).toBeNull();
+
+      clearMessagesSpy.mockRestore();
     });
   });
 
@@ -752,31 +733,19 @@ describe('ConversationController - Race Condition Guards', () => {
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
     });
 
-    it('should reset isCreatingConversation flag even on error', async () => {
-      (deps.plugin.createConversation as jest.Mock).mockRejectedValue(new Error('Creation failed'));
+    it('should set and reset isCreatingConversation flag during entry point reset', async () => {
+      // Entry point model: createNew() just resets state, doesn't create conversation
+      // But isCreatingConversation flag should still be set during the reset
+      let flagDuringExecution = false;
 
-      await expect(controller.createNew()).rejects.toThrow('Creation failed');
-
-      expect(deps.state.isCreatingConversation).toBe(false);
-    });
-
-    it('should set isCreatingConversation flag during creation', async () => {
-      let flagDuringCreation = false;
-      (deps.plugin.createConversation as jest.Mock).mockImplementation(async () => {
-        flagDuringCreation = deps.state.isCreatingConversation;
-        return {
-          id: 'new-conv',
-          title: 'New Conversation',
-          messages: [],
-          sessionId: null,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+      // Override clearMessages to capture flag state during execution
+      deps.state.clearMessages = jest.fn(() => {
+        flagDuringExecution = deps.state.isCreatingConversation;
       });
 
       await controller.createNew();
 
-      expect(flagDuringCreation).toBe(true);
+      expect(flagDuringExecution).toBe(true);
       expect(deps.state.isCreatingConversation).toBe(false);
     });
   });

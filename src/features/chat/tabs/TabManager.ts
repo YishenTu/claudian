@@ -91,6 +91,10 @@ export class TabManager {
       onAttentionChanged: (needsAttention) => {
         this.callbacks.onTabAttentionChanged?.(tab.id, needsAttention);
       },
+      onConversationIdChanged: (conversationId) => {
+        // Sync tab.conversationId when conversation is lazily created
+        tab.conversationId = conversationId;
+      },
     });
 
     // Initialize UI components
