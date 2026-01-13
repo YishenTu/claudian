@@ -183,6 +183,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     inputWrapper,
     inputEl,
     selectionIndicatorEl: null,
+    eventCleanups: [],
   };
 }
 
@@ -201,7 +202,17 @@ export async function initializeTabService(
 
   // Create per-tab ClaudianService
   tab.service = new ClaudianService(plugin, mcpManager);
-  await tab.service.loadCCPermissions();
+
+  // Load Claude Code permissions with error handling
+  try {
+    await tab.service.loadCCPermissions();
+  } catch (error) {
+    console.warn(
+      `[Tab ${tab.id}] Failed to load CC permissions:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    // Continue without permissions - service can still function
+  }
 
   // Pre-warm if we have a conversation with a session ID
   const conversation = tab.conversationId
@@ -485,12 +496,13 @@ export function initializeTabControllers(
 /**
  * Wires up input event handlers for a tab.
  * Call this after controllers are initialized.
+ * Stores cleanup functions in dom.eventCleanups for proper memory management.
  */
 export function wireTabInputEvents(tab: TabData): void {
   const { dom, ui, state, controllers } = tab;
 
   // Input keydown handler
-  dom.inputEl.addEventListener('keydown', (e) => {
+  const keydownHandler = (e: KeyboardEvent) => {
     // Check for # trigger first (empty input + # keystroke)
     if (ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
@@ -520,18 +532,24 @@ export function wireTabInputEvents(tab: TabData): void {
       e.preventDefault();
       void controllers.inputController?.sendMessage();
     }
-  });
+  };
+  dom.inputEl.addEventListener('keydown', keydownHandler);
+  dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
   // Input change handler
-  dom.inputEl.addEventListener('input', () => {
+  const inputHandler = () => {
     ui.fileContextManager?.handleInputChange();
     ui.instructionModeManager?.handleInputChange();
-  });
+  };
+  dom.inputEl.addEventListener('input', inputHandler);
+  dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));
 
   // Input focus handler
-  dom.inputEl.addEventListener('focus', () => {
+  const focusHandler = () => {
     controllers.selectionController?.showHighlight();
-  });
+  };
+  dom.inputEl.addEventListener('focus', focusHandler);
+  dom.eventCleanups.push(() => dom.inputEl.removeEventListener('focus', focusHandler));
 }
 
 /**
@@ -552,8 +570,9 @@ export function deactivateTab(tab: TabData): void {
 
 /**
  * Cleans up a tab and releases all resources.
+ * Made async to ensure proper cleanup ordering.
  */
-export function destroyTab(tab: TabData): void {
+export async function destroyTab(tab: TabData): Promise<void> {
   // Stop polling
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
@@ -583,9 +602,15 @@ export function destroyTab(tab: TabData): void {
   tab.services.asyncSubagentManager.orphanAllActive();
   tab.state.asyncSubagentStates.clear();
 
-  // Close the tab's service (fires abort signal but doesn't await).
-  // Any async handlers in ClaudianService.query() may still run briefly,
-  // but this is acceptable since we're destroying the tab anyway.
+  // Remove event listeners to prevent memory leaks
+  for (const cleanup of tab.dom.eventCleanups) {
+    cleanup();
+  }
+  tab.dom.eventCleanups.length = 0;
+
+  // Close the tab's service
+  // Note: closePersistentQuery is synchronous but we make destroyTab async
+  // for future-proofing and proper cleanup ordering
   tab.service?.closePersistentQuery('tab closed');
   tab.service = null;
 

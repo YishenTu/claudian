@@ -128,6 +128,9 @@ export interface TabDOMElements {
   inputWrapper: HTMLElement;
   inputEl: HTMLTextAreaElement;
   selectionIndicatorEl: HTMLElement | null;
+
+  /** Cleanup functions for event listeners (prevents memory leaks). */
+  eventCleanups: Array<() => void>;
 }
 
 /**

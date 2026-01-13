@@ -188,8 +188,8 @@ export class TabManager implements TabManagerInterface {
     // Save conversation before closing
     await tab.controllers.conversationController?.save();
 
-    // Destroy tab resources
-    destroyTab(tab);
+    // Destroy tab resources (async for proper cleanup)
+    await destroyTab(tab);
     this.tabs.delete(tabId);
     this.callbacks.onTabClosed?.(tabId);
 
@@ -350,14 +350,29 @@ export class TabManager implements TabManagerInterface {
 
   /** Restores state from persisted data. */
   async restoreState(state: PersistedTabManagerState): Promise<void> {
-    // Create tabs from persisted state
+    // Create tabs from persisted state with error handling
     for (const tabState of state.openTabs) {
-      await this.createTab(tabState.conversationId, tabState.tabId);
+      try {
+        await this.createTab(tabState.conversationId, tabState.tabId);
+      } catch (error) {
+        console.warn(
+          `[TabManager] Failed to restore tab ${tabState.tabId}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        // Continue restoring other tabs
+      }
     }
 
     // Switch to the previously active tab
     if (state.activeTabId && this.tabs.has(state.activeTabId)) {
-      await this.switchToTab(state.activeTabId);
+      try {
+        await this.switchToTab(state.activeTabId);
+      } catch (error) {
+        console.warn(
+          `[TabManager] Failed to switch to active tab ${state.activeTabId}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     }
 
     // If no tabs were restored, create a default one
@@ -402,9 +417,9 @@ export class TabManager implements TabManagerInterface {
       await tab.controllers.conversationController?.save();
     }
 
-    // Destroy all tabs
+    // Destroy all tabs (async for proper cleanup)
     for (const tab of this.tabs.values()) {
-      destroyTab(tab);
+      await destroyTab(tab);
     }
 
     this.tabs.clear();
