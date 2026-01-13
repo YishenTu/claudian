@@ -638,6 +638,11 @@ export class ConversationController {
     const welcomeEl = this.deps.getWelcomeEl();
     if (!welcomeEl) return;
 
+    // Initialize file context to auto-attach the currently focused note
+    const fileCtx = this.deps.getFileContextManager();
+    fileCtx?.resetForNewConversation();
+    fileCtx?.autoAttachActiveFile();
+
     // Only add greeting if not already present
     if (!welcomeEl.querySelector('.claudian-welcome-greeting')) {
       welcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: this.getGreeting() });

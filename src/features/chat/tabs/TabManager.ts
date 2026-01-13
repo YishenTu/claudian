@@ -114,10 +114,8 @@ export class TabManager implements TabManagerInterface {
     this.tabs.set(tab.id, tab);
     this.callbacks.onTabCreated?.(tab);
 
-    // If this is the first tab, activate it and initialize service
-    if (this.tabs.size === 1) {
-      await this.switchToTab(tab.id);
-    }
+    // Auto-switch to the newly created tab
+    await this.switchToTab(tab.id);
 
     return tab;
   }

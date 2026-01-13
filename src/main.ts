@@ -183,13 +183,10 @@ export default class ClaudianPlugin extends Plugin {
         const tabManager = view.getTabManager();
         if (!tabManager) return false;
 
-        // Only enable command when 2+ tabs
-        const tabCount = tabManager.getTabCount();
-        if (tabCount < 2) return false;
-
         if (!checking) {
           const activeTabId = tabManager.getActiveTabId();
           if (activeTabId) {
+            // When closing the last tab, TabManager will create a new empty one
             tabManager.closeTab(activeTabId);
           }
         }

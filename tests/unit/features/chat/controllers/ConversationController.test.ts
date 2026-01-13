@@ -318,6 +318,51 @@ describe('ConversationController - Queue Management', () => {
   });
 });
 
+describe('ConversationController - initializeWelcome', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should initialize file context for new tab', () => {
+    const fileContextManager = deps.getFileContextManager()!;
+
+    controller.initializeWelcome();
+
+    expect(fileContextManager.resetForNewConversation).toHaveBeenCalled();
+    expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
+  });
+
+  it('should not throw if welcomeEl is null', () => {
+    const depsWithNullWelcome = createMockDeps({
+      getWelcomeEl: () => null,
+    });
+    const controllerWithNullWelcome = new ConversationController(depsWithNullWelcome);
+
+    expect(() => controllerWithNullWelcome.initializeWelcome()).not.toThrow();
+  });
+
+  it('should only add greeting if not already present', () => {
+    const welcomeEl = deps.getWelcomeEl()!;
+    const createDivSpy = jest.spyOn(welcomeEl, 'createDiv');
+
+    // First call should add greeting
+    controller.initializeWelcome();
+    expect(createDivSpy).toHaveBeenCalledTimes(1);
+
+    // Mock querySelector to return an element (greeting already exists)
+    welcomeEl.querySelector = jest.fn().mockReturnValue(createMockElement());
+
+    // Second call should not add another greeting
+    controller.initializeWelcome();
+    expect(createDivSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
+  });
+});
+
 describe('ConversationController - Callbacks', () => {
   it('should call onNewConversation callback', async () => {
     const onNewConversation = jest.fn();
