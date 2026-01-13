@@ -24,6 +24,7 @@ function createInitialState(): ChatStateData {
     messages: [],
     isStreaming: false,
     cancelRequested: false,
+    streamGeneration: 0,
     isCreatingConversation: false,
     isSwitchingConversation: false,
     currentConversationId: null,
@@ -113,6 +114,15 @@ export class ChatState {
 
   set cancelRequested(value: boolean) {
     this.state.cancelRequested = value;
+  }
+
+  get streamGeneration(): number {
+    return this.state.streamGeneration;
+  }
+
+  bumpStreamGeneration(): number {
+    this.state.streamGeneration += 1;
+    return this.state.streamGeneration;
   }
 
   get isCreatingConversation(): boolean {

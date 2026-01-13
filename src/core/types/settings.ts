@@ -265,7 +265,6 @@ export interface ClaudianSettings {
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
 
   // State (merged from data.json)
-  activeConversationId: string | null;
   lastClaudeModel?: ClaudeModel;
   lastCustomModel?: ClaudeModel;
   lastEnvHash?: string;
@@ -324,8 +323,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   claudeCliPaths: getDefaultCliPaths(),  // Platform-specific paths
   loadUserClaudeSettings: true,  // Default on for compatibility
 
-  // State (merged from data.json)
-  activeConversationId: null,
   lastClaudeModel: 'haiku',
   lastCustomModel: '',
   lastEnvHash: '',

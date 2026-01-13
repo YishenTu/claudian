@@ -17,7 +17,6 @@ describe('ClaudianService', () => {
       addDenyRule: jest.fn().mockResolvedValue(undefined),
       addAllowRule: jest.fn().mockResolvedValue(undefined),
       getPermissions: jest.fn().mockResolvedValue({ allow: [], deny: [], ask: [] }),
-      setActiveConversationId: jest.fn().mockResolvedValue(undefined),
     };
 
     mockPlugin = {

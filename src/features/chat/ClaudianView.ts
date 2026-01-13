@@ -6,13 +6,14 @@
  */
 
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
-import { ItemView, setIcon } from 'obsidian';
+import { ItemView, Notice, setIcon } from 'obsidian';
 
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { LOGO_SVG } from './constants';
 import { TabBar, TabManager } from './tabs';
 import type { TabData, TabId } from './tabs/types';
+import { MAX_TABS } from './tabs/types';
 
 /** Main sidebar chat view for interacting with Claude. */
 export class ClaudianView extends ItemView {
@@ -190,16 +191,18 @@ export class ClaudianView extends ItemView {
 
   private async handleTabClose(tabId: TabId): Promise<void> {
     const tab = this.tabManager?.getTab(tabId);
-    if (tab?.state.isStreaming) {
-      // TODO: Show confirmation dialog for closing streaming tab
-      return;
-    }
-    await this.tabManager?.closeTab(tabId);
+    // If streaming, treat close like user interrupt (force close cancels the stream)
+    const force = tab?.state.isStreaming ?? false;
+    await this.tabManager?.closeTab(tabId, force);
     this.updateTabBarVisibility();
   }
 
   private async handleNewTab(): Promise<void> {
-    await this.tabManager?.createTab();
+    const tab = await this.tabManager?.createTab();
+    if (!tab) {
+      new Notice(`Maximum ${MAX_TABS} tabs allowed`);
+      return;
+    }
     this.updateTabBarVisibility();
   }
 
@@ -245,15 +248,27 @@ export class ClaudianView extends ItemView {
     if (conversationController) {
       conversationController.renderHistoryDropdown(this.historyDropdown, {
         onSelectConversation: async (conversationId) => {
-          // Check if conversation is already open in another tab
+          // Check if conversation is already open in this view's tabs
           const existingTab = this.findTabWithConversation(conversationId);
           if (existingTab) {
             // Switch to existing tab instead of opening in current tab
             await this.tabManager?.switchToTab(existingTab.id);
-          } else {
-            // Open in current tab
-            await this.tabManager?.openConversation(conversationId);
+            this.historyDropdown?.removeClass('visible');
+            return;
           }
+
+          // Check if conversation is open in another view (split workspace scenario)
+          const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
+          if (crossViewResult && crossViewResult.view !== this) {
+            // Focus the other view's leaf and switch to the tab
+            this.plugin.app.workspace.revealLeaf(crossViewResult.view.leaf);
+            await crossViewResult.view.getTabManager()?.switchToTab(crossViewResult.tabId);
+            this.historyDropdown?.removeClass('visible');
+            return;
+          }
+
+          // Open in current tab
+          await this.tabManager?.openConversation(conversationId);
           this.historyDropdown?.removeClass('visible');
         },
       });
@@ -339,11 +354,26 @@ export class ClaudianView extends ItemView {
     const persistedState = await this.plugin.storage.getTabManagerState();
     if (persistedState && persistedState.openTabs.length > 0) {
       await this.tabManager.restoreState(persistedState);
-    } else {
-      // No persisted state - create a tab with the active conversation
-      const activeConvId = this.plugin.getActiveConversation()?.id;
-      await this.tabManager.createTab(activeConvId);
+      await this.plugin.storage.clearLegacyActiveConversationId();
+      return;
     }
+
+    // No persisted state - migrate legacy activeConversationId if present
+    const legacyActiveId = await this.plugin.storage.getLegacyActiveConversationId();
+    if (legacyActiveId) {
+      const conversation = this.plugin.getConversationById(legacyActiveId);
+      if (conversation) {
+        await this.tabManager.createTab(conversation.id);
+      } else {
+        await this.tabManager.createTab();
+      }
+      await this.plugin.storage.clearLegacyActiveConversationId();
+      return;
+    }
+
+    // Fallback: create a new empty tab
+    await this.tabManager.createTab();
+    await this.plugin.storage.clearLegacyActiveConversationId();
   }
 
   private async persistTabState(): Promise<void> {

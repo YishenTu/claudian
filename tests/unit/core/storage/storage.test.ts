@@ -457,13 +457,12 @@ describe('StorageService migration', () => {
     });
 
     it('should return false if only state fields exist', () => {
-      // activeConversationId is excluded from hasSettings check
       const stateOnlyData = {
-        activeConversationId: 'conv-1',
         lastEnvHash: 'hash',
         lastClaudeModel: 'haiku',
         lastCustomModel: 'custom',
         migrationVersion: 2,
+        tabManagerState: { openTabs: [], activeTabId: null },
       };
       expect(needsMigrationHelper(stateOnlyData)).toBe(false);
     });
@@ -674,11 +673,11 @@ function needsMigrationHelper(legacyData: any): boolean {
   const stateKeys = new Set([
     'conversations',
     'slashCommands',
-    'activeConversationId',
     'lastEnvHash',
     'lastClaudeModel',
     'lastCustomModel',
     'migrationVersion',
+    'tabManagerState',
   ]);
   const hasSettings = Object.keys(legacyData).some(key => !stateKeys.has(key));
 

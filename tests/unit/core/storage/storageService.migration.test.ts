@@ -156,7 +156,7 @@ describe('StorageService migration', () => {
     });
   });
 
-  it('clears data.json after migrating state-only data', async () => {
+  it('does not migrate legacy activeConversationId from data.json', async () => {
     const { plugin, files } = createMockPlugin({
       dataJson: { activeConversationId: 'conv-1' },
     });
@@ -164,9 +164,33 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
-    expect(saved.activeConversationId).toBe('conv-1');
-    expect(plugin.saveData).toHaveBeenCalledWith({});
+    const rawSettings = files.get('.claude/claudian-settings.json');
+    // If settings file was created, it should NOT contain the legacy activeConversationId
+    const containsLegacyField = rawSettings
+      ? 'activeConversationId' in (JSON.parse(rawSettings) as Record<string, unknown>)
+      : false;
+    expect(containsLegacyField).toBe(false);
+    expect(plugin.saveData).not.toHaveBeenCalled();
+  });
+
+  it('preserves tabManagerState when clearing legacy data.json state', async () => {
+    const tabManagerState = {
+      openTabs: [{ tabId: 'tab-1', conversationId: 'conv-1' }],
+      activeTabId: 'tab-1',
+    };
+    const { plugin } = createMockPlugin({
+      dataJson: {
+        lastEnvHash: 'hash',
+        tabManagerState,
+      },
+    });
+
+    const storage = new StorageService(plugin);
+    await storage.initialize();
+
+    expect(plugin.saveData).toHaveBeenCalledWith({
+      tabManagerState,
+    });
   });
 
   it('initializes persistentExternalContextPaths to empty array when migrating old settings', async () => {

@@ -188,7 +188,6 @@ export class StorageService {
    */
   private hasStateToMigrate(data: LegacyDataJson): boolean {
     return (
-      data.activeConversationId !== undefined ||
       data.lastEnvHash !== undefined ||
       data.lastClaudeModel !== undefined ||
       data.lastCustomModel !== undefined
@@ -257,7 +256,6 @@ export class StorageService {
       loadUserClaudeSettings: oldSettings.loadUserClaudeSettings ?? DEFAULT_SETTINGS.loadUserClaudeSettings,
       enableAutoTitleGeneration: oldSettings.enableAutoTitleGeneration ?? DEFAULT_SETTINGS.enableAutoTitleGeneration,
       titleGenerationModel: oldSettings.titleGenerationModel ?? DEFAULT_SETTINGS.titleGenerationModel,
-      activeConversationId: null,
       lastClaudeModel: DEFAULT_SETTINGS.lastClaudeModel,
       lastCustomModel: DEFAULT_SETTINGS.lastCustomModel,
       lastEnvHash: DEFAULT_SETTINGS.lastEnvHash,
@@ -307,9 +305,6 @@ export class StorageService {
     const claudian = await this.claudianSettings.load();
 
     // Only migrate if not already set (claudian-settings.json takes precedence)
-    if (dataJson.activeConversationId !== undefined && !claudian.activeConversationId) {
-      claudian.activeConversationId = dataJson.activeConversationId;
-    }
     if (dataJson.lastEnvHash !== undefined && !claudian.lastEnvHash) {
       claudian.lastEnvHash = dataJson.lastEnvHash;
     }
@@ -366,7 +361,25 @@ export class StorageService {
    * Clear legacy data.json after successful migration.
    */
   private async clearLegacyDataJson(): Promise<void> {
-    await this.plugin.saveData({});
+    const dataJson = await this.loadDataJson();
+    if (!dataJson) {
+      return;
+    }
+
+    const cleaned: Record<string, unknown> = { ...dataJson };
+    delete cleaned.lastEnvHash;
+    delete cleaned.lastClaudeModel;
+    delete cleaned.lastCustomModel;
+    delete cleaned.conversations;
+    delete cleaned.slashCommands;
+    delete cleaned.migrationVersion;
+
+    if (Object.keys(cleaned).length === 0) {
+      await this.plugin.saveData({});
+      return;
+    }
+
+    await this.plugin.saveData(cleaned);
   }
 
   /**
@@ -438,13 +451,6 @@ export class StorageService {
   }
 
   /**
-   * Update active conversation ID.
-   */
-  async setActiveConversationId(id: string | null): Promise<void> {
-    return this.claudianSettings.setActiveConversationId(id);
-  }
-
-  /**
    * Update Claudian settings.
    */
   async updateClaudianSettings(updates: Partial<StoredClaudianSettings>): Promise<void> {
@@ -463,6 +469,39 @@ export class StorageService {
    */
   async loadClaudianSettings(): Promise<StoredClaudianSettings> {
     return this.claudianSettings.load();
+  }
+
+  /**
+   * Get legacy activeConversationId from storage (claudian-settings.json or data.json).
+   */
+  async getLegacyActiveConversationId(): Promise<string | null> {
+    const fromSettings = await this.claudianSettings.getLegacyActiveConversationId();
+    if (fromSettings) {
+      return fromSettings;
+    }
+
+    const dataJson = await this.loadDataJson();
+    if (dataJson && typeof dataJson.activeConversationId === 'string') {
+      return dataJson.activeConversationId;
+    }
+
+    return null;
+  }
+
+  /**
+   * Remove legacy activeConversationId from storage after migration.
+   */
+  async clearLegacyActiveConversationId(): Promise<void> {
+    await this.claudianSettings.clearLegacyActiveConversationId();
+
+    const dataJson = await this.loadDataJson();
+    if (!dataJson || !('activeConversationId' in dataJson)) {
+      return;
+    }
+
+    const cleaned: Record<string, unknown> = { ...dataJson };
+    delete cleaned.activeConversationId;
+    await this.plugin.saveData(cleaned);
   }
 
   // ============================================================================

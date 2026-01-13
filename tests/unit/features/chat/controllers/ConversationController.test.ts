@@ -84,7 +84,6 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }),
-      getActiveConversation: jest.fn().mockReturnValue(null),
       getConversationById: jest.fn().mockReturnValue(null),
       getConversationList: jest.fn().mockReturnValue([]),
       findEmptyConversation: jest.fn().mockReturnValue(null),
@@ -637,7 +636,8 @@ describe('ConversationController - MCP Server Persistence', () => {
 
   describe('loadActive', () => {
     it('should restore enabled MCP servers from conversation', async () => {
-      (deps.plugin.getActiveConversation as jest.Mock).mockReturnValue({
+      deps.state.currentConversationId = 'conv-1';
+      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
         id: 'conv-1',
         messages: [],
         sessionId: null,
@@ -653,7 +653,8 @@ describe('ConversationController - MCP Server Persistence', () => {
     });
 
     it('should clear MCP servers when conversation has none', async () => {
-      (deps.plugin.getActiveConversation as jest.Mock).mockReturnValue({
+      deps.state.currentConversationId = 'conv-1';
+      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
         id: 'conv-1',
         messages: [],
         sessionId: null,
@@ -731,6 +732,19 @@ describe('ConversationController - Race Condition Guards', () => {
       await controller.createNew();
 
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
+    });
+
+    it('should reset even when streaming if force is true', async () => {
+      deps.state.isStreaming = true;
+      deps.state.cancelRequested = false;
+      const initialGeneration = deps.state.streamGeneration;
+
+      await controller.createNew({ force: true });
+
+      expect(deps.state.isStreaming).toBe(false);
+      expect(deps.state.cancelRequested).toBe(true);
+      expect(deps.state.streamGeneration).toBe(initialGeneration + 1);
+      expect(deps.state.currentConversationId).toBeNull();
     });
 
     it('should set and reset isCreatingConversation flag during entry point reset', async () => {
@@ -885,7 +899,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
   describe('loadActive', () => {
     it('should use persistent paths for new conversation (no existing conversation)', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue(null);
+      deps.state.currentConversationId = null;
 
       await controller.loadActive();
 
@@ -895,7 +909,8 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
 
     it('should use persistent paths for empty conversation (msg=0)', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue({
+      deps.state.currentConversationId = 'existing-conv';
+      deps.plugin.getConversationById = jest.fn().mockReturnValue({
         id: 'existing-conv',
         messages: [],
         sessionId: null,
@@ -909,7 +924,8 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
 
     it('should restore saved paths for conversation with messages (msg>0)', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue({
+      deps.state.currentConversationId = 'existing-conv';
+      deps.plugin.getConversationById = jest.fn().mockReturnValue({
         id: 'existing-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
@@ -923,7 +939,8 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
 
     it('should restore empty paths for conversation with messages but no saved paths', async () => {
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue({
+      deps.state.currentConversationId = 'existing-conv';
+      deps.plugin.getConversationById = jest.fn().mockReturnValue({
         id: 'existing-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
@@ -996,7 +1013,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
       // Step 1: Session 0 is empty, persistent paths = [A]
       (deps.plugin.settings as any).persistentExternalContextPaths = ['/path/a'];
-      deps.plugin.getActiveConversation = jest.fn().mockReturnValue(null);
+      deps.state.currentConversationId = null;
       await controller.loadActive();
 
       expect(mockExternalContextSelector.clearExternalContexts).toHaveBeenCalledWith(['/path/a']);

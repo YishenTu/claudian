@@ -106,7 +106,6 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
-        activeConversationId: null,
         enabledPlugins: [],
       };
 
@@ -138,7 +137,6 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
-        activeConversationId: null,
         enabledPlugins: [],
       };
 
@@ -170,7 +168,6 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPaths: { macos: '', linux: '', windows: '' },
         loadUserClaudeSettings: false,
-        activeConversationId: null,
         enabledPlugins: [],
       };
 

@@ -27,16 +27,18 @@ import {
   type TabData,
   type TabId,
   type TabManagerCallbacks,
+  type TabManagerInterface,
+  type TabManagerViewHost,
 } from './types';
 
 /**
  * TabManager coordinates multiple chat tabs.
  */
-export class TabManager {
+export class TabManager implements TabManagerInterface {
   private plugin: ClaudianPlugin;
   private mcpManager: McpServerManager;
   private containerEl: HTMLElement;
-  private view: any; // ClaudianView - using any to avoid circular dependency
+  private view: TabManagerViewHost;
 
   private tabs: Map<TabId, TabData> = new Map();
   private activeTabId: TabId | null = null;
@@ -46,7 +48,7 @@ export class TabManager {
     plugin: ClaudianPlugin,
     mcpManager: McpServerManager,
     containerEl: HTMLElement,
-    view: any,
+    view: TabManagerViewHost,
     callbacks: TabManagerCallbacks = {}
   ) {
     this.plugin = plugin;
@@ -197,7 +199,9 @@ export class TabManager {
 
       // Switch to the first remaining tab, or create a new one
       if (this.tabs.size > 0) {
-        const nextTabId = this.tabs.keys().next().value;
+        // Use Array.from for safer type narrowing instead of iterator.next()
+        const remainingTabIds = Array.from(this.tabs.keys());
+        const nextTabId = remainingTabIds[0];
         if (nextTabId) {
           await this.switchToTab(nextTabId);
         }
@@ -278,12 +282,22 @@ export class TabManager {
    * @param preferNewTab If true, prefer opening in a new tab.
    */
   async openConversation(conversationId: string, preferNewTab = false): Promise<void> {
-    // Check if conversation is already open in a tab
+    // Check if conversation is already open in this view's tabs
     for (const tab of this.tabs.values()) {
       if (tab.conversationId === conversationId) {
         await this.switchToTab(tab.id);
         return;
       }
+    }
+
+    // Check if conversation is open in another view (split workspace scenario)
+    const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
+    const isSameView = crossViewResult?.view.leaf === this.view.leaf;
+    if (crossViewResult && !isSameView) {
+      // Focus the other view and switch to its tab instead of opening duplicate
+      this.plugin.app.workspace.revealLeaf(crossViewResult.view.leaf);
+      await crossViewResult.view.getTabManager()?.switchToTab(crossViewResult.tabId);
+      return;
     }
 
     // Open in current tab or new tab

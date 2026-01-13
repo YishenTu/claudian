@@ -9,6 +9,8 @@
  * - DOM Elements
  */
 
+import type { Component } from 'obsidian';
+
 import { ClaudianService } from '../../../core/agent';
 import { SlashCommandManager } from '../../../core/commands';
 import type { McpServerManager } from '../../../core/mcp';
@@ -101,7 +103,10 @@ export function createTab(options: TabCreateOptions): TabData {
     },
   });
 
-  // Create async subagent manager
+  // Create async subagent manager with no-op callback.
+  // This placeholder is replaced in initializeTabControllers() with the actual
+  // callback that updates the StreamController. We defer the real callback
+  // because StreamController doesn't exist until controllers are initialized.
   const asyncSubagentManager = new AsyncSubagentManager(() => {});
 
   // Create DOM structure
@@ -371,16 +376,20 @@ export function initializeTabUI(
 /**
  * Initializes the tab's controllers.
  * Call this after UI components are initialized.
+ *
+ * @param tab The tab data to initialize controllers for.
+ * @param plugin The plugin instance.
+ * @param component The Obsidian Component for registering event handlers (typically ClaudianView).
  */
 export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
-  view: any // ClaudianView - using any to avoid circular dependency
+  component: Component
 ): void {
   const { dom, state, services, ui } = tab;
 
   // Create renderer
-  tab.renderer = new MessageRenderer(plugin, view, dom.messagesEl);
+  tab.renderer = new MessageRenderer(plugin, component, dom.messagesEl);
 
   // Update async subagent manager callback
   services.asyncSubagentManager = new AsyncSubagentManager(
@@ -574,7 +583,9 @@ export function destroyTab(tab: TabData): void {
   tab.services.asyncSubagentManager.orphanAllActive();
   tab.state.asyncSubagentStates.clear();
 
-  // Close the tab's service
+  // Close the tab's service (fires abort signal but doesn't await).
+  // Any async handlers in ClaudianService.query() may still run briefly,
+  // but this is acceptable since we're destroying the tab anyway.
   tab.service?.closePersistentQuery('tab closed');
   tab.service = null;
 

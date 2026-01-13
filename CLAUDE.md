@@ -230,7 +230,7 @@ vault/.claude/
     └── {conv-id}.jsonl        # Meta line + message lines
 
 .obsidian/plugins/claudian/
-└── data.json                  # Machine state only
+└── data.json                  # Machine state only (tabManagerState, etc.)
 ```
 
 | File | Contents |
@@ -239,7 +239,7 @@ vault/.claude/
 | `mcp.json` | MCP server configs with `_claudian` metadata (Claude Code compatible) |
 | `commands/*.md` | Slash commands with YAML frontmatter |
 | `sessions/*.jsonl` | Conversations (meta + messages per line) |
-| `data.json` | `activeConversationId`, `lastEnvHash`, model tracking |
+| `data.json` | `tabManagerState`, other machine-only state |
 
 **Command ID encoding**: `-` → `-_`, `/` → `--` (reversible, no collisions)
 

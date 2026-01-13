@@ -5,6 +5,8 @@
  * ClaudianService instance for concurrent streaming support.
  */
 
+import type { Component, WorkspaceLeaf } from 'obsidian';
+
 import type { ClaudianService } from '../../../core/agent';
 import type { SlashCommandManager } from '../../../core/commands';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -33,8 +35,40 @@ import type {
   TodoPanel,
 } from '../ui';
 
-/** Maximum number of tabs allowed. */
+/**
+ * Maximum number of tabs allowed.
+ *
+ * Set to 3 to balance usability with resource usage:
+ * - Each tab has its own ClaudianService and persistent query
+ * - More tabs = more memory and potential SDK processes
+ * - 3 tabs allows multi-tasking without excessive overhead
+ */
 export const MAX_TABS = 3;
+
+/**
+ * Minimal interface for the ClaudianView methods used by TabManager and Tab.
+ * Extends Component for Obsidian integration (event handling, cleanup).
+ * Avoids circular dependency by not importing ClaudianView directly.
+ */
+export interface TabManagerViewHost extends Component {
+  /** Reference to the workspace leaf for revealing the view. */
+  leaf: WorkspaceLeaf;
+
+  /** Gets the tab manager instance (used for cross-view coordination). */
+  getTabManager(): TabManagerInterface | null;
+}
+
+/**
+ * Minimal interface for TabManager methods used by external code.
+ * Used to break circular dependencies.
+ */
+export interface TabManagerInterface {
+  /** Switches to a specific tab. */
+  switchToTab(tabId: TabId): Promise<void>;
+
+  /** Gets all tabs. */
+  getAllTabs(): TabData[];
+}
 
 /** Tab identifier type. */
 export type TabId = string;

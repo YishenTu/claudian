@@ -11,6 +11,7 @@ import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -75,9 +76,10 @@ export class ConversationController {
    * Entry point is a blank UI state - no conversation is created until the
    * first message is sent. This prevents empty conversations cluttering history.
    */
-  async createNew(): Promise<void> {
+  async createNew(options: { force?: boolean } = {}): Promise<void> {
     const { plugin, state, asyncSubagentManager } = this.deps;
-    if (state.isStreaming) return;
+    const force = options.force === true;
+    if (state.isStreaming && !force) return;
     if (state.isCreatingConversation) return;
     if (state.isSwitchingConversation) return;
 
@@ -85,6 +87,12 @@ export class ConversationController {
     state.isCreatingConversation = true;
 
     try {
+      if (force && state.isStreaming) {
+        state.cancelRequested = true;
+        state.bumpStreamGeneration();
+        this.getAgentService()?.cancel();
+      }
+
       // Save current conversation if it has messages
       if (state.currentConversationId && state.messages.length > 0) {
         await this.save();
@@ -92,6 +100,17 @@ export class ConversationController {
 
       asyncSubagentManager.orphanAllActive();
       state.asyncSubagentStates.clear();
+
+      // Clear streaming state and related DOM references
+      cleanupThinkingBlock(state.currentThinkingState);
+      state.currentContentEl = null;
+      state.currentTextEl = null;
+      state.currentTextContent = '';
+      state.currentThinkingState = null;
+      state.toolCallElements.clear();
+      state.activeSubagents.clear();
+      state.writeEditStates.clear();
+      state.isStreaming = false;
 
       // Reset to entry point state - no conversation created yet
       state.currentConversationId = null;
@@ -134,15 +153,16 @@ export class ConversationController {
   }
 
   /**
-   * Loads the active conversation, or starts at entry point if none.
+   * Loads the current tab conversation, or starts at entry point if none.
    *
-   * Entry point (no active conversation) shows welcome screen without
+   * Entry point (no conversation) shows welcome screen without
    * creating a conversation. Conversation is created lazily on first message.
    */
   async loadActive(): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
-    const conversation = plugin.getActiveConversation();
+    const conversationId = state.currentConversationId;
+    const conversation = conversationId ? plugin.getConversationById(conversationId) : null;
 
     // No active conversation - start at entry point
     if (!conversation) {
