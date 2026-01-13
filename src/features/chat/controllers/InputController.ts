@@ -7,6 +7,7 @@
 
 import { Notice } from 'obsidian';
 
+import type { ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand, type SlashCommandManager } from '../../../core/commands';
 import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
 import { TOOL_BASH } from '../../../core/tools/toolNames';
@@ -50,8 +51,8 @@ export interface InputControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   generateId: () => string;
   resetContextMeter: () => void;
-  /** Optional: Override the agent service (for multi-tab support). Defaults to plugin.agentService. */
-  getAgentService?: () => ClaudianPlugin['agentService'] | null;
+  /** Get the agent service from the tab. */
+  getAgentService?: () => ClaudianService | null;
 }
 
 /**
@@ -64,9 +65,9 @@ export class InputController {
     this.deps = deps;
   }
 
-  /** Gets the agent service (supports per-tab override). */
-  private getAgentService() {
-    return this.deps.getAgentService?.() ?? this.deps.plugin.agentService;
+  /** Gets the agent service from the tab. */
+  private getAgentService(): ClaudianService | null {
+    return this.deps.getAgentService?.() ?? null;
   }
 
   // ============================================
@@ -299,6 +300,10 @@ export class InputController {
 
     let wasInterrupted = false;
     const agentService = this.getAgentService();
+    if (!agentService) {
+      new Notice('Agent service not available. Please reload the plugin.');
+      return;
+    }
     try {
       for await (const chunk of agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
         if (state.cancelRequested) {
@@ -499,7 +504,7 @@ export class InputController {
     if (!state.isStreaming) return;
     state.cancelRequested = true;
     this.clearQueuedMessage();
-    this.getAgentService().cancel();
+    this.getAgentService()?.cancel();
     streamController.hideThinkingIndicator();
   }
 

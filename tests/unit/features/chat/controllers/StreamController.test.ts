@@ -135,7 +135,6 @@ function createMockDeps(): StreamControllerDeps {
           },
         },
       },
-      agentService,
     } as any,
     state,
     renderer: {
@@ -154,6 +153,7 @@ function createMockDeps(): StreamControllerDeps {
     getMessagesEl: () => messagesEl,
     getFileContextManager: () => fileContextManager as any,
     updateQueueIndicator: jest.fn(),
+    getAgentService: () => agentService as any,
   };
 }
 

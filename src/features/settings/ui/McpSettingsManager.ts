@@ -216,7 +216,10 @@ export class McpSettingsManager {
     }
 
     try {
-      await this.plugin.agentService.reloadMcpServers();
+      const view = this.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => service.reloadMcpServers()
+      );
     } catch (error) {
       // Save succeeded but reload failed - don't rollback since disk has correct state
       console.warn('[Claudian] MCP reload failed after save:', error);
@@ -340,7 +343,10 @@ export class McpSettingsManager {
     }
 
     await this.plugin.storage.mcp.save(this.servers);
-    await this.plugin.agentService.reloadMcpServers();
+    const view = this.plugin.getView();
+    await view?.getTabManager()?.broadcastToAllTabs(
+      (service) => service.reloadMcpServers()
+    );
     this.render();
     new Notice(existing ? `MCP server "${server.name}" updated` : `MCP server "${server.name}" added`);
   }
@@ -377,7 +383,10 @@ export class McpSettingsManager {
     }
 
     await this.plugin.storage.mcp.save(this.servers);
-    await this.plugin.agentService.reloadMcpServers();
+    const view = this.plugin.getView();
+    await view?.getTabManager()?.broadcastToAllTabs(
+      (service) => service.reloadMcpServers()
+    );
     this.render();
 
     let message = `Imported ${added.length} MCP server${added.length > 1 ? 's' : ''}`;
@@ -390,7 +399,10 @@ export class McpSettingsManager {
   private async toggleServer(server: ClaudianMcpServer) {
     server.enabled = !server.enabled;
     await this.plugin.storage.mcp.save(this.servers);
-    await this.plugin.agentService.reloadMcpServers();
+    const view = this.plugin.getView();
+    await view?.getTabManager()?.broadcastToAllTabs(
+      (service) => service.reloadMcpServers()
+    );
     this.render();
     new Notice(`MCP server "${server.name}" ${server.enabled ? 'enabled' : 'disabled'}`);
   }
@@ -402,7 +414,10 @@ export class McpSettingsManager {
 
     this.servers = this.servers.filter((s) => s.name !== server.name);
     await this.plugin.storage.mcp.save(this.servers);
-    await this.plugin.agentService.reloadMcpServers();
+    const view = this.plugin.getView();
+    await view?.getTabManager()?.broadcastToAllTabs(
+      (service) => service.reloadMcpServers()
+    );
     this.render();
     new Notice(`MCP server "${server.name}" deleted`);
   }

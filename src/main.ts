@@ -8,7 +8,6 @@
 import type { Editor,MarkdownView } from 'obsidian';
 import { Notice,Plugin } from 'obsidian';
 
-import { ClaudianService } from './core/agent';
 import { clearDiffState } from './core/hooks';
 import { deleteCachedImages } from './core/images/imageCache';
 import { McpServerManager } from './core/mcp';
@@ -40,7 +39,6 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
  */
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
-  agentService: ClaudianService;
   mcpService: McpService;
   pluginManager: PluginManager;
   storage: StorageService;
@@ -80,20 +78,6 @@ export default class ClaudianPlugin extends Plugin {
 
     // Load slash commands from enabled plugins and merge with vault commands
     this.loadPluginSlashCommands();
-
-    // Initialize agent service with the MCP manager
-    this.agentService = new ClaudianService(this, mcpManager);
-
-    // Load CC permissions into the agent service
-    await this.agentService.loadCCPermissions();
-
-    // Pre-warm the persistent query with the active conversation's session ID (Phase 5)
-    const activeConv = this.getActiveConversation();
-    const sessionId = activeConv?.sessionId;
-    this.agentService.preWarm(sessionId ?? undefined).catch((error) => {
-      console.warn('[Claudian] Pre-warm failed, first query will use cold-start:',
-        error instanceof Error ? error.message : String(error));
-    });
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
@@ -148,7 +132,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   onunload() {
-    this.agentService.cleanup();
+    // Tab cleanup is handled by ClaudianView.onClose()
   }
 
   /** Opens the Claudian sidebar view, creating it if necessary. */
@@ -368,9 +352,7 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     // Hash changed - model or provider may have changed.
-    // Invalidate session so next query rebuilds full context from history.
-    // Note: agentService may not exist yet during initial plugin load.
-    this.agentService?.resetSession();
+    // Session invalidation is now handled per-tab by TabManager.
     clearDiffState(); // Clear UI diff state (not SDK-related)
 
     // Clear sessionId from all conversations since they belong to the old provider.
@@ -463,7 +445,7 @@ export default class ClaudianPlugin extends Plugin {
 
     this.conversations.unshift(conversation);
     this.activeConversationId = conversation.id;
-    this.agentService.resetSession();
+    // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state (not SDK-related)
 
     // Save new conversation to session file
@@ -479,7 +461,7 @@ export default class ClaudianPlugin extends Plugin {
     if (!conversation) return null;
 
     this.activeConversationId = id;
-    this.agentService.setSessionId(conversation.sessionId);
+    // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state when switching conversations
 
     await this.storage.setActiveConversationId(this.activeConversationId);

@@ -389,6 +389,7 @@ export function initializeTabControllers(
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
+    getAgentService: () => tab.service,
   });
 
   // Conversation controller

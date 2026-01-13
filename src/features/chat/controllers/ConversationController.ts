@@ -60,9 +60,9 @@ export class ConversationController {
     this.callbacks = callbacks;
   }
 
-  /** Gets the agent service (tab's service if available, otherwise plugin's). */
-  private getAgentService(): ClaudianService {
-    return this.deps.getAgentService?.() ?? this.deps.plugin.agentService;
+  /** Gets the agent service from the tab. */
+  private getAgentService(): ClaudianService | null {
+    return this.deps.getAgentService?.() ?? null;
   }
 
   // ============================================
@@ -144,7 +144,7 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
 
-    this.getAgentService().setSessionId(conversation.sessionId);
+    this.getAgentService()?.setSessionId(conversation.sessionId);
 
     const hasMessages = state.messages.length > 0;
     const fileCtx = this.deps.getFileContextManager();
@@ -256,7 +256,7 @@ export class ConversationController {
     const { plugin, state } = this.deps;
     if (!state.currentConversationId) return;
 
-    const sessionId = this.getAgentService().getSessionId();
+    const sessionId = this.getAgentService()?.getSessionId() ?? null;
     const fileCtx = this.deps.getFileContextManager();
     const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const externalContextSelector = this.deps.getExternalContextSelector();

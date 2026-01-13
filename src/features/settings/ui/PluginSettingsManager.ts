@@ -157,8 +157,11 @@ export class PluginSettingsManager {
       // Reload plugin slash commands
       this.plugin.loadPluginSlashCommands();
 
-      // Restart persistent query to apply plugin changes
-      await this.plugin.agentService.restartPersistentQuery();
+      // Restart persistent query to apply plugin changes to all tabs
+      const view = this.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => service.restartPersistentQuery()
+      );
 
       if (plugin) {
         new Notice(`Plugin "${plugin.name}" ${wasEnabled ? 'disabled' : 'enabled'}`);
@@ -180,8 +183,11 @@ export class PluginSettingsManager {
       // Reload plugin slash commands to pick up new/updated/removed plugins
       this.plugin.loadPluginSlashCommands();
 
-      // Restart persistent query to apply plugin tool changes
-      await this.plugin.agentService.restartPersistentQuery();
+      // Restart persistent query to apply plugin tool changes to all tabs
+      const view = this.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => service.restartPersistentQuery()
+      );
 
       new Notice('Plugin list refreshed');
     } catch (err) {

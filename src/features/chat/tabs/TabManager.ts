@@ -5,6 +5,7 @@
  * and coordination between tabs.
  */
 
+import type { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
 import type ClaudianPlugin from '../../../main';
 import {
@@ -332,6 +333,31 @@ export class TabManager {
     if (this.tabs.size === 0) {
       await this.createTab();
     }
+  }
+
+  // ============================================
+  // Broadcast
+  // ============================================
+
+  /**
+   * Broadcasts a function call to all tabs' ClaudianService instances.
+   * Used by settings managers to apply configuration changes to all tabs.
+   * @param fn Function to call on each service.
+   */
+  async broadcastToAllTabs(fn: (service: ClaudianService) => Promise<void>): Promise<void> {
+    const promises: Promise<void>[] = [];
+
+    for (const tab of this.tabs.values()) {
+      if (tab.service && tab.serviceInitialized) {
+        promises.push(
+          fn(tab.service).catch((error) => {
+            console.warn(`[TabManager] Broadcast to tab ${tab.id} failed:`, error);
+          })
+        );
+      }
+    }
+
+    await Promise.all(promises);
   }
 
   // ============================================

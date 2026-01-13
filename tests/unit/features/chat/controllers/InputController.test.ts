@@ -43,8 +43,22 @@ async function* createMockStream(chunks: any[]) {
   }
 }
 
+// Helper to create mock agent service
+function createMockAgentService() {
+  return {
+    query: jest.fn(),
+    cancel: jest.fn(),
+    resetSession: jest.fn(),
+    setApprovedPlanContent: jest.fn(),
+    setCurrentPlanFilePath: jest.fn(),
+    getApprovedPlanContent: jest.fn().mockReturnValue(null),
+    clearApprovedPlanContent: jest.fn(),
+    restartPersistentQuery: jest.fn(),
+  };
+}
+
 // Helper to create mock dependencies
-function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputControllerDeps {
+function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputControllerDeps & { mockAgentService: ReturnType<typeof createMockAgentService> } {
   const state = new ChatState();
   const inputEl = createMockInputEl();
   const queueIndicatorEl = createMockElement();
@@ -53,18 +67,11 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
   // Store image context manager so tests can access it
   const imageContextManager = createMockImageContextManager();
 
+  // Create mock agent service that can be accessed by tests
+  const mockAgentService = createMockAgentService();
+
   return {
     plugin: {
-      agentService: {
-        query: jest.fn(),
-        cancel: jest.fn(),
-        resetSession: jest.fn(),
-        setApprovedPlanContent: jest.fn(),
-        setCurrentPlanFilePath: jest.fn(),
-        getApprovedPlanContent: jest.fn().mockReturnValue(null),
-        clearApprovedPlanContent: jest.fn(),
-        restartPersistentQuery: jest.fn(),
-      },
       saveSettings: jest.fn(),
       settings: {
         slashCommands: [],
@@ -122,6 +129,8 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     getTitleGenerationService: () => null,
     generateId: () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     resetContextMeter: jest.fn(),
+    getAgentService: () => mockAgentService as any,
+    mockAgentService,
     ...overrides,
   };
 }
@@ -328,7 +337,7 @@ describe('InputController - Message Queue', () => {
 
       expect(deps.state.queuedMessage).toBeNull();
       expect(deps.state.cancelRequested).toBe(true);
-      expect(deps.plugin.agentService.cancel).toHaveBeenCalled();
+      expect((deps as any).mockAgentService.cancel).toHaveBeenCalled();
     });
 
     it('should not cancel if not streaming', () => {
@@ -336,7 +345,7 @@ describe('InputController - Message Queue', () => {
 
       controller.cancelStreaming();
 
-      expect(deps.plugin.agentService.cancel).not.toHaveBeenCalled();
+      expect((deps as any).mockAgentService.cancel).not.toHaveBeenCalled();
     });
   });
 
@@ -355,7 +364,7 @@ describe('InputController - Message Queue', () => {
       deps.getWelcomeEl = () => welcomeEl;
       deps.getFileContextManager = () => fileContextManager as any;
       deps.state.currentConversationId = 'conv-1';
-      deps.plugin.agentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
 
       inputEl.value = 'See ![[image.png]]';
 
@@ -370,7 +379,7 @@ describe('InputController - Message Queue', () => {
       expect(imageContextManager.clearImages).toHaveBeenCalled();
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
       expect(deps.conversationController.save).toHaveBeenCalledWith(true);
-      expect(deps.plugin.agentService.query).toHaveBeenCalled();
+      expect((deps as any).mockAgentService.query).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
     });
 
@@ -386,7 +395,7 @@ describe('InputController - Message Queue', () => {
       };
 
       deps.getFileContextManager = () => fileContextManager as any;
-      deps.plugin.agentService.query = jest.fn().mockImplementation((prompt: string) => {
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation((prompt: string) => {
         prompts.push(prompt);
         return createMockStream([{ type: 'done' }]);
       });
@@ -409,13 +418,13 @@ describe('InputController - Message Queue', () => {
       deps.getMcpServerSelector = () => ({
         getEnabledServers: () => enabledServers,
       }) as any;
-      deps.plugin.agentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
 
       inputEl.value = 'hello';
 
       await controller.sendMessage();
 
-      const queryCall = (deps.plugin.agentService.query as jest.Mock).mock.calls[0];
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
       const queryOptions = queryCall[3];
       expect(queryOptions.mcpMentions).toBe(mcpMentions);
       expect(queryOptions.enabledMcpServers).toBe(enabledServers);
@@ -429,7 +438,7 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.plugin.agentService.query).not.toHaveBeenCalled();
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
       // Input should be preserved for retry
       expect(inputEl.value).toBe('test message');
     });
@@ -440,7 +449,7 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.plugin.agentService.query).not.toHaveBeenCalled();
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
       // Input should be preserved for retry
       expect(inputEl.value).toBe('test message');
     });
@@ -455,7 +464,7 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.plugin.agentService.query).not.toHaveBeenCalled();
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
       // Images should NOT be cleared
       expect(imageContextManager.clearImages).not.toHaveBeenCalled();
     });
@@ -486,7 +495,7 @@ describe('InputController - Message Queue', () => {
       deps.state.currentConversationId = 'conv-1';
 
       // Mock the agent query to return a text response
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
           { type: 'text', content: 'Hello, how can I help?' },
           { type: 'done' },
@@ -529,7 +538,7 @@ describe('InputController - Message Queue', () => {
       });
       deps.state.currentConversationId = 'conv-1';
 
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
       );
 
@@ -569,7 +578,7 @@ describe('InputController - Message Queue', () => {
       });
       deps.state.currentConversationId = 'conv-1';
 
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
           { type: 'text', content: 'Response text' },
           { type: 'done' },
@@ -619,7 +628,7 @@ describe('InputController - Message Queue', () => {
       });
       deps.state.currentConversationId = 'conv-1';
 
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
           { type: 'text', content: 'Response' },
           { type: 'done' },
@@ -671,7 +680,7 @@ describe('InputController - Message Queue', () => {
       });
       deps.state.currentConversationId = 'conv-1';
 
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
           { type: 'text', content: 'Response' },
           { type: 'done' },
@@ -722,7 +731,7 @@ describe('InputController - Message Queue', () => {
       deps.state.currentConversationId = 'conv-1';
 
       // Return empty stream - no text content
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
       );
 
@@ -771,7 +780,7 @@ describe('InputController - Message Queue', () => {
       deps.plugin.settings.enableAutoTitleGeneration = false;
       deps.state.currentConversationId = 'conv-1';
 
-      (deps.plugin.agentService.query as jest.Mock).mockReturnValue(
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
           { type: 'text', content: 'Response text' },
           { type: 'done' },

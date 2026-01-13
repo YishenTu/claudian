@@ -59,11 +59,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
     });
 
-    it('should initialize agentService', async () => {
-      await plugin.onload();
-
-      expect(plugin.agentService).toBeDefined();
-    });
+    // Note: With multi-tab, agentService is per-tab via TabManager, not on plugin
 
     it('should register the view', async () => {
       await plugin.onload();
@@ -122,14 +118,11 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('onunload', () => {
-    it('should call cleanup on agentService', async () => {
+    // Note: With multi-tab, cleanup is handled per-tab via ClaudianView.onClose()
+    it('should complete without error', async () => {
       await plugin.onload();
 
-      const cleanupSpy = jest.spyOn(plugin.agentService, 'cleanup');
-
-      plugin.onunload();
-
-      expect(cleanupSpy).toHaveBeenCalled();
+      expect(() => plugin.onunload()).not.toThrow();
     });
   });
 
@@ -360,15 +353,7 @@ describe('ClaudianPlugin', () => {
       expect(conv.title.length).toBeGreaterThan(0);
     });
 
-    it('should reset agent service session', async () => {
-      await plugin.onload();
-
-      const resetSessionSpy = jest.spyOn(plugin.agentService, 'resetSession');
-
-      await plugin.createConversation();
-
-      expect(resetSessionSpy).toHaveBeenCalled();
-    });
+    // Note: Session management is now per-tab via TabManager
   });
 
   describe('switchConversation', () => {
@@ -385,20 +370,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.getActiveConversation()?.id).toBe(conv1.id);
     });
 
-    it('should restore session ID when switching', async () => {
-      await plugin.onload();
-
-      const conv1 = await plugin.createConversation();
-      await plugin.updateConversation(conv1.id, { sessionId: 'session-123' });
-
-      await plugin.createConversation();
-
-      const setSessionIdSpy = jest.spyOn(plugin.agentService, 'setSessionId');
-
-      await plugin.switchConversation(conv1.id);
-
-      expect(setSessionIdSpy).toHaveBeenCalledWith('session-123');
-    });
+    // Note: Session ID restoration is now handled per-tab via TabManager
 
     it('should return null for non-existent conversation', async () => {
       await plugin.onload();
