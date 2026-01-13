@@ -96,15 +96,24 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
         continue;
       }
 
+      // Compute leading spaces once
+      const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
+
       // Detect indentation of first content line
       if (blockScalarIndent === null) {
-        const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
-        blockScalarIndent = leadingSpaces;
-      }
-
-      // Check if this line is part of the block scalar (must be indented more than the key)
-      const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
-      if (leadingSpaces >= blockScalarIndent) {
+        // Block scalar content MUST be indented (at least 1 space)
+        if (leadingSpaces === 0) {
+          // This line is not block scalar content - flush empty block scalar and process normally
+          flushBlockScalar();
+          // Fall through to process this line as a key-value pair
+        } else {
+          blockScalarIndent = leadingSpaces;
+          // Remove the base indentation and add content
+          const content = line.slice(blockScalarIndent);
+          blockScalarLines.push(content);
+          continue;
+        }
+      } else if (leadingSpaces >= blockScalarIndent) {
         // Remove the base indentation
         const content = line.slice(blockScalarIndent);
         blockScalarLines.push(content);
@@ -138,10 +147,13 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
     const key = line.slice(0, colonIndex).trim();
     const value = line.slice(colonIndex + 1).trim();
 
-    // Check for block scalar indicators (| or >)
-    if (value === '|' || value === '>') {
+    // Check for block scalar indicators (| or >) with optional modifiers (-, +)
+    // Only enable for supported keys to avoid silently discarding content
+    const blockScalarMatch = value.match(/^([|>])([+-])?$/);
+    if (blockScalarMatch && (key === 'description' || key === 'argument-hint' || key === 'model')) {
       blockScalarKey = key;
-      blockScalarStyle = value === '|' ? 'literal' : 'folded';
+      blockScalarStyle = blockScalarMatch[1] === '|' ? 'literal' : 'folded';
+      // Note: chomping indicator (blockScalarMatch[2]) is currently ignored
       blockScalarLines = [];
       blockScalarIndent = null;
       continue;
