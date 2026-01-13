@@ -265,6 +265,9 @@ export class ConversationController {
       state.messages = [...conversation.messages];
       state.usage = conversation.usage ?? null;
 
+      // Update agent service session ID to match conversation (triggers pre-warm)
+      this.getAgentService()?.setSessionId(conversation.sessionId ?? null);
+
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
 

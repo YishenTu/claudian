@@ -171,6 +171,13 @@ export class TabManager implements TabManagerInterface {
       // Load conversation if not already loaded
       if (tab.conversationId && tab.state.messages.length === 0) {
         await tab.controllers.conversationController?.switchTo(tab.conversationId);
+      } else if (tab.conversationId && tab.state.messages.length > 0 && tab.service) {
+        // Tab already has messages loaded - sync service session to conversation
+        // This handles the case where user switches between tabs with different sessions
+        const conversation = this.plugin.getConversationById(tab.conversationId);
+        if (conversation && conversation.sessionId !== tab.service.getSessionId()) {
+          tab.service.setSessionId(conversation.sessionId ?? null);
+        }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
         tab.controllers.conversationController?.initializeWelcome();
@@ -225,10 +232,18 @@ export class TabManager implements TabManagerInterface {
         const nextTabId = remainingTabIds[0];
         if (nextTabId) {
           await this.switchToTab(nextTabId);
+
+          // If this is now the only tab and it's not warm, pre-warm immediately
+          // User expects the active tab to be ready for chat
+          if (this.tabs.size === 1) {
+            await this.initializeActiveTabService();
+          }
         }
       } else {
-        // Create a new empty tab
+        // Create a new empty tab and pre-warm immediately
+        // This is the only tab, so it should be ready for chat
         await this.createTab();
+        await this.initializeActiveTabService();
       }
     }
 

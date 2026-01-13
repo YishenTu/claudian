@@ -1186,7 +1186,7 @@ export class ClaudianService {
 
   /**
    * Set the session ID (for restoring from saved conversation).
-   * Closes the persistent query since session is switching.
+   * Closes the persistent query since session is switching, then pre-warms the new session.
    */
   setSessionId(id: string | null): void {
     // Close persistent query when switching sessions
@@ -1196,6 +1196,15 @@ export class ClaudianService {
     }
 
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
+
+    // Immediately pre-warm the new session (fire-and-forget)
+    // This ensures no cold start delay when user sends their first message
+    this.preWarm(id ?? undefined).catch((error) => {
+      console.warn(
+        '[ClaudianService] Pre-warm after session switch failed:',
+        error instanceof Error ? error.message : String(error)
+      );
+    });
   }
 
   /**

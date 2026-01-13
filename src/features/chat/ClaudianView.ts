@@ -192,8 +192,8 @@ export class ClaudianView extends ItemView {
     headerActions.className = 'claudian-header-actions';
 
     // New tab button (plus icon)
-    const newTabBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
-    setIcon(newTabBtn, 'plus');
+    const newTabBtn = headerActions.createDiv({ cls: 'claudian-header-btn claudian-new-tab-btn' });
+    setIcon(newTabBtn, 'square-plus');
     newTabBtn.setAttribute('aria-label', 'New tab');
     newTabBtn.addEventListener('click', async () => {
       await this.handleNewTab();
