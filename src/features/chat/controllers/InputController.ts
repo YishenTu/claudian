@@ -50,6 +50,8 @@ export interface InputControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   generateId: () => string;
   resetContextMeter: () => void;
+  /** Optional: Override the agent service (for multi-tab support). Defaults to plugin.agentService. */
+  getAgentService?: () => ClaudianPlugin['agentService'] | null;
 }
 
 /**
@@ -60,6 +62,11 @@ export class InputController {
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
+  }
+
+  /** Gets the agent service (supports per-tab override). */
+  private getAgentService() {
+    return this.deps.getAgentService?.() ?? this.deps.plugin.agentService;
   }
 
   // ============================================
@@ -291,8 +298,9 @@ export class InputController {
     }
 
     let wasInterrupted = false;
+    const agentService = this.getAgentService();
     try {
-      for await (const chunk of plugin.agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
+      for await (const chunk of agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
         if (state.cancelRequested) {
           wasInterrupted = true;
           break;
@@ -487,11 +495,11 @@ export class InputController {
 
   /** Cancels the current streaming operation. */
   cancelStreaming(): void {
-    const { plugin, state, streamController } = this.deps;
+    const { state, streamController } = this.deps;
     if (!state.isStreaming) return;
     state.cancelRequested = true;
     this.clearQueuedMessage();
-    plugin.agentService.cancel();
+    this.getAgentService().cancel();
     streamController.hideThinkingIndicator();
   }
 

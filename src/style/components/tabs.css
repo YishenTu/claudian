@@ -1,0 +1,148 @@
+/* Tab Bar */
+
+/* Container for the tab bar (sits between title and actions) */
+.claudian-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  margin: 0 12px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Container for tab items */
+.claudian-tab-bar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.claudian-tab-bar-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Individual tab */
+.claudian-tab-bar-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 150px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-tab-bar-tab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Active tab */
+.claudian-tab-bar-tab-active {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Tab content (title + spinner) */
+.claudian-tab-bar-tab-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Tab title */
+.claudian-tab-bar-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Close button */
+.claudian-tab-bar-tab-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 2px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-tab-bar-tab:hover .claudian-tab-bar-tab-close {
+  display: flex;
+}
+
+.claudian-tab-bar-tab-close:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-tab-bar-tab-close svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Streaming spinner */
+.claudian-tab-bar-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.claudian-tab-bar-spinner svg {
+  width: 12px;
+  height: 12px;
+  animation: claudian-spin 1s linear infinite;
+}
+
+/* New tab button */
+.claudian-tab-bar-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-tab-bar-new:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-tab-bar-new svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Tab content container (per-tab content area) */
+.claudian-tab-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Hide inactive tab content */
+.claudian-tab-content[style*="display: none"] {
+  /* CSS selector for hidden tabs */
+}

@@ -1,0 +1,352 @@
+/**
+ * TabManager - Manages multiple chat tabs.
+ *
+ * Handles tab lifecycle (create, switch, close), persistence,
+ * and coordination between tabs.
+ */
+
+import type { McpServerManager } from '../../../core/mcp';
+import type ClaudianPlugin from '../../../main';
+import {
+  activateTab,
+  createTab,
+  deactivateTab,
+  destroyTab,
+  getTabTitle,
+  initializeTabControllers,
+  initializeTabService,
+  initializeTabUI,
+} from './Tab';
+import {
+  MAX_TABS,
+  type PersistedTabManagerState,
+  type PersistedTabState,
+  type TabBarItem,
+  type TabData,
+  type TabId,
+  type TabManagerCallbacks,
+} from './types';
+
+/**
+ * TabManager coordinates multiple chat tabs.
+ */
+export class TabManager {
+  private plugin: ClaudianPlugin;
+  private mcpManager: McpServerManager;
+  private containerEl: HTMLElement;
+  private view: any; // ClaudianView - using any to avoid circular dependency
+
+  private tabs: Map<TabId, TabData> = new Map();
+  private activeTabId: TabId | null = null;
+  private callbacks: TabManagerCallbacks;
+
+  constructor(
+    plugin: ClaudianPlugin,
+    mcpManager: McpServerManager,
+    containerEl: HTMLElement,
+    view: any,
+    callbacks: TabManagerCallbacks = {}
+  ) {
+    this.plugin = plugin;
+    this.mcpManager = mcpManager;
+    this.containerEl = containerEl;
+    this.view = view;
+    this.callbacks = callbacks;
+  }
+
+  // ============================================
+  // Tab Lifecycle
+  // ============================================
+
+  /**
+   * Creates a new tab.
+   * @param conversationId Optional conversation to load into the tab.
+   * @param tabId Optional tab ID (for restoration).
+   * @returns The created tab, or null if max tabs reached.
+   */
+  async createTab(conversationId?: string | null, tabId?: TabId): Promise<TabData | null> {
+    if (this.tabs.size >= MAX_TABS) {
+      console.warn(`[TabManager] Max tabs (${MAX_TABS}) reached`);
+      return null;
+    }
+
+    const conversation = conversationId
+      ? this.plugin.getConversationById(conversationId)
+      : undefined;
+
+    const tab = createTab({
+      plugin: this.plugin,
+      mcpManager: this.mcpManager,
+      containerEl: this.containerEl,
+      conversation: conversation ?? undefined,
+      tabId,
+      onStreamingChanged: (isStreaming) => {
+        this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
+      },
+      onTitleChanged: (title) => {
+        this.callbacks.onTabTitleChanged?.(tab.id, title);
+      },
+    });
+
+    // Initialize UI components
+    initializeTabUI(tab, this.plugin);
+
+    // Initialize controllers
+    initializeTabControllers(tab, this.plugin, this.view);
+
+    this.tabs.set(tab.id, tab);
+    this.callbacks.onTabCreated?.(tab);
+
+    // If this is the first tab, activate it and initialize service
+    if (this.tabs.size === 1) {
+      await this.switchToTab(tab.id);
+    }
+
+    return tab;
+  }
+
+  /**
+   * Switches to a different tab.
+   * @param tabId The tab to switch to.
+   */
+  async switchToTab(tabId: TabId): Promise<void> {
+    const tab = this.tabs.get(tabId);
+    if (!tab) {
+      console.warn(`[TabManager] Tab not found: ${tabId}`);
+      return;
+    }
+
+    const previousTabId = this.activeTabId;
+
+    // Deactivate current tab
+    if (previousTabId && previousTabId !== tabId) {
+      const currentTab = this.tabs.get(previousTabId);
+      if (currentTab) {
+        deactivateTab(currentTab);
+      }
+    }
+
+    // Activate new tab
+    this.activeTabId = tabId;
+    activateTab(tab);
+
+    // Initialize service if not already done (lazy initialization)
+    if (!tab.serviceInitialized) {
+      await initializeTabService(tab, this.plugin, this.mcpManager);
+
+      // Set approval callback for this tab's service
+      if (tab.service) {
+        tab.service.setApprovalCallback(
+          (toolName, input, description) =>
+            tab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
+        );
+      }
+    }
+
+    // Load conversation if not already loaded
+    if (tab.conversationId && tab.state.messages.length === 0) {
+      await tab.controllers.conversationController?.switchTo(tab.conversationId);
+    }
+
+    this.callbacks.onTabSwitched?.(previousTabId, tabId);
+  }
+
+  /**
+   * Closes a tab.
+   * @param tabId The tab to close.
+   * @param force If true, close even if streaming.
+   * @returns True if the tab was closed.
+   */
+  async closeTab(tabId: TabId, force = false): Promise<boolean> {
+    const tab = this.tabs.get(tabId);
+    if (!tab) {
+      return false;
+    }
+
+    // Don't close if streaming unless forced
+    if (tab.state.isStreaming && !force) {
+      return false;
+    }
+
+    // Save conversation before closing
+    await tab.controllers.conversationController?.save();
+
+    // Destroy tab resources
+    destroyTab(tab);
+    this.tabs.delete(tabId);
+    this.callbacks.onTabClosed?.(tabId);
+
+    // If we closed the active tab, switch to another
+    if (this.activeTabId === tabId) {
+      this.activeTabId = null;
+
+      // Switch to the first remaining tab, or create a new one
+      if (this.tabs.size > 0) {
+        const nextTabId = this.tabs.keys().next().value;
+        if (nextTabId) {
+          await this.switchToTab(nextTabId);
+        }
+      } else {
+        // Create a new empty tab
+        await this.createTab();
+      }
+    }
+
+    return true;
+  }
+
+  // ============================================
+  // Tab Queries
+  // ============================================
+
+  /** Gets the currently active tab. */
+  getActiveTab(): TabData | null {
+    return this.activeTabId ? this.tabs.get(this.activeTabId) ?? null : null;
+  }
+
+  /** Gets the active tab ID. */
+  getActiveTabId(): TabId | null {
+    return this.activeTabId;
+  }
+
+  /** Gets a tab by ID. */
+  getTab(tabId: TabId): TabData | null {
+    return this.tabs.get(tabId) ?? null;
+  }
+
+  /** Gets all tabs. */
+  getAllTabs(): TabData[] {
+    return Array.from(this.tabs.values());
+  }
+
+  /** Gets the number of tabs. */
+  getTabCount(): number {
+    return this.tabs.size;
+  }
+
+  /** Checks if more tabs can be created. */
+  canCreateTab(): boolean {
+    return this.tabs.size < MAX_TABS;
+  }
+
+  // ============================================
+  // Tab Bar Data
+  // ============================================
+
+  /** Gets data for rendering the tab bar. */
+  getTabBarItems(): TabBarItem[] {
+    const items: TabBarItem[] = [];
+
+    for (const tab of this.tabs.values()) {
+      items.push({
+        id: tab.id,
+        title: getTabTitle(tab, this.plugin),
+        isActive: tab.id === this.activeTabId,
+        isStreaming: tab.state.isStreaming,
+        canClose: this.tabs.size > 1 || !tab.state.isStreaming,
+      });
+    }
+
+    return items;
+  }
+
+  // ============================================
+  // Conversation Management
+  // ============================================
+
+  /**
+   * Opens a conversation in a new tab or existing tab.
+   * @param conversationId The conversation to open.
+   * @param preferNewTab If true, prefer opening in a new tab.
+   */
+  async openConversation(conversationId: string, preferNewTab = false): Promise<void> {
+    // Check if conversation is already open in a tab
+    for (const tab of this.tabs.values()) {
+      if (tab.conversationId === conversationId) {
+        await this.switchToTab(tab.id);
+        return;
+      }
+    }
+
+    // Open in current tab or new tab
+    if (preferNewTab && this.canCreateTab()) {
+      await this.createTab(conversationId);
+    } else {
+      // Open in current tab
+      const activeTab = this.getActiveTab();
+      if (activeTab) {
+        activeTab.conversationId = conversationId;
+        await activeTab.controllers.conversationController?.switchTo(conversationId);
+      }
+    }
+  }
+
+  /**
+   * Creates a new conversation in the active tab.
+   */
+  async createNewConversation(): Promise<void> {
+    const activeTab = this.getActiveTab();
+    if (activeTab) {
+      await activeTab.controllers.conversationController?.createNew();
+    }
+  }
+
+  // ============================================
+  // Persistence
+  // ============================================
+
+  /** Gets the state to persist. */
+  getPersistedState(): PersistedTabManagerState {
+    const openTabs: PersistedTabState[] = [];
+
+    for (const tab of this.tabs.values()) {
+      openTabs.push({
+        tabId: tab.id,
+        conversationId: tab.conversationId,
+      });
+    }
+
+    return {
+      openTabs,
+      activeTabId: this.activeTabId,
+    };
+  }
+
+  /** Restores state from persisted data. */
+  async restoreState(state: PersistedTabManagerState): Promise<void> {
+    // Create tabs from persisted state
+    for (const tabState of state.openTabs) {
+      await this.createTab(tabState.conversationId, tabState.tabId);
+    }
+
+    // Switch to the previously active tab
+    if (state.activeTabId && this.tabs.has(state.activeTabId)) {
+      await this.switchToTab(state.activeTabId);
+    }
+
+    // If no tabs were restored, create a default one
+    if (this.tabs.size === 0) {
+      await this.createTab();
+    }
+  }
+
+  // ============================================
+  // Cleanup
+  // ============================================
+
+  /** Destroys all tabs and cleans up resources. */
+  async destroy(): Promise<void> {
+    // Save all conversations
+    for (const tab of this.tabs.values()) {
+      await tab.controllers.conversationController?.save();
+    }
+
+    // Destroy all tabs
+    for (const tab of this.tabs.values()) {
+      destroyTab(tab);
+    }
+
+    this.tabs.clear();
+    this.activeTabId = null;
+  }
+}

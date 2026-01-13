@@ -53,11 +53,21 @@ function createInitialState(): ChatStateData {
  */
 export class ChatState {
   private state: ChatStateData;
-  private callbacks: ChatStateCallbacks;
+  private _callbacks: ChatStateCallbacks;
 
   constructor(callbacks: ChatStateCallbacks = {}) {
     this.state = createInitialState();
-    this.callbacks = callbacks;
+    this._callbacks = callbacks;
+  }
+
+  /** Gets the callbacks. */
+  get callbacks(): ChatStateCallbacks {
+    return this._callbacks;
+  }
+
+  /** Sets the callbacks (for updating after construction). */
+  set callbacks(value: ChatStateCallbacks) {
+    this._callbacks = value;
   }
 
   // ============================================
@@ -70,17 +80,17 @@ export class ChatState {
 
   set messages(value: ChatMessage[]) {
     this.state.messages = value;
-    this.callbacks.onMessagesChanged?.();
+    this._callbacks.onMessagesChanged?.();
   }
 
   addMessage(msg: ChatMessage): void {
     this.state.messages.push(msg);
-    this.callbacks.onMessagesChanged?.();
+    this._callbacks.onMessagesChanged?.();
   }
 
   clearMessages(): void {
     this.state.messages = [];
-    this.callbacks.onMessagesChanged?.();
+    this._callbacks.onMessagesChanged?.();
   }
 
   // ============================================
@@ -93,7 +103,7 @@ export class ChatState {
 
   set isStreaming(value: boolean) {
     this.state.isStreaming = value;
-    this.callbacks.onStreamingStateChanged?.(value);
+    this._callbacks.onStreamingStateChanged?.(value);
   }
 
   get cancelRequested(): boolean {
@@ -130,7 +140,7 @@ export class ChatState {
 
   set currentConversationId(value: string | null) {
     this.state.currentConversationId = value;
-    this.callbacks.onConversationChanged?.(value);
+    this._callbacks.onConversationChanged?.(value);
   }
 
   // ============================================
@@ -227,7 +237,7 @@ export class ChatState {
 
   set usage(value: UsageInfo | null) {
     this.state.usage = value;
-    this.callbacks.onUsageChanged?.(value);
+    this._callbacks.onUsageChanged?.(value);
   }
 
   get ignoreUsageUpdates(): boolean {
@@ -258,7 +268,7 @@ export class ChatState {
     // Normalize empty arrays to null for consistency
     const normalizedValue = (value && value.length > 0) ? value : null;
     this.state.currentTodos = normalizedValue;
-    this.callbacks.onTodosChanged?.(normalizedValue);
+    this._callbacks.onTodosChanged?.(normalizedValue);
   }
 
   // ============================================
