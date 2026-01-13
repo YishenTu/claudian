@@ -152,6 +152,44 @@ export function createTab(options: TabCreateOptions): TabData {
   return tab;
 }
 
+/** Minimum max-height for textarea in pixels. */
+const MIN_MAX_HEIGHT = 150;
+/** Percentage of view height for max textarea height. */
+const MAX_HEIGHT_PERCENT = 0.55;
+
+/**
+ * Auto-resizes a textarea based on its content.
+ *
+ * Logic:
+ * - At minimum wrapper height: let flexbox allocate space (textarea fills available)
+ * - When content exceeds flex allocation: set min-height to force wrapper growth
+ * - When content shrinks: remove min-height override to let wrapper shrink
+ * - Max height is capped at 55% of view height (minimum 150px)
+ */
+function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
+  // Clear inline min-height to let flexbox compute natural allocation
+  textarea.style.minHeight = '';
+
+  // Calculate max height: 55% of view height, minimum 150px
+  const viewHeight = textarea.closest('.claudian-container')?.clientHeight ?? window.innerHeight;
+  const maxHeight = Math.max(MIN_MAX_HEIGHT, viewHeight * MAX_HEIGHT_PERCENT);
+
+  // Get flex-allocated height (what flexbox gives the textarea)
+  const flexAllocatedHeight = textarea.offsetHeight;
+
+  // Get content height (what the content actually needs), capped at max
+  const contentHeight = Math.min(textarea.scrollHeight, maxHeight);
+
+  // Only set min-height if content exceeds flex allocation
+  // This forces the wrapper to grow while letting it shrink when content reduces
+  if (contentHeight > flexAllocatedHeight) {
+    textarea.style.minHeight = `${contentHeight}px`;
+  }
+
+  // Always set max-height to enforce the cap
+  textarea.style.maxHeight = `${maxHeight}px`;
+}
+
 /**
  * Builds the DOM structure for a tab.
  */
@@ -276,7 +314,11 @@ export function initializeTabUI(
     dom.inputEl,
     {
       getExcludedTags: () => plugin.settings.excludedTags,
-      onChipsChanged: () => tab.renderer?.scrollToBottomIfNeeded(),
+      onChipsChanged: () => {
+        tab.controllers.selectionController?.updateContextRowVisibility();
+        autoResizeTextarea(dom.inputEl);
+        tab.renderer?.scrollToBottomIfNeeded();
+      },
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
     },
     dom.inputContainerEl
@@ -289,7 +331,11 @@ export function initializeTabUI(
     dom.inputContainerEl,
     dom.inputEl,
     {
-      onImagesChanged: () => tab.renderer?.scrollToBottomIfNeeded(),
+      onImagesChanged: () => {
+        tab.controllers.selectionController?.updateContextRowVisibility();
+        autoResizeTextarea(dom.inputEl);
+        tab.renderer?.scrollToBottomIfNeeded();
+      },
     },
     dom.contextRowEl
   );
@@ -432,7 +478,9 @@ export function initializeTabControllers(
   tab.controllers.selectionController = new SelectionController(
     plugin.app,
     dom.selectionIndicatorEl!,
-    dom.inputEl
+    dom.inputEl,
+    dom.contextRowEl,
+    () => autoResizeTextarea(dom.inputEl)
   );
 
   // Stream controller
@@ -580,10 +628,12 @@ export function wireTabInputEvents(tab: TabData): void {
   dom.inputEl.addEventListener('keydown', keydownHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
-  // Input change handler
+  // Input change handler (includes auto-resize)
   const inputHandler = () => {
     ui.fileContextManager?.handleInputChange();
     ui.instructionModeManager?.handleInputChange();
+    // Auto-resize textarea based on content
+    autoResizeTextarea(dom.inputEl);
   };
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));

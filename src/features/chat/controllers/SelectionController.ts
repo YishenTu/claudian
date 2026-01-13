@@ -25,13 +25,23 @@ export class SelectionController {
   private app: App;
   private indicatorEl: HTMLElement;
   private inputEl: HTMLElement;
+  private contextRowEl: HTMLElement;
+  private onVisibilityChange: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(app: App, indicatorEl: HTMLElement, inputEl: HTMLElement) {
+  constructor(
+    app: App,
+    indicatorEl: HTMLElement,
+    inputEl: HTMLElement,
+    contextRowEl: HTMLElement,
+    onVisibilityChange?: () => void
+  ) {
     this.app = app;
     this.indicatorEl = indicatorEl;
     this.inputEl = inputEl;
+    this.contextRowEl = contextRowEl;
+    this.onVisibilityChange = onVisibilityChange ?? null;
   }
 
   // ============================================
@@ -141,6 +151,19 @@ export class SelectionController {
     } else {
       this.indicatorEl.style.display = 'none';
     }
+    this.updateContextRowVisibility();
+  }
+
+  /** Updates context row visibility based on whether any content is visible. */
+  updateContextRowVisibility(): void {
+    if (!this.contextRowEl) return;
+    const hasSelection = this.storedSelection !== null;
+    const fileIndicator = this.contextRowEl.querySelector('.claudian-file-indicator') as HTMLElement | null;
+    const imagePreview = this.contextRowEl.querySelector('.claudian-image-preview') as HTMLElement | null;
+    const hasFileChips = fileIndicator?.style.display === 'flex';
+    const hasImageChips = imagePreview?.style.display === 'flex';
+    this.contextRowEl.classList.toggle('has-content', hasSelection || hasFileChips || hasImageChips);
+    this.onVisibilityChange?.();
   }
 
   // ============================================

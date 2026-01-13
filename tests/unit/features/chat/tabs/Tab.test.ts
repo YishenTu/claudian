@@ -1263,3 +1263,527 @@ describe('Tab - ChatState Callback Integration', () => {
     expect(onConversationIdChanged).toHaveBeenCalledWith('new-conv-id');
   });
 });
+
+describe('Tab - UI Callback Wiring', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('initializeTabUI callbacks', () => {
+    it('should wire onChipsChanged to scroll to bottom', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Initialize UI to wire callbacks
+      initializeTabUI(tab, options.plugin);
+
+      // Set up renderer
+      tab.renderer = mockMessageRenderer as any;
+
+      // Get the FileContextManager constructor call arguments
+      const { FileContextManager } = jest.requireMock('@/features/chat/ui');
+      const constructorCall = FileContextManager.mock.calls[0];
+      const callbacks = constructorCall[3]; // 4th argument is callbacks
+
+      // Trigger onChipsChanged callback
+      callbacks.onChipsChanged();
+
+      expect(mockMessageRenderer.scrollToBottomIfNeeded).toHaveBeenCalled();
+    });
+
+    it('should wire onImagesChanged to scroll to bottom', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      tab.renderer = mockMessageRenderer as any;
+
+      // Get the ImageContextManager constructor call
+      const { ImageContextManager } = jest.requireMock('@/features/chat/ui');
+      const constructorCall = ImageContextManager.mock.calls[0];
+      const callbacks = constructorCall[3]; // 4th argument is callbacks
+
+      callbacks.onImagesChanged();
+
+      expect(mockMessageRenderer.scrollToBottomIfNeeded).toHaveBeenCalled();
+    });
+
+    it('should wire getExcludedTags to return plugin settings', () => {
+      const plugin = createMockPlugin({
+        settings: {
+          ...createMockPlugin().settings,
+          excludedTags: ['tag1', 'tag2'],
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      initializeTabUI(tab, plugin);
+
+      const { FileContextManager } = jest.requireMock('@/features/chat/ui');
+      const constructorCall = FileContextManager.mock.calls[0];
+      const callbacks = constructorCall[3];
+
+      const excludedTags = callbacks.getExcludedTags();
+
+      expect(excludedTags).toEqual(['tag1', 'tag2']);
+    });
+
+    it('should wire getExternalContexts to return external context selector contexts', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Mock external context selector return value
+      mockExternalContextSelector.getExternalContexts.mockReturnValue(['/path/1', '/path/2']);
+
+      const { FileContextManager } = jest.requireMock('@/features/chat/ui');
+      const constructorCall = FileContextManager.mock.calls[0];
+      const callbacks = constructorCall[3];
+
+      const contexts = callbacks.getExternalContexts();
+
+      expect(contexts).toEqual(['/path/1', '/path/2']);
+    });
+
+    it('should wire MCP mention change to add servers to selector', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Get the setOnMcpMentionChange callback
+      const onMcpMentionChange = mockFileContextManager.setOnMcpMentionChange.mock.calls[0][0];
+
+      // Trigger with server list
+      onMcpMentionChange(['server1', 'server2']);
+
+      expect(mockMcpServerSelector.addMentionedServers).toHaveBeenCalledWith(['server1', 'server2']);
+    });
+
+    it('should wire external context onChange to pre-scan contexts', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Get the setOnChange callback
+      const onChange = mockExternalContextSelector.setOnChange.mock.calls[0][0];
+
+      // Trigger onChange
+      onChange();
+
+      expect(mockFileContextManager.preScanExternalContexts).toHaveBeenCalled();
+    });
+
+    it('should wire persistence change to save settings', async () => {
+      const saveSettings = jest.fn().mockResolvedValue(undefined);
+      const plugin = createMockPlugin({ saveSettings });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      initializeTabUI(tab, plugin);
+
+      // Get the setOnPersistenceChange callback
+      const onPersistenceChange = mockExternalContextSelector.setOnPersistenceChange.mock.calls[0][0];
+
+      // Trigger with new paths
+      await onPersistenceChange(['/new/path1', '/new/path2']);
+
+      expect(plugin.settings.persistentExternalContextPaths).toEqual(['/new/path1', '/new/path2']);
+      expect(saveSettings).toHaveBeenCalled();
+    });
+
+    it('should wire onUsageChanged callback to update context meter', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Verify callback is wired
+      const usage = { inputTokens: 1000, outputTokens: 500 };
+      tab.state.callbacks.onUsageChanged?.(usage as any);
+
+      expect(mockContextUsageMeter.update).toHaveBeenCalledWith(usage);
+    });
+
+    it('should wire onTodosChanged callback to update todo panel', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Verify callback is wired
+      const todos = [{ id: '1', content: 'Test todo', status: 'pending' }];
+      tab.state.callbacks.onTodosChanged?.(todos as any);
+
+      expect(mockTodoPanel.updateTodos).toHaveBeenCalledWith(todos);
+    });
+
+    it('should wire instruction mode onSubmit to input controller', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      // Get the InstructionModeManager constructor arguments
+      const { InstructionModeManager } = jest.requireMock('@/features/chat/ui');
+      const constructorCall = InstructionModeManager.mock.calls[0];
+      const callbacks = constructorCall[1]; // 2nd argument is callbacks
+
+      // Trigger onSubmit
+      await callbacks.onSubmit('refined instruction');
+
+      expect(mockInputController.handleInstructionSubmit).toHaveBeenCalledWith('refined instruction');
+    });
+
+    it('should wire getInputWrapper to return input wrapper element', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      const { InstructionModeManager } = jest.requireMock('@/features/chat/ui');
+      const constructorCall = InstructionModeManager.mock.calls[0];
+      const callbacks = constructorCall[1];
+
+      const wrapper = callbacks.getInputWrapper();
+
+      expect(wrapper).toBe(tab.dom.inputWrapper);
+    });
+
+    it('should wire getCommands to return slash commands from settings', () => {
+      const commands = [{ name: 'test', content: 'test content' }];
+      const plugin = createMockPlugin({
+        settings: {
+          ...createMockPlugin().settings,
+          slashCommands: commands,
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      initializeTabUI(tab, plugin);
+
+      const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
+      const constructorCall = SlashCommandDropdown.mock.calls[0];
+      const callbacks = constructorCall[2]; // 3rd argument is callbacks
+
+      const returnedCommands = callbacks.getCommands();
+
+      expect(returnedCommands).toEqual(commands);
+    });
+  });
+});
+
+describe('Tab - Service Initialization Error Handling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should skip re-initialization if already initialized', async () => {
+    const options = createMockOptions();
+    const tab = createTab(options);
+
+    // Mark as already initialized
+    tab.serviceInitialized = true;
+    const originalService = { id: 'existing-service' } as any;
+    tab.service = originalService;
+
+    await initializeTabService(tab, options.plugin, options.mcpManager);
+
+    // Should not change existing service
+    expect(tab.service).toBe(originalService);
+    expect(tab.serviceInitialized).toBe(true);
+  });
+
+  it('should set serviceInitialized to true after successful initialization', async () => {
+    const options = createMockOptions();
+    const tab = createTab(options);
+
+    expect(tab.serviceInitialized).toBe(false);
+    expect(tab.service).toBeNull();
+
+    await initializeTabService(tab, options.plugin, options.mcpManager);
+
+    expect(tab.serviceInitialized).toBe(true);
+    expect(tab.service).not.toBeNull();
+  });
+
+  it('should call loadCCPermissions during initialization', async () => {
+    const { ClaudianService } = jest.requireMock('@/core/agent');
+    const loadCCPermissions = jest.fn().mockResolvedValue(undefined);
+
+    ClaudianService.mockImplementation(() => ({
+      loadCCPermissions,
+      preWarm: jest.fn().mockResolvedValue(undefined),
+      closePersistentQuery: jest.fn(),
+    }));
+
+    const options = createMockOptions();
+    const tab = createTab(options);
+
+    await initializeTabService(tab, options.plugin, options.mcpManager);
+
+    expect(loadCCPermissions).toHaveBeenCalled();
+  });
+});
+
+describe('Tab - Controller Configuration', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('InputController configuration', () => {
+    it('should wire ensureServiceInitialized to return true when already initialized', async () => {
+      const { InputController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      // Get InputController constructor config
+      const constructorCall = InputController.mock.calls[0];
+      const config = constructorCall[0];
+
+      // Test ensureServiceInitialized when already initialized
+      tab.serviceInitialized = true;
+      const result = await config.ensureServiceInitialized();
+      expect(result).toBe(true);
+    });
+
+    it('should wire getAgentService to return tab service', () => {
+      const { InputController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = InputController.mock.calls[0];
+      const config = constructorCall[0];
+
+      // Verify getAgentService returns tab's service
+      tab.service = { id: 'test-service' } as any;
+      expect(config.getAgentService()).toBe(tab.service);
+    });
+
+    it('should wire getters to return tab UI components', () => {
+      const { InputController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = InputController.mock.calls[0];
+      const config = constructorCall[0];
+
+      // Test getters return correct UI components
+      expect(config.getInputEl()).toBe(tab.dom.inputEl);
+      expect(config.getMessagesEl()).toBe(tab.dom.messagesEl);
+      expect(config.getFileContextManager()).toBe(tab.ui.fileContextManager);
+      expect(config.getImageContextManager()).toBe(tab.ui.imageContextManager);
+      expect(config.getSlashCommandManager()).toBe(tab.ui.slashCommandManager);
+      expect(config.getMcpServerSelector()).toBe(tab.ui.mcpServerSelector);
+      expect(config.getExternalContextSelector()).toBe(tab.ui.externalContextSelector);
+      expect(config.getInstructionModeManager()).toBe(tab.ui.instructionModeManager);
+      expect(config.getInstructionRefineService()).toBe(tab.services.instructionRefineService);
+      expect(config.getTitleGenerationService()).toBe(tab.services.titleGenerationService);
+    });
+
+    it('should wire resetContextMeter to update with null', () => {
+      const { InputController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = InputController.mock.calls[0];
+      const config = constructorCall[0];
+
+      config.resetContextMeter();
+
+      expect(mockContextUsageMeter.update).toHaveBeenCalledWith(null);
+    });
+  });
+
+  describe('StreamController configuration', () => {
+    it('should wire updateQueueIndicator to input controller', () => {
+      const { StreamController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = StreamController.mock.calls[0];
+      const config = constructorCall[0];
+
+      config.updateQueueIndicator();
+
+      expect(mockInputController.updateQueueIndicator).toHaveBeenCalled();
+    });
+
+    it('should wire getAgentService to return tab service', () => {
+      const { StreamController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      tab.service = { id: 'test-service' } as any;
+
+      const constructorCall = StreamController.mock.calls[0];
+      const config = constructorCall[0];
+
+      expect(config.getAgentService()).toBe(tab.service);
+    });
+
+    it('should wire getMessagesEl to return tab messages element', () => {
+      const { StreamController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = StreamController.mock.calls[0];
+      const config = constructorCall[0];
+
+      expect(config.getMessagesEl()).toBe(tab.dom.messagesEl);
+    });
+  });
+
+  describe('NavigationController configuration', () => {
+    it('should wire shouldSkipEscapeHandling to check UI state', () => {
+      const { NavigationController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = NavigationController.mock.calls[0];
+      const config = constructorCall[0];
+
+      // Test when instruction mode is active
+      mockInstructionModeManager.isActive.mockReturnValue(true);
+      expect(config.shouldSkipEscapeHandling()).toBe(true);
+
+      // Test when slash command dropdown is visible
+      mockInstructionModeManager.isActive.mockReturnValue(false);
+      mockSlashCommandDropdown.isVisible.mockReturnValue(true);
+      expect(config.shouldSkipEscapeHandling()).toBe(true);
+
+      // Test when mention dropdown is visible
+      mockSlashCommandDropdown.isVisible.mockReturnValue(false);
+      mockFileContextManager.isMentionDropdownVisible.mockReturnValue(true);
+      expect(config.shouldSkipEscapeHandling()).toBe(true);
+
+      // Test when nothing active
+      mockFileContextManager.isMentionDropdownVisible.mockReturnValue(false);
+      expect(config.shouldSkipEscapeHandling()).toBe(false);
+    });
+
+    it('should wire isStreaming to return tab state', () => {
+      const { NavigationController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = NavigationController.mock.calls[0];
+      const config = constructorCall[0];
+
+      tab.state.isStreaming = true;
+      expect(config.isStreaming()).toBe(true);
+
+      tab.state.isStreaming = false;
+      expect(config.isStreaming()).toBe(false);
+    });
+
+    it('should wire getSettings to return keyboard navigation settings', () => {
+      const keyboardNavigation = {
+        scrollUpKey: 'k',
+        scrollDownKey: 'j',
+        focusInputKey: 'i',
+      };
+      const plugin = createMockPlugin({
+        settings: {
+          ...createMockPlugin().settings,
+          keyboardNavigation,
+        },
+      });
+      const { NavigationController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, plugin);
+      initializeTabControllers(tab, plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = NavigationController.mock.calls[0];
+      const config = constructorCall[0];
+
+      expect(config.getSettings()).toEqual(keyboardNavigation);
+    });
+  });
+
+  describe('ConversationController configuration', () => {
+    it('should wire getHistoryDropdown to return null (tab has no dropdown)', () => {
+      const { ConversationController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = ConversationController.mock.calls[0];
+      const config = constructorCall[0];
+
+      expect(config.getHistoryDropdown()).toBeNull();
+    });
+
+    it('should wire welcome element getters and setters', () => {
+      const { ConversationController } = jest.requireMock('@/features/chat/controllers');
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const constructorCall = ConversationController.mock.calls[0];
+      const config = constructorCall[0];
+
+      // Test getter - use mock element
+      const mockWelcome = { id: 'welcome-el' } as any;
+      tab.dom.welcomeEl = mockWelcome;
+      expect(config.getWelcomeEl()).toBe(mockWelcome);
+
+      // Test setter
+      const newWelcomeEl = { id: 'new-welcome-el' } as any;
+      config.setWelcomeEl(newWelcomeEl);
+      expect(tab.dom.welcomeEl).toBe(newWelcomeEl);
+    });
+  });
+});

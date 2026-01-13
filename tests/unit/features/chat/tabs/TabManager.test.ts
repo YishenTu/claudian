@@ -777,3 +777,214 @@ describe('TabManager - Cleanup', () => {
     });
   });
 });
+
+describe('TabManager - Callback Wiring', () => {
+  let plugin: any;
+  let containerEl: any;
+  let view: any;
+  let mcpManager: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    plugin = createMockPlugin();
+    containerEl = createMockElement();
+    view = createMockView();
+    mcpManager = createMockMcpManager();
+  });
+
+  describe('ChatState callbacks during tab creation', () => {
+    it('should wire onStreamingChanged callback to TabManager callbacks', async () => {
+      const onTabStreamingChanged = jest.fn();
+      const callbacks: TabManagerCallbacks = { onTabStreamingChanged };
+
+      // Capture the callbacks passed to createTab
+      let capturedCallbacks: any;
+      mockCreateTab.mockImplementation((opts: any) => {
+        capturedCallbacks = opts;
+        return createMockTabData({ id: 'test-tab' });
+      });
+
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      await manager.createTab();
+
+      // Trigger the onStreamingChanged callback
+      capturedCallbacks.onStreamingChanged(true);
+
+      expect(onTabStreamingChanged).toHaveBeenCalledWith('test-tab', true);
+    });
+
+    it('should wire onTitleChanged callback to TabManager callbacks', async () => {
+      const onTabTitleChanged = jest.fn();
+      const callbacks: TabManagerCallbacks = { onTabTitleChanged };
+
+      let capturedCallbacks: any;
+      mockCreateTab.mockImplementation((opts: any) => {
+        capturedCallbacks = opts;
+        return createMockTabData({ id: 'test-tab' });
+      });
+
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      await manager.createTab();
+
+      capturedCallbacks.onTitleChanged('New Title');
+
+      expect(onTabTitleChanged).toHaveBeenCalledWith('test-tab', 'New Title');
+    });
+
+    it('should wire onAttentionChanged callback to TabManager callbacks', async () => {
+      const onTabAttentionChanged = jest.fn();
+      const callbacks: TabManagerCallbacks = { onTabAttentionChanged };
+
+      let capturedCallbacks: any;
+      mockCreateTab.mockImplementation((opts: any) => {
+        capturedCallbacks = opts;
+        return createMockTabData({ id: 'test-tab' });
+      });
+
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      await manager.createTab();
+
+      capturedCallbacks.onAttentionChanged(true);
+
+      expect(onTabAttentionChanged).toHaveBeenCalledWith('test-tab', true);
+    });
+
+    it('should wire onConversationIdChanged callback to sync tab conversationId', async () => {
+      const onTabConversationChanged = jest.fn();
+      const callbacks: TabManagerCallbacks = { onTabConversationChanged };
+
+      let capturedCallbacks: any;
+      const tabData = createMockTabData({ id: 'test-tab', conversationId: null });
+      mockCreateTab.mockImplementation((opts: any) => {
+        capturedCallbacks = opts;
+        return tabData;
+      });
+
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      await manager.createTab();
+
+      // Trigger the onConversationIdChanged callback (simulating conversation creation)
+      capturedCallbacks.onConversationIdChanged('new-conv-id');
+
+      // Tab's conversationId should be synced
+      expect(tabData.conversationId).toBe('new-conv-id');
+      expect(onTabConversationChanged).toHaveBeenCalledWith('test-tab', 'new-conv-id');
+    });
+  });
+});
+
+describe('TabManager - openConversation Current Tab Path', () => {
+  let manager: TabManager;
+  let plugin: any;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    plugin = createMockPlugin();
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({ id: `tab-${tabCounter}` });
+    });
+
+    manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockElement(),
+      createMockView()
+    );
+    await manager.createTab();
+  });
+
+  it('should open conversation in current tab when preferNewTab is false', async () => {
+    const activeTab = manager.getActiveTab();
+    const switchTo = jest.fn().mockResolvedValue(undefined);
+    activeTab!.controllers.conversationController = { switchTo } as any;
+
+    // Conversation not already open in any tab
+    plugin.getConversationById.mockReturnValue({ id: 'conv-to-open' });
+
+    await manager.openConversation('conv-to-open', false);
+
+    expect(switchTo).toHaveBeenCalledWith('conv-to-open');
+  });
+
+  it('should open conversation in current tab by default (preferNewTab defaults to false)', async () => {
+    const activeTab = manager.getActiveTab();
+    const switchTo = jest.fn().mockResolvedValue(undefined);
+    activeTab!.controllers.conversationController = { switchTo } as any;
+
+    plugin.getConversationById.mockReturnValue({ id: 'conv-default' });
+
+    await manager.openConversation('conv-default');
+
+    expect(switchTo).toHaveBeenCalledWith('conv-default');
+  });
+
+  it('should not modify tab.conversationId directly (waits for callback)', async () => {
+    const activeTab = manager.getActiveTab();
+    const switchTo = jest.fn().mockResolvedValue(undefined);
+    activeTab!.controllers.conversationController = { switchTo } as any;
+    activeTab!.conversationId = null;
+
+    plugin.getConversationById.mockReturnValue({ id: 'conv-123' });
+
+    await manager.openConversation('conv-123', false);
+
+    // conversationId should NOT be set by openConversation - it's synced via callback
+    expect(activeTab!.conversationId).toBeNull();
+  });
+
+  it('should not open in current tab if at max tabs and preferNewTab is true', async () => {
+    // Fill up to max tabs
+    for (let i = 0; i < DEFAULT_MAX_TABS - 1; i++) {
+      await manager.createTab();
+    }
+
+    // Now at max tabs
+    expect(manager.getTabCount()).toBe(DEFAULT_MAX_TABS);
+
+    const activeTab = manager.getActiveTab();
+    const switchTo = jest.fn().mockResolvedValue(undefined);
+    activeTab!.controllers.conversationController = { switchTo } as any;
+
+    plugin.getConversationById.mockReturnValue({ id: 'conv-max' });
+
+    // preferNewTab=true but at max, so should open in current tab
+    await manager.openConversation('conv-max', true);
+
+    // Since we can't create new tab (at max), it opens in current
+    expect(switchTo).toHaveBeenCalledWith('conv-max');
+  });
+});
+
+describe('TabManager - Service Initialization Errors', () => {
+  it('should handle initializeActiveTabService errors gracefully', async () => {
+    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+    // Make initializeTabService fail
+    mockInitializeTabService.mockRejectedValueOnce(new Error('Service init failed'));
+
+    mockCreateTab.mockReturnValue(
+      createMockTabData({ id: 'test-tab', serviceInitialized: false })
+    );
+
+    const manager = new TabManager(
+      createMockPlugin(),
+      createMockMcpManager(),
+      createMockElement(),
+      createMockView()
+    );
+
+    // Restore state triggers initializeActiveTabService
+    const persistedState: PersistedTabManagerState = {
+      openTabs: [{ tabId: 'restored-tab', conversationId: null }],
+      activeTabId: 'restored-tab',
+    };
+
+    // Should not throw even if service init fails
+    await expect(manager.restoreState(persistedState)).resolves.not.toThrow();
+
+    consoleSpy.mockRestore();
+  });
+});
