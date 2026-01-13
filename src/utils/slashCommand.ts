@@ -62,7 +62,8 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
       value = blockScalarLines.join('\n');
     } else {
       // Folded (>): join lines with spaces, but preserve double line breaks as paragraphs
-      value = blockScalarLines.join('\n').replace(/\n(?!\n)/g, ' ').trim();
+      // Use lookbehind + lookahead to only replace isolated newlines (not preceded or followed by \n)
+      value = blockScalarLines.join('\n').replace(/(?<!\n)\n(?!\n)/g, ' ').trim();
     }
 
     switch (blockScalarKey) {

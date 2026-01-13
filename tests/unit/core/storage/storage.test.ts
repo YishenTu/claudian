@@ -390,6 +390,21 @@ Prompt`;
       expect(parsed.promptContent).toBe('Prompt');
     });
 
+    it('should preserve paragraph breaks in folded block scalar (>)', () => {
+      const content = `---
+description: >
+  First paragraph here.
+
+  Second paragraph after empty line.
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+
+      expect(parsed.description).toBe('First paragraph here.\n\nSecond paragraph after empty line.');
+      expect(parsed.promptContent).toBe('Prompt');
+    });
+
     it('should parse literal block scalar for argument-hint', () => {
       const content = `---
 argument-hint: |
