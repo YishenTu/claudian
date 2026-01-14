@@ -12,6 +12,9 @@ src/
 ├── core/                        # Core infrastructure (no feature dependencies)
 │   ├── agent/                   # Claude Agent SDK wrapper
 │   │   └── ClaudianService.ts
+│   ├── commands/                # Slash command management
+│   │   ├── SlashCommandManager.ts
+│   │   └── builtInCommands.ts
 │   ├── hooks/                   # PreToolUse/PostToolUse hooks
 │   ├── images/                  # Image caching and loading
 │   ├── mcp/                     # MCP server config, service, and testing
@@ -48,6 +51,8 @@ src/
 │   ├── mention/                 # @-mention dropdown controller
 │   ├── modals/                  # Approval + instruction modals
 │   └── icons.ts                 # Shared SVG icons
+├── i18n/                        # Internationalization
+│   └── locales/                 # Language files (en, de, es, fr, ja, ko, pt, ru, zh-CN, zh-TW)
 ├── utils/                       # Modular utility functions
 └── style/                       # Modular CSS (→ styles.css)
 ```
@@ -55,6 +60,7 @@ src/
 | Layer | Folder | Purpose |
 |-------|--------|---------|
 | **core** | `agent/` | Claude Agent SDK wrapper (ClaudianService) |
+| | `commands/` | Slash command expansion (SlashCommandManager, builtInCommands) |
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
 | | `mcp/` | MCP server config, service, and testing |
@@ -80,6 +86,7 @@ src/
 | | `mention/` | @-mention dropdown controller |
 | | `modals/` | Approval + instruction modals |
 | | `icons.ts` | Shared SVG icons |
+| **i18n** | | Internationalization with 10 locales |
 | **utils** | | Modular utilities: date, path, env, context, editor, session, markdown, mcp, slashCommand |
 | **style** | | Modular CSS (built into root `styles.css`) |
 
@@ -105,6 +112,7 @@ tests/
   unit/
     core/
     features/
+    i18n/
     shared/
     utils/
   integration/

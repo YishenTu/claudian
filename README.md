@@ -197,6 +197,7 @@ src/
 ├── main.ts                      # Plugin entry point
 ├── core/                        # Core infrastructure
 │   ├── agent/                   # Claude Agent SDK wrapper (ClaudianService)
+│   ├── commands/                # Slash command management (SlashCommandManager)
 │   ├── hooks/                   # PreToolUse/PostToolUse hooks
 │   ├── images/                  # Image caching and loading
 │   ├── mcp/                     # MCP server config, service, and testing
@@ -216,6 +217,7 @@ src/
 │   ├── mention/                 # @-mention dropdown controller
 │   ├── modals/                  # Approval + instruction modals
 │   └── icons.ts                 # Shared SVG icons
+├── i18n/                        # Internationalization (10 locales)
 ├── utils/                       # Modular utility functions
 └── style/                       # Modular CSS (→ styles.css)
 ```
