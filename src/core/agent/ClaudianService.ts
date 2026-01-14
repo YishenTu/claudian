@@ -241,9 +241,40 @@ export class ClaudianService {
       prompt: this.messageChannel,
       options,
     });
+    this.attachPersistentQueryStdinErrorHandler(this.persistentQuery);
 
     // Start the response consumer loop
     this.startResponseConsumer();
+  }
+
+  private attachPersistentQueryStdinErrorHandler(query: Query): void {
+    const stdin = (query as { transport?: { processStdin?: NodeJS.WritableStream } }).transport?.processStdin;
+    if (!stdin || typeof stdin.on !== 'function' || typeof stdin.once !== 'function') {
+      return;
+    }
+
+    const handler = (error: NodeJS.ErrnoException) => {
+      if (this.shuttingDown || this.isPipeError(error)) {
+        return;
+      }
+      this.closePersistentQuery('stdin error');
+    };
+
+    stdin.on('error', handler);
+    stdin.once('close', () => {
+      stdin.removeListener('error', handler);
+    });
+  }
+
+  private isPipeError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const maybeError = error as { code?: string; message?: string };
+    if (maybeError.code === 'EPIPE') {
+      return true;
+    }
+    return typeof maybeError.message === 'string' && maybeError.message.includes('EPIPE');
   }
 
   /**
