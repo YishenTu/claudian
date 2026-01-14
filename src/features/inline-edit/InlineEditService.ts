@@ -291,25 +291,47 @@ export class InlineEditService {
           }
 
           const filePath = getPathFromToolInput(toolName, input.tool_input);
-          if (filePath) {
-            // Use getPathAccessType for consistent path access control
-            // This allows vault, ~/.claude/, context paths, and readwrite paths
-            const accessType = getPathAccessType(filePath, undefined, undefined, vaultPath);
-            if (accessType === 'vault' || accessType === 'context' || accessType === 'readwrite') {
-              return { continue: true };
-            }
-
+          if (!filePath) {
+            // Fail-closed: deny if we can't determine the path for a file tool
             return {
               continue: false,
               hookSpecificOutput: {
                 hookEventName: 'PreToolUse' as const,
                 permissionDecision: 'deny' as const,
-                permissionDecisionReason: `Access denied: Path "${filePath}" is outside allowed paths. Inline edit is restricted to vault and ~/.claude/ directories.`,
+                permissionDecisionReason: `Access denied: Could not determine path for "${toolName}" tool.`,
               },
             };
           }
 
-          return { continue: true };
+          // Use getPathAccessType for consistent path access control
+          // This allows vault and ~/.claude/ paths (context/readwrite params are undefined)
+          let accessType: string;
+          try {
+            accessType = getPathAccessType(filePath, undefined, undefined, vaultPath);
+          } catch {
+            // Fail-closed: deny if path validation throws (ENOENT, ELOOP, EPERM, etc.)
+            return {
+              continue: false,
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse' as const,
+                permissionDecision: 'deny' as const,
+                permissionDecisionReason: `Access denied: Failed to validate path "${filePath}".`,
+              },
+            };
+          }
+
+          if (accessType === 'vault' || accessType === 'context' || accessType === 'readwrite') {
+            return { continue: true };
+          }
+
+          return {
+            continue: false,
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse' as const,
+              permissionDecision: 'deny' as const,
+              permissionDecisionReason: `Access denied: Path "${filePath}" is outside allowed paths. Inline edit is restricted to vault and ~/.claude/ directories.`,
+            },
+          };
         },
       ],
     };
