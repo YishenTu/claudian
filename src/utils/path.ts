@@ -95,8 +95,6 @@ function expandEnvironmentVariables(value: string): string {
   return expanded;
 }
 
-
-
 /**
  * Expands home directory notation to absolute path.
  * Handles both ~/path and ~\path formats.

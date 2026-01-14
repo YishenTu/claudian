@@ -3,11 +3,12 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import * as env from '../../../src/utils/env';
 
-const { cliPathRequiresNode, findNodeDirectory, getEnhancedPath, parseEnvironmentVariables } = env;
+const { cliPathRequiresNode, findNodeDirectory, getEnhancedPath, getHostnameKey, parseEnvironmentVariables } = env;
 
 const isWindows = process.platform === 'win32';
 const SEP = isWindows ? ';' : ':';
@@ -530,5 +531,24 @@ describe('findNodeDirectory', () => {
 
     const result = findNodeDirectory();
     expect(result).toBe(nvmSymlink);
+  });
+});
+
+describe('getHostnameKey', () => {
+  it('returns a non-empty string', () => {
+    const hostname = getHostnameKey();
+    expect(typeof hostname).toBe('string');
+    expect(hostname.length).toBeGreaterThan(0);
+  });
+
+  it('returns the system hostname', () => {
+    const hostname = getHostnameKey();
+    expect(hostname).toBe(os.hostname());
+  });
+
+  it('returns consistent value on repeated calls', () => {
+    const first = getHostnameKey();
+    const second = getHostnameKey();
+    expect(first).toBe(second);
   });
 });

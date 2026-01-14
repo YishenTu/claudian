@@ -137,16 +137,6 @@ export function getDefaultCliPaths(): PlatformCliPaths {
  */
 export type HostnameCliPaths = Record<string, string>;
 
-/**
- * Get the hostname key for CLI paths.
- * Uses os.hostname() to uniquely identify each device.
- */
-export function getHostnameKey(): string {
-  // Import os here to avoid circular dependencies
-  const os = require('os');
-  return os.hostname();
-}
-
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'normal';
 

@@ -933,16 +933,24 @@ export class ClaudianService {
 
     // Update model if changed
     if (this.currentConfig && selectedModel !== this.currentConfig.model) {
-      await this.persistentQuery.setModel(selectedModel);
-      this.currentConfig.model = selectedModel;
+      try {
+        await this.persistentQuery.setModel(selectedModel);
+        this.currentConfig.model = selectedModel;
+      } catch (error) {
+        console.error('[ClaudianService] Failed to update model:', error);
+      }
     }
 
     // Update thinking tokens if changed
     const currentThinking = this.currentConfig?.thinkingTokens ?? null;
     if (thinkingTokens !== currentThinking) {
-      await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
-      if (this.currentConfig) {
-        this.currentConfig.thinkingTokens = thinkingTokens;
+      try {
+        await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
+        if (this.currentConfig) {
+          this.currentConfig.thinkingTokens = thinkingTokens;
+        }
+      } catch (error) {
+        console.error('[ClaudianService] Failed to update thinking tokens:', error);
       }
     }
 
@@ -951,8 +959,12 @@ export class ClaudianService {
     // we can dynamically switch between modes without restarting
     if (this.currentConfig && permissionMode !== this.currentConfig.permissionMode) {
       const sdkMode = permissionMode === 'yolo' ? 'bypassPermissions' : 'default';
-      await this.persistentQuery.setPermissionMode(sdkMode);
-      this.currentConfig.permissionMode = permissionMode;
+      try {
+        await this.persistentQuery.setPermissionMode(sdkMode);
+        this.currentConfig.permissionMode = permissionMode;
+      } catch (error) {
+        console.error('[ClaudianService] Failed to update permission mode:', error);
+      }
     }
 
     // Update MCP servers if changed
@@ -969,8 +981,12 @@ export class ClaudianService {
       for (const [name, config] of Object.entries(mcpServers)) {
         serverConfigs[name] = config as McpServerConfig;
       }
-      await this.persistentQuery.setMcpServers(serverConfigs);
-      this.currentConfig.mcpServersKey = mcpServersKey;
+      try {
+        await this.persistentQuery.setMcpServers(serverConfigs);
+        this.currentConfig.mcpServersKey = mcpServersKey;
+      } catch (error) {
+        console.error('[ClaudianService] Failed to update MCP servers:', error);
+      }
     }
 
     // External context paths are injected per message; track but do not restart.

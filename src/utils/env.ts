@@ -1,10 +1,12 @@
 /**
  * Claudian - Environment Utilities
  *
- * Environment variable parsing, model configuration, and PATH enhancement for GUI apps.
+ * Environment variable parsing, model configuration, PATH enhancement for GUI apps,
+ * and system identification utilities.
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { parsePathEntries } from './path';
@@ -397,4 +399,13 @@ export function getCurrentModelFromEnvironment(envVars: Record<string, string>):
     return envVars.ANTHROPIC_DEFAULT_OPUS_MODEL;
   }
   return null;
+}
+
+/**
+ * Get the hostname key for CLI paths.
+ * Uses os.hostname() to identify the current device.
+ * Note: Hostname changes will require reconfiguration.
+ */
+export function getHostnameKey(): string {
+  return os.hostname();
 }

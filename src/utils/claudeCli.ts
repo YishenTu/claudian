@@ -8,11 +8,10 @@ import * as fs from 'fs';
 
 import {
   getCliPlatformKey,
-  getHostnameKey,
   type HostnameCliPaths,
   type PlatformCliPaths,
 } from '../core/types/settings';
-import { parseEnvironmentVariables } from './env';
+import { getHostnameKey, parseEnvironmentVariables } from './env';
 import { expandHomePath, findClaudeCLIPath } from './path';
 
 export class ClaudeCliResolver {
@@ -21,6 +20,9 @@ export class ClaudeCliResolver {
   private lastPlatformPath = '';
   private lastLegacyPath = '';
   private lastEnvText = '';
+  // Cache hostname since it doesn't change during a session
+  private readonly cachedHostname = getHostnameKey();
+  private readonly cachedPlatformKey = getCliPlatformKey();
 
   /**
    * Resolves CLI path with priority: hostname-specific -> platform-specific -> legacy -> auto-detect.
@@ -35,8 +37,8 @@ export class ClaudeCliResolver {
     legacyPath: string | undefined,
     envText: string
   ): string | null {
-    const hostnameKey = getHostnameKey();
-    const platformKey = getCliPlatformKey();
+    const hostnameKey = this.cachedHostname;
+    const platformKey = this.cachedPlatformKey;
 
     const hostnamePath = (hostnamePaths?.[hostnameKey] ?? '').trim();
     const platformPath = (platformPaths?.[platformKey] ?? '').trim();
@@ -89,48 +91,51 @@ export function resolveClaudeCliPath(
   // Try hostname-specific path first (highest priority)
   const trimmedHostname = (hostnamePath ?? '').trim();
   if (trimmedHostname) {
-    const expandedPath = expandHomePath(trimmedHostname);
-    if (fs.existsSync(expandedPath)) {
-      try {
+    try {
+      const expandedPath = expandHomePath(trimmedHostname);
+      if (fs.existsSync(expandedPath)) {
         const stat = fs.statSync(expandedPath);
         if (stat.isFile()) {
           return expandedPath;
         }
-      } catch {
-        // Ignore and fall back to platform path.
+        console.warn('[ClaudeCliResolver] Hostname path exists but is not a file:', expandedPath);
       }
+    } catch (error) {
+      console.warn('[ClaudeCliResolver] Error resolving hostname path:', trimmedHostname, error);
     }
   }
 
   // Try platform-specific path second
   const trimmedPlatform = (platformPath ?? '').trim();
   if (trimmedPlatform) {
-    const expandedPath = expandHomePath(trimmedPlatform);
-    if (fs.existsSync(expandedPath)) {
-      try {
+    try {
+      const expandedPath = expandHomePath(trimmedPlatform);
+      if (fs.existsSync(expandedPath)) {
         const stat = fs.statSync(expandedPath);
         if (stat.isFile()) {
           return expandedPath;
         }
-      } catch {
-        // Ignore and fall back to legacy path detection.
+        console.warn('[ClaudeCliResolver] Platform path exists but is not a file:', expandedPath);
       }
+    } catch (error) {
+      console.warn('[ClaudeCliResolver] Error resolving platform path:', trimmedPlatform, error);
     }
   }
 
   // Fall back to legacy path
   const trimmedLegacy = (legacyPath ?? '').trim();
   if (trimmedLegacy) {
-    const expandedPath = expandHomePath(trimmedLegacy);
-    if (fs.existsSync(expandedPath)) {
-      try {
+    try {
+      const expandedPath = expandHomePath(trimmedLegacy);
+      if (fs.existsSync(expandedPath)) {
         const stat = fs.statSync(expandedPath);
         if (stat.isFile()) {
           return expandedPath;
         }
-      } catch {
-        // Ignore and fall back to auto-detection.
+        console.warn('[ClaudeCliResolver] Legacy path exists but is not a file:', expandedPath);
       }
+    } catch (error) {
+      console.warn('[ClaudeCliResolver] Error resolving legacy path:', trimmedLegacy, error);
     }
   }
 

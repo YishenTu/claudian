@@ -53,7 +53,6 @@ export {
   getCurrentPlatformKey,
   getDefaultBlockedCommands,
   getDefaultCliPaths,
-  getHostnameKey,
   type HostnameCliPaths,
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
@@ -68,6 +67,9 @@ export {
   type PlatformCliPaths,
   type SlashCommand,
 } from './settings';
+
+// Re-export getHostnameKey from utils (moved from settings for architecture compliance)
+export { getHostnameKey } from '../../utils/env';
 
 // Tool types
 export {
