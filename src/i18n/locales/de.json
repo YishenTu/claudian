@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "Zu diesem Checkpoint wiederherstellen",
+    "noSession": "Keine aktive Sitzung. Zurückspulen nicht möglich.",
+    "whileStreaming": "Zurückspulen nicht möglich während der Übertragung.",
+    "missingId": "Zurückspulen nicht möglich: fehlende Nachrichtenkennung.",
+    "notFound": "Nachricht nicht gefunden.",
+    "cannotRewind": "Zurückspulen zu diesem Punkt nicht möglich.",
+    "restartFailed": "Sitzungsneustart fehlgeschlagen: {error}",
+    "successOne": "1 Datei zum Checkpoint wiederhergestellt.",
+    "successMany": "{count} Dateien zum Checkpoint wiederhergestellt.",
+    "successNone": "Zum Checkpoint wiederhergestellt."
   }
 }

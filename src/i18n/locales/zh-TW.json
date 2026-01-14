@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "還原到此檢查點",
+    "noSession": "沒有活動會話。無法倒回。",
+    "whileStreaming": "串流傳輸時無法倒回。",
+    "missingId": "無法倒回：缺少訊息識別碼。",
+    "notFound": "訊息未找到。",
+    "cannotRewind": "無法倒回到此點。",
+    "restartFailed": "會話重啟失敗：{error}",
+    "successOne": "已將 1 個檔案還原到檢查點。",
+    "successMany": "已將 {count} 個檔案還原到檢查點。",
+    "successNone": "已還原到檢查點。"
   }
 }

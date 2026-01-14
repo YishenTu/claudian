@@ -218,6 +218,7 @@ interface ClaudianSettings {
   claudeCliPath: string;             // Custom Claude CLI path (empty = auto-detect)
   enabledPlugins: string[];          // IDs of enabled Claude Code plugins (per vault)
   maxTabs: number;                   // Maximum concurrent tabs (3-10, default: 3)
+  show1MModel: boolean;              // Show 1M context model in selector (default: false)
 }
 
 // Per-conversation state (session-only, not global settings)
@@ -260,7 +261,10 @@ vault/.claude/
 |-------|------------------|
 | `claude-haiku-4-5` | Off |
 | `claude-sonnet-4-5` | Low (4k) |
+| `claude-sonnet-4-5-1m` | Low (4k) |
 | `claude-opus-4-5` | Medium (8k) |
+
+**1M Context Model**: `claude-sonnet-4-5-1m` provides 1M token context window. Requires Max subscription. Enable via `show1MModel` setting (hidden by default). Uses `context-1m-2025-08-07` beta flag.
 
 Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`
 
@@ -299,6 +303,14 @@ Select text or place cursor + hotkey → edit/insert without sidebar chat.
 - Read-only tools: `Read`, `Grep`, `Glob`, `LS`, `WebSearch`, `WebFetch`
 - Selection mode: `<replacement>` tags
 - Cursor mode: `<insertion>` tags
+
+### File Checkpoint Rewind
+Restore files to their state before agent modifications.
+- **Hover action**: Rewind button appears on user messages with checkpoints
+- **File restoration**: SDK tracks file modifications and restores original content
+- **Conversation truncation**: Messages after the rewind point are removed
+- **Session restart**: SDK session restarts aligned to the checkpoint
+- **Accessibility**: Button has aria-label, title, and keyboard support
 
 ### Skills
 Reusable capability modules that Claude discovers and invokes automatically based on context.

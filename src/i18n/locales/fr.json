@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "Restaurer vers ce point de contrôle",
+    "noSession": "Aucune session active. Impossible de revenir en arrière.",
+    "whileStreaming": "Impossible de revenir en arrière pendant la diffusion.",
+    "missingId": "Impossible de revenir en arrière : identifiant du message manquant.",
+    "notFound": "Message non trouvé.",
+    "cannotRewind": "Impossible de revenir à ce point.",
+    "restartFailed": "Échec du redémarrage de la session : {error}",
+    "successOne": "1 fichier restauré au point de contrôle.",
+    "successMany": "{count} fichiers restaurés au point de contrôle.",
+    "successNone": "Restauré au point de contrôle."
   }
 }

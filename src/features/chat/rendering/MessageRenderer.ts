@@ -11,6 +11,7 @@ import { MarkdownRenderer } from 'obsidian';
 import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
 import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
@@ -444,7 +445,10 @@ export class MessageRenderer {
 
     const rewindBtn = msgEl.createSpan({ cls: 'claudian-rewind-btn' });
     rewindBtn.innerHTML = MessageRenderer.REWIND_ICON;
-    rewindBtn.setAttribute('aria-label', 'Restore to this point');
+    rewindBtn.setAttribute('aria-label', t('rewind.ariaLabel'));
+    rewindBtn.setAttribute('title', t('rewind.ariaLabel'));
+    rewindBtn.setAttribute('role', 'button');
+    rewindBtn.setAttribute('tabindex', '0');
 
     rewindBtn.addEventListener('click', (e) => {
       e.stopPropagation();

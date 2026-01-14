@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "このチェックポイントに復元",
+    "noSession": "アクティブなセッションがありません。巻き戻しできません。",
+    "whileStreaming": "ストリーミング中は巻き戻しできません。",
+    "missingId": "巻き戻しできません：メッセージ識別子がありません。",
+    "notFound": "メッセージが見つかりません。",
+    "cannotRewind": "このポイントに巻き戻しできません。",
+    "restartFailed": "セッション再起動に失敗しました：{error}",
+    "successOne": "1ファイルをチェックポイントに復元しました。",
+    "successMany": "{count}ファイルをチェックポイントに復元しました。",
+    "successNone": "チェックポイントに復元しました。"
   }
 }

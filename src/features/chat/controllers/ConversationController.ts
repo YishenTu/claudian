@@ -10,6 +10,7 @@ import { Notice, setIcon } from 'obsidian';
 import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { Conversation } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
@@ -734,13 +735,13 @@ export class ConversationController {
     const agentService = this.getAgentService();
 
     if (!agentService) {
-      new Notice('No active session. Cannot rewind.');
+      new Notice(t('rewind.noSession'));
       return;
     }
 
     // Check streaming state and set rewinding flag atomically to prevent race conditions
     if (state.isStreaming) {
-      new Notice('Cannot rewind while streaming.');
+      new Notice(t('rewind.whileStreaming'));
       return;
     }
     state.isRewinding = true;
@@ -748,14 +749,14 @@ export class ConversationController {
     try {
       // Validate UUID before SDK call
       if (!sdkUuid) {
-        new Notice('Cannot rewind: missing message identifier.');
+        new Notice(t('rewind.missingId'));
         return;
       }
 
       // Find the message index
       const messageIndex = state.messages.findIndex(m => m.id === messageId);
       if (messageIndex === -1) {
-        new Notice('Message not found.');
+        new Notice(t('rewind.notFound'));
         return;
       }
 
@@ -763,7 +764,7 @@ export class ConversationController {
       const result = await agentService.rewindFiles(sdkUuid);
 
       if (!result.canRewind) {
-        new Notice(result.error || 'Cannot rewind to this point.');
+        new Notice(result.error || t('rewind.cannotRewind'));
         return;
       }
 
@@ -784,7 +785,7 @@ export class ConversationController {
         await agentService.restartAfterRewind(sdkUuid);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        new Notice(`Session restart failed: ${errorMessage}`);
+        new Notice(t('rewind.restartFailed').replace('{error}', errorMessage));
         // Continue with UI update even if restart fails - files are already restored
       }
 
@@ -806,10 +807,12 @@ export class ConversationController {
 
       // Show notification with details
       const filesChanged = result.filesChanged?.length || 0;
-      if (filesChanged > 0) {
-        new Notice(`Restored ${filesChanged} file${filesChanged > 1 ? 's' : ''} to checkpoint.`);
+      if (filesChanged === 1) {
+        new Notice(t('rewind.successOne'));
+      } else if (filesChanged > 1) {
+        new Notice(t('rewind.successMany').replace('{count}', String(filesChanged)));
       } else {
-        new Notice('Restored to checkpoint.');
+        new Notice(t('rewind.successNone'));
       }
     } finally {
       // Always clear rewinding flag

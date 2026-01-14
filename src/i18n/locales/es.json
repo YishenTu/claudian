@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "Restaurar a este punto de control",
+    "noSession": "No hay sesión activa. No se puede rebobinar.",
+    "whileStreaming": "No se puede rebobinar durante la transmisión.",
+    "missingId": "No se puede rebobinar: falta el identificador del mensaje.",
+    "notFound": "Mensaje no encontrado.",
+    "cannotRewind": "No se puede rebobinar a este punto.",
+    "restartFailed": "Error al reiniciar la sesión: {error}",
+    "successOne": "1 archivo restaurado al punto de control.",
+    "successMany": "{count} archivos restaurados al punto de control.",
+    "successNone": "Restaurado al punto de control."
   }
 }

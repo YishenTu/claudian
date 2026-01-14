@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "이 체크포인트로 복원",
+    "noSession": "활성 세션이 없습니다. 되감기할 수 없습니다.",
+    "whileStreaming": "스트리밍 중에는 되감기할 수 없습니다.",
+    "missingId": "되감기할 수 없습니다: 메시지 식별자가 없습니다.",
+    "notFound": "메시지를 찾을 수 없습니다.",
+    "cannotRewind": "이 지점으로 되감기할 수 없습니다.",
+    "restartFailed": "세션 재시작 실패: {error}",
+    "successOne": "1개 파일을 체크포인트로 복원했습니다.",
+    "successMany": "{count}개 파일을 체크포인트로 복원했습니다.",
+    "successNone": "체크포인트로 복원했습니다."
   }
 }

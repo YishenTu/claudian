@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "Restaurar para este ponto de verificação",
+    "noSession": "Nenhuma sessão ativa. Não é possível retroceder.",
+    "whileStreaming": "Não é possível retroceder durante a transmissão.",
+    "missingId": "Não é possível retroceder: identificador de mensagem ausente.",
+    "notFound": "Mensagem não encontrada.",
+    "cannotRewind": "Não é possível retroceder para este ponto.",
+    "restartFailed": "Falha ao reiniciar a sessão: {error}",
+    "successOne": "1 arquivo restaurado para o ponto de verificação.",
+    "successMany": "{count} arquivos restaurados para o ponto de verificação.",
+    "successNone": "Restaurado para o ponto de verificação."
   }
 }

@@ -149,4 +149,16 @@ export type TranslationKey =
   | 'settings.language.fr'
   | 'settings.language.es'
   | 'settings.language.ru'
-  | 'settings.language.pt';
+  | 'settings.language.pt'
+
+  // Rewind
+  | 'rewind.ariaLabel'
+  | 'rewind.noSession'
+  | 'rewind.whileStreaming'
+  | 'rewind.missingId'
+  | 'rewind.notFound'
+  | 'rewind.cannotRewind'
+  | 'rewind.restartFailed'
+  | 'rewind.successOne'
+  | 'rewind.successMany'
+  | 'rewind.successNone';

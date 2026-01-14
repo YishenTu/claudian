@@ -177,5 +177,17 @@
       "ru": "Русский",
       "pt": "Português"
     }
+  },
+  "rewind": {
+    "ariaLabel": "恢复到此检查点",
+    "noSession": "没有活动会话。无法回退。",
+    "whileStreaming": "流式传输时无法回退。",
+    "missingId": "无法回退：缺少消息标识符。",
+    "notFound": "消息未找到。",
+    "cannotRewind": "无法回退到此点。",
+    "restartFailed": "会话重启失败：{error}",
+    "successOne": "已将 1 个文件恢复到检查点。",
+    "successMany": "已将 {count} 个文件恢复到检查点。",
+    "successNone": "已恢复到检查点。"
   }
 }
