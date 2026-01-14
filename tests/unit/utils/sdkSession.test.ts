@@ -36,12 +36,15 @@ describe('sdkSession', () => {
   });
 
   describe('encodeVaultPathForSDK', () => {
-    it('encodes vault path to URL-safe base64', () => {
+    it('encodes vault path using character replacement to match SDK format', () => {
       const encoded = encodeVaultPathForSDK('/Users/test/vault');
-      // Should be base64 URL-safe encoded
-      expect(encoded).not.toContain('+');
-      expect(encoded).not.toContain('/');
-      expect(encoded).not.toContain('=');
+      // SDK uses: `/` → `-`, space → `-`, `~` → `-`, `'` → `-`
+      expect(encoded).toBe('-Users-test-vault');
+    });
+
+    it('handles paths with spaces and special characters', () => {
+      const encoded = encodeVaultPathForSDK("/Users/test/My Vault's~Data");
+      expect(encoded).toBe('-Users-test-My-Vault-s-Data');
     });
 
     it('produces consistent encoding', () => {
