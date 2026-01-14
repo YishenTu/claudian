@@ -5,8 +5,8 @@
  * Manages conversation persistence and environment variable configuration.
  */
 
-import type { Editor,MarkdownView } from 'obsidian';
-import { Notice,Plugin } from 'obsidian';
+import type { Editor, MarkdownView } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 
 import { clearDiffState } from './core/hooks';
 import { deleteCachedImages } from './core/images/imageCache';
@@ -17,7 +17,8 @@ import { StorageService } from './core/storage';
 import type {
   ClaudianSettings,
   Conversation,
-  ConversationMeta} from './core/types';
+  ConversationMeta
+} from './core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_SETTINGS,
@@ -251,6 +252,11 @@ export default class ClaudianPlugin extends Plugin {
       ...(this.settings.claudeCliPaths ?? {}),
     };
 
+    // Initialize claudeCliPathsByHost if not present (for settings migrated from older versions)
+    if (!this.settings.claudeCliPathsByHost) {
+      this.settings.claudeCliPathsByHost = {};
+    }
+
     // Migrate legacy claudeCliPath to platform-specific claudeCliPaths
     let didMigrateCliPath = false;
     if (this.settings.claudeCliPath && !this.hasAnyPlatformCliPath()) {
@@ -352,8 +358,9 @@ export default class ClaudianPlugin extends Plugin {
 
   getResolvedClaudeCliPath(): string | null {
     return this.cliResolver.resolve(
-      this.settings.claudeCliPaths,
-      this.settings.claudeCliPath,  // Legacy fallback
+      this.settings.claudeCliPathsByHost,  // Per-device paths (preferred)
+      this.settings.claudeCliPaths,         // Platform paths (fallback)
+      this.settings.claudeCliPath,          // Legacy path (fallback)
       this.getActiveEnvironmentVariables()
     );
   }

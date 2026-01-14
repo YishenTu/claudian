@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
-import { getCliPlatformKey, getCurrentPlatformKey } from '../../core/types';
+import { getCliPlatformKey, getCurrentPlatformKey, getHostnameKey } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n/types';
@@ -525,15 +525,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
       updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
     });
 
-    // Get current platform key for platform-specific CLI path storage
-    const cliPlatformKey = getCliPlatformKey();
+    // Get hostname key for per-device CLI path storage
+    const hostnameKey = getHostnameKey();
 
-    const cliPathDescription = process.platform === 'win32'
-      ? `${t('settings.cliPath.desc')} ${t('settings.cliPath.descWindows')}`
-      : `${t('settings.cliPath.desc')} ${t('settings.cliPath.descUnix')}`;
+    // Build description with hostname info
+    const platformDesc = process.platform === 'win32'
+      ? t('settings.cliPath.descWindows')
+      : t('settings.cliPath.descUnix');
+    const cliPathDescription = `${t('settings.cliPath.desc')} ${platformDesc}`;
 
     const cliPathSetting = new Setting(containerEl)
-      .setName(t('settings.cliPath.name'))
+      .setName(`${t('settings.cliPath.name')} (${hostnameKey})`)
       .setDesc(cliPathDescription);
 
     // Create validation message element
@@ -566,8 +568,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
         ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
         : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
 
-      // Read from platform-specific path
-      const currentValue = this.plugin.settings.claudeCliPaths[cliPlatformKey] || '';
+      // Read from hostname-specific path (new) or fall back to platform-specific path (old)
+      const cliPlatformKey = getCliPlatformKey();
+      const currentValue = this.plugin.settings.claudeCliPathsByHost?.[hostnameKey]
+        || this.plugin.settings.claudeCliPaths?.[cliPlatformKey]
+        || '';
 
       text
         .setPlaceholder(placeholder)
@@ -584,10 +589,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
           }
 
           const trimmed = value.trim();
-          // Write to platform-specific path
-          this.plugin.settings.claudeCliPaths[cliPlatformKey] = trimmed;
-          // Keep legacy field in sync for downgrade compatibility
-          this.plugin.settings.claudeCliPath = trimmed;
+          // Initialize claudeCliPathsByHost if needed
+          if (!this.plugin.settings.claudeCliPathsByHost) {
+            this.plugin.settings.claudeCliPathsByHost = {};
+          }
+          // Write to hostname-specific path
+          this.plugin.settings.claudeCliPathsByHost[hostnameKey] = trimmed;
           await this.plugin.saveSettings();
           // Clear cached path so next query will use the new path
           this.plugin.cliResolver?.reset();

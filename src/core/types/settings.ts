@@ -130,6 +130,23 @@ export function getDefaultCliPaths(): PlatformCliPaths {
   };
 }
 
+/**
+ * Hostname-keyed CLI paths for per-device configuration.
+ * Each device stores its path using its hostname as key.
+ * This allows settings to sync across devices without conflicts.
+ */
+export type HostnameCliPaths = Record<string, string>;
+
+/**
+ * Get the hostname key for CLI paths.
+ * Uses os.hostname() to uniquely identify each device.
+ */
+export function getHostnameKey(): string {
+  // Import os here to avoid circular dependencies
+  const os = require('os');
+  return os.hostname();
+}
+
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'normal';
 
@@ -261,7 +278,8 @@ export interface ClaudianSettings {
 
   // CLI paths (platform-specific)
   claudeCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
-  claudeCliPaths: PlatformCliPaths;  // Platform-specific CLI paths (preferred)
+  claudeCliPaths: PlatformCliPaths;  // Platform-specific CLI paths (deprecated, kept for migration)
+  claudeCliPathsByHost: HostnameCliPaths;  // Per-device paths keyed by hostname (preferred)
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
 
   // State (merged from data.json)
@@ -323,7 +341,8 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // CLI paths
   claudeCliPath: '',  // Legacy field (empty = not migrated)
-  claudeCliPaths: getDefaultCliPaths(),  // Platform-specific paths
+  claudeCliPaths: getDefaultCliPaths(),  // Platform-specific paths (deprecated)
+  claudeCliPathsByHost: {},  // Per-device paths keyed by hostname
   loadUserClaudeSettings: true,  // Default on for compatibility
 
   lastClaudeModel: 'haiku',
