@@ -2437,6 +2437,25 @@ describe('ClaudianService', () => {
       expect(response?.setPermissionMode).toHaveBeenCalledWith('default');
     });
 
+    it('updates permission mode via setPermissionMode when going from normal to YOLO', async () => {
+      // Start in normal mode
+      mockPlugin.settings.permissionMode = 'normal';
+      service = new ClaudianService(mockPlugin, createMockMcpManager());
+
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      // Switch to YOLO mode
+      mockPlugin.settings.permissionMode = 'yolo';
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      const response = getLastResponse();
+      // Should call setPermissionMode for normal -> YOLO transition (no restart needed)
+      expect(response?.setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
+    });
+
     it('updates MCP servers on the active persistent query', async () => {
       const chunks1: any[] = [];
       for await (const c of service.query('first', undefined, undefined, {

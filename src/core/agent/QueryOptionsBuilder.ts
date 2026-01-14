@@ -121,8 +121,8 @@ export class QueryOptionsBuilder {
     if (currentConfig.settingSources !== newConfig.settingSources) return true;
     if (currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
 
-    // Note: allowDangerouslySkip (YOLO mode) is handled in ClaudianService's applyDynamicUpdates
-    // permission mode section via restart (normal→YOLO) or setPermissionMode (YOLO→normal)
+    // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
+    // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
 
     // Export paths affect system prompt
     const oldExport = [...(currentConfig.allowedExportPaths || [])].sort().join('|');
@@ -161,7 +161,6 @@ export class QueryOptionsBuilder {
       model: ctx.settings.model,
       thinkingTokens: thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null,
       permissionMode: ctx.settings.permissionMode,
-      allowDangerouslySkip: ctx.settings.permissionMode === 'yolo',
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
       disallowedToolsKey,
       mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
@@ -353,15 +352,21 @@ export class QueryOptionsBuilder {
 
   /**
    * Applies permission mode settings to options.
+   *
+   * Always sets allowDangerouslySkipPermissions: true to enable dynamic
+   * switching between permission modes via setPermissionMode() without
+   * requiring a process restart. This mimics Claude Code CLI behavior.
    */
   private static applyPermissionMode(
     options: Options,
     permissionMode: PermissionMode,
     canUseTool?: CanUseTool
   ): void {
+    // Always enable bypass capability so we can dynamically switch modes
+    options.allowDangerouslySkipPermissions = true;
+
     if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
-      options.allowDangerouslySkipPermissions = true;
     } else {
       options.permissionMode = 'default';
       if (canUseTool) {

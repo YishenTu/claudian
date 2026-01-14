@@ -946,26 +946,13 @@ export class ClaudianService {
       }
     }
 
-    // Update permission mode if changed (except YOLO toggle which requires restart)
-    // Note: Switching from normal to YOLO requires restart (allowDangerouslySkipPermissions)
-    // Switching from YOLO to normal can use setPermissionMode
+    // Update permission mode if changed
+    // Since we always start with allowDangerouslySkipPermissions: true,
+    // we can dynamically switch between modes without restarting
     if (this.currentConfig && permissionMode !== this.currentConfig.permissionMode) {
-      if (permissionMode === 'yolo' && this.currentConfig.permissionMode !== 'yolo') {
-        // Switching TO YOLO requires restart
-        if (!allowRestart) {
-          return;
-        }
-        await this.restartPersistentQuery('permission mode change to YOLO', restartOptions);
-        if (allowRestart && this.persistentQuery) {
-          await this.applyDynamicUpdates(queryOptions, restartOptions, false);
-        }
-        return;
-      } else if (permissionMode !== 'yolo') {
-        // Can update via setPermissionMode (normal mode uses 'default')
-        await this.persistentQuery.setPermissionMode('default');
-        this.currentConfig.permissionMode = permissionMode;
-        this.currentConfig.allowDangerouslySkip = false;
-      }
+      const sdkMode = permissionMode === 'yolo' ? 'bypassPermissions' : 'default';
+      await this.persistentQuery.setPermissionMode(sdkMode);
+      this.currentConfig.permissionMode = permissionMode;
     }
 
     // Update MCP servers if changed

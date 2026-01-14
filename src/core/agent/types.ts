@@ -142,7 +142,6 @@ export interface PersistentQueryConfig {
   model: string | null;
   thinkingTokens: number | null;
   permissionMode: PermissionMode | null;
-  allowDangerouslySkip: boolean;
   systemPromptKey: string;
   disallowedToolsKey: string;
   mcpServersKey: string;

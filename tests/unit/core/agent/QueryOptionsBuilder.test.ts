@@ -86,7 +86,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -105,7 +104,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -124,7 +122,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -144,7 +141,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -164,7 +160,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -184,7 +179,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -204,7 +198,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -224,7 +217,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -244,7 +236,6 @@ describe('QueryOptionsBuilder', () => {
         model: 'claude-sonnet-4-5',
         thinkingTokens: null,
         permissionMode: 'yolo',
-        allowDangerouslySkip: true,
         systemPromptKey: 'key1',
         disallowedToolsKey: '',
         mcpServersKey: '',
@@ -268,7 +259,6 @@ describe('QueryOptionsBuilder', () => {
       expect(config.model).toBe('claude-sonnet-4-5');
       expect(config.thinkingTokens).toBeNull();
       expect(config.permissionMode).toBe('yolo');
-      expect(config.allowDangerouslySkip).toBe(true);
       expect(config.settingSources).toBe('project');
       expect(config.claudeCliPath).toBe('/mock/claude');
     });
@@ -318,6 +308,8 @@ describe('QueryOptionsBuilder', () => {
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
       expect(options.permissionMode).toBe('default');
+      // Always true to enable dynamic switching to bypassPermissions without restart
+      expect(options.allowDangerouslySkipPermissions).toBe(true);
       expect(options.canUseTool).toBe(canUseTool);
     });
 
