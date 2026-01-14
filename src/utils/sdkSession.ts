@@ -262,14 +262,16 @@ function mapContentBlocks(content: string | SDKNativeContentBlock[] | undefined)
 /**
  * Converts an SDK native message to a ChatMessage.
  *
- * Note: For full tool result matching across messages, use loadSDKSessionMessages()
- * which performs two-pass parsing. This function only matches tool_result in the
- * same message as tool_use.
- *
  * @param sdkMsg - The SDK native message
+ * @param toolResults - Optional pre-collected tool results for cross-message matching.
+ *   If not provided, only matches tool_result in the same message as tool_use.
+ *   For full cross-message matching, use loadSDKSessionMessages() which performs two-pass parsing.
  * @returns ChatMessage or null if the message should be skipped
  */
-export function parseSDKMessageToChat(sdkMsg: SDKNativeMessage): ChatMessage | null {
+export function parseSDKMessageToChat(
+  sdkMsg: SDKNativeMessage,
+  toolResults?: Map<string, { content: string; isError: boolean }>
+): ChatMessage | null {
   // Skip non-conversation messages
   if (sdkMsg.type === 'file-history-snapshot') return null;
   if (sdkMsg.type === 'system') return null;
@@ -294,7 +296,7 @@ export function parseSDKMessageToChat(sdkMsg: SDKNativeMessage): ChatMessage | n
     role: sdkMsg.type,
     content: textContent,
     timestamp,
-    toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content) : undefined,
+    toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
   };
 }
@@ -377,7 +379,7 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
     // Skip user messages that only contain tool_result
     if (isToolResultOnlyMessage(sdkMsg)) continue;
 
-    const chatMsg = parseSDKMessageToChatWithResults(sdkMsg, toolResults);
+    const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults);
     if (chatMsg) {
       chatMessages.push(chatMsg);
     }
@@ -387,40 +389,4 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
   chatMessages.sort((a, b) => a.timestamp - b.timestamp);
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
-}
-
-/**
- * Converts an SDK native message to a ChatMessage with cross-message tool results.
- */
-function parseSDKMessageToChatWithResults(
-  sdkMsg: SDKNativeMessage,
-  toolResults: Map<string, { content: string; isError: boolean }>
-): ChatMessage | null {
-  // Skip non-conversation messages
-  if (sdkMsg.type === 'file-history-snapshot') return null;
-  if (sdkMsg.type === 'system') return null;
-  if (sdkMsg.type === 'result') return null;
-
-  // Only process user and assistant messages
-  if (sdkMsg.type !== 'user' && sdkMsg.type !== 'assistant') return null;
-
-  const content = sdkMsg.message?.content;
-  const textContent = extractTextContent(content);
-
-  // Skip empty messages (but allow assistant messages with tool_use)
-  const hasToolUse = Array.isArray(content) && content.some(b => b.type === 'tool_use');
-  if (!textContent && !hasToolUse && (!content || typeof content === 'string')) return null;
-
-  const timestamp = sdkMsg.timestamp
-    ? new Date(sdkMsg.timestamp).getTime()
-    : Date.now();
-
-  return {
-    id: sdkMsg.uuid || `sdk-${timestamp}-${Math.random().toString(36).slice(2)}`,
-    role: sdkMsg.type,
-    content: textContent,
-    timestamp,
-    toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
-    contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
-  };
 }
