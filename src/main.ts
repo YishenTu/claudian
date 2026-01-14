@@ -9,12 +9,12 @@ import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
 import { clearDiffState } from './core/hooks';
-import { deleteCachedImages } from './core/images/imageCache';
 import { McpServerManager } from './core/mcp';
 import { McpService } from './core/mcp/McpService';
 import { loadPluginCommands, PluginManager, PluginStorage } from './core/plugins';
 import { StorageService } from './core/storage';
 import type {
+  ChatMessage,
   ClaudianSettings,
   Conversation,
   ConversationMeta
@@ -33,6 +33,8 @@ import { setLocale } from './i18n';
 import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
+import { getVaultPath } from './utils/path';
+import { loadSDKSessionMessages, sdkSessionExists, type SDKSessionLoadResult } from './utils/sdkSession';
 
 /**
  * Main plugin class for Claudian.
@@ -267,9 +269,70 @@ export default class ClaudianPlugin extends Plugin {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (this.settings as any).claudeCliPaths;
 
-    // Load all conversations from session files
-    const { conversations, failedCount } = await this.storage.sessions.loadAllConversations();
-    this.conversations = conversations;
+    // Load all conversations from session files (legacy JSONL + native metadata)
+    const { conversations: legacyConversations, failedCount } = await this.storage.sessions.loadAllConversations();
+    const legacyIds = new Set(legacyConversations.map(c => c.id));
+
+    // Overlay native metadata onto legacy conversations if present
+    for (const conversation of legacyConversations) {
+      const meta = await this.storage.sessions.loadMetadata(conversation.id);
+      if (!meta) continue;
+
+      conversation.isNative = true;
+      conversation.title = meta.title ?? conversation.title;
+      conversation.titleGenerationStatus = meta.titleGenerationStatus ?? conversation.titleGenerationStatus;
+      conversation.createdAt = meta.createdAt ?? conversation.createdAt;
+      conversation.updatedAt = meta.updatedAt ?? conversation.updatedAt;
+      conversation.lastResponseAt = meta.lastResponseAt ?? conversation.lastResponseAt;
+      if (meta.sessionId !== undefined) {
+        conversation.sessionId = meta.sessionId;
+      }
+      conversation.currentNote = meta.currentNote ?? conversation.currentNote;
+      conversation.externalContextPaths = meta.externalContextPaths ?? conversation.externalContextPaths;
+      conversation.enabledMcpServers = meta.enabledMcpServers ?? conversation.enabledMcpServers;
+      conversation.usage = meta.usage ?? conversation.usage;
+      if (meta.sdkSessionId !== undefined) {
+        conversation.sdkSessionId = meta.sdkSessionId;
+      } else if (conversation.sdkSessionId === undefined && conversation.sessionId) {
+        conversation.sdkSessionId = conversation.sessionId;
+      }
+      conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
+    }
+
+    // Also load native session metadata (no legacy JSONL)
+    const nativeMetadata = await this.storage.sessions.listNativeMetadata();
+    const nativeConversations: Conversation[] = nativeMetadata
+      .filter(meta => !legacyIds.has(meta.id))
+      .map(meta => {
+        const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
+        const sdkSessionId = meta.sdkSessionId !== undefined
+          ? meta.sdkSessionId
+          : (resumeSessionId ?? undefined);
+
+        return {
+          id: meta.id,
+          title: meta.title,
+          createdAt: meta.createdAt,
+          updatedAt: meta.updatedAt,
+          lastResponseAt: meta.lastResponseAt,
+          sessionId: resumeSessionId,
+          sdkSessionId,
+          messages: [], // Messages are in SDK storage, loaded on demand
+          currentNote: meta.currentNote,
+          externalContextPaths: meta.externalContextPaths,
+          enabledMcpServers: meta.enabledMcpServers,
+          usage: meta.usage,
+          titleGenerationStatus: meta.titleGenerationStatus,
+          legacyCutoffAt: meta.legacyCutoffAt,
+          isNative: true,
+        };
+      });
+
+    // Merge and sort by lastResponseAt/updatedAt
+    this.conversations = [...legacyConversations, ...nativeConversations].sort(
+      (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
+    );
+
     if (failedCount > 0) {
       new Notice(`Failed to load ${failedCount} conversation${failedCount > 1 ? 's' : ''}`);
     }
@@ -288,7 +351,15 @@ export default class ClaudianPlugin extends Plugin {
     // Persist backfilled and invalidated conversations to their session files
     const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
     for (const conv of conversationsToSave) {
-      await this.storage.sessions.saveConversation(conv);
+      if (conv.isNative) {
+        // Native session: save metadata only
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conv)
+        );
+      } else {
+        // Legacy session: save full JSONL
+        await this.storage.sessions.saveConversation(conv);
+      }
     }
   }
 
@@ -423,8 +494,9 @@ export default class ClaudianPlugin extends Plugin {
     // Session invalidation is now handled per-tab by TabManager.
     clearDiffState(); // Clear UI diff state (not SDK-related)
 
-    // Clear sessionId from all conversations since they belong to the old provider.
+    // Clear resume sessionId from all conversations since they belong to the old provider.
     // Sessions are provider-specific (contain signed thinking blocks, etc.).
+    // NOTE: sdkSessionId is retained for loading SDK-stored history.
     const invalidatedConversations: Conversation[] = [];
     for (const conv of this.conversations) {
       if (conv.sessionId) {
@@ -446,40 +518,6 @@ export default class ClaudianPlugin extends Plugin {
     return { changed: true, invalidatedConversations };
   }
 
-  /** Removes cached images associated with a conversation if not used elsewhere. */
-  private cleanupConversationImages(conversation: Conversation): void {
-    const cachePaths = new Set<string>();
-
-    for (const message of conversation.messages || []) {
-      if (!message.images) continue;
-      for (const img of message.images) {
-        if (img.cachePath) {
-          cachePaths.add(img.cachePath);
-        }
-      }
-    }
-
-    if (cachePaths.size === 0) return;
-
-    const inUseElsewhere = new Set<string>();
-    for (const conv of this.conversations) {
-      if (conv.id === conversation.id) continue;
-      for (const msg of conv.messages || []) {
-        if (!msg.images) continue;
-        for (const img of msg.images) {
-          if (img.cachePath && cachePaths.has(img.cachePath)) {
-            inUseElsewhere.add(img.cachePath);
-          }
-        }
-      }
-    }
-
-    const deletable = Array.from(cachePaths).filter(p => !inUseElsewhere.has(p));
-    if (deletable.length > 0) {
-      deleteCachedImages(this.app, deletable);
-    }
-  }
-
   private generateConversationId(): string {
     return `conv-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
@@ -496,35 +534,102 @@ export default class ClaudianPlugin extends Plugin {
 
   private getConversationPreview(conv: Conversation): string {
     const firstUserMsg = conv.messages.find(m => m.role === 'user');
-    if (!firstUserMsg) return 'New conversation';
+    if (!firstUserMsg) {
+      // For native sessions without loaded messages, indicate it's a persisted session
+      // rather than "New conversation" which implies no content exists
+      return conv.isNative ? 'SDK session' : 'New conversation';
+    }
     return firstUserMsg.content.substring(0, 50) + (firstUserMsg.content.length > 50 ? '...' : '');
   }
 
-  /** Creates a new conversation and sets it as active. */
-  async createConversation(): Promise<Conversation> {
+  private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
+    if (!conversation.isNative || conversation.sdkMessagesLoaded) return;
+
+    const vaultPath = getVaultPath(this.app);
+    const sdkSessionToLoad = conversation.sdkSessionId ?? conversation.sessionId;
+    if (!vaultPath || !sdkSessionToLoad) return;
+
+    if (!sdkSessionExists(vaultPath, sdkSessionToLoad)) return;
+
+    const result: SDKSessionLoadResult = await loadSDKSessionMessages(vaultPath, sdkSessionToLoad);
+
+    // Notify user of issues
+    if (result.error) {
+      new Notice(`Failed to load conversation history: ${result.error}`);
+      return;
+    }
+    if (result.skippedLines > 0) {
+      new Notice(`Some messages could not be loaded (${result.skippedLines} corrupted)`);
+    }
+
+    const filteredSdkMessages = conversation.legacyCutoffAt != null
+      ? result.messages.filter(msg => msg.timestamp > conversation.legacyCutoffAt!)
+      : result.messages;
+    const merged = this.dedupeMessages([
+      ...conversation.messages,
+      ...filteredSdkMessages,
+    ]).sort((a, b) => a.timestamp - b.timestamp);
+
+    conversation.messages = merged;
+    conversation.sdkMessagesLoaded = true;
+  }
+
+  private dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
+    const seen = new Set<string>();
+    const result: ChatMessage[] = [];
+
+    for (const message of messages) {
+      // Use message.id as primary key - more reliable than content-based deduplication
+      // especially for tool-only messages or messages with identical content
+      if (seen.has(message.id)) continue;
+      seen.add(message.id);
+      result.push(message);
+    }
+
+    return result;
+  }
+
+  /**
+   * Creates a new conversation and sets it as active.
+   *
+   * New conversations always use SDK-native storage.
+   * The session ID may be captured after the first SDK response.
+   */
+  async createConversation(sessionId?: string): Promise<Conversation> {
+    const conversationId = sessionId ?? this.generateConversationId();
     const conversation: Conversation = {
-      id: this.generateConversationId(),
+      id: conversationId,
       title: this.generateDefaultTitle(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      sessionId: null,
+      sessionId: sessionId ?? null,
+      sdkSessionId: sessionId ?? undefined,
       messages: [],
+      isNative: true,
     };
 
     this.conversations.unshift(conversation);
     // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state (not SDK-related)
 
-    // Save new conversation to session file
-    await this.storage.sessions.saveConversation(conversation);
+    // Save new conversation (metadata only - SDK handles messages)
+    await this.storage.sessions.saveMetadata(
+      this.storage.sessions.toSessionMetadata(conversation)
+    );
 
     return conversation;
   }
 
-  /** Switches to an existing conversation by ID. */
+  /**
+   * Switches to an existing conversation by ID.
+   *
+   * For native sessions, loads messages from SDK storage if not already loaded.
+   */
   async switchConversation(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
+
+    await this.loadSdkMessagesForConversation(conversation);
 
     // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state when switching conversations
@@ -532,17 +637,29 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  /** Deletes a conversation and resets any tabs using it. */
+  /**
+   * Deletes a conversation and resets any tabs using it.
+   *
+   * For native sessions, deletes the metadata file.
+   * For legacy sessions, deletes the JSONL file.
+   * Note: SDK-stored messages in ~/.claude/projects/ are not deleted.
+   */
   async deleteConversation(id: string): Promise<void> {
     const index = this.conversations.findIndex(c => c.id === id);
     if (index === -1) return;
 
     const conversation = this.conversations[index];
-    this.cleanupConversationImages(conversation);
     this.conversations.splice(index, 1);
 
-    // Delete the session file
-    await this.storage.sessions.deleteConversation(id);
+    // Delete the appropriate storage file
+    if (conversation.isNative) {
+      // Native session: delete metadata file only
+      // SDK messages in ~/.claude/projects/ are intentionally kept
+      await this.storage.sessions.deleteMetadata(id);
+    } else {
+      // Legacy session: delete JSONL file
+      await this.storage.sessions.deleteConversation(id);
+    }
 
     // Notify all views/tabs that have this conversation open
     // They need to reset to a new conversation
@@ -558,7 +675,6 @@ export default class ClaudianPlugin extends Plugin {
         }
       }
     }
-
   }
 
   /** Renames a conversation. */
@@ -568,20 +684,72 @@ export default class ClaudianPlugin extends Plugin {
 
     conversation.title = title.trim() || this.generateDefaultTitle();
     conversation.updatedAt = Date.now();
-    await this.storage.sessions.saveConversation(conversation);
+
+    if (conversation.isNative) {
+      // Native session: save metadata only
+      await this.storage.sessions.saveMetadata(
+        this.storage.sessions.toSessionMetadata(conversation)
+      );
+    } else {
+      // Legacy session: save full JSONL
+      await this.storage.sessions.saveConversation(conversation);
+    }
   }
 
-  /** Updates conversation properties (messages, sessionId, etc.). */
+  /**
+   * Updates conversation properties.
+   *
+   * For native sessions, saves metadata only (SDK handles messages including images).
+   * For legacy sessions, saves full JSONL.
+   *
+   * Image data is cleared from memory after save (SDK/JSONL has persisted it).
+   */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return;
 
     Object.assign(conversation, updates, { updatedAt: Date.now() });
-    await this.storage.sessions.saveConversation(conversation);
+
+    if (conversation.isNative) {
+      // Native session: save metadata only (SDK handles messages including images)
+      await this.storage.sessions.saveMetadata(
+        this.storage.sessions.toSessionMetadata(conversation)
+      );
+    } else {
+      // Legacy session: save full JSONL
+      await this.storage.sessions.saveConversation(conversation);
+    }
+
+    // Clear image data from memory after save (data is persisted by SDK or JSONL)
+    for (const msg of conversation.messages) {
+      if (msg.images) {
+        for (const img of msg.images) {
+          img.data = '';
+        }
+      }
+    }
   }
 
-  /** Gets a conversation by ID from the in-memory cache. */
-  getConversationById(id: string): Conversation | null {
+  /**
+   * Gets a conversation by ID from the in-memory cache.
+   *
+   * For native sessions, loads messages from SDK storage if not already loaded.
+   */
+  async getConversationById(id: string): Promise<Conversation | null> {
+    const conversation = this.conversations.find(c => c.id === id) || null;
+
+    if (conversation) {
+      await this.loadSdkMessagesForConversation(conversation);
+    }
+
+    return conversation;
+  }
+
+  /**
+   * Gets a conversation by ID without loading SDK messages.
+   * Use this for UI code that only needs metadata (title, etc.).
+   */
+  getConversationSync(id: string): Conversation | null {
     return this.conversations.find(c => c.id === id) || null;
   }
 
@@ -601,6 +769,7 @@ export default class ClaudianPlugin extends Plugin {
       messageCount: c.messages.length,
       preview: this.getConversationPreview(c),
       titleGenerationStatus: c.titleGenerationStatus,
+      isNative: c.isNative,
     }));
   }
 

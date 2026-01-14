@@ -1,6 +1,5 @@
 import * as os from 'os';
 
-import * as imageCache from '@/core/images/imageCache';
 import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 
 // Mock fs for ClaudianService
@@ -351,7 +350,7 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
-      const fetched = plugin.getConversationById(conv.id);
+      const fetched = await plugin.getConversationById(conv.id);
 
       expect(fetched?.id).toBe(conv.id);
     });
@@ -419,46 +418,6 @@ describe('ClaudianPlugin', () => {
     });
   });
 
-  describe('cleanupConversationImages', () => {
-    it('deletes cached images not used elsewhere', async () => {
-      await plugin.onload();
-      const deleteSpy = jest.spyOn(imageCache, 'deleteCachedImages').mockImplementation(() => {});
-
-      const convA: any = {
-        id: 'a',
-        title: 'A',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        sessionId: null,
-        messages: [
-          { id: 'm1', role: 'user', content: '', timestamp: 0, images: [
-            { id: 'i1', name: 'x', mediaType: 'image/png', cachePath: 'path1', size: 1, source: 'file' },
-            { id: 'i2', name: 'y', mediaType: 'image/png', cachePath: 'path2', size: 1, source: 'file' },
-          ] },
-        ],
-      };
-
-      const convB: any = {
-        id: 'b',
-        title: 'B',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        sessionId: null,
-        messages: [
-          { id: 'm2', role: 'user', content: '', timestamp: 0, images: [
-            { id: 'i3', name: 'z', mediaType: 'image/png', cachePath: 'path1', size: 1, source: 'file' },
-          ] },
-        ],
-      };
-
-      (plugin as any).conversations = [convA, convB];
-      (plugin as any).cleanupConversationImages(convA);
-
-      expect(deleteSpy).toHaveBeenCalledWith(plugin.app, ['path2']);
-      deleteSpy.mockRestore();
-    });
-  });
-
   describe('renameConversation', () => {
     it('should rename conversation', async () => {
       await plugin.onload();
@@ -467,7 +426,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.renameConversation(conv.id, 'New Title');
 
-      const updated = plugin.getConversationById(conv.id);
+      const updated = await plugin.getConversationById(conv.id);
       expect(updated?.title).toBe('New Title');
     });
 
@@ -478,7 +437,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.renameConversation(conv.id, '   ');
 
-      const updated = plugin.getConversationById(conv.id);
+      const updated = await plugin.getConversationById(conv.id);
       expect(updated?.title).toBeTruthy();
     });
   });
@@ -494,7 +453,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.updateConversation(conv.id, { messages });
 
-      const updated = plugin.getConversationById(conv.id);
+      const updated = await plugin.getConversationById(conv.id);
       expect(updated?.messages).toEqual(messages);
     });
 
@@ -505,7 +464,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.updateConversation(conv.id, { sessionId: 'new-session-id' });
 
-      const updated = plugin.getConversationById(conv.id);
+      const updated = await plugin.getConversationById(conv.id);
       expect(updated?.sessionId).toBe('new-session-id');
     });
 
@@ -520,7 +479,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.updateConversation(conv.id, { title: 'Changed' });
 
-      const updated = plugin.getConversationById(conv.id);
+      const updated = await plugin.getConversationById(conv.id);
       expect(updated?.updatedAt).toBeGreaterThan(originalUpdatedAt);
     });
   });
@@ -602,7 +561,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      const loaded = plugin.getConversationById('conv-saved-1');
+      const loaded = await plugin.getConversationById('conv-saved-1');
       expect(loaded?.id).toBe('conv-saved-1');
       expect(loaded?.title).toBe('Saved Chat');
     });
@@ -648,7 +607,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      const loaded = plugin.getConversationById('conv-saved-1');
+      const loaded = await plugin.getConversationById('conv-saved-1');
       expect(loaded?.sessionId).toBeNull();
 
       const sessionWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(

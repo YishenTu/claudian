@@ -305,7 +305,8 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       persistentExternalContextPaths: [],
     },
     mcpService: { getMcpServers: jest.fn().mockReturnValue([]) },
-    getConversationById: jest.fn().mockReturnValue(null),
+    getConversationById: jest.fn().mockResolvedValue(null),
+    getConversationSync: jest.fn().mockReturnValue(null),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue({}),
     ...overrides,
@@ -464,7 +465,7 @@ describe('Tab - Service Initialization', () => {
       expect(tab.serviceInitialized).toBe(true);
     });
 
-    it('should pre-warm when conversation has sessionId', async () => {
+    it('should pre-warm without session ID (just spin up process)', async () => {
       const mockPreWarm = jest.fn().mockResolvedValue(undefined);
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
       agentModule.ClaudianService.mockImplementationOnce(() => ({
@@ -472,20 +473,13 @@ describe('Tab - Service Initialization', () => {
         preWarm: mockPreWarm,
       }));
 
-      const plugin = createMockPlugin({
-        getConversationById: jest.fn().mockReturnValue({
-          id: 'conv-123',
-          sessionId: 'session-456',
-        }),
-      });
-
-      const options = createMockOptions({ plugin });
+      const options = createMockOptions();
       const tab = createTab(options);
-      tab.conversationId = 'conv-123';
 
-      await initializeTabService(tab, plugin, options.mcpManager);
+      await initializeTabService(tab, options.plugin, options.mcpManager);
 
-      expect(mockPreWarm).toHaveBeenCalledWith('session-456');
+      // PreWarm should be called without session ID - just to spin up the process
+      expect(mockPreWarm).toHaveBeenCalledWith();
     });
   });
 });
@@ -671,7 +665,7 @@ describe('Tab - Title', () => {
 
     it('should return conversation title when available', () => {
       const plugin = createMockPlugin({
-        getConversationById: jest.fn().mockReturnValue({
+        getConversationSync: jest.fn().mockReturnValue({
           id: 'conv-123',
           title: 'My Conversation',
         }),
@@ -688,7 +682,7 @@ describe('Tab - Title', () => {
 
     it('should return "New Chat" when conversation has no title', () => {
       const plugin = createMockPlugin({
-        getConversationById: jest.fn().mockReturnValue({
+        getConversationSync: jest.fn().mockReturnValue({
           id: 'conv-123',
           title: null,
         }),
@@ -1304,7 +1298,7 @@ describe('Tab - UI Callback Wiring', () => {
       // Get the ImageContextManager constructor call
       const { ImageContextManager } = jest.requireMock('@/features/chat/ui');
       const constructorCall = ImageContextManager.mock.calls[0];
-      const callbacks = constructorCall[3]; // 4th argument is callbacks
+      const callbacks = constructorCall[2]; // 3rd argument is callbacks (app parameter was removed)
 
       callbacks.onImagesChanged();
 

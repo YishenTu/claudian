@@ -90,7 +90,7 @@ export class TabManager implements TabManagerInterface {
     }
 
     const conversation = conversationId
-      ? this.plugin.getConversationById(conversationId)
+      ? await this.plugin.getConversationById(conversationId)
       : undefined;
 
     const tab = createTab({
@@ -173,7 +173,7 @@ export class TabManager implements TabManagerInterface {
       } else if (tab.conversationId && tab.state.messages.length > 0 && tab.service) {
         // Tab already has messages loaded - sync service session to conversation
         // This handles the case where user switches between tabs with different sessions
-        const conversation = this.plugin.getConversationById(tab.conversationId);
+        const conversation = await this.plugin.getConversationById(tab.conversationId);
         if (conversation && conversation.sessionId !== tab.service.getSessionId()) {
           tab.service.setSessionId(conversation.sessionId ?? null);
         }

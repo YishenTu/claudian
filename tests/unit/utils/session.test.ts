@@ -5,6 +5,7 @@
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import {
   buildContextFromHistory,
+  buildPromptWithHistoryContext,
   formatContextLine,
   formatToolCallForContext,
   getLastUserMessage,
@@ -607,6 +608,84 @@ describe('session utilities', () => {
       const result = getLastUserMessage(messages);
 
       expect(result?.id).toBe('msg-2');
+    });
+  });
+
+  describe('buildPromptWithHistoryContext', () => {
+    it('returns prompt unchanged when historyContext is null', () => {
+      const prompt = '<query>\nhello\n</query>';
+      const result = buildPromptWithHistoryContext(null, prompt, 'hello', []);
+
+      expect(result).toBe(prompt);
+    });
+
+    it('returns only history when actualPrompt matches last user message', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'hello', timestamp: 1000 },
+        { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: 2000 },
+      ];
+      const historyContext = 'User: hello\n\nAssistant: hi';
+      const prompt = '<query>\nhello\n</query>';
+      const actualPrompt = 'hello';
+
+      const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
+
+      // Should NOT append prompt since actualPrompt matches last user message
+      expect(result).toBe(historyContext);
+    });
+
+    it('appends prompt when actualPrompt differs from last user message', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'first message', timestamp: 1000 },
+        { id: 'msg-2', role: 'assistant', content: 'response', timestamp: 2000 },
+      ];
+      const historyContext = 'User: first message\n\nAssistant: response';
+      const prompt = '<query>\nsecond message\n</query>';
+      const actualPrompt = 'second message';
+
+      const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
+
+      expect(result).toContain(historyContext);
+      expect(result).toContain('User: <query>');
+      expect(result).toContain('second message');
+    });
+
+    it('returns prompt unchanged when history context is empty string', () => {
+      const historyContext = '';
+      const prompt = '<query>\nhello\n</query>';
+
+      const result = buildPromptWithHistoryContext(historyContext, prompt, 'hello', []);
+
+      // Empty string is falsy, so returns original prompt
+      expect(result).toBe(prompt);
+    });
+
+    it('appends prompt when no user messages in history', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'assistant', content: 'welcome', timestamp: 1000 },
+      ];
+      const historyContext = 'Assistant: welcome';
+      const prompt = '<query>\nhello\n</query>';
+      const actualPrompt = 'hello';
+
+      const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
+
+      expect(result).toContain(historyContext);
+      expect(result).toContain('User: <query>');
+    });
+
+    it('handles whitespace in comparison', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: '  hello world  ', timestamp: 1000 },
+      ];
+      const historyContext = 'User: hello world';
+      const prompt = '<query>\nhello world\n</query>';
+      const actualPrompt = 'hello world';
+
+      const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
+
+      // Should match after trimming
+      expect(result).toBe(historyContext);
     });
   });
 });

@@ -91,6 +91,21 @@ describe('SessionManager', () => {
 
       expect(manager.getSessionId()).toBeNull();
     });
+
+    it('should mark invalidation and allow consumption', () => {
+      manager.setSessionId('test-session');
+      manager.invalidateSession();
+
+      expect(manager.consumeInvalidation()).toBe(true);
+      expect(manager.consumeInvalidation()).toBe(false);
+    });
+
+    it('should clear invalidation when setting a new session', () => {
+      manager.invalidateSession();
+      manager.setSessionId('new-session');
+
+      expect(manager.consumeInvalidation()).toBe(false);
+    });
   });
 
   describe('session mismatch recovery', () => {

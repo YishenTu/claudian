@@ -40,7 +40,6 @@ import {
   createVaultRestrictionHook,
   type FileEditPostCallback,
 } from '../hooks';
-import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
 import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
@@ -242,9 +241,40 @@ export class ClaudianService {
       prompt: this.messageChannel,
       options,
     });
+    this.attachPersistentQueryStdinErrorHandler(this.persistentQuery);
 
     // Start the response consumer loop
     this.startResponseConsumer();
+  }
+
+  private attachPersistentQueryStdinErrorHandler(query: Query): void {
+    const stdin = (query as { transport?: { processStdin?: NodeJS.WritableStream } }).transport?.processStdin;
+    if (!stdin || typeof stdin.on !== 'function' || typeof stdin.once !== 'function') {
+      return;
+    }
+
+    const handler = (error: NodeJS.ErrnoException) => {
+      if (this.shuttingDown || this.isPipeError(error)) {
+        return;
+      }
+      this.closePersistentQuery('stdin error');
+    };
+
+    stdin.on('error', handler);
+    stdin.once('close', () => {
+      stdin.removeListener('error', handler);
+    });
+  }
+
+  private isPipeError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const maybeError = error as { code?: string; message?: string };
+    if (maybeError.code === 'EPIPE') {
+      return true;
+    }
+    return typeof maybeError.message === 'string' && maybeError.message.includes('EPIPE');
   }
 
   /**
@@ -289,8 +319,10 @@ export class ClaudianService {
       this.currentAllowedTools = null;
     }
 
-    // Reset crash recovery flag for next session
-    this.crashRecoveryAttempted = false;
+    // NOTE: Do NOT reset crashRecoveryAttempted here.
+    // It's reset in queryViaPersistent after a successful message send,
+    // or in resetSession/setSessionId when switching sessions.
+    // Resetting it here would cause infinite restart loops on persistent errors.
 
     // Reset shuttingDown flag so next query can start a new persistent query.
     // This must be done after all cleanup to prevent race conditions with the consumer loop.
@@ -298,17 +330,19 @@ export class ClaudianService {
   }
 
   /**
-   * Restarts the persistent query (e.g., after configuration change).
+   * Restarts the persistent query (e.g., after configuration change or crash recovery).
+   * Does NOT try to resume session - just spins up a fresh process.
+   * Resume happens when user sends a message via queryViaPersistent.
    */
   async restartPersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): Promise<void> {
-    const sessionId = this.sessionManager.getSessionId();
     this.closePersistentQuery(reason, options);
 
     const vaultPath = getVaultPath(this.plugin.app);
     const cliPath = this.plugin.getResolvedClaudeCliPath();
 
     if (vaultPath && cliPath) {
-      await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined);
+      // Don't pass session ID - just spin up the process
+      await this.startPersistentQuery(vaultPath, cliPath);
     }
   }
 
@@ -509,6 +543,9 @@ export class ClaudianService {
    * on the current handler. A new handler is registered only when the next query starts.
    */
   private async routeMessage(message: SDKMessage): Promise<void> {
+    // Note: Session expiration errors are handled in catch blocks (queryViaSDK, handleAbort)
+    // The SDK throws errors as exceptions, not as message types
+
     // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
     if (handler && this.isStreamTextEvent(message)) {
@@ -665,11 +702,7 @@ export class ClaudianService {
     this.abortController = new AbortController();
 
     try {
-      const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
-      if (failedFiles.length > 0) {
-        new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
-      }
-      yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, hydratedImages, effectiveQueryOptions);
+      yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, images, effectiveQueryOptions);
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionManager.invalidateSession();
@@ -679,10 +712,9 @@ export class ClaudianService {
         const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
 
         const lastUserMessage = getLastUserMessage(conversationHistory);
-        const { images: retryImages } = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
 
         try {
-          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, retryImages, effectiveQueryOptions);
+          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, lastUserMessage?.images, effectiveQueryOptions);
         } catch (retryError) {
           const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
           yield { type: 'error', content: msg };
@@ -720,18 +752,8 @@ export class ClaudianService {
   ): AsyncGenerator<StreamChunk> {
     if (!this.persistentQuery || !this.messageChannel) {
       // Fallback to cold-start if persistent query not available
-      const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
-      if (failedFiles.length > 0) {
-        new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
-      }
-      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
       return;
-    }
-
-    // Hydrate images
-    const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
-    if (failedFiles.length > 0) {
-      new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
     }
 
     // Set allowed tools for canUseTool enforcement
@@ -756,16 +778,16 @@ export class ClaudianService {
     // Check if applyDynamicUpdates triggered a restart that failed
     // (e.g., CLI path not found, vault path missing)
     if (!this.persistentQuery || !this.messageChannel) {
-      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
       return;
     }
     if (!this.responseConsumerRunning) {
-      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
       return;
     }
 
     // Build SDKUserMessage
-    const message = this.buildSDKUserMessage(prompt, hydratedImages);
+    const message = this.buildSDKUserMessage(prompt, images);
 
     // Create a promise-based handler to yield chunks
     // Use a mutable state object to work around TypeScript's control flow analysis
@@ -819,7 +841,7 @@ export class ClaudianService {
         this.messageChannel.enqueue(message);
       } catch (error) {
         if (error instanceof Error && error.message.includes('closed')) {
-          yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+          yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
           return;
         }
         throw error;
@@ -864,10 +886,9 @@ export class ClaudianService {
    * Builds an SDKUserMessage from prompt and images.
    */
   private buildSDKUserMessage(prompt: string, images?: ImageAttachment[]): SDKUserMessage {
-    const validImages = (images || []).filter(img => !!img.data);
     const sessionId = this.sessionManager.getSessionId() || '';
 
-    if (validImages.length === 0) {
+    if (!images || images.length === 0) {
       return {
         type: 'user',
         message: {
@@ -882,13 +903,13 @@ export class ClaudianService {
     // Build content blocks with images
     const content: SDKContentBlock[] = [];
 
-    for (const image of validImages) {
+    for (const image of images) {
       content.push({
         type: 'image',
         source: {
           type: 'base64',
           media_type: image.mediaType,
-          data: image.data!,
+          data: image.data,
         },
       });
     }
@@ -1030,21 +1051,20 @@ export class ClaudianService {
    * Build a prompt with images as content blocks
    */
   private buildPromptWithImages(prompt: string, images?: ImageAttachment[]): string | AsyncGenerator<any> {
-    const validImages = (images || []).filter(img => !!img.data);
-    if (validImages.length === 0) {
+    if (!images || images.length === 0) {
       return prompt;
     }
 
     const content: SDKContentBlock[] = [];
 
     // Add image blocks first (Claude recommends images before text)
-    for (const image of validImages) {
+    for (const image of images) {
       content.push({
         type: 'image',
         source: {
           type: 'base64',
           media_type: image.mediaType,
-          data: image.data!,
+          data: image.data,
         },
       });
     }
@@ -1183,6 +1203,9 @@ export class ClaudianService {
     // Close persistent query (new session will use cold-start resume)
     this.closePersistentQuery('session reset');
 
+    // Reset crash recovery for fresh start
+    this.crashRecoveryAttempted = false;
+
     this.sessionManager.reset();
     this.approvalManager.clearSessionPermissions();
   }
@@ -1190,6 +1213,11 @@ export class ClaudianService {
   /** Get the current session ID. */
   getSessionId(): string | null {
     return this.sessionManager.getSessionId();
+  }
+
+  /** Consume session invalidation flag for persistence updates. */
+  consumeSessionInvalidation(): boolean {
+    return this.sessionManager.consumeInvalidation();
   }
 
   /**
@@ -1201,13 +1229,15 @@ export class ClaudianService {
     const currentId = this.sessionManager.getSessionId();
     if (currentId !== id) {
       this.closePersistentQuery('session switch');
+      // Reset crash recovery for new session context
+      this.crashRecoveryAttempted = false;
     }
 
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
 
-    // Immediately pre-warm the new session (fire-and-forget)
-    // This ensures no cold start delay when user sends their first message
-    this.preWarm(id ?? undefined).catch(() => {
+    // Pre-warm the SDK process (no session ID - just spin up the process)
+    // Resume happens when user sends a message via queryViaPersistent
+    this.preWarm().catch(() => {
       // Pre-warm is best-effort, ignore failures
     });
   }

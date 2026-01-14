@@ -162,7 +162,7 @@ export class ConversationController {
     const { plugin, state, renderer } = this.deps;
 
     const conversationId = state.currentConversationId;
-    const conversation = conversationId ? plugin.getConversationById(conversationId) : null;
+    const conversation = conversationId ? await plugin.getConversationById(conversationId) : null;
 
     // No active conversation - start at entry point
     if (!conversation) {
@@ -200,7 +200,7 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
 
-    this.getAgentService()?.setSessionId(conversation.sessionId);
+    this.getAgentService()?.setSessionId(conversation.sessionId ?? null);
 
     const hasMessages = state.messages.length > 0;
     const fileCtx = this.deps.getFileContextManager();
@@ -315,6 +315,9 @@ export class ConversationController {
    *
    * If we're at an entry point (no conversation yet) and have messages,
    * creates a new conversation first (lazy creation).
+   *
+   * For native sessions (new conversations with sessionId from SDK),
+   * only metadata is saved - the SDK handles message persistence.
    */
   async save(updateLastResponse = false): Promise<void> {
     const { plugin, state } = this.deps;
@@ -324,13 +327,17 @@ export class ConversationController {
       return;
     }
 
+    const agentService = this.getAgentService();
+    const sessionId = agentService?.getSessionId() ?? null;
+    const sessionInvalidated = agentService?.consumeSessionInvalidation?.() ?? false;
+
     // Entry point with messages - create conversation lazily
+    // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
-      const conversation = await plugin.createConversation();
+      const conversation = await plugin.createConversation(sessionId ?? undefined);
       state.currentConversationId = conversation.id;
     }
 
-    const sessionId = this.getAgentService()?.getSessionId() ?? null;
     const fileCtx = this.deps.getFileContextManager();
     const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const externalContextSelector = this.deps.getExternalContextSelector();
@@ -338,9 +345,26 @@ export class ConversationController {
     const mcpServerSelector = this.deps.getMcpServerSelector();
     const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
+    // Check if this is a native session and promote legacy sessions after first SDK session capture
+    const conversation = await plugin.getConversationById(state.currentConversationId!);
+    const wasNative = conversation?.isNative ?? false;
+    const shouldPromote = !wasNative && !!sessionId;
+    const isNative = wasNative || shouldPromote;
+    const legacyMessages = conversation?.messages ?? [];
+    const legacyCutoffAt = shouldPromote
+      ? legacyMessages[legacyMessages.length - 1]?.timestamp
+      : conversation?.legacyCutoffAt;
+
     const updates: Partial<Conversation> = {
-      messages: state.getPersistedMessages(),
-      sessionId: sessionId,
+      // For native sessions, don't persist messages (SDK handles that)
+      // For legacy sessions, persist messages as before
+      messages: isNative ? state.messages : state.getPersistedMessages(),
+      // Preserve existing sessionId when SDK hasn't captured a new one yet
+      sessionId: sessionInvalidated ? null : (sessionId ?? conversation?.sessionId ?? null),
+      sdkSessionId: isNative && sessionId ? sessionId : conversation?.sdkSessionId,
+      isNative: isNative || undefined,
+      legacyCutoffAt,
+      sdkMessagesLoaded: isNative ? true : undefined,
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,
@@ -668,7 +692,7 @@ export class ConversationController {
     if (!titleService) return;
 
     // Get the full conversation from cache
-    const fullConv = plugin.getConversationById(conversationId);
+    const fullConv = await plugin.getConversationById(conversationId);
     if (!fullConv || fullConv.messages.length < 2) return;
 
     // Find first user and assistant messages by role (not by index)
@@ -701,7 +725,7 @@ export class ConversationController {
       assistantText,
       async (convId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
-        const currentConv = plugin.getConversationById(convId);
+        const currentConv = await plugin.getConversationById(convId);
         if (!currentConv) return;
 
         // Only apply AI title if user hasn't manually renamed (title still matches expected)

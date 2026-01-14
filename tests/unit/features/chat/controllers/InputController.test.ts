@@ -86,7 +86,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       },
       renameConversation: jest.fn(),
       updateConversation: jest.fn(),
-      getConversationById: jest.fn().mockReturnValue(null),
+      getConversationById: jest.fn().mockResolvedValue(null),
     } as any,
     state,
     renderer: {
@@ -375,7 +375,9 @@ describe('InputController - Message Queue', () => {
       expect(fileContextManager.startSession).toHaveBeenCalled();
       expect(deps.renderer.addMessage).toHaveBeenCalledTimes(2);
       expect(deps.state.messages).toHaveLength(2);
-      expect(deps.state.messages[0].content).toBe('See ![[image.png]]');
+      // content now stores full XML prompt, displayContent stores original user input
+      expect(deps.state.messages[0].content).toBe('<query>\nSee ![[image.png]]\n</query>');
+      expect(deps.state.messages[0].displayContent).toBe('See ![[image.png]]');
       expect(deps.state.messages[0].images).toBeUndefined();
       expect(imageContextManager.clearImages).toHaveBeenCalled();
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
@@ -643,7 +645,7 @@ describe('InputController - Message Queue', () => {
       });
 
       // Mock getConversationById to return a conversation with different title (user renamed)
-      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'conv-1',
         title: 'User Custom Title', // User renamed it
       });

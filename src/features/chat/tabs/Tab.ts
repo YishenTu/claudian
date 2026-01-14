@@ -258,17 +258,10 @@ export async function initializeTabService(
       // Continue without permissions - service can still function
     }
 
-    // Pre-warm if we have a conversation with a session ID
-    const conversation = tab.conversationId
-      ? plugin.getConversationById(tab.conversationId)
-      : null;
-    const sessionId = conversation?.sessionId;
-
-    if (sessionId) {
-      service.preWarm(sessionId).catch(() => {
-        // Pre-warm is best-effort, ignore failures
-      });
-    }
+    // Pre-warm the SDK process (no session ID - just spin up the process)
+    service.preWarm().catch(() => {
+      // Pre-warm is best-effort, ignore failures
+    });
 
     // Only set tab state after successful initialization
     tab.service = service;
@@ -311,7 +304,6 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(
-    app,
     dom.inputContainerEl,
     dom.inputEl,
     {
@@ -731,10 +723,11 @@ export async function destroyTab(tab: TabData): Promise<void> {
 
 /**
  * Gets the display title for a tab.
+ * Uses synchronous access since we only need the title, not messages.
  */
 export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
   if (tab.conversationId) {
-    const conversation = plugin.getConversationById(tab.conversationId);
+    const conversation = plugin.getConversationSync(tab.conversationId);
     if (conversation?.title) {
       return conversation.title;
     }

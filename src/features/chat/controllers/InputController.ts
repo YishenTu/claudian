@@ -253,8 +253,8 @@ export class InputController {
     const userMsg: ChatMessage = {
       id: this.deps.generateId(),
       role: 'user',
-      content,
-      displayContent: displayContent !== content ? displayContent : undefined,
+      content: promptToSend,         // Full prompt with XML context (for history rebuild)
+      displayContent,                // Original user input (for UI display)
       timestamp: Date.now(),
       currentNote: currentNoteForMessage,
       images: imagesForMessage,
@@ -325,7 +325,10 @@ export class InputController {
       return;
     }
     try {
-      for await (const chunk of agentService.query(promptToSend, imagesForMessage, state.messages, queryOptions)) {
+      // Pass history WITHOUT current turn (userMsg + assistantMsg we just added)
+      // This prevents duplication when rebuilding context for new sessions
+      const previousMessages = state.messages.slice(0, -2);
+      for await (const chunk of agentService.query(promptToSend, imagesForMessage, previousMessages, queryOptions)) {
         if (state.streamGeneration !== streamGeneration) {
           wasInvalidated = true;
           break;
@@ -513,7 +516,7 @@ export class InputController {
       assistantText,
       async (conversationId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
-        const currentConv = plugin.getConversationById(conversationId);
+        const currentConv = await plugin.getConversationById(conversationId);
         if (!currentConv) return;
 
         // Only apply AI title if user hasn't manually renamed (title still matches fallback)

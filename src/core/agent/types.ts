@@ -163,6 +163,8 @@ export interface SessionState {
   wasInterrupted: boolean;
   /** Set when SDK returns a different session ID than expected (context lost). */
   needsHistoryRebuild: boolean;
+  /** Set when the current session is invalidated by SDK errors. */
+  sessionInvalidated: boolean;
 }
 
 // ============================================

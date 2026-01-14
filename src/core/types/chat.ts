@@ -15,9 +15,8 @@ export interface ImageAttachment {
   id: string;
   name: string;
   mediaType: ImageMediaType;
-  data?: string;
-  cachePath?: string;
-  filePath?: string;
+  /** Base64 encoded image data - single source of truth. */
+  data: string;
   width?: number;
   height?: number;
   size: number;
@@ -55,6 +54,12 @@ export interface Conversation {
   /** Timestamp when the last agent response completed. */
   lastResponseAt?: number;
   sessionId: string | null;
+  /**
+   * Current SDK session ID for native sessions.
+   * May differ from sessionId when SDK creates a new session (session expired, API key changed).
+   * Used for loading messages from SDK storage. Falls back to sessionId if not set.
+   */
+  sdkSessionId?: string;
   messages: ChatMessage[];
   currentNote?: string;
   /** Session-specific external context paths (directories with full access). Resets on new session. */
@@ -65,6 +70,12 @@ export interface Conversation {
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
   enabledMcpServers?: string[];
+  /** True if this conversation uses SDK-native storage (messages in ~/.claude/projects/). */
+  isNative?: boolean;
+  /** Timestamp of the last legacy JSONL message (used to merge SDK history). */
+  legacyCutoffAt?: number;
+  /** Internal flag to avoid reloading SDK history repeatedly. */
+  sdkMessagesLoaded?: boolean;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -79,6 +90,35 @@ export interface ConversationMeta {
   preview: string;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
+  /** True if this conversation uses SDK-native storage. */
+  isNative?: boolean;
+}
+
+/**
+ * Session metadata overlay for SDK-native storage.
+ * Stored in vault/.claude/sessions/{id}.meta.json
+ * SDK handles message storage; this stores UI-only state.
+ */
+export interface SessionMetadata {
+  id: string;
+  title: string;
+  titleGenerationStatus?: 'pending' | 'success' | 'failed';
+  createdAt: number;
+  updatedAt: number;
+  lastResponseAt?: number;
+  /** Session ID used for SDK resume (may be cleared when invalidated). */
+  sessionId?: string | null;
+  /**
+   * Current SDK session ID. May differ from id when SDK creates a new session.
+   * Used to locate the correct SDK session file for message loading.
+   */
+  sdkSessionId?: string;
+  currentNote?: string;
+  externalContextPaths?: string[];
+  enabledMcpServers?: string[];
+  usage?: UsageInfo;
+  /** Timestamp of the last legacy JSONL message (used to merge SDK history). */
+  legacyCutoffAt?: number;
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */
