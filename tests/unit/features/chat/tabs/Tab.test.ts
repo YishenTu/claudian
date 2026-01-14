@@ -1304,7 +1304,7 @@ describe('Tab - UI Callback Wiring', () => {
       // Get the ImageContextManager constructor call
       const { ImageContextManager } = jest.requireMock('@/features/chat/ui');
       const constructorCall = ImageContextManager.mock.calls[0];
-      const callbacks = constructorCall[3]; // 4th argument is callbacks
+      const callbacks = constructorCall[2]; // 3rd argument is callbacks (app parameter was removed)
 
       callbacks.onImagesChanged();
 

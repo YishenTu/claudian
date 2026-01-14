@@ -16,7 +16,6 @@ import type {
   ChatMessage,
   Conversation,
   ConversationMeta,
-  ImageAttachment,
   SessionMetadata,
   UsageInfo,
 } from '../types';
@@ -270,25 +269,10 @@ export class SessionStorage {
     return lines.join('\n');
   }
 
-  /** Prepare a message for storage (strip image data). */
+  /** Prepare a message for storage. */
   private prepareMessageForStorage(message: ChatMessage): ChatMessage {
-    if (!message.images || message.images.length === 0) {
-      return message;
-    }
-
-    // Strip base64 data only when a cachePath or filePath exists
-    const strippedImages: ImageAttachment[] = message.images.map(img => {
-      if (!img.cachePath && !img.filePath) {
-        return img;
-      }
-      const { data: _, ...rest } = img;
-      return rest;
-    });
-
-    return {
-      ...message,
-      images: strippedImages,
-    };
+    // Images are stored with their base64 data as single source of truth
+    return message;
   }
 
   // ============================================

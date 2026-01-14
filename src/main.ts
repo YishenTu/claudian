@@ -9,7 +9,6 @@ import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
 import { clearDiffState } from './core/hooks';
-import { deleteCachedImages } from './core/images/imageCache';
 import { McpServerManager } from './core/mcp';
 import { McpService } from './core/mcp/McpService';
 import { loadPluginCommands, PluginManager, PluginStorage } from './core/plugins';
@@ -35,7 +34,7 @@ import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
-import { loadSDKSessionMessages } from './utils/sdkSession';
+import { loadSDKSessionMessages, sdkSessionExists } from './utils/sdkSession';
 
 /**
  * Main plugin class for Claudian.
@@ -519,40 +518,6 @@ export default class ClaudianPlugin extends Plugin {
     return { changed: true, invalidatedConversations };
   }
 
-  /** Removes cached images associated with a conversation if not used elsewhere. */
-  private cleanupConversationImages(conversation: Conversation): void {
-    const cachePaths = new Set<string>();
-
-    for (const message of conversation.messages || []) {
-      if (!message.images) continue;
-      for (const img of message.images) {
-        if (img.cachePath) {
-          cachePaths.add(img.cachePath);
-        }
-      }
-    }
-
-    if (cachePaths.size === 0) return;
-
-    const inUseElsewhere = new Set<string>();
-    for (const conv of this.conversations) {
-      if (conv.id === conversation.id) continue;
-      for (const msg of conv.messages || []) {
-        if (!msg.images) continue;
-        for (const img of msg.images) {
-          if (img.cachePath && cachePaths.has(img.cachePath)) {
-            inUseElsewhere.add(img.cachePath);
-          }
-        }
-      }
-    }
-
-    const deletable = Array.from(cachePaths).filter(p => !inUseElsewhere.has(p));
-    if (deletable.length > 0) {
-      deleteCachedImages(this.app, deletable);
-    }
-  }
-
   private generateConversationId(): string {
     return `conv-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
@@ -581,8 +546,10 @@ export default class ClaudianPlugin extends Plugin {
     if (!conversation.isNative || conversation.sdkMessagesLoaded) return;
 
     const vaultPath = getVaultPath(this.app);
-    const sdkSessionToLoad = conversation.sdkSessionId || conversation.sessionId;
+    const sdkSessionToLoad = conversation.sdkSessionId ?? conversation.sessionId;
     if (!vaultPath || !sdkSessionToLoad) return;
+
+    if (!sdkSessionExists(vaultPath, sdkSessionToLoad)) return;
 
     const sdkMessages = loadSDKSessionMessages(vaultPath, sdkSessionToLoad);
     const filteredSdkMessages = conversation.legacyCutoffAt != null
@@ -602,9 +569,10 @@ export default class ClaudianPlugin extends Plugin {
     const result: ChatMessage[] = [];
 
     for (const message of messages) {
-      const key = `${message.role}|${message.timestamp}|${message.content}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      // Use message.id as primary key - more reliable than content-based deduplication
+      // especially for tool-only messages or messages with identical content
+      if (seen.has(message.id)) continue;
+      seen.add(message.id);
       result.push(message);
     }
 
@@ -671,7 +639,6 @@ export default class ClaudianPlugin extends Plugin {
     if (index === -1) return;
 
     const conversation = this.conversations[index];
-    this.cleanupConversationImages(conversation);
     this.conversations.splice(index, 1);
 
     // Delete the appropriate storage file

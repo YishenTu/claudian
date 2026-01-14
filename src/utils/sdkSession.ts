@@ -71,13 +71,33 @@ export function getSDKProjectsPath(): string {
 }
 
 /**
+ * Validates a session ID to prevent path traversal attacks.
+ * Session IDs should be UUIDs or alphanumeric strings without path separators.
+ */
+export function isValidSessionId(sessionId: string): boolean {
+  if (!sessionId || sessionId.length === 0 || sessionId.length > 128) {
+    return false;
+  }
+  // Reject path traversal attempts and path separators
+  if (sessionId.includes('..') || sessionId.includes('/') || sessionId.includes('\\')) {
+    return false;
+  }
+  // Allow only alphanumeric characters, hyphens, and underscores (UUID-compatible)
+  return /^[a-zA-Z0-9_-]+$/.test(sessionId);
+}
+
+/**
  * Gets the full path to an SDK session file.
  *
  * @param vaultPath - The vault's absolute path
  * @param sessionId - The session ID (same as conversation ID for native sessions)
- * @returns Full path to the session JSONL file, or null if not determinable
+ * @returns Full path to the session JSONL file
+ * @throws Error if sessionId is invalid (path traversal protection)
  */
 export function getSDKSessionPath(vaultPath: string, sessionId: string): string {
+  if (!isValidSessionId(sessionId)) {
+    throw new Error(`Invalid session ID: ${sessionId}`);
+  }
   const projectsPath = getSDKProjectsPath();
   const encodedVault = encodeVaultPathForSDK(vaultPath);
   return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);

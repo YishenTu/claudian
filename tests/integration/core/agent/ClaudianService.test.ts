@@ -26,7 +26,6 @@ jest.mock('@/core/types', () => {
 import { ClaudianService } from '@/core/agent/ClaudianService';
 import { clearDiffState, createFileHashPostHook, createFileHashPreHook, getDiffData } from '@/core/hooks/DiffTrackingHooks';
 import { createVaultRestrictionHook } from '@/core/hooks/SecurityHooks';
-import { hydrateImagesData, readImageAttachmentBase64, resolveImageFilePath } from '@/core/images/imageLoader';
 import { transformSDKMessage } from '@/core/sdk';
 import { getActionDescription, getActionPattern } from '@/core/security/ApprovalManager';
 import { extractPathCandidates } from '@/core/security/BashPathValidator';
@@ -1948,25 +1947,6 @@ describe('ClaudianService', () => {
       expect(messages[0].message.content[2].type).toBe('text');
     });
 
-    it('should hydrate images using existing data, cache, and file paths', async () => {
-      const imageCache = await import('@/core/images/imageCache');
-      jest.spyOn(imageCache, 'readCachedImageBase64').mockReturnValue('CACHE');
-
-      (fs.existsSync as jest.Mock).mockImplementation((p: any) => p === '/test/vault/path/c.png');
-      (fs.readFileSync as jest.Mock).mockReturnValue(Buffer.from('file-bytes'));
-
-      const images = [
-        { id: 'img-1', name: 'a.png', mediaType: 'image/png' as const, data: 'DATA', size: 1, source: 'file' as const },
-        { id: 'img-2', name: 'b.png', mediaType: 'image/png' as const, cachePath: 'cache.png', size: 1, source: 'file' as const },
-        { id: 'img-3', name: 'c.png', mediaType: 'image/png' as const, filePath: 'c.png', size: 1, source: 'file' as const },
-      ];
-
-      const { images: hydrated } = await hydrateImagesData(mockPlugin.app, images as any, '/test/vault/path');
-
-      expect(hydrated?.[0].data).toBe('DATA');
-      expect(hydrated?.[1].data).toBe('CACHE');
-      expect(hydrated?.[2].data).toBe(Buffer.from('file-bytes').toString('base64'));
-    });
   });
 
   // QueryOptionsBuilder tests moved to tests/unit/core/agent/QueryOptionsBuilder.test.ts
@@ -2224,18 +2204,6 @@ describe('ClaudianService', () => {
       // Now test the standalone function directly
       const line = formatToolCallForContext({ id: 't', name: 'Read', input: {}, status: 'completed' as const });
       expect(line).toBe('[Tool Read status=completed]');
-    });
-
-    it('handles image read errors and path resolution branches', () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-
-
-        const base64 = readImageAttachmentBase64(mockPlugin.app, { filePath: 'x.png' } as any, '/test/vault');
-        expect(base64).toBeNull();
-
-      expect(resolveImageFilePath('/abs.png', '/test/vault')).toBe('/abs.png');
-      expect(resolveImageFilePath('rel.png', null)).toBeNull();
     });
 
     it('yields error when SDK query throws inside queryViaSDK', async () => {

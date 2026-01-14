@@ -1,6 +1,5 @@
 import * as os from 'os';
 
-import * as imageCache from '@/core/images/imageCache';
 import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 
 // Mock fs for ClaudianService
@@ -416,46 +415,6 @@ describe('ClaudianPlugin', () => {
 
       const list = plugin.getConversationList();
       expect(list.find(c => c.id === conv.id)).toBeUndefined();
-    });
-  });
-
-  describe('cleanupConversationImages', () => {
-    it('deletes cached images not used elsewhere', async () => {
-      await plugin.onload();
-      const deleteSpy = jest.spyOn(imageCache, 'deleteCachedImages').mockImplementation(() => {});
-
-      const convA: any = {
-        id: 'a',
-        title: 'A',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        sessionId: null,
-        messages: [
-          { id: 'm1', role: 'user', content: '', timestamp: 0, images: [
-            { id: 'i1', name: 'x', mediaType: 'image/png', cachePath: 'path1', size: 1, source: 'file' },
-            { id: 'i2', name: 'y', mediaType: 'image/png', cachePath: 'path2', size: 1, source: 'file' },
-          ] },
-        ],
-      };
-
-      const convB: any = {
-        id: 'b',
-        title: 'B',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        sessionId: null,
-        messages: [
-          { id: 'm2', role: 'user', content: '', timestamp: 0, images: [
-            { id: 'i3', name: 'z', mediaType: 'image/png', cachePath: 'path1', size: 1, source: 'file' },
-          ] },
-        ],
-      };
-
-      (plugin as any).conversations = [convA, convB];
-      (plugin as any).cleanupConversationImages(convA);
-
-      expect(deleteSpy).toHaveBeenCalledWith(plugin.app, ['path2']);
-      deleteSpy.mockRestore();
     });
   });
 

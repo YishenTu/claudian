@@ -15,9 +15,8 @@ export interface ImageAttachment {
   id: string;
   name: string;
   mediaType: ImageMediaType;
-  data?: string;
-  cachePath?: string;
-  filePath?: string;
+  /** Base64 encoded image data - single source of truth. */
+  data: string;
   width?: number;
   height?: number;
   size: number;

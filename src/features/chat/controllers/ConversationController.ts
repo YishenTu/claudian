@@ -327,7 +327,9 @@ export class ConversationController {
       return;
     }
 
-    const sessionId = this.getAgentService()?.getSessionId() ?? null;
+    const agentService = this.getAgentService();
+    const sessionId = agentService?.getSessionId() ?? null;
+    const sessionInvalidated = agentService?.consumeSessionInvalidation?.() ?? false;
 
     // Entry point with messages - create conversation lazily
     // New conversations always use SDK-native storage.
@@ -358,7 +360,7 @@ export class ConversationController {
       // For legacy sessions, persist messages as before
       messages: isNative ? state.messages : state.getPersistedMessages(),
       // Preserve existing sessionId when SDK hasn't captured a new one yet
-      sessionId: sessionId ?? conversation?.sessionId ?? null,
+      sessionId: sessionInvalidated ? null : (sessionId ?? conversation?.sessionId ?? null),
       sdkSessionId: isNative && sessionId ? sessionId : conversation?.sdkSessionId,
       isNative: isNative || undefined,
       legacyCutoffAt,

@@ -40,7 +40,6 @@ import {
   createVaultRestrictionHook,
   type FileEditPostCallback,
 } from '../hooks';
-import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
 import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
@@ -673,11 +672,7 @@ export class ClaudianService {
     this.abortController = new AbortController();
 
     try {
-      const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
-      if (failedFiles.length > 0) {
-        new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
-      }
-      yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, hydratedImages, effectiveQueryOptions);
+      yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, images, effectiveQueryOptions);
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionManager.invalidateSession();
@@ -687,10 +682,9 @@ export class ClaudianService {
         const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
 
         const lastUserMessage = getLastUserMessage(conversationHistory);
-        const { images: retryImages } = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
 
         try {
-          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, retryImages, effectiveQueryOptions);
+          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, lastUserMessage?.images, effectiveQueryOptions);
         } catch (retryError) {
           const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
           yield { type: 'error', content: msg };
@@ -728,18 +722,8 @@ export class ClaudianService {
   ): AsyncGenerator<StreamChunk> {
     if (!this.persistentQuery || !this.messageChannel) {
       // Fallback to cold-start if persistent query not available
-      const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
-      if (failedFiles.length > 0) {
-        new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
-      }
-      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
       return;
-    }
-
-    // Hydrate images
-    const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
-    if (failedFiles.length > 0) {
-      new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
     }
 
     // Set allowed tools for canUseTool enforcement
@@ -764,16 +748,16 @@ export class ClaudianService {
     // Check if applyDynamicUpdates triggered a restart that failed
     // (e.g., CLI path not found, vault path missing)
     if (!this.persistentQuery || !this.messageChannel) {
-      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
       return;
     }
     if (!this.responseConsumerRunning) {
-      yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+      yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
       return;
     }
 
     // Build SDKUserMessage
-    const message = this.buildSDKUserMessage(prompt, hydratedImages);
+    const message = this.buildSDKUserMessage(prompt, images);
 
     // Create a promise-based handler to yield chunks
     // Use a mutable state object to work around TypeScript's control flow analysis
@@ -827,7 +811,7 @@ export class ClaudianService {
         this.messageChannel.enqueue(message);
       } catch (error) {
         if (error instanceof Error && error.message.includes('closed')) {
-          yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
+          yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
           return;
         }
         throw error;
@@ -872,10 +856,9 @@ export class ClaudianService {
    * Builds an SDKUserMessage from prompt and images.
    */
   private buildSDKUserMessage(prompt: string, images?: ImageAttachment[]): SDKUserMessage {
-    const validImages = (images || []).filter(img => !!img.data);
     const sessionId = this.sessionManager.getSessionId() || '';
 
-    if (validImages.length === 0) {
+    if (!images || images.length === 0) {
       return {
         type: 'user',
         message: {
@@ -890,13 +873,13 @@ export class ClaudianService {
     // Build content blocks with images
     const content: SDKContentBlock[] = [];
 
-    for (const image of validImages) {
+    for (const image of images) {
       content.push({
         type: 'image',
         source: {
           type: 'base64',
           media_type: image.mediaType,
-          data: image.data!,
+          data: image.data,
         },
       });
     }
@@ -1038,21 +1021,20 @@ export class ClaudianService {
    * Build a prompt with images as content blocks
    */
   private buildPromptWithImages(prompt: string, images?: ImageAttachment[]): string | AsyncGenerator<any> {
-    const validImages = (images || []).filter(img => !!img.data);
-    if (validImages.length === 0) {
+    if (!images || images.length === 0) {
       return prompt;
     }
 
     const content: SDKContentBlock[] = [];
 
     // Add image blocks first (Claude recommends images before text)
-    for (const image of validImages) {
+    for (const image of images) {
       content.push({
         type: 'image',
         source: {
           type: 'base64',
           media_type: image.mediaType,
-          data: image.data!,
+          data: image.data,
         },
       });
     }
@@ -1198,6 +1180,11 @@ export class ClaudianService {
   /** Get the current session ID. */
   getSessionId(): string | null {
     return this.sessionManager.getSessionId();
+  }
+
+  /** Consume session invalidation flag for persistence updates. */
+  consumeSessionInvalidation(): boolean {
+    return this.sessionManager.consumeInvalidation();
   }
 
   /**

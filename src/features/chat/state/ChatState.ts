@@ -327,15 +327,10 @@ export class ChatState {
     this.currentTodos = null;
   }
 
-  /** Gets persisted messages (strips image data). */
+  /** Gets messages for persistence. */
   getPersistedMessages(): ChatMessage[] {
-    return this.state.messages.map(msg => ({
-      ...msg,
-      images: msg.images?.map(img => {
-        const { data, ...rest } = img;
-        return { ...rest };
-      }),
-    }));
+    // Return messages as-is - image data is single source of truth
+    return this.state.messages;
   }
 }
 

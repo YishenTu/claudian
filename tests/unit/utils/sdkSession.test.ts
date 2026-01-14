@@ -9,6 +9,7 @@ import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
   getSDKSessionPath,
+  isValidSessionId,
   loadSDKSessionMessages,
   parseSDKMessageToChat,
   readSDKSession,
@@ -59,11 +60,49 @@ describe('sdkSession', () => {
     });
   });
 
+  describe('isValidSessionId', () => {
+    it('accepts valid UUID-style session IDs', () => {
+      expect(isValidSessionId('abc123')).toBe(true);
+      expect(isValidSessionId('session-123')).toBe(true);
+      expect(isValidSessionId('a1b2c3d4-e5f6-7890-abcd-ef1234567890')).toBe(true);
+      expect(isValidSessionId('test_session_id')).toBe(true);
+    });
+
+    it('rejects empty or too long session IDs', () => {
+      expect(isValidSessionId('')).toBe(false);
+      expect(isValidSessionId('a'.repeat(129))).toBe(false);
+    });
+
+    it('rejects path traversal attempts', () => {
+      expect(isValidSessionId('../etc/passwd')).toBe(false);
+      expect(isValidSessionId('..\\windows\\system32')).toBe(false);
+      expect(isValidSessionId('foo/../bar')).toBe(false);
+      expect(isValidSessionId('session/subdir')).toBe(false);
+      expect(isValidSessionId('session\\subdir')).toBe(false);
+    });
+
+    it('rejects special characters', () => {
+      expect(isValidSessionId('session.jsonl')).toBe(false);
+      expect(isValidSessionId('session:123')).toBe(false);
+      expect(isValidSessionId('session@host')).toBe(false);
+    });
+  });
+
   describe('getSDKSessionPath', () => {
     it('constructs correct session file path', () => {
       const sessionPath = getSDKSessionPath('/Users/test/vault', 'session-123');
       expect(sessionPath).toContain('.claude/projects');
       expect(sessionPath).toContain('session-123.jsonl');
+    });
+
+    it('throws error for path traversal attempts', () => {
+      expect(() => getSDKSessionPath('/Users/test/vault', '../etc/passwd')).toThrow('Invalid session ID');
+      expect(() => getSDKSessionPath('/Users/test/vault', 'foo/../bar')).toThrow('Invalid session ID');
+      expect(() => getSDKSessionPath('/Users/test/vault', 'session/subdir')).toThrow('Invalid session ID');
+    });
+
+    it('throws error for empty session ID', () => {
+      expect(() => getSDKSessionPath('/Users/test/vault', '')).toThrow('Invalid session ID');
     });
   });
 

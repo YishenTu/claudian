@@ -212,7 +212,7 @@ describe('SessionStorage', () => {
       expect(msg2.message.role).toBe('assistant');
     });
 
-    it('strips base64 data from images with cachePath', async () => {
+    it('preserves base64 image data when saving', async () => {
       const conversation: Conversation = {
         id: 'conv-img',
         title: 'Image Test',
@@ -231,7 +231,6 @@ describe('SessionStorage', () => {
                 name: 'test.png',
                 data: 'base64encodeddata...',
                 mediaType: 'image/png',
-                cachePath: '/cache/img-abc.png',
                 size: 1024,
                 source: 'paste',
               },
@@ -246,83 +245,9 @@ describe('SessionStorage', () => {
       const lines = writtenContent.split('\n');
       const msgRecord = JSON.parse(lines[1]);
 
-      expect(msgRecord.message.images[0]).not.toHaveProperty('data');
-      expect(msgRecord.message.images[0].cachePath).toBe('/cache/img-abc.png');
-      expect(msgRecord.message.images[0].mediaType).toBe('image/png');
-    });
-
-    it('strips base64 data from images with filePath', async () => {
-      const conversation: Conversation = {
-        id: 'conv-img2',
-        title: 'Image Test 2',
-        createdAt: 1700000000,
-        updatedAt: 1700001000,
-        sessionId: null,
-        messages: [
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'Another image',
-            timestamp: 1700000100,
-            images: [
-              {
-                id: 'img-2',
-                name: 'photo.jpg',
-                data: 'base64encodeddata...',
-                mediaType: 'image/jpeg',
-                filePath: '/vault/images/photo.jpg',
-                size: 2048,
-                source: 'file',
-              },
-            ],
-          },
-        ],
-      };
-
-      await storage.saveConversation(conversation);
-
-      const writtenContent = mockAdapter.write.mock.calls[0][1];
-      const lines = writtenContent.split('\n');
-      const msgRecord = JSON.parse(lines[1]);
-
-      expect(msgRecord.message.images[0]).not.toHaveProperty('data');
-      expect(msgRecord.message.images[0].filePath).toBe('/vault/images/photo.jpg');
-    });
-
-    it('preserves base64 data for images without cachePath or filePath', async () => {
-      const conversation: Conversation = {
-        id: 'conv-img3',
-        title: 'Inline Image Test',
-        createdAt: 1700000000,
-        updatedAt: 1700001000,
-        sessionId: null,
-        messages: [
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'Pasted image',
-            timestamp: 1700000100,
-            images: [
-              {
-                id: 'img-3',
-                name: 'pasted.png',
-                data: 'base64encodeddata...',
-                mediaType: 'image/png',
-                size: 512,
-                source: 'paste',
-              },
-            ],
-          },
-        ],
-      };
-
-      await storage.saveConversation(conversation);
-
-      const writtenContent = mockAdapter.write.mock.calls[0][1];
-      const lines = writtenContent.split('\n');
-      const msgRecord = JSON.parse(lines[1]);
-
+      // Image data is preserved as single source of truth
       expect(msgRecord.message.images[0].data).toBe('base64encodeddata...');
+      expect(msgRecord.message.images[0].mediaType).toBe('image/png');
     });
 
     it('handles messages without images', async () => {
