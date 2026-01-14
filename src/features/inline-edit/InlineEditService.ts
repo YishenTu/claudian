@@ -23,7 +23,7 @@ import type ClaudianPlugin from '../../main';
 import { prependContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../utils/env';
-import { getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../utils/path';
+import { getPathAccessType, getVaultPath } from '../../utils/path';
 
 export type InlineEditMode = 'selection' | 'cursor';
 
@@ -273,7 +273,7 @@ export class InlineEditService {
     };
   }
 
-  /** Creates PreToolUse hook to restrict file tools to the vault. */
+  /** Creates PreToolUse hook to restrict file tools to allowed paths. */
   private createVaultRestrictionHook(vaultPath: string): HookCallbackMatcher {
     const fileTools = [TOOL_READ, TOOL_GLOB, TOOL_GREP, TOOL_LS] as const;
 
@@ -291,13 +291,20 @@ export class InlineEditService {
           }
 
           const filePath = getPathFromToolInput(toolName, input.tool_input);
-          if (filePath && !isPathWithinVaultUtil(filePath, vaultPath)) {
+          if (filePath) {
+            // Use getPathAccessType for consistent path access control
+            // This allows vault, ~/.claude/, context paths, and readwrite paths
+            const accessType = getPathAccessType(filePath, undefined, undefined, vaultPath);
+            if (accessType === 'vault' || accessType === 'context' || accessType === 'readwrite') {
+              return { continue: true };
+            }
+
             return {
               continue: false,
               hookSpecificOutput: {
                 hookEventName: 'PreToolUse' as const,
                 permissionDecision: 'deny' as const,
-                permissionDecisionReason: `Access denied: Path "${filePath}" is outside the vault. Inline edit is restricted to vault directory only.`,
+                permissionDecisionReason: `Access denied: Path "${filePath}" is outside allowed paths. Inline edit is restricted to vault and ~/.claude/ directories.`,
               },
             };
           }

@@ -771,6 +771,35 @@ describe('utils.ts', () => {
       expect(getPathAccessType('/tmp/shared/readonly/file.md', allowedContextPaths, allowedExportPaths, '/vault')).toBe('context');
       expect(getPathAccessType('/tmp/shared/file.md', allowedContextPaths, allowedExportPaths, '/vault')).toBe('readwrite');
     });
+
+    it('should allow access to ~/.claude/ directory as vault', () => {
+      jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+      const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
+      (fs.realpathSync as any).native = realpathSpy;
+
+      expect(getPathAccessType('/home/test/.claude', [], [], '/vault')).toBe('vault');
+      expect(getPathAccessType('/home/test/.claude/settings.json', [], [], '/vault')).toBe('vault');
+      expect(getPathAccessType('/home/test/.claude/hooks/pre-commit.sh', [], [], '/vault')).toBe('vault');
+    });
+
+    it('should allow access to ~/.claude/ via tilde expansion', () => {
+      jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+      const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
+      (fs.realpathSync as any).native = realpathSpy;
+
+      expect(getPathAccessType('~/.claude', [], [], '/vault')).toBe('vault');
+      expect(getPathAccessType('~/.claude/sessions/abc.jsonl', [], [], '/vault')).toBe('vault');
+    });
+
+    it('should block other home directory paths', () => {
+      jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+      const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
+      (fs.realpathSync as any).native = realpathSpy;
+
+      expect(getPathAccessType('/home/test/.ssh/id_rsa', [], [], '/vault')).toBe('none');
+      expect(getPathAccessType('~/.ssh/id_rsa', [], [], '/vault')).toBe('none');
+      expect(getPathAccessType('/home/test/Documents/secret.txt', [], [], '/vault')).toBe('none');
+    });
   });
 
   describe('isPathWithinVault', () => {

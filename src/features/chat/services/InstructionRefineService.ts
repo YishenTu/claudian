@@ -2,20 +2,17 @@
  * Claudian - Instruction refine service
  *
  * Lightweight Claude query service for refining user instructions.
- * Uses read-only tools and parses <instruction> tags from response.
+ * Parses <instruction> tags from response.
  */
 
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
 import { buildRefineSystemPrompt } from '../../../core/prompts/instructionRefine';
-import { TOOL_GLOB, TOOL_GREP, TOOL_READ } from '../../../core/tools/toolNames';
 import { type InstructionRefineResult, THINKING_BUDGETS } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
-import { getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../../utils/path';
-
-const READ_ONLY_TOOLS = [TOOL_READ, TOOL_GREP, TOOL_GLOB] as const;
+import { getVaultPath } from '../../../utils/path';
 
 /** Callback for streaming progress updates. */
 export type RefineProgressCallback = (update: InstructionRefineResult) => void;
@@ -100,12 +97,6 @@ export class InstructionRefineService {
       tools: [], // No tools needed for instruction refinement
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      hooks: {
-        PreToolUse: [
-          this.createReadOnlyHook(),
-          this.createVaultRestrictionHook(vaultPath),
-        ],
-      },
     };
 
     if (this.sessionId) {
@@ -178,69 +169,5 @@ export class InstructionRefineService {
       .filter((block): block is { type: 'text'; text: string } => block.type === 'text' && !!block.text)
       .map(block => block.text)
       .join('');
-  }
-
-  /** Creates PreToolUse hook to enforce read-only mode. */
-  private createReadOnlyHook(): HookCallbackMatcher {
-    return {
-      hooks: [
-        async (hookInput) => {
-          const input = hookInput as {
-            tool_name: string;
-            tool_input: Record<string, unknown>;
-          };
-          const toolName = input.tool_name;
-
-          if (READ_ONLY_TOOLS.includes(toolName as typeof READ_ONLY_TOOLS[number])) {
-            return { continue: true };
-          }
-
-          return {
-            continue: false,
-            hookSpecificOutput: {
-              hookEventName: 'PreToolUse' as const,
-              permissionDecision: 'deny' as const,
-              permissionDecisionReason: `Instruction refine mode: tool "${toolName}" is not allowed (read-only)`,
-            },
-          };
-        },
-      ],
-    };
-  }
-
-  /** Creates PreToolUse hook to restrict file access to vault. */
-  private createVaultRestrictionHook(vaultPath: string): HookCallbackMatcher {
-    return {
-      hooks: [
-        async (hookInput) => {
-          const input = hookInput as {
-            tool_name: string;
-            tool_input: Record<string, unknown>;
-          };
-          const toolName = input.tool_name;
-          const toolInput = input.tool_input;
-
-          // Check file path tools
-          if (toolName === 'Read' || toolName === 'Glob' || toolName === 'Grep') {
-            const filePath =
-              toolName === 'Read'
-                ? ((toolInput.file_path as string) || '')
-                : (((toolInput.path as string) || (toolInput.pattern as string)) || '');
-            if (filePath && !isPathWithinVaultUtil(filePath, vaultPath)) {
-              return {
-                continue: false,
-                hookSpecificOutput: {
-                  hookEventName: 'PreToolUse' as const,
-                  permissionDecision: 'deny' as const,
-                  permissionDecisionReason: `Access denied: "${filePath}" is outside the vault`,
-                },
-              };
-            }
-          }
-
-          return { continue: true };
-        },
-      ],
-    };
   }
 }

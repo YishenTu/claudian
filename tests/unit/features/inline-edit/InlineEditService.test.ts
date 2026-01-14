@@ -9,6 +9,7 @@ import {
   setMockMessages,
 } from '@test/__mocks__/claude-agent-sdk';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // Mock fs module
 jest.mock('fs');
@@ -64,6 +65,10 @@ describe('InlineEditService', () => {
       }
     });
 
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it('should block Read outside vault', async () => {
       const hook = (service as any).createVaultRestrictionHook('/test/vault/path');
       const res = await hook.hooks[0](
@@ -73,7 +78,7 @@ describe('InlineEditService', () => {
       );
 
       expect(res.continue).toBe(false);
-      expect(res.hookSpecificOutput.permissionDecisionReason).toContain('outside the vault');
+      expect(res.hookSpecificOutput.permissionDecisionReason).toContain('outside allowed paths');
     });
 
     it('should allow Read inside vault', async () => {
@@ -96,6 +101,47 @@ describe('InlineEditService', () => {
       );
 
       expect(res.continue).toBe(false);
+    });
+
+    it('should allow Read inside ~/.claude/ directory', async () => {
+      // Mock os.homedir to return a known path
+      jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+
+      const hook = (service as any).createVaultRestrictionHook('/test/vault/path');
+      const res = await hook.hooks[0](
+        { tool_name: 'Read', tool_input: { file_path: '/home/test/.claude/settings.json' } },
+        'tool-4',
+        {}
+      );
+
+      expect(res.continue).toBe(true);
+    });
+
+    it('should allow Glob inside ~/.claude/ directory', async () => {
+      jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+
+      const hook = (service as any).createVaultRestrictionHook('/test/vault/path');
+      const res = await hook.hooks[0](
+        { tool_name: 'Glob', tool_input: { pattern: '/home/test/.claude/**/*.md' } },
+        'tool-5',
+        {}
+      );
+
+      expect(res.continue).toBe(true);
+    });
+
+    it('should still block paths outside vault and ~/.claude/', async () => {
+      jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+
+      const hook = (service as any).createVaultRestrictionHook('/test/vault/path');
+      const res = await hook.hooks[0](
+        { tool_name: 'Read', tool_input: { file_path: '/home/test/.ssh/id_rsa' } },
+        'tool-6',
+        {}
+      );
+
+      expect(res.continue).toBe(false);
+      expect(res.hookSpecificOutput.permissionDecisionReason).toContain('outside allowed paths');
     });
   });
 

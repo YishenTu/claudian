@@ -8,10 +8,6 @@ import {
   resetMockMessages,
   setMockMessages,
 } from '@test/__mocks__/claude-agent-sdk';
-import * as fs from 'fs';
-
-// Mock fs module
-jest.mock('fs');
 
 // Import after mocks are set up
 import { InstructionRefineService } from '@/features/chat/services/InstructionRefineService';
@@ -48,7 +44,7 @@ describe('InstructionRefineService', () => {
   });
 
   describe('refineInstruction', () => {
-    it('should use restricted read-only tools', async () => {
+    it('should use no tools (text-only refinement)', async () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         {
@@ -97,31 +93,6 @@ describe('InstructionRefineService', () => {
       expect(options?.systemPrompt).toContain(existing);
       expect(options?.systemPrompt).toContain('Consider how it fits with existing instructions');
       expect(options?.systemPrompt).toContain('Match the format of existing instructions');
-    });
-  });
-
-  describe('vault restriction hook', () => {
-    beforeEach(() => {
-      const normalizePath = (p: string) => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const pathModule = require('path');
-        return pathModule.resolve(p);
-      };
-      (fs.realpathSync as any) = jest.fn(normalizePath);
-      if (fs.realpathSync) {
-        (fs.realpathSync as any).native = jest.fn(normalizePath);
-      }
-    });
-
-    it('should block Glob escaping pattern', async () => {
-      const hook = (service as any).createVaultRestrictionHook('/test/vault/path');
-      const res = await hook.hooks[0]({
-        tool_name: 'Glob',
-        tool_input: { pattern: '../**/*.md' },
-      });
-
-      expect(res.continue).toBe(false);
-      expect(res.hookSpecificOutput.permissionDecisionReason).toContain('outside the vault');
     });
   });
 });
