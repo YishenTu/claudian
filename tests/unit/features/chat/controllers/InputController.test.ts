@@ -375,7 +375,9 @@ describe('InputController - Message Queue', () => {
       expect(fileContextManager.startSession).toHaveBeenCalled();
       expect(deps.renderer.addMessage).toHaveBeenCalledTimes(2);
       expect(deps.state.messages).toHaveLength(2);
-      expect(deps.state.messages[0].content).toBe('See ![[image.png]]');
+      // content now stores full XML prompt, displayContent stores original user input
+      expect(deps.state.messages[0].content).toBe('<query>\nSee ![[image.png]]\n</query>');
+      expect(deps.state.messages[0].displayContent).toBe('See ![[image.png]]');
       expect(deps.state.messages[0].images).toBeUndefined();
       expect(imageContextManager.clearImages).toHaveBeenCalled();
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
