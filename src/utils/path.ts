@@ -8,7 +8,6 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
 
 // ============================================
 // Vault Path
@@ -96,67 +95,14 @@ function expandEnvironmentVariables(value: string): string {
   return expanded;
 }
 
-/**
- * Checks if a string contains shell command substitution syntax.
- */
-export function hasShellCommandSubstitution(value: string): boolean {
-  return /\$\([^)]*\)/.test(value);
-}
 
-/**
- * Executes a shell command and returns the trimmed output.
- * Returns the original value if execution fails.
- */
-function executeShellCommand(command: string): string {
-  try {
-    // Use platform-appropriate shell
-    const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
-    const shellArgs = process.platform === 'win32' ? ['/c', command] : ['-c', command];
-
-    const result = execSync(command, {
-      shell: shell,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-
-    return result;
-  } catch (error) {
-    // If command fails, return original value
-    return command;
-  }
-}
-
-/**
- * Expands shell command substitutions like $(which claude) or `which claude`.
- * Handles both $() and backtick syntax.
- */
-function expandShellCommands(value: string): string {
-  // First handle $(command) syntax
-  let expanded = value.replace(/\$\(([^)]+)\)/g, (match, command) => {
-    const result = executeShellCommand(command);
-    return result !== command ? result : match;
-  });
-
-  // Then handle backtick `command` syntax
-  expanded = expanded.replace(/`([^`]+)`/g, (match, command) => {
-    const result = executeShellCommand(command);
-    return result !== command ? result : match;
-  });
-
-  return expanded;
-}
 
 /**
  * Expands home directory notation to absolute path.
  * Handles both ~/path and ~\path formats.
- * Also supports shell command substitutions like $(which claude).
  */
 export function expandHomePath(p: string): string {
-  // First expand shell commands like $(which claude)
-  let expanded = expandShellCommands(p);
-  // Then expand environment variables
-  expanded = expandEnvironmentVariables(expanded);
-  // Finally handle home directory expansion
+  const expanded = expandEnvironmentVariables(p);
   if (expanded === '~') {
     return os.homedir();
   }
