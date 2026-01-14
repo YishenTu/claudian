@@ -13,7 +13,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { ChatMessage, ContentBlock, ToolCallInfo } from '../core/types';
+import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, ToolCallInfo } from '../core/types';
 
 /** Result of reading an SDK session file. */
 export interface SDKSessionReadResult {
@@ -46,7 +46,7 @@ export interface SDKNativeMessage {
  * SDK native content block structure.
  */
 export interface SDKNativeContentBlock {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'image';
   text?: string;
   thinking?: string;
   id?: string;
@@ -55,6 +55,12 @@ export interface SDKNativeContentBlock {
   tool_use_id?: string;
   content?: string | unknown;
   is_error?: boolean;
+  // Image block fields
+  source?: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
 }
 
 /**
@@ -177,6 +183,31 @@ function extractTextContent(content: string | SDKNativeContentBlock[] | undefine
 }
 
 /**
+ * Extracts images from SDK content blocks.
+ */
+function extractImages(content: string | SDKNativeContentBlock[] | undefined): ImageAttachment[] | undefined {
+  if (!content || typeof content === 'string') return undefined;
+
+  const imageBlocks = content.filter(
+    (block): block is SDKNativeContentBlock & {
+      type: 'image';
+      source: { type: 'base64'; media_type: string; data: string };
+    } => block.type === 'image' && !!block.source?.data
+  );
+
+  if (imageBlocks.length === 0) return undefined;
+
+  return imageBlocks.map((block, index) => ({
+    id: `sdk-img-${Date.now()}-${index}`,
+    name: `image-${index + 1}`,
+    mediaType: block.source.media_type as ImageMediaType,
+    data: block.source.data,
+    size: Math.ceil(block.source.data.length * 0.75), // Approximate original size from base64
+    source: 'paste' as const,
+  }));
+}
+
+/**
  * Extracts tool calls from SDK content blocks.
  *
  * @param content - The content blocks from the assistant message
@@ -282,10 +313,12 @@ export function parseSDKMessageToChat(
 
   const content = sdkMsg.message?.content;
   const textContent = extractTextContent(content);
+  const images = sdkMsg.type === 'user' ? extractImages(content) : undefined;
 
-  // Skip empty messages (but allow assistant messages with tool_use)
+  // Skip empty messages (but allow messages with tool_use or images)
   const hasToolUse = Array.isArray(content) && content.some(b => b.type === 'tool_use');
-  if (!textContent && !hasToolUse && (!content || typeof content === 'string')) return null;
+  const hasImages = images && images.length > 0;
+  if (!textContent && !hasToolUse && !hasImages && (!content || typeof content === 'string')) return null;
 
   const timestamp = sdkMsg.timestamp
     ? new Date(sdkMsg.timestamp).getTime()
@@ -298,6 +331,7 @@ export function parseSDKMessageToChat(
     timestamp,
     toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
+    images,
   };
 }
 

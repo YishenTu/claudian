@@ -699,8 +699,10 @@ export default class ClaudianPlugin extends Plugin {
   /**
    * Updates conversation properties.
    *
-   * For native sessions, saves metadata only (SDK handles messages).
+   * For native sessions, saves metadata only (SDK handles messages including images).
    * For legacy sessions, saves full JSONL.
+   *
+   * Image data is cleared from memory after save (SDK/JSONL has persisted it).
    */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
@@ -709,13 +711,22 @@ export default class ClaudianPlugin extends Plugin {
     Object.assign(conversation, updates, { updatedAt: Date.now() });
 
     if (conversation.isNative) {
-      // Native session: save metadata only
+      // Native session: save metadata only (SDK handles messages including images)
       await this.storage.sessions.saveMetadata(
         this.storage.sessions.toSessionMetadata(conversation)
       );
     } else {
       // Legacy session: save full JSONL
       await this.storage.sessions.saveConversation(conversation);
+    }
+
+    // Clear image data from memory after save (data is persisted by SDK or JSONL)
+    for (const msg of conversation.messages) {
+      if (msg.images) {
+        for (const img of msg.images) {
+          img.data = '';
+        }
+      }
     }
   }
 
