@@ -904,6 +904,241 @@ describe('ConversationController - Race Condition Guards', () => {
   });
 });
 
+describe('ConversationController - Rewind To Message', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockAgentService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAgentService = {
+      getSessionId: jest.fn().mockReturnValue('test-session'),
+      setSessionId: jest.fn(),
+      rewindFiles: jest.fn().mockResolvedValue({
+        canRewind: true,
+        filesChanged: ['file1.ts'],
+      }),
+      restartAfterRewind: jest.fn().mockResolvedValue(undefined),
+    };
+    deps = createMockDeps({
+      getAgentService: () => mockAgentService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  describe('rewindToMessage guards', () => {
+    it('should show notice and return when no agent service', async () => {
+      // Create a controller with no agent service
+      const depsNoAgent = createMockDeps({
+        getAgentService: () => null,
+      });
+      const controllerNoAgent = new ConversationController(depsNoAgent);
+
+      await controllerNoAgent.rewindToMessage('msg-1', 'uuid-1');
+
+      // Should not throw, just return early
+      expect(mockAgentService.rewindFiles).not.toHaveBeenCalled();
+    });
+
+    it('should show notice and return when streaming', async () => {
+      deps.state.isStreaming = true;
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(mockAgentService.rewindFiles).not.toHaveBeenCalled();
+    });
+
+    it('should show notice and return when UUID is missing', async () => {
+      await controller.rewindToMessage('msg-1', '');
+
+      expect(mockAgentService.rewindFiles).not.toHaveBeenCalled();
+    });
+
+    it('should show notice and return when message not found', async () => {
+      deps.state.messages = [
+        { id: 'other-msg', role: 'user', content: 'test', timestamp: Date.now() },
+      ];
+
+      await controller.rewindToMessage('non-existent-msg', 'uuid-1');
+
+      expect(mockAgentService.rewindFiles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rewindToMessage SDK interaction', () => {
+    beforeEach(() => {
+      deps.state.messages = [
+        { id: 'msg-1', role: 'user', content: 'first', timestamp: Date.now(), sdkUuid: 'uuid-1' },
+        { id: 'msg-2', role: 'assistant', content: 'response', timestamp: Date.now() },
+        { id: 'msg-3', role: 'user', content: 'second', timestamp: Date.now(), sdkUuid: 'uuid-3' },
+      ];
+      deps.state.currentConversationId = 'conv-1';
+    });
+
+    it('should call rewindFiles with correct UUID', async () => {
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(mockAgentService.rewindFiles).toHaveBeenCalledWith('uuid-1');
+    });
+
+    it('should show notice and return when canRewind is false', async () => {
+      mockAgentService.rewindFiles.mockResolvedValue({
+        canRewind: false,
+        error: 'Checkpoint not found',
+      });
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(mockAgentService.restartAfterRewind).not.toHaveBeenCalled();
+    });
+
+    it('should truncate messages to target message (inclusive)', async () => {
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(deps.state.messages).toHaveLength(1);
+      expect(deps.state.messages[0].id).toBe('msg-1');
+    });
+
+    it('should save truncated conversation', async () => {
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          messages: expect.any(Array),
+        })
+      );
+    });
+
+    it('should call restartAfterRewind with correct UUID', async () => {
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(mockAgentService.restartAfterRewind).toHaveBeenCalledWith('uuid-1');
+    });
+
+    it('should continue with UI update even if restart fails', async () => {
+      mockAgentService.restartAfterRewind.mockRejectedValue(new Error('Restart failed'));
+      const messagesEl = deps.getMessagesEl();
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      // Should still clear and re-render messages
+      expect(messagesEl.empty).toBeDefined();
+      expect(deps.renderer.renderMessages).toHaveBeenCalled();
+    });
+
+    it('should clear state maps and re-render messages', async () => {
+      const clearMapsSpy = jest.spyOn(deps.state, 'clearMaps');
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(clearMapsSpy).toHaveBeenCalled();
+      expect(deps.renderer.renderMessages).toHaveBeenCalled();
+    });
+  });
+
+  describe('isRewinding flag management', () => {
+    beforeEach(() => {
+      deps.state.messages = [
+        { id: 'msg-1', role: 'user', content: 'test', timestamp: Date.now(), sdkUuid: 'uuid-1' },
+      ];
+      deps.state.currentConversationId = 'conv-1';
+    });
+
+    it('should set isRewinding to true during rewind', async () => {
+      let flagDuringRewind = false;
+      mockAgentService.rewindFiles.mockImplementation(async () => {
+        flagDuringRewind = deps.state.isRewinding;
+        return { canRewind: true, filesChanged: [] };
+      });
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(flagDuringRewind).toBe(true);
+    });
+
+    it('should reset isRewinding to false after successful rewind', async () => {
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(deps.state.isRewinding).toBe(false);
+    });
+
+    it('should reset isRewinding to false even when rewind fails', async () => {
+      mockAgentService.rewindFiles.mockRejectedValue(new Error('SDK error'));
+
+      await controller.rewindToMessage('msg-1', 'uuid-1').catch(() => {});
+
+      expect(deps.state.isRewinding).toBe(false);
+    });
+
+    it('should reset isRewinding to false when canRewind is false', async () => {
+      mockAgentService.rewindFiles.mockResolvedValue({ canRewind: false });
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(deps.state.isRewinding).toBe(false);
+    });
+
+    it('should reset isRewinding to false when UUID validation fails', async () => {
+      await controller.rewindToMessage('msg-1', '');
+
+      expect(deps.state.isRewinding).toBe(false);
+    });
+
+    it('should reset isRewinding to false when message not found', async () => {
+      await controller.rewindToMessage('non-existent', 'uuid-1');
+
+      expect(deps.state.isRewinding).toBe(false);
+    });
+  });
+
+  describe('rewindToMessage notifications', () => {
+    beforeEach(() => {
+      deps.state.messages = [
+        { id: 'msg-1', role: 'user', content: 'test', timestamp: Date.now(), sdkUuid: 'uuid-1' },
+      ];
+      deps.state.currentConversationId = 'conv-1';
+    });
+
+    it('should complete successfully for single file restored', async () => {
+      mockAgentService.rewindFiles.mockResolvedValue({
+        canRewind: true,
+        filesChanged: ['file1.ts'],
+      });
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      // Verify rewind completed (messages truncated, UI re-rendered)
+      expect(deps.state.messages).toHaveLength(1);
+      expect(deps.renderer.renderMessages).toHaveBeenCalled();
+    });
+
+    it('should complete successfully for multiple files restored', async () => {
+      mockAgentService.rewindFiles.mockResolvedValue({
+        canRewind: true,
+        filesChanged: ['file1.ts', 'file2.ts', 'file3.ts'],
+      });
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(deps.state.messages).toHaveLength(1);
+      expect(deps.renderer.renderMessages).toHaveBeenCalled();
+    });
+
+    it('should complete successfully when no files changed', async () => {
+      mockAgentService.rewindFiles.mockResolvedValue({
+        canRewind: true,
+        filesChanged: [],
+      });
+
+      await controller.rewindToMessage('msg-1', 'uuid-1');
+
+      expect(deps.state.messages).toHaveLength(1);
+      expect(deps.renderer.renderMessages).toHaveBeenCalled();
+    });
+  });
+});
+
 describe('ConversationController - Persistent External Context Paths', () => {
   let controller: ConversationController;
   let deps: ConversationControllerDeps;
