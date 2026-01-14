@@ -124,6 +124,8 @@ export type TranslationKey =
 
   // Settings - Advanced
   | 'settings.advanced'
+  | 'settings.show1MModel.name'
+  | 'settings.show1MModel.desc'
   | 'settings.maxTabs.name'
   | 'settings.maxTabs.desc'
   | 'settings.maxTabs.warning'

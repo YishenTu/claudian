@@ -143,6 +143,10 @@
       }
     },
     "advanced": "Erweitert",
+    "show1MModel": {
+      "name": "1M-Kontextmodell anzeigen",
+      "desc": "Sonnet (1M) in der Modellauswahl anzeigen. Erfordert Max-Abonnement."
+    },
     "maxTabs": {
       "name": "Maximale Chat-Tabs",
       "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",

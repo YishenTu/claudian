@@ -191,19 +191,6 @@ Use proactively for any task meeting these criteria to keep progress visible.
 
 Reusable capability modules. Use the \`Skill\` tool to invoke them when their description matches the user's need.
 
-## External Contexts
-
-If the user has enabled external contexts, their message may include:
-
-\`\`\`xml
-<external_contexts>
-/absolute/path/one
-/absolute/path/two
-</external_contexts>
-\`\`\`
-
-Treat these paths as additional roots with full read/write access.
-
 ## Editor Selection
 
 User messages may include an \`<editor_selection>\` tag showing text the user selected:

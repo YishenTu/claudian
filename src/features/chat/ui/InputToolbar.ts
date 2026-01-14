@@ -25,6 +25,7 @@ export interface ToolbarSettings {
   model: ClaudeModel;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
+  show1MModel?: boolean;
 }
 
 /** Callback interface for toolbar changes. */
@@ -51,7 +52,7 @@ export class ModelSelector {
 
   /** Returns available models (custom from env vars, or defaults). */
   private getAvailableModels() {
-    let models: { value: string; label: string; description: string }[] = [];
+    let models: { value: string; label: string; description: string; is1M?: boolean }[] = [];
 
     if (this.callbacks.getEnvironmentVariables) {
       const envVarsStr = this.callbacks.getEnvironmentVariables();
@@ -65,6 +66,12 @@ export class ModelSelector {
       }
     } else {
       models = [...DEFAULT_CLAUDE_MODELS];
+    }
+
+    // Filter out 1M models if show1MModel setting is disabled
+    const settings = this.callbacks.getSettings();
+    if (!settings.show1MModel) {
+      models = models.filter(m => !m.is1M);
     }
 
     return models;

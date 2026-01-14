@@ -143,6 +143,10 @@
       }
     },
     "advanced": "Avançado",
+    "show1MModel": {
+      "name": "Mostrar modelo de contexto 1M",
+      "desc": "Mostrar Sonnet (1M) no seletor de modelos. Requer assinatura Max."
+    },
     "maxTabs": {
       "name": "Máximo de abas de chat",
       "desc": "Número máximo de abas de chat simultâneas (3-10). Cada aba usa uma sessão Claude separada.",

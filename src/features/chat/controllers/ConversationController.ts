@@ -5,7 +5,7 @@
  * history dropdown UI, and greeting/welcome state.
  */
 
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
@@ -720,6 +720,77 @@ export class ConversationController {
         this.updateHistoryDropdown();
       }
     );
+  }
+
+  /**
+   * Rewinds files and conversation to a previous checkpoint.
+   * Restores file contents and truncates conversation history.
+   *
+   * @param messageId - The id of the user message to rewind to
+   * @param sdkUuid - The SDK UUID for file restoration
+   */
+  async rewindToMessage(messageId: string, sdkUuid: string): Promise<void> {
+    const { plugin, state, renderer } = this.deps;
+    const agentService = this.getAgentService();
+
+    if (!agentService) {
+      new Notice('No active session. Cannot rewind.');
+      return;
+    }
+
+    if (state.isStreaming) {
+      new Notice('Cannot rewind while streaming.');
+      return;
+    }
+
+    // Find the message index
+    const messageIndex = state.messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) {
+      new Notice('Message not found.');
+      return;
+    }
+
+    // Call SDK to restore files
+    const result = await agentService.rewindFiles(sdkUuid);
+
+    if (!result.canRewind) {
+      new Notice(result.error || 'Cannot rewind to this point.');
+      return;
+    }
+
+    // Truncate conversation messages (keep up to and including the target message)
+    const truncatedMessages = state.messages.slice(0, messageIndex + 1);
+    state.messages = truncatedMessages;
+
+    // Save truncated conversation (without resumeAt since we're restarting immediately)
+    if (state.currentConversationId) {
+      const updates: Partial<Conversation> = {
+        messages: state.getPersistedMessages(),
+      };
+      await plugin.updateConversation(state.currentConversationId, updates);
+    }
+
+    // Restart SDK session with resumeSessionAt to align state
+    await agentService.restartAfterRewind(sdkUuid);
+
+    // Re-render messages
+    const welcomeEl = renderer.renderMessages(
+      state.messages,
+      () => this.getGreeting()
+    );
+    this.deps.setWelcomeEl(welcomeEl);
+    this.updateWelcomeVisibility();
+
+    // Update todo panel (may have changed)
+    state.currentTodos = extractLastTodosFromMessages(state.messages);
+
+    // Show notification with details
+    const filesChanged = result.filesChanged?.length || 0;
+    if (filesChanged > 0) {
+      new Notice(`Restored ${filesChanged} file${filesChanged > 1 ? 's' : ''} to checkpoint.`);
+    } else {
+      new Notice('Restored to checkpoint.');
+    }
   }
 
   /** Formats a timestamp for display. */

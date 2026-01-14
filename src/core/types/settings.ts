@@ -233,6 +233,7 @@ export interface ClaudianSettings {
   thinkingBudget: ThinkingBudget;
   enableAutoTitleGeneration: boolean;
   titleGenerationModel: string;  // Model for auto title generation (empty = auto)
+  show1MModel: boolean;  // Show Sonnet (1M) in model selector (requires Max subscription)
 
   // Content settings
   excludedTags: string[];
@@ -291,6 +292,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   thinkingBudget: 'off',
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
+  show1MModel: false,  // Hidden by default
 
   // Content settings
   excludedTags: [],

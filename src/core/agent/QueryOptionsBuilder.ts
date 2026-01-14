@@ -20,7 +20,7 @@ import type { McpServerManager } from '../mcp';
 import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudianSettings, PermissionMode } from '../types';
-import { THINKING_BUDGETS } from '../types';
+import { is1MModel, resolveModelWithBetas, THINKING_BUDGETS } from '../types';
 import {
   computeSystemPromptKey,
   type PersistentQueryConfig,
@@ -60,10 +60,14 @@ export interface PersistentQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   resumeSessionId?: string;
+  /** Resume at specific message UUID (for rewind). */
+  resumeSessionAt?: string;
   /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
   /** Pre-built hooks array. */
   hooks: Options['hooks'];
+  /** External context paths for additionalDirectories SDK option. */
+  externalContextPaths?: string[];
 }
 
 /**
@@ -74,6 +78,8 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   sessionId?: string;
+  /** Resume at specific message UUID (for rewind). */
+  resumeSessionAt?: string;
   /** Optional model override for cold-start queries. */
   modelOverride?: string;
   /** Approval callback for normal mode. */
@@ -88,6 +94,8 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   allowedTools?: string[];
   /** Whether the query has editor context. */
   hasEditorContext: boolean;
+  /** External context paths for additionalDirectories SDK option. */
+  externalContextPaths?: string[];
 }
 
 // ============================================
@@ -124,10 +132,20 @@ export class QueryOptionsBuilder {
     // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
 
+    // 1M model requires beta flag change which can't be updated dynamically
+    const currentIs1M = is1MModel(currentConfig.model || '');
+    const newIs1M = is1MModel(newConfig.model || '');
+    if (currentIs1M !== newIs1M) return true;
+
     // Export paths affect system prompt
     const oldExport = [...(currentConfig.allowedExportPaths || [])].sort().join('|');
     const newExport = [...(newConfig.allowedExportPaths || [])].sort().join('|');
     if (oldExport !== newExport) return true;
+
+    // External context paths require restart (additionalDirectories can't be updated dynamically)
+    const oldExternal = [...(currentConfig.externalContextPaths || [])].sort().join('|');
+    const newExternal = [...(newConfig.externalContextPaths || [])].sort().join('|');
+    if (oldExternal !== newExternal) return true;
 
     return false;
   }
@@ -137,8 +155,14 @@ export class QueryOptionsBuilder {
    *
    * Used to detect when the persistent query needs to be restarted
    * due to configuration changes that cannot be applied dynamically.
+   *
+   * @param ctx - The query options context
+   * @param externalContextPaths - External context paths for additionalDirectories
    */
-  static buildPersistentQueryConfig(ctx: QueryOptionsContext): PersistentQueryConfig {
+  static buildPersistentQueryConfig(
+    ctx: QueryOptionsContext,
+    externalContextPaths?: string[]
+  ): PersistentQueryConfig {
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -165,7 +189,7 @@ export class QueryOptionsBuilder {
       disallowedToolsKey,
       mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
       pluginsKey,
-      externalContextPaths: [],
+      externalContextPaths: externalContextPaths || [],
       allowedExportPaths: ctx.settings.allowedExportPaths,
       settingSources: ctx.settings.loadUserClaudeSettings ? 'user,project' : 'project',
       claudeCliPath: ctx.cliPath,
@@ -179,8 +203,10 @@ export class QueryOptionsBuilder {
    * eliminating cold-start latency for follow-up messages.
    */
   static buildPersistentQueryOptions(ctx: PersistentQueryContext): Options {
-    const selectedModel = ctx.settings.model;
     const permissionMode = ctx.settings.permissionMode;
+
+    // Resolve model and optional beta flags (e.g., 1M context)
+    const resolved = resolveModelWithBetas(ctx.settings.model);
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt({
@@ -194,7 +220,7 @@ export class QueryOptionsBuilder {
     const options: Options = {
       cwd: ctx.vaultPath,
       systemPrompt,
-      model: selectedModel,
+      model: resolved.model,
       abortController: ctx.abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,
       settingSources: ctx.settings.loadUserClaudeSettings
@@ -206,7 +232,13 @@ export class QueryOptionsBuilder {
         PATH: ctx.enhancedPath,
       },
       includePartialMessages: true, // Enable streaming
+      enableFileCheckpointing: true, // Enable file snapshots for rewind
     };
+
+    // Add beta flags if present (e.g., 1M context window)
+    if (resolved.betas) {
+      options.betas = resolved.betas;
+    }
 
     // Pre-register all disabled MCP tools and hide unsupported SDK tools
     const allDisallowedTools = [
@@ -235,6 +267,16 @@ export class QueryOptionsBuilder {
       options.resume = ctx.resumeSessionId;
     }
 
+    // Resume at specific message (for rewind)
+    if (ctx.resumeSessionAt) {
+      options.resumeSessionAt = ctx.resumeSessionAt;
+    }
+
+    // Add external context paths as additionalDirectories
+    if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
+      options.additionalDirectories = ctx.externalContextPaths;
+    }
+
     return options;
   }
 
@@ -249,8 +291,11 @@ export class QueryOptionsBuilder {
    * - When forceColdStart option is set
    */
   static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
-    const selectedModel = ctx.modelOverride ?? ctx.settings.model;
     const permissionMode = ctx.settings.permissionMode;
+
+    // Resolve model and optional beta flags (e.g., 1M context)
+    const selectedModel = ctx.modelOverride ?? ctx.settings.model;
+    const resolved = resolveModelWithBetas(selectedModel);
 
     // Build system prompt with settings
     const systemPrompt = buildSystemPrompt({
@@ -264,7 +309,7 @@ export class QueryOptionsBuilder {
     const options: Options = {
       cwd: ctx.vaultPath,
       systemPrompt,
-      model: selectedModel,
+      model: resolved.model,
       abortController: ctx.abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,
       // Load project settings. Optionally load user settings if enabled.
@@ -280,7 +325,13 @@ export class QueryOptionsBuilder {
         PATH: ctx.enhancedPath,
       },
       includePartialMessages: true, // Enable streaming
+      enableFileCheckpointing: true, // Enable file snapshots for rewind
     };
+
+    // Add beta flags if present (e.g., 1M context window)
+    if (resolved.betas) {
+      options.betas = resolved.betas;
+    }
 
     // Add MCP servers to options
     const mcpMentions = ctx.mcpMentions || new Set<string>();
@@ -322,6 +373,16 @@ export class QueryOptionsBuilder {
     // Resume previous session if we have a session ID
     if (ctx.sessionId) {
       options.resume = ctx.sessionId;
+    }
+
+    // Resume at specific message (for rewind)
+    if (ctx.resumeSessionAt) {
+      options.resumeSessionAt = ctx.resumeSessionAt;
+    }
+
+    // Add external context paths as additionalDirectories
+    if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
+      options.additionalDirectories = ctx.externalContextPaths;
     }
 
     return options;

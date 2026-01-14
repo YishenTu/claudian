@@ -19,9 +19,12 @@ export {
 
 // Model types
 export {
+  BETA_1M_CONTEXT,
   type ClaudeModel,
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_THINKING_BUDGET,
+  is1MModel,
+  resolveModelWithBetas,
   THINKING_BUDGETS,
   type ThinkingBudget,
 } from './models';

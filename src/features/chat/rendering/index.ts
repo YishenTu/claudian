@@ -13,7 +13,7 @@ export {
   renderDiffContent,
   splitIntoHunks,
 } from './DiffRenderer';
-export { MessageRenderer } from './MessageRenderer';
+export { MessageRenderer, type RewindCallback } from './MessageRenderer';
 export {
   addSubagentToolCall,
   type AsyncSubagentState,

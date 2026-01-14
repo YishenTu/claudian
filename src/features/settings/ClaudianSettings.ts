@@ -491,6 +491,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // Advanced section
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
 
+    // 1M context model toggle
+    new Setting(containerEl)
+      .setName(t('settings.show1MModel.name'))
+      .setDesc(t('settings.show1MModel.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.show1MModel ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.show1MModel = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // Max tabs setting
     const maxTabsSetting = new Setting(containerEl)
       .setName(t('settings.maxTabs.name'))

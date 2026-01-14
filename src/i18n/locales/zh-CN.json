@@ -143,6 +143,10 @@
       }
     },
     "advanced": "高级",
+    "show1MModel": {
+      "name": "显示 1M 上下文模型",
+      "desc": "在模型选择器中显示 Sonnet (1M)。需要 Max 订阅。"
+    },
     "maxTabs": {
       "name": "最大聊天标签数",
       "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",

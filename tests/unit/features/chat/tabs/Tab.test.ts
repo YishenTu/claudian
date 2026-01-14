@@ -107,7 +107,7 @@ let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
 let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
 let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
 let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
-let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock };
+let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setRewindCallback: jest.Mock };
 let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockStreamController: { onAsyncSubagentStateChange: jest.Mock };
 let mockConversationController: { save: jest.Mock };
@@ -173,7 +173,7 @@ jest.mock('@/shared/components/SlashCommandDropdown', () => ({
 // Mock rendering
 jest.mock('@/features/chat/rendering', () => ({
   MessageRenderer: jest.fn().mockImplementation(() => {
-    mockMessageRenderer = { scrollToBottomIfNeeded: jest.fn() };
+    mockMessageRenderer = { scrollToBottomIfNeeded: jest.fn(), setRewindCallback: jest.fn() };
     return mockMessageRenderer;
   }),
   cleanupThinkingBlock: jest.fn(),

@@ -22,6 +22,9 @@ import { renderStoredWriteEdit } from './WriteEditRenderer';
 /** Render content function type for callbacks. */
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
+/** Callback for rewind action on user messages. */
+export type RewindCallback = (messageId: string, sdkUuid: string) => void;
+
 /**
  * MessageRenderer handles all message DOM rendering.
  *
@@ -32,6 +35,7 @@ export class MessageRenderer {
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
+  private onRewind?: RewindCallback;
 
   constructor(
     plugin: ClaudianPlugin,
@@ -45,6 +49,11 @@ export class MessageRenderer {
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
+  }
+
+  /** Sets the rewind callback for user messages with file checkpoints. */
+  setRewindCallback(callback: RewindCallback | undefined): void {
+    this.onRewind = callback;
   }
 
   /** Sets the messages container element. */
@@ -155,6 +164,8 @@ export class MessageRenderer {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
       }
+      // Add rewind button for user messages with file checkpoint
+      this.addRewindButton(msgEl, msg);
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
     }
@@ -371,11 +382,14 @@ export class MessageRenderer {
   }
 
   // ============================================
-  // Copy Button
+  // Copy & Rewind Buttons
   // ============================================
 
   /** Clipboard icon SVG for copy button. */
   private static readonly COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+
+  /** Rewind icon SVG (regenerate/restore). */
+  private static readonly REWIND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
 
   /**
    * Adds a copy button to a text block.
@@ -414,6 +428,29 @@ export class MessageRenderer {
         copyBtn.classList.remove('copied');
         feedbackTimeout = null;
       }, 1500);
+    });
+  }
+
+  /**
+   * Adds a rewind button to a user message.
+   * Button restores files and conversation to this checkpoint.
+   * @param msgEl The message element
+   * @param msg The message data (needs id and sdkUuid)
+   */
+  private addRewindButton(msgEl: HTMLElement, msg: ChatMessage): void {
+    if (!msg.sdkUuid || !this.onRewind) {
+      return;
+    }
+
+    const rewindBtn = msgEl.createSpan({ cls: 'claudian-rewind-btn' });
+    rewindBtn.innerHTML = MessageRenderer.REWIND_ICON;
+    rewindBtn.setAttribute('aria-label', 'Restore to this point');
+
+    rewindBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.onRewind && msg.sdkUuid) {
+        this.onRewind(msg.id, msg.sdkUuid);
+      }
     });
   }
 

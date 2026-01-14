@@ -17,6 +17,7 @@ import type {
   Options,
   PermissionResult,
   Query,
+  RewindFilesResult,
   SDKMessage,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -54,7 +55,7 @@ import type {
   ImageAttachment,
   StreamChunk,
 } from '../types';
-import { THINKING_BUDGETS } from '../types';
+import { is1MModel, resolveModelWithBetas, THINKING_BUDGETS } from '../types';
 import { MessageChannel } from './MessageChannel';
 import {
   type ColdStartQueryContext,
@@ -210,7 +211,9 @@ export class ClaudianService {
   private async startPersistentQuery(
     vaultPath: string,
     cliPath: string,
-    resumeSessionId?: string
+    resumeSessionId?: string,
+    externalContextPaths?: string[],
+    resumeSessionAt?: string
   ): Promise<void> {
     if (this.persistentQuery) {
       return;
@@ -231,11 +234,17 @@ export class ClaudianService {
     this.queryAbortController = new AbortController();
 
     // Build initial configuration
-    const config = this.buildPersistentQueryConfig(vaultPath, cliPath);
+    const config = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
     this.currentConfig = config;
 
     // Build SDK options
-    const options = await this.buildPersistentQueryOptions(vaultPath, cliPath, resumeSessionId);
+    const options = await this.buildPersistentQueryOptions(
+      vaultPath,
+      cliPath,
+      resumeSessionId,
+      externalContextPaths,
+      resumeSessionAt
+    );
 
     // Create the persistent query with the message channel
     this.persistentQuery = agentQuery({
@@ -302,13 +311,15 @@ export class ClaudianService {
    */
   async restartPersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): Promise<void> {
     const sessionId = this.sessionManager.getSessionId();
+    // Preserve external context paths across restart
+    const externalContextPaths = this.currentExternalContextPaths;
     this.closePersistentQuery(reason, options);
 
     const vaultPath = getVaultPath(this.plugin.app);
     const cliPath = this.plugin.getResolvedClaudeCliPath();
 
     if (vaultPath && cliPath) {
-      await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined);
+      await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined, externalContextPaths);
     }
   }
 
@@ -322,9 +333,14 @@ export class ClaudianService {
   /**
    * Builds configuration object for tracking changes.
    */
-  private buildPersistentQueryConfig(vaultPath: string, cliPath: string): PersistentQueryConfig {
+  private buildPersistentQueryConfig(
+    vaultPath: string,
+    cliPath: string,
+    externalContextPaths?: string[]
+  ): PersistentQueryConfig {
     return QueryOptionsBuilder.buildPersistentQueryConfig(
-      this.buildQueryOptionsContext(vaultPath, cliPath)
+      this.buildQueryOptionsContext(vaultPath, cliPath),
+      externalContextPaths
     );
   }
 
@@ -352,7 +368,9 @@ export class ClaudianService {
   private buildPersistentQueryOptions(
     vaultPath: string,
     cliPath: string,
-    resumeSessionId?: string
+    resumeSessionId?: string,
+    externalContextPaths?: string[],
+    resumeSessionAt?: string
   ): Options {
     const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
     const hooks = this.buildHooks(vaultPath);
@@ -362,8 +380,10 @@ export class ClaudianService {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
       resumeSessionId,
+      resumeSessionAt,
       canUseTool: permissionMode !== 'yolo' ? this.createApprovalCallback() : undefined,
       hooks,
+      externalContextPaths,
     };
 
     return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
@@ -936,10 +956,19 @@ export class ClaudianService {
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
     const thinkingTokens = budgetConfig?.tokens ?? null;
 
-    // Update model if changed
-    if (this.currentConfig && selectedModel !== this.currentConfig.model) {
+    // Handle model changes:
+    // - 1M beta flag changes require restart (cannot be updated dynamically)
+    // - Same-beta-status model changes can use setModel() dynamically
+    const currentIs1M = this.currentConfig ? is1MModel(this.currentConfig.model || '') : false;
+    const newIs1M = is1MModel(selectedModel);
+    const betaStatusChanged = currentIs1M !== newIs1M;
+
+    // Only update model dynamically if beta status is unchanged
+    // (1M changes are handled by needsRestart below which triggers restartPersistentQuery)
+    if (!betaStatusChanged && this.currentConfig && selectedModel !== this.currentConfig.model) {
+      const resolved = resolveModelWithBetas(selectedModel);
       try {
-        await this.persistentQuery.setModel(selectedModel);
+        await this.persistentQuery.setModel(resolved.model);
         this.currentConfig.model = selectedModel;
       } catch {
         // Silently ignore model update errors
@@ -994,14 +1023,12 @@ export class ClaudianService {
       }
     }
 
-    // External context paths are injected per message; track but do not restart.
-    if (this.currentConfig) {
-      this.currentConfig.externalContextPaths = queryOptions?.externalContextPaths || [];
-    }
-    this.currentExternalContextPaths = queryOptions?.externalContextPaths || [];
+    // Track external context paths (used by hooks and for restart detection)
+    const newExternalContextPaths = queryOptions?.externalContextPaths || [];
+    this.currentExternalContextPaths = newExternalContextPaths;
 
-    // Check for other changes that require restart
-    const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath);
+    // Check for other changes that require restart (including external context paths)
+    const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath, newExternalContextPaths);
     if (this.needsRestart(newConfig)) {
       if (!allowRestart) {
         return;
@@ -1110,6 +1137,7 @@ export class ClaudianService {
       enabledMcpServers: queryOptions?.enabledMcpServers,
       allowedTools,
       hasEditorContext,
+      externalContextPaths,
     };
 
     const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
@@ -1210,6 +1238,63 @@ export class ClaudianService {
     this.preWarm(id ?? undefined).catch(() => {
       // Pre-warm is best-effort, ignore failures
     });
+  }
+
+  /**
+   * Rewinds files to a previous checkpoint identified by user message UUID.
+   * The SDK restores file contents to the state before that turn's modifications.
+   *
+   * @param userMessageUuid - The UUID of the user message to rewind to
+   * @param options - Optional settings (dryRun to preview without applying)
+   * @returns Result with canRewind status, files changed, and any errors
+   */
+  async rewindFiles(
+    userMessageUuid: string,
+    options?: { dryRun?: boolean }
+  ): Promise<RewindFilesResult> {
+    if (!this.persistentQuery) {
+      return {
+        canRewind: false,
+        error: 'No active session. Please send a message first.',
+      };
+    }
+
+    try {
+      return await this.persistentQuery.rewindFiles(userMessageUuid, options);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        canRewind: false,
+        error: `Rewind failed: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * Restarts the persistent query after a rewind, aligning SDK state.
+   * The resumeSessionAt tells the SDK to ignore messages after that point.
+   *
+   * @param resumeSessionAt - The UUID to resume from (SDK ignores messages after this)
+   */
+  async restartAfterRewind(resumeSessionAt: string): Promise<void> {
+    const sessionId = this.sessionManager.getSessionId();
+    const externalContextPaths = this.currentExternalContextPaths;
+
+    // Close the current query
+    this.closePersistentQuery('rewind');
+
+    const vaultPath = getVaultPath(this.plugin.app);
+    const cliPath = this.plugin.getResolvedClaudeCliPath();
+
+    if (vaultPath && cliPath) {
+      await this.startPersistentQuery(
+        vaultPath,
+        cliPath,
+        sessionId ?? undefined,
+        externalContextPaths,
+        resumeSessionAt
+      );
+    }
   }
 
   /**

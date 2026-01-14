@@ -143,6 +143,10 @@
       }
     },
     "advanced": "Avancé",
+    "show1MModel": {
+      "name": "Afficher le modèle contexte 1M",
+      "desc": "Afficher Sonnet (1M) dans le sélecteur de modèles. Nécessite un abonnement Max."
+    },
     "maxTabs": {
       "name": "Maximum d'onglets de chat",
       "desc": "Nombre maximum d'onglets de chat simultanés (3-10). Chaque onglet utilise une session Claude séparée.",

@@ -742,6 +742,54 @@ describe('transformSDKMessage', () => {
 
       expect(results).toHaveLength(1);
     });
+
+    it('yields turn_uuid event when result has uuid', () => {
+      const message: SDKMessage = {
+        type: 'result',
+        uuid: 'turn-uuid-123',
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toContainEqual({ type: 'turn_uuid', uuid: 'turn-uuid-123' });
+    });
+
+    it('yields turn_uuid before usage when both present', () => {
+      const message: SDKMessage = {
+        type: 'result',
+        uuid: 'turn-uuid-456',
+        model: 'test-model',
+        modelUsage: {
+          'test-model': {
+            inputTokens: 1000,
+            contextWindow: 200000,
+          },
+        },
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ type: 'turn_uuid', uuid: 'turn-uuid-456' });
+      expect(results[1].type).toBe('usage');
+    });
+
+    it('does not yield turn_uuid when uuid is not present', () => {
+      const message: SDKMessage = {
+        type: 'result',
+        model: 'test-model',
+        modelUsage: {
+          'test-model': {
+            inputTokens: 1000,
+            contextWindow: 200000,
+          },
+        },
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results.find(r => r.type === 'turn_uuid')).toBeUndefined();
+    });
   });
 
   describe('error messages', () => {

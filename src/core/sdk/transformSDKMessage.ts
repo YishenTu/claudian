@@ -144,6 +144,12 @@ export function* transformSDKMessage(
       if (parentToolUseId) {
         break;
       }
+
+      // Emit turn UUID for rewind targeting (only from main agent result)
+      if (message.uuid) {
+        yield { type: 'turn_uuid', uuid: message.uuid };
+      }
+
       // Extract usage info from result message
       const usageByModel = message.modelUsage;
       if (usageByModel) {

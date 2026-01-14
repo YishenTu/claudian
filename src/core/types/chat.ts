@@ -44,6 +44,8 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];
+  /** SDK message UUID for rewind targeting. */
+  sdkUuid?: string;
 }
 
 /** Persisted conversation with messages and session state. */
@@ -65,6 +67,8 @@ export interface Conversation {
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
   enabledMcpServers?: string[];
+  /** After rewind, resume SDK session from this UUID on next query. */
+  resumeAt?: string;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -90,7 +94,8 @@ export type StreamChunk =
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
   | { type: 'done' }
-  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null };
+  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
+  | { type: 'turn_uuid'; uuid: string };
 
 /** Context window usage information. */
 export interface UsageInfo {

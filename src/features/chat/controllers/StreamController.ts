@@ -158,6 +158,18 @@ export class StreamController {
         }
         break;
       }
+
+      case 'turn_uuid': {
+        // Store the turn UUID on the user message that initiated this turn (for rewind)
+        // Find the most recent user message and update its sdkUuid
+        for (let i = state.messages.length - 1; i >= 0; i--) {
+          if (state.messages[i].role === 'user') {
+            state.messages[i].sdkUuid = chunk.uuid;
+            break;
+          }
+        }
+        break;
+      }
     }
 
     this.scrollToBottom();

@@ -143,6 +143,10 @@
       }
     },
     "advanced": "Advanced",
+    "show1MModel": {
+      "name": "Show 1M context model",
+      "desc": "Show Sonnet (1M) in the model selector. Requires Max subscription."
+    },
     "maxTabs": {
       "name": "Maximum chat tabs",
       "desc": "Maximum number of concurrent chat tabs (3-10). Each tab uses a separate Claude session.",
