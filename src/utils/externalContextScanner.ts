@@ -137,16 +137,16 @@ class ExternalContextScanner {
               contextRoot,
               mtime: fileStat.mtimeMs,
             });
-          } catch (err) {
-            console.debug(`Skipped file ${fullPath}: ${err instanceof Error ? err.message : String(err)}`);
+          } catch {
+            // Skip files that can't be stat'd
           }
         }
 
         // Limit total files per external context path
         if (files.length >= MAX_FILES_PER_PATH) break;
       }
-    } catch (err) {
-      console.warn(`Failed to scan external context directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+    } catch {
+      // Skip directories that can't be scanned
     }
 
     return files;

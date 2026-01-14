@@ -208,10 +208,6 @@ export class StreamController {
       if (todos) {
         this.deps.state.currentTodos = todos;
       } else {
-        console.warn('[StreamController] TodoWrite input parsing failed', {
-          toolId: chunk.id,
-          inputKeys: Object.keys(chunk.input),
-        });
         // Parsing failed - render as raw tool call for debugging
         if (state.currentContentEl) {
           msg.contentBlocks = msg.contentBlocks || [];

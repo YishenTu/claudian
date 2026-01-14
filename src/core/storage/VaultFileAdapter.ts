@@ -113,9 +113,7 @@ export class VaultFileAdapter {
       const stat = await this.app.vault.adapter.stat(path);
       if (!stat) return null;
       return { mtime: stat.mtime, size: stat.size };
-    } catch (error) {
-      // Log error but return null - callers expect null for non-existent files
-      console.debug('[Claudian] Could not stat file:', path, error);
+    } catch {
       return null;
     }
   }

@@ -27,8 +27,7 @@ function readFileBase64(absPath: string): string | null {
   try {
     const buffer = fs.readFileSync(absPath);
     return buffer.toString('base64');
-  } catch (error) {
-    console.warn('Failed to read image file:', absPath, error);
+  } catch {
     return null;
   }
 }
@@ -81,14 +80,21 @@ export function getImageAttachmentDataUri(
   return toImageDataUri(image.mediaType, base64);
 }
 
+/** Result of hydrating images, including any failed filenames. */
+export interface HydrateImagesResult {
+  images: ImageAttachment[] | undefined;
+  failedFiles: string[];
+}
+
 export async function hydrateImagesData(
   app: App,
   images?: ImageAttachment[],
   vaultPath?: string | null
-): Promise<ImageAttachment[] | undefined> {
-  if (!images || images.length === 0) return undefined;
+): Promise<HydrateImagesResult> {
+  if (!images || images.length === 0) return { images: undefined, failedFiles: [] };
 
   const hydrated: ImageAttachment[] = [];
+  const failedFiles: string[] = [];
 
   for (const image of images) {
     if (image.data) {
@@ -99,8 +105,19 @@ export async function hydrateImagesData(
     const base64 = readImageAttachmentBase64(app, image, vaultPath);
     if (base64) {
       hydrated.push({ ...image, data: base64 });
+    } else {
+      // Track failed image by filename
+      const filename = image.filePath
+        ? path.basename(image.filePath)
+        : image.cachePath
+          ? path.basename(image.cachePath)
+          : 'unknown';
+      failedFiles.push(filename);
     }
   }
 
-  return hydrated.length > 0 ? hydrated : undefined;
+  return {
+    images: hydrated.length > 0 ? hydrated : undefined,
+    failedFiles,
+  };
 }

@@ -51,7 +51,6 @@ export class McpStorage {
 
       for (const [name, config] of Object.entries(file.mcpServers)) {
         if (!isValidMcpServerConfig(config)) {
-          console.warn(`[Claudian] Invalid MCP server config for "${name}", skipping`);
           continue;
         }
 
@@ -73,93 +72,87 @@ export class McpStorage {
       }
 
       return servers;
-    } catch (error) {
-      console.error('[Claudian] Failed to load MCP config:', error);
+    } catch {
       return [];
     }
   }
 
   /** Save MCP servers to .claude/mcp.json. */
   async save(servers: ClaudianMcpServer[]): Promise<void> {
-    try {
-      const mcpServers: Record<string, McpServerConfig> = {};
-      const claudianServers: Record<
-        string,
-        { enabled?: boolean; contextSaving?: boolean; disabledTools?: string[]; description?: string }
-      > = {};
+    const mcpServers: Record<string, McpServerConfig> = {};
+    const claudianServers: Record<
+      string,
+      { enabled?: boolean; contextSaving?: boolean; disabledTools?: string[]; description?: string }
+    > = {};
 
-      for (const server of servers) {
-        mcpServers[server.name] = server.config;
+    for (const server of servers) {
+      mcpServers[server.name] = server.config;
 
-        // Only store Claudian metadata if different from defaults
-        const meta: {
-          enabled?: boolean;
-          contextSaving?: boolean;
-          disabledTools?: string[];
-          description?: string;
-        } = {};
+      // Only store Claudian metadata if different from defaults
+      const meta: {
+        enabled?: boolean;
+        contextSaving?: boolean;
+        disabledTools?: string[];
+        description?: string;
+      } = {};
 
-        if (server.enabled !== DEFAULT_MCP_SERVER.enabled) {
-          meta.enabled = server.enabled;
-        }
-        if (server.contextSaving !== DEFAULT_MCP_SERVER.contextSaving) {
-          meta.contextSaving = server.contextSaving;
-        }
-        const normalizedDisabledTools = server.disabledTools
-          ?.map((tool) => tool.trim())
-          .filter((tool) => tool.length > 0);
-        if (normalizedDisabledTools && normalizedDisabledTools.length > 0) {
-          meta.disabledTools = normalizedDisabledTools;
-        }
-        if (server.description) {
-          meta.description = server.description;
-        }
-
-        if (Object.keys(meta).length > 0) {
-          claudianServers[server.name] = meta;
-        }
+      if (server.enabled !== DEFAULT_MCP_SERVER.enabled) {
+        meta.enabled = server.enabled;
+      }
+      if (server.contextSaving !== DEFAULT_MCP_SERVER.contextSaving) {
+        meta.contextSaving = server.contextSaving;
+      }
+      const normalizedDisabledTools = server.disabledTools
+        ?.map((tool) => tool.trim())
+        .filter((tool) => tool.length > 0);
+      if (normalizedDisabledTools && normalizedDisabledTools.length > 0) {
+        meta.disabledTools = normalizedDisabledTools;
+      }
+      if (server.description) {
+        meta.description = server.description;
       }
 
-      let existing: Record<string, unknown> | null = null;
-      if (await this.adapter.exists(MCP_CONFIG_PATH)) {
-        try {
-          const raw = await this.adapter.read(MCP_CONFIG_PATH);
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') {
-            existing = parsed as Record<string, unknown>;
-          }
-        } catch {
-          existing = null;
-        }
+      if (Object.keys(meta).length > 0) {
+        claudianServers[server.name] = meta;
       }
+    }
 
-      const file: Record<string, unknown> = existing ? { ...existing } : {};
-      file.mcpServers = mcpServers;
-
-      const existingClaudian =
-        existing && typeof existing._claudian === 'object'
-          ? (existing._claudian as Record<string, unknown>)
-          : null;
-
-      if (Object.keys(claudianServers).length > 0) {
-        file._claudian = { ...(existingClaudian ?? {}), servers: claudianServers };
-      } else if (existingClaudian) {
-        const { servers: _servers, ...rest } = existingClaudian;
-        if (Object.keys(rest).length > 0) {
-          file._claudian = rest;
-        } else {
-          delete file._claudian;
+    let existing: Record<string, unknown> | null = null;
+    if (await this.adapter.exists(MCP_CONFIG_PATH)) {
+      try {
+        const raw = await this.adapter.read(MCP_CONFIG_PATH);
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          existing = parsed as Record<string, unknown>;
         }
+      } catch {
+        existing = null;
+      }
+    }
+
+    const file: Record<string, unknown> = existing ? { ...existing } : {};
+    file.mcpServers = mcpServers;
+
+    const existingClaudian =
+      existing && typeof existing._claudian === 'object'
+        ? (existing._claudian as Record<string, unknown>)
+        : null;
+
+    if (Object.keys(claudianServers).length > 0) {
+      file._claudian = { ...(existingClaudian ?? {}), servers: claudianServers };
+    } else if (existingClaudian) {
+      const { servers: _servers, ...rest } = existingClaudian;
+      if (Object.keys(rest).length > 0) {
+        file._claudian = rest;
       } else {
         delete file._claudian;
       }
-
-      const content = JSON.stringify(file, null, 2);
-      await this.adapter.write(MCP_CONFIG_PATH, content);
-    } catch (error) {
-      console.error('[Claudian] Failed to save MCP config:', error);
-      throw error;
+    } else {
+      delete file._claudian;
     }
+
+    const content = JSON.stringify(file, null, 2);
+    await this.adapter.write(MCP_CONFIG_PATH, content);
   }
 
   /** Check if config file exists. */

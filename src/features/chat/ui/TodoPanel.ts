@@ -42,7 +42,6 @@ export class TodoPanel {
    */
   remount(): void {
     if (!this.containerEl) {
-      console.warn('[TodoPanel] Cannot remount - no containerEl set');
       return;
     }
     // Destroy old references and recreate
@@ -58,7 +57,6 @@ export class TodoPanel {
    */
   private createPanel(): void {
     if (!this.containerEl) {
-      console.warn('[TodoPanel] Cannot create panel - containerEl not set. Was mount() called correctly?');
       return;
     }
 
@@ -106,11 +104,7 @@ export class TodoPanel {
    */
   updateTodos(todos: TodoItem[] | null): void {
     if (!this.todoContainerEl || !this.todoHeaderEl || !this.todoContentEl) {
-      // Only warn if we have todos to display but component is not ready
-      // Don't update internal state to keep it consistent with display
-      if (todos && todos.length > 0) {
-        console.warn('[TodoPanel] Cannot update todos - component not mounted or destroyed');
-      }
+      // Component not ready - don't update internal state to keep it consistent with display
       return;
     }
 

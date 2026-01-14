@@ -84,9 +84,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     containerEl.addClass('claudian-settings');
 
     // Update i18n locale from settings
-    if (!setLocale(this.plugin.settings.locale)) {
-      console.error(`[Settings] Invalid locale in settings: ${this.plugin.settings.locale}, using default`);
-    }
+    setLocale(this.plugin.settings.locale);
 
     // Language selector at the very top
     new Setting(containerEl)

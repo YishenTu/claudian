@@ -230,9 +230,8 @@ export class McpSettingsManager {
 
     try {
       await this.broadcastMcpReloadToAllViews();
-    } catch (error) {
+    } catch {
       // Save succeeded but reload failed - don't rollback since disk has correct state
-      console.warn('[Claudian] MCP reload failed after save:', error);
       new Notice('Setting saved but reload failed. Changes will apply on next session.');
     }
   }

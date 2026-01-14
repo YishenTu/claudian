@@ -61,8 +61,7 @@ export class SessionStorage {
 
       const content = await this.adapter.read(filePath);
       return this.parseJSONL(content);
-    } catch (error) {
-      console.error(`[Claudian] Failed to load conversation ${id}:`, error);
+    } catch {
       return null;
     }
   }
@@ -95,23 +94,24 @@ export class SessionStorage {
           if (meta) {
             metas.push(meta);
           }
-        } catch (error) {
-          console.error(`[Claudian] Failed to load meta from ${filePath}:`, error);
+        } catch {
+          // Skip files that fail to load
         }
       }
 
       // Sort by updatedAt descending (most recent first)
       metas.sort((a, b) => b.updatedAt - a.updatedAt);
-    } catch (error) {
-      console.error('[Claudian] Failed to list sessions:', error);
+    } catch {
+      // Return empty list if directory listing fails
     }
 
     return metas;
   }
 
-  /** Load all conversations (full data). */
-  async loadAllConversations(): Promise<Conversation[]> {
+  /** Load all conversations (full data). Returns conversations and count of failed loads. */
+  async loadAllConversations(): Promise<{ conversations: Conversation[]; failedCount: number }> {
     const conversations: Conversation[] = [];
+    let failedCount = 0;
 
     try {
       const files = await this.adapter.listFiles(SESSIONS_PATH);
@@ -124,19 +124,21 @@ export class SessionStorage {
           const conversation = this.parseJSONL(content);
           if (conversation) {
             conversations.push(conversation);
+          } else {
+            failedCount++;
           }
-        } catch (error) {
-          console.error(`[Claudian] Failed to load conversation from ${filePath}:`, error);
+        } catch {
+          failedCount++;
         }
       }
 
       // Sort by updatedAt descending
       conversations.sort((a, b) => b.updatedAt - a.updatedAt);
-    } catch (error) {
-      console.error('[Claudian] Failed to load all conversations:', error);
+    } catch {
+      // Return empty list if directory listing fails
     }
 
-    return conversations;
+    return { conversations, failedCount };
   }
 
   /** Check if any sessions exist. */
@@ -214,8 +216,8 @@ export class SessionStorage {
         } else if (record.type === 'message') {
           messages.push(record.message);
         }
-      } catch (error) {
-        console.warn('[Claudian] Failed to parse JSONL line:', error);
+      } catch {
+        // Skip invalid JSONL lines
       }
     }
 

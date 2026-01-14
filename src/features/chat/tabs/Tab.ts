@@ -254,11 +254,7 @@ export async function initializeTabService(
     // Load Claude Code permissions with error handling
     try {
       await service.loadCCPermissions();
-    } catch (error) {
-      console.warn(
-        `[Tab ${tab.id}] Failed to load CC permissions:`,
-        error instanceof Error ? error.message : String(error)
-      );
+    } catch {
       // Continue without permissions - service can still function
     }
 
@@ -269,11 +265,8 @@ export async function initializeTabService(
     const sessionId = conversation?.sessionId;
 
     if (sessionId) {
-      service.preWarm(sessionId).catch((error) => {
-        console.warn(
-          `[Tab ${tab.id}] Pre-warm failed:`,
-          error instanceof Error ? error.message : String(error)
-        );
+      service.preWarm(sessionId).catch(() => {
+        // Pre-warm is best-effort, ignore failures
       });
     }
 
@@ -587,8 +580,7 @@ export function initializeTabControllers(
         await initializeTabService(tab, plugin, mcpManager);
         setupApprovalCallback(tab);
         return true;
-      } catch (error) {
-        console.warn(`[Tab ${tab.id}] Service initialization failed:`, error);
+      } catch {
         return false;
       }
     },

@@ -58,16 +58,13 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
     } else {
       // Fallback to English if key not found in current locale
       if (locale !== DEFAULT_LOCALE) {
-        console.warn(`[i18n] Missing translation for key "${key}" in locale "${locale}", falling back to English`);
         return tFallback(key, params);
       }
-      console.warn(`[i18n] Missing translation for key "${key}"`);
       return key;
     }
   }
 
   if (typeof value !== 'string') {
-    console.warn(`[i18n] Translation for key "${key}" is not a string`);
     return key;
   }
 
@@ -96,13 +93,11 @@ function tFallback(key: TranslationKey, params?: Record<string, string | number>
     if (value && typeof value === 'object' && k in value) {
       value = value[k];
     } else {
-      console.error(`[i18n] CRITICAL: Missing translation for key "${key}" in default locale "${DEFAULT_LOCALE}"`);
       return key;
     }
   }
 
   if (typeof value !== 'string') {
-    console.error(`[i18n] CRITICAL: Translation for key "${key}" is not a string in default locale`);
     return key;
   }
 
@@ -121,7 +116,6 @@ function tFallback(key: TranslationKey, params?: Record<string, string | number>
  */
 export function setLocale(locale: Locale): boolean {
   if (!translations[locale]) {
-    console.warn(`[i18n] Unknown locale: ${locale}, keeping current locale: ${currentLocale}`);
     return false;
   }
   currentLocale = locale;

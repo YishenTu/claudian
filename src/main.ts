@@ -268,7 +268,11 @@ export default class ClaudianPlugin extends Plugin {
     delete (this.settings as any).claudeCliPaths;
 
     // Load all conversations from session files
-    this.conversations = await this.storage.sessions.loadAllConversations();
+    const { conversations, failedCount } = await this.storage.sessions.loadAllConversations();
+    this.conversations = conversations;
+    if (failedCount > 0) {
+      new Notice(`Failed to load ${failedCount} conversation${failedCount > 1 ? 's' : ''}`);
+    }
     // Initialize i18n with saved locale
     setLocale(this.settings.locale);
 

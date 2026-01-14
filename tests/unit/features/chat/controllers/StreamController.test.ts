@@ -343,36 +343,27 @@ describe('StreamController - Text Content', () => {
       const { parseTodoInput } = jest.requireMock('@/core/tools');
       const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
       parseTodoInput.mockReturnValue(null); // Simulate parse failure
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockElement();
 
-      try {
-        await controller.handleStreamChunk(
-          {
-            type: 'tool_use',
-            id: 'todo-1',
-            name: TOOL_TODO_WRITE,
-            input: { invalid: 'data' },
-          },
-          msg
-        );
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_use',
+          id: 'todo-1',
+          name: TOOL_TODO_WRITE,
+          input: { invalid: 'data' },
+        },
+        msg
+      );
 
-        // Should fall back to rendering as tool call
-        expect(msg.contentBlocks).toHaveLength(1);
-        expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'todo-1' });
-        expect(renderToolCall).toHaveBeenCalled();
+      // Should fall back to rendering as tool call
+      expect(msg.contentBlocks).toHaveLength(1);
+      expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'todo-1' });
+      expect(renderToolCall).toHaveBeenCalled();
 
-        // Should not update currentTodos
-        expect(deps.state.currentTodos).toBeNull();
-        expect(warnSpy).toHaveBeenCalledWith(
-          '[StreamController] TodoWrite input parsing failed',
-          expect.objectContaining({ toolId: 'todo-1', inputKeys: ['invalid'] })
-        );
-      } finally {
-        warnSpy.mockRestore();
-      }
+      // Should not update currentTodos
+      expect(deps.state.currentTodos).toBeNull();
     });
   });
 });

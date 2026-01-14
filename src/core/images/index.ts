@@ -12,6 +12,7 @@ export {
 } from './imageCache';
 export {
   hydrateImagesData,
+  type HydrateImagesResult,
   readImageAttachmentBase64,
   resolveImageFilePath,
 } from './imageLoader';

@@ -1946,7 +1946,7 @@ describe('ClaudianService', () => {
         { id: 'img-3', name: 'c.png', mediaType: 'image/png' as const, filePath: 'c.png', size: 1, source: 'file' as const },
       ];
 
-      const hydrated = await hydrateImagesData(mockPlugin.app, images as any, '/test/vault/path');
+      const { images: hydrated } = await hydrateImagesData(mockPlugin.app, images as any, '/test/vault/path');
 
       expect(hydrated?.[0].data).toBe('DATA');
       expect(hydrated?.[1].data).toBe('CACHE');
@@ -2214,19 +2214,10 @@ describe('ClaudianService', () => {
     it('handles image read errors and path resolution branches', () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.readFileSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
-      try {
+
         const base64 = readImageAttachmentBase64(mockPlugin.app, { filePath: 'x.png' } as any, '/test/vault');
         expect(base64).toBeNull();
-        expect(warnSpy).toHaveBeenCalledWith(
-          'Failed to read image file:',
-          '/test/vault/x.png',
-          expect.any(Error)
-        );
-      } finally {
-        warnSpy.mockRestore();
-      }
 
       expect(resolveImageFilePath('/abs.png', '/test/vault')).toBe('/abs.png');
       expect(resolveImageFilePath('rel.png', null)).toBeNull();
@@ -2273,7 +2264,6 @@ describe('ClaudianService', () => {
       clearDiffState();
       (fs.existsSync as jest.Mock).mockReturnValue(true);
       (fs.statSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
         const vaultPath = '/test/vault/path';
@@ -2286,13 +2276,7 @@ describe('ClaudianService', () => {
 
         const diff = getDiffData('tool-bad');
         expect(diff).toEqual({ filePath: 'bad.md', skippedReason: 'unavailable' });
-        expect(warnSpy).toHaveBeenCalledWith(
-          'Failed to capture original file contents:',
-          '/test/vault/path/bad.md',
-          expect.any(Error)
-        );
       } finally {
-        warnSpy.mockRestore();
         clearDiffState();
       }
     });
@@ -2322,7 +2306,6 @@ describe('ClaudianService', () => {
         .mockReturnValueOnce('original') // pre-hook reads successfully
         .mockImplementation(() => { throw new Error('boom'); }); // post-hook fails
 
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
       try {
         const vaultPath = '/test/vault/path';
@@ -2335,13 +2318,7 @@ describe('ClaudianService', () => {
 
         const diff = getDiffData('tool-read-err');
         expect(diff).toEqual({ filePath: 'err.md', skippedReason: 'unavailable' });
-        expect(warnSpy).toHaveBeenCalledWith(
-          'Failed to capture updated file contents:',
-          '/test/vault/path/err.md',
-          expect.any(Error)
-        );
       } finally {
-        warnSpy.mockRestore();
         clearDiffState();
       }
     });

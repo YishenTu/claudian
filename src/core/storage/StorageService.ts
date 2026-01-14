@@ -572,8 +572,8 @@ export class StorageService {
       const data = (await this.plugin.loadData()) || {};
       data.tabManagerState = state;
       await this.plugin.saveData(data);
-    } catch (error) {
-      console.error('[StorageService] Failed to save tab manager state:', error);
+    } catch {
+      // Silently ignore persistence errors
     }
   }
 }

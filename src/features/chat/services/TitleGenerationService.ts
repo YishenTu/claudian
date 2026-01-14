@@ -46,7 +46,6 @@ export class TitleGenerationService {
   ): Promise<void> {
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
-      console.warn('[TitleGeneration] Could not determine vault path');
       await this.safeCallback(callback, conversationId, {
         success: false,
         error: 'Could not determine vault path',
@@ -60,7 +59,6 @@ export class TitleGenerationService {
 
     const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
     if (!resolvedClaudePath) {
-      console.warn('[TitleGeneration] Claude CLI not found');
       await this.safeCallback(callback, conversationId, {
         success: false,
         error: 'Claude CLI not found',
@@ -142,17 +140,12 @@ Generate a title for this conversation:`;
       if (title) {
         await this.safeCallback(callback, conversationId, { success: true, title });
       } else {
-        console.warn('[TitleGeneration] Failed to parse title from response');
         await this.safeCallback(callback, conversationId, {
           success: false,
           error: 'Failed to parse title from response',
         });
       }
     } catch (error) {
-      // Don't log AbortError as it's expected when cancelled
-      if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('[TitleGeneration] Error generating title:', error.message);
-      }
       const msg = error instanceof Error ? error.message : 'Unknown error';
       await this.safeCallback(callback, conversationId, { success: false, error: msg });
     } finally {
@@ -224,8 +217,8 @@ Generate a title for this conversation:`;
   ): Promise<void> {
     try {
       await callback(conversationId, result);
-    } catch (error) {
-      console.error('[TitleGeneration] Error in callback:', error instanceof Error ? error.message : error);
+    } catch {
+      // Silently ignore callback errors
     }
   }
 }

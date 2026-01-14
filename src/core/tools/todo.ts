@@ -53,13 +53,7 @@ export function parseTodoInput(input: Record<string, unknown>): TodoItem[] | nul
     }
   }
 
-  if (invalidItems.length > 0) {
-    console.warn('[TodoTools] Dropped invalid todo items:', {
-      dropped: invalidItems.length,
-      total: input.todos.length,
-      sample: invalidItems.slice(0, 3),
-    });
-  }
+  // Invalid items are silently dropped
 
   return validTodos.length > 0 ? validTodos : null;
 }
@@ -80,14 +74,6 @@ export function extractLastTodosFromMessages(
         const toolCall = msg.toolCalls[j];
         if (toolCall.name === TOOL_TODO_WRITE) {
           const todos = parseTodoInput(toolCall.input);
-          if (!todos) {
-            // Log when TodoWrite is found but parsing fails (indicates data corruption or schema change)
-            console.warn('[TodoTools] Failed to parse TodoWrite from saved conversation', {
-              messageIndex: i,
-              toolCallIndex: j,
-              inputKeys: Object.keys(toolCall.input),
-            });
-          }
           return todos;
         }
       }

@@ -362,8 +362,7 @@ export class MessageRenderer {
 
       // Process file paths to make them clickable links
       processFileLinks(this.app, el);
-    } catch (error) {
-      console.error('[MessageRenderer] Failed to render content:', error);
+    } catch {
       el.createDiv({
         cls: 'claudian-render-error',
         text: 'Failed to render message content.',

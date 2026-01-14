@@ -276,8 +276,7 @@ export class SlashCommandSettings {
     deleteBtn.addEventListener('click', async () => {
       try {
         await this.deleteCommand(cmd);
-      } catch (error) {
-        console.error('[SlashCommandSettings] Failed to delete command:', error);
+      } catch {
         new Notice('Failed to delete slash command');
       }
     });

@@ -131,48 +131,42 @@ export class CCSettingsStorage {
    * @param stripClaudianFields - If true, remove Claudian-only fields (only during migration)
    */
   async save(settings: CCSettings, stripClaudianFields: boolean = false): Promise<void> {
-    try {
-      // Load existing to preserve CC-specific fields we don't manage
-      let existing: Record<string, unknown> = {};
-      if (await this.adapter.exists(CC_SETTINGS_PATH)) {
-        try {
-          const content = await this.adapter.read(CC_SETTINGS_PATH);
-          const parsed = JSON.parse(content) as Record<string, unknown>;
+    // Load existing to preserve CC-specific fields we don't manage
+    let existing: Record<string, unknown> = {};
+    if (await this.adapter.exists(CC_SETTINGS_PATH)) {
+      try {
+        const content = await this.adapter.read(CC_SETTINGS_PATH);
+        const parsed = JSON.parse(content) as Record<string, unknown>;
 
-          // Only strip Claudian-only fields during explicit migration
-          if (stripClaudianFields && (isLegacyPermissionsFormat(parsed) || hasClaudianOnlyFields(parsed))) {
-            existing = {};
-            for (const [key, value] of Object.entries(parsed)) {
-              if (!CLAUDIAN_ONLY_FIELDS.has(key)) {
-                existing[key] = value;
-              }
+        // Only strip Claudian-only fields during explicit migration
+        if (stripClaudianFields && (isLegacyPermissionsFormat(parsed) || hasClaudianOnlyFields(parsed))) {
+          existing = {};
+          for (const [key, value] of Object.entries(parsed)) {
+            if (!CLAUDIAN_ONLY_FIELDS.has(key)) {
+              existing[key] = value;
             }
-            // Also strip legacy permissions array format
-            if (Array.isArray(existing.permissions)) {
-              delete existing.permissions;
-            }
-          } else {
-            existing = parsed;
           }
-        } catch (parseError) {
-          // Log parse errors - user may want to know their settings file is corrupted
-          console.warn('[Claudian] Could not parse existing CC settings, starting fresh:', parseError);
+          // Also strip legacy permissions array format
+          if (Array.isArray(existing.permissions)) {
+            delete existing.permissions;
+          }
+        } else {
+          existing = parsed;
         }
+      } catch {
+        // Parse error - start fresh with default settings
       }
-
-      // Merge: existing CC fields + our updates
-      const merged: CCSettings = {
-        ...existing,
-        $schema: CC_SETTINGS_SCHEMA,
-        permissions: settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS },
-      };
-
-      const content = JSON.stringify(merged, null, 2);
-      await this.adapter.write(CC_SETTINGS_PATH, content);
-    } catch (error) {
-      console.error('[Claudian] Failed to save CC settings:', error);
-      throw error;
     }
+
+    // Merge: existing CC fields + our updates
+    const merged: CCSettings = {
+      ...existing,
+      $schema: CC_SETTINGS_SCHEMA,
+      permissions: settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS },
+    };
+
+    const content = JSON.stringify(merged, null, 2);
+    await this.adapter.write(CC_SETTINGS_PATH, content);
   }
 
   /**

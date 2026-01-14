@@ -77,11 +77,8 @@ export class MentionDropdownController {
     setTimeout(() => {
       try {
         externalContextScanner.scanPaths(externalContexts);
-      } catch (err) {
-        console.warn(
-          'Failed to pre-scan external contexts:',
-          err instanceof Error ? err.message : String(err)
-        );
+      } catch {
+        // Pre-scan is best-effort, ignore failures
       }
     }, 0);
   }

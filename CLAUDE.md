@@ -435,3 +435,5 @@ All classes use `.claudian-` prefix. Key patterns:
 - Generated docs go in `dev/`, move docs to `dev/archive` before commit
 - Generated agents communication notes in `.agents/`, move notes to `.agents/archive` before commit, do not check in any docs under `.agents/` or `.agents/archive`(already gitignored)
 - Run `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build` after editing
+- Do not use console msg in production code, only add them upon request from user, and remove them before commit. 
+- If user should be notified/warned about something, use the notification system provided by Obsidian, do not use console msg.

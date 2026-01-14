@@ -116,15 +116,9 @@ describe('McpStorage', () => {
         '.claude/mcp.json': 'invalid json{',
       });
       const storage = new McpStorage(adapter);
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      try {
-        const servers = await storage.load();
-        expect(servers).toEqual([]);
-        expect(errorSpy).toHaveBeenCalled();
-      } finally {
-        errorSpy.mockRestore();
-      }
+      const servers = await storage.load();
+      expect(servers).toEqual([]);
     });
   });
 

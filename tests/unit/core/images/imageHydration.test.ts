@@ -60,7 +60,7 @@ describe('ClaudianService image hydration', () => {
       source: 'paste',
     }];
 
-    const hydrated = await hydrateImagesData(plugin.app, images, vaultPath);
+    const { images: hydrated } = await hydrateImagesData(plugin.app, images, vaultPath);
     expect(hydrated).toBeDefined();
     expect(hydrated![0].data).toBe(buffer.toString('base64'));
   });
@@ -80,12 +80,12 @@ describe('ClaudianService image hydration', () => {
       source: 'file',
     }];
 
-    const hydrated = await hydrateImagesData(plugin.app, images, vaultPath);
+    const { images: hydrated } = await hydrateImagesData(plugin.app, images, vaultPath);
     expect(hydrated).toBeDefined();
     expect(hydrated![0].data).toBe(buffer.toString('base64'));
   });
 
-  it('returns undefined when no sources are available', async () => {
+  it('returns undefined images and tracks failed files when no sources are available', async () => {
     const images: ImageAttachment[] = [{
       id: 'img-3',
       name: 'missing.png',
@@ -96,7 +96,8 @@ describe('ClaudianService image hydration', () => {
       source: 'paste',
     }];
 
-    const hydrated = await hydrateImagesData(plugin.app, images, vaultPath);
+    const { images: hydrated, failedFiles } = await hydrateImagesData(plugin.app, images, vaultPath);
     expect(hydrated).toBeUndefined();
+    expect(failedFiles).toEqual(['missing.png']);
   });
 });

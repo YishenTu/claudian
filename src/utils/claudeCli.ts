@@ -83,10 +83,9 @@ export function resolveClaudeCliPath(
         if (stat.isFile()) {
           return expandedPath;
         }
-        console.warn('[ClaudeCliResolver] Hostname path exists but is not a file:', expandedPath);
       }
-    } catch (error) {
-      console.warn('[ClaudeCliResolver] Error resolving hostname path:', trimmedHostname, error);
+    } catch {
+      // Silently fall through to next resolution method
     }
   }
 
@@ -100,10 +99,9 @@ export function resolveClaudeCliPath(
         if (stat.isFile()) {
           return expandedPath;
         }
-        console.warn('[ClaudeCliResolver] Legacy path exists but is not a file:', expandedPath);
       }
-    } catch (error) {
-      console.warn('[ClaudeCliResolver] Error resolving legacy path:', trimmedLegacy, error);
+    } catch {
+      // Silently fall through to auto-detect
     }
   }
 

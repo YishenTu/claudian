@@ -306,24 +306,22 @@ describe('TodoPanel', () => {
       expect(containerEl.querySelector('.claudian-todo-completed')).not.toBeNull();
     });
 
-    it('should warn if called before mount with todos to display', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    it('should handle updateTodos called before mount with todos to display', () => {
       const unmountedPanel = new TodoPanel();
 
-      unmountedPanel.updateTodos([{ content: 'Task', status: 'pending', activeForm: 'Task' }]);
-
-      expect(warnSpy).toHaveBeenCalledWith('[TodoPanel] Cannot update todos - component not mounted or destroyed');
-      warnSpy.mockRestore();
+      // Should not throw, just silently handle unmounted state
+      expect(() => {
+        unmountedPanel.updateTodos([{ content: 'Task', status: 'pending', activeForm: 'Task' }]);
+      }).not.toThrow();
     });
 
-    it('should not warn if called with null before mount', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    it('should handle updateTodos called with null before mount', () => {
       const unmountedPanel = new TodoPanel();
 
-      unmountedPanel.updateTodos(null);
-
-      expect(warnSpy).not.toHaveBeenCalled();
-      warnSpy.mockRestore();
+      // Should not throw
+      expect(() => {
+        unmountedPanel.updateTodos(null);
+      }).not.toThrow();
     });
   });
 
@@ -479,26 +477,6 @@ describe('TodoPanel', () => {
       expect(() => {
         unmountedPanel.destroy();
       }).not.toThrow();
-    });
-  });
-
-  describe('createPanel warning', () => {
-    it('should warn when containerEl is null', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
-
-      // Access private method via any cast - createPanel is called by mount
-      // but we need to test the warning when containerEl is null
-      // The warning happens if mount is called without setting containerEl
-      // which shouldn't happen in practice but let's test the guard
-
-      // Since we can't easily test the private method directly,
-      // we verify the warning message exists in the code
-      // by checking that updateTodos warns when not mounted
-      const unmountedPanel = new TodoPanel();
-      unmountedPanel.updateTodos([{ content: 'Task', status: 'pending', activeForm: 'Task' }]);
-
-      expect(warnSpy).toHaveBeenCalledWith('[TodoPanel] Cannot update todos - component not mounted or destroyed');
-      warnSpy.mockRestore();
     });
   });
 });

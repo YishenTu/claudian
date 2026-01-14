@@ -112,17 +112,11 @@ describe('SessionStorage', () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockRejectedValue(new Error('Read error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
       const result = await storage.loadConversation('conv-123');
 
       expect(result).toBeNull();
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[Claudian] Failed to load conversation conv-123'),
-        expect.any(Error)
-      );
 
-      consoleSpy.mockRestore();
     });
 
     it('skips invalid JSON lines and continues parsing', async () => {
@@ -135,17 +129,11 @@ describe('SessionStorage', () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(jsonlContent);
 
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const result = await storage.loadConversation('conv-123');
 
       expect(result?.messages).toHaveLength(1);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[Claudian] Failed to parse JSONL line'),
-        expect.any(Error)
-      );
 
-      consoleSpy.mockRestore();
     });
 
     it('preserves all conversation metadata', async () => {
@@ -459,17 +447,11 @@ describe('SessionStorage', () => {
     it('handles listFiles error gracefully', async () => {
       mockAdapter.listFiles.mockRejectedValue(new Error('List error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
       const metas = await storage.listConversations();
 
       expect(metas).toEqual([]);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[Claudian] Failed to list sessions'),
-        expect.any(Error)
-      );
 
-      consoleSpy.mockRestore();
     });
 
     it('skips files that fail to load', async () => {
@@ -487,14 +469,12 @@ describe('SessionStorage', () => {
         return Promise.reject(new Error('Read error'));
       });
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
       const metas = await storage.listConversations();
 
       expect(metas).toHaveLength(1);
       expect(metas[0].id).toBe('good');
 
-      consoleSpy.mockRestore();
     });
 
     it('truncates long previews', async () => {
@@ -560,7 +540,7 @@ describe('SessionStorage', () => {
         return Promise.resolve('');
       });
 
-      const conversations = await storage.loadAllConversations();
+      const { conversations } = await storage.loadAllConversations();
 
       expect(conversations).toHaveLength(2);
 
@@ -583,7 +563,7 @@ describe('SessionStorage', () => {
         '{"type":"meta","id":"conv","title":"Conv","createdAt":1700000000,"updatedAt":1700001000,"sessionId":null}'
       );
 
-      const conversations = await storage.loadAllConversations();
+      const { conversations } = await storage.loadAllConversations();
 
       expect(conversations).toHaveLength(1);
       expect(mockAdapter.read).toHaveBeenCalledTimes(1);
@@ -592,13 +572,11 @@ describe('SessionStorage', () => {
     it('handles errors gracefully', async () => {
       mockAdapter.listFiles.mockRejectedValue(new Error('List error'));
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const conversations = await storage.loadAllConversations();
+      const { conversations } = await storage.loadAllConversations();
 
       expect(conversations).toEqual([]);
 
-      consoleSpy.mockRestore();
     });
 
     it('continues loading after individual file errors', async () => {
@@ -616,14 +594,13 @@ describe('SessionStorage', () => {
         return Promise.reject(new Error('Read error'));
       });
 
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
 
-      const conversations = await storage.loadAllConversations();
+      const { conversations, failedCount } = await storage.loadAllConversations();
 
       expect(conversations).toHaveLength(1);
       expect(conversations[0].id).toBe('good');
+      expect(failedCount).toBe(1);
 
-      consoleSpy.mockRestore();
     });
   });
 

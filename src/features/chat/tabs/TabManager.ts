@@ -86,7 +86,6 @@ export class TabManager implements TabManagerInterface {
   async createTab(conversationId?: string | null, tabId?: TabId): Promise<TabData | null> {
     const maxTabs = this.getMaxTabs();
     if (this.tabs.size >= maxTabs) {
-      console.warn(`[TabManager] Max tabs (${maxTabs}) reached`);
       return null;
     }
 
@@ -141,7 +140,6 @@ export class TabManager implements TabManagerInterface {
   async switchToTab(tabId: TabId): Promise<void> {
     const tab = this.tabs.get(tabId);
     if (!tab) {
-      console.warn(`[TabManager] Tab not found: ${tabId}`);
       return;
     }
 
@@ -392,11 +390,7 @@ export class TabManager implements TabManagerInterface {
     for (const tabState of state.openTabs) {
       try {
         await this.createTab(tabState.conversationId, tabState.tabId);
-      } catch (error) {
-        console.warn(
-          `[TabManager] Failed to restore tab ${tabState.tabId}:`,
-          error instanceof Error ? error.message : String(error)
-        );
+      } catch {
         // Continue restoring other tabs
       }
     }
@@ -405,11 +399,8 @@ export class TabManager implements TabManagerInterface {
     if (state.activeTabId && this.tabs.has(state.activeTabId)) {
       try {
         await this.switchToTab(state.activeTabId);
-      } catch (error) {
-        console.warn(
-          `[TabManager] Failed to switch to active tab ${state.activeTabId}:`,
-          error instanceof Error ? error.message : String(error)
-        );
+      } catch {
+        // Ignore switch errors
       }
     }
 
@@ -436,11 +427,7 @@ export class TabManager implements TabManagerInterface {
     try {
       await initializeTabService(activeTab, this.plugin, this.mcpManager);
       setupApprovalCallback(activeTab);
-    } catch (error) {
-      console.warn(
-        `[TabManager] Failed to pre-initialize active tab service:`,
-        error instanceof Error ? error.message : String(error)
-      );
+    } catch {
       // Non-fatal - service will be initialized on first query
     }
   }
@@ -460,8 +447,8 @@ export class TabManager implements TabManagerInterface {
     for (const tab of this.tabs.values()) {
       if (tab.service && tab.serviceInitialized) {
         promises.push(
-          fn(tab.service).catch((error) => {
-            console.warn(`[TabManager] Broadcast to tab ${tab.id} failed:`, error);
+          fn(tab.service).catch(() => {
+            // Silently ignore broadcast errors
           })
         );
       }

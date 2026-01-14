@@ -531,9 +531,8 @@ export class InputController {
         }
         conversationController.updateHistoryDropdown();
       }
-    ).catch((error) => {
-      // Log unexpected errors (callback errors are already handled by safeCallback)
-      console.error('[InputController] Title generation failed:', error instanceof Error ? error.message : error);
+    ).catch(() => {
+      // Silently ignore title generation errors
     });
   }
 
@@ -697,7 +696,7 @@ export class InputController {
         await conversationController.createNew();
         break;
       default:
-        console.warn(`[InputController] Unknown built-in command action: ${action}`);
+        // Unknown command - ignore
     }
   }
 }

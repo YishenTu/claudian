@@ -21,6 +21,7 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../main';
 import { stripCurrentNotePrefix } from '../../utils/context';
@@ -142,10 +143,9 @@ export class ClaudianService {
       try {
         await this.plugin.storage.addAllowRule(rule);
         await this.loadCCPermissions();
-      } catch (error) {
+      } catch {
         // Rule is still in session permissions via ApprovalManager, so action continues.
-        // Log for debugging but don't block the action.
-        console.warn('[ClaudianService] Failed to persist allow rule:', error);
+        new Notice('Failed to save permission rule');
       }
     });
 
@@ -153,10 +153,9 @@ export class ClaudianService {
       try {
         await this.plugin.storage.addDenyRule(rule);
         await this.loadCCPermissions();
-      } catch (error) {
+      } catch {
         // Rule is still in session permissions via ApprovalManager, so action continues.
-        // Log for debugging but don't block the action.
-        console.warn('[ClaudianService] Failed to persist deny rule:', error);
+        new Notice('Failed to save permission rule');
       }
     });
   }
@@ -465,7 +464,6 @@ export class ClaudianService {
               if (isSessionExpiredError(restartError)) {
                 this.sessionManager.invalidateSession();
               }
-              console.warn('[ClaudianService] Crash recovery restart failed:', restartError);
               handler.onError(errorInstance);
               return;
             }
@@ -488,8 +486,6 @@ export class ClaudianService {
                 this.sessionManager.invalidateSession();
               }
               // Restart failed - next query will start fresh.
-              // Log for debugging but don't propagate since we've already notified the handler.
-              console.warn('[ClaudianService] Post-error restart failed:', restartError);
             }
           }
         }
@@ -669,7 +665,10 @@ export class ClaudianService {
     this.abortController = new AbortController();
 
     try {
-      const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
+      const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
+      if (failedFiles.length > 0) {
+        new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
+      }
       yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, hydratedImages, effectiveQueryOptions);
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
@@ -680,7 +679,7 @@ export class ClaudianService {
         const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
 
         const lastUserMessage = getLastUserMessage(conversationHistory);
-        const retryImages = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
+        const { images: retryImages } = await hydrateImagesData(this.plugin.app, lastUserMessage?.images, vaultPath);
 
         try {
           yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, retryImages, effectiveQueryOptions);
@@ -721,13 +720,19 @@ export class ClaudianService {
   ): AsyncGenerator<StreamChunk> {
     if (!this.persistentQuery || !this.messageChannel) {
       // Fallback to cold-start if persistent query not available
-      const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
+      const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
+      if (failedFiles.length > 0) {
+        new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
+      }
       yield* this.queryViaSDK(prompt, vaultPath, cliPath, hydratedImages, queryOptions);
       return;
     }
 
     // Hydrate images
-    const hydratedImages = await hydrateImagesData(this.plugin.app, images, vaultPath);
+    const { images: hydratedImages, failedFiles } = await hydrateImagesData(this.plugin.app, images, vaultPath);
+    if (failedFiles.length > 0) {
+      new Notice(`Failed to attach image: ${failedFiles.join(', ')}`);
+    }
 
     // Set allowed tools for canUseTool enforcement
     // undefined = no restriction, [] = no tools, [...] = restricted
@@ -936,8 +941,8 @@ export class ClaudianService {
       try {
         await this.persistentQuery.setModel(selectedModel);
         this.currentConfig.model = selectedModel;
-      } catch (error) {
-        console.error('[ClaudianService] Failed to update model:', error);
+      } catch {
+        // Silently ignore model update errors
       }
     }
 
@@ -949,8 +954,8 @@ export class ClaudianService {
         if (this.currentConfig) {
           this.currentConfig.thinkingTokens = thinkingTokens;
         }
-      } catch (error) {
-        console.error('[ClaudianService] Failed to update thinking tokens:', error);
+      } catch {
+        // Silently ignore thinking tokens update errors
       }
     }
 
@@ -962,8 +967,8 @@ export class ClaudianService {
       try {
         await this.persistentQuery.setPermissionMode(sdkMode);
         this.currentConfig.permissionMode = permissionMode;
-      } catch (error) {
-        console.error('[ClaudianService] Failed to update permission mode:', error);
+      } catch {
+        // Silently ignore permission mode update errors
       }
     }
 
@@ -984,8 +989,8 @@ export class ClaudianService {
       try {
         await this.persistentQuery.setMcpServers(serverConfigs);
         this.currentConfig.mcpServersKey = mcpServersKey;
-      } catch (error) {
-        console.error('[ClaudianService] Failed to update MCP servers:', error);
+      } catch {
+        // Silently ignore MCP servers update errors
       }
     }
 
@@ -1202,11 +1207,8 @@ export class ClaudianService {
 
     // Immediately pre-warm the new session (fire-and-forget)
     // This ensures no cold start delay when user sends their first message
-    this.preWarm(id ?? undefined).catch((error) => {
-      console.warn(
-        '[ClaudianService] Pre-warm after session switch failed:',
-        error instanceof Error ? error.message : String(error)
-      );
+    this.preWarm(id ?? undefined).catch(() => {
+      // Pre-warm is best-effort, ignore failures
     });
   }
 

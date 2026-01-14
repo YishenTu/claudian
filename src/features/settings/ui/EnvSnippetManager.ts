@@ -184,8 +184,7 @@ export class EnvSnippetManager {
       restoreBtn.addEventListener('click', async () => {
         try {
           await this.insertSnippet(snippet);
-        } catch (error) {
-          console.error('[EnvSnippetManager] Failed to insert snippet:', error);
+        } catch {
           new Notice('Failed to insert snippet');
         }
       });
@@ -211,8 +210,7 @@ export class EnvSnippetManager {
           if (confirm(`Delete environment snippet "${snippet.name}"?`)) {
             await this.deleteSnippet(snippet);
           }
-        } catch (error) {
-          console.error('[EnvSnippetManager] Failed to delete snippet:', error);
+        } catch {
           new Notice('Failed to delete snippet');
         }
       });

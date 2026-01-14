@@ -111,9 +111,8 @@ export class McpServerManager {
           if (!normalized) continue;
           disallowed.add(`mcp__${server.name}__${normalized}`);
         }
-      } catch (error) {
-        console.warn('[McpServerManager] Skipping malformed server config:',
-          server?.name, error instanceof Error ? error.message : String(error));
+      } catch {
+        // Skip malformed server configs
       }
     }
 

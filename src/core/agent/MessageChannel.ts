@@ -30,7 +30,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
   private currentSessionId: string | null = null;
   private onWarning: (message: string) => void;
 
-  constructor(onWarning: (message: string) => void = console.warn) {
+  constructor(onWarning: (message: string) => void = () => {}) {
     this.onWarning = onWarning;
   }
 

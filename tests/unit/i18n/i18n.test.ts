@@ -31,21 +31,13 @@ describe('i18n', () => {
     });
 
     it('returns key for missing translation in English', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
       const result = t('nonexistent.key.here' as TranslationKey);
 
       expect(result).toBe('nonexistent.key.here');
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Missing translation for key "nonexistent.key.here"')
-      );
-
-      consoleSpy.mockRestore();
     });
 
     it('falls back to English for missing translation in other locale', () => {
       setLocale('de');
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       // Use a key that exists in English but might not in German
       const result = t('common.save' as TranslationKey);
@@ -53,8 +45,6 @@ describe('i18n', () => {
       // Should return the English translation or the German one
       expect(typeof result).toBe('string');
       expect(result.length).toBeGreaterThan(0);
-
-      consoleSpy.mockRestore();
     });
 
     it('handles nested keys correctly', () => {
@@ -68,17 +58,10 @@ describe('i18n', () => {
     });
 
     it('returns key when value is not a string', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
       // Try to access a non-leaf key (object instead of string)
       const result = t('settings' as TranslationKey);
 
       expect(result).toBe('settings');
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('not a string')
-      );
-
-      consoleSpy.mockRestore();
     });
 
     it('replaces placeholders with params', () => {
@@ -118,17 +101,11 @@ describe('i18n', () => {
 
     it('returns false for invalid locale and keeps current', () => {
       setLocale('de');
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const result = setLocale('invalid' as Locale);
 
       expect(result).toBe(false);
       expect(getLocale()).toBe('de'); // Should remain unchanged
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Unknown locale: invalid')
-      );
-
-      consoleSpy.mockRestore();
     });
   });
 

@@ -869,7 +869,6 @@ describe('InlineEditService', () => {
       const spy = jest.spyOn(sdk, 'query').mockImplementation(() => {
         throw new Error('boom');
       });
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       try {
         const result = await service.editText({
@@ -881,9 +880,7 @@ describe('InlineEditService', () => {
 
         expect(result.success).toBe(false);
         expect(result.error).toBe('boom');
-        expect(errorSpy).toHaveBeenCalled();
       } finally {
-        errorSpy.mockRestore();
         spy.mockRestore();
       }
     });

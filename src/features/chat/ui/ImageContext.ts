@@ -354,11 +354,6 @@ export class ImageContextManager {
   }
 
   private notifyImageError(message: string, error?: unknown) {
-    if (error) {
-      console.error(message, error);
-    } else {
-      console.warn(message);
-    }
     let userMessage = message;
     if (error instanceof Error) {
       if (error.message.includes('ENOENT') || error.message.includes('no such file')) {

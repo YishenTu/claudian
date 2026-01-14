@@ -412,9 +412,8 @@ export class ExternalContextSelector {
         this.updateDisplay();
         this.renderDropdown();
       }
-    } catch (err) {
-      console.error('[ExternalContext] Failed to open folder picker:', err);
-      new Notice('Unable to open folder picker. Please check console for details.', 5000);
+    } catch {
+      new Notice('Unable to open folder picker.', 5000);
     }
   }
 
@@ -502,9 +501,8 @@ export class ExternalContextSelector {
         const remainder = normalizedFull.slice(normalizedHome.length);
         return '~' + remainder;
       }
-    } catch (error) {
-      // Log for debugging but don't disrupt UX
-      console.debug('[ExternalContext] Failed to shorten path, using full path:', error);
+    } catch {
+      // Fall through to return full path
     }
     return fullPath;
   }

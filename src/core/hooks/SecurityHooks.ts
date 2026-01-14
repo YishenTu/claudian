@@ -5,6 +5,7 @@
  */
 
 import type { HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
+import { Notice } from 'obsidian';
 
 import type { PathAccessType } from '../../utils/path';
 import type { PathCheckContext } from '../security/BashPathValidator';
@@ -42,6 +43,7 @@ export function createBlocklistHook(getContext: () => BlocklistContext): HookCal
 
         const bashToolCommands = getBashToolBlockedCommands(context.blockedCommands);
         if (isCommandBlocked(command, bashToolCommands, context.enableBlocklist)) {
+          new Notice('Command blocked by security policy');
           return {
             continue: false,
             hookSpecificOutput: {

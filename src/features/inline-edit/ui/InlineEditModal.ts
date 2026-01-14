@@ -458,8 +458,7 @@ class InlineEditController {
         getCachedMarkdownFiles: () => {
           try {
             return this.app.vault.getMarkdownFiles();
-          } catch (error) {
-            console.error('[InlineEditModal] getCachedMarkdownFiles error:', error);
+          } catch {
             return [];
           }
         },
@@ -761,8 +760,7 @@ class InlineEditController {
     try {
       const vaultPath = getVaultPath(this.app);
       return normalizePathForVaultUtil(rawPath, vaultPath);
-    } catch (error) {
-      console.error('[InlineEditModal] normalizePathForVault error:', error);
+    } catch {
       new Notice('Failed to attach file: invalid path');
       return null;
     }

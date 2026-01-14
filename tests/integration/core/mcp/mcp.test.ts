@@ -443,7 +443,6 @@ describe('McpStorage', () => {
     });
 
     it('should skip invalid server configs on load', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       const initial = {
         mcpServers: {
           valid: { command: 'npx' },
@@ -457,15 +456,7 @@ describe('McpStorage', () => {
       };
       const { storage } = createMemoryStorage(initial);
 
-      let servers: ClaudianMcpServer[] = [];
-      try {
-        servers = await storage.load();
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Invalid MCP server config for "invalid"')
-        );
-      } finally {
-        warnSpy.mockRestore();
-      }
+      const servers = await storage.load();
 
       expect(servers).toHaveLength(1);
       expect(servers[0].name).toBe('valid');

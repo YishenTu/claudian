@@ -456,8 +456,8 @@ export class ClaudianView extends ItemView {
       this.pendingPersist = null;
       if (!this.tabManager) return;
       const state = this.tabManager.getPersistedState();
-      this.plugin.storage.setTabManagerState(state).catch((error) => {
-        console.warn('[ClaudianView] Failed to persist tab state:', error);
+      this.plugin.storage.setTabManagerState(state).catch(() => {
+        // Silently ignore persistence errors
       });
     }, 300);
   }

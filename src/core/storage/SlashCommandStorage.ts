@@ -43,12 +43,12 @@ export class SlashCommandStorage {
           if (command) {
             commands.push(command);
           }
-        } catch (error) {
-          console.error(`[Claudian] Failed to load command from ${filePath}:`, error);
+        } catch {
+          // Skip commands that fail to load
         }
       }
-    } catch (error) {
-      console.error('[Claudian] Failed to list command files:', error);
+    } catch {
+      // Return empty list if directory listing fails
     }
 
     return commands;
@@ -59,8 +59,7 @@ export class SlashCommandStorage {
     try {
       const content = await this.adapter.read(filePath);
       return this.parseFile(content, filePath);
-    } catch (error) {
-      console.error(`[Claudian] Failed to read command file ${filePath}:`, error);
+    } catch {
       return null;
     }
   }

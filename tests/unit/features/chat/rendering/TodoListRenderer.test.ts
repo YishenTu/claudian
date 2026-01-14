@@ -38,17 +38,11 @@ describe('TodoListRenderer', () => {
           { status: 'pending' },
         ],
       };
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      try {
-        const result = parseTodoInput(input);
+      const result = parseTodoInput(input);
 
-        expect(result).toHaveLength(1);
-        expect(result![0].content).toBe('Valid');
-        expect(warnSpy).toHaveBeenCalled();
-      } finally {
-        warnSpy.mockRestore();
-      }
+      expect(result).toHaveLength(1);
+      expect(result![0].content).toBe('Valid');
     });
 
     it('should filter out items with empty strings', () => {
@@ -59,17 +53,11 @@ describe('TodoListRenderer', () => {
           { content: 'Also valid', status: 'completed', activeForm: 'Done' },
         ],
       };
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      try {
-        const result = parseTodoInput(input);
+      const result = parseTodoInput(input);
 
-        expect(result).toHaveLength(1);
-        expect(result![0].content).toBe('Also valid');
-        expect(warnSpy).toHaveBeenCalled();
-      } finally {
-        warnSpy.mockRestore();
-      }
+      expect(result).toHaveLength(1);
+      expect(result![0].content).toBe('Also valid');
     });
   });
 
@@ -171,8 +159,7 @@ describe('TodoListRenderer', () => {
       expect(result![0].content).toBe('Last');
     });
 
-    it('should log warning when TodoWrite parsing fails', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    it('should return null when TodoWrite parsing fails', () => {
       const messages = [
         {
           role: 'assistant',
@@ -185,15 +172,6 @@ describe('TodoListRenderer', () => {
       const result = extractLastTodosFromMessages(messages);
 
       expect(result).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[TodoTools] Failed to parse TodoWrite from saved conversation',
-        expect.objectContaining({
-          messageIndex: 0,
-          toolCallIndex: 0,
-          inputKeys: ['todos'],
-        })
-      );
-      warnSpy.mockRestore();
     });
   });
 });

@@ -368,7 +368,6 @@ export class ConversationController {
     const { plugin } = this.deps;
     const externalContextSelector = this.deps.getExternalContextSelector();
     if (!externalContextSelector) {
-      console.warn('[ConversationController] External context selector not available, skipping path restoration');
       return;
     }
 
@@ -466,8 +465,8 @@ export class ConversationController {
           e.stopPropagation();
           try {
             await options.onSelectConversation(conv.id);
-          } catch (error) {
-            console.error('[ConversationController] Failed to select conversation:', error);
+          } catch {
+            // Silently ignore selection errors
           }
         });
       }
@@ -487,8 +486,8 @@ export class ConversationController {
           e.stopPropagation();
           try {
             await this.regenerateTitle(conv.id);
-          } catch (error) {
-            console.error('[ConversationController] Failed to regenerate title:', error);
+          } catch {
+            // Silently ignore regeneration errors
           }
         });
       }
@@ -514,8 +513,8 @@ export class ConversationController {
           if (conv.id === state.currentConversationId) {
             await this.loadActive();
           }
-        } catch (error) {
-          console.error('[ConversationController] Failed to delete conversation:', error);
+        } catch {
+          // Silently ignore deletion errors
         }
       });
     }
@@ -540,8 +539,8 @@ export class ConversationController {
         const newTitle = input.value.trim() || currentTitle;
         await this.deps.plugin.renameConversation(convId, newTitle);
         this.updateHistoryDropdown();
-      } catch (error) {
-        console.error('[ConversationController] Failed to rename conversation:', error);
+      } catch {
+        // Silently ignore rename errors
       }
     };
 
