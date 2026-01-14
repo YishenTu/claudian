@@ -41,6 +41,19 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 4. Enable the plugin in Obsidian:
    - Settings → Community plugins → Enable "Claudian"
 
+### Using BRAT (recommended for easy updates)
+
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) (Beta Reviewers Auto-update Tester) allows you to install and automatically update plugins directly from GitHub.
+
+1. Install the BRAT plugin from Obsidian Community Plugins
+2. Enable BRAT in Settings → Community plugins
+3. Open BRAT settings and click "Add Beta plugin"
+4. Enter the repository URL: `https://github.com/YishenTu/claudian`
+5. Click "Add Plugin" and BRAT will install Claudian automatically
+6. Enable Claudian in Settings → Community plugins
+
+> **Tip**: BRAT will automatically check for updates and notify you when a new version is available.
+
 ### From source (development)
 
 1. Clone this repository into your vault's plugins folder:
