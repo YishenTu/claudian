@@ -87,17 +87,23 @@ export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): s
   return getCurrentPlatformBlockedCommands(commands);
 }
 
-/** Platform-specific Claude CLI paths. */
+/**
+ * Platform-specific Claude CLI paths.
+ * @deprecated Use HostnameCliPaths instead. Kept for migration from older versions.
+ */
 export interface PlatformCliPaths {
   macos: string;
   linux: string;
   windows: string;
 }
 
-/** Platform key for CLI paths. */
+/** Platform key for CLI paths. Used for migration only. */
 export type CliPlatformKey = keyof PlatformCliPaths;
 
-/** Map process.platform to CLI platform key. */
+/**
+ * Map process.platform to CLI platform key.
+ * @deprecated Used for migration only.
+ */
 export function getCliPlatformKey(): CliPlatformKey {
   switch (process.platform) {
     case 'darwin':
@@ -107,27 +113,6 @@ export function getCliPlatformKey(): CliPlatformKey {
     default:
       return 'linux';
   }
-}
-
-/** Get the display name for a CLI platform key. */
-export function getCliPlatformDisplayName(key: CliPlatformKey): string {
-  switch (key) {
-    case 'macos':
-      return 'macOS';
-    case 'linux':
-      return 'Linux';
-    case 'windows':
-      return 'Windows';
-  }
-}
-
-/** Get default empty CLI paths. */
-export function getDefaultCliPaths(): PlatformCliPaths {
-  return {
-    macos: '',
-    linux: '',
-    windows: '',
-  };
 }
 
 /**
@@ -266,9 +251,8 @@ export interface ClaudianSettings {
   // Internationalization
   locale: Locale;  // UI language setting
 
-  // CLI paths (platform-specific)
+  // CLI paths
   claudeCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
-  claudeCliPaths: PlatformCliPaths;  // Platform-specific CLI paths (deprecated, kept for migration)
   claudeCliPathsByHost: HostnameCliPaths;  // Per-device paths keyed by hostname (preferred)
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
 
@@ -331,7 +315,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // CLI paths
   claudeCliPath: '',  // Legacy field (empty = not migrated)
-  claudeCliPaths: getDefaultCliPaths(),  // Platform-specific paths (deprecated)
   claudeCliPathsByHost: {},  // Per-device paths keyed by hostname
   loadUserClaudeSettings: true,  // Default on for compatibility
 

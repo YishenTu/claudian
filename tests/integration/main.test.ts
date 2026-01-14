@@ -1,5 +1,7 @@
+import * as os from 'os';
+
 import * as imageCache from '@/core/images/imageCache';
-import { DEFAULT_SETTINGS, getCliPlatformKey, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 
 // Mock fs for ClaudianService
 jest.mock('fs');
@@ -96,7 +98,7 @@ describe('ClaudianPlugin', () => {
       expect((plugin.addSettingTab as jest.Mock)).toHaveBeenCalled();
     });
 
-    it('should migrate legacy cli path to platform-specific paths', async () => {
+    it('should migrate legacy cli path to hostname-based paths and clear old field', async () => {
       const legacyPath = '/legacy/claude';
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
         // claudeCliPath is now in claudian-settings.json
@@ -111,9 +113,20 @@ describe('ClaudianPlugin', () => {
 
       await plugin.onload();
 
-      const platformKey = getCliPlatformKey();
-      expect(plugin.settings.claudeCliPaths[platformKey]).toBe(legacyPath);
+      const hostname = os.hostname();
+      // Should migrate to hostname-based path
+      expect(plugin.settings.claudeCliPathsByHost[hostname]).toBe(legacyPath);
+      // Should clear legacy field after migration
+      expect(plugin.settings.claudeCliPath).toBe('');
+      // Should save settings with migrated path and cleared legacy field
       expect(mockApp.vault.adapter.write).toHaveBeenCalled();
+      const settingsWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+        ([path]) => path === '.claude/claudian-settings.json'
+      );
+      expect(settingsWrite).toBeDefined();
+      const savedSettings = JSON.parse(settingsWrite[1]);
+      expect(savedSettings.claudeCliPathsByHost[hostname]).toBe(legacyPath);
+      expect(savedSettings.claudeCliPath).toBe('');
     });
   });
 

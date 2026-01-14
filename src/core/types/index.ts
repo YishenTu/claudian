@@ -47,12 +47,10 @@ export {
   DEFAULT_SETTINGS,
   type EnvSnippet,
   getBashToolBlockedCommands,
-  getCliPlatformDisplayName,
-  getCliPlatformKey,
+  getCliPlatformKey,  // Kept for migration
   getCurrentPlatformBlockedCommands,
   getCurrentPlatformKey,
   getDefaultBlockedCommands,
-  getDefaultCliPaths,
   type HostnameCliPaths,
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
@@ -64,7 +62,7 @@ export {
   type PermissionMode,
   type PermissionRule,
   type PlatformBlockedCommands,
-  type PlatformCliPaths,
+  type PlatformCliPaths,  // Kept for migration
   type SlashCommand,
 } from './settings';
 

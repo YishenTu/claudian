@@ -34,7 +34,6 @@ import { CC_SETTINGS_PATH, CCSettingsStorage, isLegacyPermissionsFormat } from '
 import {
   ClaudianSettingsStorage,
   normalizeBlockedCommands,
-  normalizeCliPaths,
   type StoredClaudianSettings,
 } from './ClaudianSettingsStorage';
 import { McpStorage } from './McpStorage';
@@ -252,7 +251,7 @@ export class StorageService {
       persistentExternalContextPaths: DEFAULT_SETTINGS.persistentExternalContextPaths,
       keyboardNavigation: oldSettings.keyboardNavigation as StoredClaudianSettings['keyboardNavigation'] ?? DEFAULT_SETTINGS.keyboardNavigation,
       claudeCliPath: oldSettings.claudeCliPath ?? DEFAULT_SETTINGS.claudeCliPath,
-      claudeCliPaths: normalizeCliPaths(oldSettings.claudeCliPaths),
+      claudeCliPathsByHost: DEFAULT_SETTINGS.claudeCliPathsByHost,  // Migration to hostname-based handled in main.ts
       loadUserClaudeSettings: oldSettings.loadUserClaudeSettings ?? DEFAULT_SETTINGS.loadUserClaudeSettings,
       enableAutoTitleGeneration: oldSettings.enableAutoTitleGeneration ?? DEFAULT_SETTINGS.enableAutoTitleGeneration,
       titleGenerationModel: oldSettings.titleGenerationModel ?? DEFAULT_SETTINGS.titleGenerationModel,

@@ -23,7 +23,7 @@ import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   getCliPlatformKey,
-  getDefaultCliPaths,
+  getHostnameKey,
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
 import { ClaudianView } from './features/chat/ClaudianView';
@@ -247,24 +247,25 @@ export default class ClaudianPlugin extends Plugin {
       slashCommands,
     };
 
-    this.settings.claudeCliPaths = {
-      ...getDefaultCliPaths(),
-      ...(this.settings.claudeCliPaths ?? {}),
-    };
-
-    // Initialize claudeCliPathsByHost if not present (for settings migrated from older versions)
-    if (!this.settings.claudeCliPathsByHost) {
-      this.settings.claudeCliPathsByHost = {};
-    }
-
-    // Migrate legacy claudeCliPath to platform-specific claudeCliPaths
+    // Initialize and migrate legacy CLI paths to hostname-based paths
+    this.settings.claudeCliPathsByHost ??= {};
+    const hostname = getHostnameKey();
     let didMigrateCliPath = false;
-    if (this.settings.claudeCliPath && !this.hasAnyPlatformCliPath()) {
-      const currentPlatformKey = getCliPlatformKey();
-      this.settings.claudeCliPaths[currentPlatformKey] = this.settings.claudeCliPath.trim();
-      // Keep legacy field as fallback for downgrade compatibility
-      didMigrateCliPath = true;
+
+    if (!this.settings.claudeCliPathsByHost[hostname]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const platformPaths = (this.settings as any).claudeCliPaths as Record<string, string> | undefined;
+      const migratedPath = platformPaths?.[getCliPlatformKey()]?.trim() || this.settings.claudeCliPath?.trim();
+
+      if (migratedPath) {
+        this.settings.claudeCliPathsByHost[hostname] = migratedPath;
+        this.settings.claudeCliPath = '';
+        didMigrateCliPath = true;
+      }
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (this.settings as any).claudeCliPaths;
 
     // Load all conversations from session files
     this.conversations = await this.storage.sessions.loadAllConversations();
@@ -359,15 +360,9 @@ export default class ClaudianPlugin extends Plugin {
   getResolvedClaudeCliPath(): string | null {
     return this.cliResolver.resolve(
       this.settings.claudeCliPathsByHost,  // Per-device paths (preferred)
-      this.settings.claudeCliPaths,         // Platform paths (fallback)
       this.settings.claudeCliPath,          // Legacy path (fallback)
       this.getActiveEnvironmentVariables()
     );
-  }
-
-  private hasAnyPlatformCliPath(): boolean {
-    const paths = this.settings.claudeCliPaths;
-    return !!(paths?.macos || paths?.linux || paths?.windows);
   }
 
   private getDefaultModelValues(): string[] {

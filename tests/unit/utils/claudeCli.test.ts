@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 
-import { getDefaultCliPaths } from '@/core/types';
 import { ClaudeCliResolver, resolveClaudeCliPath } from '@/utils/claudeCli';
 import { findClaudeCLIPath } from '@/utils/path';
 
@@ -26,17 +25,14 @@ describe('ClaudeCliResolver', () => {
     mockedHostname.mockReturnValue('test-host');
   });
 
-  describe('hostname-based resolution (new feature)', () => {
-    it('should prefer hostname path over platform path', () => {
-      mockedExists.mockImplementation((p: string) =>
-        p === '/hostname/claude' || p === '/platform/claude'
-      );
+  describe('hostname-based resolution', () => {
+    it('should use hostname path when available', () => {
+      mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCliResolver();
       const resolved = resolver.resolve(
         { 'test-host': '/hostname/claude' },
-        { macos: '/platform/claude', linux: '', windows: '' },
         '/legacy/claude',
         ''
       );
@@ -44,29 +40,27 @@ describe('ClaudeCliResolver', () => {
       expect(resolved).toBe('/hostname/claude');
     });
 
-    it('should fall back to platform path when hostname path not found', () => {
-      mockedExists.mockImplementation((p: string) => p === '/platform/claude');
+    it('should fall back to legacy path when hostname not found', () => {
+      mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCliResolver();
       const resolved = resolver.resolve(
         { 'other-host': '/other/claude' },
-        { macos: '/platform/claude', linux: '/platform/claude', windows: '/platform/claude' },
         '/legacy/claude',
         ''
       );
 
-      expect(resolved).toBe('/platform/claude');
+      expect(resolved).toBe('/legacy/claude');
     });
 
-    it('should fall back to legacy path when no hostname or platform path', () => {
+    it('should fall back to legacy path when hostname paths empty', () => {
       mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCliResolver();
       const resolved = resolver.resolve(
         {},
-        { macos: '', linux: '', windows: '' },
         '/legacy/claude',
         ''
       );
@@ -79,7 +73,7 @@ describe('ClaudeCliResolver', () => {
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCliResolver();
-      const resolved = resolver.resolve({}, getDefaultCliPaths(), '', '');
+      const resolved = resolver.resolve({}, '', '');
 
       expect(resolved).toBe('/auto/claude');
       expect(mockedFind).toHaveBeenCalled();
@@ -94,13 +88,11 @@ describe('ClaudeCliResolver', () => {
       const resolver = new ClaudeCliResolver();
       const first = resolver.resolve(
         { 'test-host': '/hostname/claude' },
-        getDefaultCliPaths(),
         '',
         ''
       );
       const second = resolver.resolve(
         { 'test-host': '/hostname/claude' },
-        getDefaultCliPaths(),
         '',
         ''
       );
@@ -118,13 +110,11 @@ describe('ClaudeCliResolver', () => {
       const resolver = new ClaudeCliResolver();
       const first = resolver.resolve(
         { 'test-host': '/hostname/claude1' },
-        getDefaultCliPaths(),
         '',
         ''
       );
       const second = resolver.resolve(
         { 'test-host': '/hostname/claude2' },
-        getDefaultCliPaths(),
         '',
         ''
       );
@@ -140,7 +130,6 @@ describe('ClaudeCliResolver', () => {
       const resolver = new ClaudeCliResolver();
       resolver.resolve(
         { 'test-host': '/hostname/claude' },
-        getDefaultCliPaths(),
         '',
         ''
       );
@@ -149,7 +138,6 @@ describe('ClaudeCliResolver', () => {
 
       resolver.resolve(
         { 'test-host': '/hostname/claude' },
-        getDefaultCliPaths(),
         '',
         ''
       );
@@ -160,26 +148,25 @@ describe('ClaudeCliResolver', () => {
   });
 
   describe('legacy compatibility', () => {
-    it('should use legacy path as fallback when hostname and platform paths are empty', () => {
+    it('should use legacy path as fallback when hostname paths are empty', () => {
       mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCliResolver();
-      // Empty hostname paths + empty platform paths = fall back to legacy
-      const resolved = resolver.resolve({}, getDefaultCliPaths(), '/legacy/claude', '');
+      const resolved = resolver.resolve({}, '/legacy/claude', '');
 
       expect(resolved).toBe('/legacy/claude');
       expect(mockedFind).not.toHaveBeenCalled();
     });
 
-    it('should use legacy path when platform paths are not provided', () => {
+    it('should use legacy path when hostname paths are undefined', () => {
       mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCliResolver();
-      const resolved = resolver.resolve(undefined, undefined, '/legacy/claude', '');
+      const resolved = resolver.resolve(undefined, '/legacy/claude', '');
 
       expect(resolved).toBe('/legacy/claude');
       expect(mockedFind).not.toHaveBeenCalled();
@@ -196,7 +183,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('/hostname/claude', '/platform/claude', '/legacy/claude', '');
+    const result = resolveClaudeCliPath('/hostname/claude', '/legacy/claude', '');
 
     expect(result).toBe('/hostname/claude');
   });
@@ -207,25 +194,25 @@ describe('resolveClaudeCliPath', () => {
       isFile: () => p !== '/hostname/claude',
     }));
 
-    const result = resolveClaudeCliPath('/hostname/claude', '/platform/claude', '', '');
+    const result = resolveClaudeCliPath('/hostname/claude', '/legacy/claude', '');
 
-    expect(result).toBe('/platform/claude');
+    expect(result).toBe('/legacy/claude');
   });
 
   it('should handle empty hostname path gracefully', () => {
-    mockedExists.mockImplementation((p: string) => p === '/platform/claude');
+    mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('', '/platform/claude', '', '');
+    const result = resolveClaudeCliPath('', '/legacy/claude', '');
 
-    expect(result).toBe('/platform/claude');
+    expect(result).toBe('/legacy/claude');
   });
 
   it('should trim whitespace from paths', () => {
     mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('  /hostname/claude  ', '', '', '');
+    const result = resolveClaudeCliPath('  /hostname/claude  ', '', '');
 
     expect(result).toBe('/hostname/claude');
   });

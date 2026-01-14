@@ -1,7 +1,7 @@
 import type { Plugin } from 'obsidian';
 
 import { StorageService } from '@/core/storage';
-import { DEFAULT_SETTINGS, getDefaultCliPaths, type SlashCommand } from '@/core/types';
+import { DEFAULT_SETTINGS, type SlashCommand } from '@/core/types';
 
 type AdapterOptions = {
   shouldFailWrite?: (path: string) => boolean;
@@ -126,11 +126,10 @@ describe('StorageService migration', () => {
     expect(plugin.saveData).not.toHaveBeenCalled();
   });
 
-  it('normalizes legacy blockedCommands and claudeCliPaths during settings migration', async () => {
+  it('normalizes legacy blockedCommands during settings migration', async () => {
     const legacySettings = {
       userName: 'Test User',
       blockedCommands: ['rm -rf', '  '],
-      claudeCliPaths: { macos: ' /usr/local/bin/claude ' },
       permissions: [],
     };
 
@@ -146,14 +145,9 @@ describe('StorageService migration', () => {
 
     const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
     const blocked = saved.blockedCommands as { unix: string[]; windows: string[] };
-    const cliPaths = saved.claudeCliPaths as { macos: string; linux: string; windows: string };
 
     expect(blocked.unix).toEqual(['rm -rf']);
     expect(blocked.windows).toEqual(DEFAULT_SETTINGS.blockedCommands.windows);
-    expect(cliPaths).toEqual({
-      ...getDefaultCliPaths(),
-      macos: '/usr/local/bin/claude',
-    });
   });
 
   it('does not migrate legacy activeConversationId from data.json', async () => {

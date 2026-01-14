@@ -2,10 +2,9 @@ import {
   CLAUDIAN_SETTINGS_PATH,
   ClaudianSettingsStorage,
   normalizeBlockedCommands,
-  normalizeCliPaths,
 } from '@/core/storage/ClaudianSettingsStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { DEFAULT_SETTINGS, getDefaultBlockedCommands, getDefaultCliPaths } from '@/core/types';
+import { DEFAULT_SETTINGS, getDefaultBlockedCommands } from '@/core/types';
 
 // Mock VaultFileAdapter
 const mockAdapter = {
@@ -68,21 +67,19 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.blockedCommands.windows).toContain('custom-win-cmd');
     });
 
-    it('should normalize claudeCliPaths from loaded data', async () => {
+    it('should normalize claudeCliPathsByHost from loaded data', async () => {
       (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
       (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
-        claudeCliPaths: {
-          macos: '/custom/macos/path',
-          linux: '/custom/linux/path',
-          windows: 'C:\\custom\\windows\\path',
+        claudeCliPathsByHost: {
+          'host-a': '/custom/path-a',
+          'host-b': '/custom/path-b',
         },
       }));
 
       const result = await storage.load();
 
-      expect(result.claudeCliPaths.macos).toBe('/custom/macos/path');
-      expect(result.claudeCliPaths.linux).toBe('/custom/linux/path');
-      expect(result.claudeCliPaths.windows).toBe('C:\\custom\\windows\\path');
+      expect(result.claudeCliPathsByHost['host-a']).toBe('/custom/path-a');
+      expect(result.claudeCliPathsByHost['host-b']).toBe('/custom/path-b');
     });
 
     it('should preserve legacy claudeCliPath field', async () => {
@@ -116,7 +113,6 @@ describe('ClaudianSettingsStorage', () => {
       const settings = {
         ...DEFAULT_SETTINGS,
         model: 'claude-opus-4-5' as const,
-        claudeCliPaths: getDefaultCliPaths(),
       };
       // Remove slashCommands as it's stored separately
       const { slashCommands: _, ...storedSettings } = settings;
@@ -136,7 +132,6 @@ describe('ClaudianSettingsStorage', () => {
 
       const settings = {
         ...DEFAULT_SETTINGS,
-        claudeCliPaths: getDefaultCliPaths(),
       };
       const { slashCommands: _, ...storedSettings } = settings;
 
@@ -352,79 +347,3 @@ describe('normalizeBlockedCommands', () => {
   });
 });
 
-describe('normalizeCliPaths', () => {
-  const defaults = getDefaultCliPaths();
-
-  it('should return defaults for null input', () => {
-    const result = normalizeCliPaths(null);
-
-    expect(result).toEqual(defaults);
-  });
-
-  it('should return defaults for undefined input', () => {
-    const result = normalizeCliPaths(undefined);
-
-    expect(result).toEqual(defaults);
-  });
-
-  it('should return defaults for non-object input', () => {
-    expect(normalizeCliPaths('string')).toEqual(defaults);
-    expect(normalizeCliPaths(123)).toEqual(defaults);
-    expect(normalizeCliPaths([])).toEqual(defaults);
-  });
-
-  it('should normalize valid platform paths', () => {
-    const input = {
-      macos: '/custom/macos/path',
-      linux: '/custom/linux/path',
-      windows: 'C:\\custom\\windows\\path',
-    };
-
-    const result = normalizeCliPaths(input);
-
-    expect(result.macos).toBe('/custom/macos/path');
-    expect(result.linux).toBe('/custom/linux/path');
-    expect(result.windows).toBe('C:\\custom\\windows\\path');
-  });
-
-  it('should trim whitespace from paths', () => {
-    const input = {
-      macos: '  /path/with/spaces  ',
-      linux: '/linux/path  ',
-      windows: '  C:\\windows\\path',
-    };
-
-    const result = normalizeCliPaths(input);
-
-    expect(result.macos).toBe('/path/with/spaces');
-    expect(result.linux).toBe('/linux/path');
-    expect(result.windows).toBe('C:\\windows\\path');
-  });
-
-  it('should use defaults for missing platform keys', () => {
-    const input = {
-      macos: '/custom/macos',
-      // linux and windows missing
-    };
-
-    const result = normalizeCliPaths(input);
-
-    expect(result.macos).toBe('/custom/macos');
-    expect(result.linux).toBe(defaults.linux);
-    expect(result.windows).toBe(defaults.windows);
-  });
-
-  it('should use defaults for non-string values', () => {
-    const input = {
-      macos: 123,
-      linux: null,
-      windows: { path: 'invalid' },
-    } as unknown as Record<string, unknown>;
-
-    const result = normalizeCliPaths(input);
-
-    expect(result.macos).toBe(defaults.macos);
-    expect(result.linux).toBe(defaults.linux);
-    expect(result.windows).toBe(defaults.windows);
-  });
-});

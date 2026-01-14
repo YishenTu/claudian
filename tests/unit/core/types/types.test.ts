@@ -11,9 +11,7 @@ import type {
 import {
   createPermissionRule,
   DEFAULT_SETTINGS,
-  getCliPlatformDisplayName,
   getCliPlatformKey,
-  getDefaultCliPaths,
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
@@ -104,7 +102,6 @@ describe('types.ts', () => {
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'en',
         claudeCliPath: '',
-        claudeCliPaths: { macos: '', linux: '', windows: '' },
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
         enabledPlugins: [],
@@ -137,7 +134,6 @@ describe('types.ts', () => {
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'zh-CN',
         claudeCliPath: '',
-        claudeCliPaths: { macos: '', linux: '', windows: '' },
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
         enabledPlugins: [],
@@ -170,7 +166,6 @@ describe('types.ts', () => {
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'en',
         claudeCliPath: '',
-        claudeCliPaths: { macos: '', linux: '', windows: '' },
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
         enabledPlugins: [],
@@ -457,7 +452,7 @@ describe('types.ts', () => {
     });
   });
 
-  describe('Platform CLI helpers', () => {
+  describe('Platform CLI helpers (deprecated)', () => {
     describe('getCliPlatformKey', () => {
       it('should return a valid platform key', () => {
         const key = getCliPlatformKey();
@@ -471,42 +466,10 @@ describe('types.ts', () => {
       });
     });
 
-    describe('getCliPlatformDisplayName', () => {
-      it('should return macOS for macos key', () => {
-        expect(getCliPlatformDisplayName('macos')).toBe('macOS');
-      });
-
-      it('should return Linux for linux key', () => {
-        expect(getCliPlatformDisplayName('linux')).toBe('Linux');
-      });
-
-      it('should return Windows for windows key', () => {
-        expect(getCliPlatformDisplayName('windows')).toBe('Windows');
-      });
-    });
-
-    describe('getDefaultCliPaths', () => {
-      it('should return empty paths for all platforms', () => {
-        const paths = getDefaultCliPaths();
-        expect(paths.macos).toBe('');
-        expect(paths.linux).toBe('');
-        expect(paths.windows).toBe('');
-      });
-
-      it('should return a new object each time', () => {
-        const paths1 = getDefaultCliPaths();
-        const paths2 = getDefaultCliPaths();
-        expect(paths1).not.toBe(paths2);
-        expect(paths1).toEqual(paths2);
-      });
-    });
-
-    describe('DEFAULT_SETTINGS.claudeCliPaths', () => {
-      it('should have empty platform CLI paths by default', () => {
-        expect(DEFAULT_SETTINGS.claudeCliPaths).toBeDefined();
-        expect(DEFAULT_SETTINGS.claudeCliPaths.macos).toBe('');
-        expect(DEFAULT_SETTINGS.claudeCliPaths.linux).toBe('');
-        expect(DEFAULT_SETTINGS.claudeCliPaths.windows).toBe('');
+    describe('DEFAULT_SETTINGS.claudeCliPathsByHost', () => {
+      it('should have empty hostname-based CLI paths by default', () => {
+        expect(DEFAULT_SETTINGS.claudeCliPathsByHost).toBeDefined();
+        expect(DEFAULT_SETTINGS.claudeCliPathsByHost).toEqual({});
       });
     });
   });

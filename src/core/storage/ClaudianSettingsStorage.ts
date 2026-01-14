@@ -15,8 +15,8 @@
  * - State (merged from data.json)
  */
 
-import type { ClaudeModel, ClaudianSettings, PlatformBlockedCommands, PlatformCliPaths } from '../types';
-import { DEFAULT_SETTINGS, getDefaultBlockedCommands, getDefaultCliPaths } from '../types';
+import type { ClaudeModel, ClaudianSettings, PlatformBlockedCommands } from '../types';
+import { DEFAULT_SETTINGS, getDefaultBlockedCommands } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to Claudian settings file relative to vault root. */
@@ -68,20 +68,20 @@ export function normalizeBlockedCommands(value: unknown): PlatformBlockedCommand
 }
 
 /**
- * Normalize platform-specific CLI paths.
+ * Normalize hostname-keyed CLI paths.
  */
-export function normalizeCliPaths(value: unknown): PlatformCliPaths {
-  const defaults = getDefaultCliPaths();
+function normalizeHostnameCliPaths(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object') {
-    return defaults;
+    return {};
   }
 
-  const candidate = value as Record<string, unknown>;
-  return {
-    macos: typeof candidate.macos === 'string' ? candidate.macos.trim() : defaults.macos,
-    linux: typeof candidate.linux === 'string' ? candidate.linux.trim() : defaults.linux,
-    windows: typeof candidate.windows === 'string' ? candidate.windows.trim() : defaults.windows,
-  };
+  const result: Record<string, string> = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (typeof val === 'string' && val.trim()) {
+      result[key] = val.trim();
+    }
+  }
+  return result;
 }
 
 export class ClaudianSettingsStorage {
@@ -103,7 +103,7 @@ export class ClaudianSettingsStorage {
 
     // Normalize complex fields
     const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
-    const cliPaths = normalizeCliPaths(stored.claudeCliPaths);
+    const hostnameCliPaths = normalizeHostnameCliPaths(stored.claudeCliPathsByHost);
     const legacyCliPath = typeof stored.claudeCliPath === 'string' ? stored.claudeCliPath : '';
 
     return {
@@ -111,7 +111,7 @@ export class ClaudianSettingsStorage {
       ...storedWithoutLegacy,
       blockedCommands,
       claudeCliPath: legacyCliPath,
-      claudeCliPaths: cliPaths,
+      claudeCliPathsByHost: hostnameCliPaths,
     } as StoredClaudianSettings;
   }
 
@@ -205,9 +205,6 @@ export class ClaudianSettingsStorage {
       ...defaults
     } = DEFAULT_SETTINGS;
 
-    return {
-      ...defaults,
-      claudeCliPaths: getDefaultCliPaths(),
-    };
+    return defaults;
   }
 }

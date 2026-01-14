@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
-import { getCliPlatformKey, getCurrentPlatformKey, getHostnameKey } from '../../core/types';
+import { getCurrentPlatformKey, getHostnameKey } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n/types';
@@ -568,11 +568,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
         ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
         : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
 
-      // Read from hostname-specific path (new) or fall back to platform-specific path (old)
-      const cliPlatformKey = getCliPlatformKey();
-      const currentValue = this.plugin.settings.claudeCliPathsByHost?.[hostnameKey]
-        || this.plugin.settings.claudeCliPaths?.[cliPlatformKey]
-        || '';
+      // Read from hostname-specific path
+      const currentValue = this.plugin.settings.claudeCliPathsByHost?.[hostnameKey] || '';
 
       text
         .setPlaceholder(placeholder)
