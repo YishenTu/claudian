@@ -115,6 +115,7 @@ Generate a title for this conversation:`;
       tools: [], // No tools needed for title generation
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      persistSession: false, // Don't save title generation queries to session history
     };
 
     try {

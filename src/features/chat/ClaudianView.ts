@@ -432,7 +432,7 @@ export class ClaudianView extends ItemView {
     // No persisted state - migrate legacy activeConversationId if present
     const legacyActiveId = await this.plugin.storage.getLegacyActiveConversationId();
     if (legacyActiveId) {
-      const conversation = this.plugin.getConversationById(legacyActiveId);
+      const conversation = await this.plugin.getConversationById(legacyActiveId);
       if (conversation) {
         await this.tabManager.createTab(conversation.id);
       } else {

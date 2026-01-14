@@ -113,7 +113,7 @@ describe('SessionStorage JSONL format', () => {
       expect(msg2.message.role).toBe('assistant');
     });
 
-    it('should strip image data when serializing', () => {
+    it('should preserve image data when serializing', () => {
       const conversation: Conversation = {
         id: 'conv-img',
         title: 'Image Chat',
@@ -131,8 +131,7 @@ describe('SessionStorage JSONL format', () => {
                 id: 'img-1',
                 name: 'test.png',
                 mediaType: 'image/png',
-                data: 'base64-data-should-be-stripped',
-                cachePath: '.claude/cache/abc123.png',
+                data: 'base64-image-data',
                 size: 1024,
                 source: 'paste',
               },
@@ -147,41 +146,8 @@ describe('SessionStorage JSONL format', () => {
 
       expect(msgRecord.message.images).toHaveLength(1);
       expect(msgRecord.message.images[0].name).toBe('test.png');
-      expect(msgRecord.message.images[0].cachePath).toBe('.claude/cache/abc123.png');
-      expect(msgRecord.message.images[0].data).toBeUndefined();
-    });
-
-    it('should preserve image data without cachePath or filePath', () => {
-      const conversation: Conversation = {
-        id: 'conv-inline',
-        title: 'Inline Image',
-        createdAt: 1000,
-        updatedAt: 2000,
-        sessionId: null,
-        messages: [
-          {
-            id: 'msg-1',
-            role: 'user',
-            content: 'Inline image',
-            timestamp: 1001,
-            images: [
-              {
-                id: 'img-1',
-                name: 'inline.png',
-                mediaType: 'image/png',
-                data: 'inline-base64-data',
-                size: 512,
-                source: 'paste',
-              },
-            ],
-          },
-        ],
-      };
-
-      const jsonl = serializeToJSONLHelper(conversation);
-      const msgRecord = JSON.parse(jsonl.split('\n')[1]);
-
-      expect(msgRecord.message.images[0].data).toBe('inline-base64-data');
+      // Image data is preserved as single source of truth
+      expect(msgRecord.message.images[0].data).toBe('base64-image-data');
     });
 
     it('should preserve lastResponseAt in serialization', () => {
@@ -589,20 +555,10 @@ function serializeToJSONLHelper(conversation: Conversation): string {
   lines.push(JSON.stringify(meta));
 
   for (const message of conversation.messages) {
-    // Strip image data
-    const storedMessage = { ...message };
-    if (storedMessage.images) {
-      storedMessage.images = storedMessage.images.map(img => {
-        if (!img.cachePath && !img.filePath) {
-          return img as typeof img;
-        }
-        const { data: _, ...rest } = img;
-        return rest as typeof img;
-      });
-    }
+    // Image data is preserved as single source of truth
     const record: SessionMessageRecord = {
       type: 'message',
-      message: storedMessage,
+      message,
     };
     lines.push(JSON.stringify(record));
   }

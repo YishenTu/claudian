@@ -12,6 +12,7 @@ export {
   type ConversationMeta,
   type ImageAttachment,
   type ImageMediaType,
+  type SessionMetadata,
   type StreamChunk,
   type UsageInfo,
   VIEW_TYPE_CLAUDIAN,

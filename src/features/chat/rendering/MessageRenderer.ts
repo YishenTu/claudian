@@ -8,7 +8,6 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
-import { getImageAttachmentDataUri } from '../../../core/images/imageLoader';
 import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n';
@@ -266,9 +265,8 @@ export class MessageRenderer {
   /**
    * Shows full-size image in modal overlay.
    */
-  async showFullImage(image: ImageAttachment): Promise<void> {
-    const dataUri = getImageAttachmentDataUri(this.app, image);
-    if (!dataUri) return;
+  showFullImage(image: ImageAttachment): void {
+    const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
     const overlay = document.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
@@ -304,13 +302,9 @@ export class MessageRenderer {
   /**
    * Sets image src from attachment data.
    */
-  async setImageSrc(imgEl: HTMLImageElement, image: ImageAttachment): Promise<void> {
-    const dataUri = getImageAttachmentDataUri(this.app, image);
-    if (dataUri) {
-      imgEl.setAttribute('src', dataUri);
-    } else {
-      imgEl.setAttribute('alt', `${image.name} (missing)`);
-    }
+  setImageSrc(imgEl: HTMLImageElement, image: ImageAttachment): void {
+    const dataUri = `data:${image.mediaType};base64,${image.data}`;
+    imgEl.setAttribute('src', dataUri);
   }
 
   // ============================================

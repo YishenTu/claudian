@@ -29,6 +29,7 @@ export class SessionManager {
     pendingSessionModel: null,
     wasInterrupted: false,
     needsHistoryRebuild: false,
+    sessionInvalidated: false,
   };
 
   getSessionId(): string | null {
@@ -40,6 +41,8 @@ export class SessionManager {
     this.state.sessionModel = id ? (defaultModel ?? null) : null;
     // Clear rebuild flag when switching sessions to prevent carrying over to different conversation
     this.state.needsHistoryRebuild = false;
+    // Clear invalidation flag when explicitly setting session
+    this.state.sessionInvalidated = false;
   }
 
   wasInterrupted(): boolean {
@@ -78,6 +81,7 @@ export class SessionManager {
     this.state.sessionId = sessionId;
     this.state.sessionModel = this.state.pendingSessionModel;
     this.state.pendingSessionModel = null;
+    this.state.sessionInvalidated = false;
   }
 
   /** Check if history rebuild is needed due to session mismatch. */
@@ -93,6 +97,14 @@ export class SessionManager {
   invalidateSession(): void {
     this.state.sessionId = null;
     this.state.sessionModel = null;
+    this.state.sessionInvalidated = true;
+  }
+
+  /** Consume the invalidation flag (returns true once). */
+  consumeInvalidation(): boolean {
+    const wasInvalidated = this.state.sessionInvalidated;
+    this.state.sessionInvalidated = false;
+    return wasInvalidated;
   }
 
   reset(): void {
@@ -102,6 +114,7 @@ export class SessionManager {
       pendingSessionModel: null,
       wasInterrupted: false,
       needsHistoryRebuild: false,
+      sessionInvalidated: false,
     };
   }
 }

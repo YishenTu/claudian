@@ -60,7 +60,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       maxTabs: DEFAULT_MAX_TABS,
       ...(overrides.settings || {}),
     },
-    getConversationById: jest.fn().mockReturnValue(null),
+    getConversationById: jest.fn().mockResolvedValue(null),
     findConversationAcrossViews: jest.fn().mockReturnValue(null),
     ...overrides,
   };
@@ -528,7 +528,7 @@ describe('TabManager - Conversation Management', () => {
     });
 
     it('should create new tab when preferNewTab is true', async () => {
-      plugin.getConversationById.mockReturnValue({ id: 'conv-new' });
+      plugin.getConversationById.mockResolvedValue({ id: 'conv-new' });
 
       await manager.openConversation('conv-new', true);
 
@@ -904,7 +904,7 @@ describe('TabManager - openConversation Current Tab Path', () => {
     activeTab!.controllers.conversationController = { switchTo } as any;
 
     // Conversation not already open in any tab
-    plugin.getConversationById.mockReturnValue({ id: 'conv-to-open' });
+    plugin.getConversationById.mockResolvedValue({ id: 'conv-to-open' });
 
     await manager.openConversation('conv-to-open', false);
 
@@ -916,7 +916,7 @@ describe('TabManager - openConversation Current Tab Path', () => {
     const switchTo = jest.fn().mockResolvedValue(undefined);
     activeTab!.controllers.conversationController = { switchTo } as any;
 
-    plugin.getConversationById.mockReturnValue({ id: 'conv-default' });
+    plugin.getConversationById.mockResolvedValue({ id: 'conv-default' });
 
     await manager.openConversation('conv-default');
 
@@ -929,7 +929,7 @@ describe('TabManager - openConversation Current Tab Path', () => {
     activeTab!.controllers.conversationController = { switchTo } as any;
     activeTab!.conversationId = null;
 
-    plugin.getConversationById.mockReturnValue({ id: 'conv-123' });
+    plugin.getConversationById.mockResolvedValue({ id: 'conv-123' });
 
     await manager.openConversation('conv-123', false);
 
@@ -950,7 +950,7 @@ describe('TabManager - openConversation Current Tab Path', () => {
     const switchTo = jest.fn().mockResolvedValue(undefined);
     activeTab!.controllers.conversationController = { switchTo } as any;
 
-    plugin.getConversationById.mockReturnValue({ id: 'conv-max' });
+    plugin.getConversationById.mockResolvedValue({ id: 'conv-max' });
 
     // preferNewTab=true but at max, so should open in current tab
     await manager.openConversation('conv-max', true);

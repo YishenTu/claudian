@@ -4,11 +4,9 @@
  * Manages image attachments via drag/drop and paste.
  */
 
-import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
 import * as path from 'path';
 
-import { saveImageToCache } from '../../../core/images/imageCache';
 import type { ImageAttachment, ImageMediaType } from '../../../core/types';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -28,7 +26,6 @@ export interface ImageContextCallbacks {
 
 /** Manages image attachments via drag/drop and paste. */
 export class ImageContextManager {
-  private app: App;
   private callbacks: ImageContextCallbacks;
   private containerEl: HTMLElement;
   private previewContainerEl: HTMLElement;
@@ -38,13 +35,11 @@ export class ImageContextManager {
   private attachedImages: Map<string, ImageAttachment> = new Map();
 
   constructor(
-    app: App,
     containerEl: HTMLElement,
     inputEl: HTMLTextAreaElement,
     callbacks: ImageContextCallbacks,
     previewContainerEl?: HTMLElement
   ) {
-    this.app = app;
     this.containerEl = containerEl;
     this.previewContainerEl = previewContainerEl ?? containerEl;
     this.inputEl = inputEl;
@@ -213,19 +208,13 @@ export class ImageContextManager {
     }
 
     try {
-      const { buffer, base64 } = await this.fileToBufferAndBase64(file);
-      const cacheEntry = saveImageToCache(this.app, buffer, mediaType, file.name);
-      if (!cacheEntry) {
-        this.notifyImageError('Failed to save image to cache.');
-        return false;
-      }
+      const base64 = await this.fileToBase64(file);
 
       const attachment: ImageAttachment = {
         id: this.generateId(),
         name: file.name || `image-${Date.now()}.${mediaType.split('/')[1]}`,
         mediaType,
         data: base64,
-        cachePath: cacheEntry.relPath,
         size: file.size,
         source,
       };
@@ -240,13 +229,10 @@ export class ImageContextManager {
     }
   }
 
-  private async fileToBufferAndBase64(file: File): Promise<{ buffer: Buffer; base64: string }> {
+  private async fileToBase64(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    return {
-      buffer,
-      base64: buffer.toString('base64'),
-    };
+    return buffer.toString('base64');
   }
 
   // ============================================

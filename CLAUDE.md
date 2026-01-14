@@ -11,7 +11,8 @@ src/
 ├── main.ts                      # Plugin entry point
 ├── core/                        # Core infrastructure (no feature dependencies)
 │   ├── agent/                   # Claude Agent SDK wrapper
-│   │   └── ClaudianService.ts
+│   │   ├── ClaudianService.ts
+│   │   └── SessionManager.ts
 │   ├── commands/                # Slash command management
 │   │   ├── SlashCommandManager.ts
 │   │   └── builtInCommands.ts
@@ -59,7 +60,7 @@ src/
 
 | Layer | Folder | Purpose |
 |-------|--------|---------|
-| **core** | `agent/` | Claude Agent SDK wrapper (ClaudianService) |
+| **core** | `agent/` | Claude Agent SDK wrapper (ClaudianService, SessionManager) |
 | | `commands/` | Slash command expansion (SlashCommandManager, builtInCommands) |
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
@@ -87,7 +88,7 @@ src/
 | | `modals/` | Approval + instruction modals |
 | | `icons.ts` | Shared SVG icons |
 | **i18n** | | Internationalization with 10 locales |
-| **utils** | | Modular utilities: date, path, env, context, editor, session, markdown, mcp, slashCommand |
+| **utils** | | Modular utilities: date, path, env, context, editor, session, sdkSession, markdown, mcp, slashCommand |
 | **style** | | Modular CSS (built into root `styles.css`) |
 
 ## Commands
@@ -230,16 +231,20 @@ interface Conversation {
 
 ## Storage System
 
-Distributed storage mimicking Claude Code patterns:
+Hybrid storage using SDK-native sessions with metadata overlay:
 
 ```
+~/.claude/projects/{encoded-vault}/     # SDK-native message storage
+└── {sessionId}.jsonl                   # SDK session messages (new conversations)
+
 vault/.claude/
 ├── settings.json              # User settings + permissions (shareable)
 ├── mcp.json                   # MCP server configurations
 ├── commands/                  # Slash commands as Markdown
 │   └── {name}.md              # YAML frontmatter + prompt content
-└── sessions/                  # Chat sessions as JSONL
-    └── {conv-id}.jsonl        # Meta line + message lines
+└── sessions/                  # Session metadata + legacy storage
+    ├── {id}.meta.json         # Metadata overlay for SDK-native sessions
+    └── {id}.jsonl             # Legacy sessions (full messages, backward compat)
 
 .obsidian/plugins/claudian/
 └── data.json                  # Machine state only (tabManagerState, etc.)
@@ -247,11 +252,19 @@ vault/.claude/
 
 | File | Contents |
 |------|----------|
+| `~/.claude/projects/.../*.jsonl` | SDK-native session messages (new conversations) |
 | `settings.json` | All settings including `permissions` (like Claude Code) |
 | `mcp.json` | MCP server configs with `_claudian` metadata (Claude Code compatible) |
 | `commands/*.md` | Slash commands with YAML frontmatter |
-| `sessions/*.jsonl` | Conversations (meta + messages per line) |
+| `sessions/*.meta.json` | Metadata overlay for SDK-native sessions (title, usage, UI state) |
+| `sessions/*.jsonl` | Legacy sessions (meta + messages per line, backward compat) |
 | `data.json` | `tabManagerState`, other machine-only state |
+
+**Storage modes**:
+- **SDK-native** (new conversations): Messages in `~/.claude/projects/`, metadata in `.meta.json`
+- **Legacy** (existing conversations): Full JSONL in `sessions/`, continues to work
+
+**Vault path encoding**: `/` → `-`, spaces → `-`, `~` → `-`, `'` → `-`
 
 **Command ID encoding**: `-` → `-_`, `/` → `--` (reversible, no collisions)
 
