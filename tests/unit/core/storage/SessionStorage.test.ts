@@ -4,7 +4,7 @@
 
 import { SESSIONS_PATH,SessionStorage } from '@/core/storage/SessionStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import type { Conversation, UsageInfo } from '@/core/types';
+import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';
 
 describe('SessionStorage', () => {
   let mockAdapter: jest.Mocked<VaultFileAdapter>;
@@ -633,6 +633,405 @@ describe('SessionStorage', () => {
       const result = await storage.hasSessions();
 
       expect(result).toBe(false);
+    });
+  });
+
+  // ============================================
+  // SDK-Native Session Metadata Tests
+  // ============================================
+
+  describe('isNativeSession', () => {
+    it('returns false if legacy JSONL exists', async () => {
+      mockAdapter.exists.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('.jsonl'))
+      );
+
+      const result = await storage.isNativeSession('conv-123');
+
+      expect(result).toBe(false);
+    });
+
+    it('returns true if only meta.json exists', async () => {
+      mockAdapter.exists.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('.meta.json'))
+      );
+
+      const result = await storage.isNativeSession('conv-123');
+
+      expect(result).toBe(true);
+    });
+
+    it('returns true if neither file exists (new native session)', async () => {
+      mockAdapter.exists.mockResolvedValue(false);
+
+      const result = await storage.isNativeSession('conv-new');
+
+      expect(result).toBe(true);
+    });
+
+    it('returns false if both JSONL and meta.json exist (legacy takes precedence)', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+
+      const result = await storage.isNativeSession('conv-both');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('getMetadataPath', () => {
+    it('returns correct file path for session id', () => {
+      const path = storage.getMetadataPath('session-abc');
+      expect(path).toBe('.claude/sessions/session-abc.meta.json');
+    });
+  });
+
+  describe('saveMetadata', () => {
+    it('serializes metadata to JSON and writes to file', async () => {
+      const metadata: SessionMetadata = {
+        id: 'session-456',
+        title: 'Test Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        lastResponseAt: 1700000900,
+        currentNote: 'notes/test.md',
+        titleGenerationStatus: 'success',
+      };
+
+      await storage.saveMetadata(metadata);
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        '.claude/sessions/session-456.meta.json',
+        expect.any(String)
+      );
+
+      const writtenContent = mockAdapter.write.mock.calls[0][1];
+      const parsed = JSON.parse(writtenContent);
+
+      expect(parsed.id).toBe('session-456');
+      expect(parsed.title).toBe('Test Session');
+      expect(parsed.lastResponseAt).toBe(1700000900);
+      expect(parsed.titleGenerationStatus).toBe('success');
+    });
+
+    it('preserves all optional fields', async () => {
+      const usage: UsageInfo = {
+        model: 'claude-sonnet-4-5',
+        inputTokens: 1000,
+        cacheCreationInputTokens: 500,
+        cacheReadInputTokens: 200,
+        contextWindow: 200000,
+        contextTokens: 1700,
+        percentage: 1,
+      };
+
+      const metadata: SessionMetadata = {
+        id: 'session-full',
+        title: 'Full Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        externalContextPaths: ['/path/to/external'],
+        enabledMcpServers: ['server1', 'server2'],
+        usage,
+      };
+
+      await storage.saveMetadata(metadata);
+
+      const writtenContent = mockAdapter.write.mock.calls[0][1];
+      const parsed = JSON.parse(writtenContent);
+
+      expect(parsed.externalContextPaths).toEqual(['/path/to/external']);
+      expect(parsed.enabledMcpServers).toEqual(['server1', 'server2']);
+      expect(parsed.usage).toEqual(usage);
+    });
+  });
+
+  describe('loadMetadata', () => {
+    it('returns null if file does not exist', async () => {
+      mockAdapter.exists.mockResolvedValue(false);
+
+      const result = await storage.loadMetadata('session-123');
+
+      expect(result).toBeNull();
+    });
+
+    it('loads and parses metadata from JSON file', async () => {
+      const metadata = {
+        id: 'session-abc',
+        title: 'Loaded Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        titleGenerationStatus: 'pending',
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
+
+      const result = await storage.loadMetadata('session-abc');
+
+      expect(result).toEqual(metadata);
+    });
+
+    it('returns null on parse error', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue('invalid json');
+
+      const result = await storage.loadMetadata('session-bad');
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null on read error', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockRejectedValue(new Error('Read error'));
+
+      const result = await storage.loadMetadata('session-error');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('deleteMetadata', () => {
+    it('deletes the meta.json file', async () => {
+      await storage.deleteMetadata('session-del');
+
+      expect(mockAdapter.delete).toHaveBeenCalledWith('.claude/sessions/session-del.meta.json');
+    });
+  });
+
+  describe('listNativeMetadata', () => {
+    it('returns metadata for .meta.json files without .jsonl counterparts', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/native-1.meta.json',
+        '.claude/sessions/native-2.meta.json',
+        '.claude/sessions/legacy.jsonl',
+        '.claude/sessions/legacy.meta.json', // Has JSONL counterpart, skip
+      ]);
+
+      // native-1.meta.json and native-2.meta.json have no .jsonl
+      // legacy.meta.json has .jsonl counterpart
+      mockAdapter.exists.mockImplementation((path: string) => {
+        if (path === '.claude/sessions/native-1.jsonl') return Promise.resolve(false);
+        if (path === '.claude/sessions/native-2.jsonl') return Promise.resolve(false);
+        if (path === '.claude/sessions/legacy.jsonl') return Promise.resolve(true);
+        return Promise.resolve(false);
+      });
+
+      mockAdapter.read.mockImplementation((path: string) => {
+        if (path.includes('native-1')) {
+          return Promise.resolve(JSON.stringify({
+            id: 'native-1',
+            title: 'Native One',
+            createdAt: 1700000000,
+            updatedAt: 1700002000,
+          }));
+        }
+        if (path.includes('native-2')) {
+          return Promise.resolve(JSON.stringify({
+            id: 'native-2',
+            title: 'Native Two',
+            createdAt: 1700000000,
+            updatedAt: 1700001000,
+          }));
+        }
+        return Promise.resolve('{}');
+      });
+
+      const metas = await storage.listNativeMetadata();
+
+      expect(metas).toHaveLength(2);
+      expect(metas.map(m => m.id)).toContain('native-1');
+      expect(metas.map(m => m.id)).toContain('native-2');
+    });
+
+    it('handles empty sessions directory', async () => {
+      mockAdapter.listFiles.mockResolvedValue([]);
+
+      const metas = await storage.listNativeMetadata();
+
+      expect(metas).toEqual([]);
+    });
+
+    it('handles listFiles error gracefully', async () => {
+      mockAdapter.listFiles.mockRejectedValue(new Error('List error'));
+
+      const metas = await storage.listNativeMetadata();
+
+      expect(metas).toEqual([]);
+    });
+
+    it('skips files that fail to load', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/good.meta.json',
+        '.claude/sessions/bad.meta.json',
+      ]);
+
+      mockAdapter.exists.mockResolvedValue(false); // No JSONL files
+
+      mockAdapter.read.mockImplementation((path: string) => {
+        if (path.includes('good')) {
+          return Promise.resolve(JSON.stringify({
+            id: 'good',
+            title: 'Good',
+            createdAt: 1700000000,
+            updatedAt: 1700001000,
+          }));
+        }
+        return Promise.reject(new Error('Read error'));
+      });
+
+      const metas = await storage.listNativeMetadata();
+
+      expect(metas).toHaveLength(1);
+      expect(metas[0].id).toBe('good');
+    });
+  });
+
+  describe('listAllConversations', () => {
+    it('merges legacy and native conversations', async () => {
+      // Set up legacy JSONL files
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/legacy-1.jsonl',
+        '.claude/sessions/native-1.meta.json',
+      ]);
+
+      mockAdapter.exists.mockImplementation((path: string) => {
+        // native-1 has no .jsonl counterpart
+        if (path === '.claude/sessions/native-1.jsonl') return Promise.resolve(false);
+        return Promise.resolve(true);
+      });
+
+      mockAdapter.read.mockImplementation((path: string) => {
+        if (path.includes('legacy-1.jsonl')) {
+          return Promise.resolve([
+            '{"type":"meta","id":"legacy-1","title":"Legacy","createdAt":1700000000,"updatedAt":1700001000,"sessionId":null}',
+            '{"type":"message","message":{"id":"msg-1","role":"user","content":"Hello","timestamp":1700000100}}',
+          ].join('\n'));
+        }
+        if (path.includes('native-1.meta.json')) {
+          return Promise.resolve(JSON.stringify({
+            id: 'native-1',
+            title: 'Native',
+            createdAt: 1700000000,
+            updatedAt: 1700002000,
+            lastResponseAt: 1700001500,
+          }));
+        }
+        return Promise.resolve('');
+      });
+
+      const metas = await storage.listAllConversations();
+
+      expect(metas).toHaveLength(2);
+
+      // Should be sorted by lastResponseAt/updatedAt descending
+      expect(metas[0].id).toBe('native-1'); // updatedAt: 1700002000
+      expect(metas[0].isNative).toBe(true);
+
+      expect(metas[1].id).toBe('legacy-1'); // updatedAt: 1700001000
+      expect(metas[1].isNative).toBeUndefined();
+    });
+
+    it('legacy takes precedence over native with same ID', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/conv-1.jsonl',
+        '.claude/sessions/conv-1.meta.json', // Same ID, should be skipped
+      ]);
+
+      mockAdapter.exists.mockResolvedValue(true); // .jsonl exists for conv-1
+
+      mockAdapter.read.mockImplementation((path: string) => {
+        if (path.includes('.jsonl')) {
+          return Promise.resolve(
+            '{"type":"meta","id":"conv-1","title":"Legacy Version","createdAt":1700000000,"updatedAt":1700001000,"sessionId":null}'
+          );
+        }
+        return Promise.resolve(JSON.stringify({
+          id: 'conv-1',
+          title: 'Native Version',
+          createdAt: 1700000000,
+          updatedAt: 1700002000,
+        }));
+      });
+
+      const metas = await storage.listAllConversations();
+
+      expect(metas).toHaveLength(1);
+      expect(metas[0].title).toBe('Legacy Version');
+      expect(metas[0].isNative).toBeUndefined();
+    });
+
+    it('native sessions have isNative flag and default preview', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/native-only.meta.json',
+      ]);
+
+      mockAdapter.exists.mockResolvedValue(false); // No .jsonl
+
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'native-only',
+        title: 'Native Only',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+      }));
+
+      const metas = await storage.listAllConversations();
+
+      expect(metas).toHaveLength(1);
+      expect(metas[0].isNative).toBe(true);
+      expect(metas[0].preview).toBe('SDK session');
+      expect(metas[0].messageCount).toBe(0);
+    });
+  });
+
+  describe('toSessionMetadata', () => {
+    it('converts Conversation to SessionMetadata', () => {
+      const usage: UsageInfo = {
+        model: 'claude-opus-4-5',
+        inputTokens: 5000,
+        cacheCreationInputTokens: 1000,
+        cacheReadInputTokens: 500,
+        contextWindow: 200000,
+        contextTokens: 6500,
+        percentage: 3,
+      };
+
+      const conversation: Conversation = {
+        id: 'conv-convert',
+        title: 'Convert Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        lastResponseAt: 1700000900,
+        sessionId: 'sdk-session',
+        sdkSessionId: 'current-sdk-session',
+        messages: [
+          { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
+        ],
+        currentNote: 'notes/test.md',
+        externalContextPaths: ['/external/path'],
+        enabledMcpServers: ['mcp-server'],
+        usage,
+        titleGenerationStatus: 'success',
+        legacyCutoffAt: 1700000050,
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.id).toBe('conv-convert');
+      expect(metadata.title).toBe('Convert Test');
+      expect(metadata.createdAt).toBe(1700000000);
+      expect(metadata.updatedAt).toBe(1700001000);
+      expect(metadata.lastResponseAt).toBe(1700000900);
+      expect(metadata.sessionId).toBe('sdk-session');
+      expect(metadata.sdkSessionId).toBe('current-sdk-session');
+      expect(metadata.legacyCutoffAt).toBe(1700000050);
+      expect(metadata.currentNote).toBe('notes/test.md');
+      expect(metadata.externalContextPaths).toEqual(['/external/path']);
+      expect(metadata.enabledMcpServers).toEqual(['mcp-server']);
+      expect(metadata.usage).toEqual(usage);
+      expect(metadata.titleGenerationStatus).toBe('success');
+
+      // Should not include messages
+      expect(metadata).not.toHaveProperty('messages');
     });
   });
 });

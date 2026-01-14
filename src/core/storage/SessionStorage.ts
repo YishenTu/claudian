@@ -17,6 +17,7 @@ import type {
   Conversation,
   ConversationMeta,
   ImageAttachment,
+  SessionMetadata,
   UsageInfo,
 } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
@@ -287,6 +288,166 @@ export class SessionStorage {
     return {
       ...message,
       images: strippedImages,
+    };
+  }
+
+  // ============================================
+  // SDK-Native Session Metadata (Phase 1)
+  // ============================================
+
+  /**
+   * Detects if a session uses SDK-native storage.
+   * A session is "native" if:
+   * - No legacy JSONL file exists, OR
+   * - Only a .meta.json file exists (no .jsonl)
+   *
+   * Legacy sessions have both id.jsonl and optionally id.meta.json.
+   * Native sessions have only id.meta.json (SDK stores messages).
+   */
+  async isNativeSession(id: string): Promise<boolean> {
+    const legacyPath = `${SESSIONS_PATH}/${id}.jsonl`;
+    const metaPath = `${SESSIONS_PATH}/${id}.meta.json`;
+
+    const legacyExists = await this.adapter.exists(legacyPath);
+    const metaExists = await this.adapter.exists(metaPath);
+
+    // If legacy JSONL exists, it's legacy (even if meta.json also exists)
+    if (legacyExists) {
+      return false;
+    }
+
+    // If only meta.json exists or neither exists, it's native
+    // (neither exists = new conversation that will be native)
+    return metaExists || !legacyExists;
+  }
+
+  /** Get the metadata file path for a session. */
+  getMetadataPath(id: string): string {
+    return `${SESSIONS_PATH}/${id}.meta.json`;
+  }
+
+  /** Save session metadata overlay for SDK-native storage. */
+  async saveMetadata(metadata: SessionMetadata): Promise<void> {
+    const filePath = this.getMetadataPath(metadata.id);
+    const content = JSON.stringify(metadata, null, 2);
+    await this.adapter.write(filePath, content);
+  }
+
+  /** Load session metadata for SDK-native storage. */
+  async loadMetadata(id: string): Promise<SessionMetadata | null> {
+    const filePath = this.getMetadataPath(id);
+
+    try {
+      if (!(await this.adapter.exists(filePath))) {
+        return null;
+      }
+
+      const content = await this.adapter.read(filePath);
+      return JSON.parse(content) as SessionMetadata;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Delete session metadata. */
+  async deleteMetadata(id: string): Promise<void> {
+    const filePath = this.getMetadataPath(id);
+    await this.adapter.delete(filePath);
+  }
+
+  /** List all native session metadata (.meta.json files without .jsonl counterparts). */
+  async listNativeMetadata(): Promise<SessionMetadata[]> {
+    const metas: SessionMetadata[] = [];
+
+    try {
+      const files = await this.adapter.listFiles(SESSIONS_PATH);
+
+      // Find .meta.json files
+      const metaFiles = files.filter(f => f.endsWith('.meta.json'));
+
+      for (const filePath of metaFiles) {
+        // Extract ID from path: .claude/sessions/{id}.meta.json
+        const fileName = filePath.split('/').pop() || '';
+        const id = fileName.replace('.meta.json', '');
+
+        // Check if this is truly native (no legacy .jsonl exists)
+        const legacyPath = `${SESSIONS_PATH}/${id}.jsonl`;
+        const legacyExists = await this.adapter.exists(legacyPath);
+
+        if (legacyExists) {
+          // Skip - this has legacy storage, meta.json is supplementary
+          continue;
+        }
+
+        try {
+          const content = await this.adapter.read(filePath);
+          const meta = JSON.parse(content) as SessionMetadata;
+          metas.push(meta);
+        } catch {
+          // Skip files that fail to load
+        }
+      }
+    } catch {
+      // Return empty list if directory listing fails
+    }
+
+    return metas;
+  }
+
+  /**
+   * List all conversations, merging legacy JSONL and native metadata sources.
+   * Legacy conversations take precedence if both exist.
+   */
+  async listAllConversations(): Promise<ConversationMeta[]> {
+    const metas: ConversationMeta[] = [];
+
+    // 1. Load legacy conversations (existing .jsonl files)
+    const legacyMetas = await this.listConversations();
+    metas.push(...legacyMetas);
+
+    // 2. Load native metadata (.meta.json files)
+    const nativeMetas = await this.listNativeMetadata();
+
+    // 3. Merge, avoiding duplicates (legacy takes precedence)
+    const legacyIds = new Set(legacyMetas.map(m => m.id));
+    for (const meta of nativeMetas) {
+      if (!legacyIds.has(meta.id)) {
+        metas.push({
+          id: meta.id,
+          title: meta.title,
+          createdAt: meta.createdAt,
+          updatedAt: meta.updatedAt,
+          lastResponseAt: meta.lastResponseAt,
+          messageCount: 0, // Native sessions don't track message count in metadata
+          preview: 'SDK session', // SDK stores messages, we don't parse them for preview
+          titleGenerationStatus: meta.titleGenerationStatus,
+          isNative: true,
+        });
+      }
+    }
+
+    // 4. Sort by lastResponseAt descending (fallback to createdAt)
+    return metas.sort((a, b) =>
+      (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt)
+    );
+  }
+
+  /** Convert a Conversation to SessionMetadata for native storage. */
+  toSessionMetadata(conversation: Conversation): SessionMetadata {
+    return {
+      id: conversation.id,
+      title: conversation.title,
+      titleGenerationStatus: conversation.titleGenerationStatus,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      lastResponseAt: conversation.lastResponseAt,
+      sessionId: conversation.sessionId,
+      sdkSessionId: conversation.sdkSessionId,
+      currentNote: conversation.currentNote,
+      externalContextPaths: conversation.externalContextPaths,
+      enabledMcpServers: conversation.enabledMcpServers,
+      usage: conversation.usage,
+      legacyCutoffAt: conversation.legacyCutoffAt,
     };
   }
 }

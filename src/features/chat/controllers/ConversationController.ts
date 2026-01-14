@@ -200,7 +200,7 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
 
-    this.getAgentService()?.setSessionId(conversation.sessionId);
+    this.getAgentService()?.setSessionId(conversation.sessionId ?? null);
 
     const hasMessages = state.messages.length > 0;
     const fileCtx = this.deps.getFileContextManager();
@@ -315,6 +315,9 @@ export class ConversationController {
    *
    * If we're at an entry point (no conversation yet) and have messages,
    * creates a new conversation first (lazy creation).
+   *
+   * For native sessions (new conversations with sessionId from SDK),
+   * only metadata is saved - the SDK handles message persistence.
    */
   async save(updateLastResponse = false): Promise<void> {
     const { plugin, state } = this.deps;
@@ -324,13 +327,15 @@ export class ConversationController {
       return;
     }
 
+    const sessionId = this.getAgentService()?.getSessionId() ?? null;
+
     // Entry point with messages - create conversation lazily
+    // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
-      const conversation = await plugin.createConversation();
+      const conversation = await plugin.createConversation(sessionId ?? undefined);
       state.currentConversationId = conversation.id;
     }
 
-    const sessionId = this.getAgentService()?.getSessionId() ?? null;
     const fileCtx = this.deps.getFileContextManager();
     const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const externalContextSelector = this.deps.getExternalContextSelector();
@@ -338,9 +343,26 @@ export class ConversationController {
     const mcpServerSelector = this.deps.getMcpServerSelector();
     const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
+    // Check if this is a native session and promote legacy sessions after first SDK session capture
+    const conversation = plugin.getConversationById(state.currentConversationId!);
+    const wasNative = conversation?.isNative ?? false;
+    const shouldPromote = !wasNative && !!sessionId;
+    const isNative = wasNative || shouldPromote;
+    const legacyMessages = conversation?.messages ?? [];
+    const legacyCutoffAt = shouldPromote
+      ? legacyMessages[legacyMessages.length - 1]?.timestamp
+      : conversation?.legacyCutoffAt;
+
     const updates: Partial<Conversation> = {
-      messages: state.getPersistedMessages(),
-      sessionId: sessionId,
+      // For native sessions, don't persist messages (SDK handles that)
+      // For legacy sessions, persist messages as before
+      messages: isNative ? state.messages : state.getPersistedMessages(),
+      // Preserve existing sessionId when SDK hasn't captured a new one yet
+      sessionId: sessionId ?? conversation?.sessionId ?? null,
+      sdkSessionId: isNative && sessionId ? sessionId : conversation?.sdkSessionId,
+      isNative: isNative || undefined,
+      legacyCutoffAt,
+      sdkMessagesLoaded: isNative ? true : undefined,
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,

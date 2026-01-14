@@ -509,6 +509,14 @@ export class ClaudianService {
    * on the current handler. A new handler is registered only when the next query starts.
    */
   private async routeMessage(message: SDKMessage): Promise<void> {
+    if (message.type === 'error' && message.error) {
+      const error = new Error(message.error);
+      if (isSessionExpiredError(error)) {
+        this.sessionManager.invalidateSession();
+        this.messageChannel?.setSessionId('');
+      }
+    }
+
     // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
     if (handler && this.isStreamTextEvent(message)) {

@@ -772,6 +772,21 @@ describe('ClaudianService', () => {
       expect(chunks.some((c) => c.type === 'error' && c.content === 'Fatal error')).toBe(true);
       expect(chunks.some((c) => c.type === 'done')).toBe(true);
     });
+
+    it('invalidates session on session-expired error messages', async () => {
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        { type: 'error', error: 'Session expired' },
+      ], { appendResult: false });
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('trigger error')) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks.some((c) => c.type === 'error' && c.content === 'Session expired')).toBe(true);
+      expect(service.getSessionId()).toBeNull();
+    });
   });
 
   describe('closePersistentQuery with preserveHandlers', () => {
