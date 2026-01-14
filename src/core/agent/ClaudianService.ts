@@ -1275,6 +1275,7 @@ export class ClaudianService {
    * The resumeSessionAt tells the SDK to ignore messages after that point.
    *
    * @param resumeSessionAt - The UUID to resume from (SDK ignores messages after this)
+   * @throws Error if restart fails (caller should handle and notify user)
    */
   async restartAfterRewind(resumeSessionAt: string): Promise<void> {
     const sessionId = this.sessionManager.getSessionId();
@@ -1286,7 +1287,11 @@ export class ClaudianService {
     const vaultPath = getVaultPath(this.plugin.app);
     const cliPath = this.plugin.getResolvedClaudeCliPath();
 
-    if (vaultPath && cliPath) {
+    if (!vaultPath || !cliPath) {
+      throw new Error('Cannot restart: missing vault path or CLI path');
+    }
+
+    try {
       await this.startPersistentQuery(
         vaultPath,
         cliPath,
@@ -1294,6 +1299,10 @@ export class ClaudianService {
         externalContextPaths,
         resumeSessionAt
       );
+    } catch (error) {
+      // Re-throw with context so caller can notify user
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to restart session after rewind: ${message}`);
     }
   }
 

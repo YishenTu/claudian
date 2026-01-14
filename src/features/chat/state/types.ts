@@ -52,6 +52,8 @@ export interface ChatStateData {
   isCreatingConversation: boolean;
   /** Guards against concurrent operations during conversation switching. */
   isSwitchingConversation: boolean;
+  /** Guards against streaming during rewind operation. */
+  isRewinding: boolean;
 
   // Conversation identity
   currentConversationId: string | null;

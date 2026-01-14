@@ -112,8 +112,8 @@ export class InputController {
       return;
     }
 
-    // If agent is working, queue the message instead of dropping it
-    if (state.isStreaming) {
+    // If agent is working or rewinding, queue the message instead of dropping it
+    if (state.isStreaming || state.isRewinding) {
       const images = hasImages ? [...(imageContextManager?.getAttachedImages() || [])] : undefined;
       const editorContext = selectionController.getContext();
       const promptPrefix = options?.promptPrefix;

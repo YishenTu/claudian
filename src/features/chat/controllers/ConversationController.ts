@@ -738,58 +738,76 @@ export class ConversationController {
       return;
     }
 
+    // Check streaming state and set rewinding flag atomically to prevent race conditions
     if (state.isStreaming) {
       new Notice('Cannot rewind while streaming.');
       return;
     }
+    state.isRewinding = true;
 
-    // Find the message index
-    const messageIndex = state.messages.findIndex(m => m.id === messageId);
-    if (messageIndex === -1) {
-      new Notice('Message not found.');
-      return;
-    }
+    try {
+      // Find the message index
+      const messageIndex = state.messages.findIndex(m => m.id === messageId);
+      if (messageIndex === -1) {
+        new Notice('Message not found.');
+        return;
+      }
 
-    // Call SDK to restore files
-    const result = await agentService.rewindFiles(sdkUuid);
+      // Call SDK to restore files
+      const result = await agentService.rewindFiles(sdkUuid);
 
-    if (!result.canRewind) {
-      new Notice(result.error || 'Cannot rewind to this point.');
-      return;
-    }
+      if (!result.canRewind) {
+        new Notice(result.error || 'Cannot rewind to this point.');
+        return;
+      }
 
-    // Truncate conversation messages (keep up to and including the target message)
-    const truncatedMessages = state.messages.slice(0, messageIndex + 1);
-    state.messages = truncatedMessages;
+      // Truncate conversation messages (keep up to and including the target message)
+      const truncatedMessages = state.messages.slice(0, messageIndex + 1);
+      state.messages = truncatedMessages;
 
-    // Save truncated conversation (without resumeAt since we're restarting immediately)
-    if (state.currentConversationId) {
-      const updates: Partial<Conversation> = {
-        messages: state.getPersistedMessages(),
-      };
-      await plugin.updateConversation(state.currentConversationId, updates);
-    }
+      // Save truncated conversation (without resumeAt since we're restarting immediately)
+      if (state.currentConversationId) {
+        const updates: Partial<Conversation> = {
+          messages: state.getPersistedMessages(),
+        };
+        await plugin.updateConversation(state.currentConversationId, updates);
+      }
 
-    // Restart SDK session with resumeSessionAt to align state
-    await agentService.restartAfterRewind(sdkUuid);
+      // Restart SDK session with resumeSessionAt to align state
+      try {
+        await agentService.restartAfterRewind(sdkUuid);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        new Notice(`Session restart failed: ${errorMessage}`);
+        // Continue with UI update even if restart fails - files are already restored
+      }
 
-    // Re-render messages
-    const welcomeEl = renderer.renderMessages(
-      state.messages,
-      () => this.getGreeting()
-    );
-    this.deps.setWelcomeEl(welcomeEl);
-    this.updateWelcomeVisibility();
+      // Clear existing UI and state maps before re-render to prevent stale DOM elements
+      const messagesEl = this.deps.getMessagesEl();
+      messagesEl.empty();
+      state.clearMaps();
 
-    // Update todo panel (may have changed)
-    state.currentTodos = extractLastTodosFromMessages(state.messages);
+      // Re-render messages
+      const welcomeEl = renderer.renderMessages(
+        state.messages,
+        () => this.getGreeting()
+      );
+      this.deps.setWelcomeEl(welcomeEl);
+      this.updateWelcomeVisibility();
 
-    // Show notification with details
-    const filesChanged = result.filesChanged?.length || 0;
-    if (filesChanged > 0) {
-      new Notice(`Restored ${filesChanged} file${filesChanged > 1 ? 's' : ''} to checkpoint.`);
-    } else {
-      new Notice('Restored to checkpoint.');
+      // Update todo panel (may have changed)
+      state.currentTodos = extractLastTodosFromMessages(state.messages);
+
+      // Show notification with details
+      const filesChanged = result.filesChanged?.length || 0;
+      if (filesChanged > 0) {
+        new Notice(`Restored ${filesChanged} file${filesChanged > 1 ? 's' : ''} to checkpoint.`);
+      } else {
+        new Notice('Restored to checkpoint.');
+      }
+    } finally {
+      // Always clear rewinding flag
+      state.isRewinding = false;
     }
   }
 
