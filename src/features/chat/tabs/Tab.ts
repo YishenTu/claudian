@@ -258,17 +258,10 @@ export async function initializeTabService(
       // Continue without permissions - service can still function
     }
 
-    // Pre-warm if we have a conversation with a session ID
-    const conversation = tab.conversationId
-      ? await plugin.getConversationById(tab.conversationId)
-      : null;
-    const sessionId = conversation?.sessionId;
-
-    if (sessionId) {
-      service.preWarm(sessionId).catch(() => {
-        // Pre-warm is best-effort, ignore failures
-      });
-    }
+    // Pre-warm the SDK process (no session ID - just spin up the process)
+    service.preWarm().catch(() => {
+      // Pre-warm is best-effort, ignore failures
+    });
 
     // Only set tab state after successful initialization
     tab.service = service;

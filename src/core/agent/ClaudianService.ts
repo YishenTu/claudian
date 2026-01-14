@@ -288,8 +288,10 @@ export class ClaudianService {
       this.currentAllowedTools = null;
     }
 
-    // Reset crash recovery flag for next session
-    this.crashRecoveryAttempted = false;
+    // NOTE: Do NOT reset crashRecoveryAttempted here.
+    // It's reset in queryViaPersistent after a successful message send,
+    // or in resetSession/setSessionId when switching sessions.
+    // Resetting it here would cause infinite restart loops on persistent errors.
 
     // Reset shuttingDown flag so next query can start a new persistent query.
     // This must be done after all cleanup to prevent race conditions with the consumer loop.
@@ -297,17 +299,19 @@ export class ClaudianService {
   }
 
   /**
-   * Restarts the persistent query (e.g., after configuration change).
+   * Restarts the persistent query (e.g., after configuration change or crash recovery).
+   * Does NOT try to resume session - just spins up a fresh process.
+   * Resume happens when user sends a message via queryViaPersistent.
    */
   async restartPersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): Promise<void> {
-    const sessionId = this.sessionManager.getSessionId();
     this.closePersistentQuery(reason, options);
 
     const vaultPath = getVaultPath(this.plugin.app);
     const cliPath = this.plugin.getResolvedClaudeCliPath();
 
     if (vaultPath && cliPath) {
-      await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined);
+      // Don't pass session ID - just spin up the process
+      await this.startPersistentQuery(vaultPath, cliPath);
     }
   }
 
@@ -1168,6 +1172,9 @@ export class ClaudianService {
     // Close persistent query (new session will use cold-start resume)
     this.closePersistentQuery('session reset');
 
+    // Reset crash recovery for fresh start
+    this.crashRecoveryAttempted = false;
+
     this.sessionManager.reset();
     this.approvalManager.clearSessionPermissions();
   }
@@ -1191,13 +1198,15 @@ export class ClaudianService {
     const currentId = this.sessionManager.getSessionId();
     if (currentId !== id) {
       this.closePersistentQuery('session switch');
+      // Reset crash recovery for new session context
+      this.crashRecoveryAttempted = false;
     }
 
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
 
-    // Immediately pre-warm the new session (fire-and-forget)
-    // This ensures no cold start delay when user sends their first message
-    this.preWarm(id ?? undefined).catch(() => {
+    // Pre-warm the SDK process (no session ID - just spin up the process)
+    // Resume happens when user sends a message via queryViaPersistent
+    this.preWarm().catch(() => {
       // Pre-warm is best-effort, ignore failures
     });
   }

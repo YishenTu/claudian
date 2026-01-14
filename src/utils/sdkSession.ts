@@ -65,15 +65,21 @@ export interface SDKNativeContentBlock {
 
 /**
  * Encodes a vault path for the SDK project directory name.
- * The SDK uses URL-safe base64 encoding of the absolute path.
+ * The SDK uses simple character replacement (NOT base64):
+ * - `/` → `-`
+ * - spaces → `-`
+ * - `~` → `-`
+ * - `'` → `-`
  */
 export function encodeVaultPathForSDK(vaultPath: string): string {
-  // SDK uses the absolute path, then encodes it
   const absolutePath = path.resolve(vaultPath);
-  // Convert to base64 and make URL-safe
-  const base64 = Buffer.from(absolutePath).toString('base64');
-  // Replace + with -, / with _, and remove = padding
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // Replace special characters with dashes
+  // The leading `/` becomes the first `-`
+  return absolutePath
+    .replace(/\//g, '-')
+    .replace(/ /g, '-')
+    .replace(/~/g, '-')
+    .replace(/'/g, '-');
 }
 
 /**
