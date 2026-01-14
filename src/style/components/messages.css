@@ -42,6 +42,7 @@
 }
 
 .claudian-message-user {
+  position: relative;
   background: rgba(0, 0, 0, 0.3);
   align-self: flex-end;
   border-bottom-right-radius: 4px;
@@ -162,11 +163,6 @@
 .claudian-rewind-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
-}
-
-/* Make user message position relative for absolute button positioning */
-.claudian-message-user {
-  position: relative;
 }
 
 .claudian-text-block+.claudian-tool-call {

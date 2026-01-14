@@ -746,6 +746,12 @@ export class ConversationController {
     state.isRewinding = true;
 
     try {
+      // Validate UUID before SDK call
+      if (!sdkUuid) {
+        new Notice('Cannot rewind: missing message identifier.');
+        return;
+      }
+
       // Find the message index
       const messageIndex = state.messages.findIndex(m => m.id === messageId);
       if (messageIndex === -1) {
