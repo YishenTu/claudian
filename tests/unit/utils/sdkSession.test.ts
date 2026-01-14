@@ -2,7 +2,8 @@
  * Tests for SDK Session Parser - parsing Claude Agent SDK native session files.
  */
 
-import * as fs from 'fs';
+import { existsSync } from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 
 import {
@@ -17,11 +18,15 @@ import {
   sdkSessionExists,
 } from '@/utils/sdkSession';
 
-// Mock fs and os modules
-jest.mock('fs');
+// Mock fs, fs/promises, and os modules
+jest.mock('fs', () => ({
+  existsSync: jest.fn(),
+}));
+jest.mock('fs/promises');
 jest.mock('os');
 
-const mockFs = fs as jest.Mocked<typeof fs>;
+const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
+const mockFsPromises = fsPromises as jest.Mocked<typeof fsPromises>;
 const mockOs = os as jest.Mocked<typeof os>;
 
 describe('sdkSession', () => {
@@ -108,7 +113,7 @@ describe('sdkSession', () => {
 
   describe('sdkSessionExists', () => {
     it('returns true when session file exists', () => {
-      mockFs.existsSync.mockReturnValue(true);
+      mockExistsSync.mockReturnValue(true);
 
       const exists = sdkSessionExists('/Users/test/vault', 'session-abc');
 
@@ -116,7 +121,7 @@ describe('sdkSession', () => {
     });
 
     it('returns false when session file does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
+      mockExistsSync.mockReturnValue(false);
 
       const exists = sdkSessionExists('/Users/test/vault', 'session-xyz');
 
@@ -124,7 +129,7 @@ describe('sdkSession', () => {
     });
 
     it('returns false on error', () => {
-      mockFs.existsSync.mockImplementation(() => {
+      mockExistsSync.mockImplementation(() => {
         throw new Error('Permission denied');
       });
 
@@ -135,64 +140,67 @@ describe('sdkSession', () => {
   });
 
   describe('readSDKSession', () => {
-    it('returns empty array when file does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
+    it('returns empty result when file does not exist', async () => {
+      mockExistsSync.mockReturnValue(false);
 
-      const messages = readSDKSession('/Users/test/vault', 'nonexistent');
+      const result = await readSDKSession('/Users/test/vault', 'nonexistent');
 
-      expect(messages).toEqual([]);
+      expect(result.messages).toEqual([]);
+      expect(result.skippedLines).toBe(0);
+      expect(result.error).toBeUndefined();
     });
 
-    it('parses valid JSONL file', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('parses valid JSONL file', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","message":{"content":"Hello"}}',
         '{"type":"assistant","uuid":"a1","message":{"content":"Hi there"}}',
       ].join('\n'));
 
-      const messages = readSDKSession('/Users/test/vault', 'session-1');
+      const result = await readSDKSession('/Users/test/vault', 'session-1');
 
-      expect(messages).toHaveLength(2);
-      expect(messages[0].type).toBe('user');
-      expect(messages[1].type).toBe('assistant');
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].type).toBe('user');
+      expect(result.messages[1].type).toBe('assistant');
+      expect(result.skippedLines).toBe(0);
     });
 
-    it('skips invalid JSON lines', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('skips invalid JSON lines and reports count', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","message":{"content":"Hello"}}',
         'invalid json line',
         '{"type":"assistant","uuid":"a1","message":{"content":"Hi"}}',
       ].join('\n'));
 
-      const messages = readSDKSession('/Users/test/vault', 'session-2');
+      const result = await readSDKSession('/Users/test/vault', 'session-2');
 
-      expect(messages).toHaveLength(2);
+      expect(result.messages).toHaveLength(2);
+      expect(result.skippedLines).toBe(1);
     });
 
-    it('handles empty lines', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('handles empty lines', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","message":{"content":"Test"}}',
         '',
         '   ',
         '{"type":"assistant","uuid":"a1","message":{"content":"Response"}}',
       ].join('\n'));
 
-      const messages = readSDKSession('/Users/test/vault', 'session-3');
+      const result = await readSDKSession('/Users/test/vault', 'session-3');
 
-      expect(messages).toHaveLength(2);
+      expect(result.messages).toHaveLength(2);
     });
 
-    it('returns empty array on read error', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockImplementation(() => {
-        throw new Error('Read error');
-      });
+    it('returns error on read failure', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockRejectedValue(new Error('Read error'));
 
-      const messages = readSDKSession('/Users/test/vault', 'session-err');
+      const result = await readSDKSession('/Users/test/vault', 'session-err');
 
-      expect(messages).toEqual([]);
+      expect(result.messages).toEqual([]);
+      expect(result.error).toBe('Read error');
     });
   });
 
@@ -391,100 +399,100 @@ describe('sdkSession', () => {
   });
 
   describe('loadSDKSessionMessages', () => {
-    it('loads and converts all messages from session file', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('loads and converts all messages from session file', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
         '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
         '{"type":"system","uuid":"s1"}',
         '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","message":{"content":"Thanks"}}',
       ].join('\n'));
 
-      const messages = loadSDKSessionMessages('/Users/test/vault', 'session-full');
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-full');
 
       // Should have 3 messages (system skipped)
-      expect(messages).toHaveLength(3);
-      expect(messages[0].role).toBe('user');
-      expect(messages[0].content).toBe('Hello');
-      expect(messages[1].role).toBe('assistant');
-      expect(messages[1].content).toBe('Hi!');
-      expect(messages[2].role).toBe('user');
-      expect(messages[2].content).toBe('Thanks');
+      expect(result.messages).toHaveLength(3);
+      expect(result.messages[0].role).toBe('user');
+      expect(result.messages[0].content).toBe('Hello');
+      expect(result.messages[1].role).toBe('assistant');
+      expect(result.messages[1].content).toBe('Hi!');
+      expect(result.messages[2].role).toBe('user');
+      expect(result.messages[2].content).toBe('Thanks');
     });
 
-    it('sorts messages by timestamp ascending', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('sorts messages by timestamp ascending', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Second"}]}}',
         '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"First"}}',
         '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","message":{"content":"Third"}}',
       ].join('\n'));
 
-      const messages = loadSDKSessionMessages('/Users/test/vault', 'session-unordered');
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-unordered');
 
-      expect(messages[0].content).toBe('First');
-      expect(messages[1].content).toBe('Second');
-      expect(messages[2].content).toBe('Third');
+      expect(result.messages[0].content).toBe('First');
+      expect(result.messages[1].content).toBe('Second');
+      expect(result.messages[2].content).toBe('Third');
     });
 
-    it('returns empty array when session does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
+    it('returns empty result when session does not exist', async () => {
+      mockExistsSync.mockReturnValue(false);
 
-      const messages = loadSDKSessionMessages('/Users/test/vault', 'nonexistent');
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'nonexistent');
 
-      expect(messages).toEqual([]);
+      expect(result.messages).toEqual([]);
     });
 
-    it('matches tool_result from user message to tool_use in assistant message', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('matches tool_result from user message to tool_use in assistant message', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Search for cats"}}',
         '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Let me search"},{"type":"tool_use","id":"tool-1","name":"WebSearch","input":{"query":"cats"}}]}}',
         '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"Found 10 results"}]}}',
         '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:03:00Z","message":{"content":[{"type":"text","text":"I found 10 results about cats."}]}}',
       ].join('\n'));
 
-      const messages = loadSDKSessionMessages('/Users/test/vault', 'session-cross-tool');
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-cross-tool');
 
       // Should have 3 messages (tool_result-only user message skipped)
-      expect(messages).toHaveLength(3);
-      expect(messages[0].content).toBe('Search for cats');
-      expect(messages[1].toolCalls).toHaveLength(1);
-      expect(messages[1].toolCalls![0].id).toBe('tool-1');
-      expect(messages[1].toolCalls![0].result).toBe('Found 10 results');
-      expect(messages[1].toolCalls![0].status).toBe('completed');
-      expect(messages[2].content).toBe('I found 10 results about cats.');
+      expect(result.messages).toHaveLength(3);
+      expect(result.messages[0].content).toBe('Search for cats');
+      expect(result.messages[1].toolCalls).toHaveLength(1);
+      expect(result.messages[1].toolCalls![0].id).toBe('tool-1');
+      expect(result.messages[1].toolCalls![0].result).toBe('Found 10 results');
+      expect(result.messages[1].toolCalls![0].status).toBe('completed');
+      expect(result.messages[2].content).toBe('I found 10 results about cats.');
     });
 
-    it('skips user messages that contain only tool_result', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('skips user messages that contain only tool_result', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
         '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}',
         '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"done"}]}}',
       ].join('\n'));
 
-      const messages = loadSDKSessionMessages('/Users/test/vault', 'session-skip-tool-result');
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-skip-tool-result');
 
       // Should have 2 messages (tool_result-only user skipped)
-      expect(messages).toHaveLength(2);
-      expect(messages[0].role).toBe('user');
-      expect(messages[0].content).toBe('Hello');
-      expect(messages[1].role).toBe('assistant');
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].role).toBe('user');
+      expect(result.messages[0].content).toBe('Hello');
+      expect(result.messages[1].role).toBe('assistant');
     });
 
-    it('handles tool_result with error flag', () => {
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockReturnValue([
+    it('handles tool_result with error flag', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
         '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"invalid"}}]}}',
         '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"Command not found","is_error":true}]}}',
       ].join('\n'));
 
-      const messages = loadSDKSessionMessages('/Users/test/vault', 'session-error-result');
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-error-result');
 
-      expect(messages).toHaveLength(1);
-      expect(messages[0].toolCalls![0].status).toBe('error');
-      expect(messages[0].toolCalls![0].result).toBe('Command not found');
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].toolCalls![0].status).toBe('error');
+      expect(result.messages[0].toolCalls![0].result).toBe('Command not found');
     });
   });
 });

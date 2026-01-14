@@ -162,7 +162,7 @@ export class ConversationController {
     const { plugin, state, renderer } = this.deps;
 
     const conversationId = state.currentConversationId;
-    const conversation = conversationId ? plugin.getConversationById(conversationId) : null;
+    const conversation = conversationId ? await plugin.getConversationById(conversationId) : null;
 
     // No active conversation - start at entry point
     if (!conversation) {
@@ -346,7 +346,7 @@ export class ConversationController {
     const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
     // Check if this is a native session and promote legacy sessions after first SDK session capture
-    const conversation = plugin.getConversationById(state.currentConversationId!);
+    const conversation = await plugin.getConversationById(state.currentConversationId!);
     const wasNative = conversation?.isNative ?? false;
     const shouldPromote = !wasNative && !!sessionId;
     const isNative = wasNative || shouldPromote;
@@ -692,7 +692,7 @@ export class ConversationController {
     if (!titleService) return;
 
     // Get the full conversation from cache
-    const fullConv = plugin.getConversationById(conversationId);
+    const fullConv = await plugin.getConversationById(conversationId);
     if (!fullConv || fullConv.messages.length < 2) return;
 
     // Find first user and assistant messages by role (not by index)
@@ -725,7 +725,7 @@ export class ConversationController {
       assistantText,
       async (convId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
-        const currentConv = plugin.getConversationById(convId);
+        const currentConv = await plugin.getConversationById(convId);
         if (!currentConv) return;
 
         // Only apply AI title if user hasn't manually renamed (title still matches expected)

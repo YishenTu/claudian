@@ -86,7 +86,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       },
       renameConversation: jest.fn(),
       updateConversation: jest.fn(),
-      getConversationById: jest.fn().mockReturnValue(null),
+      getConversationById: jest.fn().mockResolvedValue(null),
     } as any,
     state,
     renderer: {
@@ -643,7 +643,7 @@ describe('InputController - Message Queue', () => {
       });
 
       // Mock getConversationById to return a conversation with different title (user renamed)
-      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'conv-1',
         title: 'User Custom Title', // User renamed it
       });

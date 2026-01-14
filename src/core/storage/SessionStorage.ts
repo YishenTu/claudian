@@ -281,28 +281,16 @@ export class SessionStorage {
 
   /**
    * Detects if a session uses SDK-native storage.
-   * A session is "native" if:
-   * - No legacy JSONL file exists, OR
-   * - Only a .meta.json file exists (no .jsonl)
+   * A session is "native" if no legacy JSONL file exists.
    *
-   * Legacy sessions have both id.jsonl and optionally id.meta.json.
-   * Native sessions have only id.meta.json (SDK stores messages).
+   * Legacy sessions have id.jsonl (and optionally id.meta.json).
+   * Native sessions have only id.meta.json or no files yet (SDK stores messages).
    */
   async isNativeSession(id: string): Promise<boolean> {
     const legacyPath = `${SESSIONS_PATH}/${id}.jsonl`;
-    const metaPath = `${SESSIONS_PATH}/${id}.meta.json`;
-
     const legacyExists = await this.adapter.exists(legacyPath);
-    const metaExists = await this.adapter.exists(metaPath);
-
-    // If legacy JSONL exists, it's legacy (even if meta.json also exists)
-    if (legacyExists) {
-      return false;
-    }
-
-    // If only meta.json exists or neither exists, it's native
-    // (neither exists = new conversation that will be native)
-    return metaExists || !legacyExists;
+    // Native if no legacy JSONL exists (new conversation or meta-only)
+    return !legacyExists;
   }
 
   /** Get the metadata file path for a session. */

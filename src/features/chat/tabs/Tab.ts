@@ -260,7 +260,7 @@ export async function initializeTabService(
 
     // Pre-warm if we have a conversation with a session ID
     const conversation = tab.conversationId
-      ? plugin.getConversationById(tab.conversationId)
+      ? await plugin.getConversationById(tab.conversationId)
       : null;
     const sessionId = conversation?.sessionId;
 
@@ -730,10 +730,11 @@ export async function destroyTab(tab: TabData): Promise<void> {
 
 /**
  * Gets the display title for a tab.
+ * Uses synchronous access since we only need the title, not messages.
  */
 export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
   if (tab.conversationId) {
-    const conversation = plugin.getConversationById(tab.conversationId);
+    const conversation = plugin.getConversationSync(tab.conversationId);
     if (conversation?.title) {
       return conversation.title;
     }

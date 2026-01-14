@@ -513,7 +513,7 @@ export class InputController {
       assistantText,
       async (conversationId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
-        const currentConv = plugin.getConversationById(conversationId);
+        const currentConv = await plugin.getConversationById(conversationId);
         if (!currentConv) return;
 
         // Only apply AI title if user hasn't manually renamed (title still matches fallback)

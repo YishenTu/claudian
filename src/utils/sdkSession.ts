@@ -8,11 +8,19 @@
  * for displaying conversation history from native sessions.
  */
 
-import * as fs from 'fs';
+import { existsSync } from 'fs';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
 import type { ChatMessage, ContentBlock, ToolCallInfo } from '../core/types';
+
+/** Result of reading an SDK session file. */
+export interface SDKSessionReadResult {
+  messages: SDKNativeMessage[];
+  skippedLines: number;
+  error?: string;
+}
 
 /**
  * SDK native message structure (stored in session JSONL files).
@@ -72,7 +80,8 @@ export function getSDKProjectsPath(): string {
 
 /**
  * Validates a session ID to prevent path traversal attacks.
- * Session IDs should be UUIDs or alphanumeric strings without path separators.
+ * Accepts alphanumeric strings with hyphens and underscores (max 128 chars).
+ * Common formats: SDK UUIDs, Claudian IDs (conv-TIMESTAMP-RANDOM).
  */
 export function isValidSessionId(sessionId: string): boolean {
   if (!sessionId || sessionId.length === 0 || sessionId.length > 128) {
@@ -82,7 +91,7 @@ export function isValidSessionId(sessionId: string): boolean {
   if (sessionId.includes('..') || sessionId.includes('/') || sessionId.includes('\\')) {
     return false;
   }
-  // Allow only alphanumeric characters, hyphens, and underscores (UUID-compatible)
+  // Allow only alphanumeric characters, hyphens, and underscores
   return /^[a-zA-Z0-9_-]+$/.test(sessionId);
 }
 
@@ -90,7 +99,7 @@ export function isValidSessionId(sessionId: string): boolean {
  * Gets the full path to an SDK session file.
  *
  * @param vaultPath - The vault's absolute path
- * @param sessionId - The session ID (same as conversation ID for native sessions)
+ * @param sessionId - The SDK session ID (may equal conversation ID for new native sessions)
  * @returns Full path to the session JSONL file
  * @throws Error if sessionId is invalid (path traversal protection)
  */
@@ -105,46 +114,50 @@ export function getSDKSessionPath(vaultPath: string, sessionId: string): string 
 
 /**
  * Checks if an SDK session file exists.
+ * Uses synchronous check for simple existence test.
  */
 export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {
   try {
     const sessionPath = getSDKSessionPath(vaultPath, sessionId);
-    return fs.existsSync(sessionPath);
+    return existsSync(sessionPath);
   } catch {
+    // Invalid session ID or path construction error
     return false;
   }
 }
 
 /**
- * Reads and parses an SDK session file.
+ * Reads and parses an SDK session file asynchronously.
  *
  * @param vaultPath - The vault's absolute path
  * @param sessionId - The session ID
- * @returns Array of SDK native messages, or empty array on error
+ * @returns Result object with messages, skipped line count, and any error
  */
-export function readSDKSession(vaultPath: string, sessionId: string): SDKNativeMessage[] {
+export async function readSDKSession(vaultPath: string, sessionId: string): Promise<SDKSessionReadResult> {
   try {
     const sessionPath = getSDKSessionPath(vaultPath, sessionId);
-    if (!fs.existsSync(sessionPath)) {
-      return [];
+    if (!existsSync(sessionPath)) {
+      return { messages: [], skippedLines: 0 };
     }
 
-    const content = fs.readFileSync(sessionPath, 'utf-8');
+    const content = await fs.readFile(sessionPath, 'utf-8');
     const lines = content.split('\n').filter(line => line.trim());
     const messages: SDKNativeMessage[] = [];
+    let skippedLines = 0;
 
     for (const line of lines) {
       try {
         const msg = JSON.parse(line) as SDKNativeMessage;
         messages.push(msg);
       } catch {
-        // Skip invalid JSON lines
+        skippedLines++;
       }
     }
 
-    return messages;
-  } catch {
-    return [];
+    return { messages, skippedLines };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    return { messages: [], skippedLines: 0, error: errorMsg };
   }
 }
 
@@ -329,6 +342,13 @@ function isToolResultOnlyMessage(sdkMsg: SDKNativeMessage): boolean {
   return hasOnlyToolResults && content.length > 0;
 }
 
+/** Result of loading SDK session messages. */
+export interface SDKSessionLoadResult {
+  messages: ChatMessage[];
+  skippedLines: number;
+  error?: string;
+}
+
 /**
  * Loads and converts all messages from an SDK native session.
  *
@@ -338,18 +358,22 @@ function isToolResultOnlyMessage(sdkMsg: SDKNativeMessage): boolean {
  *
  * @param vaultPath - The vault's absolute path
  * @param sessionId - The session ID
- * @returns Array of ChatMessage objects, sorted by timestamp
+ * @returns Result object with messages, skipped line count, and any error
  */
-export function loadSDKSessionMessages(vaultPath: string, sessionId: string): ChatMessage[] {
-  const sdkMessages = readSDKSession(vaultPath, sessionId);
+export async function loadSDKSessionMessages(vaultPath: string, sessionId: string): Promise<SDKSessionLoadResult> {
+  const result = await readSDKSession(vaultPath, sessionId);
+
+  if (result.error) {
+    return { messages: [], skippedLines: result.skippedLines, error: result.error };
+  }
 
   // First pass: collect all tool results for cross-message matching
-  const toolResults = collectToolResults(sdkMessages);
+  const toolResults = collectToolResults(result.messages);
 
   const chatMessages: ChatMessage[] = [];
 
   // Second pass: convert messages
-  for (const sdkMsg of sdkMessages) {
+  for (const sdkMsg of result.messages) {
     // Skip user messages that only contain tool_result
     if (isToolResultOnlyMessage(sdkMsg)) continue;
 
@@ -362,7 +386,7 @@ export function loadSDKSessionMessages(vaultPath: string, sessionId: string): Ch
   // Sort by timestamp ascending
   chatMessages.sort((a, b) => a.timestamp - b.timestamp);
 
-  return chatMessages;
+  return { messages: chatMessages, skippedLines: result.skippedLines };
 }
 
 /**

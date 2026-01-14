@@ -84,13 +84,13 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }),
-      getConversationById: jest.fn().mockReturnValue(null),
+      getConversationById: jest.fn().mockResolvedValue(null),
       getConversationList: jest.fn().mockReturnValue([]),
-      findEmptyConversation: jest.fn().mockReturnValue(null),
+      findEmptyConversation: jest.fn().mockResolvedValue(null),
       updateConversation: jest.fn().mockResolvedValue(undefined),
       renameConversation: jest.fn().mockResolvedValue(undefined),
       agentService: {
-        getSessionId: jest.fn().mockReturnValue(null),
+        getSessionId: jest.fn().mockResolvedValue(null),
         setSessionId: jest.fn(),
       },
       settings: {
@@ -117,7 +117,7 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     }) as any,
     getMcpServerSelector: () => ({
       clearEnabled: jest.fn(),
-      getEnabledServers: jest.fn().mockReturnValue(new Set()),
+      getEnabledServers: jest.fn().mockResolvedValue(new Set()),
       setEnabledServers: jest.fn(),
     }) as any,
     getExternalContextSelector: () => ({
@@ -420,7 +420,7 @@ describe('ConversationController - Title Generation', () => {
       });
       const controllerNoService = new ConversationController(depsNoService);
 
-      (depsNoService.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (depsNoService.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Old Title',
         messages: [
@@ -436,7 +436,7 @@ describe('ConversationController - Title Generation', () => {
 
     it('should not regenerate if enableAutoTitleGeneration is false', async () => {
       deps.plugin.settings.enableAutoTitleGeneration = false;
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Old Title',
         messages: [
@@ -455,7 +455,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should not regenerate if conversation not found', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue(null);
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue(null);
 
       await controller.regenerateTitle('non-existent');
 
@@ -463,7 +463,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should not regenerate if conversation has less than 2 messages', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Title',
         messages: [{ role: 'user', content: 'Hello' }],
@@ -475,7 +475,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should not regenerate if no user message found', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Title',
         messages: [
@@ -490,7 +490,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should not regenerate if no assistant message found', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Title',
         messages: [
@@ -505,7 +505,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should not regenerate if assistant text is empty', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Title',
         messages: [
@@ -520,7 +520,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should set pending status before generating', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Old Title',
         messages: [
@@ -537,7 +537,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should call titleService.generateTitle with correct params', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Old Title',
         messages: [
@@ -557,7 +557,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should rename conversation with generated title', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Old Title',
         messages: [
@@ -581,7 +581,7 @@ describe('ConversationController - Title Generation', () => {
     });
 
     it('should extract text from contentBlocks if content is empty', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockReturnValue({
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Title',
         messages: [
@@ -682,7 +682,7 @@ describe('ConversationController - MCP Server Persistence', () => {
   describe('loadActive', () => {
     it('should restore enabled MCP servers from conversation', async () => {
       deps.state.currentConversationId = 'conv-1';
-      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'conv-1',
         messages: [],
         sessionId: null,
@@ -699,7 +699,7 @@ describe('ConversationController - MCP Server Persistence', () => {
 
     it('should clear MCP servers when conversation has none', async () => {
       deps.state.currentConversationId = 'conv-1';
-      (deps.plugin.getConversationById as jest.Mock).mockReturnValue({
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'conv-1',
         messages: [],
         sessionId: null,
@@ -955,7 +955,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
     it('should use persistent paths for empty conversation (msg=0)', async () => {
       deps.state.currentConversationId = 'existing-conv';
-      deps.plugin.getConversationById = jest.fn().mockReturnValue({
+      deps.plugin.getConversationById = jest.fn().mockResolvedValue({
         id: 'existing-conv',
         messages: [],
         sessionId: null,
@@ -970,7 +970,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
     it('should restore saved paths for conversation with messages (msg>0)', async () => {
       deps.state.currentConversationId = 'existing-conv';
-      deps.plugin.getConversationById = jest.fn().mockReturnValue({
+      deps.plugin.getConversationById = jest.fn().mockResolvedValue({
         id: 'existing-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
@@ -985,7 +985,7 @@ describe('ConversationController - Persistent External Context Paths', () => {
 
     it('should restore empty paths for conversation with messages but no saved paths', async () => {
       deps.state.currentConversationId = 'existing-conv';
-      deps.plugin.getConversationById = jest.fn().mockReturnValue({
+      deps.plugin.getConversationById = jest.fn().mockResolvedValue({
         id: 'existing-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,

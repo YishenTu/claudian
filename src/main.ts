@@ -34,7 +34,7 @@ import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
-import { loadSDKSessionMessages, sdkSessionExists } from './utils/sdkSession';
+import { loadSDKSessionMessages, sdkSessionExists, type SDKSessionLoadResult } from './utils/sdkSession';
 
 /**
  * Main plugin class for Claudian.
@@ -542,7 +542,7 @@ export default class ClaudianPlugin extends Plugin {
     return firstUserMsg.content.substring(0, 50) + (firstUserMsg.content.length > 50 ? '...' : '');
   }
 
-  private loadSdkMessagesForConversation(conversation: Conversation): void {
+  private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
     if (!conversation.isNative || conversation.sdkMessagesLoaded) return;
 
     const vaultPath = getVaultPath(this.app);
@@ -551,10 +551,20 @@ export default class ClaudianPlugin extends Plugin {
 
     if (!sdkSessionExists(vaultPath, sdkSessionToLoad)) return;
 
-    const sdkMessages = loadSDKSessionMessages(vaultPath, sdkSessionToLoad);
+    const result: SDKSessionLoadResult = await loadSDKSessionMessages(vaultPath, sdkSessionToLoad);
+
+    // Notify user of issues
+    if (result.error) {
+      new Notice(`Failed to load conversation history: ${result.error}`);
+      return;
+    }
+    if (result.skippedLines > 0) {
+      new Notice(`Some messages could not be loaded (${result.skippedLines} corrupted)`);
+    }
+
     const filteredSdkMessages = conversation.legacyCutoffAt != null
-      ? sdkMessages.filter(msg => msg.timestamp > conversation.legacyCutoffAt!)
-      : sdkMessages;
+      ? result.messages.filter(msg => msg.timestamp > conversation.legacyCutoffAt!)
+      : result.messages;
     const merged = this.dedupeMessages([
       ...conversation.messages,
       ...filteredSdkMessages,
@@ -619,7 +629,7 @@ export default class ClaudianPlugin extends Plugin {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
 
-    this.loadSdkMessagesForConversation(conversation);
+    await this.loadSdkMessagesForConversation(conversation);
 
     // Session management is now per-tab in TabManager
     clearDiffState(); // Clear UI diff state when switching conversations
@@ -714,14 +724,22 @@ export default class ClaudianPlugin extends Plugin {
    *
    * For native sessions, loads messages from SDK storage if not already loaded.
    */
-  getConversationById(id: string): Conversation | null {
+  async getConversationById(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id) || null;
 
     if (conversation) {
-      this.loadSdkMessagesForConversation(conversation);
+      await this.loadSdkMessagesForConversation(conversation);
     }
 
     return conversation;
+  }
+
+  /**
+   * Gets a conversation by ID without loading SDK messages.
+   * Use this for UI code that only needs metadata (title, etc.).
+   */
+  getConversationSync(id: string): Conversation | null {
+    return this.conversations.find(c => c.id === id) || null;
   }
 
   /** Finds an existing empty conversation (no messages). */

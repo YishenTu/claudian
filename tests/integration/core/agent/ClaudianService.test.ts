@@ -772,20 +772,9 @@ describe('ClaudianService', () => {
       expect(chunks.some((c) => c.type === 'done')).toBe(true);
     });
 
-    it('invalidates session on session-expired error messages', async () => {
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        { type: 'error', error: 'Session expired' },
-      ], { appendResult: false });
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('trigger error')) {
-        chunks.push(chunk);
-      }
-
-      expect(chunks.some((c) => c.type === 'error' && c.content === 'Session expired')).toBe(true);
-      expect(service.getSessionId()).toBeNull();
-    });
+    // Note: Session expiration is handled via thrown errors in catch blocks,
+    // not via message types. The SDK throws on session expiration which is
+    // caught by isSessionExpiredError() in the query error handlers.
   });
 
   describe('closePersistentQuery with preserveHandlers', () => {

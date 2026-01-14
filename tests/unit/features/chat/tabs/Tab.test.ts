@@ -305,7 +305,8 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       persistentExternalContextPaths: [],
     },
     mcpService: { getMcpServers: jest.fn().mockReturnValue([]) },
-    getConversationById: jest.fn().mockReturnValue(null),
+    getConversationById: jest.fn().mockResolvedValue(null),
+    getConversationSync: jest.fn().mockReturnValue(null),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue({}),
     ...overrides,
@@ -473,7 +474,7 @@ describe('Tab - Service Initialization', () => {
       }));
 
       const plugin = createMockPlugin({
-        getConversationById: jest.fn().mockReturnValue({
+        getConversationById: jest.fn().mockResolvedValue({
           id: 'conv-123',
           sessionId: 'session-456',
         }),
@@ -671,7 +672,7 @@ describe('Tab - Title', () => {
 
     it('should return conversation title when available', () => {
       const plugin = createMockPlugin({
-        getConversationById: jest.fn().mockReturnValue({
+        getConversationSync: jest.fn().mockReturnValue({
           id: 'conv-123',
           title: 'My Conversation',
         }),
@@ -688,7 +689,7 @@ describe('Tab - Title', () => {
 
     it('should return "New Chat" when conversation has no title', () => {
       const plugin = createMockPlugin({
-        getConversationById: jest.fn().mockReturnValue({
+        getConversationSync: jest.fn().mockReturnValue({
           id: 'conv-123',
           title: null,
         }),
