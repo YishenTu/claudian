@@ -9,11 +9,8 @@ import * as os from 'os';
 import {
   deleteSDKSession,
   encodeVaultPathForSDK,
-  findSDKSessionPath,
   getSDKProjectsPath,
   getSDKSessionPath,
-  getSDKSessionPaths,
-  getVaultEncodings,
   isValidSessionId,
   loadSDKSessionMessages,
   parseSDKMessageToChat,
@@ -76,66 +73,6 @@ describe('sdkSession', () => {
       // Windows paths have colons after drive letter
       const encoded = encodeVaultPathForSDK('C:\\Users\\test\\vault');
       expect(encoded).not.toContain(':');
-    });
-  });
-
-  describe('getVaultEncodings', () => {
-    it('returns single encoding for Unix paths', () => {
-      const encodings = getVaultEncodings('/Users/test/vault');
-      expect(encodings).toHaveLength(1);
-      expect(encodings[0]).toBe('-Users-test-vault');
-    });
-
-    it('returns two encodings for Windows paths with colon', () => {
-      // path.resolve on Unix will prepend cwd, so we check the behavior
-      const encodings = getVaultEncodings('C:\\Users\\test\\vault');
-      // Should return both with and without colon replacement
-      expect(encodings.length).toBeGreaterThanOrEqual(1);
-      // First encoding should have no colons
-      expect(encodings[0]).not.toContain(':');
-    });
-  });
-
-  describe('getSDKSessionPaths', () => {
-    it('returns paths for all vault encodings', () => {
-      const paths = getSDKSessionPaths('/Users/test/vault', 'session-123');
-      expect(paths).toHaveLength(1);
-      expect(paths[0]).toBe('/Users/test/.claude/projects/-Users-test-vault/session-123.jsonl');
-    });
-
-    it('throws on invalid session ID', () => {
-      expect(() => getSDKSessionPaths('/Users/test/vault', '../invalid')).toThrow();
-    });
-  });
-
-  describe('findSDKSessionPath', () => {
-    it('returns path when session exists', () => {
-      mockExistsSync.mockReturnValue(true);
-      const result = findSDKSessionPath('/Users/test/vault', 'session-123');
-      expect(result).toBe('/Users/test/.claude/projects/-Users-test-vault/session-123.jsonl');
-    });
-
-    it('returns null when session does not exist', () => {
-      mockExistsSync.mockReturnValue(false);
-      const result = findSDKSessionPath('/Users/test/vault', 'session-123');
-      expect(result).toBeNull();
-    });
-
-    it('returns null for invalid session ID', () => {
-      const result = findSDKSessionPath('/Users/test/vault', '../invalid');
-      expect(result).toBeNull();
-    });
-
-    it('tries multiple encodings and returns first existing', () => {
-      // Simulate Windows path where first encoding doesn't exist but second does
-      mockExistsSync
-        .mockReturnValueOnce(false)  // First encoding
-        .mockReturnValueOnce(true);   // Second encoding
-
-      const result = findSDKSessionPath('C:\\Users\\test\\vault', 'session-123');
-      // Should find a path (the second encoding)
-      expect(result).not.toBeNull();
-      expect(mockExistsSync).toHaveBeenCalledTimes(2);
     });
   });
 

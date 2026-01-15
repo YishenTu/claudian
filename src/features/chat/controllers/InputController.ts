@@ -222,8 +222,12 @@ export class InputController {
       ? editorContextOverride
       : selectionController.getContext();
 
-    // Wrap query in XML tag
-    let promptToSend = `<query>\n${content}\n</query>`;
+    const externalContextPaths = externalContextSelector?.getExternalContexts();
+    const hasExternalContexts = externalContextPaths && externalContextPaths.length > 0;
+
+    // Only wrap in <query> when there are other XML context tags
+    const hasXmlContext = !!editorContext || (shouldSendCurrentNote && !!currentNotePath) || hasExternalContexts;
+    let promptToSend = hasXmlContext ? `<query>\n${content}\n</query>` : content;
     let currentNoteForMessage: string | undefined;
 
     // Prepend editor context if available
@@ -235,12 +239,6 @@ export class InputController {
       promptToSend = prependCurrentNote(promptToSend, currentNotePath);
       currentNoteForMessage = currentNotePath;
     }
-
-    // Get and sanitize external context paths (trim, filter empty, dedupe)
-    const rawExternalPaths = externalContextSelector?.getExternalContexts() || [];
-    const externalContextPaths = [...new Set(
-      rawExternalPaths.map(p => p.trim()).filter(p => p.length > 0)
-    )];
 
     if (options?.promptPrefix) {
       promptToSend = `${options.promptPrefix}\n\n${promptToSend}`;
