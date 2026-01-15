@@ -478,8 +478,8 @@ describe('Tab - Service Initialization', () => {
 
       await initializeTabService(tab, options.plugin, options.mcpManager);
 
-      // PreWarm should be called without session ID - just to spin up the process
-      expect(mockPreWarm).toHaveBeenCalledWith();
+      // PreWarm should be called with persistent external context paths
+      expect(mockPreWarm).toHaveBeenCalledWith(undefined, []);
     });
   });
 });

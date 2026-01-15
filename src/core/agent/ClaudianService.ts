@@ -185,8 +185,12 @@ export class ClaudianService {
   /**
    * Pre-warm the persistent query for faster follow-up messages.
    * Call this on plugin load with the active conversation session ID.
+   *
+   * @param resumeSessionId - Optional session ID to resume
+   * @param externalContextPaths - Optional external context paths to include.
+   *        Pass persistent paths here to avoid restart on first message.
    */
-  async preWarm(resumeSessionId?: string): Promise<void> {
+  async preWarm(resumeSessionId?: string, externalContextPaths?: string[]): Promise<void> {
     if (this.persistentQuery) {
       return;
     }
@@ -201,7 +205,12 @@ export class ClaudianService {
       return;
     }
 
-    await this.startPersistentQuery(vaultPath, resolvedClaudePath, resumeSessionId);
+    // Track external context paths for dynamic updates
+    if (externalContextPaths && externalContextPaths.length > 0) {
+      this.currentExternalContextPaths = externalContextPaths;
+    }
+
+    await this.startPersistentQuery(vaultPath, resolvedClaudePath, resumeSessionId, externalContextPaths);
   }
 
   /**
