@@ -97,6 +97,9 @@ export class InstructionRefineService {
       tools: [], // No tools needed for instruction refinement
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      settingSources: this.plugin.settings.loadUserClaudeSettings
+        ? ['user', 'project']
+        : ['project'],
     };
 
     if (this.sessionId) {

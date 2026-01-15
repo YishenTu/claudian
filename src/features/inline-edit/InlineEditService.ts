@@ -120,6 +120,9 @@ export class InlineEditService {
       tools: [...READ_ONLY_TOOLS], // Only read-only tools needed
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      settingSources: this.plugin.settings.loadUserClaudeSettings
+        ? ['user', 'project']
+        : ['project'],
       hooks: {
         PreToolUse: [
           this.createReadOnlyHook(),
