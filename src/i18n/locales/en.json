@@ -144,8 +144,8 @@
     },
     "advanced": "Advanced",
     "show1MModel": {
-      "name": "Show 1M context model",
-      "desc": "Show Sonnet (1M) in the model selector. Requires Max subscription."
+      "name": "Enable Sonnet with 1M context window",
+      "desc": "Replace standard Sonnet with Sonnet (1M) in the model selector. Same pricing under 200k tokens. Requires Max subscription."
     },
     "maxTabs": {
       "name": "Maximum chat tabs",

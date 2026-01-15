@@ -150,6 +150,7 @@ export interface PersistentQueryConfig {
   allowedExportPaths: string[];
   settingSources: string;
   claudeCliPath: string;
+  show1MModel: boolean;  // Whether 1M beta flag is always included
 }
 
 // ============================================

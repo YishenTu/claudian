@@ -13,9 +13,9 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import type { ClaudianView } from '../chat/ClaudianView';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
+import type { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
@@ -503,7 +503,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.plugin.settings.show1MModel = value;
             await this.plugin.saveSettings();
 
-            // Refresh model selector to show/hide 1M model option
+            // Refresh model selector to show/hide model options
             const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
             view?.refreshModelSelector();
           })

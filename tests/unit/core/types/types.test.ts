@@ -13,7 +13,6 @@ import {
   createPermissionRule,
   DEFAULT_SETTINGS,
   getCliPlatformKey,
-  is1MModel,
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
@@ -611,61 +610,33 @@ describe('types.ts', () => {
   });
 
   describe('1M Model Utilities', () => {
-    describe('is1MModel', () => {
-      it('should return true for models ending with -1m', () => {
-        expect(is1MModel('sonnet-1m')).toBe(true);
-        expect(is1MModel('opus-1m')).toBe(true);
-        expect(is1MModel('haiku-1m')).toBe(true);
-      });
-
-      it('should return false for models not ending with -1m', () => {
-        expect(is1MModel('sonnet')).toBe(false);
-        expect(is1MModel('opus')).toBe(false);
-        expect(is1MModel('haiku')).toBe(false);
-        expect(is1MModel('claude-sonnet-4-5')).toBe(false);
-      });
-
-      it('should return false for empty string', () => {
-        expect(is1MModel('')).toBe(false);
-      });
-
-      it('should be case-sensitive', () => {
-        expect(is1MModel('sonnet-1M')).toBe(false);
-        expect(is1MModel('SONNET-1m')).toBe(true);
-      });
-
-      it('should not match -1m in middle of string', () => {
-        expect(is1MModel('sonnet-1m-beta')).toBe(false);
-      });
-    });
-
     describe('resolveModelWithBetas', () => {
-      it('should return model with betas for 1M model', () => {
-        const result = resolveModelWithBetas('sonnet-1m');
+      it('should return model with betas when include1MBeta is true', () => {
+        const result = resolveModelWithBetas('sonnet', true);
         expect(result.model).toBe('sonnet');
         expect(result.betas).toBeDefined();
         expect(result.betas).toContain(BETA_1M_CONTEXT);
       });
 
-      it('should strip -1m suffix from model name', () => {
-        expect(resolveModelWithBetas('sonnet-1m').model).toBe('sonnet');
-        expect(resolveModelWithBetas('opus-1m').model).toBe('opus');
-        expect(resolveModelWithBetas('haiku-1m').model).toBe('haiku');
+      it('should return model without betas when include1MBeta is false', () => {
+        const result = resolveModelWithBetas('sonnet', false);
+        expect(result.model).toBe('sonnet');
+        expect(result.betas).toBeUndefined();
       });
 
-      it('should return model without betas for non-1M model', () => {
+      it('should return model without betas by default', () => {
         const result = resolveModelWithBetas('sonnet');
         expect(result.model).toBe('sonnet');
         expect(result.betas).toBeUndefined();
       });
 
-      it('should preserve full model names for non-1M models', () => {
-        expect(resolveModelWithBetas('claude-sonnet-4-5').model).toBe('claude-sonnet-4-5');
-        expect(resolveModelWithBetas('claude-opus-4-5').model).toBe('claude-opus-4-5');
+      it('should preserve model name', () => {
+        expect(resolveModelWithBetas('claude-sonnet-4-5', true).model).toBe('claude-sonnet-4-5');
+        expect(resolveModelWithBetas('claude-opus-4-5', false).model).toBe('claude-opus-4-5');
       });
 
       it('should return single beta flag in array', () => {
-        const result = resolveModelWithBetas('sonnet-1m');
+        const result = resolveModelWithBetas('sonnet', true);
         expect(result.betas).toHaveLength(1);
       });
     });

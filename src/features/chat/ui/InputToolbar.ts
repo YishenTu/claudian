@@ -52,7 +52,7 @@ export class ModelSelector {
 
   /** Returns available models (custom from env vars, or defaults). */
   private getAvailableModels() {
-    let models: { value: string; label: string; description: string; is1M?: boolean }[] = [];
+    let models: { value: string; label: string; description: string }[] = [];
 
     if (this.callbacks.getEnvironmentVariables) {
       const envVarsStr = this.callbacks.getEnvironmentVariables();
@@ -68,10 +68,12 @@ export class ModelSelector {
       models = [...DEFAULT_CLAUDE_MODELS];
     }
 
-    // Filter out 1M models if show1MModel setting is disabled
+    // When 1M context is enabled, update sonnet label to show "(1M)"
     const settings = this.callbacks.getSettings();
-    if (!settings.show1MModel) {
-      models = models.filter(m => !m.is1M);
+    if (settings.show1MModel) {
+      models = models.map(m =>
+        m.value === 'sonnet' ? { ...m, label: 'Sonnet (1M)' } : m
+      );
     }
 
     return models;

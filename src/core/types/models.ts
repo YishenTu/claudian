@@ -8,10 +8,9 @@ import type { SdkBeta } from '@anthropic-ai/claude-agent-sdk';
 export type ClaudeModel = string;
 
 /** Default Claude model options. */
-export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string; is1M?: boolean }[] = [
+export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
   { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
   { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },
-  { value: 'sonnet-1m', label: 'Sonnet (1M)', description: '1M context window', is1M: true },
   { value: 'opus', label: 'Opus', description: 'Most capable' },
 ];
 
@@ -19,20 +18,15 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
 export const BETA_1M_CONTEXT: SdkBeta = 'context-1m-2025-08-07';
 
 /**
- * Checks if a model is a 1M context variant.
- */
-export function is1MModel(model: string): boolean {
-  return model.endsWith('-1m');
-}
-
-/**
  * Resolves a model to its base model and optional beta flags.
- * For 1M variants (e.g., 'sonnet-1m'), returns the base model with the 1M beta flag.
+ *
+ * @param model - The model identifier
+ * @param include1MBeta - If true, include 1M beta flag for 1M context window
  */
-export function resolveModelWithBetas(model: string): { model: string; betas?: SdkBeta[] } {
-  if (is1MModel(model)) {
+export function resolveModelWithBetas(model: string, include1MBeta = false): { model: string; betas?: SdkBeta[] } {
+  if (include1MBeta) {
     return {
-      model: model.replace('-1m', ''),
+      model,
       betas: [BETA_1M_CONTEXT],
     };
   }
@@ -55,6 +49,5 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
 export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   'haiku': 'off',
   'sonnet': 'low',
-  'sonnet-1m': 'low',  // Same as sonnet base model
   'opus': 'medium',
 };

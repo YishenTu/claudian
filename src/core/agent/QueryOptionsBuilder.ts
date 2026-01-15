@@ -20,7 +20,7 @@ import type { McpServerManager } from '../mcp';
 import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudianSettings, PermissionMode } from '../types';
-import { is1MModel, resolveModelWithBetas, THINKING_BUDGETS } from '../types';
+import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
 import {
   computeSystemPromptKey,
   type PersistentQueryConfig,
@@ -132,10 +132,9 @@ export class QueryOptionsBuilder {
     // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
 
-    // 1M model requires beta flag change which can't be updated dynamically
-    const currentIs1M = is1MModel(currentConfig.model || '');
-    const newIs1M = is1MModel(newConfig.model || '');
-    if (currentIs1M !== newIs1M) return true;
+    // Beta flag presence is determined by show1MModel setting.
+    // If it changes, restart is required.
+    if (currentConfig.show1MModel !== newConfig.show1MModel) return true;
 
     // Export paths affect system prompt
     const oldExport = [...(currentConfig.allowedExportPaths || [])].sort().join('|');
@@ -193,6 +192,7 @@ export class QueryOptionsBuilder {
       allowedExportPaths: ctx.settings.allowedExportPaths,
       settingSources: ctx.settings.loadUserClaudeSettings ? 'user,project' : 'project',
       claudeCliPath: ctx.cliPath,
+      show1MModel: ctx.settings.show1MModel,
     };
   }
 
@@ -206,7 +206,8 @@ export class QueryOptionsBuilder {
     const permissionMode = ctx.settings.permissionMode;
 
     // Resolve model and optional beta flags (e.g., 1M context)
-    const resolved = resolveModelWithBetas(ctx.settings.model);
+    // If show1MModel is enabled, always include 1M beta to allow model switching without restart
+    const resolved = resolveModelWithBetas(ctx.settings.model, ctx.settings.show1MModel);
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt({
@@ -294,8 +295,9 @@ export class QueryOptionsBuilder {
     const permissionMode = ctx.settings.permissionMode;
 
     // Resolve model and optional beta flags (e.g., 1M context)
+    // If show1MModel is enabled, always include 1M beta to allow model switching without restart
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;
-    const resolved = resolveModelWithBetas(selectedModel);
+    const resolved = resolveModelWithBetas(selectedModel, ctx.settings.show1MModel);
 
     // Build system prompt with settings
     const systemPrompt = buildSystemPrompt({

@@ -54,7 +54,7 @@ import type {
   ImageAttachment,
   StreamChunk,
 } from '../types';
-import { is1MModel, resolveModelWithBetas, THINKING_BUDGETS } from '../types';
+import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
 import { MessageChannel } from './MessageChannel';
 import {
   type ColdStartQueryContext,
@@ -977,17 +977,10 @@ export class ClaudianService {
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
     const thinkingTokens = budgetConfig?.tokens ?? null;
 
-    // Handle model changes:
-    // - 1M beta flag changes require restart (cannot be updated dynamically)
-    // - Same-beta-status model changes can use setModel() dynamically
-    const currentIs1M = this.currentConfig ? is1MModel(this.currentConfig.model || '') : false;
-    const newIs1M = is1MModel(selectedModel);
-    const betaStatusChanged = currentIs1M !== newIs1M;
-
-    // Only update model dynamically if beta status is unchanged
-    // (1M changes are handled by needsRestart below which triggers restartPersistentQuery)
-    if (!betaStatusChanged && this.currentConfig && selectedModel !== this.currentConfig.model) {
-      const resolved = resolveModelWithBetas(selectedModel);
+    // Model can always be updated dynamically (show1MModel change triggers restart)
+    const show1MModel = this.plugin.settings.show1MModel;
+    if (this.currentConfig && selectedModel !== this.currentConfig.model) {
+      const resolved = resolveModelWithBetas(selectedModel, show1MModel);
       try {
         await this.persistentQuery.setModel(resolved.model);
         this.currentConfig.model = selectedModel;
