@@ -144,8 +144,8 @@
     },
     "advanced": "進階",
     "show1MModel": {
-      "name": "顯示 1M 上下文模型",
-      "desc": "在模型選擇器中顯示 Sonnet (1M)。需要 Max 訂閱。"
+      "name": "啟用具有 1M 上下文視窗的 Sonnet",
+      "desc": "在模型選擇器中將標準 Sonnet 替換為 Sonnet (1M)。在 200k 權杖以下價格相同。需要 Max 訂閱。"
     },
     "maxTabs": {
       "name": "最大聊天標籤數",

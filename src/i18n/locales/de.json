@@ -144,8 +144,8 @@
     },
     "advanced": "Erweitert",
     "show1MModel": {
-      "name": "1M-Kontextmodell anzeigen",
-      "desc": "Sonnet (1M) in der Modellauswahl anzeigen. Erfordert Max-Abonnement."
+      "name": "Sonnet mit 1M-Kontextfenster aktivieren",
+      "desc": "Standard-Sonnet durch Sonnet (1M) in der Modellauswahl ersetzen. Gleiche Preise unter 200k Token. Erfordert Max-Abonnement."
     },
     "maxTabs": {
       "name": "Maximale Chat-Tabs",

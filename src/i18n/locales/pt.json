@@ -144,8 +144,8 @@
     },
     "advanced": "Avançado",
     "show1MModel": {
-      "name": "Mostrar modelo de contexto 1M",
-      "desc": "Mostrar Sonnet (1M) no seletor de modelos. Requer assinatura Max."
+      "name": "Habilitar Sonnet com janela de contexto de 1M",
+      "desc": "Substituir Sonnet padrão por Sonnet (1M) no seletor de modelos. Mesmo preço abaixo de 200k tokens. Requer assinatura Max."
     },
     "maxTabs": {
       "name": "Máximo de abas de chat",

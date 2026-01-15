@@ -144,8 +144,8 @@
     },
     "advanced": "Avancé",
     "show1MModel": {
-      "name": "Afficher le modèle contexte 1M",
-      "desc": "Afficher Sonnet (1M) dans le sélecteur de modèles. Nécessite un abonnement Max."
+      "name": "Activer Sonnet avec fenêtre de contexte de 1M",
+      "desc": "Remplacer Sonnet standard par Sonnet (1M) dans le sélecteur de modèles. Même tarif sous 200k tokens. Nécessite un abonnement Max."
     },
     "maxTabs": {
       "name": "Maximum d'onglets de chat",

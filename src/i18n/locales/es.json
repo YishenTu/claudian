@@ -144,8 +144,8 @@
     },
     "advanced": "Avanzado",
     "show1MModel": {
-      "name": "Mostrar modelo de contexto 1M",
-      "desc": "Mostrar Sonnet (1M) en el selector de modelos. Requiere suscripción Max."
+      "name": "Habilitar Sonnet con ventana de contexto de 1M",
+      "desc": "Reemplazar Sonnet estándar con Sonnet (1M) en el selector de modelos. Mismo precio bajo 200k tokens. Requiere suscripción Max."
     },
     "maxTabs": {
       "name": "Máximo de pestañas de chat",

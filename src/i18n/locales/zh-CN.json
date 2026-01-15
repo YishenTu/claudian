@@ -144,8 +144,8 @@
     },
     "advanced": "高级",
     "show1MModel": {
-      "name": "显示 1M 上下文模型",
-      "desc": "在模型选择器中显示 Sonnet (1M)。需要 Max 订阅。"
+      "name": "启用具有 1M 上下文窗口的 Sonnet",
+      "desc": "在模型选择器中将标准 Sonnet 替换为 Sonnet (1M)。在 200k 令牌以下价格相同。需要 Max 订阅。"
     },
     "maxTabs": {
       "name": "最大聊天标签数",

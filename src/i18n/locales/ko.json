@@ -144,8 +144,8 @@
     },
     "advanced": "고급",
     "show1MModel": {
-      "name": "1M 컨텍스트 모델 표시",
-      "desc": "모델 선택기에 Sonnet (1M)을 표시합니다. Max 구독이 필요합니다."
+      "name": "1M 컨텍스트 창을 가진 Sonnet 활성화",
+      "desc": "모델 선택기에서 표준 Sonnet을 Sonnet (1M)으로 교체합니다. 200k 토큰 미만에서는 동일한 가격. Max 구독이 필요합니다."
     },
     "maxTabs": {
       "name": "최대 채팅 탭 수",
