@@ -317,14 +317,6 @@ Select text or place cursor + hotkey → edit/insert without sidebar chat.
 - Selection mode: `<replacement>` tags
 - Cursor mode: `<insertion>` tags
 
-### File Checkpoint Rewind
-Restore files to their state before agent modifications.
-- **Hover action**: Rewind button appears on user messages with checkpoints
-- **File restoration**: SDK tracks file modifications and restores original content
-- **Conversation truncation**: Messages after the rewind point are removed
-- **Session restart**: SDK session restarts aligned to the checkpoint
-- **Accessibility**: Button has aria-label, title, and keyboard support
-
 ### Skills
 Reusable capability modules that Claude discovers and invokes automatically based on context.
 - **User skills**: `~/.claude/skills/{name}/SKILL.md` (all vaults)

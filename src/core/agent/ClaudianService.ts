@@ -17,7 +17,6 @@ import type {
   Options,
   PermissionResult,
   Query,
-  RewindFilesResult,
   SDKMessage,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -220,8 +219,7 @@ export class ClaudianService {
     vaultPath: string,
     cliPath: string,
     resumeSessionId?: string,
-    externalContextPaths?: string[],
-    resumeSessionAt?: string
+    externalContextPaths?: string[]
   ): Promise<void> {
     if (this.persistentQuery) {
       return;
@@ -250,8 +248,7 @@ export class ClaudianService {
       vaultPath,
       cliPath,
       resumeSessionId,
-      externalContextPaths,
-      resumeSessionAt
+      externalContextPaths
     );
 
     // Create the persistent query with the message channel
@@ -412,8 +409,7 @@ export class ClaudianService {
     vaultPath: string,
     cliPath: string,
     resumeSessionId?: string,
-    externalContextPaths?: string[],
-    resumeSessionAt?: string
+    externalContextPaths?: string[]
   ): Options {
     const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
     const hooks = this.buildHooks(vaultPath);
@@ -423,7 +419,6 @@ export class ClaudianService {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
       resumeSessionId,
-      resumeSessionAt,
       canUseTool: permissionMode !== 'yolo' ? this.createApprovalCallback() : undefined,
       hooks,
       externalContextPaths,
@@ -1277,72 +1272,6 @@ export class ClaudianService {
     this.preWarm().catch(() => {
       // Pre-warm is best-effort, ignore failures
     });
-  }
-
-  /**
-   * Rewinds files to a previous checkpoint identified by user message UUID.
-   * The SDK restores file contents to the state before that turn's modifications.
-   *
-   * @param userMessageUuid - The UUID of the user message to rewind to
-   * @param options - Optional settings (dryRun to preview without applying)
-   * @returns Result with canRewind status, files changed, and any errors
-   */
-  async rewindFiles(
-    userMessageUuid: string,
-    options?: { dryRun?: boolean }
-  ): Promise<RewindFilesResult> {
-    if (!this.persistentQuery) {
-      return {
-        canRewind: false,
-        error: 'No active session. Please send a message first.',
-      };
-    }
-
-    try {
-      return await this.persistentQuery.rewindFiles(userMessageUuid, options);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        canRewind: false,
-        error: `Rewind failed: ${errorMessage}`,
-      };
-    }
-  }
-
-  /**
-   * Restarts the persistent query after a rewind, aligning SDK state.
-   * The resumeSessionAt tells the SDK to ignore messages after that point.
-   *
-   * @param resumeSessionAt - The UUID to resume from (SDK ignores messages after this)
-   * @throws Error if restart fails (caller should handle and notify user)
-   */
-  async restartAfterRewind(resumeSessionAt: string): Promise<void> {
-    const sessionId = this.sessionManager.getSessionId();
-    const externalContextPaths = this.currentExternalContextPaths;
-
-    // Close the current query
-    this.closePersistentQuery('rewind');
-
-    const vaultPath = getVaultPath(this.plugin.app);
-    const cliPath = this.plugin.getResolvedClaudeCliPath();
-
-    if (!vaultPath || !cliPath) {
-      throw new Error('Cannot restart: missing vault path or CLI path');
-    }
-
-    try {
-      await this.startPersistentQuery(
-        vaultPath,
-        cliPath,
-        sessionId ?? undefined,
-        externalContextPaths,
-        resumeSessionAt
-      );
-    } catch (error) {
-      // Re-throw with context so caller can notify user
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to restart session after rewind: ${message}`);
-    }
   }
 
   /**

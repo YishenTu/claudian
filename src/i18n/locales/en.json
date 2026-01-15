@@ -177,17 +177,5 @@
       "ru": "Русский",
       "pt": "Português"
     }
-  },
-  "rewind": {
-    "ariaLabel": "Restore to this checkpoint",
-    "noSession": "No active session. Cannot rewind.",
-    "whileStreaming": "Cannot rewind while streaming.",
-    "missingId": "Cannot rewind: missing message identifier.",
-    "notFound": "Message not found.",
-    "cannotRewind": "Cannot rewind to this point.",
-    "restartFailed": "Session restart failed: {error}",
-    "successOne": "Restored 1 file to checkpoint.",
-    "successMany": "Restored {count} files to checkpoint.",
-    "successNone": "Restored to checkpoint."
   }
 }

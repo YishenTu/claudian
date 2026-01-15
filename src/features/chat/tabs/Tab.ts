@@ -538,11 +538,6 @@ export function initializeTabControllers(
     {}
   );
 
-  // Wire up rewind callback for file checkpoint restoration
-  tab.renderer.setRewindCallback((messageId, sdkUuid) => {
-    void tab.controllers.conversationController?.rewindToMessage(messageId, sdkUuid);
-  });
-
   // Input controller - needs the tab's service
   const generateId = () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 

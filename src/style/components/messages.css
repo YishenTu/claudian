@@ -131,40 +131,6 @@
   color: var(--text-accent);
 }
 
-/* Rewind button for user messages */
-.claudian-rewind-btn {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  padding: 4px;
-  background: var(--background-primary);
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
-  border-radius: 3px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.claudian-rewind-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* Show rewind button on hover */
-.claudian-message-user:hover .claudian-rewind-btn {
-  opacity: 1;
-}
-
-.claudian-rewind-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
 .claudian-text-block+.claudian-tool-call {
   margin-top: 8px;
 }

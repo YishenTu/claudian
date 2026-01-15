@@ -43,8 +43,6 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];
-  /** SDK message UUID for rewind targeting. */
-  sdkUuid?: string;
 }
 
 /** Persisted conversation with messages and session state. */
@@ -72,8 +70,6 @@ export interface Conversation {
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
   enabledMcpServers?: string[];
-  /** After rewind, resume SDK session from this UUID on next query. */
-  resumeAt?: string;
   /** True if this conversation uses SDK-native storage (messages in ~/.claude/projects/). */
   isNative?: boolean;
   /** Timestamp of the last legacy JSONL message (used to merge SDK history). */
@@ -134,8 +130,7 @@ export type StreamChunk =
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
   | { type: 'done' }
-  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
-  | { type: 'turn_uuid'; uuid: string };
+  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null };
 
 /** Context window usage information. */
 export interface UsageInfo {

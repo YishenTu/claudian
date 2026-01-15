@@ -60,8 +60,6 @@ export interface PersistentQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   resumeSessionId?: string;
-  /** Resume at specific message UUID (for rewind). */
-  resumeSessionAt?: string;
   /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
   /** Pre-built hooks array. */
@@ -78,8 +76,6 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   sessionId?: string;
-  /** Resume at specific message UUID (for rewind). */
-  resumeSessionAt?: string;
   /** Optional model override for cold-start queries. */
   modelOverride?: string;
   /** Approval callback for normal mode. */
@@ -233,7 +229,6 @@ export class QueryOptionsBuilder {
         PATH: ctx.enhancedPath,
       },
       includePartialMessages: true, // Enable streaming
-      enableFileCheckpointing: true, // Enable file snapshots for rewind
     };
 
     // Add beta flags if present (e.g., 1M context window)
@@ -266,11 +261,6 @@ export class QueryOptionsBuilder {
     // Resume session if provided
     if (ctx.resumeSessionId) {
       options.resume = ctx.resumeSessionId;
-    }
-
-    // Resume at specific message (for rewind)
-    if (ctx.resumeSessionAt) {
-      options.resumeSessionAt = ctx.resumeSessionAt;
     }
 
     // Add external context paths as additionalDirectories
@@ -327,7 +317,6 @@ export class QueryOptionsBuilder {
         PATH: ctx.enhancedPath,
       },
       includePartialMessages: true, // Enable streaming
-      enableFileCheckpointing: true, // Enable file snapshots for rewind
     };
 
     // Add beta flags if present (e.g., 1M context window)
@@ -375,11 +364,6 @@ export class QueryOptionsBuilder {
     // Resume previous session if we have a session ID
     if (ctx.sessionId) {
       options.resume = ctx.sessionId;
-    }
-
-    // Resume at specific message (for rewind)
-    if (ctx.resumeSessionAt) {
-      options.resumeSessionAt = ctx.resumeSessionAt;
     }
 
     // Add external context paths as additionalDirectories

@@ -5,12 +5,11 @@
  * history dropdown UI, and greeting/welcome state.
  */
 
-import { Notice, setIcon } from 'obsidian';
+import { setIcon } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { Conversation } from '../../../core/types';
-import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
@@ -745,103 +744,6 @@ export class ConversationController {
         this.updateHistoryDropdown();
       }
     );
-  }
-
-  /**
-   * Rewinds files and conversation to a previous checkpoint.
-   * Restores file contents and truncates conversation history.
-   *
-   * @param messageId - The id of the user message to rewind to
-   * @param sdkUuid - The SDK UUID for file restoration
-   */
-  async rewindToMessage(messageId: string, sdkUuid: string): Promise<void> {
-    const { plugin, state, renderer } = this.deps;
-    const agentService = this.getAgentService();
-
-    if (!agentService) {
-      new Notice(t('rewind.noSession'));
-      return;
-    }
-
-    // Check streaming state and set rewinding flag atomically to prevent race conditions
-    if (state.isStreaming) {
-      new Notice(t('rewind.whileStreaming'));
-      return;
-    }
-    state.isRewinding = true;
-
-    try {
-      // Validate UUID before SDK call
-      if (!sdkUuid) {
-        new Notice(t('rewind.missingId'));
-        return;
-      }
-
-      // Find the message index
-      const messageIndex = state.messages.findIndex(m => m.id === messageId);
-      if (messageIndex === -1) {
-        new Notice(t('rewind.notFound'));
-        return;
-      }
-
-      // Call SDK to restore files
-      const result = await agentService.rewindFiles(sdkUuid);
-
-      if (!result.canRewind) {
-        new Notice(result.error || t('rewind.cannotRewind'));
-        return;
-      }
-
-      // Truncate conversation messages (keep up to and including the target message)
-      const truncatedMessages = state.messages.slice(0, messageIndex + 1);
-      state.messages = truncatedMessages;
-
-      // Save truncated conversation (without resumeAt since we're restarting immediately)
-      if (state.currentConversationId) {
-        const updates: Partial<Conversation> = {
-          messages: state.getPersistedMessages(),
-        };
-        await plugin.updateConversation(state.currentConversationId, updates);
-      }
-
-      // Restart SDK session with resumeSessionAt to align state
-      try {
-        await agentService.restartAfterRewind(sdkUuid);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        new Notice(t('rewind.restartFailed').replace('{error}', errorMessage));
-        // Continue with UI update even if restart fails - files are already restored
-      }
-
-      // Clear existing UI and state maps before re-render to prevent stale DOM elements
-      const messagesEl = this.deps.getMessagesEl();
-      messagesEl.empty();
-      state.clearMaps();
-
-      // Re-render messages
-      const welcomeEl = renderer.renderMessages(
-        state.messages,
-        () => this.getGreeting()
-      );
-      this.deps.setWelcomeEl(welcomeEl);
-      this.updateWelcomeVisibility();
-
-      // Update todo panel (may have changed)
-      state.currentTodos = extractLastTodosFromMessages(state.messages);
-
-      // Show notification with details
-      const filesChanged = result.filesChanged?.length || 0;
-      if (filesChanged === 1) {
-        new Notice(t('rewind.successOne'));
-      } else if (filesChanged > 1) {
-        new Notice(t('rewind.successMany').replace('{count}', String(filesChanged)));
-      } else {
-        new Notice(t('rewind.successNone'));
-      }
-    } finally {
-      // Always clear rewinding flag
-      state.isRewinding = false;
-    }
   }
 
   /** Formats a timestamp for display. */
