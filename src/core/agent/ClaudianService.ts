@@ -496,6 +496,13 @@ export class ClaudianService {
           await this.routeMessage(message);
         }
       } catch (error) {
+        // Skip error handling if this consumer was replaced by a new one.
+        // This prevents race conditions where the OLD consumer's error handler
+        // interferes with the NEW handler after a restart (e.g., from applyDynamicUpdates).
+        if (this.persistentQuery !== queryForThisConsumer && this.persistentQuery !== null) {
+          return;
+        }
+
         // Skip restart if cold-start is in progress (it will handle session capture)
         if (!this.shuttingDown && !this.coldStartInProgress) {
           const handler = this.responseHandlers[this.responseHandlers.length - 1];
