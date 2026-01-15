@@ -65,6 +65,44 @@ describe('InstructionRefineService', () => {
       expect(options?.allowDangerouslySkipPermissions).toBe(true);
     });
 
+    it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {
+      mockPlugin.settings.loadUserClaudeSettings = false;
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: '<instruction>- Be concise.</instruction>' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.refineInstruction('be concise', '');
+
+      const options = getLastOptions();
+      expect(options?.settingSources).toEqual(['project']);
+    });
+
+    it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
+      mockPlugin.settings.loadUserClaudeSettings = true;
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: '<instruction>- Be concise.</instruction>' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.refineInstruction('be concise', '');
+
+      const options = getLastOptions();
+      expect(options?.settingSources).toEqual(['user', 'project']);
+    });
+
     it('should include existing instructions and allow markdown blocks', async () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },

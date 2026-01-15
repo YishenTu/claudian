@@ -471,6 +471,54 @@ describe('InlineEditService', () => {
       expect(options?.permissionMode).toBe('bypassPermissions');
     });
 
+    it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {
+      mockPlugin.settings.loadUserClaudeSettings = false;
+      service = new InlineEditService(mockPlugin);
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>fixed</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      const options = getLastOptions();
+      expect(options?.settingSources).toEqual(['project']);
+    });
+
+    it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
+      mockPlugin.settings.loadUserClaudeSettings = true;
+      service = new InlineEditService(mockPlugin);
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>fixed</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      const options = getLastOptions();
+      expect(options?.settingSources).toEqual(['user', 'project']);
+    });
+
     it('should enable thinking when configured', async () => {
       mockPlugin.settings.thinkingBudget = 'medium';
       service = new InlineEditService(mockPlugin);

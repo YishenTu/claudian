@@ -115,6 +115,9 @@ Generate a title for this conversation:`;
       tools: [], // No tools needed for title generation
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
+      settingSources: this.plugin.settings.loadUserClaudeSettings
+        ? ['user', 'project']
+        : ['project'],
       persistSession: false, // Don't save title generation queries to session history
     };
 

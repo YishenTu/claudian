@@ -20,6 +20,7 @@ export interface Options {
   canUseTool?: CanUseTool;
   systemPrompt?: string | { content: string; cacheControl?: { type: string } };
   mcpServers?: Record<string, unknown>;
+  settingSources?: ('user' | 'project' | 'local')[];
   hooks?: {
     PreToolUse?: HookCallbackMatcher[];
   };
