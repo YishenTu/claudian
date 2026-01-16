@@ -535,4 +535,54 @@ Just a simple prompt with $ARGUMENTS.`;
       );
     });
   });
+
+  describe('empty metadata handling', () => {
+    it('adds blank line in frontmatter when no metadata exists', async () => {
+      const commandNoMetadata: SlashCommand = {
+        id: 'cmd-simple',
+        name: 'simple',
+        content: 'Just a prompt',
+      };
+
+      await storage.save(commandNoMetadata);
+
+      // Should produce valid frontmatter that can be parsed back
+      // With blank line: ---\n\n---\nJust a prompt
+      const writeCall = mockAdapter.write.mock.calls[0];
+      const writtenContent = writeCall[1] as string;
+
+      // Verify the structure: should have blank line between --- markers
+      expect(writtenContent).toBe('---\n\n---\nJust a prompt');
+    });
+
+    it('produces parseable frontmatter even with no metadata', async () => {
+      const commandNoMetadata: SlashCommand = {
+        id: 'cmd-simple',
+        name: 'simple',
+        content: 'Just a prompt',
+      };
+
+      await storage.save(commandNoMetadata);
+
+      const writeCall = mockAdapter.write.mock.calls[0];
+      const writtenContent = writeCall[1] as string;
+
+      // Simulate loading it back - should parse correctly
+      mockAdapter.read.mockResolvedValue(writtenContent);
+      const loaded = await storage.loadFromFile('.claude/commands/simple.md');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.content).toBe('Just a prompt');
+    });
+
+    it('does not add extra blank line when metadata exists', async () => {
+      await storage.save(mockCommand1);
+
+      const writeCall = mockAdapter.write.mock.calls[0];
+      const writtenContent = writeCall[1] as string;
+
+      // Should not have double newlines between description and ---
+      expect(writtenContent).not.toMatch(/description: .*\n\n---/);
+    });
+  });
 });

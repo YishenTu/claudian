@@ -164,6 +164,12 @@ export class SlashCommandStorage {
       lines.push(`model: ${command.model}`);
     }
 
+    // Ensure at least one blank line between --- markers when no metadata exists
+    // (the frontmatter regex requires \n before the closing ---)
+    if (lines.length === 1) {
+      lines.push('');
+    }
+
     lines.push('---');
 
     // Extract prompt content (strip existing frontmatter if present)
