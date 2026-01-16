@@ -108,6 +108,7 @@ export interface ChatStateCallbacks {
   onUsageChanged?: (usage: UsageInfo | null) => void;
   onTodosChanged?: (todos: TodoItem[] | null) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
+  onAutoScrollChanged?: (enabled: boolean) => void;
 }
 
 /** Options for query execution. */

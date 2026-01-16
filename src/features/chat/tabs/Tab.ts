@@ -185,15 +185,31 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.maxHeight = `${maxHeight}px`;
 }
 
+/** Arrow-down SVG icon for scroll-to-bottom button. */
+const ARROW_DOWN_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>`;
+
 /**
  * Builds the DOM structure for a tab.
  */
 function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
-  // Messages area
-  const messagesEl = contentEl.createDiv({ cls: 'claudian-messages' });
+  // Messages wrapper (for scroll-to-bottom button positioning)
+  const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
+
+  // Messages area (inside wrapper)
+  const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
 
   // Welcome message placeholder
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
+
+  // Scroll-to-bottom button (positioned absolutely in wrapper, overlays bottom of messages)
+  const scrollToBottomEl = messagesWrapperEl.createEl('button', {
+    cls: 'claudian-scroll-to-bottom',
+    attr: {
+      'aria-label': 'Scroll to bottom',
+      type: 'button',
+    },
+  });
+  scrollToBottomEl.textContent = 'Scroll to bottom';
 
   // Todo panel container (fixed between messages and input)
   const todoPanelContainerEl = contentEl.createDiv({ cls: 'claudian-todo-panel-container' });
@@ -229,6 +245,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     navRowEl,
     contextRowEl,
     selectionIndicatorEl: null,
+    scrollToBottomEl,
     eventCleanups: [],
   };
 }
@@ -465,12 +482,25 @@ export function initializeTabUI(
   // Initialize input toolbar
   initializeInputToolbar(tab, plugin);
 
+  // Helper to update scroll-to-bottom button visibility
+  const updateScrollToBottomVisibility = () => {
+    if (dom.scrollToBottomEl) {
+      // Show button when user has scrolled up (auto-scroll disabled)
+      const shouldShow = !state.autoScrollEnabled;
+      dom.scrollToBottomEl.classList.toggle('visible', shouldShow);
+    }
+  };
+
   // Update ChatState callbacks for UI updates
   state.callbacks = {
     ...state.callbacks,
     onUsageChanged: (usage) => tab.ui.contextUsageMeter?.update(usage),
     onTodosChanged: (todos) => tab.ui.todoPanel?.updateTodos(todos),
+    onAutoScrollChanged: () => updateScrollToBottomVisibility(),
   };
+
+  // Sync initial button visibility with current state
+  updateScrollToBottomVisibility();
 }
 
 /**
@@ -661,14 +691,12 @@ export function wireTabInputEvents(tab: TabData): void {
   dom.inputEl.addEventListener('focus', focusHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('focus', focusHandler));
 
-  // Scroll listener for auto-scroll control during streaming
+  // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   const SCROLL_THRESHOLD = 20; // pixels from bottom to consider "at bottom"
   const RE_ENABLE_DELAY = 150; // ms to wait before re-enabling auto-scroll
   let reEnableTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const scrollHandler = () => {
-    if (!state.isStreaming) return; // Only track during streaming
-
     const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
     const isAtBottom = scrollHeight - scrollTop - clientHeight <= SCROLL_THRESHOLD;
 
@@ -694,6 +722,18 @@ export function wireTabInputEvents(tab: TabData): void {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
     if (reEnableTimeout) clearTimeout(reEnableTimeout);
   });
+
+  // Scroll-to-bottom button click handler
+  if (dom.scrollToBottomEl) {
+    const scrollToBottomHandler = () => {
+      // Scroll to bottom
+      dom.messagesEl.scrollTop = dom.messagesEl.scrollHeight;
+      // Re-enable auto-scroll
+      state.autoScrollEnabled = true;
+    };
+    dom.scrollToBottomEl.addEventListener('click', scrollToBottomHandler);
+    dom.eventCleanups.push(() => dom.scrollToBottomEl?.removeEventListener('click', scrollToBottomHandler));
+  }
 }
 
 /**

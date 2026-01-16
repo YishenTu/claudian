@@ -244,6 +244,23 @@ function createMockElement(): any {
       add: (cls: string) => classList.add(cls),
       remove: (cls: string) => classList.delete(cls),
       contains: (cls: string) => classList.has(cls),
+      toggle: (cls: string, force?: boolean) => {
+        if (force === undefined) {
+          if (classList.has(cls)) {
+            classList.delete(cls);
+            return false;
+          } else {
+            classList.add(cls);
+            return true;
+          }
+        }
+        if (force) {
+          classList.add(cls);
+        } else {
+          classList.delete(cls);
+        }
+        return force;
+      },
     },
     empty: () => { children.length = 0; },
     createDiv: (opts?: { cls?: string; text?: string }) => {
@@ -544,7 +561,7 @@ describe('Tab - Event Wiring', () => {
 
       wireTabInputEvents(tab);
 
-      expect(tab.dom.eventCleanups.length).toBe(4); // keydown, input, focus, scroll
+      expect(tab.dom.eventCleanups.length).toBe(5); // keydown, input, focus, scroll, scroll-to-bottom click
     });
   });
 });
@@ -1780,6 +1797,116 @@ describe('Tab - Controller Configuration', () => {
       const newWelcomeEl = { id: 'new-welcome-el' } as any;
       config.setWelcomeEl(newWelcomeEl);
       expect(tab.dom.welcomeEl).toBe(newWelcomeEl);
+    });
+  });
+});
+
+describe('Tab - Scroll to Bottom Button', () => {
+  describe('visibility', () => {
+    it('should sync initial visibility with autoScrollEnabled state', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set autoScrollEnabled to false before initializing UI
+      tab.state.autoScrollEnabled = false;
+
+      initializeTabUI(tab, options.plugin);
+
+      // Button should have 'visible' class since autoScrollEnabled is false
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
+    });
+
+    it('should hide button when autoScrollEnabled is true (initial state)', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Default state is autoScrollEnabled = true
+      initializeTabUI(tab, options.plugin);
+
+      // Button should not have 'visible' class
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+    });
+
+    it('should show button when autoScrollEnabled changes to false', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Initially hidden
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+
+      // Change state
+      tab.state.autoScrollEnabled = false;
+
+      // Now visible
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
+    });
+
+    it('should hide button when autoScrollEnabled changes to true', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Set to false first
+      tab.state.autoScrollEnabled = false;
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
+
+      // Change back to true
+      tab.state.autoScrollEnabled = true;
+
+      // Should be hidden
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+    });
+  });
+
+  describe('click behavior', () => {
+    it('should scroll to bottom and re-enable auto-scroll when clicked', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set up messagesEl with scroll properties
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, writable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 500, writable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, options.plugin);
+      wireTabInputEvents(tab);
+
+      // Disable auto-scroll
+      tab.state.autoScrollEnabled = false;
+
+      // Get the click handler from registered event listeners
+      const eventListeners = (tab.dom.scrollToBottomEl as any).getEventListeners();
+      const clickHandlers = eventListeners.get('click');
+      expect(clickHandlers).toBeDefined();
+      expect(clickHandlers.length).toBe(1);
+
+      // Call the click handler directly
+      clickHandlers[0]();
+
+      // Should have scrolled to bottom
+      expect(tab.dom.messagesEl.scrollTop).toBe(1000);
+
+      // Should have re-enabled auto-scroll
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      // Button should be hidden now
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+    });
+  });
+
+  describe('accessibility', () => {
+    it('should create button element with aria-label', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Check that scrollToBottomEl exists and has correct attributes
+      expect(tab.dom.scrollToBottomEl).toBeDefined();
+      expect(tab.dom.scrollToBottomEl?.tagName).toBe('BUTTON');
     });
   });
 });
