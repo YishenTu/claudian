@@ -3,21 +3,6 @@
   margin: 4px 0;
   background: transparent;
   overflow: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.claudian-write-edit-block::-webkit-scrollbar,
-.claudian-write-edit-block *::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-/* Hide scrollbars on all children during streaming */
-.claudian-write-edit-block * {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
 .claudian-text-block+.claudian-write-edit-block {
@@ -111,14 +96,6 @@
   padding: 0;
   background: transparent;
   overflow: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.claudian-write-edit-content::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 .claudian-write-edit-diff-row {
@@ -134,14 +111,6 @@
   max-height: 300px;
   overflow-y: auto;
   overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.claudian-write-edit-diff::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 .claudian-write-edit-loading,

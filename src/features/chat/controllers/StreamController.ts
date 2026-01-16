@@ -79,6 +79,8 @@ export class StreamController {
 
     switch (chunk.type) {
       case 'thinking':
+        // Flush pending tools before rendering new content type
+        this.flushPendingTools(msg);
         if (state.currentTextEl) {
           this.finalizeCurrentTextBlock(msg);
         }
@@ -86,6 +88,8 @@ export class StreamController {
         break;
 
       case 'text':
+        // Flush pending tools before rendering new content type
+        this.flushPendingTools(msg);
         if (state.currentThinkingState) {
           this.finalizeCurrentThinkingBlock(msg);
         }
@@ -100,6 +104,8 @@ export class StreamController {
         this.finalizeCurrentTextBlock(msg);
 
         if (chunk.name === TOOL_TASK) {
+          // Flush pending tools before Task (subagent needs immediate render)
+          this.flushPendingTools(msg);
           // Track subagent spawn for usage filtering
           state.subagentsSpawnedThisStream++;
           const isAsync = this.deps.asyncSubagentManager.isAsyncTask(chunk.input);
@@ -126,14 +132,20 @@ export class StreamController {
       }
 
       case 'blocked':
+        // Flush pending tools before rendering blocked message
+        this.flushPendingTools(msg);
         await this.appendText(`\n\n⚠️ **Blocked:** ${chunk.content}`);
         break;
 
       case 'error':
+        // Flush pending tools before rendering error message
+        this.flushPendingTools(msg);
         await this.appendText(`\n\n❌ **Error:** ${chunk.content}`);
         break;
 
       case 'done':
+        // Flush any remaining pending tools
+        this.flushPendingTools(msg);
         break;
 
       case 'usage': {
@@ -165,13 +177,17 @@ export class StreamController {
   // Tool Use Handling
   // ============================================
 
-  /** Handles regular tool_use chunks. */
+  /**
+   * Handles regular tool_use chunks by buffering them.
+   * Tools are rendered when flushPendingTools is called (on next content type or tool_result).
+   */
   private handleRegularToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): void {
     const { state } = this.deps;
 
+    // Check if this is an update to an existing tool call
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (existingToolCall) {
       const newInput = chunk.input || {};
@@ -186,29 +202,21 @@ export class StreamController {
           }
         }
 
-        // For Write/Edit: render now if we have file_path and haven't rendered yet
-        if (isWriteEditTool(existingToolCall.name) && !state.writeEditStates.has(chunk.id)) {
-          const filePath = existingToolCall.input.file_path as string | undefined;
-          if (filePath && state.currentContentEl) {
-            const writeEditState = createWriteEditBlock(state.currentContentEl, existingToolCall);
-            state.writeEditStates.set(chunk.id, writeEditState);
-            state.toolCallElements.set(chunk.id, writeEditState.wrapperEl);
-          }
-        } else {
-          const toolEl = state.toolCallElements.get(chunk.id);
-          if (toolEl) {
-            // Try regular tool label first, then Write/Edit label
-            const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement | null
-              ?? toolEl.querySelector('.claudian-write-edit-label') as HTMLElement | null;
-            if (labelEl) {
-              labelEl.setText(getToolLabel(existingToolCall.name, existingToolCall.input));
-            }
+        // If already rendered, update the label
+        const toolEl = state.toolCallElements.get(chunk.id);
+        if (toolEl) {
+          const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement | null
+            ?? toolEl.querySelector('.claudian-write-edit-label') as HTMLElement | null;
+          if (labelEl) {
+            labelEl.setText(getToolLabel(existingToolCall.name, existingToolCall.input));
           }
         }
+        // If still pending, the updated input is already in the toolCall object
       }
       return;
     }
 
+    // Create new tool call
     const toolCall: ToolCallInfo = {
       id: chunk.id,
       name: chunk.name,
@@ -219,39 +227,56 @@ export class StreamController {
     msg.toolCalls = msg.toolCalls || [];
     msg.toolCalls.push(toolCall);
 
-    // TodoWrite updates both inline rendering and the persistent bottom panel
+    // Add to contentBlocks for ordering
+    msg.contentBlocks = msg.contentBlocks || [];
+    msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
+
+    // TodoWrite: update panel state immediately (side effect), but still buffer render
     if (chunk.name === TOOL_TODO_WRITE) {
       const todos = parseTodoInput(chunk.input);
       if (todos) {
         this.deps.state.currentTodos = todos;
       }
-      // Render inline like other tools
-      if (state.currentContentEl) {
-        msg.contentBlocks = msg.contentBlocks || [];
-        msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
-        renderToolCall(state.currentContentEl, toolCall, state.toolCallElements);
-      }
-    } else if (state.currentContentEl) {
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
+    }
 
-      if (isWriteEditTool(chunk.name)) {
-        // Delay rendering until we have file_path to avoid empty block with scrollbar
-        const filePath = chunk.input.file_path as string | undefined;
-        if (filePath) {
-          const writeEditState = createWriteEditBlock(state.currentContentEl, toolCall);
-          state.writeEditStates.set(chunk.id, writeEditState);
-          state.toolCallElements.set(chunk.id, writeEditState.wrapperEl);
-        }
-        // else: wait for subsequent chunks with file_path
-      } else {
-        renderToolCall(state.currentContentEl, toolCall, state.toolCallElements);
-      }
+    // Buffer the tool call instead of rendering immediately
+    if (state.currentContentEl) {
+      state.pendingTools.set(chunk.id, {
+        toolCall,
+        parentEl: state.currentContentEl,
+      });
     }
 
     if (state.currentContentEl) {
       this.showThinkingIndicator(state.currentContentEl);
     }
+  }
+
+  /**
+   * Flushes all pending tool calls by rendering them.
+   * Called when a different content type arrives or stream ends.
+   */
+  private flushPendingTools(msg: ChatMessage): void {
+    const { state } = this.deps;
+
+    if (state.pendingTools.size === 0) {
+      return;
+    }
+
+    // Render pending tools in order (Map preserves insertion order)
+    for (const [toolId, pending] of state.pendingTools) {
+      const { toolCall, parentEl } = pending;
+
+      if (isWriteEditTool(toolCall.name)) {
+        const writeEditState = createWriteEditBlock(parentEl, toolCall);
+        state.writeEditStates.set(toolId, writeEditState);
+        state.toolCallElements.set(toolId, writeEditState.wrapperEl);
+      } else {
+        renderToolCall(parentEl, toolCall, state.toolCallElements);
+      }
+    }
+
+    state.pendingTools.clear();
   }
 
   /** Handles tool_result chunks. */
@@ -284,6 +309,20 @@ export class StreamController {
       return;
     }
 
+    // Check if tool is still pending (buffered) - render it now before applying result
+    const pending = state.pendingTools.get(chunk.id);
+    if (pending) {
+      const { toolCall, parentEl } = pending;
+      if (isWriteEditTool(toolCall.name)) {
+        const writeEditState = createWriteEditBlock(parentEl, toolCall);
+        state.writeEditStates.set(chunk.id, writeEditState);
+        state.toolCallElements.set(chunk.id, writeEditState.wrapperEl);
+      } else {
+        renderToolCall(parentEl, toolCall, state.toolCallElements);
+      }
+      state.pendingTools.delete(chunk.id);
+    }
+
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
 
     // Regular tool result
@@ -292,13 +331,6 @@ export class StreamController {
     if (existingToolCall) {
       existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
       existingToolCall.result = chunk.content;
-
-      // For Write/Edit: render now if not rendered yet (fallback for delayed rendering)
-      if (isWriteEditTool(existingToolCall.name) && !state.writeEditStates.has(chunk.id) && state.currentContentEl) {
-        const writeEditState = createWriteEditBlock(state.currentContentEl, existingToolCall);
-        state.writeEditStates.set(chunk.id, writeEditState);
-        state.toolCallElements.set(chunk.id, writeEditState.wrapperEl);
-      }
 
       const writeEditState = state.writeEditStates.get(chunk.id);
       if (writeEditState && isWriteEditTool(existingToolCall.name)) {
@@ -751,5 +783,6 @@ export class StreamController {
     state.currentTextContent = '';
     state.currentThinkingState = null;
     state.activeSubagents.clear();
+    state.pendingTools.clear();
   }
 }

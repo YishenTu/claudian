@@ -8,7 +8,7 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
-import { isWriteEditTool, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';

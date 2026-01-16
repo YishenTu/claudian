@@ -28,6 +28,12 @@ export interface QueuedMessage {
   promptPrefix?: string;
 }
 
+/** Pending tool call waiting to be rendered (buffered until input is complete). */
+export interface PendingToolCall {
+  toolCall: ToolCallInfo;
+  parentEl: HTMLElement;
+}
+
 /** Stored selection state from editor polling. */
 export interface StoredSelection {
   notePath: string;
@@ -74,6 +80,8 @@ export interface ChatStateData {
   activeSubagents: Map<string, SubagentState>;
   asyncSubagentStates: Map<string, AsyncSubagentState>;
   writeEditStates: Map<string, WriteEditState>;
+  /** Pending tool calls buffered until input is complete (for non-streaming-style render). */
+  pendingTools: Map<string, PendingToolCall>;
 
   // Context window usage
   usage: UsageInfo | null;

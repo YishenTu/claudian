@@ -366,13 +366,20 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      // TodoWrite should render inline
+      // Tool is buffered, should be in pendingTools
       expect(msg.contentBlocks).toHaveLength(1);
       expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'todo-1' });
-      expect(renderToolCall).toHaveBeenCalled();
+      expect(deps.state.pendingTools.size).toBe(1);
 
-      // Should update currentTodos for panel
+      // Should update currentTodos for panel immediately (side effect)
       expect(deps.state.currentTodos).toEqual(mockTodos);
+
+      // Flush pending tools by sending a different chunk type (text or done)
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      // Now renderToolCall should have been called
+      expect(renderToolCall).toHaveBeenCalled();
+      expect(deps.state.pendingTools.size).toBe(0);
     });
 
     it('should re-parse TodoWrite on input updates when streaming completes', async () => {

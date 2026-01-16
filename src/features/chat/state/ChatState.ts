@@ -11,6 +11,7 @@ import type {
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
+  PendingToolCall,
   QueuedMessage,
   SubagentState,
   ThinkingBlockState,
@@ -40,6 +41,7 @@ function createInitialState(): ChatStateData {
     activeSubagents: new Map(),
     asyncSubagentStates: new Map(),
     writeEditStates: new Map(),
+    pendingTools: new Map(),
     usage: null,
     ignoreUsageUpdates: false,
     subagentsSpawnedThisStream: 0,
@@ -248,6 +250,10 @@ export class ChatState {
     return this.state.writeEditStates;
   }
 
+  get pendingTools(): Map<string, PendingToolCall> {
+    return this.state.pendingTools;
+  }
+
   // ============================================
   // Usage State
   // ============================================
@@ -342,6 +348,7 @@ export class ChatState {
     this.state.activeSubagents.clear();
     this.state.asyncSubagentStates.clear();
     this.state.writeEditStates.clear();
+    this.state.pendingTools.clear();
   }
 
   /** Resets all state for a new conversation. */
