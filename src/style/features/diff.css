@@ -2,6 +2,7 @@
 .claudian-write-edit-block {
   margin: 4px 0;
   background: transparent;
+  overflow: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -101,6 +102,7 @@
 .claudian-write-edit-content {
   padding: 0;
   background: transparent;
+  overflow: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
