@@ -68,6 +68,7 @@
 
 /* Per-tab content area */
 .claudian-tab-content {
+  position: relative; /* For scroll-to-bottom button positioning */
   display: flex;
   flex-direction: column;
   flex: 1;

@@ -163,6 +163,9 @@ export interface TabDOMElements {
 
   selectionIndicatorEl: HTMLElement | null;
 
+  /** Scroll-to-bottom button (shown when user scrolls up). */
+  scrollToBottomEl: HTMLElement | null;
+
   /** Cleanup functions for event listeners (prevents memory leaks). */
   eventCleanups: Array<() => void>;
 }

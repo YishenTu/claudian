@@ -320,7 +320,11 @@ export class ChatState {
   }
 
   set autoScrollEnabled(value: boolean) {
+    const changed = this.state.autoScrollEnabled !== value;
     this.state.autoScrollEnabled = value;
+    if (changed) {
+      this._callbacks.onAutoScrollChanged?.(value);
+    }
   }
 
   // ============================================
