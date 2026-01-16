@@ -88,10 +88,9 @@ export function createWriteEditBlock(
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
   // Empty initially, populated when diff is computed
 
-  // Status indicator (spinner while running)
+  // Status indicator (empty while running, icon on completion/error)
   const statusEl = headerEl.createDiv({ cls: 'claudian-write-edit-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
-  statusEl.createSpan({ cls: 'claudian-spinner' });
 
   // Content area (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-content' });

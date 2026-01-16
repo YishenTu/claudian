@@ -78,11 +78,6 @@
   height: 16px;
 }
 
-.claudian-write-edit-status.status-running .claudian-spinner {
-  width: 14px;
-  height: 14px;
-}
-
 .claudian-write-edit-status.status-completed {
   color: var(--color-green);
 }

@@ -240,9 +240,6 @@ export function renderToolCall(
   const statusEl = header.createSpan({ cls: 'claudian-tool-status' });
   statusEl.addClass(`status-${toolCall.status}`);
   statusEl.setAttribute('aria-label', `Status: ${toolCall.status}`);
-  if (toolCall.status === 'running') {
-    statusEl.createSpan({ cls: 'claudian-spinner' });
-  }
 
   // Collapsible content
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });

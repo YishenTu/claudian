@@ -264,8 +264,6 @@ export function renderStoredSubagent(
     setIcon(statusEl, 'check');
   } else if (subagent.status === 'error') {
     setIcon(statusEl, 'x');
-  } else {
-    statusEl.createSpan({ cls: 'claudian-spinner' });
   }
 
   // Content
@@ -392,7 +390,7 @@ export function createAsyncSubagentBlock(
   const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
   statusTextEl.setText('Running');
 
-  // Status indicator (spinner initially)
+  // Status indicator (empty while running, icon on completion/error)
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
 
