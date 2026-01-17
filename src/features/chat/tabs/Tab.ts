@@ -26,7 +26,7 @@ import {
   SelectionController,
   StreamController,
 } from '../controllers';
-import { cleanupThinkingBlock, MessageRenderer } from '../rendering';
+import { hideFlavorThinking, MessageRenderer } from '../rendering';
 import { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import { InstructionRefineService } from '../services/InstructionRefineService';
 import { TitleGenerationService } from '../services/TitleGenerationService';
@@ -804,8 +804,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.controllers.navigationController?.dispose();
 
   // Cleanup thinking state
-  cleanupThinkingBlock(tab.state.currentThinkingState);
-  tab.state.currentThinkingState = null;
+  hideFlavorThinking(tab.state.flavorThinkingState);
+  tab.state.flavorThinkingState = null;
 
   // Cleanup UI components
   tab.ui.fileContextManager?.destroy();

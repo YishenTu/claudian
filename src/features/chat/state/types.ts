@@ -15,6 +15,7 @@ import type {
 import type { EditorSelectionContext } from '../../../utils/editor';
 import type {
   AsyncSubagentState,
+  FlavorThinkingState,
   SubagentState,
   ThinkingBlockState,
   WriteEditState,
@@ -69,8 +70,8 @@ export interface ChatStateData {
   currentContentEl: HTMLElement | null;
   currentTextEl: HTMLElement | null;
   currentTextContent: string;
-  currentThinkingState: ThinkingBlockState | null;
-  thinkingEl: HTMLElement | null;
+  /** Merged flavor text + thinking indicator state. */
+  flavorThinkingState: FlavorThinkingState | null;
   queueIndicatorEl: HTMLElement | null;
   /** Debounce timeout for showing thinking indicator after inactivity. */
   thinkingIndicatorTimeout: ReturnType<typeof setTimeout> | null;
@@ -130,6 +131,7 @@ export type {
   AsyncSubagentState,
   ChatMessage,
   EditorSelectionContext,
+  FlavorThinkingState,
   ImageAttachment,
   SubagentInfo,
   SubagentState,

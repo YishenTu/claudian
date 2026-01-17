@@ -181,7 +181,7 @@ jest.mock('@/features/chat/rendering', () => ({
     mockMessageRenderer = { scrollToBottomIfNeeded: jest.fn() };
     return mockMessageRenderer;
   }),
-  cleanupThinkingBlock: jest.fn(),
+  hideFlavorThinking: jest.fn(),
 }));
 
 // Mock controllers

@@ -11,7 +11,7 @@ import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { ChatMessage, Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import { cleanupThinkingBlock } from '../rendering';
+import { hideFlavorThinking } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -102,11 +102,11 @@ export class ConversationController {
       state.asyncSubagentStates.clear();
 
       // Clear streaming state and related DOM references
-      cleanupThinkingBlock(state.currentThinkingState);
+      hideFlavorThinking(state.flavorThinkingState);
       state.currentContentEl = null;
       state.currentTextEl = null;
       state.currentTextContent = '';
-      state.currentThinkingState = null;
+      state.flavorThinkingState = null;
       state.toolCallElements.clear();
       state.activeSubagents.clear();
       state.writeEditStates.clear();

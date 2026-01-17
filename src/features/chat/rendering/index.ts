@@ -29,10 +29,15 @@ export {
   updateSubagentToolResult,
 } from './SubagentRenderer';
 export {
+  appendFlavorThinkingContent,
   appendThinkingContent,
   cleanupThinkingBlock,
+  createFlavorThinkingBlock,
   createThinkingBlock,
+  finalizeFlavorThinking,
   finalizeThinkingBlock,
+  type FlavorThinkingState,
+  hideFlavorThinking,
   type RenderContentFn,
   renderStoredThinkingBlock,
   type ThinkingBlockState,

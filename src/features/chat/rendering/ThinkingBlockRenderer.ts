@@ -2,8 +2,10 @@
  * Claudian - Thinking block renderer
  *
  * Renders extended thinking blocks with live timer and expand/collapse.
+ * Also renders the merged flavor text + thinking indicator.
  */
 
+import { FLAVOR_TEXTS } from '../constants';
 import { collapseElement, setupCollapsible } from './collapsible';
 
 /** Callback for rendering markdown content. */
@@ -134,4 +136,180 @@ export function renderStoredThinkingBlock(
   setupCollapsible(wrapperEl, header, contentEl, state);
 
   return wrapperEl;
+}
+
+// ============================================
+// Merged Flavor Text + Thinking Indicator
+// ============================================
+
+/** State for merged flavor text + thinking indicator. */
+export interface FlavorThinkingState {
+  wrapperEl: HTMLElement;
+  flavorEl: HTMLElement;
+  hintEl: HTMLElement;
+  contentEl: HTMLElement;
+  timerEl: HTMLElement;
+
+  flavorText: string;
+  thinkingContent: string;
+  hasThinkingContent: boolean;
+
+  startTime: number | null;
+  timerInterval: ReturnType<typeof setInterval> | null;
+  isExpanded: boolean;
+  isFinalized: boolean;
+}
+
+/** Create a merged flavor text + thinking indicator. */
+export function createFlavorThinkingBlock(parentEl: HTMLElement): FlavorThinkingState {
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-flavor-thinking' });
+
+  // Header line: flavor text + hint (always visible)
+  const headerEl = wrapperEl.createDiv({ cls: 'claudian-flavor-thinking-header' });
+  const flavorEl = headerEl.createSpan({ cls: 'claudian-flavor-text' });
+  const hintEl = headerEl.createSpan({ cls: 'claudian-thinking-hint' });
+
+  // Set random flavor text
+  const flavorText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
+  flavorEl.setText(flavorText);
+  hintEl.setText(' (esc to interrupt)');
+
+  // Collapsible content container (hidden by default)
+  const contentEl = wrapperEl.createDiv({ cls: 'claudian-flavor-thinking-content' });
+  contentEl.style.display = 'none';
+
+  // Timer inside expanded content
+  const timerEl = contentEl.createDiv({ cls: 'claudian-flavor-thinking-timer' });
+
+  return {
+    wrapperEl,
+    flavorEl,
+    hintEl,
+    contentEl,
+    timerEl,
+    flavorText,
+    thinkingContent: '',
+    hasThinkingContent: false,
+    startTime: null,
+    timerInterval: null,
+    isExpanded: false,
+    isFinalized: false,
+  };
+}
+
+/** Append thinking content to the merged block. Enables expand/collapse on first content. */
+export async function appendFlavorThinkingContent(
+  state: FlavorThinkingState,
+  content: string,
+  renderContent: RenderContentFn
+): Promise<void> {
+  // First thinking chunk - initialize
+  if (!state.hasThinkingContent) {
+    state.hasThinkingContent = true;
+    state.startTime = Date.now();
+
+    // Update hint to show "· thinking"
+    state.hintEl.setText(' (esc to interrupt · thinking)');
+
+    // Make header clickable
+    state.wrapperEl.addClass('claudian-has-thinking');
+    setupFlavorThinkingCollapsible(state);
+
+    // Start timer
+    state.timerEl.setText('Thinking 0s...');
+    state.timerInterval = setInterval(() => {
+      if (state.startTime && !state.isFinalized) {
+        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+        state.timerEl.setText(`Thinking ${elapsed}s...`);
+      }
+    }, 1000);
+  }
+
+  // Accumulate content
+  state.thinkingContent += content;
+
+  // Render content
+  let thinkingTextEl = state.contentEl.querySelector('.claudian-thinking-text') as HTMLElement;
+  if (!thinkingTextEl) {
+    thinkingTextEl = state.contentEl.createDiv({ cls: 'claudian-thinking-text' });
+  }
+  await renderContent(thinkingTextEl, state.thinkingContent);
+}
+
+/** Setup click-to-expand behavior for flavor thinking block. */
+function setupFlavorThinkingCollapsible(state: FlavorThinkingState): void {
+  const headerEl = state.wrapperEl.querySelector('.claudian-flavor-thinking-header') as HTMLElement;
+  if (!headerEl) return;
+
+  const toggleExpand = () => {
+    if (!state.hasThinkingContent) return;
+
+    state.isExpanded = !state.isExpanded;
+    if (state.isExpanded) {
+      state.wrapperEl.addClass('expanded');
+      state.contentEl.style.display = 'block';
+      headerEl.setAttribute('aria-expanded', 'true');
+    } else {
+      state.wrapperEl.removeClass('expanded');
+      state.contentEl.style.display = 'none';
+      headerEl.setAttribute('aria-expanded', 'false');
+    }
+  };
+
+  headerEl.addEventListener('click', toggleExpand);
+  headerEl.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand();
+    }
+  });
+
+  headerEl.setAttribute('tabindex', '0');
+  headerEl.setAttribute('role', 'button');
+  headerEl.setAttribute('aria-expanded', 'false');
+  headerEl.setAttribute('aria-label', 'Thinking - click to expand');
+}
+
+/** Finalize thinking (stop timer, update labels). Returns duration in seconds. */
+export function finalizeFlavorThinking(state: FlavorThinkingState): number {
+  // Stop timer
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+  }
+
+  // Calculate duration
+  const duration = state.startTime ? Math.floor((Date.now() - state.startTime) / 1000) : 0;
+  state.isFinalized = true;
+
+  // Update timer label to final text
+  state.timerEl.setText(`Thought for ${duration}s`);
+
+  // Remove ", thinking" from hint
+  state.hintEl.setText(' (esc to interrupt)');
+
+  // Collapse
+  if (state.isExpanded) {
+    state.isExpanded = false;
+    state.wrapperEl.removeClass('expanded');
+    state.contentEl.style.display = 'none';
+    const headerEl = state.wrapperEl.querySelector('.claudian-flavor-thinking-header');
+    if (headerEl) {
+      headerEl.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  return duration;
+}
+
+/** Hide and clean up the flavor thinking block. */
+export function hideFlavorThinking(state: FlavorThinkingState | null): void {
+  if (!state) return;
+
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+  }
+
+  state.wrapperEl.remove();
 }

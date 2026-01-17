@@ -11,20 +11,20 @@ import { parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import { FLAVOR_TEXTS } from '../constants';
 import {
   addSubagentToolCall,
-  appendThinkingContent,
+  appendFlavorThinkingContent,
   type AsyncSubagentState,
   createAsyncSubagentBlock,
+  createFlavorThinkingBlock,
   createSubagentBlock,
-  createThinkingBlock,
   createWriteEditBlock,
   finalizeAsyncSubagent,
+  finalizeFlavorThinking,
   finalizeSubagentBlock,
-  finalizeThinkingBlock,
   finalizeWriteEditBlock,
   getToolLabel,
+  hideFlavorThinking,
   isBlockedToolResult,
   markAsyncSubagentOrphaned,
   renderToolCall,
@@ -90,7 +90,7 @@ export class StreamController {
       case 'text':
         // Flush pending tools before rendering new content type
         this.flushPendingTools();
-        if (state.currentThinkingState) {
+        if (state.flavorThinkingState?.hasThinkingContent) {
           this.finalizeCurrentThinkingBlock(msg);
         }
         msg.content += chunk.content;
@@ -98,7 +98,7 @@ export class StreamController {
         break;
 
       case 'tool_use': {
-        if (state.currentThinkingState) {
+        if (state.flavorThinkingState?.hasThinkingContent) {
           this.finalizeCurrentThinkingBlock(msg);
         }
         this.finalizeCurrentTextBlock(msg);
@@ -379,39 +379,52 @@ export class StreamController {
   // Thinking Block Management
   // ============================================
 
-  /** Appends thinking content. */
+  /** Appends thinking content to the merged flavor/thinking block. */
   async appendThinking(content: string, msg: ChatMessage): Promise<void> {
     const { state, renderer } = this.deps;
     if (!state.currentContentEl) return;
 
-    this.hideThinkingIndicator();
-    if (!state.currentThinkingState) {
-      state.currentThinkingState = createThinkingBlock(
-        state.currentContentEl,
-        (el, md) => renderer.renderContent(el, md)
-      );
+    // Cancel any pending show timeout since we're appending content now
+    if (state.thinkingIndicatorTimeout) {
+      clearTimeout(state.thinkingIndicatorTimeout);
+      state.thinkingIndicatorTimeout = null;
     }
 
-    await appendThinkingContent(state.currentThinkingState, content, (el, md) => renderer.renderContent(el, md));
+    // Create flavor thinking block if not exists (no delay for thinking chunks)
+    if (!state.flavorThinkingState) {
+      state.flavorThinkingState = createFlavorThinkingBlock(state.currentContentEl);
+      // Queue indicator inside the wrapper
+      state.queueIndicatorEl = state.flavorThinkingState.wrapperEl.createDiv({
+        cls: 'claudian-queue-indicator',
+      });
+      this.deps.updateQueueIndicator();
+    }
+
+    await appendFlavorThinkingContent(
+      state.flavorThinkingState,
+      content,
+      (el, md) => renderer.renderContent(el, md)
+    );
   }
 
   /** Finalizes the current thinking block. */
   finalizeCurrentThinkingBlock(msg?: ChatMessage): void {
     const { state } = this.deps;
-    if (!state.currentThinkingState) return;
+    if (!state.flavorThinkingState || !state.flavorThinkingState.hasThinkingContent) return;
 
-    const durationSeconds = finalizeThinkingBlock(state.currentThinkingState);
+    const durationSeconds = finalizeFlavorThinking(state.flavorThinkingState);
 
-    if (msg && state.currentThinkingState.content) {
+    if (msg && state.flavorThinkingState.thinkingContent) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({
         type: 'thinking',
-        content: state.currentThinkingState.content,
+        content: state.flavorThinkingState.thinkingContent,
         durationSeconds,
       });
     }
 
-    state.currentThinkingState = null;
+    // Clear reference to prevent reuse in next message (DOM stays in place)
+    state.flavorThinkingState = null;
   }
 
   // ============================================
@@ -761,10 +774,9 @@ export class StreamController {
   private static readonly THINKING_INDICATOR_DELAY = 400;
 
   /**
-   * Schedules showing the thinking indicator after a delay.
+   * Schedules showing the merged flavor/thinking indicator after a delay.
    * If content arrives before the delay, the indicator won't show.
    * This prevents the indicator from appearing during active streaming.
-   * Note: Flavor text is hidden when model thinking block is active (thinking takes priority).
    */
   showThinkingIndicator(): void {
     const { state } = this.deps;
@@ -778,14 +790,9 @@ export class StreamController {
       state.thinkingIndicatorTimeout = null;
     }
 
-    // Don't show flavor text while model thinking block is active
-    if (state.currentThinkingState) {
-      return;
-    }
-
-    // If indicator already exists, just re-append it to the bottom
-    if (state.thinkingEl) {
-      state.currentContentEl.appendChild(state.thinkingEl);
+    // If indicator already exists, just re-append it to the bottom (keeps thinking state)
+    if (state.flavorThinkingState) {
+      state.currentContentEl.appendChild(state.flavorThinkingState.wrapperEl);
       this.deps.updateQueueIndicator();
       return;
     }
@@ -793,21 +800,20 @@ export class StreamController {
     // Schedule showing the indicator after a delay
     state.thinkingIndicatorTimeout = setTimeout(() => {
       state.thinkingIndicatorTimeout = null;
-      // Double-check we still have a content element, no indicator exists, and no thinking block
-      if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
+      // Double-check we still have a content element and no indicator exists
+      if (!state.currentContentEl || state.flavorThinkingState) return;
 
-      state.thinkingEl = state.currentContentEl.createDiv({ cls: 'claudian-thinking' });
-      const randomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
-      state.thinkingEl.createSpan({ text: randomText });
-      state.thinkingEl.createSpan({ text: ' (esc to interrupt)', cls: 'claudian-thinking-hint' });
+      state.flavorThinkingState = createFlavorThinkingBlock(state.currentContentEl);
 
       // Queue indicator line (initially hidden)
-      state.queueIndicatorEl = state.thinkingEl.createDiv({ cls: 'claudian-queue-indicator' });
+      state.queueIndicatorEl = state.flavorThinkingState.wrapperEl.createDiv({
+        cls: 'claudian-queue-indicator',
+      });
       this.deps.updateQueueIndicator();
     }, StreamController.THINKING_INDICATOR_DELAY);
   }
 
-  /** Hides the thinking indicator and cancels any pending show timeout. */
+  /** Hides the thinking indicator (only if no thinking content). */
   hideThinkingIndicator(): void {
     const { state } = this.deps;
 
@@ -817,9 +823,10 @@ export class StreamController {
       state.thinkingIndicatorTimeout = null;
     }
 
-    if (state.thinkingEl) {
-      state.thinkingEl.remove();
-      state.thinkingEl = null;
+    // Only hide if NO thinking content (if has content, keep visible)
+    if (state.flavorThinkingState && !state.flavorThinkingState.hasThinkingContent) {
+      hideFlavorThinking(state.flavorThinkingState);
+      state.flavorThinkingState = null;
     }
     state.queueIndicatorEl = null;
   }
@@ -840,11 +847,17 @@ export class StreamController {
   /** Resets streaming state after completion. */
   resetStreamingState(): void {
     const { state } = this.deps;
-    this.hideThinkingIndicator();
+    // Clean up flavor thinking block completely
+    if (state.thinkingIndicatorTimeout) {
+      clearTimeout(state.thinkingIndicatorTimeout);
+      state.thinkingIndicatorTimeout = null;
+    }
+    hideFlavorThinking(state.flavorThinkingState);
+    state.flavorThinkingState = null;
+    state.queueIndicatorEl = null;
     state.currentContentEl = null;
     state.currentTextEl = null;
     state.currentTextContent = '';
-    state.currentThinkingState = null;
     state.activeSubagents.clear();
     state.pendingTools.clear();
   }

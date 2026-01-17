@@ -11,10 +11,10 @@ import type {
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
+  FlavorThinkingState,
   PendingToolCall,
   QueuedMessage,
   SubagentState,
-  ThinkingBlockState,
   TodoItem,
   WriteEditState,
 } from './types';
@@ -33,8 +33,7 @@ function createInitialState(): ChatStateData {
     currentContentEl: null,
     currentTextEl: null,
     currentTextContent: '',
-    currentThinkingState: null,
-    thinkingEl: null,
+    flavorThinkingState: null,
     queueIndicatorEl: null,
     thinkingIndicatorTimeout: null,
     toolCallElements: new Map(),
@@ -199,20 +198,12 @@ export class ChatState {
     this.state.currentTextContent = value;
   }
 
-  get currentThinkingState(): ThinkingBlockState | null {
-    return this.state.currentThinkingState;
+  get flavorThinkingState(): FlavorThinkingState | null {
+    return this.state.flavorThinkingState;
   }
 
-  set currentThinkingState(value: ThinkingBlockState | null) {
-    this.state.currentThinkingState = value;
-  }
-
-  get thinkingEl(): HTMLElement | null {
-    return this.state.thinkingEl;
-  }
-
-  set thinkingEl(value: HTMLElement | null) {
-    this.state.thinkingEl = value;
+  set flavorThinkingState(value: FlavorThinkingState | null) {
+    this.state.flavorThinkingState = value;
   }
 
   get queueIndicatorEl(): HTMLElement | null {
@@ -341,7 +332,7 @@ export class ChatState {
     this.state.currentContentEl = null;
     this.state.currentTextEl = null;
     this.state.currentTextContent = '';
-    this.state.currentThinkingState = null;
+    this.state.flavorThinkingState = null;
     this.state.isStreaming = false;
     this.state.cancelRequested = false;
     // Clear thinking indicator timeout
