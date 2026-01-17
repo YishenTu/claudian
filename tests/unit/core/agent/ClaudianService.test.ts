@@ -233,6 +233,56 @@ describe('ClaudianService', () => {
       expect(startPersistentQuerySpy).toHaveBeenCalledTimes(2);
     });
 
+    it('should pass preserveHandlers: true to closePersistentQuery on force restart', async () => {
+      const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
+      const closePersistentQuerySpy = jest.spyOn(service as any, 'closePersistentQuery');
+
+      startPersistentQuerySpy.mockImplementation(async () => {
+        (service as any).persistentQuery = {};
+      });
+
+      closePersistentQuerySpy.mockImplementation(() => {
+        (service as any).persistentQuery = null;
+      });
+
+      // Start the query first
+      await service.ensureReady();
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1);
+
+      // Force restart with preserveHandlers: true (crash recovery scenario)
+      await service.ensureReady({ force: true, preserveHandlers: true });
+
+      expect(closePersistentQuerySpy).toHaveBeenCalledWith('forced restart', { preserveHandlers: true });
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('should pass preserveHandlers through config change restart', async () => {
+      const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
+      const closePersistentQuerySpy = jest.spyOn(service as any, 'closePersistentQuery');
+      const buildConfigSpy = jest.spyOn(service as any, 'buildPersistentQueryConfig');
+      const needsRestartSpy = jest.spyOn(service as any, 'needsRestart');
+
+      const mockConfig = { model: 'test', externalContextPaths: [] };
+      buildConfigSpy.mockReturnValue(mockConfig);
+      needsRestartSpy.mockReturnValue(true);
+
+      startPersistentQuerySpy.mockImplementation(async () => {
+        (service as any).persistentQuery = {};
+      });
+
+      closePersistentQuerySpy.mockImplementation(() => {
+        (service as any).persistentQuery = null;
+      });
+
+      // Start the query first
+      await service.ensureReady({ externalContextPaths: [] });
+
+      // Config change with preserveHandlers: true
+      await service.ensureReady({ externalContextPaths: ['/new/path'], preserveHandlers: true });
+
+      expect(closePersistentQuerySpy).toHaveBeenCalledWith('config changed', { preserveHandlers: true });
+    });
+
     it('should return false when CLI unavailable after force close', async () => {
       const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
       const closePersistentQuerySpy = jest.spyOn(service as any, 'closePersistentQuery');

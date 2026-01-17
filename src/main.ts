@@ -446,6 +446,12 @@ export default class ClaudianPlugin extends Plugin {
     const tabManager = view?.getTabManager();
 
     if (tabManager) {
+      for (const tab of tabManager.getAllTabs()) {
+        if (tab.state.isStreaming) {
+          tab.controllers.inputController?.cancelStreaming();
+        }
+      }
+
       let failedTabs = 0;
       if (changed) {
         for (const tab of tabManager.getAllTabs()) {
@@ -478,7 +484,10 @@ export default class ClaudianPlugin extends Plugin {
     // Update model selector to reflect any new models from env vars
     view?.refreshModelSelector();
 
-    new Notice('Environment variables applied. Sessions will be rebuilt on next message.');
+    const noticeText = changed
+      ? 'Environment variables applied. Sessions will be rebuilt on next message.'
+      : 'Environment variables applied.';
+    new Notice(noticeText);
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */

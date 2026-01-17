@@ -314,6 +314,38 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(manager.getTabCount()).toBe(1);
     });
 
+    it('should prefer previous tab when closing a middle tab', async () => {
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+
+      const tab1 = await manager.createTab();
+      const tab2 = await manager.createTab();
+      await manager.createTab();
+
+      await manager.switchToTab(tab2!.id);
+
+      const switchSpy = jest.spyOn(manager, 'switchToTab');
+
+      await manager.closeTab(tab2!.id);
+
+      expect(switchSpy).toHaveBeenCalledWith(tab1!.id);
+    });
+
+    it('should fall back to next tab when closing the first tab', async () => {
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+
+      const tab1 = await manager.createTab();
+      const tab2 = await manager.createTab();
+      await manager.createTab();
+
+      await manager.switchToTab(tab1!.id);
+
+      const switchSpy = jest.spyOn(manager, 'switchToTab');
+
+      await manager.closeTab(tab1!.id);
+
+      expect(switchSpy).toHaveBeenCalledWith(tab2!.id);
+    });
+
     it('should create new tab if all tabs are closed', async () => {
       const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
 
@@ -339,6 +371,63 @@ describe('TabManager - Tab Lifecycle', () => {
       await manager.closeTab('tab-with-save', true);
 
       expect(mockSave).toHaveBeenCalled();
+    });
+
+    it('should switch to next tab when closing first tab', async () => {
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+
+      // Create three tabs: tab-1, tab-2, tab-3
+      const tab1 = await manager.createTab();
+      const tab2 = await manager.createTab();
+      await manager.createTab(); // tab-3
+
+      // Switch to tab-1 (first tab)
+      await manager.switchToTab(tab1!.id);
+      expect(manager.getActiveTabId()).toBe(tab1!.id);
+
+      // Close tab-1 (first tab)
+      await manager.closeTab(tab1!.id);
+
+      // Should switch to tab-2 (next tab, not previous since there is none)
+      expect(manager.getActiveTabId()).toBe(tab2!.id);
+    });
+
+    it('should switch to previous tab when closing middle tab', async () => {
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+
+      // Create three tabs: tab-1, tab-2, tab-3
+      const tab1 = await manager.createTab();
+      const tab2 = await manager.createTab();
+      await manager.createTab(); // tab-3
+
+      // Switch to tab-2 (middle tab)
+      await manager.switchToTab(tab2!.id);
+      expect(manager.getActiveTabId()).toBe(tab2!.id);
+
+      // Close tab-2 (middle tab)
+      await manager.closeTab(tab2!.id);
+
+      // Should switch to tab-1 (previous tab)
+      expect(manager.getActiveTabId()).toBe(tab1!.id);
+    });
+
+    it('should switch to previous tab when closing last tab in list', async () => {
+      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+
+      // Create three tabs: tab-1, tab-2, tab-3
+      await manager.createTab(); // tab-1
+      const tab2 = await manager.createTab();
+      const tab3 = await manager.createTab();
+
+      // Switch to tab-3 (last tab)
+      await manager.switchToTab(tab3!.id);
+      expect(manager.getActiveTabId()).toBe(tab3!.id);
+
+      // Close tab-3 (last tab)
+      await manager.closeTab(tab3!.id);
+
+      // Should switch to tab-2 (previous tab)
+      expect(manager.getActiveTabId()).toBe(tab2!.id);
     });
   });
 });
