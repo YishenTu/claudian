@@ -25,7 +25,7 @@ import type { InstructionRefineService } from '../services/InstructionRefineServ
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
-import type { FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector } from '../ui';
+import type { FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector, StatusPanel } from '../ui';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
@@ -49,6 +49,7 @@ export interface InputControllerDeps {
   getInstructionModeManager: () => InstructionModeManager | null;
   getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
+  getStatusPanel: () => StatusPanel | null;
   generateId: () => string;
   resetContextMeter: () => void;
   resetInputHeight: () => void;
@@ -105,6 +106,10 @@ export class InputController {
     if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
       state.currentTodos = null;
     }
+
+    // Clear completed/error async subagents from status panel and messages
+    this.deps.getStatusPanel()?.clearTerminalSubagents();
+    this.deps.conversationController.clearTerminalSubagentsFromMessages();
 
     // Check for built-in commands first (e.g., /clear, /new)
     const builtInCmd = detectBuiltInCommand(content);

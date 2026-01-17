@@ -8,7 +8,7 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
-import { isWriteEditTool } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
@@ -232,11 +232,22 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders a tool call with special handling for Write/Edit.
+   * Renders a tool call with special handling for Write/Edit and Task (subagent).
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
+    } else if (toolCall.name === TOOL_TASK) {
+      // Backward compatibility: render Task tools as subagents
+      const subagentInfo = {
+        id: toolCall.id,
+        description: (toolCall.input?.description as string) || 'Subagent task',
+        status: toolCall.status === 'completed' ? 'completed' as const : toolCall.status === 'error' ? 'error' as const : 'running' as const,
+        toolCalls: [],
+        isExpanded: false,
+        result: toolCall.result,
+      };
+      renderStoredSubagent(contentEl, subagentInfo);
     } else {
       renderStoredToolCall(contentEl, toolCall);
     }

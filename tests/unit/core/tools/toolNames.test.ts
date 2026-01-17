@@ -37,7 +37,7 @@ import {
 
 describe('Tool Constants', () => {
   it('should export all tool name constants', () => {
-    expect(TOOL_AGENT_OUTPUT).toBe('AgentOutputTool');
+    expect(TOOL_AGENT_OUTPUT).toBe('TaskOutput');
     expect(TOOL_BASH).toBe('Bash');
     expect(TOOL_BASH_OUTPUT).toBe('BashOutput');
     expect(TOOL_EDIT).toBe('Edit');

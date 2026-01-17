@@ -43,10 +43,12 @@ export class AsyncSubagentManager {
     taskInput: Record<string, unknown>
   ): SubagentInfo {
     const description = (taskInput.description as string) || 'Background task';
+    const prompt = (taskInput.prompt as string) || '';
 
     const subagent: SubagentInfo = {
       id: taskToolId,
       description,
+      prompt,
       mode: 'async' as SubagentMode,
       isExpanded: false,
       status: 'running',
@@ -228,6 +230,16 @@ export class AsyncSubagentManager {
     const lowerResult = payload.toLowerCase();
     if (lowerResult.includes('not_ready') || lowerResult.includes('not ready')) {
       return true;
+    }
+
+    // Check for XML-style status (SDK returns XML format for TaskOutput)
+    // <status>running</status> or <retrieval_status>not_ready</retrieval_status>
+    const xmlStatusMatch = lowerResult.match(/<status>([^<]+)<\/status>/);
+    if (xmlStatusMatch) {
+      const status = xmlStatusMatch[1].trim();
+      if (status === 'running' || status === 'pending' || status === 'not_ready') {
+        return true;
+      }
     }
 
     return false;
@@ -423,9 +435,10 @@ export class AsyncSubagentManager {
     return null;
   }
 
-  /** Extracts agentId from AgentOutputTool input. */
+  /** Extracts agentId from TaskOutput tool input. */
   private extractAgentIdFromInput(input: Record<string, unknown>): string | null {
-    const agentId = (input.agentId as string) || (input.agent_id as string);
+    // TaskOutput uses task_id parameter which contains the agent ID
+    const agentId = (input.task_id as string) || (input.agentId as string) || (input.agent_id as string);
     return agentId || null;
   }
 }

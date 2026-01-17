@@ -150,18 +150,22 @@ Spawn subagents for complex multi-step tasks. Parameters: \`prompt\`, \`descript
 
 **Async Mode (\`run_in_background=true\`)**:
 - Use ONLY when explicitly requested or task is clearly long-running.
-- Returns \`agent_id\` immediately.
-- **Must retrieve result** with \`AgentOutputTool\` (poll with block=false, then block=true).
-- Never end response without retrieving async results.
+- Returns \`task_id\` and \`output_file\` path immediately.
+- System sends \`<task-notification>\` with result when complete.
+- Full transcript persists in \`output_file\`.
+
+**Retrieving async results (three options):**
+- Wait for \`<task-notification>\` (automatic, includes result)
+- Use \`TaskOutput task_id="..." block=true\` (blocking) or \`block=false\` (polling)
+- Read \`output_file\` directly with Read tool
 
 **Async workflow:**
-1. Launch: \`Task prompt="..." run_in_background=true\` → get \`agent_id\`
-2. Check immediately: \`AgentOutputTool agentId="..." block=false\`
-3. Poll while working: \`AgentOutputTool agentId="..." block=false\`
-4. When idle: \`AgentOutputTool agentId="..." block=true\` (wait for completion)
-5. Report result to user
+1. Launch: \`Task prompt="..." run_in_background=true\` → get \`task_id\` and \`output_file\`
+2. Continue working on other tasks (if any)
+3. If no other work: use \`TaskOutput task_id="..." block=true\` to wait for completion
+4. Report result to user
 
-**Critical:** Never end response without retrieving async task results.
+**Critical:** Never end response without retrieving async task results. When idle, actively wait with \`TaskOutput block=true\` rather than waiting passively.
 
 ### TodoWrite
 

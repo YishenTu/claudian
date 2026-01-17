@@ -401,23 +401,23 @@ describe('Async Subagent Renderer', () => {
     });
   });
 
-  it('shows label immediately and running status text', () => {
+  it('shows label immediately and initializing status text', () => {
     const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Background job' });
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.statusTextEl.textContent).toBe('Running');
+    expect(state.statusTextEl.textContent).toBe('Initializing');
     expect((state.wrapperEl as any).getClasses()).toEqual(expect.arrayContaining(['async', 'pending']));
   });
 
-  it('shows agent id in content and keeps label visible while running', () => {
-    const state = createAsyncSubagentBlock(parentEl as any, 'task-2', { description: 'Background job' });
+  it('shows prompt in content and keeps label visible while running', () => {
+    const state = createAsyncSubagentBlock(parentEl as any, 'task-2', { description: 'Background job', prompt: 'Do the work' });
 
     updateAsyncSubagentRunning(state, 'agent-xyz');
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.statusTextEl.textContent).toBe('Running');
+    expect(state.statusTextEl.textContent).toBe('Running in background');
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-done-text')[0];
-    expect(contentText).toContain('agent-xyz');
+    expect(contentText).toContain('Do the work');
     expect((state.wrapperEl as any).getClasses()).toEqual(expect.arrayContaining(['running', 'async']));
   });
 
@@ -429,7 +429,7 @@ describe('Async Subagent Renderer', () => {
     finalizeAsyncSubagent(state, 'all done', false);
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.statusTextEl.textContent).toBe('Completed');
+    expect(state.statusTextEl.textContent).toBe('');
     expect((state.wrapperEl as any).hasClass('done')).toBe(true);
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-done-text')[0];
     expect(contentText).toBe('DONE');

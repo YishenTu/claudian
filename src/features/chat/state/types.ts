@@ -82,6 +82,8 @@ export interface ChatStateData {
   writeEditStates: Map<string, WriteEditState>;
   /** Pending tool calls buffered until input is complete (for non-streaming-style render). */
   pendingTools: Map<string, PendingToolCall>;
+  /** Pending Task tool calls buffered until run_in_background is known. */
+  pendingTaskTools: Map<string, PendingToolCall>;
 
   // Context window usage
   usage: UsageInfo | null;

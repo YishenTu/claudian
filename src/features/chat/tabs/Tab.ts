@@ -36,7 +36,7 @@ import {
   FileContextManager,
   ImageContextManager,
   InstructionModeManager as InstructionModeManagerClass,
-  TodoPanel,
+  StatusPanel,
 } from '../ui';
 import type { TabData, TabDOMElements, TabId } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
@@ -402,7 +402,7 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
     }
   );
 
-  tab.ui.todoPanel = new TodoPanel();
+  tab.ui.todoPanel = new StatusPanel();
   tab.ui.todoPanel.mount(dom.todoPanelContainerEl);
 }
 
@@ -566,7 +566,23 @@ export function initializeTabControllers(
 
   // Wire async subagent callback now that StreamController exists
   services.asyncSubagentManager.setCallback(
-    (subagent) => tab.controllers.streamController?.onAsyncSubagentStateChange(subagent)
+    (subagent) => {
+      // Update inline renderer
+      tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
+
+      // Update status panel
+      if (subagent.mode === 'async' && ui.todoPanel) {
+        ui.todoPanel.updateSubagent({
+          id: subagent.id,
+          description: subagent.description,
+          status: subagent.asyncStatus === 'completed' ? 'completed'
+            : subagent.asyncStatus === 'error' ? 'error'
+            : subagent.asyncStatus === 'orphaned' ? 'orphaned'
+            : subagent.asyncStatus === 'running' ? 'running'
+            : 'pending',
+        });
+      }
+    }
   );
 
   // Conversation controller
@@ -587,7 +603,7 @@ export function initializeTabControllers(
       getExternalContextSelector: () => ui.externalContextSelector,
       clearQueuedMessage: () => tab.controllers.inputController?.clearQueuedMessage(),
       getTitleGenerationService: () => services.titleGenerationService,
-      getTodoPanel: () => ui.todoPanel,
+      getStatusPanel: () => ui.todoPanel,
       getAgentService: () => tab.service, // Use tab's service instead of plugin's
     },
     {}
@@ -614,6 +630,7 @@ export function initializeTabControllers(
     getInstructionModeManager: () => ui.instructionModeManager,
     getInstructionRefineService: () => services.instructionRefineService,
     getTitleGenerationService: () => services.titleGenerationService,
+    getStatusPanel: () => ui.todoPanel,
     generateId,
     resetContextMeter: () => ui.contextUsageMeter?.update(null),
     resetInputHeight: () => {

@@ -42,6 +42,7 @@ function createInitialState(): ChatStateData {
     asyncSubagentStates: new Map(),
     writeEditStates: new Map(),
     pendingTools: new Map(),
+    pendingTaskTools: new Map(),
     usage: null,
     ignoreUsageUpdates: false,
     subagentsSpawnedThisStream: 0,
@@ -254,6 +255,10 @@ export class ChatState {
     return this.state.pendingTools;
   }
 
+  get pendingTaskTools(): Map<string, PendingToolCall> {
+    return this.state.pendingTaskTools;
+  }
+
   // ============================================
   // Usage State
   // ============================================
@@ -353,6 +358,7 @@ export class ChatState {
     this.state.asyncSubagentStates.clear();
     this.state.writeEditStates.clear();
     this.state.pendingTools.clear();
+    this.state.pendingTaskTools.clear();
   }
 
   /** Resets all state for a new conversation. */

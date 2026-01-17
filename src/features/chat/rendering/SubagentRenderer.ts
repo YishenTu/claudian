@@ -336,16 +336,32 @@ function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'co
 }
 
 function getAsyncStatusText(asyncStatus: string | undefined): string {
-  const display = getAsyncDisplayStatus(asyncStatus);
-  if (display === 'completed') return 'Completed';
-  if (display === 'error') return 'Error';
-  if (display === 'orphaned') return 'Orphaned';
-  return 'Running';
+  if (asyncStatus === 'pending') return 'Initializing';
+  if (asyncStatus === 'completed') return ''; // Just show tick icon, no text
+  if (asyncStatus === 'error') return 'Error';
+  if (asyncStatus === 'orphaned') return 'Orphaned';
+  return 'Running in background';
+}
+
+/** Get status text for aria-label (always returns meaningful text for accessibility). */
+function getAsyncStatusAriaLabel(asyncStatus: string | undefined): string {
+  if (asyncStatus === 'pending') return 'Initializing';
+  if (asyncStatus === 'completed') return 'Completed';
+  if (asyncStatus === 'error') return 'Error';
+  if (asyncStatus === 'orphaned') return 'Orphaned';
+  return 'Running in background';
 }
 
 function updateAsyncLabel(state: AsyncSubagentState, _displayStatus: 'running' | 'completed' | 'error' | 'orphaned'): void {
   // Always show label (description) for immediate visibility
   state.labelEl.setText(truncateDescription(state.info.description));
+}
+
+/** Truncate prompt for display in expand area. */
+function truncatePrompt(prompt: string, maxLength = 200): string {
+  if (!prompt) return '';
+  if (prompt.length <= maxLength) return prompt;
+  return prompt.substring(0, maxLength) + '...';
 }
 
 /** Create an async subagent block for a background Task tool call. */
@@ -355,10 +371,12 @@ export function createAsyncSubagentBlock(
   taskInput: Record<string, unknown>
 ): AsyncSubagentState {
   const description = (taskInput.description as string) || 'Background task';
+  const prompt = (taskInput.prompt as string) || '';
 
   const info: SubagentInfo = {
     id: taskToolId,
     description,
+    prompt,
     mode: 'async',
     status: 'running',
     toolCalls: [],
@@ -388,7 +406,7 @@ export function createAsyncSubagentBlock(
 
   // Status text (instead of tool count)
   const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
-  statusTextEl.setText('Running');
+  statusTextEl.setText('Initializing');
 
   // Status indicator (empty while running, icon on completion/error)
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
@@ -397,12 +415,12 @@ export function createAsyncSubagentBlock(
   // Content (collapsed by default)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
 
-  // Initial content
+  // Initial content - show prompt
   const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
   const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
   branchEl.setText('└─');
-  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
-  textEl.setText('run in background');
+  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-prompt' });
+  textEl.setText(truncatePrompt(prompt) || 'Background task');
 
   // Setup collapsible behavior - use info as state (it has isExpanded property)
   setupCollapsible(wrapperEl, headerEl, contentEl, info);
@@ -430,16 +448,15 @@ export function updateAsyncSubagentRunning(
   updateAsyncLabel(state, 'running');
 
   // Update status text
-  state.statusTextEl.setText('Running');
+  state.statusTextEl.setText('Running in background');
 
-  // Update content
+  // Update content - keep showing prompt
   state.contentEl.empty();
   const statusRow = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
   const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
   branchEl.setText('└─');
-  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-agent-id' });
-  const shortId = agentId.length > 12 ? agentId.substring(0, 12) + '...' : agentId;
-  textEl.setText(`run in background (${shortId})`);
+  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-prompt' });
+  textEl.setText(truncatePrompt(state.info.prompt || '') || 'Background task');
 }
 
 /** Finalize async subagent with AgentOutputTool result. */
@@ -455,8 +472,8 @@ export function finalizeAsyncSubagent(
   setAsyncWrapperStatus(state.wrapperEl, isError ? 'error' : 'completed');
   updateAsyncLabel(state, isError ? 'error' : 'completed');
 
-  // Update status text
-  state.statusTextEl.setText(isError ? 'Error' : 'Completed');
+  // Update status text (empty for completed - just show tick icon)
+  state.statusTextEl.setText(isError ? 'Error' : '');
 
   // Update status indicator
   state.statusEl.className = 'claudian-subagent-status';
@@ -540,12 +557,13 @@ export function renderStoredAsyncSubagent(
   // Status info
   const displayStatus = getAsyncDisplayStatus(subagent.asyncStatus);
   const statusText = getAsyncStatusText(subagent.asyncStatus);
+  const statusAriaLabel = getAsyncStatusAriaLabel(subagent.asyncStatus);
 
   // Header
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - Status: ${statusText}`);
+  headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - Status: ${statusAriaLabel}`);
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -564,7 +582,7 @@ export function renderStoredAsyncSubagent(
     ? 'status-error'
     : (displayStatus === 'completed' ? 'status-completed' : 'status-running');
   const statusEl = headerEl.createDiv({ cls: `claudian-subagent-status ${statusIconClass}` });
-  statusEl.setAttribute('aria-label', `Status: ${statusText}`);
+  statusEl.setAttribute('aria-label', `Status: ${statusAriaLabel}`);
 
   if (subagent.asyncStatus === 'completed') {
     setIcon(statusEl, 'check');
@@ -587,13 +605,10 @@ export function renderStoredAsyncSubagent(
     textEl.setText('ERROR');
   } else if (subagent.asyncStatus === 'orphaned') {
     textEl.setText('⚠️ Task orphaned');
-  } else if (subagent.agentId) {
-    const shortId = subagent.agentId.length > 12
-      ? subagent.agentId.substring(0, 12) + '...'
-      : subagent.agentId;
-    textEl.setText(`run in background (${shortId})`);
   } else {
-    textEl.setText('run in background');
+    // Running state - show prompt
+    textEl.addClass('claudian-async-prompt');
+    textEl.setText(truncatePrompt(subagent.prompt || '') || 'Background task');
   }
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)

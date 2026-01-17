@@ -31,8 +31,8 @@ import type {
   McpServerSelector,
   ModelSelector,
   PermissionToggle,
+  StatusPanel,
   ThinkingBudgetSelector,
-  TodoPanel,
 } from '../ui';
 
 /**
@@ -137,7 +137,7 @@ export interface TabUIComponents {
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   contextUsageMeter: ContextUsageMeter | null;
-  todoPanel: TodoPanel | null;
+  todoPanel: StatusPanel | null;
 }
 
 /**

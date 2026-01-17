@@ -91,6 +91,11 @@ export interface Conversation {
    * Loaded from metadata for native sessions to restore +/- stats on reload.
    */
   toolDiffData?: Record<string, ToolDiffData>;
+  /**
+   * Cached subagent data for Task tool operations.
+   * Loaded from metadata for native sessions to restore tool count and status on reload.
+   */
+  subagentData?: Record<string, SubagentInfo>;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -146,6 +151,12 @@ export interface SessionMetadata {
    * Stored here because SDK session files don't preserve this Claudian-specific data.
    */
   toolDiffData?: Record<string, ToolDiffData>;
+  /**
+   * Subagent data for Task tool operations.
+   * Maps toolUseId to subagent info (tool count, status, result).
+   * Stored here because SDK session files don't preserve this Claudian-specific data.
+   */
+  subagentData?: Record<string, SubagentInfo>;
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */
