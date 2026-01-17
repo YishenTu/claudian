@@ -211,10 +211,13 @@ function extractTextContent(content: string | SDKNativeContentBlock[] | undefine
 
 /**
  * Checks if user message content represents rebuilt context (history sent to SDK when session reset).
- * These start with "User:" pattern and contain conversation history, not actual user input.
+ * These start with a conversation role prefix and contain conversation history markers.
+ * Handles both normal history (starting with User:) and truncated/malformed history (starting with Assistant:).
  */
 function isRebuiltContextContent(textContent: string): boolean {
-  if (!/^User:\s/.test(textContent)) return false;
+  // Must start with a conversation role prefix
+  if (!/^(User|Assistant):\s/.test(textContent)) return false;
+  // Must contain conversation continuation markers
   return textContent.includes('\n\nUser:') ||
          textContent.includes('\n\nAssistant:') ||
          textContent.includes('\n\nA:');

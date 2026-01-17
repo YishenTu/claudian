@@ -499,6 +499,22 @@ describe('sdkSession', () => {
       expect(chatMsg!.isRebuiltContext).toBe(true);
     });
 
+    it('marks rebuilt context messages starting with Assistant', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'rebuilt-2',
+        timestamp: '2024-01-15T10:31:00Z',
+        message: {
+          content: 'Assistant: Hello\n\nUser: Hi again',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.isRebuiltContext).toBe(true);
+    });
+
     it('does not mark regular messages starting with User as rebuilt context', () => {
       const sdkMsg: SDKNativeMessage = {
         type: 'user',

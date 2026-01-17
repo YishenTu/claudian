@@ -21,6 +21,31 @@ export function stripCurrentNotePrefix(prompt: string): string {
   return prompt.replace(CURRENT_NOTE_PREFIX_REGEX, '');
 }
 
+/**
+ * Extracts the actual user query from an XML-wrapped prompt.
+ * Used for comparing prompts during history deduplication.
+ *
+ * Priority:
+ * 1. Content inside <query> tags (if present)
+ * 2. Stripped prompt with all XML context removed
+ */
+export function extractUserQuery(prompt: string): string {
+  if (!prompt) return '';
+
+  // Try to extract content from <query> tags first
+  const queryMatch = prompt.match(/<query>\n?([\s\S]*?)\n?<\/query>/);
+  if (queryMatch) {
+    return queryMatch[1].trim();
+  }
+
+  // Otherwise strip all XML context tags
+  return prompt
+    .replace(/<current_note>[\s\S]*?<\/current_note>\s*/g, '')
+    .replace(/<editor_selection>[\s\S]*?<\/editor_selection>\s*/g, '')
+    .replace(/<context_files>[\s\S]*?<\/context_files>\s*/g, '')
+    .trim();
+}
+
 // ============================================
 // Context Files (for InlineEditService)
 // ============================================

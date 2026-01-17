@@ -5,7 +5,7 @@
  */
 
 import type { ChatMessage, ToolCallInfo } from '../core/types';
-import { formatCurrentNote } from './context';
+import { extractUserQuery, formatCurrentNote } from './context';
 
 // ============================================
 // Session Recovery
@@ -234,8 +234,15 @@ export function buildPromptWithHistoryContext(
   if (!historyContext) return prompt;
 
   const lastUserMessage = getLastUserMessage(conversationHistory);
+
+  // Compare actual user queries, not XML-wrapped versions
+  // Use displayContent if available (already extracted), otherwise extract from content
+  const lastUserQuery = lastUserMessage?.displayContent
+    ?? extractUserQuery(lastUserMessage?.content ?? '');
+  const currentUserQuery = extractUserQuery(actualPrompt);
+
   const shouldAppendPrompt = !lastUserMessage ||
-    lastUserMessage.content.trim() !== actualPrompt.trim();
+    lastUserQuery.trim() !== currentUserQuery.trim();
 
   return shouldAppendPrompt
     ? `${historyContext}\n\nUser: ${prompt}`

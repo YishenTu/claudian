@@ -1907,6 +1907,39 @@ describe('ClaudianService', () => {
       expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
       expect(service.getSessionId()).toBeNull();
     });
+
+    it('should rebuild history when persistent query throws session expired', async () => {
+      service.setSessionId('stale-session');
+      const prompts: string[] = [];
+
+      // eslint-disable-next-line require-yield
+      jest.spyOn(service as any, 'queryViaPersistent').mockImplementation((async function* () {
+        throw new Error('Session expired');
+      }) as any);
+
+      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (prompt: string) {
+        prompts.push(prompt);
+        yield { type: 'text', content: 'Recovered' };
+      }) as any);
+
+      const history = [
+        { id: 'msg-1', role: 'user' as const, content: 'First question', timestamp: Date.now() },
+        { id: 'msg-2', role: 'assistant' as const, content: 'Answer', timestamp: Date.now() },
+        { id: 'msg-3', role: 'user' as const, content: 'Follow up', timestamp: Date.now() },
+      ];
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('Follow up', undefined, history)) {
+        chunks.push(chunk);
+      }
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain('User: First question');
+      expect(prompts[0]).toContain('Assistant: Answer');
+      expect(prompts[0]).toContain('User: Follow up');
+      expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
+      expect(service.getSessionId()).toBeNull();
+    });
   });
 
   describe('image prompt and hydration', () => {

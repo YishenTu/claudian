@@ -756,8 +756,37 @@ export class ClaudianService {
 
       if (this.persistentQuery && !this.shuttingDown) {
         // Use persistent query path
-        yield* this.queryViaPersistent(promptToSend, images, vaultPath, resolvedClaudePath, effectiveQueryOptions);
-        return;
+        try {
+          yield* this.queryViaPersistent(promptToSend, images, vaultPath, resolvedClaudePath, effectiveQueryOptions);
+          return;
+        } catch (error) {
+          if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
+            this.sessionManager.invalidateSession();
+            const retryRequest = this.buildHistoryRebuildRequest(prompt, conversationHistory);
+
+            this.coldStartInProgress = true;
+            this.abortController = new AbortController();
+
+            try {
+              yield* this.queryViaSDK(
+                retryRequest.prompt,
+                vaultPath,
+                resolvedClaudePath,
+                retryRequest.images,
+                effectiveQueryOptions
+              );
+            } catch (retryError) {
+              const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
+              yield { type: 'error', content: msg };
+            } finally {
+              this.coldStartInProgress = false;
+              this.abortController = null;
+            }
+            return;
+          }
+
+          throw error;
+        }
       }
     }
 
@@ -771,15 +800,16 @@ export class ClaudianService {
     } catch (error) {
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionManager.invalidateSession();
-
-        const historyContext = buildContextFromHistory(conversationHistory);
-        const actualPrompt = stripCurrentNotePrefix(prompt);
-        const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
-
-        const lastUserMessage = getLastUserMessage(conversationHistory);
+        const retryRequest = this.buildHistoryRebuildRequest(prompt, conversationHistory);
 
         try {
-          yield* this.queryViaSDK(fullPrompt, vaultPath, resolvedClaudePath, lastUserMessage?.images, effectiveQueryOptions);
+          yield* this.queryViaSDK(
+            retryRequest.prompt,
+            vaultPath,
+            resolvedClaudePath,
+            retryRequest.images,
+            effectiveQueryOptions
+          );
         } catch (retryError) {
           const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
           yield { type: 'error', content: msg };
@@ -793,6 +823,21 @@ export class ClaudianService {
       this.coldStartInProgress = false;
       this.abortController = null;
     }
+  }
+
+  private buildHistoryRebuildRequest(
+    prompt: string,
+    conversationHistory: ChatMessage[]
+  ): { prompt: string; images?: ImageAttachment[] } {
+    const historyContext = buildContextFromHistory(conversationHistory);
+    const actualPrompt = stripCurrentNotePrefix(prompt);
+    const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
+    const lastUserMessage = getLastUserMessage(conversationHistory);
+
+    return {
+      prompt: fullPrompt,
+      images: lastUserMessage?.images,
+    };
   }
 
   /**
@@ -933,6 +978,10 @@ export class ClaudianService {
 
       // Check if an error occurred (assigned in onError callback)
       if (state.error) {
+        // Re-throw session expired errors for outer retry logic to handle
+        if (isSessionExpiredError(state.error)) {
+          throw state.error;
+        }
         yield { type: 'error', content: state.error.message };
       }
 
@@ -1246,6 +1295,10 @@ export class ClaudianService {
         }
       }
     } catch (error) {
+      // Re-throw session expired errors for outer retry logic to handle
+      if (isSessionExpiredError(error)) {
+        throw error;
+      }
       const msg = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', content: msg };
     } finally {
