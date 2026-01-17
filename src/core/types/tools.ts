@@ -36,6 +36,7 @@ export type AsyncSubagentStatus =
 export interface SubagentInfo {
   id: string;
   description: string;
+  prompt?: string;
   mode?: SubagentMode;
   isExpanded: boolean;
   result?: string;

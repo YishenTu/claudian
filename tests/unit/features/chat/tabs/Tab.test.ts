@@ -62,9 +62,14 @@ const createMockInstructionModeManager = () => ({
   destroy: jest.fn(),
 });
 
-const createMockTodoPanel = () => ({
+const createMockStatusPanel = () => ({
   mount: jest.fn(),
+  remount: jest.fn(),
   updateTodos: jest.fn(),
+  updateSubagent: jest.fn(),
+  removeSubagent: jest.fn(),
+  clearSubagents: jest.fn(),
+  restoreSubagents: jest.fn(),
   destroy: jest.fn(),
 });
 
@@ -100,7 +105,7 @@ let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
 let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
 let mockSlashCommandDropdown: ReturnType<typeof createMockSlashCommandDropdown>;
 let mockInstructionModeManager: ReturnType<typeof createMockInstructionModeManager>;
-let mockTodoPanel: ReturnType<typeof createMockTodoPanel>;
+let mockStatusPanel: ReturnType<typeof createMockStatusPanel>;
 let mockModelSelector: ReturnType<typeof createMockModelSelector>;
 let mockThinkingBudgetSelector: ReturnType<typeof createMockThinkingBudgetSelector>;
 let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
@@ -141,9 +146,9 @@ jest.mock('@/features/chat/ui', () => ({
     mockInstructionModeManager = createMockInstructionModeManager();
     return mockInstructionModeManager;
   }),
-  TodoPanel: jest.fn().mockImplementation(() => {
-    mockTodoPanel = createMockTodoPanel();
-    return mockTodoPanel;
+  StatusPanel: jest.fn().mockImplementation(() => {
+    mockStatusPanel = createMockStatusPanel();
+    return mockStatusPanel;
   }),
   createInputToolbar: jest.fn().mockImplementation(() => {
     mockModelSelector = createMockModelSelector();
@@ -691,7 +696,7 @@ describe('Tab - Destruction', () => {
       tab.ui.instructionModeManager = { destroy: destroyInstructionMode } as any;
       tab.services.instructionRefineService = { cancel: cancelInstructionRefine } as any;
       tab.services.titleGenerationService = { cancel: cancelTitleGeneration } as any;
-      tab.ui.todoPanel = { destroy: destroyTodoPanel } as any;
+      tab.ui.statusPanel = { destroy: destroyTodoPanel } as any;
 
       await destroyTab(tab);
 
@@ -840,14 +845,14 @@ describe('Tab - UI Initialization', () => {
       expect(tab.ui.instructionModeManager).toBeDefined();
     });
 
-    it('should create and mount TodoPanel', () => {
+    it('should create and mount StatusPanel', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
       initializeTabUI(tab, options.plugin);
 
-      expect(tab.ui.todoPanel).toBeDefined();
-      expect(mockTodoPanel.mount).toHaveBeenCalledWith(tab.dom.todoPanelContainerEl);
+      expect(tab.ui.statusPanel).toBeDefined();
+      expect(mockStatusPanel.mount).toHaveBeenCalledWith(tab.dom.statusPanelContainerEl);
     });
 
     it('should create input toolbar components', () => {
@@ -1468,7 +1473,7 @@ describe('Tab - UI Callback Wiring', () => {
       const todos = [{ id: '1', content: 'Test todo', status: 'pending' }];
       tab.state.callbacks.onTodosChanged?.(todos as any);
 
-      expect(mockTodoPanel.updateTodos).toHaveBeenCalledWith(todos);
+      expect(mockStatusPanel.updateTodos).toHaveBeenCalledWith(todos);
     });
 
     it('should wire instruction mode onSubmit to input controller', async () => {

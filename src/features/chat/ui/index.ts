@@ -14,4 +14,6 @@ export {
   ThinkingBudgetSelector,
 } from './InputToolbar';
 export { type InstructionModeCallbacks, InstructionModeManager, type InstructionModeState } from './InstructionModeManager';
-export { TodoPanel } from './TodoPanel';
+export { type PanelSubagentInfo, StatusPanel } from './StatusPanel';
+// Backwards compatibility alias
+export { StatusPanel as TodoPanel } from './StatusPanel';

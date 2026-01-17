@@ -1,9 +1,9 @@
 /**
- * Tests for TodoPanel component
+ * Tests for StatusPanel component
  */
 
 import type { TodoItem } from '@/core/tools';
-import { TodoPanel } from '@/features/chat/ui/TodoPanel';
+import { StatusPanel } from '@/features/chat/ui/StatusPanel';
 
 // Mock obsidian setIcon
 jest.mock('obsidian', () => ({
@@ -111,7 +111,16 @@ class MockElement {
   }
 
   getAttribute(name: string): string | null {
-    return this.attributes[name] ?? null;
+    // Check attributes first
+    if (this.attributes[name] !== undefined) {
+      return this.attributes[name];
+    }
+    // For data-* attributes, also check dataset
+    if (name.startsWith('data-')) {
+      const dataKey = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      return this.dataset[dataKey] ?? null;
+    }
+    return null;
   }
 
   addEventListener(type: string, listener: Listener): void {
@@ -170,7 +179,19 @@ class MockElement {
   querySelectorAll(selector: string): MockElement[] {
     const matches: MockElement[] = [];
     const match = (el: MockElement): boolean => {
-      // Handle class selectors like .claudian-todo-panel
+      // Handle attribute selectors like [data-panel-subagent-id]
+      const attrMatch = selector.match(/\[([a-zA-Z0-9_-]+)\]/);
+      if (attrMatch) {
+        const attrName = attrMatch[1];
+        // Convert data-* attributes to dataset keys (data-panel-subagent-id -> panelSubagentId)
+        if (attrName.startsWith('data-')) {
+          const dataKey = attrName.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+          return el.dataset[dataKey] !== undefined;
+        }
+        return el.attributes[attrName] !== undefined;
+      }
+
+      // Handle class selectors like .claudian-status-panel
       const classMatch = selector.match(/\.([a-zA-Z0-9_-]+)/g);
       if (classMatch) {
         for (const cls of classMatch) {
@@ -203,16 +224,16 @@ function createMockDocument() {
   };
 }
 
-describe('TodoPanel', () => {
+describe('StatusPanel', () => {
   let containerEl: MockElement;
-  let panel: TodoPanel;
+  let panel: StatusPanel;
   let originalDocument: any;
 
   beforeEach(() => {
     originalDocument = (global as any).document;
     (global as any).document = createMockDocument();
     containerEl = new MockElement('div');
-    panel = new TodoPanel();
+    panel = new StatusPanel();
   });
 
   afterEach(() => {
@@ -224,13 +245,13 @@ describe('TodoPanel', () => {
     it('should create panel element when mounted', () => {
       panel.mount(containerEl as unknown as HTMLElement);
 
-      expect(containerEl.querySelector('.claudian-todo-panel')).not.toBeNull();
+      expect(containerEl.querySelector('.claudian-status-panel')).not.toBeNull();
     });
 
     it('should create hidden todo container initially', () => {
       panel.mount(containerEl as unknown as HTMLElement);
 
-      const todoContainer = containerEl.querySelector('.claudian-todo-panel-todos');
+      const todoContainer = containerEl.querySelector('.claudian-status-panel-todos');
       expect(todoContainer).not.toBeNull();
       expect(todoContainer!.style.display).toBe('none');
     });
@@ -248,7 +269,7 @@ describe('TodoPanel', () => {
 
       panel.updateTodos(todos);
 
-      const todoContainer = containerEl.querySelector('.claudian-todo-panel-todos');
+      const todoContainer = containerEl.querySelector('.claudian-status-panel-todos');
       expect(todoContainer!.style.display).toBe('block');
     });
 
@@ -260,7 +281,7 @@ describe('TodoPanel', () => {
       panel.updateTodos(todos);
       panel.updateTodos(null);
 
-      const todoContainer = containerEl.querySelector('.claudian-todo-panel-todos');
+      const todoContainer = containerEl.querySelector('.claudian-status-panel-todos');
       expect(todoContainer!.style.display).toBe('none');
     });
 
@@ -272,7 +293,7 @@ describe('TodoPanel', () => {
       panel.updateTodos(todos);
       panel.updateTodos([]);
 
-      const todoContainer = containerEl.querySelector('.claudian-todo-panel-todos');
+      const todoContainer = containerEl.querySelector('.claudian-status-panel-todos');
       expect(todoContainer!.style.display).toBe('none');
     });
 
@@ -285,7 +306,7 @@ describe('TodoPanel', () => {
 
       panel.updateTodos(todos);
 
-      const label = containerEl.querySelector('.claudian-todo-panel-label');
+      const label = containerEl.querySelector('.claudian-status-panel-label');
       expect(label?.textContent).toBe('Tasks (1/3)');
     });
 
@@ -297,7 +318,7 @@ describe('TodoPanel', () => {
 
       panel.updateTodos(todos);
 
-      const current = containerEl.querySelector('.claudian-todo-panel-current');
+      const current = containerEl.querySelector('.claudian-status-panel-current');
       expect(current?.textContent).toBe('Working on Task 2');
     });
 
@@ -328,7 +349,7 @@ describe('TodoPanel', () => {
     });
 
     it('should handle updateTodos called before mount with todos to display', () => {
-      const unmountedPanel = new TodoPanel();
+      const unmountedPanel = new StatusPanel();
 
       // Should not throw, just silently handle unmounted state
       expect(() => {
@@ -337,7 +358,7 @@ describe('TodoPanel', () => {
     });
 
     it('should handle updateTodos called with null before mount', () => {
-      const unmountedPanel = new TodoPanel();
+      const unmountedPanel = new StatusPanel();
 
       // Should not throw
       expect(() => {
@@ -355,8 +376,8 @@ describe('TodoPanel', () => {
     });
 
     it('should expand content on header click', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
-      const content = containerEl.querySelector('.claudian-todo-panel-content');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
+      const content = containerEl.querySelector('.claudian-status-panel-content');
 
       expect(content!.style.display).toBe('none');
 
@@ -366,8 +387,8 @@ describe('TodoPanel', () => {
     });
 
     it('should collapse content on second click', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
-      const content = containerEl.querySelector('.claudian-todo-panel-content');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
+      const content = containerEl.querySelector('.claudian-status-panel-content');
 
       header!.click();
       expect(content!.style.display).toBe('block');
@@ -377,24 +398,24 @@ describe('TodoPanel', () => {
     });
 
     it('should show list icon in header', () => {
-      const icon = containerEl.querySelector('.claudian-todo-panel-icon');
+      const icon = containerEl.querySelector('.claudian-status-panel-icon');
       expect(icon).not.toBeNull();
       expect(icon?.getAttribute('data-icon')).toBe('list-checks');
     });
 
     it('should hide current task when expanded', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
 
-      expect(containerEl.querySelector('.claudian-todo-panel-current')).not.toBeNull();
+      expect(containerEl.querySelector('.claudian-status-panel-current')).not.toBeNull();
 
       header!.click();
 
-      expect(containerEl.querySelector('.claudian-todo-panel-current')).toBeNull();
+      expect(containerEl.querySelector('.claudian-status-panel-current')).toBeNull();
     });
 
     it('should toggle on Enter key', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
-      const content = containerEl.querySelector('.claudian-todo-panel-content');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
+      const content = containerEl.querySelector('.claudian-status-panel-content');
 
       const event = { type: 'keydown', key: 'Enter', preventDefault: jest.fn() };
       header!.dispatchEvent(event);
@@ -404,8 +425,8 @@ describe('TodoPanel', () => {
     });
 
     it('should toggle on Space key', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
-      const content = containerEl.querySelector('.claudian-todo-panel-content');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
+      const content = containerEl.querySelector('.claudian-status-panel-content');
 
       const event = { type: 'keydown', key: ' ', preventDefault: jest.fn() };
       header!.dispatchEvent(event);
@@ -415,8 +436,8 @@ describe('TodoPanel', () => {
     });
 
     it('should not toggle on other keys', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
-      const content = containerEl.querySelector('.claudian-todo-panel-content');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
+      const content = containerEl.querySelector('.claudian-status-panel-content');
 
       const event = { type: 'keydown', key: 'Tab', preventDefault: jest.fn() };
       header!.dispatchEvent(event);
@@ -432,18 +453,18 @@ describe('TodoPanel', () => {
     });
 
     it('should set tabindex on header', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
       expect(header?.getAttribute('tabindex')).toBe('0');
     });
 
     it('should set role button on header', () => {
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
       expect(header?.getAttribute('role')).toBe('button');
     });
 
     it('should update aria-expanded on toggle', () => {
       panel.updateTodos([{ content: 'Task', status: 'pending', activeForm: 'Task' }]);
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
 
       expect(header!.getAttribute('aria-expanded')).toBe('false');
 
@@ -460,7 +481,7 @@ describe('TodoPanel', () => {
         { content: 'Task 2', status: 'pending', activeForm: 'Task 2' },
       ]);
 
-      const header = containerEl.querySelector('.claudian-todo-panel-header');
+      const header = containerEl.querySelector('.claudian-status-panel-header');
       expect(header?.getAttribute('aria-label')).toBe('Expand task list - 1 of 2 completed');
     });
 
@@ -476,11 +497,11 @@ describe('TodoPanel', () => {
     it('should remove panel from DOM', () => {
       panel.mount(containerEl as unknown as HTMLElement);
 
-      expect(containerEl.querySelector('.claudian-todo-panel')).not.toBeNull();
+      expect(containerEl.querySelector('.claudian-status-panel')).not.toBeNull();
 
       panel.destroy();
 
-      expect(containerEl.querySelector('.claudian-todo-panel')).toBeNull();
+      expect(containerEl.querySelector('.claudian-status-panel')).toBeNull();
     });
 
     it('should be safe to call multiple times', () => {
@@ -493,11 +514,203 @@ describe('TodoPanel', () => {
     });
 
     it('should handle destroy without mount', () => {
-      const unmountedPanel = new TodoPanel();
+      const unmountedPanel = new StatusPanel();
 
       expect(() => {
         unmountedPanel.destroy();
       }).not.toThrow();
+    });
+  });
+
+  describe('updateSubagent', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should add a new subagent element', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'New task', status: 'pending' });
+
+      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(1);
+      const label = containerEl.querySelector('.claudian-subagent-label');
+      expect(label?.textContent).toBe('New task');
+    });
+
+    it('should update status of existing subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+
+      const wrapper = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(wrapper).toHaveLength(1);
+      expect(wrapper[0].classList.has('running')).toBe(true);
+    });
+
+    it('should display status text for running subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('Running in background');
+    });
+
+    it('should display status text for pending subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('Initializing');
+    });
+
+    it('should display status text for orphaned subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'orphaned' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('Orphaned');
+    });
+
+    it('should clear status text for completed subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'completed' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('');
+    });
+
+    it('should truncate long descriptions', () => {
+      const longDescription = 'A'.repeat(50);
+      panel.updateSubagent({ id: 'task-1', description: longDescription, status: 'pending' });
+
+      const label = containerEl.querySelector('.claudian-subagent-label');
+      expect(label?.textContent).toBe('A'.repeat(40) + '...');
+    });
+
+    it('should handle updateSubagent called before mount', () => {
+      const unmountedPanel = new StatusPanel();
+
+      expect(() => {
+        unmountedPanel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+      }).not.toThrow();
+    });
+  });
+
+  describe('restoreSubagents', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should mark running subagents as orphaned after reload', () => {
+      const subagents = [
+        { id: 'running-1', description: 'Running task', mode: 'async' as const, asyncStatus: 'running' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
+        { id: 'completed-1', description: 'Done task', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(2);
+
+      // Running should become orphaned
+      const runningEl = elements.find(el => el.getAttribute('data-panel-subagent-id') === 'running-1');
+      expect(runningEl?.classList.has('orphaned')).toBe(true);
+
+      // Completed should stay completed
+      const completedEl = elements.find(el => el.getAttribute('data-panel-subagent-id') === 'completed-1');
+      expect(completedEl?.classList.has('completed')).toBe(true);
+    });
+
+    it('should filter to async subagents only', () => {
+      const subagents = [
+        { id: 'sync-1', description: 'Sync task', mode: undefined, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+        { id: 'async-1', description: 'Async task', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].getAttribute('data-panel-subagent-id')).toBe('async-1');
+    });
+
+    it('should mark pending subagents as orphaned after reload', () => {
+      const subagents = [
+        { id: 'pending-1', description: 'Pending task', mode: 'async' as const, asyncStatus: 'pending' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].classList.has('orphaned')).toBe(true);
+    });
+
+    it('should preserve error status after reload', () => {
+      const subagents = [
+        { id: 'error-1', description: 'Error task', mode: 'async' as const, asyncStatus: 'error' as const, isExpanded: false, status: 'error' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].classList.has('error')).toBe(true);
+    });
+
+    it('should preserve existing orphaned status after reload', () => {
+      const subagents = [
+        { id: 'orphaned-1', description: 'Orphaned task', mode: 'async' as const, asyncStatus: 'orphaned' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].classList.has('orphaned')).toBe(true);
+    });
+
+    it('should clear existing subagents before restoring', () => {
+      // Add initial subagent
+      panel.updateSubagent({ id: 'existing-1', description: 'Existing', status: 'running' });
+      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(1);
+
+      // Restore with new subagents
+      const subagents = [
+        { id: 'restored-1', description: 'Restored', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+      ];
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].getAttribute('data-panel-subagent-id')).toBe('restored-1');
+    });
+  });
+
+  describe('clearTerminalSubagents', () => {
+    it('should remove completed subagents but keep running ones', () => {
+      panel.mount(containerEl as unknown as HTMLElement);
+
+      // Add a running and a completed subagent
+      panel.updateSubagent({ id: 'running-1', description: 'Running task', status: 'running' });
+      panel.updateSubagent({ id: 'completed-1', description: 'Completed task', status: 'completed' });
+      panel.updateSubagent({ id: 'error-1', description: 'Error task', status: 'error' });
+
+      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(3);
+
+      panel.clearTerminalSubagents();
+
+      const remaining = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].getAttribute('data-panel-subagent-id')).toBe('running-1');
+    });
+
+    it('should remove orphaned subagents', () => {
+      panel.mount(containerEl as unknown as HTMLElement);
+
+      panel.updateSubagent({ id: 'orphaned-1', description: 'Orphaned task', status: 'orphaned' });
+      panel.updateSubagent({ id: 'pending-1', description: 'Pending task', status: 'pending' });
+
+      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(2);
+
+      panel.clearTerminalSubagents();
+
+      const remaining = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].getAttribute('data-panel-subagent-id')).toBe('pending-1');
     });
   });
 });

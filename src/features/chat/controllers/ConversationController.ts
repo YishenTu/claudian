@@ -9,14 +9,14 @@ import { setIcon } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
-import type { Conversation } from '../../../core/types';
+import type { ChatMessage, Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
-import type { ExternalContextSelector, FileContextManager, ImageContextManager, McpServerSelector, TodoPanel } from '../ui';
+import type { ExternalContextSelector, FileContextManager, ImageContextManager, McpServerSelector, StatusPanel } from '../ui';
 
 /** Callbacks for conversation events. */
 export interface ConversationCallbacks {
@@ -43,8 +43,8 @@ export interface ConversationControllerDeps {
   clearQueuedMessage: () => void;
   /** Get title generation service. */
   getTitleGenerationService: () => TitleGenerationService | null;
-  /** Get TodoPanel for remounting after messagesEl.empty(). */
-  getTodoPanel: () => TodoPanel | null;
+  /** Get StatusPanel for remounting after messagesEl.empty(). */
+  getStatusPanel: () => StatusPanel | null;
   /** Get the agent service (for multi-tab, returns tab's service). */
   getAgentService?: () => ClaudianService | null;
 }
@@ -129,13 +129,14 @@ export class ConversationController {
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
 
-      // Recreate welcome element first (before TodoPanel for consistent ordering)
+      // Recreate welcome element first (before StatusPanel for consistent ordering)
       const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
       welcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: this.getGreeting() });
       this.deps.setWelcomeEl(welcomeEl);
 
-      // Remount TodoPanel after welcome (messagesEl.empty() removes it from DOM)
-      this.deps.getTodoPanel()?.remount();
+      // Remount StatusPanel to restore state for new conversation
+      this.deps.getStatusPanel()?.remount();
+      this.deps.getStatusPanel()?.clearSubagents();
 
       this.deps.getInputEl().value = '';
 
@@ -253,6 +254,9 @@ export class ConversationController {
     // Restore todo panel from loaded conversation
     state.currentTodos = extractLastTodosFromMessages(state.messages);
 
+    // Restore async subagents to status panel
+    this.restoreAsyncSubagentsToPanel(state.messages);
+
     this.callbacks.onConversationLoaded?.();
   }
 
@@ -326,6 +330,9 @@ export class ConversationController {
 
       // Restore todo panel from switched conversation
       state.currentTodos = extractLastTodosFromMessages(state.messages);
+
+      // Restore async subagents to status panel
+      this.restoreAsyncSubagentsToPanel(state.messages);
 
       this.deps.getHistoryDropdown()?.removeClass('visible');
       this.updateWelcomeVisibility();
@@ -439,6 +446,57 @@ export class ConversationController {
     } else {
       // Session with messages: restore exactly what was saved
       externalContextSelector.setExternalContexts(savedPaths || []);
+    }
+  }
+
+  /**
+   * Restores async subagents from messages to the status panel.
+   * Extracts all async subagents from conversation messages.
+   */
+  private restoreAsyncSubagentsToPanel(messages: ChatMessage[]): void {
+    const statusPanel = this.deps.getStatusPanel();
+    if (!statusPanel) return;
+
+    // Collect all async subagents from messages
+    const allSubagents = messages
+      .filter(msg => msg.role === 'assistant' && msg.subagents)
+      .flatMap(msg => msg.subagents!)
+      .filter(s => s.mode === 'async');
+
+    if (allSubagents.length > 0) {
+      statusPanel.restoreSubagents(allSubagents);
+    } else {
+      statusPanel.clearSubagents();
+    }
+  }
+
+  /**
+   * Clears terminal async subagents (completed, error) from conversation messages.
+   * Called when user sends a new query - terminal subagents are dismissed and
+   * should not reappear on reload.
+   */
+  clearTerminalSubagentsFromMessages(): void {
+    const { state } = this.deps;
+    const terminalStates = ['completed', 'error'];
+    let modified = false;
+
+    for (const msg of state.messages) {
+      if (msg.role === 'assistant' && msg.subagents) {
+        const originalLength = msg.subagents.length;
+        msg.subagents = msg.subagents.filter(
+          s => s.mode !== 'async' || !terminalStates.includes(s.asyncStatus || '')
+        );
+        if (msg.subagents.length !== originalLength) {
+          modified = true;
+        }
+      }
+    }
+
+    // Save if modified (fire-and-forget with error handling)
+    if (modified && state.currentConversationId) {
+      this.save().catch(() => {
+        // Save failure is non-critical for this operation
+      });
     }
   }
 

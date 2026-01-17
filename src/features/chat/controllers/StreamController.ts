@@ -104,16 +104,9 @@ export class StreamController {
         this.finalizeCurrentTextBlock(msg);
 
         if (chunk.name === TOOL_TASK) {
-          // Flush pending tools before Task (subagent needs immediate render)
+          // Flush pending tools before Task
           this.flushPendingTools();
-          // Track subagent spawn for usage filtering
-          state.subagentsSpawnedThisStream++;
-          const isAsync = this.deps.asyncSubagentManager.isAsyncTask(chunk.input);
-          if (isAsync) {
-            await this.handleAsyncTaskToolUse(chunk, msg);
-          } else {
-            await this.handleTaskToolUse(chunk, msg);
-          }
+          await this.handleTaskToolUseBuffered(chunk, msg);
           break;
         }
 
@@ -294,6 +287,12 @@ export class StreamController {
   ): void {
     const { state } = this.deps;
 
+    // Check if Task is still pending - render it first before processing result
+    if (state.pendingTaskTools.has(chunk.id)) {
+      // Result arrived, render as sync (run_in_background defaults to false)
+      void this.renderPendingTask(chunk.id, msg);
+    }
+
     // Check if it's a sync subagent result
     const subagentState = state.activeSubagents.get(chunk.id);
     if (subagentState) {
@@ -419,34 +418,127 @@ export class StreamController {
   // Sync Subagent Handling
   // ============================================
 
-  /** Handles Task tool_use by creating a sync subagent block. */
-  private async handleTaskToolUse(
+  /**
+   * Handles Task tool_use with buffering until run_in_background is known.
+   * This prevents creating wrong block type when input arrives in chunks.
+   */
+  private async handleTaskToolUseBuffered(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): Promise<void> {
     const { state } = this.deps;
     if (!state.currentContentEl) return;
 
-    // Check for existing subagent (input update during streaming)
-    const existingState = state.activeSubagents.get(chunk.id);
-    if (existingState) {
+    // Check if already rendered as sync subagent
+    const existingSyncState = state.activeSubagents.get(chunk.id);
+    if (existingSyncState) {
+      this.updateSubagentLabel(existingSyncState.wrapperEl, existingSyncState.info, chunk.input);
+      return;
+    }
+
+    // Check if already rendered as async subagent
+    const existingAsyncState = state.asyncSubagentStates.get(chunk.id);
+    if (existingAsyncState) {
+      this.updateSubagentLabel(existingAsyncState.wrapperEl, existingAsyncState.info, chunk.input);
+      return;
+    }
+
+    // Check if already buffered - merge input
+    const pending = state.pendingTaskTools.get(chunk.id);
+    if (pending) {
       const newInput = chunk.input || {};
       if (Object.keys(newInput).length > 0) {
-        // Update the label with new description
-        const description = (newInput.description as string) || '';
-        if (description) {
-          existingState.info.description = description;
-          const labelEl = existingState.wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
-          if (labelEl) {
-            const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
-            labelEl.setText(truncated);
-          }
-        }
+        pending.toolCall.input = { ...pending.toolCall.input, ...newInput };
+      }
+      // Check if we can now render (run_in_background is known)
+      if (pending.toolCall.input.run_in_background !== undefined) {
+        this.renderPendingTask(chunk.id, msg);
       }
       return;
     }
 
-    const subagentState = createSubagentBlock(state.currentContentEl, chunk.id, chunk.input);
+    // New Task - check if run_in_background is known
+    const runInBackground = chunk.input?.run_in_background;
+    if (runInBackground !== undefined) {
+      // Known immediately - render directly
+      state.subagentsSpawnedThisStream++;
+      if (runInBackground === true) {
+        await this.handleAsyncTaskToolUse(chunk, msg);
+      } else {
+        await this.handleTaskToolUse(chunk, msg);
+      }
+      return;
+    }
+
+    // Unknown - buffer until we know
+    const toolCall: ToolCallInfo = {
+      id: chunk.id,
+      name: chunk.name,
+      input: chunk.input || {},
+      status: 'running',
+      isExpanded: false,
+    };
+    state.pendingTaskTools.set(chunk.id, {
+      toolCall,
+      parentEl: state.currentContentEl,
+    });
+    this.showThinkingIndicator();
+  }
+
+  /** Updates subagent label with new description from input. */
+  private updateSubagentLabel(
+    wrapperEl: HTMLElement,
+    info: SubagentInfo,
+    newInput: Record<string, unknown>
+  ): void {
+    if (!newInput || Object.keys(newInput).length === 0) return;
+    const description = (newInput.description as string) || '';
+    if (description) {
+      info.description = description;
+      const labelEl = wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
+      if (labelEl) {
+        const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
+        labelEl.setText(truncated);
+      }
+    }
+  }
+
+  /** Renders a pending Task tool and removes it from the buffer. */
+  private async renderPendingTask(toolId: string, msg: ChatMessage): Promise<void> {
+    const { state } = this.deps;
+    const pending = state.pendingTaskTools.get(toolId);
+    if (!pending) return;
+
+    state.pendingTaskTools.delete(toolId);
+    state.subagentsSpawnedThisStream++;
+
+    const chunk = {
+      type: 'tool_use' as const,
+      id: pending.toolCall.id,
+      name: pending.toolCall.name,
+      input: pending.toolCall.input,
+    };
+
+    // Use the stored parentEl to ensure rendering in correct location
+    const isAsync = this.deps.asyncSubagentManager.isAsyncTask(chunk.input);
+    if (isAsync) {
+      await this.handleAsyncTaskToolUse(chunk, msg, pending.parentEl);
+    } else {
+      await this.handleTaskToolUse(chunk, msg, pending.parentEl);
+    }
+  }
+
+  /** Handles Task tool_use by creating a sync subagent block. */
+  private async handleTaskToolUse(
+    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
+    msg: ChatMessage,
+    parentEl?: HTMLElement
+  ): Promise<void> {
+    const { state } = this.deps;
+    const targetEl = parentEl ?? state.currentContentEl;
+    if (!targetEl) return;
+
+    const subagentState = createSubagentBlock(targetEl, chunk.id, chunk.input);
     state.activeSubagents.set(chunk.id, subagentState);
 
     msg.subagents = msg.subagents || [];
@@ -531,36 +623,16 @@ export class StreamController {
   /** Handles async Task tool_use (run_in_background=true). */
   private async handleAsyncTaskToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
-    msg: ChatMessage
+    msg: ChatMessage,
+    parentEl?: HTMLElement
   ): Promise<void> {
     const { state, asyncSubagentManager } = this.deps;
-    if (!state.currentContentEl) return;
-
-    // Check for existing async subagent (input update during streaming)
-    const existingState = state.asyncSubagentStates.get(chunk.id);
-    if (existingState) {
-      const newInput = chunk.input || {};
-      if (Object.keys(newInput).length > 0) {
-        // Update the label with new description
-        const description = (newInput.description as string) || '';
-        if (description) {
-          const existingInfo = msg.subagents?.find(s => s.id === chunk.id);
-          if (existingInfo) {
-            existingInfo.description = description;
-          }
-          const labelEl = existingState.wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
-          if (labelEl) {
-            const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
-            labelEl.setText(truncated);
-          }
-        }
-      }
-      return;
-    }
+    const targetEl = parentEl ?? state.currentContentEl;
+    if (!targetEl) return;
 
     const subagentInfo = asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
 
-    const asyncState = createAsyncSubagentBlock(state.currentContentEl, chunk.id, chunk.input);
+    const asyncState = createAsyncSubagentBlock(targetEl, chunk.id, chunk.input);
     state.asyncSubagentStates.set(chunk.id, asyncState);
 
     msg.subagents = msg.subagents || [];
@@ -572,7 +644,7 @@ export class StreamController {
     this.showThinkingIndicator();
   }
 
-  /** Handles AgentOutputTool tool_use (invisible, links to async subagent). */
+  /** Handles TaskOutput tool_use (invisible, links to async subagent). */
   private handleAgentOutputToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     _msg: ChatMessage
@@ -586,6 +658,9 @@ export class StreamController {
     };
 
     this.deps.asyncSubagentManager.handleAgentOutputToolUse(toolCall);
+
+    // Show flavor text while waiting for TaskOutput result
+    this.showThinkingIndicator();
   }
 
   /** Handles async Task tool_result to extract agent_id. */
@@ -602,7 +677,7 @@ export class StreamController {
     return true;
   }
 
-  /** Handles AgentOutputTool result to finalize async subagent. */
+  /** Handles TaskOutput result to finalize async subagent. */
   private handleAgentOutputToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     _msg: ChatMessage

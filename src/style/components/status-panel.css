@@ -1,0 +1,164 @@
+/* Status Panel - persistent bottom panel for async subagents and todos */
+
+/* Fixed container between messages and input */
+.claudian-status-panel-container {
+  flex-shrink: 0;
+  padding: 0 12px;
+}
+
+/* Main container - no border/background, flows seamlessly */
+.claudian-status-panel {
+  padding: 0;
+}
+
+/* ============================================
+   Async Subagent Section (above todos)
+   ============================================ */
+
+.claudian-status-panel-subagents {
+  /* Subagents reuse the .claudian-subagent-list.async styles from subagent.css */
+}
+
+.claudian-status-panel-subagents .claudian-subagent-list {
+  margin-bottom: 4px;
+}
+
+/* Override pointer cursor - panel subagents are not clickable */
+.claudian-status-panel-subagents .claudian-subagent-header {
+  cursor: default;
+}
+
+/* ============================================
+   Todo Section
+   ============================================ */
+
+/* Todos container */
+.claudian-status-panel-todos {
+  margin-top: 4px;
+}
+
+/* Header (collapsed view) - subtle hover only */
+.claudian-status-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+  overflow: hidden;
+}
+
+.claudian-status-panel-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-status-panel-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* List icon */
+.claudian-status-panel-icon {
+  display: flex;
+  align-items: center;
+  color: var(--interactive-accent);
+  flex-shrink: 0;
+}
+
+.claudian-status-panel-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Label */
+.claudian-status-panel-label {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--interactive-accent);
+}
+
+/* Current task preview (collapsed state) */
+.claudian-status-panel-current {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* Content (expanded list) */
+.claudian-status-panel-content {
+  padding: 2px 0;
+}
+
+/* Individual todo item - reuses existing styles */
+.claudian-status-panel-content .claudian-todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.claudian-status-panel-content .claudian-todo-status-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.claudian-status-panel-content .claudian-todo-status-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-status-panel-content .claudian-todo-text {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  line-height: 1.4;
+  flex: 1;
+}
+
+/* Status-specific styling */
+.claudian-status-panel-content .claudian-todo-pending .claudian-todo-status-icon {
+  color: var(--text-normal);
+}
+
+.claudian-status-panel-content .claudian-todo-pending .claudian-todo-status-icon svg {
+  transform: scale(2);
+}
+
+.claudian-status-panel-content .claudian-todo-pending .claudian-todo-text {
+  color: var(--text-normal);
+}
+
+.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-status-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-status-icon svg {
+  transform: scale(2);
+}
+
+.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-text {
+  color: var(--text-normal);
+}
+
+.claudian-status-panel-content .claudian-todo-completed .claudian-todo-status-icon {
+  color: var(--color-green);
+}
+
+.claudian-status-panel-content .claudian-todo-completed .claudian-todo-status-icon svg {
+  width: 12px;
+  height: 12px;
+  transform: translateX(3px);
+}
+
+.claudian-status-panel-content .claudian-todo-completed .claudian-todo-text {
+  color: var(--text-muted);
+}

@@ -17,6 +17,7 @@ import type {
   Conversation,
   ConversationMeta,
   SessionMetadata,
+  SubagentInfo,
   ToolDiffData,
   UsageInfo,
 } from '../types';
@@ -407,8 +408,9 @@ export class SessionStorage {
 
   /** Convert a Conversation to SessionMetadata for native storage. */
   toSessionMetadata(conversation: Conversation): SessionMetadata {
-    // Extract toolDiffData from all messages for persistence
+    // Extract toolDiffData and subagentData from all messages for persistence
     const toolDiffData = this.extractToolDiffData(conversation.messages);
+    const subagentData = this.extractSubagentData(conversation.messages);
 
     return {
       id: conversation.id,
@@ -426,6 +428,7 @@ export class SessionStorage {
       usage: conversation.usage,
       legacyCutoffAt: conversation.legacyCutoffAt,
       toolDiffData: Object.keys(toolDiffData).length > 0 ? toolDiffData : undefined,
+      subagentData: Object.keys(subagentData).length > 0 ? subagentData : undefined,
     };
   }
 
@@ -443,6 +446,24 @@ export class SessionStorage {
         if (toolCall.diffData) {
           result[toolCall.id] = toolCall.diffData;
         }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Extracts subagentData from messages for persistence.
+   * Collects subagent info from all assistant messages.
+   */
+  private extractSubagentData(messages: ChatMessage[]): Record<string, SubagentInfo> {
+    const result: Record<string, SubagentInfo> = {};
+
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || !msg.subagents) continue;
+
+      for (const subagent of msg.subagents) {
+        result[subagent.id] = subagent;
       }
     }
 

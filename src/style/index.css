@@ -14,7 +14,7 @@
 @import "./components/code.css";
 @import "./components/thinking.css";
 @import "./components/toolcalls.css";
-@import "./components/todo-panel.css";
+@import "./components/status-panel.css";
 @import "./components/subagent.css";
 @import "./components/input.css";
 @import "./components/context-footer.css";

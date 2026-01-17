@@ -190,6 +190,41 @@ describe('AsyncSubagentManager', () => {
     expect(manager.isLinkedAgentOutputTool('output-unknown')).toBe(false);
   });
 
+  it('handles TaskOutput with task_id parameter (SDK format)', () => {
+    const { manager, updates } = createManager();
+
+    // Create and start async subagent
+    manager.createAsyncSubagent('task-sdk', { description: 'SDK test', run_in_background: true });
+    manager.handleTaskToolResult('task-sdk', JSON.stringify({ agent_id: 'agent-sdk-123' }));
+
+    // TaskOutput tool uses task_id parameter (not agent_id)
+    const toolCall: ToolCallInfo = {
+      id: 'taskoutput-1',
+      name: 'TaskOutput',
+      input: { task_id: 'agent-sdk-123' },  // SDK uses task_id
+      status: 'running',
+      isExpanded: false,
+    };
+    manager.handleAgentOutputToolUse(toolCall);
+
+    // Tool should be linked via task_id
+    expect(manager.isLinkedAgentOutputTool('taskoutput-1')).toBe(true);
+
+    // Complete with result
+    const completed = manager.handleAgentOutputToolResult(
+      'taskoutput-1',
+      JSON.stringify({
+        retrieval_status: 'success',
+        agents: { 'agent-sdk-123': { status: 'completed', result: 'task_id works!' } },
+      }),
+      false
+    );
+
+    expect(completed?.asyncStatus).toBe('completed');
+    expect(completed?.result).toBe('task_id works!');
+    expect(updates[updates.length - 1].asyncStatus).toBe('completed');
+  });
+
   it('returns undefined on invalid AgentOutputTool state transition', () => {
     const { manager } = createManager();
     manager.createAsyncSubagent('task-done', { description: 'Background', run_in_background: true });
@@ -226,6 +261,30 @@ describe('AsyncSubagentManager', () => {
     manager.handleAgentOutputToolUse(toolCall);
 
     const running = manager.handleAgentOutputToolResult('output-plain', 'not ready', false);
+    expect(running?.asyncStatus).toBe('running');
+  });
+
+  it('treats XML-style status running as still running', () => {
+    const { manager } = createManager();
+    manager.createAsyncSubagent('task-xml', { description: 'Background', run_in_background: true });
+    manager.handleTaskToolResult('task-xml', JSON.stringify({ agent_id: 'agent-xml' }));
+
+    const toolCall: ToolCallInfo = {
+      id: 'output-xml',
+      name: 'AgentOutputTool',
+      input: { agent_id: 'agent-xml' },
+      status: 'running',
+      isExpanded: false,
+    };
+    manager.handleAgentOutputToolUse(toolCall);
+
+    // SDK returns XML-style format for TaskOutput
+    const xmlResult = `<retrieval_status>not_ready</retrieval_status>
+<task_id>agent-xml</task_id>
+<task_type>local_agent</task_type>
+<status>running</status>`;
+
+    const running = manager.handleAgentOutputToolResult('output-xml', xmlResult, false);
     expect(running?.asyncStatus).toBe('running');
   });
 

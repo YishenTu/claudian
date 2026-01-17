@@ -36,7 +36,7 @@ import {
   FileContextManager,
   ImageContextManager,
   InstructionModeManager as InstructionModeManagerClass,
-  TodoPanel,
+  StatusPanel,
 } from '../ui';
 import type { TabData, TabDOMElements, TabId } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
@@ -143,7 +143,7 @@ export function createTab(options: TabCreateOptions): TabData {
       slashCommandDropdown: null,
       instructionModeManager: null,
       contextUsageMeter: null,
-      todoPanel: null,
+      statusPanel: null,
     },
     dom,
     renderer: null,
@@ -208,8 +208,8 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   });
   scrollToBottomEl.textContent = 'Scroll to bottom';
 
-  // Todo panel container (fixed between messages and input)
-  const todoPanelContainerEl = contentEl.createDiv({ cls: 'claudian-todo-panel-container' });
+  // Status panel container (fixed between messages and input)
+  const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
 
   // Input container
   const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
@@ -235,7 +235,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     contentEl,
     messagesEl,
     welcomeEl,
-    todoPanelContainerEl,
+    statusPanelContainerEl,
     inputContainerEl,
     inputWrapper,
     inputEl,
@@ -402,8 +402,8 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
     }
   );
 
-  tab.ui.todoPanel = new TodoPanel();
-  tab.ui.todoPanel.mount(dom.todoPanelContainerEl);
+  tab.ui.statusPanel = new StatusPanel();
+  tab.ui.statusPanel.mount(dom.statusPanelContainerEl);
 }
 
 /**
@@ -516,7 +516,7 @@ export function initializeTabUI(
   state.callbacks = {
     ...state.callbacks,
     onUsageChanged: (usage) => tab.ui.contextUsageMeter?.update(usage),
-    onTodosChanged: (todos) => tab.ui.todoPanel?.updateTodos(todos),
+    onTodosChanged: (todos) => tab.ui.statusPanel?.updateTodos(todos),
     onAutoScrollChanged: () => updateScrollToBottomVisibility(),
   };
 
@@ -566,7 +566,23 @@ export function initializeTabControllers(
 
   // Wire async subagent callback now that StreamController exists
   services.asyncSubagentManager.setCallback(
-    (subagent) => tab.controllers.streamController?.onAsyncSubagentStateChange(subagent)
+    (subagent) => {
+      // Update inline renderer
+      tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
+
+      // Update status panel
+      if (subagent.mode === 'async' && ui.statusPanel) {
+        ui.statusPanel.updateSubagent({
+          id: subagent.id,
+          description: subagent.description,
+          status: subagent.asyncStatus === 'completed' ? 'completed'
+            : subagent.asyncStatus === 'error' ? 'error'
+            : subagent.asyncStatus === 'orphaned' ? 'orphaned'
+            : subagent.asyncStatus === 'running' ? 'running'
+            : 'pending',
+        });
+      }
+    }
   );
 
   // Conversation controller
@@ -587,7 +603,7 @@ export function initializeTabControllers(
       getExternalContextSelector: () => ui.externalContextSelector,
       clearQueuedMessage: () => tab.controllers.inputController?.clearQueuedMessage(),
       getTitleGenerationService: () => services.titleGenerationService,
-      getTodoPanel: () => ui.todoPanel,
+      getStatusPanel: () => ui.statusPanel,
       getAgentService: () => tab.service, // Use tab's service instead of plugin's
     },
     {}
@@ -614,6 +630,7 @@ export function initializeTabControllers(
     getInstructionModeManager: () => ui.instructionModeManager,
     getInstructionRefineService: () => services.instructionRefineService,
     getTitleGenerationService: () => services.titleGenerationService,
+    getStatusPanel: () => ui.statusPanel,
     generateId,
     resetContextMeter: () => ui.contextUsageMeter?.update(null),
     resetInputHeight: () => {
@@ -801,8 +818,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.services.instructionRefineService = null;
   tab.services.titleGenerationService?.cancel();
   tab.services.titleGenerationService = null;
-  tab.ui.todoPanel?.destroy();
-  tab.ui.todoPanel = null;
+  tab.ui.statusPanel?.destroy();
+  tab.ui.statusPanel = null;
 
   // Cleanup async subagents
   tab.services.asyncSubagentManager.orphanAllActive();

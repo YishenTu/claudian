@@ -18,6 +18,7 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
+  SubagentInfo,
   ToolDiffData,
 } from './core/types';
 import {
@@ -328,6 +329,7 @@ export default class ClaudianPlugin extends Plugin {
           legacyCutoffAt: meta.legacyCutoffAt,
           isNative: true,
           toolDiffData: meta.toolDiffData, // Preserve for applying to loaded messages
+          subagentData: meta.subagentData, // Preserve for applying to loaded messages
         };
       });
 
@@ -689,6 +691,11 @@ export default class ClaudianPlugin extends Plugin {
       this.applyToolDiffData(merged, conversation.toolDiffData);
     }
 
+    // Apply cached subagentData to loaded messages (for Task tool count and status)
+    if (conversation.subagentData) {
+      this.applySubagentData(merged, conversation.subagentData);
+    }
+
     conversation.messages = merged;
     conversation.sdkMessagesLoaded = true;
   }
@@ -705,6 +712,59 @@ export default class ClaudianPlugin extends Plugin {
         const diffData = toolDiffData[toolCall.id];
         if (diffData && !toolCall.diffData) {
           toolCall.diffData = diffData;
+        }
+      }
+    }
+  }
+
+  /**
+   * Applies cached subagentData to messages.
+   * Restores subagent info so Task tools can show tool count and status.
+   * Also updates contentBlocks to properly identify Task tools as subagents.
+   */
+  private applySubagentData(messages: ChatMessage[], subagentData: Record<string, SubagentInfo>): void {
+    for (const msg of messages) {
+      if (msg.role !== 'assistant') continue;
+
+      // Apply subagent data to the message
+      for (const [subagentId, subagent] of Object.entries(subagentData)) {
+        // Initialize subagents array if needed
+        if (!msg.subagents) {
+          msg.subagents = [];
+        }
+
+        // Check if this subagent belongs to this message by checking contentBlocks
+        const hasSubagentBlock = msg.contentBlocks?.some(
+          b => (b.type === 'subagent' && b.subagentId === subagentId) ||
+               (b.type === 'tool_use' && b.toolId === subagentId)
+        );
+
+        if (!hasSubagentBlock) continue;
+
+        // Add or update subagent in the message
+        const existingIdx = msg.subagents.findIndex(s => s.id === subagentId);
+        if (existingIdx === -1) {
+          msg.subagents.push(subagent);
+        } else {
+          msg.subagents[existingIdx] = subagent;
+        }
+
+        // Update contentBlock from tool_use to subagent, or update existing subagent block with mode
+        if (msg.contentBlocks) {
+          for (let i = 0; i < msg.contentBlocks.length; i++) {
+            const block = msg.contentBlocks[i];
+            if (block.type === 'tool_use' && block.toolId === subagentId) {
+              // Replace tool_use with subagent block
+              msg.contentBlocks[i] = {
+                type: 'subagent',
+                subagentId,
+                mode: subagent.mode,
+              };
+            } else if (block.type === 'subagent' && block.subagentId === subagentId && !block.mode) {
+              // Update existing subagent block with mode if missing
+              block.mode = subagent.mode;
+            }
+          }
         }
       }
     }

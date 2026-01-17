@@ -336,7 +336,7 @@ describe('StreamController - Text Content', () => {
           type: 'tool_use',
           id: 'task-1',
           name: TOOL_TASK,
-          input: { prompt: 'Do something', subagent_type: 'general-purpose' },
+          input: { prompt: 'Do something', subagent_type: 'general-purpose', run_in_background: false },
         },
         msg
       );
@@ -558,7 +558,7 @@ describe('StreamController - Text Content', () => {
 
       // Task tool should flush pending tools before creating subagent block
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose', run_in_background: false } },
         msg
       );
 
