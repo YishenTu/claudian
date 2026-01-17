@@ -363,6 +363,7 @@ export class ChatState {
     this.state.queuedMessage = null;
     this.usage = null;
     this.currentTodos = null;
+    this.autoScrollEnabled = true;
   }
 
   /** Gets messages for persistence. */

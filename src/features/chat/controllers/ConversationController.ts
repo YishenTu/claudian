@@ -117,6 +117,7 @@ export class ConversationController {
       state.clearMessages();
       state.usage = null;
       state.currentTodos = null;
+      state.autoScrollEnabled = true;
 
       // Reset agent service session (no session ID for entry point)
       // Pass persistent paths to prevent stale external contexts
@@ -174,6 +175,7 @@ export class ConversationController {
       state.clearMessages();
       state.usage = null;
       state.currentTodos = null;
+      state.autoScrollEnabled = true;
 
       // Pass persistent paths to prevent stale external contexts
       this.getAgentService()?.setSessionId(
@@ -207,6 +209,7 @@ export class ConversationController {
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
+    state.autoScrollEnabled = true;
 
     const hasMessages = state.messages.length > 0;
 
@@ -278,6 +281,7 @@ export class ConversationController {
       state.currentConversationId = conversation.id;
       state.messages = [...conversation.messages];
       state.usage = conversation.usage ?? null;
+      state.autoScrollEnabled = true;
 
       const hasMessages = state.messages.length > 0;
 
