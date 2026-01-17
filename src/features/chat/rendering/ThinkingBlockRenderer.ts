@@ -218,6 +218,14 @@ export async function appendFlavorThinkingContent(
     // Start timer
     state.timerEl.setText('Thinking 0s...');
     state.timerInterval = setInterval(() => {
+      // Stop timer if DOM element is no longer connected
+      if (!state.timerEl?.isConnected) {
+        if (state.timerInterval) {
+          clearInterval(state.timerInterval);
+          state.timerInterval = null;
+        }
+        return;
+      }
       if (state.startTime && !state.isFinalized) {
         const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
         state.timerEl.setText(`Thinking ${elapsed}s...`);
@@ -233,7 +241,11 @@ export async function appendFlavorThinkingContent(
   if (!thinkingTextEl) {
     thinkingTextEl = state.contentEl.createDiv({ cls: 'claudian-thinking-text' });
   }
-  await renderContent(thinkingTextEl, state.thinkingContent);
+  try {
+    await renderContent(thinkingTextEl, state.thinkingContent);
+  } catch {
+    // Silently ignore render errors during streaming (DOM may be detached)
+  }
 }
 
 /** Setup click-to-expand behavior for flavor thinking block. */
@@ -302,7 +314,7 @@ export function finalizeFlavorThinking(state: FlavorThinkingState): number {
   return duration;
 }
 
-/** Hide and clean up the flavor thinking block. */
+/** Remove and clean up the flavor thinking block. */
 export function hideFlavorThinking(state: FlavorThinkingState | null): void {
   if (!state) return;
 

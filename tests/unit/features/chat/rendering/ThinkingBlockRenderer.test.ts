@@ -3,8 +3,12 @@
  */
 
 import {
+  appendFlavorThinkingContent,
+  createFlavorThinkingBlock,
   createThinkingBlock,
+  finalizeFlavorThinking,
   finalizeThinkingBlock,
+  hideFlavorThinking,
   renderStoredThinkingBlock,
 } from '@/features/chat/rendering/ThinkingBlockRenderer';
 
@@ -83,6 +87,7 @@ function createMockElement(tag = 'div'): any {
     setText: (text: string) => {
       element.textContent = text;
     },
+    remove: jest.fn(),
     // Test helpers
     _classes: classes,
     _attributes: attributes,
@@ -386,6 +391,254 @@ describe('ThinkingBlockRenderer', () => {
 
       expect(tabEvent.preventDefault).not.toHaveBeenCalled();
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
+  });
+
+  // ===========================================
+  // FlavorThinking Tests (Merged flavor + thinking)
+  // ===========================================
+
+  describe('createFlavorThinkingBlock', () => {
+    it('should create wrapper with correct class', () => {
+      const parentEl = createMockElement();
+
+      const state = createFlavorThinkingBlock(parentEl);
+
+      expect(state.wrapperEl.hasClass('claudian-flavor-thinking')).toBe(true);
+    });
+
+    it('should initialize with no thinking content', () => {
+      const parentEl = createMockElement();
+
+      const state = createFlavorThinkingBlock(parentEl);
+
+      expect(state.hasThinkingContent).toBe(false);
+      expect(state.thinkingContent).toBe('');
+      expect(state.startTime).toBeNull();
+      expect(state.timerInterval).toBeNull();
+    });
+
+    it('should start collapsed with content hidden', () => {
+      const parentEl = createMockElement();
+
+      const state = createFlavorThinkingBlock(parentEl);
+
+      expect(state.isExpanded).toBe(false);
+      expect(state.contentEl.style.display).toBe('none');
+    });
+
+    it('should set random flavor text', () => {
+      const parentEl = createMockElement();
+
+      const state = createFlavorThinkingBlock(parentEl);
+
+      // Flavor text should be set (non-empty)
+      expect(state.flavorText).toBeTruthy();
+      expect(state.flavorEl.textContent).toBe(state.flavorText);
+    });
+
+    it('should set interrupt hint', () => {
+      const parentEl = createMockElement();
+
+      const state = createFlavorThinkingBlock(parentEl);
+
+      expect(state.hintEl.textContent).toContain('esc to interrupt');
+    });
+  });
+
+  describe('appendFlavorThinkingContent', () => {
+    it('should enable thinking mode on first content', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+
+      expect(state.hasThinkingContent).toBe(true);
+      expect(state.startTime).not.toBeNull();
+      expect(state.timerInterval).not.toBeNull();
+    });
+
+    it('should accumulate thinking content', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'First ', mockRenderContent);
+      await appendFlavorThinkingContent(state, 'Second', mockRenderContent);
+
+      expect(state.thinkingContent).toBe('First Second');
+    });
+
+    it('should update hint text on first content', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+
+      expect(state.hintEl.textContent).toContain('thinking');
+    });
+
+    it('should add claudian-has-thinking class on first content', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+
+      expect(state.wrapperEl.hasClass('claudian-has-thinking')).toBe(true);
+    });
+
+    it('should call renderContent with accumulated content', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Test content', mockRenderContent);
+
+      expect(mockRenderContent).toHaveBeenCalled();
+    });
+
+    it('should not throw when renderContent fails', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+      const failingRenderContent = jest.fn().mockRejectedValue(new Error('Render failed'));
+
+      // Should not throw
+      await expect(
+        appendFlavorThinkingContent(state, 'Test', failingRenderContent)
+      ).resolves.not.toThrow();
+    });
+
+    it('should stop timer if DOM element is disconnected', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'First chunk', mockRenderContent);
+
+      // Mock isConnected to return false (simulate disconnected DOM)
+      Object.defineProperty(state.timerEl, 'isConnected', { value: false, configurable: true });
+
+      // Advance timer - should detect disconnected element and clear itself
+      jest.advanceTimersByTime(2000);
+
+      // Timer should have been cleared
+      expect(state.timerInterval).toBeNull();
+    });
+  });
+
+  describe('finalizeFlavorThinking', () => {
+    it('should stop the timer', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+      expect(state.timerInterval).not.toBeNull();
+
+      finalizeFlavorThinking(state);
+
+      expect(state.timerInterval).toBeNull();
+    });
+
+    it('should return duration in seconds', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+
+      // Advance time by 5 seconds
+      jest.advanceTimersByTime(5000);
+
+      const duration = finalizeFlavorThinking(state);
+
+      expect(duration).toBeGreaterThanOrEqual(5);
+    });
+
+    it('should update timer label with final duration', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+      jest.advanceTimersByTime(3000);
+
+      finalizeFlavorThinking(state);
+
+      expect(state.timerEl.textContent).toContain('Thought for');
+    });
+
+    it('should remove thinking hint from flavor text', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+      expect(state.hintEl.textContent).toContain('thinking');
+
+      finalizeFlavorThinking(state);
+
+      expect(state.hintEl.textContent).not.toContain('thinking');
+    });
+
+    it('should collapse if expanded', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+      state.isExpanded = true;
+      state.wrapperEl.addClass('expanded');
+      state.contentEl.style.display = 'block';
+
+      finalizeFlavorThinking(state);
+
+      expect(state.isExpanded).toBe(false);
+      expect(state.wrapperEl.hasClass('expanded')).toBe(false);
+      expect(state.contentEl.style.display).toBe('none');
+    });
+
+    it('should set isFinalized flag', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+
+      finalizeFlavorThinking(state);
+
+      expect(state.isFinalized).toBe(true);
+    });
+
+    it('should return 0 if no thinking content was added', () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      const duration = finalizeFlavorThinking(state);
+
+      expect(duration).toBe(0);
+    });
+  });
+
+  describe('hideFlavorThinking', () => {
+    it('should handle null state gracefully', () => {
+      // Should not throw
+      expect(() => hideFlavorThinking(null)).not.toThrow();
+    });
+
+    it('should stop the timer if running', async () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      await appendFlavorThinkingContent(state, 'Thinking...', mockRenderContent);
+      expect(state.timerInterval).not.toBeNull();
+
+      hideFlavorThinking(state);
+
+      expect(state.timerInterval).toBeNull();
+    });
+
+    it('should remove wrapper element from DOM', () => {
+      const parentEl = createMockElement();
+      const state = createFlavorThinkingBlock(parentEl);
+
+      const removeSpy = jest.fn();
+      state.wrapperEl.remove = removeSpy;
+
+      hideFlavorThinking(state);
+
+      expect(removeSpy).toHaveBeenCalled();
     });
   });
 });
