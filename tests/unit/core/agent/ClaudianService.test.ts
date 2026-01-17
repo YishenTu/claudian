@@ -88,6 +88,33 @@ describe('ClaudianService', () => {
       service.setSessionId(null);
       expect(service.getSessionId()).toBeNull();
     });
+
+    it('should pass externalContextPaths to ensureReady when setting session ID', async () => {
+      const ensureReadySpy = jest.spyOn(service, 'ensureReady').mockResolvedValue(true);
+
+      service.setSessionId('test-session', ['/path/a', '/path/b']);
+
+      // ensureReady is called asynchronously, give it a tick
+      await Promise.resolve();
+
+      expect(ensureReadySpy).toHaveBeenCalledWith({
+        sessionId: 'test-session',
+        externalContextPaths: ['/path/a', '/path/b'],
+      });
+    });
+
+    it('should pass undefined externalContextPaths when not provided', async () => {
+      const ensureReadySpy = jest.spyOn(service, 'ensureReady').mockResolvedValue(true);
+
+      service.setSessionId('test-session');
+
+      await Promise.resolve();
+
+      expect(ensureReadySpy).toHaveBeenCalledWith({
+        sessionId: 'test-session',
+        externalContextPaths: undefined,
+      });
+    });
   });
 
   describe('CC Permissions Loading', () => {
@@ -145,6 +172,130 @@ describe('ClaudianService', () => {
       await service.ensureReady({ force: true });
 
       expect(startPersistentQuerySpy).toHaveBeenCalled();
+    });
+
+    it('should return false (no-op) when config unchanged and query running', async () => {
+      // Setup: simulate running query with current config
+      const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
+      const buildConfigSpy = jest.spyOn(service as any, 'buildPersistentQueryConfig');
+      const needsRestartSpy = jest.spyOn(service as any, 'needsRestart');
+
+      const mockConfig = { model: 'test', externalContextPaths: [] };
+      buildConfigSpy.mockReturnValue(mockConfig);
+      needsRestartSpy.mockReturnValue(false);
+
+      startPersistentQuerySpy.mockImplementation(async () => {
+        // Simulate that query is now running
+        (service as any).persistentQuery = {};
+        (service as any).currentConfig = mockConfig;
+      });
+
+      // First call starts the query
+      const result1 = await service.ensureReady();
+      expect(result1).toBe(true);
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1);
+
+      // Second call with same config should no-op
+      const result2 = await service.ensureReady();
+      expect(result2).toBe(false);
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1); // Still 1, not called again
+    });
+
+    it('should restart when config changed (external context paths)', async () => {
+      const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
+      const closePersistentQuerySpy = jest.spyOn(service as any, 'closePersistentQuery');
+      const buildConfigSpy = jest.spyOn(service as any, 'buildPersistentQueryConfig');
+      const needsRestartSpy = jest.spyOn(service as any, 'needsRestart');
+
+      const mockConfig = { model: 'test', externalContextPaths: [] };
+      buildConfigSpy.mockReturnValue(mockConfig);
+
+      // needsRestart is only called when query is already running (Case 3)
+      // Return true to trigger restart on config change
+      needsRestartSpy.mockReturnValue(true);
+
+      startPersistentQuerySpy.mockImplementation(async () => {
+        (service as any).persistentQuery = {};
+      });
+
+      closePersistentQuerySpy.mockImplementation(() => {
+        (service as any).persistentQuery = null;
+      });
+
+      // First call starts with no external paths (Case 1: not running)
+      await service.ensureReady({ externalContextPaths: [] });
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1);
+
+      // Second call: query is running, needsRestart returns true → restart
+      const result = await service.ensureReady({ externalContextPaths: ['/new/path'] });
+      expect(result).toBe(true);
+      expect(closePersistentQuerySpy).toHaveBeenCalledWith('config changed', { preserveHandlers: undefined });
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('should return false when CLI unavailable after force close', async () => {
+      const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
+      const closePersistentQuerySpy = jest.spyOn(service as any, 'closePersistentQuery');
+
+      startPersistentQuerySpy.mockImplementation(async () => {
+        (service as any).persistentQuery = {};
+      });
+
+      closePersistentQuerySpy.mockImplementation(() => {
+        (service as any).persistentQuery = null;
+      });
+
+      // Start the query first
+      await service.ensureReady();
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1);
+
+      // Now make CLI unavailable
+      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockReturnValue(null);
+
+      // Force restart should close but fail to start new one
+      const result = await service.ensureReady({ force: true });
+      expect(result).toBe(false);
+      expect(closePersistentQuerySpy).toHaveBeenCalledWith('forced restart', { preserveHandlers: undefined });
+      expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1); // Not called again
+    });
+
+    it('should return false when CLI unavailable after config change close', async () => {
+      const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
+      const closePersistentQuerySpy = jest.spyOn(service as any, 'closePersistentQuery');
+      const buildConfigSpy = jest.spyOn(service as any, 'buildPersistentQueryConfig');
+      const needsRestartSpy = jest.spyOn(service as any, 'needsRestart');
+
+      const mockConfig = { model: 'test', externalContextPaths: [] };
+      buildConfigSpy.mockReturnValue(mockConfig);
+
+      // needsRestart returns true to trigger config change restart
+      needsRestartSpy.mockReturnValue(true);
+
+      startPersistentQuerySpy.mockImplementation(async () => {
+        (service as any).persistentQuery = {};
+      });
+
+      closePersistentQuerySpy.mockImplementation(() => {
+        (service as any).persistentQuery = null;
+      });
+
+      // Start the query first (Case 1: not running)
+      await service.ensureReady({ externalContextPaths: [] });
+
+      // Make CLI unavailable after the config change detection
+      // In Case 3, CLI is checked once before needsRestart, then again after close
+      let cliCallCount = 0;
+      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockImplementation(() => {
+        cliCallCount++;
+        // First call (for config check) returns valid path
+        // Second call (after close, for restart) returns null
+        return cliCallCount === 1 ? '/usr/local/bin/claude' : null;
+      });
+
+      // Config change should close but fail to start new one (CLI unavailable)
+      const result = await service.ensureReady({ externalContextPaths: ['/new/path'] });
+      expect(result).toBe(false);
+      expect(closePersistentQuerySpy).toHaveBeenCalledWith('config changed', { preserveHandlers: undefined });
     });
 
     it('should cleanup resources', () => {

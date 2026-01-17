@@ -321,6 +321,31 @@ describe('ClaudianPlugin', () => {
       expect(updated?.sessionId).toBeNull();
       expect(saveMetadataSpy).toHaveBeenCalled();
     });
+
+    it('broadcasts ensureReady with force when env changes without model change', async () => {
+      await plugin.onload();
+
+      // Mock getView to return a view with tabManager
+      const mockEnsureReady = jest.fn().mockResolvedValue(true);
+      const mockBroadcast = jest.fn().mockImplementation(async (fn) => {
+        await fn({ ensureReady: mockEnsureReady });
+      });
+      const mockTabManager = {
+        broadcastToAllTabs: mockBroadcast,
+        getAllTabs: jest.fn().mockReturnValue([]),
+      };
+      const mockView = {
+        getTabManager: jest.fn().mockReturnValue(mockTabManager),
+        refreshModelSelector: jest.fn(),
+      };
+      jest.spyOn(plugin, 'getView').mockReturnValue(mockView as any);
+
+      // Change env but not in a way that affects model
+      await plugin.applyEnvironmentVariables('SOME_VAR=value');
+
+      expect(mockBroadcast).toHaveBeenCalled();
+      expect(mockEnsureReady).toHaveBeenCalledWith({ force: true });
+    });
   });
 
   describe('ribbon icon callback', () => {

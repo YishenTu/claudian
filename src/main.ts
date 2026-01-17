@@ -446,20 +446,32 @@ export default class ClaudianPlugin extends Plugin {
     const tabManager = view?.getTabManager();
 
     if (tabManager) {
+      let failedTabs = 0;
       if (changed) {
         for (const tab of tabManager.getAllTabs()) {
           if (!tab.service || !tab.serviceInitialized) {
             continue;
           }
-          const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts() ?? [];
-          tab.service.resetSession();
-          await tab.service.ensureReady({ externalContextPaths });
+          try {
+            const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts() ?? [];
+            tab.service.resetSession();
+            await tab.service.ensureReady({ externalContextPaths });
+          } catch {
+            failedTabs++;
+          }
         }
       } else {
         // Restart initialized tabs to pick up env changes
-        await tabManager.broadcastToAllTabs(
-          async (service) => { await service.ensureReady({ force: true }); }
-        );
+        try {
+          await tabManager.broadcastToAllTabs(
+            async (service) => { await service.ensureReady({ force: true }); }
+          );
+        } catch {
+          failedTabs++;
+        }
+      }
+      if (failedTabs > 0) {
+        new Notice(`Environment changes applied, but ${failedTabs} tab(s) failed to restart.`);
       }
     }
 

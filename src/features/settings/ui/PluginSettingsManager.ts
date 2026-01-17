@@ -159,9 +159,16 @@ export class PluginSettingsManager {
 
       // Restart persistent query to apply plugin changes to all tabs
       const view = this.plugin.getView();
-      await view?.getTabManager()?.broadcastToAllTabs(
-        async (service) => { await service.ensureReady({ force: true }); }
-      );
+      const tabManager = view?.getTabManager();
+      if (tabManager) {
+        try {
+          await tabManager.broadcastToAllTabs(
+            async (service) => { await service.ensureReady({ force: true }); }
+          );
+        } catch {
+          new Notice('Plugin toggled, but some tabs failed to restart.');
+        }
+      }
 
       if (plugin) {
         new Notice(`Plugin "${plugin.name}" ${wasEnabled ? 'disabled' : 'enabled'}`);
@@ -185,9 +192,17 @@ export class PluginSettingsManager {
 
       // Restart persistent query to apply plugin tool changes to all tabs
       const view = this.plugin.getView();
-      await view?.getTabManager()?.broadcastToAllTabs(
-        async (service) => { await service.ensureReady({ force: true }); }
-      );
+      const tabManager = view?.getTabManager();
+      if (tabManager) {
+        try {
+          await tabManager.broadcastToAllTabs(
+            async (service) => { await service.ensureReady({ force: true }); }
+          );
+        } catch {
+          new Notice('Plugins refreshed, but some tabs failed to restart.');
+          return;
+        }
+      }
 
       new Notice('Plugin list refreshed');
     } catch (err) {
