@@ -676,4 +676,88 @@ describe('ClaudianPlugin', () => {
     });
   });
 
+  describe('Multi-session message loading', () => {
+    it('should load messages from previousSdkSessionIds when present', async () => {
+      const timestamp = Date.now();
+
+      // Setup conversation with previousSdkSessionIds
+      const sessionMeta = JSON.stringify({
+        type: 'meta',
+        id: 'conv-multi-session',
+        title: 'Multi Session Chat',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        sdkSessionId: 'session-B',
+        previousSdkSessionIds: ['session-A'],
+        isNative: true,
+      });
+
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claude/claudian-settings.json' ||
+          path === '.claude/sessions' ||
+          path === '.claude/sessions/conv-multi-session.meta.json';
+      });
+      mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
+        if (path === '.claude/sessions') {
+          return { files: ['.claude/sessions/conv-multi-session.meta.json'], folders: [] };
+        }
+        return { files: [], folders: [] };
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claude/sessions/conv-multi-session.meta.json') {
+          return sessionMeta;
+        }
+        if (path === '.claude/claudian-settings.json') {
+          return JSON.stringify({});
+        }
+        return '';
+      });
+
+      (plugin.loadData as jest.Mock).mockResolvedValue({});
+
+      await plugin.loadSettings();
+
+      const loaded = await plugin.getConversationById('conv-multi-session');
+      expect(loaded?.previousSdkSessionIds).toEqual(['session-A']);
+      expect(loaded?.sdkSessionId).toBe('session-B');
+    });
+
+    it('should preserve previousSdkSessionIds through conversation updates', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        sdkSessionId: 'session-B',
+        previousSdkSessionIds: ['session-A'],
+        isNative: true,
+      });
+
+      const updated = await plugin.getConversationById(conv.id);
+      expect(updated?.previousSdkSessionIds).toEqual(['session-A']);
+      expect(updated?.sdkSessionId).toBe('session-B');
+
+      // Further update should preserve previousSdkSessionIds
+      await plugin.updateConversation(conv.id, {
+        title: 'Updated Title',
+      });
+
+      const afterTitleUpdate = await plugin.getConversationById(conv.id);
+      expect(afterTitleUpdate?.previousSdkSessionIds).toEqual(['session-A']);
+    });
+
+    it('should handle empty previousSdkSessionIds array', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        sdkSessionId: 'session-A',
+        previousSdkSessionIds: [],
+        isNative: true,
+      });
+
+      const updated = await plugin.getConversationById(conv.id);
+      expect(updated?.previousSdkSessionIds).toEqual([]);
+    });
+  });
+
 });

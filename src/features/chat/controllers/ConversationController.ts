@@ -379,10 +379,11 @@ export class ConversationController {
 
     // Detect session change (resume failed, SDK created new session)
     // Move old sdkSessionId to previousSdkSessionIds for history merging on reload
+    // Use Set to deduplicate in case of race conditions or repeated session changes
     const oldSdkSessionId = conversation?.sdkSessionId;
     const sessionChanged = isNative && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
     const previousSdkSessionIds = sessionChanged
-      ? [...(conversation?.previousSdkSessionIds || []), oldSdkSessionId]
+      ? [...new Set([...(conversation?.previousSdkSessionIds || []), oldSdkSessionId])]
       : conversation?.previousSdkSessionIds;
 
     const updates: Partial<Conversation> = {

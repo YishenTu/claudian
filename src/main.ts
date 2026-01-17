@@ -624,28 +624,51 @@ export default class ClaudianPlugin extends Plugin {
     // Load messages from all session files
     const allSdkMessages: ChatMessage[] = [];
     let totalSkippedLines = 0;
-    let hasError = false;
+    let missingSessionCount = 0;
+    let errorCount = 0;
+    let successCount = 0;
 
     for (const sessionId of allSessionIds) {
-      if (!sdkSessionExists(vaultPath, sessionId)) continue;
+      if (!sdkSessionExists(vaultPath, sessionId)) {
+        missingSessionCount++;
+        continue;
+      }
 
       const result: SDKSessionLoadResult = await loadSDKSessionMessages(vaultPath, sessionId);
 
       if (result.error) {
-        hasError = true;
+        errorCount++;
         continue;
       }
 
+      successCount++;
       totalSkippedLines += result.skippedLines;
       allSdkMessages.push(...result.messages);
     }
 
-    // Notify user of issues (only once for all files)
-    if (hasError) {
-      new Notice('Some conversation history could not be loaded');
+    // Notify user of issues with specific counts
+    if (missingSessionCount > 0 || errorCount > 0) {
+      const parts: string[] = [];
+      if (missingSessionCount > 0) {
+        parts.push(`${missingSessionCount} session file(s) not found`);
+      }
+      if (errorCount > 0) {
+        parts.push(`${errorCount} failed to load`);
+      }
+      new Notice(`Conversation history incomplete: ${parts.join(', ')}`);
     }
     if (totalSkippedLines > 0) {
       new Notice(`Some messages could not be loaded (${totalSkippedLines} corrupted)`);
+    }
+
+    // Only mark as loaded if at least one session was successfully loaded,
+    // or if all sessions were missing (no point retrying non-existent files).
+    // If sessions exist but ALL failed to load, allow retry on next view.
+    const allSessionsMissing = missingSessionCount === allSessionIds.length;
+    const hasLoadErrors = errorCount > 0 && successCount === 0 && !allSessionsMissing;
+    if (hasLoadErrors) {
+      // Don't mark as loaded - allow retry on next view
+      return;
     }
 
     // Filter out rebuilt context messages (history blobs sent on session reset)

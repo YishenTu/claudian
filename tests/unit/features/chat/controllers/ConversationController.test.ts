@@ -1094,3 +1094,133 @@ describe('ConversationController - Persistent External Context Paths', () => {
     });
   });
 });
+
+describe('ConversationController - Previous SDK Session IDs', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockAgentService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAgentService = {
+      getSessionId: jest.fn().mockReturnValue(null),
+      setSessionId: jest.fn(),
+      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
+    };
+    deps = createMockDeps({
+      getAgentService: () => mockAgentService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  describe('save - session change detection', () => {
+    it('should accumulate old sdkSessionId when SDK creates new session', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      // Existing conversation has sdkSessionId 'session-A'
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+        id: 'conv-1',
+        messages: [],
+        sdkSessionId: 'session-A',
+        isNative: true,
+        previousSdkSessionIds: undefined,
+      });
+
+      // Agent service reports new session 'session-B' (resume failed, new session created)
+      mockAgentService.getSessionId.mockReturnValue('session-B');
+
+      await controller.save();
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          sdkSessionId: 'session-B',
+          previousSdkSessionIds: ['session-A'],
+        })
+      );
+    });
+
+    it('should preserve existing previousSdkSessionIds when session changes again', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      // Conversation already has previous sessions [A], current is B
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+        id: 'conv-1',
+        messages: [],
+        sdkSessionId: 'session-B',
+        isNative: true,
+        previousSdkSessionIds: ['session-A'],
+      });
+
+      // Agent service reports new session 'session-C'
+      mockAgentService.getSessionId.mockReturnValue('session-C');
+
+      await controller.save();
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          sdkSessionId: 'session-C',
+          previousSdkSessionIds: ['session-A', 'session-B'],
+        })
+      );
+    });
+
+    it('should not modify previousSdkSessionIds when session has not changed', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      // Conversation has session-A, agent also reports session-A (no change)
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+        id: 'conv-1',
+        messages: [],
+        sdkSessionId: 'session-A',
+        isNative: true,
+        previousSdkSessionIds: undefined,
+      });
+
+      mockAgentService.getSessionId.mockReturnValue('session-A');
+
+      await controller.save();
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          sdkSessionId: 'session-A',
+          previousSdkSessionIds: undefined,
+        })
+      );
+    });
+
+    it('should deduplicate session IDs to prevent duplicates from race conditions', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      // Simulate a race condition where session-A is already in previousSdkSessionIds
+      // but sdkSessionId is still session-A (should not duplicate)
+      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+        id: 'conv-1',
+        messages: [],
+        sdkSessionId: 'session-A',
+        isNative: true,
+        previousSdkSessionIds: ['session-A'], // Already contains A (from prior bug/race)
+      });
+
+      // Agent reports new session-B
+      mockAgentService.getSessionId.mockReturnValue('session-B');
+
+      await controller.save();
+
+      // Should deduplicate: [A, A] -> [A]
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          sdkSessionId: 'session-B',
+          previousSdkSessionIds: ['session-A'], // Deduplicated, not ['session-A', 'session-A']
+        })
+      );
+    });
+  });
+});

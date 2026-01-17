@@ -1940,6 +1940,87 @@ describe('ClaudianService', () => {
       expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
       expect(service.getSessionId()).toBeNull();
     });
+
+    it('should preserve current message images when session expired during cold-start', async () => {
+      service.setSessionId('stale-session');
+      let capturedImages: any[] | undefined;
+
+      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (
+        _prompt: string,
+        _vaultPath: string,
+        _cliPath: string,
+        images: any[] | undefined
+      ) {
+        if (!capturedImages) {
+          // First call throws session expired
+          capturedImages = images;
+          throw new Error('Session expired');
+        }
+        // Second call (retry) should have the images
+        capturedImages = images;
+        yield { type: 'text', content: 'Recovered' };
+      }) as any);
+
+      const history = [
+        { id: 'msg-1', role: 'user' as const, content: 'First question', timestamp: Date.now() },
+        { id: 'msg-2', role: 'assistant' as const, content: 'Answer', timestamp: Date.now() },
+      ];
+
+      const currentImages = [
+        { id: 'img-1', name: 'test.png', mediaType: 'image/png' as const, data: 'base64data', size: 100, source: 'file' as const },
+      ];
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('Follow up with image', currentImages, history, { forceColdStart: true })) {
+        chunks.push(chunk);
+      }
+
+      expect(capturedImages).toBeDefined();
+      expect(capturedImages).toHaveLength(1);
+      expect(capturedImages![0].id).toBe('img-1');
+      expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
+    });
+
+    it('should preserve current message images when session expired during persistent query', async () => {
+      service.setSessionId('stale-session');
+      let capturedImages: any[] | undefined;
+
+      // eslint-disable-next-line require-yield
+      jest.spyOn(service as any, 'queryViaPersistent').mockImplementation((async function* () {
+        throw new Error('Session expired');
+      }) as any);
+
+      jest.spyOn(service as any, 'queryViaSDK').mockImplementation((async function* (
+        _prompt: string,
+        _vaultPath: string,
+        _cliPath: string,
+        images: any[] | undefined
+      ) {
+        capturedImages = images;
+        yield { type: 'text', content: 'Recovered' };
+      }) as any);
+
+      const history = [
+        { id: 'msg-1', role: 'user' as const, content: 'First question', timestamp: Date.now() },
+        { id: 'msg-2', role: 'assistant' as const, content: 'Answer', timestamp: Date.now() },
+      ];
+
+      const currentImages = [
+        { id: 'img-1', name: 'test.png', mediaType: 'image/png' as const, data: 'base64data', size: 100, source: 'file' as const },
+        { id: 'img-2', name: 'test2.jpg', mediaType: 'image/jpeg' as const, data: 'base64data2', size: 200, source: 'paste' as const },
+      ];
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('Follow up with images', currentImages, history)) {
+        chunks.push(chunk);
+      }
+
+      expect(capturedImages).toBeDefined();
+      expect(capturedImages).toHaveLength(2);
+      expect(capturedImages![0].id).toBe('img-1');
+      expect(capturedImages![1].id).toBe('img-2');
+      expect(chunks.some((c) => c.type === 'text' && c.content === 'Recovered')).toBe(true);
+    });
   });
 
   describe('image prompt and hydration', () => {

@@ -772,7 +772,8 @@ export class ClaudianService {
                 retryRequest.prompt,
                 vaultPath,
                 resolvedClaudePath,
-                retryRequest.images,
+                // Use current message's images, fallback to history images
+                images ?? retryRequest.images,
                 effectiveQueryOptions
               );
             } catch (retryError) {
@@ -807,7 +808,8 @@ export class ClaudianService {
             retryRequest.prompt,
             vaultPath,
             resolvedClaudePath,
-            retryRequest.images,
+            // Use current message's images, fallback to history images
+            images ?? retryRequest.images,
             effectiveQueryOptions
           );
         } catch (retryError) {
