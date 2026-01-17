@@ -10,14 +10,14 @@
 import { setIcon } from 'obsidian';
 
 import type { TodoItem } from '../../../core/tools';
-import type { SubagentInfo } from '../../../core/types';
+import type { AsyncSubagentStatus, SubagentInfo } from '../../../core/types';
 import { renderTodoItems } from '../rendering/todoUtils';
 
 /** Async subagent display info for the panel. */
 export interface PanelSubagentInfo {
   id: string;
   description: string;
-  status: 'pending' | 'running' | 'completed' | 'error' | 'orphaned';
+  status: AsyncSubagentStatus;
 }
 
 /**
@@ -89,6 +89,9 @@ export class StatusPanel {
 
     // Re-render current state
     this.renderAllSubagents();
+    if (this.currentTodos && this.currentTodos.length > 0) {
+      this.updateTodos(this.currentTodos);
+    }
   }
 
   /**
