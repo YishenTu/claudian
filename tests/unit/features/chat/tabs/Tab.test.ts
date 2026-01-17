@@ -20,7 +20,7 @@ import {
 jest.mock('@/core/agent', () => ({
   ClaudianService: jest.fn().mockImplementation(() => ({
     loadCCPermissions: jest.fn().mockResolvedValue(undefined),
-    preWarm: jest.fn().mockResolvedValue(undefined),
+    ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
   })),
 }));
@@ -469,7 +469,7 @@ describe('Tab - Service Initialization', () => {
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
       agentModule.ClaudianService.mockImplementationOnce(() => ({
         loadCCPermissions: jest.fn().mockRejectedValue(new Error('Permission load failed')),
-        preWarm: jest.fn().mockResolvedValue(undefined),
+        ensureReady: jest.fn().mockResolvedValue(true),
       }));
 
       const options = createMockOptions();
@@ -482,12 +482,12 @@ describe('Tab - Service Initialization', () => {
       expect(tab.serviceInitialized).toBe(true);
     });
 
-    it('should pre-warm without session ID (just spin up process)', async () => {
-      const mockPreWarm = jest.fn().mockResolvedValue(undefined);
+    it('should ensureReady without session ID (just spin up process)', async () => {
+      const mockEnsureReady = jest.fn().mockResolvedValue(true);
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
       agentModule.ClaudianService.mockImplementationOnce(() => ({
         loadCCPermissions: jest.fn().mockResolvedValue(undefined),
-        preWarm: mockPreWarm,
+        ensureReady: mockEnsureReady,
       }));
 
       const options = createMockOptions();
@@ -495,8 +495,44 @@ describe('Tab - Service Initialization', () => {
 
       await initializeTabService(tab, options.plugin, options.mcpManager);
 
-      // PreWarm should be called with persistent external context paths
-      expect(mockPreWarm).toHaveBeenCalledWith(undefined, []);
+      // ensureReady should be called with persistent external context paths
+      expect(mockEnsureReady).toHaveBeenCalledWith({
+        sessionId: undefined,
+        externalContextPaths: [],
+      });
+    });
+
+    it('should ensureReady with saved external contexts for existing conversation', async () => {
+      const mockEnsureReady = jest.fn().mockResolvedValue(true);
+      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
+      agentModule.ClaudianService.mockImplementationOnce(() => ({
+        loadCCPermissions: jest.fn().mockResolvedValue(undefined),
+        ensureReady: mockEnsureReady,
+      }));
+
+      const conversation = {
+        id: 'conv-1',
+        title: 'Existing Conversation',
+        messages: [{ id: 'msg-1', role: 'user' as const, content: 'test', timestamp: Date.now() }],
+        sessionId: 'session-123',
+        externalContextPaths: ['/saved/path'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const plugin = createMockPlugin();
+      plugin.settings.persistentExternalContextPaths = ['/persistent/path'];
+      plugin.getConversationById = jest.fn().mockResolvedValue(conversation);
+
+      const options = createMockOptions({ plugin, conversation });
+      const tab = createTab(options);
+
+      await initializeTabService(tab, options.plugin, options.mcpManager);
+
+      expect(mockEnsureReady).toHaveBeenCalledWith({
+        sessionId: 'session-123',
+        externalContextPaths: ['/saved/path'],
+      });
     });
   });
 });
@@ -1533,7 +1569,7 @@ describe('Tab - Service Initialization Error Handling', () => {
 
     ClaudianService.mockImplementation(() => ({
       loadCCPermissions,
-      preWarm: jest.fn().mockResolvedValue(undefined),
+      ensureReady: jest.fn().mockResolvedValue(true),
       closePersistentQuery: jest.fn(),
     }));
 

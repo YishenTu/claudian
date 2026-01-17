@@ -252,8 +252,8 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
  * Call this when the tab becomes active or when the first message is sent.
  *
  * Session ID resolution:
- * - If tab has conversationId (existing chat) → lookup conversation's sessionId → preWarm with it
- * - If tab has no conversationId (new chat) → preWarm without sessionId
+ * - If tab has conversationId (existing chat) → lookup conversation's sessionId → ensureReady with it
+ * - If tab has no conversationId (new chat) → ensureReady without sessionId
  *
  * This ensures the single source of truth (tab.conversationId) determines session behavior.
  *
@@ -282,21 +282,29 @@ export async function initializeTabService(
       // Continue without permissions - service can still function
     }
 
-    // Resolve session ID from conversation if this is an existing chat
+    // Resolve session ID and external contexts from conversation if this is an existing chat
     // Single source of truth: tab.conversationId determines if we have a session to resume
     let sessionId: string | undefined;
+    let externalContextPaths = plugin.settings.persistentExternalContextPaths || [];
     if (tab.conversationId) {
       const conversation = await plugin.getConversationById(tab.conversationId);
       sessionId = conversation?.sessionId ?? undefined;
+      if (conversation) {
+        const hasMessages = conversation.messages.length > 0;
+        externalContextPaths = hasMessages
+          ? conversation.externalContextPaths || []
+          : (plugin.settings.persistentExternalContextPaths || []);
+      }
     }
 
-    // Pre-warm the SDK process
-    // - Existing chat: preWarm with sessionId for resume
-    // - New chat: preWarm without sessionId
-    // Note: startPersistentQuery() handles setting sessionManager when sessionId is provided
-    const persistentPaths = plugin.settings.persistentExternalContextPaths;
-    service.preWarm(sessionId, persistentPaths).catch(() => {
-      // Pre-warm is best-effort, ignore failures
+    // Ensure SDK process is ready
+    // - Existing chat: with sessionId for resume
+    // - New chat: without sessionId
+    service.ensureReady({
+      sessionId,
+      externalContextPaths,
+    }).catch(() => {
+      // Best-effort, ignore failures
     });
 
     // Only set tab state after successful initialization

@@ -2517,7 +2517,7 @@ describe('ClaudianService', () => {
 
       // Crash recovery should restart the persistent query loop
       serviceAny.crashRecoveryAttempted = false;
-      await serviceAny.restartPersistentQuery('consumer error');
+      await service.ensureReady({ force: true });
 
       // After restart, persistent query should still be ready
       expect(serviceAny.persistentQuery).not.toBeNull();

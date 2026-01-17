@@ -49,7 +49,6 @@ export default class ClaudianPlugin extends Plugin {
   cliResolver: ClaudeCliResolver;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
-  private hasNotifiedEnvChange = false;
 
   async onload() {
     await this.loadSettings();
@@ -414,19 +413,60 @@ export default class ClaudianPlugin extends Plugin {
     this.settings.slashCommands = [...vaultCommands, ...pluginCommands];
   }
 
-  /** Updates and persists environment variables, notifying if restart is needed. */
+  /** Updates and persists environment variables, restarting processes to apply changes. */
   async applyEnvironmentVariables(envText: string): Promise<void> {
+    const envChanged = envText !== this.runtimeEnvironmentVariables;
+
     this.settings.environmentVariables = envText;
+
+    if (!envChanged) {
+      await this.saveSettings();
+      return;
+    }
+
+    // Update runtime env vars so new processes use them
+    this.runtimeEnvironmentVariables = envText;
+
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(envText);
     await this.saveSettings();
 
-    if (envText !== this.runtimeEnvironmentVariables) {
-      if (!this.hasNotifiedEnvChange) {
-        new Notice('Environment variables changed. Restart the plugin for changes to take effect.');
-        this.hasNotifiedEnvChange = true;
+    if (invalidatedConversations.length > 0) {
+      for (const conv of invalidatedConversations) {
+        if (conv.isNative) {
+          await this.storage.sessions.saveMetadata(
+            this.storage.sessions.toSessionMetadata(conv)
+          );
+        } else {
+          await this.storage.sessions.saveConversation(conv);
+        }
       }
-    } else {
-      this.hasNotifiedEnvChange = false;
     }
+
+    const view = this.getView();
+    const tabManager = view?.getTabManager();
+
+    if (tabManager) {
+      if (changed) {
+        for (const tab of tabManager.getAllTabs()) {
+          if (!tab.service || !tab.serviceInitialized) {
+            continue;
+          }
+          const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts() ?? [];
+          tab.service.resetSession();
+          await tab.service.ensureReady({ externalContextPaths });
+        }
+      } else {
+        // Restart initialized tabs to pick up env changes
+        await tabManager.broadcastToAllTabs(
+          async (service) => { await service.ensureReady({ force: true }); }
+        );
+      }
+    }
+
+    // Update model selector to reflect any new models from env vars
+    view?.refreshModelSelector();
+
+    new Notice('Environment variables applied. Sessions will be rebuilt on next message.');
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */

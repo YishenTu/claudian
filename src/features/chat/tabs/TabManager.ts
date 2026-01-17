@@ -174,8 +174,12 @@ export class TabManager implements TabManagerInterface {
         // Tab already has messages loaded - sync service session to conversation
         // This handles the case where user switches between tabs with different sessions
         const conversation = await this.plugin.getConversationById(tab.conversationId);
-        if (conversation && conversation.sessionId !== tab.service.getSessionId()) {
-          tab.service.setSessionId(conversation.sessionId ?? null);
+        if (conversation) {
+          const hasMessages = conversation.messages.length > 0;
+          const externalContextPaths = hasMessages
+            ? conversation.externalContextPaths || []
+            : (this.plugin.settings.persistentExternalContextPaths || []);
+          tab.service.setSessionId(conversation.sessionId ?? null, externalContextPaths);
         }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting

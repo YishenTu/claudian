@@ -160,7 +160,7 @@ export class PluginSettingsManager {
       // Restart persistent query to apply plugin changes to all tabs
       const view = this.plugin.getView();
       await view?.getTabManager()?.broadcastToAllTabs(
-        (service) => service.restartPersistentQuery()
+        async (service) => { await service.ensureReady({ force: true }); }
       );
 
       if (plugin) {
@@ -186,7 +186,7 @@ export class PluginSettingsManager {
       // Restart persistent query to apply plugin tool changes to all tabs
       const view = this.plugin.getView();
       await view?.getTabManager()?.broadcastToAllTabs(
-        (service) => service.restartPersistentQuery()
+        async (service) => { await service.ensureReady({ force: true }); }
       );
 
       new Notice('Plugin list refreshed');

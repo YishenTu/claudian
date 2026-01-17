@@ -292,18 +292,34 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('applyEnvironmentVariables', () => {
-    it('toggles restart notification state based on runtime env', async () => {
+    it('updates runtime env vars when changed', async () => {
       await plugin.onload();
       (plugin as any).runtimeEnvironmentVariables = 'A=1';
 
       await plugin.applyEnvironmentVariables('A=2');
-      expect((plugin as any).hasNotifiedEnvChange).toBe(true);
+      expect((plugin as any).runtimeEnvironmentVariables).toBe('A=2');
 
       await plugin.applyEnvironmentVariables('A=3');
-      expect((plugin as any).hasNotifiedEnvChange).toBe(true);
+      expect((plugin as any).runtimeEnvironmentVariables).toBe('A=3');
 
-      await plugin.applyEnvironmentVariables('A=1');
-      expect((plugin as any).hasNotifiedEnvChange).toBe(false);
+      // No change - should not update
+      const currentEnv = (plugin as any).runtimeEnvironmentVariables;
+      await plugin.applyEnvironmentVariables('A=3');
+      expect((plugin as any).runtimeEnvironmentVariables).toBe(currentEnv);
+    });
+
+    it('invalidates sessions when env hash changes', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation('session-123');
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata');
+      saveMetadataSpy.mockClear();
+
+      await plugin.applyEnvironmentVariables('ANTHROPIC_MODEL=claude-sonnet-4-5');
+
+      const updated = await plugin.getConversationById(conv.id);
+      expect(updated?.sessionId).toBeNull();
+      expect(saveMetadataSpy).toHaveBeenCalled();
     });
   });
 

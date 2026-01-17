@@ -53,7 +53,7 @@ function createMockAgentService() {
     setCurrentPlanFilePath: jest.fn(),
     getApprovedPlanContent: jest.fn().mockReturnValue(null),
     clearApprovedPlanContent: jest.fn(),
-    restartPersistentQuery: jest.fn(),
+    ensureReady: jest.fn().mockResolvedValue(true),
   };
 }
 

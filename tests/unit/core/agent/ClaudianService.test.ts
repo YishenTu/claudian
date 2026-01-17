@@ -136,13 +136,13 @@ describe('ClaudianService', () => {
       expect(service.isPersistentQueryActive()).toBe(false);
     });
 
-    it('should restart persistent query', async () => {
+    it('should restart persistent query via ensureReady with force', async () => {
       service.setSessionId('test-session');
-      
+
       const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
       startPersistentQuerySpy.mockResolvedValue(undefined);
-      
-      await service.restartPersistentQuery('config change');
+
+      await service.ensureReady({ force: true });
 
       expect(startPersistentQuerySpy).toHaveBeenCalled();
     });

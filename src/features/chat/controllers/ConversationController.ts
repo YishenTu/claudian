@@ -119,7 +119,11 @@ export class ConversationController {
       state.currentTodos = null;
 
       // Reset agent service session (no session ID for entry point)
-      this.getAgentService()?.setSessionId(null);
+      // Pass persistent paths to prevent stale external contexts
+      this.getAgentService()?.setSessionId(
+        null,
+        plugin.settings.persistentExternalContextPaths || []
+      );
 
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
@@ -171,7 +175,11 @@ export class ConversationController {
       state.usage = null;
       state.currentTodos = null;
 
-      this.getAgentService()?.setSessionId(null);
+      // Pass persistent paths to prevent stale external contexts
+      this.getAgentService()?.setSessionId(
+        null,
+        plugin.settings.persistentExternalContextPaths || []
+      );
 
       const fileCtx = this.deps.getFileContextManager();
       fileCtx?.resetForNewConversation();
@@ -200,9 +208,15 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
 
-    this.getAgentService()?.setSessionId(conversation.sessionId ?? null);
-
     const hasMessages = state.messages.length > 0;
+
+    // Determine external context paths for this session
+    // Empty session: use persistent paths; session with messages: use saved paths
+    const externalContextPaths = hasMessages
+      ? conversation.externalContextPaths || []
+      : plugin.settings.persistentExternalContextPaths || [];
+
+    this.getAgentService()?.setSessionId(conversation.sessionId ?? null, externalContextPaths);
     const fileCtx = this.deps.getFileContextManager();
     fileCtx?.resetForLoadedConversation(hasMessages);
 
@@ -265,14 +279,22 @@ export class ConversationController {
       state.messages = [...conversation.messages];
       state.usage = conversation.usage ?? null;
 
-      // Update agent service session ID to match conversation (triggers pre-warm)
-      this.getAgentService()?.setSessionId(conversation.sessionId ?? null);
+      const hasMessages = state.messages.length > 0;
+
+      // Determine external context paths for this session
+      // Empty session: use persistent paths; session with messages: use saved paths
+      const externalContextPaths = hasMessages
+        ? conversation.externalContextPaths || []
+        : plugin.settings.persistentExternalContextPaths || [];
+
+      // Update agent service session ID with correct external contexts
+      this.getAgentService()?.setSessionId(conversation.sessionId ?? null, externalContextPaths);
 
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
 
       const fileCtx = this.deps.getFileContextManager();
-      fileCtx?.resetForLoadedConversation(state.messages.length > 0);
+      fileCtx?.resetForLoadedConversation(hasMessages);
 
       if (conversation.currentNote) {
         fileCtx?.setCurrentNote(conversation.currentNote);
@@ -281,7 +303,7 @@ export class ConversationController {
       // Restore external context paths based on session state
       this.restoreExternalContextPaths(
         conversation.externalContextPaths,
-        state.messages.length === 0
+        !hasMessages
       );
 
       // Restore enabled MCP servers (or clear if none)

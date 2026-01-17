@@ -91,6 +91,18 @@ export interface QueryOptions {
   externalContextPaths?: string[];
 }
 
+/** Options for ensureReady(). */
+export interface EnsureReadyOptions {
+  /** Session ID to resume. Auto-resolved from sessionManager if not provided. */
+  sessionId?: string;
+  /** External context paths to include. */
+  externalContextPaths?: string[];
+  /** Force restart even if query is running (for session switch, crash recovery). */
+  force?: boolean;
+  /** Preserve response handlers across restart (for mid-turn crash recovery). */
+  preserveHandlers?: boolean;
+}
+
 /** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
   private plugin: ClaudianPlugin;
@@ -182,40 +194,74 @@ export class ClaudianService {
   // ============================================
 
   /**
-   * Pre-warm the persistent query for faster follow-up messages.
-   * Call this on plugin load with the active conversation session ID.
+   * Ensures the persistent query is running with current configuration.
+   * Unified API that replaces preWarm() and restartPersistentQuery().
    *
-   * @param resumeSessionId - Optional session ID to resume. If not provided,
-   *        automatically uses sessionManager.getSessionId() to ensure session
-   *        continuity. Pass explicit `undefined` only for truly new sessions.
-   * @param externalContextPaths - Optional external context paths to include.
-   *        Pass persistent paths here to avoid restart on first message.
+   * Behavior:
+   * - If not running → start (if paths available)
+   * - If running and force=true → close and restart
+   * - If running and config changed → close and restart
+   * - If running and config unchanged → no-op
+   *
+   * Note: When restart is needed, the query is closed BEFORE checking if we can
+   * start a new one. This ensures fallback to cold-start if CLI becomes unavailable.
+   *
+   * @returns true if the query was (re)started, false otherwise
    */
-  async preWarm(resumeSessionId?: string, externalContextPaths?: string[]): Promise<void> {
-    if (this.persistentQuery) {
-      return;
-    }
-
+  async ensureReady(options?: EnsureReadyOptions): Promise<boolean> {
     const vaultPath = getVaultPath(this.plugin.app);
-    if (!vaultPath) {
-      return;
-    }
 
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
-    if (!resolvedClaudePath) {
-      return;
-    }
-
-    // Track external context paths for dynamic updates
-    if (externalContextPaths && externalContextPaths.length > 0) {
-      this.currentExternalContextPaths = externalContextPaths;
+    // Track external context paths for dynamic updates (empty list clears)
+    if (options && options.externalContextPaths !== undefined) {
+      this.currentExternalContextPaths = options.externalContextPaths;
     }
 
     // Auto-resolve session ID from sessionManager if not explicitly provided
-    // This ensures session continuity even if callers forget to pass the ID
-    const effectiveSessionId = resumeSessionId ?? this.sessionManager.getSessionId() ?? undefined;
+    const effectiveSessionId = options?.sessionId ?? this.sessionManager.getSessionId() ?? undefined;
+    const externalContextPaths = options?.externalContextPaths ?? this.currentExternalContextPaths;
 
-    await this.startPersistentQuery(vaultPath, resolvedClaudePath, effectiveSessionId, externalContextPaths);
+    // Case 1: Not running → try to start
+    if (!this.persistentQuery) {
+      if (!vaultPath) return false;
+      const cliPath = this.plugin.getResolvedClaudeCliPath();
+      if (!cliPath) return false;
+      await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
+      return true;
+    }
+
+    // Case 2: Force restart (session switch, crash recovery)
+    // Close FIRST, then try to start new one (allows fallback if CLI unavailable)
+    if (options?.force) {
+      this.closePersistentQuery('forced restart', { preserveHandlers: options.preserveHandlers });
+      if (!vaultPath) return false;
+      const cliPath = this.plugin.getResolvedClaudeCliPath();
+      if (!cliPath) return false;
+      await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
+      return true;
+    }
+
+    // Case 3: Check if config changed → restart if needed
+    // We need vaultPath and cliPath to build config for comparison
+    if (!vaultPath) return false;
+    const cliPath = this.plugin.getResolvedClaudeCliPath();
+    if (!cliPath) return false;
+
+    const newConfig = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+    if (this.needsRestart(newConfig)) {
+      // Close FIRST, then try to start new one (allows fallback if CLI unavailable)
+      this.closePersistentQuery('config changed', { preserveHandlers: options?.preserveHandlers });
+      // Re-check CLI path as it might have changed during close
+      const cliPathAfterClose = this.plugin.getResolvedClaudeCliPath();
+      if (cliPathAfterClose) {
+        await this.startPersistentQuery(vaultPath, cliPathAfterClose, effectiveSessionId, externalContextPaths);
+        return true;
+      }
+      // CLI unavailable after close - query is closed, will fallback to cold-start
+      return false;
+    }
+
+    // Case 4: Running and config unchanged → no-op
+    return false;
   }
 
   /**
@@ -349,25 +395,6 @@ export class ClaudianService {
     // Reset shuttingDown flag so next query can start a new persistent query.
     // This must be done after all cleanup to prevent race conditions with the consumer loop.
     this.shuttingDown = false;
-  }
-
-  /**
-   * Restarts the persistent query (e.g., after configuration change or crash recovery).
-   * Does NOT try to resume session - just spins up a fresh process.
-   * Resume happens when user sends a message via queryViaPersistent.
-   */
-  async restartPersistentQuery(reason?: string, options?: ClosePersistentQueryOptions): Promise<void> {
-    const sessionId = this.sessionManager.getSessionId();
-    // Preserve external context paths across restart
-    const externalContextPaths = this.currentExternalContextPaths;
-    this.closePersistentQuery(reason, options);
-
-    const vaultPath = getVaultPath(this.plugin.app);
-    const cliPath = this.plugin.getResolvedClaudeCliPath();
-
-    if (vaultPath && cliPath) {
-      await this.startPersistentQuery(vaultPath, cliPath, sessionId ?? undefined, externalContextPaths);
-    }
   }
 
   /**
@@ -523,7 +550,7 @@ export class ClaudianService {
           if (!this.crashRecoveryAttempted && messageToReplay && handler && !handler.sawAnyChunk) {
             this.crashRecoveryAttempted = true;
             try {
-              await this.restartPersistentQuery('consumer error', { preserveHandlers: true });
+              await this.ensureReady({ force: true, preserveHandlers: true });
               if (!this.messageChannel) {
                 throw new Error('Persistent query restart did not create message channel');
               }
@@ -550,7 +577,7 @@ export class ClaudianService {
           if (!this.crashRecoveryAttempted) {
             this.crashRecoveryAttempted = true;
             try {
-              await this.restartPersistentQuery('consumer error');
+              await this.ensureReady({ force: true });
             } catch (restartError) {
               // If restart failed due to session expiration, invalidate session
               // so next query triggers noSessionButHasHistory → history rebuild
@@ -563,7 +590,7 @@ export class ClaudianService {
         }
       } finally {
         // Only clear the flag if this consumer wasn't replaced by a new one (e.g., after restart)
-        // If restartPersistentQuery() was called, it starts a new consumer which sets the flag true,
+        // If ensureReady() restarted, it starts a new consumer which sets the flag true,
         // so we shouldn't clear it here.
         if (this.persistentQuery === queryForThisConsumer || this.persistentQuery === null) {
           this.responseConsumerRunning = false;
@@ -1059,16 +1086,27 @@ export class ClaudianService {
     const newExternalContextPaths = queryOptions?.externalContextPaths || [];
     this.currentExternalContextPaths = newExternalContextPaths;
 
-    // Check for other changes that require restart (including external context paths)
+    // Check for config changes that require restart
+    if (!allowRestart) {
+      return;
+    }
+
+    // Check if restart is needed using the valid cliPath we already have
     const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath, newExternalContextPaths);
-    if (this.needsRestart(newConfig)) {
-      if (!allowRestart) {
-        return;
-      }
-      await this.restartPersistentQuery('configuration change', restartOptions);
-      if (allowRestart && this.persistentQuery) {
-        await this.applyDynamicUpdates(queryOptions, restartOptions, false);
-      }
+    if (!this.needsRestart(newConfig)) {
+      return;
+    }
+
+    // Restart is needed - use force to ensure query is closed even if CLI becomes unavailable
+    const restarted = await this.ensureReady({
+      externalContextPaths: newExternalContextPaths,
+      preserveHandlers: restartOptions?.preserveHandlers,
+      force: true,
+    });
+
+    // After restart, apply dynamic updates to the new process
+    if (restarted && this.persistentQuery) {
+      await this.applyDynamicUpdates(queryOptions, restartOptions, false);
     }
   }
 
@@ -1261,22 +1299,30 @@ export class ClaudianService {
 
   /**
    * Set the session ID (for restoring from saved conversation).
-   * Closes the persistent query since session is switching, then pre-warms the new session.
+   * Closes persistent query synchronously if session is changing, then ensures query is ready.
+   *
+   * @param id - Session ID to restore, or null for new session
+   * @param externalContextPaths - External context paths for the session (prevents stale contexts)
    */
-  setSessionId(id: string | null): void {
-    // Close persistent query when switching sessions
+  setSessionId(id: string | null, externalContextPaths?: string[]): void {
     const currentId = this.sessionManager.getSessionId();
-    if (currentId !== id) {
+    const sessionChanged = currentId !== id;
+
+    // Close synchronously when session changes (maintains backwards compatibility)
+    if (sessionChanged) {
       this.closePersistentQuery('session switch');
-      // Reset crash recovery for new session context
       this.crashRecoveryAttempted = false;
     }
 
     this.sessionManager.setSessionId(id, this.plugin.settings.model);
 
-    // Pre-warm the SDK process with the session ID for resume
-    this.preWarm(id ?? undefined).catch(() => {
-      // Pre-warm is best-effort, ignore failures
+    // Ensure query is ready with the new session ID and external contexts
+    // Passing external contexts here prevents stale contexts from previous session
+    this.ensureReady({
+      sessionId: id ?? undefined,
+      externalContextPaths,
+    }).catch(() => {
+      // Best-effort, ignore failures
     });
   }
 
