@@ -215,6 +215,10 @@ export class TabManager implements TabManagerInterface {
     // Save conversation before closing
     await tab.controllers.conversationController?.save();
 
+    // Capture tab order BEFORE deletion for fallback calculation
+    const tabIdsBefore = Array.from(this.tabs.keys());
+    const closingIndex = tabIdsBefore.indexOf(tabId);
+
     // Destroy tab resources (async for proper cleanup)
     await destroyTab(tab);
     this.tabs.delete(tabId);
@@ -224,13 +228,14 @@ export class TabManager implements TabManagerInterface {
     if (this.activeTabId === tabId) {
       this.activeTabId = null;
 
-      // Switch to the first remaining tab, or create a new one
       if (this.tabs.size > 0) {
-        // Use Array.from for safer type narrowing instead of iterator.next()
-        const remainingTabIds = Array.from(this.tabs.keys());
-        const nextTabId = remainingTabIds[0];
-        if (nextTabId) {
-          await this.switchToTab(nextTabId);
+        // Fallback strategy: prefer previous tab, except for first tab (go to next)
+        const fallbackTabId = closingIndex === 0
+          ? tabIdsBefore[1]  // First tab: go to next
+          : tabIdsBefore[closingIndex - 1];  // Others: go to previous
+
+        if (fallbackTabId && this.tabs.has(fallbackTabId)) {
+          await this.switchToTab(fallbackTabId);
 
           // If this is now the only tab and it's not warm, pre-warm immediately
           // User expects the active tab to be ready for chat
