@@ -377,6 +377,14 @@ export class ConversationController {
       ? legacyMessages[legacyMessages.length - 1]?.timestamp
       : conversation?.legacyCutoffAt;
 
+    // Detect session change (resume failed, SDK created new session)
+    // Move old sdkSessionId to previousSdkSessionIds for history merging on reload
+    const oldSdkSessionId = conversation?.sdkSessionId;
+    const sessionChanged = isNative && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
+    const previousSdkSessionIds = sessionChanged
+      ? [...(conversation?.previousSdkSessionIds || []), oldSdkSessionId]
+      : conversation?.previousSdkSessionIds;
+
     const updates: Partial<Conversation> = {
       // For native sessions, don't persist messages (SDK handles that)
       // For legacy sessions, persist messages as before
@@ -384,6 +392,7 @@ export class ConversationController {
       // Preserve existing sessionId when SDK hasn't captured a new one yet
       sessionId: sessionInvalidated ? null : (sessionId ?? conversation?.sessionId ?? null),
       sdkSessionId: isNative && sessionId ? sessionId : conversation?.sdkSessionId,
+      previousSdkSessionIds,
       isNative: isNative || undefined,
       legacyCutoffAt,
       sdkMessagesLoaded: isNative ? true : undefined,

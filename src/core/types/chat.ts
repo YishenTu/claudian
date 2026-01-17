@@ -64,6 +64,12 @@ export interface Conversation {
    * Used for loading messages from SDK storage. Falls back to sessionId if not set.
    */
   sdkSessionId?: string;
+  /**
+   * Previous SDK session IDs from session rebuilds.
+   * When resume fails and SDK creates a new session, the old sdkSessionId is moved here.
+   * Used to load and merge messages from all session files for display.
+   */
+  previousSdkSessionIds?: string[];
   messages: ChatMessage[];
   currentNote?: string;
   /** Session-specific external context paths (directories with full access). Resets on new session. */
@@ -122,6 +128,12 @@ export interface SessionMetadata {
    * Used to locate the correct SDK session file for message loading.
    */
   sdkSessionId?: string;
+  /**
+   * Previous SDK session IDs from session rebuilds.
+   * When resume fails and SDK creates a new session, the old sdkSessionId is moved here.
+   * Used to load and merge messages from all session files for display.
+   */
+  previousSdkSessionIds?: string[];
   currentNote?: string;
   externalContextPaths?: string[];
   enabledMcpServers?: string[];

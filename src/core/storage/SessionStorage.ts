@@ -419,6 +419,7 @@ export class SessionStorage {
       lastResponseAt: conversation.lastResponseAt,
       sessionId: conversation.sessionId,
       sdkSessionId: conversation.sdkSessionId,
+      previousSdkSessionIds: conversation.previousSdkSessionIds,
       currentNote: conversation.currentNote,
       externalContextPaths: conversation.externalContextPaths,
       enabledMcpServers: conversation.enabledMcpServers,
