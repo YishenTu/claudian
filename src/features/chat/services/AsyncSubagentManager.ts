@@ -2,7 +2,7 @@
  * Claudian - Async subagent lifecycle manager
  *
  * Manages background Task tool execution using a two-tool transaction model:
- * Task tool_use → agent_id → AgentOutputTool → completed/error/orphaned.
+ * Task tool_use → task_id → TaskOutput → completed/error/orphaned.
  */
 
 import type {
@@ -103,7 +103,7 @@ export class AsyncSubagentManager {
     this.onStateChange(subagent);
   }
 
-  /** Links AgentOutputTool to its async subagent for result routing. */
+  /** Links TaskOutput tool to its async subagent for result routing. */
   public handleAgentOutputToolUse(toolCall: ToolCallInfo): void {
     const agentId = this.extractAgentIdFromInput(toolCall.input);
     if (!agentId) {
@@ -119,7 +119,7 @@ export class AsyncSubagentManager {
     this.outputToolIdToAgentId.set(toolCall.id, agentId);
   }
 
-  /** Handles AgentOutputTool result. Transitions: running → completed/error (if done). */
+  /** Handles TaskOutput result. Transitions: running → completed/error (if done). */
   public handleAgentOutputToolResult(
     toolId: string,
     result: string,
@@ -170,7 +170,7 @@ export class AsyncSubagentManager {
     return subagent;
   }
 
-  /** Checks if AgentOutputTool result indicates the task is still running. */
+  /** Checks if TaskOutput result indicates the task is still running. */
   private isStillRunningResult(result: string, isError: boolean): boolean {
     const trimmed = result?.trim() || '';
 
@@ -245,7 +245,7 @@ export class AsyncSubagentManager {
     return false;
   }
 
-  /** Extracts the actual result content from AgentOutputTool response. */
+  /** Extracts the actual result content from TaskOutput response. */
   private extractAgentResult(result: string, agentId: string): string {
     const unwrap = (raw: string): string => {
       try {
@@ -358,7 +358,7 @@ export class AsyncSubagentManager {
     return this.pendingAsyncSubagents.has(taskToolId);
   }
 
-  /** Checks if a tool_id is an AgentOutputTool linked to an async subagent. */
+  /** Checks if a tool_id is a TaskOutput tool linked to an async subagent. */
   public isLinkedAgentOutputTool(toolId: string): boolean {
     return this.outputToolIdToAgentId.has(toolId);
   }
@@ -419,7 +419,7 @@ export class AsyncSubagentManager {
     return null;
   }
 
-  /** Infers agent_id from AgentOutputTool result payload. */
+  /** Infers agent_id from TaskOutput result payload. */
   private inferAgentIdFromResult(result: string): string | null {
     try {
       const parsed = JSON.parse(result);

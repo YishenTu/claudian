@@ -492,9 +492,11 @@ export class ConversationController {
       }
     }
 
-    // Save if modified
+    // Save if modified (fire-and-forget with error handling)
     if (modified && state.currentConversationId) {
-      void this.save();
+      this.save().catch(() => {
+        // Save failure is non-critical for this operation
+      });
     }
   }
 

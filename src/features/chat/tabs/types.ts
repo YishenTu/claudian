@@ -137,7 +137,7 @@ export interface TabUIComponents {
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   contextUsageMeter: ContextUsageMeter | null;
-  todoPanel: StatusPanel | null;
+  statusPanel: StatusPanel | null;
 }
 
 /**
@@ -148,8 +148,8 @@ export interface TabDOMElements {
   messagesEl: HTMLElement;
   welcomeEl: HTMLElement | null;
 
-  /** Container for todo panel (fixed between messages and input). */
-  todoPanelContainerEl: HTMLElement;
+  /** Container for status panel (fixed between messages and input). */
+  statusPanelContainerEl: HTMLElement;
 
   inputContainerEl: HTMLElement;
   inputWrapper: HTMLElement;

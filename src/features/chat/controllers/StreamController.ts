@@ -644,7 +644,7 @@ export class StreamController {
     this.showThinkingIndicator();
   }
 
-  /** Handles AgentOutputTool tool_use (invisible, links to async subagent). */
+  /** Handles TaskOutput tool_use (invisible, links to async subagent). */
   private handleAgentOutputToolUse(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     _msg: ChatMessage
@@ -677,7 +677,7 @@ export class StreamController {
     return true;
   }
 
-  /** Handles AgentOutputTool result to finalize async subagent. */
+  /** Handles TaskOutput result to finalize async subagent. */
   private handleAgentOutputToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     _msg: ChatMessage

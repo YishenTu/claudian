@@ -696,7 +696,7 @@ describe('Tab - Destruction', () => {
       tab.ui.instructionModeManager = { destroy: destroyInstructionMode } as any;
       tab.services.instructionRefineService = { cancel: cancelInstructionRefine } as any;
       tab.services.titleGenerationService = { cancel: cancelTitleGeneration } as any;
-      tab.ui.todoPanel = { destroy: destroyTodoPanel } as any;
+      tab.ui.statusPanel = { destroy: destroyTodoPanel } as any;
 
       await destroyTab(tab);
 
@@ -845,14 +845,14 @@ describe('Tab - UI Initialization', () => {
       expect(tab.ui.instructionModeManager).toBeDefined();
     });
 
-    it('should create and mount TodoPanel', () => {
+    it('should create and mount StatusPanel', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
       initializeTabUI(tab, options.plugin);
 
-      expect(tab.ui.todoPanel).toBeDefined();
-      expect(mockStatusPanel.mount).toHaveBeenCalledWith(tab.dom.todoPanelContainerEl);
+      expect(tab.ui.statusPanel).toBeDefined();
+      expect(mockStatusPanel.mount).toHaveBeenCalledWith(tab.dom.statusPanelContainerEl);
     });
 
     it('should create input toolbar components', () => {

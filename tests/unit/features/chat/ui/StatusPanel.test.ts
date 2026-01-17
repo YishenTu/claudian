@@ -522,6 +522,164 @@ describe('StatusPanel', () => {
     });
   });
 
+  describe('updateSubagent', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should add a new subagent element', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'New task', status: 'pending' });
+
+      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(1);
+      const label = containerEl.querySelector('.claudian-subagent-label');
+      expect(label?.textContent).toBe('New task');
+    });
+
+    it('should update status of existing subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+
+      const wrapper = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(wrapper).toHaveLength(1);
+      expect(wrapper[0].classList.has('running')).toBe(true);
+    });
+
+    it('should display status text for running subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('Running in background');
+    });
+
+    it('should display status text for pending subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('Initializing');
+    });
+
+    it('should display status text for orphaned subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'orphaned' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('Orphaned');
+    });
+
+    it('should clear status text for completed subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'completed' });
+
+      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
+      expect(statusText?.textContent).toBe('');
+    });
+
+    it('should truncate long descriptions', () => {
+      const longDescription = 'A'.repeat(50);
+      panel.updateSubagent({ id: 'task-1', description: longDescription, status: 'pending' });
+
+      const label = containerEl.querySelector('.claudian-subagent-label');
+      expect(label?.textContent).toBe('A'.repeat(40) + '...');
+    });
+
+    it('should handle updateSubagent called before mount', () => {
+      const unmountedPanel = new StatusPanel();
+
+      expect(() => {
+        unmountedPanel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+      }).not.toThrow();
+    });
+  });
+
+  describe('restoreSubagents', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should mark running subagents as orphaned after reload', () => {
+      const subagents = [
+        { id: 'running-1', description: 'Running task', mode: 'async' as const, asyncStatus: 'running' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
+        { id: 'completed-1', description: 'Done task', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(2);
+
+      // Running should become orphaned
+      const runningEl = elements.find(el => el.getAttribute('data-panel-subagent-id') === 'running-1');
+      expect(runningEl?.classList.has('orphaned')).toBe(true);
+
+      // Completed should stay completed
+      const completedEl = elements.find(el => el.getAttribute('data-panel-subagent-id') === 'completed-1');
+      expect(completedEl?.classList.has('completed')).toBe(true);
+    });
+
+    it('should filter to async subagents only', () => {
+      const subagents = [
+        { id: 'sync-1', description: 'Sync task', mode: undefined, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+        { id: 'async-1', description: 'Async task', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].getAttribute('data-panel-subagent-id')).toBe('async-1');
+    });
+
+    it('should mark pending subagents as orphaned after reload', () => {
+      const subagents = [
+        { id: 'pending-1', description: 'Pending task', mode: 'async' as const, asyncStatus: 'pending' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].classList.has('orphaned')).toBe(true);
+    });
+
+    it('should preserve error status after reload', () => {
+      const subagents = [
+        { id: 'error-1', description: 'Error task', mode: 'async' as const, asyncStatus: 'error' as const, isExpanded: false, status: 'error' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].classList.has('error')).toBe(true);
+    });
+
+    it('should preserve existing orphaned status after reload', () => {
+      const subagents = [
+        { id: 'orphaned-1', description: 'Orphaned task', mode: 'async' as const, asyncStatus: 'orphaned' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
+      ];
+
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].classList.has('orphaned')).toBe(true);
+    });
+
+    it('should clear existing subagents before restoring', () => {
+      // Add initial subagent
+      panel.updateSubagent({ id: 'existing-1', description: 'Existing', status: 'running' });
+      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(1);
+
+      // Restore with new subagents
+      const subagents = [
+        { id: 'restored-1', description: 'Restored', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
+      ];
+      panel.restoreSubagents(subagents);
+
+      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].getAttribute('data-panel-subagent-id')).toBe('restored-1');
+    });
+  });
+
   describe('clearTerminalSubagents', () => {
     it('should remove completed subagents but keep running ones', () => {
       panel.mount(containerEl as unknown as HTMLElement);
