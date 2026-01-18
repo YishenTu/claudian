@@ -527,57 +527,53 @@ describe('StatusPanel', () => {
       panel.mount(containerEl as unknown as HTMLElement);
     });
 
-    it('should add a new subagent element', () => {
+    it('should show container when subagent is added', () => {
       panel.updateSubagent({ id: 'task-1', description: 'New task', status: 'pending' });
 
-      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(1);
-      const label = containerEl.querySelector('.claudian-subagent-label');
-      expect(label?.textContent).toBe('New task');
+      const containerEl2 = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((containerEl2 as any)?.style?.display).toBe('block');
     });
 
-    it('should update status of existing subagent', () => {
+    it('should show done row when status changes to completed', () => {
       panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
-
-      const wrapper = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(wrapper).toHaveLength(1);
-      expect(wrapper[0].classList.has('running')).toBe(true);
-    });
-
-    it('should display status text for running subagent', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
-
-      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
-      expect(statusText?.textContent).toBe('Running in background');
-    });
-
-    it('should display status text for pending subagent', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
-
-      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
-      expect(statusText?.textContent).toBe('Initializing');
-    });
-
-    it('should display status text for orphaned subagent', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'orphaned' });
-
-      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
-      expect(statusText?.textContent).toBe('Orphaned');
-    });
-
-    it('should clear status text for completed subagent', () => {
       panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'completed' });
 
-      const statusText = containerEl.querySelector('.claudian-subagent-status-text');
-      expect(statusText?.textContent).toBe('');
+      const doneRow = containerEl.querySelector('.claudian-status-panel-done-row');
+      expect(doneRow).toBeDefined();
+      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
+      expect(doneText?.textContent).toBe('Task');
     });
 
-    it('should truncate long descriptions', () => {
-      const longDescription = 'A'.repeat(50);
-      panel.updateSubagent({ id: 'task-1', description: longDescription, status: 'pending' });
+    it('should show running row for running status', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
 
-      const label = containerEl.querySelector('.claudian-subagent-label');
-      expect(label?.textContent).toBe('A'.repeat(40) + '...');
+      const runningRow = containerEl.querySelector('.claudian-status-panel-running-row');
+      expect(runningRow).toBeDefined();
+      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('1 background task');
+    });
+
+    it('should count pending as running', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
+
+      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('1 background task');
+    });
+
+    it('should not show orphaned subagents', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'orphaned' });
+
+      // Orphaned subagents don't show in panel
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
+    });
+
+    it('should not show error subagents', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'error' });
+
+      // Error subagents don't show in panel
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
     });
 
     it('should handle updateSubagent called before mount', () => {
@@ -594,7 +590,7 @@ describe('StatusPanel', () => {
       panel.mount(containerEl as unknown as HTMLElement);
     });
 
-    it('should mark running subagents as orphaned after reload', () => {
+    it('should mark running subagents as orphaned after reload (not shown)', () => {
       const subagents = [
         { id: 'running-1', description: 'Running task', mode: 'async' as const, asyncStatus: 'running' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
         { id: 'completed-1', description: 'Done task', mode: 'async' as const, asyncStatus: 'completed' as const, isExpanded: false, status: 'completed' as const, toolCalls: [] },
@@ -602,16 +598,11 @@ describe('StatusPanel', () => {
 
       panel.restoreSubagents(subagents);
 
-      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(elements).toHaveLength(2);
-
-      // Running should become orphaned
-      const runningEl = elements.find(el => el.getAttribute('data-panel-subagent-id') === 'running-1');
-      expect(runningEl?.classList.has('orphaned')).toBe(true);
-
-      // Completed should stay completed
-      const completedEl = elements.find(el => el.getAttribute('data-panel-subagent-id') === 'completed-1');
-      expect(completedEl?.classList.has('completed')).toBe(true);
+      // Orphaned (from running) should not show, completed should show as done row
+      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
+      expect(doneRows).toHaveLength(1);
+      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
+      expect(doneText?.textContent).toBe('Done task');
     });
 
     it('should filter to async subagents only', () => {
@@ -622,51 +613,50 @@ describe('StatusPanel', () => {
 
       panel.restoreSubagents(subagents);
 
-      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(elements).toHaveLength(1);
-      expect(elements[0].getAttribute('data-panel-subagent-id')).toBe('async-1');
+      // Only async subagent should show
+      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
+      expect(doneRows).toHaveLength(1);
     });
 
-    it('should mark pending subagents as orphaned after reload', () => {
+    it('should mark pending subagents as orphaned after reload (not shown)', () => {
       const subagents = [
         { id: 'pending-1', description: 'Pending task', mode: 'async' as const, asyncStatus: 'pending' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
       ];
 
       panel.restoreSubagents(subagents);
 
-      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(elements).toHaveLength(1);
-      expect(elements[0].classList.has('orphaned')).toBe(true);
+      // Pending becomes orphaned (not shown)
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
     });
 
-    it('should preserve error status after reload', () => {
+    it('should not show error status after reload', () => {
       const subagents = [
         { id: 'error-1', description: 'Error task', mode: 'async' as const, asyncStatus: 'error' as const, isExpanded: false, status: 'error' as const, toolCalls: [] },
       ];
 
       panel.restoreSubagents(subagents);
 
-      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(elements).toHaveLength(1);
-      expect(elements[0].classList.has('error')).toBe(true);
+      // Error subagents don't show
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
     });
 
-    it('should preserve existing orphaned status after reload', () => {
+    it('should not show orphaned status after reload', () => {
       const subagents = [
         { id: 'orphaned-1', description: 'Orphaned task', mode: 'async' as const, asyncStatus: 'orphaned' as const, isExpanded: false, status: 'running' as const, toolCalls: [] },
       ];
 
       panel.restoreSubagents(subagents);
 
-      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(elements).toHaveLength(1);
-      expect(elements[0].classList.has('orphaned')).toBe(true);
+      // Orphaned subagents don't show
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
     });
 
     it('should clear existing subagents before restoring', () => {
       // Add initial subagent
       panel.updateSubagent({ id: 'existing-1', description: 'Existing', status: 'running' });
-      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(1);
 
       // Restore with new subagents
       const subagents = [
@@ -674,62 +664,62 @@ describe('StatusPanel', () => {
       ];
       panel.restoreSubagents(subagents);
 
-      const elements = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(elements).toHaveLength(1);
-      expect(elements[0].getAttribute('data-panel-subagent-id')).toBe('restored-1');
+      // Should only have the restored subagent as done row
+      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
+      expect(doneRows).toHaveLength(1);
+      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
+      expect(doneText?.textContent).toBe('Restored');
     });
   });
 
-  describe('subagent visibility', () => {
+  describe('subagent status display', () => {
     beforeEach(() => {
       panel.mount(containerEl as unknown as HTMLElement);
     });
 
-    it('should create subagents hidden by default', () => {
+    it('should show container when subagents are added', () => {
       panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
 
-      expect(panel.isSubagentVisible('task-1')).toBe(false);
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('block');
     });
 
-    it('should show subagent when showSubagent is called', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+    it('should hide container when no subagents', () => {
+      // Clear any subagents
+      panel.clearSubagents();
 
-      panel.showSubagent('task-1');
-
-      expect(panel.isSubagentVisible('task-1')).toBe(true);
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
     });
 
-    it('should hide subagent when hideSubagent is called', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
-      panel.showSubagent('task-1');
+    it('should show done rows for completed and running row for running', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'running' });
+      panel.updateSubagent({ id: 'task-3', description: 'Task 3', status: 'completed' });
 
-      panel.hideSubagent('task-1');
+      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
+      expect(doneRows).toHaveLength(1);
 
-      expect(panel.isSubagentVisible('task-1')).toBe(false);
+      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('2 background tasks');
     });
 
-    it('should return false for non-existent subagent', () => {
-      expect(panel.isSubagentVisible('non-existent')).toBe(false);
-    });
+    it('should update display when subagent status changes', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
 
-    it('should handle showSubagent for non-existent ID gracefully', () => {
-      expect(() => panel.showSubagent('non-existent')).not.toThrow();
-    });
+      // Check running row exists
+      let runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('1 background task');
 
-    it('should handle hideSubagent for non-existent ID gracefully', () => {
-      expect(() => panel.hideSubagent('non-existent')).not.toThrow();
-    });
+      // Change to completed
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
 
-    it('should preserve visibility when updating subagent status', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
-      panel.showSubagent('task-1');
-      expect(panel.isSubagentVisible('task-1')).toBe(true);
+      // Running row should be gone, done row should exist
+      runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText).toBeNull();
 
-      // Update status - visibility should remain via isSubagentVisible
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'completed' });
-
-      // isSubagentVisible checks the internal state which preserves visibility
-      expect(panel.isSubagentVisible('task-1')).toBe(true);
+      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
+      expect(doneText?.textContent).toBe('Task 1');
     });
   });
 
@@ -742,13 +732,14 @@ describe('StatusPanel', () => {
       panel.updateSubagent({ id: 'completed-1', description: 'Completed task', status: 'completed' });
       panel.updateSubagent({ id: 'error-1', description: 'Error task', status: 'error' });
 
-      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(3);
-
       panel.clearTerminalSubagents();
 
-      const remaining = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(remaining).toHaveLength(1);
-      expect(remaining[0].getAttribute('data-panel-subagent-id')).toBe('running-1');
+      // Check only running row remains
+      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
+      expect(doneRows).toHaveLength(0);
+
+      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('1 background task');
     });
 
     it('should remove orphaned subagents', () => {
@@ -757,13 +748,11 @@ describe('StatusPanel', () => {
       panel.updateSubagent({ id: 'orphaned-1', description: 'Orphaned task', status: 'orphaned' });
       panel.updateSubagent({ id: 'pending-1', description: 'Pending task', status: 'pending' });
 
-      expect(containerEl.querySelectorAll('[data-panel-subagent-id]')).toHaveLength(2);
-
       panel.clearTerminalSubagents();
 
-      const remaining = containerEl.querySelectorAll('[data-panel-subagent-id]');
-      expect(remaining).toHaveLength(1);
-      expect(remaining[0].getAttribute('data-panel-subagent-id')).toBe('pending-1');
+      // Check only running row remains (pending counts as running)
+      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('1 background task');
     });
   });
 });

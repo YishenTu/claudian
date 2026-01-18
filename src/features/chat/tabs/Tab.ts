@@ -543,12 +543,6 @@ export function initializeTabControllers(
   // Create renderer
   tab.renderer = new MessageRenderer(plugin, component, dom.messagesEl);
 
-  // Wire up async subagent click callback for stored message rendering
-  tab.renderer.setAsyncSubagentClickCallback((id) => {
-    // When inline async subagent header is clicked (stored messages), show the panel
-    ui.statusPanel?.showSubagent(id);
-  });
-
   // Selection controller
   tab.controllers.selectionController = new SelectionController(
     plugin.app,
@@ -568,10 +562,6 @@ export function initializeTabControllers(
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
     getAgentService: () => tab.service,
-    // When inline async subagent header is clicked, show the panel
-    onAsyncSubagentHeaderClick: (id) => {
-      ui.statusPanel?.showSubagent(id);
-    },
   });
 
   // Wire async subagent callback now that StreamController exists

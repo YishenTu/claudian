@@ -375,86 +375,60 @@ describe('Async Subagent Renderer', () => {
   });
 
   describe('inline display behavior', () => {
-    it('should start with content hidden', () => {
+    it('should start collapsed', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
       expect(state.info.isExpanded).toBe(false);
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
     });
 
-    it('should have aria-label indicating panel switch action', () => {
+    it('should have aria-label indicating expand action', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
-      expect(state.headerEl.getAttribute('aria-label')).toContain('click to show in panel');
+      expect(state.headerEl.getAttribute('aria-label')).toContain('click to expand');
     });
 
-    it('should hide content by default', () => {
+    it('should expand content when header is clicked', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
-      expect((state.contentEl as any).style.display).toBe('none');
-    });
+      // Initially collapsed
+      expect(state.info.isExpanded).toBe(false);
 
-    it('should call onClick callback when header is clicked', () => {
-      const onClick = jest.fn();
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' }, onClick);
-
-      // Trigger click
+      // Trigger click to expand
       (state.headerEl as any).click();
 
-      // Should call callback with task ID
-      expect(onClick).toHaveBeenCalledWith('task-1');
-
-      // Content should remain hidden (panel handles display)
-      expect((state.contentEl as any).style.display).toBe('none');
+      expect(state.info.isExpanded).toBe(true);
+      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
     });
 
-    it('should call onClick callback when Enter key is pressed on header', () => {
-      const onClick = jest.fn();
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
+    it('should toggle expansion on repeated clicks', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      // Click to expand
+      (state.headerEl as any).click();
+      expect(state.info.isExpanded).toBe(true);
+
+      // Click to collapse
+      (state.headerEl as any).click();
+      expect(state.info.isExpanded).toBe(false);
+    });
+
+    it('should expand when Enter key is pressed', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' });
 
       const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
       (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
 
-      expect(onClick).toHaveBeenCalledWith('task-1');
+      expect(state.info.isExpanded).toBe(true);
     });
 
-    it('should call onClick callback when Space key is pressed on header', () => {
-      const onClick = jest.fn();
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
+    it('should expand when Space key is pressed', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' });
 
       const spaceEvent = { key: ' ', preventDefault: jest.fn() };
       (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
 
-      expect(onClick).toHaveBeenCalledWith('task-1');
-    });
-
-    it('should not call onClick on other keys', () => {
-      const onClick = jest.fn();
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
-
-      const tabEvent = { key: 'Tab', preventDefault: jest.fn() };
-      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...tabEvent });
-
-      expect(onClick).not.toHaveBeenCalled();
-    });
-
-    it('should store click and keydown handlers for cleanup', () => {
-      const onClick = jest.fn();
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
-
-      expect(state.clickHandler).toBeDefined();
-      expect(state.keydownHandler).toBeDefined();
-      expect(typeof state.clickHandler).toBe('function');
-      expect(typeof state.keydownHandler).toBe('function');
-    });
-
-    it('should work without onClick callback', () => {
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' });
-
-      // Should not throw
-      expect(() => {
-        (state.headerEl as any).click();
-      }).not.toThrow();
+      expect(state.info.isExpanded).toBe(true);
     });
   });
 
@@ -521,8 +495,7 @@ describe('Async Subagent Renderer', () => {
   });
 
   describe('renderStoredAsyncSubagent', () => {
-    it('should call onClick callback when header is clicked', () => {
-      const onClick = jest.fn();
+    it('should return wrapper element', () => {
       const subagent: SubagentInfo = {
         id: 'task-1',
         description: 'Test task',
@@ -533,16 +506,13 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'completed',
       };
 
-      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
-      const headerEl = (result.wrapperEl as any).children[0];
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
 
-      headerEl.click();
-
-      expect(onClick).toHaveBeenCalledWith('task-1');
+      expect(wrapperEl).toBeDefined();
+      expect((wrapperEl as any).hasClass('claudian-subagent-list')).toBe(true);
     });
 
-    it('should call onClick callback on Enter key', () => {
-      const onClick = jest.fn();
+    it('should expand content when header is clicked', () => {
       const subagent: SubagentInfo = {
         id: 'task-1',
         description: 'Test task',
@@ -553,51 +523,36 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'completed',
       };
 
-      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
-      const headerEl = (result.wrapperEl as any).children[0];
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
+
+      // Click to expand
+      headerEl.click();
+
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+    });
+
+    it('should expand on Enter key', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
 
       const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
       headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
 
-      expect(onClick).toHaveBeenCalledWith('task-1');
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
     });
 
-    it('should work without onClick callback', () => {
-      const subagent: SubagentInfo = {
-        id: 'task-1',
-        description: 'Test',
-        status: 'completed',
-        toolCalls: [],
-        isExpanded: false,
-        mode: 'async',
-        asyncStatus: 'completed',
-      };
-
-      expect(() => {
-        const result = renderStoredAsyncSubagent(parentEl as any, subagent);
-        const headerEl = (result.wrapperEl as any).children[0];
-        headerEl.click();
-      }).not.toThrow();
-    });
-
-    it('should return cleanup function', () => {
-      const subagent: SubagentInfo = {
-        id: 'task-1',
-        description: 'Test',
-        status: 'completed',
-        toolCalls: [],
-        isExpanded: false,
-        mode: 'async',
-        asyncStatus: 'completed',
-      };
-
-      const result = renderStoredAsyncSubagent(parentEl as any, subagent);
-
-      expect(result.cleanup).toBeDefined();
-      expect(typeof result.cleanup).toBe('function');
-    });
-
-    it('should have aria-label indicating panel switch action', () => {
+    it('should have aria-label indicating expand action', () => {
       const subagent: SubagentInfo = {
         id: 'task-1',
         description: 'Test task',
@@ -608,14 +563,13 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'completed',
       };
 
-      const result = renderStoredAsyncSubagent(parentEl as any, subagent);
-      const headerEl = (result.wrapperEl as any).children[0];
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
 
-      expect(headerEl.getAttribute('aria-label')).toContain('click to show in panel');
+      expect(headerEl.getAttribute('aria-label')).toContain('click to expand');
     });
 
-    it('should remove event listeners when cleanup is called', () => {
-      const onClick = jest.fn();
+    it('should toggle expansion on repeated clicks', () => {
       const subagent: SubagentInfo = {
         id: 'task-1',
         description: 'Test task',
@@ -626,51 +580,16 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'completed',
       };
 
-      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
-      const headerEl = (result.wrapperEl as any).children[0];
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
 
-      // Click works before cleanup
+      // Click to expand
       headerEl.click();
-      expect(onClick).toHaveBeenCalledTimes(1);
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
 
-      // Call cleanup
-      result.cleanup();
-
-      // Click should no longer work after cleanup
+      // Click to collapse
       headerEl.click();
-      expect(onClick).toHaveBeenCalledTimes(1); // Still 1, not 2
-
-      // Verify event listeners were removed
-      expect(headerEl.getEventListenerCount('click')).toBe(0);
-      expect(headerEl.getEventListenerCount('keydown')).toBe(0);
-    });
-
-    it('should remove keydown event listener when cleanup is called', () => {
-      const onClick = jest.fn();
-      const subagent: SubagentInfo = {
-        id: 'task-1',
-        description: 'Test task',
-        status: 'completed',
-        toolCalls: [],
-        isExpanded: false,
-        mode: 'async',
-        asyncStatus: 'completed',
-      };
-
-      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
-      const headerEl = (result.wrapperEl as any).children[0];
-
-      // Keydown works before cleanup
-      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
-      headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
-      expect(onClick).toHaveBeenCalledTimes(1);
-
-      // Call cleanup
-      result.cleanup();
-
-      // Keydown should no longer work after cleanup
-      headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
-      expect(onClick).toHaveBeenCalledTimes(1); // Still 1, not 2
+      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
     });
   });
 });

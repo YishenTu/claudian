@@ -16,7 +16,6 @@ export {
 export { MessageRenderer } from './MessageRenderer';
 export {
   addSubagentToolCall,
-  type AsyncSubagentClickCallback,
   type AsyncSubagentState,
   createAsyncSubagentBlock,
   createSubagentBlock,
@@ -25,7 +24,6 @@ export {
   markAsyncSubagentOrphaned,
   renderStoredAsyncSubagent,
   renderStoredSubagent,
-  type StoredAsyncSubagentResult,
   type SubagentState,
   updateAsyncSubagentRunning,
   updateSubagentToolResult,

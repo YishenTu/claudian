@@ -8,7 +8,7 @@
 
 /* Main container - no border/background, flows seamlessly */
 .claudian-status-panel {
-  padding: 0;
+  padding-top: 12px;
 }
 
 /* ============================================
@@ -16,16 +16,47 @@
    ============================================ */
 
 .claudian-status-panel-subagents {
-  /* Subagents reuse the .claudian-subagent-list.async styles from subagent.css */
-}
-
-.claudian-status-panel-subagents .claudian-subagent-list {
   margin-bottom: 4px;
 }
 
-/* Override pointer cursor - panel subagents are not clickable */
-.claudian-status-panel-subagents .claudian-subagent-header {
-  cursor: default;
+/* Done row - completed subagent with green tick + description */
+.claudian-status-panel-done-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* Combined row - done on left, running count pushed to right */
+.claudian-status-panel-combined-row {
+  justify-content: flex-start;
+}
+
+.claudian-status-panel-combined-row .claudian-status-panel-done-text {
+  flex: 1;
+}
+
+.claudian-status-panel-icon.claudian-status-panel-done-icon {
+  color: var(--color-green);
+}
+
+.claudian-status-panel-done-text {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+/* Running row - count of background tasks, right-aligned */
+.claudian-status-panel-running-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 0;
+}
+
+.claudian-status-panel-running-text {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--color-cyan);
 }
 
 /* ============================================

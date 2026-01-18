@@ -8,14 +8,13 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
-import { isWriteEditTool, TOOL_TASK } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import {
-  type AsyncSubagentClickCallback,
   renderStoredAsyncSubagent,
   renderStoredSubagent,
 } from './SubagentRenderer';
@@ -36,9 +35,6 @@ export class MessageRenderer {
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
-  private asyncSubagentClickCallback: AsyncSubagentClickCallback | null = null;
-  /** Cleanup functions for stored async subagent event listeners. */
-  private asyncSubagentCleanups: Map<string, () => void> = new Map();
 
   constructor(
     plugin: ClaudianPlugin,
@@ -52,19 +48,6 @@ export class MessageRenderer {
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
-  }
-
-  /** Sets the callback for when an async subagent header is clicked. */
-  setAsyncSubagentClickCallback(callback: AsyncSubagentClickCallback | null): void {
-    this.asyncSubagentClickCallback = callback;
-  }
-
-  /** Cleans up all stored async subagent event listeners. */
-  cleanupAsyncSubagents(): void {
-    for (const cleanup of this.asyncSubagentCleanups.values()) {
-      cleanup();
-    }
-    this.asyncSubagentCleanups.clear();
   }
 
   /** Sets the messages container element. */
@@ -128,8 +111,6 @@ export class MessageRenderer {
     messages: ChatMessage[],
     getGreeting: () => string
   ): HTMLElement {
-    // Cleanup event listeners before clearing DOM
-    this.cleanupAsyncSubagents();
     this.messagesEl.empty();
 
     // Recreate welcome element after clearing
@@ -232,8 +213,7 @@ export class MessageRenderer {
           if (subagent) {
             const mode = block.mode || subagent.mode || 'sync';
             if (mode === 'async') {
-              const result = renderStoredAsyncSubagent(contentEl, subagent, this.asyncSubagentClickCallback ?? undefined);
-              this.asyncSubagentCleanups.set(subagent.id, result.cleanup);
+              renderStoredAsyncSubagent(contentEl, subagent);
             } else {
               renderStoredSubagent(contentEl, subagent);
             }
@@ -267,8 +247,13 @@ export class MessageRenderer {
 
   /**
    * Renders a tool call with special handling for Write/Edit and Task (subagent).
+   * TaskOutput is hidden as it's an internal tool for async subagent communication.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
+    // Skip TaskOutput - it's invisible (internal async subagent communication)
+    if (toolCall.name === TOOL_AGENT_OUTPUT) {
+      return;
+    }
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
     } else if (toolCall.name === TOOL_TASK) {

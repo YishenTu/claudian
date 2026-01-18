@@ -309,9 +309,6 @@ export function renderStoredSubagent(
   return wrapperEl;
 }
 
-/** Callback when an async subagent header is clicked. */
-export type AsyncSubagentClickCallback = (id: string) => void;
-
 /** State for an async subagent block. */
 export interface AsyncSubagentState {
   wrapperEl: HTMLElement;
@@ -321,8 +318,6 @@ export interface AsyncSubagentState {
   statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
   statusEl: HTMLElement;
   info: SubagentInfo;
-  clickHandler?: () => void;
-  keydownHandler?: (e: KeyboardEvent) => void;
 }
 
 function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
@@ -377,14 +372,12 @@ function truncatePrompt(prompt: string, maxLength = 200): string {
 
 /**
  * Create an async subagent block for a background Task tool call.
- * Content area is not shown - clicking header triggers the onClick callback
- * which switches to the panel view.
+ * Expandable to show the task prompt. Collapsed by default.
  */
 export function createAsyncSubagentBlock(
   parentEl: HTMLElement,
   taskToolId: string,
-  taskInput: Record<string, unknown>,
-  onClick?: AsyncSubagentClickCallback
+  taskInput: Record<string, unknown>
 ): AsyncSubagentState {
   const description = (taskInput.description as string) || 'Background task';
   const prompt = (taskInput.prompt as string) || '';
@@ -404,11 +397,12 @@ export function createAsyncSubagentBlock(
   setAsyncWrapperStatus(wrapperEl, 'pending');
   wrapperEl.dataset.asyncSubagentId = taskToolId;
 
-  // Header
+  // Header (clickable to collapse/expand)
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-label', `Background task: ${description} - click to show in panel`);
+  headerEl.setAttribute('aria-expanded', 'false');
+  headerEl.setAttribute('aria-label', `Background task: ${description} - click to expand`);
 
   // Robot icon (decorative)
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
@@ -427,32 +421,12 @@ export function createAsyncSubagentBlock(
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
 
-  // Content area (always hidden - panel renders its own content separately)
+  // Content area (collapsed by default, shows prompt when expanded)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  contentEl.style.display = 'none';
   createStatusRow(contentEl, truncatePrompt(prompt) || 'Background task', { textClass: 'claudian-async-prompt' });
 
-  // Click handler - calls onClick to switch to panel view
-  const clickHandler = () => {
-    try {
-      onClick?.(taskToolId);
-    } catch {
-      // Click handler errors are non-fatal
-    }
-  };
-  const keydownHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      try {
-        onClick?.(taskToolId);
-      } catch {
-        // Keyboard handler errors are non-fatal
-      }
-    }
-  };
-
-  headerEl.addEventListener('click', clickHandler);
-  headerEl.addEventListener('keydown', keydownHandler);
+  // Setup collapsible behavior - use info as state (it has isExpanded property)
+  setupCollapsible(wrapperEl, headerEl, contentEl, info);
 
   return {
     wrapperEl,
@@ -462,8 +436,6 @@ export function createAsyncSubagentBlock(
     statusTextEl,
     statusEl,
     info,
-    clickHandler,
-    keydownHandler,
   };
 }
 
@@ -558,23 +530,14 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   createStatusRow(state.contentEl, '⚠️ Task orphaned', { rowClass: 'claudian-async-orphaned' });
 }
 
-/** Result from renderStoredAsyncSubagent with cleanup function. */
-export interface StoredAsyncSubagentResult {
-  wrapperEl: HTMLElement;
-  cleanup: () => void;
-}
-
 /**
  * Render a stored async subagent from conversation history.
- * Content area is hidden - clicking header triggers the onClick callback
- * which switches to the panel view.
- * @returns Object with wrapper element and cleanup function to remove event listeners.
+ * Expandable to show the task prompt. Collapsed by default.
  */
 export function renderStoredAsyncSubagent(
   parentEl: HTMLElement,
-  subagent: SubagentInfo,
-  onClick?: AsyncSubagentClickCallback
-): StoredAsyncSubagentResult {
+  subagent: SubagentInfo
+): HTMLElement {
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   const statusClass = getAsyncDisplayStatus(subagent.asyncStatus);
   setAsyncWrapperStatus(wrapperEl, statusClass);
@@ -591,11 +554,12 @@ export function renderStoredAsyncSubagent(
   const statusText = getAsyncStatusText(subagent.asyncStatus);
   const statusAriaLabel = getAsyncStatusAriaLabel(subagent.asyncStatus);
 
-  // Header
+  // Header (clickable to collapse/expand)
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - click to show in panel`);
+  headerEl.setAttribute('aria-expanded', 'false');
+  headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - ${statusAriaLabel} - click to expand`);
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -637,11 +601,10 @@ export function renderStoredAsyncSubagent(
       break;
   }
 
-  // Content area (always hidden - panel renders its own content separately)
+  // Content area (collapsed by default, shows prompt when expanded)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  contentEl.style.display = 'none';
 
-  // Show status-appropriate content (for panel when clicked)
+  // Show status-appropriate content
   switch (subagent.asyncStatus) {
     case 'completed':
       createStatusRow(contentEl, 'DONE');
@@ -657,33 +620,9 @@ export function renderStoredAsyncSubagent(
       createStatusRow(contentEl, truncatePrompt(subagent.prompt || '') || 'Background task', { textClass: 'claudian-async-prompt' });
   }
 
-  // Click handler - calls onClick to switch to panel view
-  const clickHandler = () => {
-    try {
-      onClick?.(subagent.id);
-    } catch {
-      // Click handler errors are non-fatal
-    }
-  };
-  const keydownHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      try {
-        onClick?.(subagent.id);
-      } catch {
-        // Keyboard handler errors are non-fatal
-      }
-    }
-  };
+  // Setup collapsible behavior
+  const state = { isExpanded: false };
+  setupCollapsible(wrapperEl, headerEl, contentEl, state);
 
-  headerEl.addEventListener('click', clickHandler);
-  headerEl.addEventListener('keydown', keydownHandler);
-
-  return {
-    wrapperEl,
-    cleanup: () => {
-      headerEl.removeEventListener('click', clickHandler);
-      headerEl.removeEventListener('keydown', keydownHandler);
-    },
-  };
+  return wrapperEl;
 }
