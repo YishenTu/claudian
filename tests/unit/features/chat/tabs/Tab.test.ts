@@ -71,9 +71,9 @@ const createMockStatusPanel = () => ({
   clearSubagents: jest.fn(),
   restoreSubagents: jest.fn(),
   destroy: jest.fn(),
-  setOnSubagentClick: jest.fn(),
   showSubagent: jest.fn(),
   hideSubagent: jest.fn(),
+  isSubagentVisible: jest.fn().mockReturnValue(false),
 });
 
 const createMockModelSelector = () => ({

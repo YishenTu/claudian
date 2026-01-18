@@ -3,7 +3,7 @@
 /* Fixed container between messages and input */
 .claudian-status-panel-container {
   flex-shrink: 0;
-  padding: 0 12px;
+  padding: 0 14px;
 }
 
 /* Main container - no border/background, flows seamlessly */
@@ -42,7 +42,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0 4px 2px;
+  padding: 4px 0;
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.15s ease;
@@ -107,7 +107,7 @@
 
 /* Content (expanded list) */
 .claudian-status-panel-content {
-  padding: 2px 0 2px 2px;
+  padding: 2px 0;
 }
 
 /* Individual todo item - shared by status panel and inline tool via .claudian-todo-list-container */

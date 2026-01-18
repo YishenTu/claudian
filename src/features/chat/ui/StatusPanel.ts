@@ -32,9 +32,6 @@ interface PanelSubagentState {
   keydownHandler: (e: KeyboardEvent) => void;
 }
 
-/** Callback when a panel subagent header is clicked. */
-export type PanelSubagentClickCallback = (id: string) => void;
-
 /**
  * StatusPanel - persistent bottom panel for async subagents and todos.
  */
@@ -46,7 +43,6 @@ export class StatusPanel {
   private subagentContainerEl: HTMLElement | null = null;
   private subagentStates: Map<string, PanelSubagentState> = new Map();
   private currentSubagents: Map<string, PanelSubagentInfo> = new Map();
-  private onSubagentClick: PanelSubagentClickCallback | null = null;
 
   // Todo section
   private todoContainerEl: HTMLElement | null = null;
@@ -301,14 +297,6 @@ export class StatusPanel {
   // ============================================
   // Async Subagent Methods
   // ============================================
-
-  /**
-   * Set callback for when a panel subagent header is clicked.
-   * Used to coordinate with inline renderer visibility.
-   */
-  setOnSubagentClick(callback: PanelSubagentClickCallback | null): void {
-    this.onSubagentClick = callback;
-  }
 
   /**
    * Add or update an async subagent in the panel.
@@ -614,13 +602,15 @@ export class StatusPanel {
    * Preserves visibility state - hidden subagents stay hidden.
    */
   private renderAllSubagents(): void {
-    // Store visibility state before clearing
+    // Store visibility state before cleaning up
     const visibilityStates = new Map<string, boolean>();
     for (const [id, state] of this.subagentStates) {
       visibilityStates.set(id, state.wrapperEl.style.display !== 'none');
     }
 
-    this.subagentStates.clear();
+    // Clean up listeners before clearing (prevents memory leaks)
+    this.cleanupSubagentStates();
+
     for (const [id, info] of this.currentSubagents) {
       this.createSubagentElement(info);
       // Restore visibility state
@@ -699,7 +689,6 @@ export class StatusPanel {
     // Cleanup subagent states (removes event listeners)
     this.cleanupSubagentStates();
     this.currentSubagents.clear();
-    this.onSubagentClick = null;
 
     if (this.panelEl) {
       this.panelEl.remove();

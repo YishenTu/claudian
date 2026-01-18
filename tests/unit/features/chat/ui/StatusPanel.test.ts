@@ -680,6 +680,59 @@ describe('StatusPanel', () => {
     });
   });
 
+  describe('subagent visibility', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should create subagents hidden by default', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+
+      expect(panel.isSubagentVisible('task-1')).toBe(false);
+    });
+
+    it('should show subagent when showSubagent is called', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+
+      panel.showSubagent('task-1');
+
+      expect(panel.isSubagentVisible('task-1')).toBe(true);
+    });
+
+    it('should hide subagent when hideSubagent is called', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+      panel.showSubagent('task-1');
+
+      panel.hideSubagent('task-1');
+
+      expect(panel.isSubagentVisible('task-1')).toBe(false);
+    });
+
+    it('should return false for non-existent subagent', () => {
+      expect(panel.isSubagentVisible('non-existent')).toBe(false);
+    });
+
+    it('should handle showSubagent for non-existent ID gracefully', () => {
+      expect(() => panel.showSubagent('non-existent')).not.toThrow();
+    });
+
+    it('should handle hideSubagent for non-existent ID gracefully', () => {
+      expect(() => panel.hideSubagent('non-existent')).not.toThrow();
+    });
+
+    it('should preserve visibility when updating subagent status', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
+      panel.showSubagent('task-1');
+      expect(panel.isSubagentVisible('task-1')).toBe(true);
+
+      // Update status - visibility should remain via isSubagentVisible
+      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'completed' });
+
+      // isSubagentVisible checks the internal state which preserves visibility
+      expect(panel.isSubagentVisible('task-1')).toBe(true);
+    });
+  });
+
   describe('clearTerminalSubagents', () => {
     it('should remove completed subagents but keep running ones', () => {
       panel.mount(containerEl as unknown as HTMLElement);

@@ -6,6 +6,7 @@ import {
   createSubagentBlock,
   finalizeAsyncSubagent,
   markAsyncSubagentOrphaned,
+  renderStoredAsyncSubagent,
   renderStoredSubagent,
   updateAsyncSubagentRunning,
 } from '@/features/chat/rendering/SubagentRenderer';
@@ -392,6 +393,55 @@ describe('Async Subagent Renderer', () => {
       // Content should remain hidden (panel handles display)
       expect((state.contentEl as any).style.display).toBe('none');
     });
+
+    it('should call onClick callback when Enter key is pressed on header', () => {
+      const onClick = jest.fn();
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
+
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
+
+      expect(onClick).toHaveBeenCalledWith('task-1');
+    });
+
+    it('should call onClick callback when Space key is pressed on header', () => {
+      const onClick = jest.fn();
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
+
+      const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
+
+      expect(onClick).toHaveBeenCalledWith('task-1');
+    });
+
+    it('should not call onClick on other keys', () => {
+      const onClick = jest.fn();
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
+
+      const tabEvent = { key: 'Tab', preventDefault: jest.fn() };
+      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...tabEvent });
+
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('should store click and keydown handlers for cleanup', () => {
+      const onClick = jest.fn();
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' }, onClick);
+
+      expect(state.clickHandler).toBeDefined();
+      expect(state.keydownHandler).toBeDefined();
+      expect(typeof state.clickHandler).toBe('function');
+      expect(typeof state.keydownHandler).toBe('function');
+    });
+
+    it('should work without onClick callback', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' });
+
+      // Should not throw
+      expect(() => {
+        (state.headerEl as any).click();
+      }).not.toThrow();
+    });
   });
 
   it('shows label immediately and initializing status text', () => {
@@ -454,5 +504,100 @@ describe('Async Subagent Renderer', () => {
     expect((state.wrapperEl as any).hasClass('orphaned')).toBe(true);
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-done-text')[0];
     expect(contentText).toContain('Task orphaned');
+  });
+
+  describe('renderStoredAsyncSubagent', () => {
+    it('should call onClick callback when header is clicked', () => {
+      const onClick = jest.fn();
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
+      const headerEl = (result.wrapperEl as any).children[0];
+
+      headerEl.click();
+
+      expect(onClick).toHaveBeenCalledWith('task-1');
+    });
+
+    it('should call onClick callback on Enter key', () => {
+      const onClick = jest.fn();
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
+      const headerEl = (result.wrapperEl as any).children[0];
+
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
+
+      expect(onClick).toHaveBeenCalledWith('task-1');
+    });
+
+    it('should work without onClick callback', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      expect(() => {
+        const result = renderStoredAsyncSubagent(parentEl as any, subagent);
+        const headerEl = (result.wrapperEl as any).children[0];
+        headerEl.click();
+      }).not.toThrow();
+    });
+
+    it('should return cleanup function', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const result = renderStoredAsyncSubagent(parentEl as any, subagent);
+
+      expect(result.cleanup).toBeDefined();
+      expect(typeof result.cleanup).toBe('function');
+    });
+
+    it('should have aria-label indicating panel switch action', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const result = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (result.wrapperEl as any).children[0];
+
+      expect(headerEl.getAttribute('aria-label')).toContain('click to show in panel');
+    });
   });
 });

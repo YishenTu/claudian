@@ -25,6 +25,7 @@ export {
   markAsyncSubagentOrphaned,
   renderStoredAsyncSubagent,
   renderStoredSubagent,
+  type StoredAsyncSubagentResult,
   type SubagentState,
   updateAsyncSubagentRunning,
   updateSubagentToolResult,

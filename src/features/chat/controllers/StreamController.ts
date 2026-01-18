@@ -292,7 +292,9 @@ export class StreamController {
 
     // Check if Task is still pending - render as sync before processing result
     if (state.pendingTaskTools.has(chunk.id)) {
-      void this.renderPendingTask(chunk.id, msg);
+      this.renderPendingTask(chunk.id, msg).catch(() => {
+        // Error already handled in renderPendingTask - just prevent unhandled rejection
+      });
     }
 
     // Check if it's a sync subagent result

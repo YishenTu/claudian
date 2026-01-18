@@ -548,16 +548,23 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   createStatusRow(state.contentEl, '⚠️ Task orphaned', { rowClass: 'claudian-async-orphaned' });
 }
 
+/** Result from renderStoredAsyncSubagent with cleanup function. */
+export interface StoredAsyncSubagentResult {
+  wrapperEl: HTMLElement;
+  cleanup: () => void;
+}
+
 /**
  * Render a stored async subagent from conversation history.
  * Content area is hidden - clicking header triggers the onClick callback
  * which switches to the panel view.
+ * Returns a cleanup function to remove event listeners.
  */
 export function renderStoredAsyncSubagent(
   parentEl: HTMLElement,
   subagent: SubagentInfo,
   onClick?: AsyncSubagentClickCallback
-): HTMLElement {
+): StoredAsyncSubagentResult {
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   const statusClass = getAsyncDisplayStatus(subagent.asyncStatus);
   setAsyncWrapperStatus(wrapperEl, statusClass);
@@ -641,13 +648,22 @@ export function renderStoredAsyncSubagent(
   }
 
   // Click handler - calls onClick to switch to panel view
-  headerEl.addEventListener('click', () => onClick?.(subagent.id));
-  headerEl.addEventListener('keydown', (e) => {
+  const clickHandler = () => onClick?.(subagent.id);
+  const keydownHandler = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onClick?.(subagent.id);
     }
-  });
+  };
 
-  return wrapperEl;
+  headerEl.addEventListener('click', clickHandler);
+  headerEl.addEventListener('keydown', keydownHandler);
+
+  return {
+    wrapperEl,
+    cleanup: () => {
+      headerEl.removeEventListener('click', clickHandler);
+      headerEl.removeEventListener('keydown', keydownHandler);
+    },
+  };
 }
