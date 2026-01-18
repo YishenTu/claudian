@@ -211,6 +211,15 @@ export class StatusPanel {
       current.textContent = currentTask.activeForm;
       this.todoHeaderEl.appendChild(current);
     }
+
+    // Status indicator (tick only when all todos complete)
+    const status = document.createElement('span');
+    status.className = 'claudian-status-panel-status';
+    if (completedCount === totalCount && totalCount > 0) {
+      status.classList.add('status-completed');
+      setIcon(status, 'check');
+    }
+    this.todoHeaderEl.appendChild(status);
   }
 
   /**

@@ -41,8 +41,8 @@
 .claudian-status-panel-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 4px 0 4px 2px;
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.15s ease;
@@ -62,7 +62,7 @@
 .claudian-status-panel-icon {
   display: flex;
   align-items: center;
-  color: var(--interactive-accent);
+  color: var(--text-accent);
   flex-shrink: 0;
 }
 
@@ -76,7 +76,7 @@
   font-family: var(--font-monospace);
   font-size: 13px;
   font-weight: 500;
-  color: var(--interactive-accent);
+  color: var(--text-normal);
 }
 
 /* Current task preview (collapsed state) */
@@ -87,12 +87,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+}
+
+/* Status indicator */
+.claudian-status-panel-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.claudian-status-panel-status svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-status-panel-status.status-completed {
+  color: var(--color-green);
 }
 
 /* Content (expanded list) */
 .claudian-status-panel-content {
-  padding: 2px 0;
+  padding: 2px 0 2px 2px;
 }
 
 /* Individual todo item - shared by status panel and inline tool */

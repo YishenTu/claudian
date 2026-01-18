@@ -26,7 +26,6 @@
 }
 
 .claudian-tool-label {
-  flex: 1;
   font-family: var(--font-monospace);
   font-size: 13px;
   font-weight: 500;
@@ -34,6 +33,16 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Current task preview (for TodoWrite when collapsed) */
+.claudian-tool-current {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .claudian-tool-status {
