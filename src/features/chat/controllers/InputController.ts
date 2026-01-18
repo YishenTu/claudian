@@ -294,7 +294,7 @@ export class InputController {
     state.currentTextContent = '';
 
     streamController.showThinkingIndicator();
-    state.responseStartTime = Date.now();
+    state.responseStartTime = performance.now();
 
     // Extract @-mentioned MCP servers from prompt
     const mcpMentions = plugin.mcpService.extractMentions(promptToSend);
@@ -369,7 +369,7 @@ export class InputController {
 
         // Capture response duration before resetting state
         if (state.responseStartTime) {
-          const durationSeconds = Math.floor((Date.now() - state.responseStartTime) / 1000);
+          const durationSeconds = Math.floor((performance.now() - state.responseStartTime) / 1000);
           if (durationSeconds > 0) {
             const flavorWord =
               COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];

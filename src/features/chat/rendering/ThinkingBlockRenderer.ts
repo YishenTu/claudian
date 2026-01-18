@@ -122,7 +122,7 @@ export function renderStoredThinkingBlock(
 
   // Label with duration
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
-  const labelText = durationSeconds !== undefined ? `Thought for ${durationSeconds}s` : 'Thinking';
+  const labelText = durationSeconds !== undefined ? `Thought for ${durationSeconds}s` : 'Thought';
   labelEl.setText(labelText);
 
   // Collapsible content

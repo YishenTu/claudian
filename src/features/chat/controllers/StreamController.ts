@@ -805,7 +805,7 @@ export class StreamController {
       const timerSpan = state.thinkingEl.createSpan({ cls: 'claudian-thinking-hint' });
       const updateTimer = () => {
         if (!state.responseStartTime) return;
-        const elapsedSeconds = Math.floor((Date.now() - state.responseStartTime) / 1000);
+        const elapsedSeconds = Math.floor((performance.now() - state.responseStartTime) / 1000);
         timerSpan.setText(` (esc to interrupt · ${formatDurationMmSs(elapsedSeconds)})`);
       };
       updateTimer(); // Initial update
