@@ -2,6 +2,7 @@
  * Tests for MessageRenderer - Stored Message Rendering
  */
 
+import { TOOL_AGENT_OUTPUT } from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/rendering/SubagentRenderer';
@@ -173,5 +174,71 @@ describe('MessageRenderer', () => {
     expect(renderStoredToolCall).toHaveBeenCalled();
     expect(renderStoredAsyncSubagent).toHaveBeenCalled();
     expect(renderStoredSubagent).toHaveBeenCalled();
+  });
+
+  it('should skip TaskOutput tool calls (internal async subagent communication)', () => {
+    const messagesEl = createMockElement();
+    const mockComponent = createMockComponent();
+    const renderer = new MessageRenderer({} as any, mockComponent as any, messagesEl);
+
+    // Clear any previous calls
+    (renderStoredToolCall as jest.Mock).mockClear();
+
+    const msg: ChatMessage = {
+      id: 'm1',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        { id: 'agent-output-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'abc', block: true } } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'agent-output-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    // renderStoredToolCall should NOT be called for TaskOutput
+    expect(renderStoredToolCall).not.toHaveBeenCalled();
+  });
+
+  it('should render other tool calls but skip TaskOutput when mixed', () => {
+    const messagesEl = createMockElement();
+    const mockComponent = createMockComponent();
+    const renderer = new MessageRenderer({} as any, mockComponent as any, messagesEl);
+
+    // Clear any previous calls
+    (renderStoredToolCall as jest.Mock).mockClear();
+
+    const msg: ChatMessage = {
+      id: 'm1',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        { id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, status: 'completed' } as any,
+        { id: 'agent-output-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'abc' } } as any,
+        { id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, status: 'completed' } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'read-1' } as any,
+        { type: 'tool_use', toolId: 'agent-output-1' } as any,
+        { type: 'tool_use', toolId: 'grep-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    // renderStoredToolCall should be called twice (Read and Grep), but not for TaskOutput
+    expect(renderStoredToolCall).toHaveBeenCalledTimes(2);
+    expect(renderStoredToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'read-1', name: 'Read' })
+    );
+    expect(renderStoredToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'grep-1', name: 'Grep' })
+    );
   });
 });

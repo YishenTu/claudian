@@ -40,6 +40,10 @@
   color: var(--color-green);
 }
 
+.claudian-status-panel-icon.claudian-status-panel-bot-icon {
+  color: var(--interactive-accent);
+}
+
 .claudian-status-panel-done-text {
   font-family: var(--font-monospace);
   font-size: 13px;
@@ -112,6 +116,7 @@
 
 /* Current task preview (collapsed state) */
 .claudian-status-panel-current {
+  flex: 1;
   font-family: var(--font-monospace);
   font-size: 13px;
   color: var(--text-muted);
@@ -125,6 +130,7 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .claudian-status-panel-status svg {

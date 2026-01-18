@@ -433,6 +433,12 @@ export class StatusPanel {
       setIcon(iconEl, 'check');
       rowEl.appendChild(iconEl);
 
+      // Bot icon
+      const botIconEl = document.createElement('span');
+      botIconEl.className = 'claudian-status-panel-icon claudian-status-panel-bot-icon';
+      setIcon(botIconEl, 'bot');
+      rowEl.appendChild(botIconEl);
+
       // Description text
       const textEl = document.createElement('span');
       textEl.className = 'claudian-status-panel-done-text';
