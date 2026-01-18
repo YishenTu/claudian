@@ -44,6 +44,20 @@ function truncateResult(result: string): string {
   return lines.slice(0, 2).join('\n') + '...';
 }
 
+/** Create a status row with text (used for DONE, ERROR, and prompt displays). */
+function createStatusRow(
+  parentEl: HTMLElement,
+  text: string,
+  options?: { rowClass?: string; textClass?: string }
+): HTMLElement {
+  const rowEl = parentEl.createDiv({ cls: 'claudian-subagent-done' });
+  if (options?.rowClass) rowEl.addClass(options.rowClass);
+  const textEl = rowEl.createDiv({ cls: 'claudian-subagent-done-text' });
+  if (options?.textClass) textEl.addClass(options.textClass);
+  textEl.setText(text);
+  return rowEl;
+}
+
 
 /** Create a subagent block for a Task tool call (streaming). Collapsed by default. */
 export function createSubagentBlock(
@@ -213,9 +227,7 @@ export function finalizeSubagentBlock(
   state.currentToolEl = null;
   state.currentResultEl = null;
 
-  const doneEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const textEl = doneEl.createDiv({ cls: 'claudian-subagent-done-text' });
-  textEl.setText(isError ? 'ERROR' : 'DONE');
+  createStatusRow(state.contentEl, isError ? 'ERROR' : 'DONE');
 }
 
 /** Render a stored subagent from conversation history. Collapsed by default. */
@@ -265,9 +277,7 @@ export function renderStoredSubagent(
 
   // Show "DONE" or "ERROR" for completed subagents
   if (subagent.status === 'completed' || subagent.status === 'error') {
-    const doneEl = contentEl.createDiv({ cls: 'claudian-subagent-done' });
-    const textEl = doneEl.createDiv({ cls: 'claudian-subagent-done-text' });
-    textEl.setText(subagent.status === 'error' ? 'ERROR' : 'DONE');
+    createStatusRow(contentEl, subagent.status === 'error' ? 'ERROR' : 'DONE');
   } else {
     // For running subagents, show the last tool call
     const lastTool = subagent.toolCalls[subagent.toolCalls.length - 1];
@@ -406,9 +416,7 @@ export function createAsyncSubagentBlock(
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
 
   // Initial content - show prompt
-  const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-prompt' });
-  textEl.setText(truncatePrompt(prompt) || 'Background task');
+  createStatusRow(contentEl, truncatePrompt(prompt) || 'Background task', { textClass: 'claudian-async-prompt' });
 
   // Setup collapsible behavior - use info as state (it has isExpanded property)
   setupCollapsible(wrapperEl, headerEl, contentEl, info);
@@ -440,9 +448,7 @@ export function updateAsyncSubagentRunning(
 
   // Update content - keep showing prompt
   state.contentEl.empty();
-  const statusRow = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-prompt' });
-  textEl.setText(truncatePrompt(state.info.prompt || '') || 'Background task');
+  createStatusRow(state.contentEl, truncatePrompt(state.info.prompt || '') || 'Background task', { textClass: 'claudian-async-prompt' });
 }
 
 /** Finalize async subagent with AgentOutputTool result. */
@@ -480,16 +486,15 @@ export function finalizeAsyncSubagent(
 
   // Show result in content
   state.contentEl.empty();
-  const resultEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const textEl = resultEl.createDiv({ cls: 'claudian-subagent-done-text' });
-
+  let displayText: string;
   if (isError && result) {
     // Show truncated error message for debugging
     const truncated = result.length > 80 ? result.substring(0, 80) + '...' : result;
-    textEl.setText(`ERROR: ${truncated}`);
+    displayText = `ERROR: ${truncated}`;
   } else {
-    textEl.setText(isError ? 'ERROR' : 'DONE');
+    displayText = isError ? 'ERROR' : 'DONE';
   }
+  createStatusRow(state.contentEl, displayText);
 }
 
 /** Mark async subagent as orphaned (conversation ended before completion). */
@@ -515,9 +520,7 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
 
   // Show orphaned message
   state.contentEl.empty();
-  const orphanEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done claudian-async-orphaned' });
-  const textEl = orphanEl.createDiv({ cls: 'claudian-subagent-done-text' });
-  textEl.setText('⚠️ Task orphaned');
+  createStatusRow(state.contentEl, '⚠️ Task orphaned', { rowClass: 'claudian-async-orphaned' });
 }
 
 /** Render a stored async subagent from conversation history. Collapsed by default. */
@@ -576,19 +579,15 @@ export function renderStoredAsyncSubagent(
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
 
   // Show status-appropriate content
-  const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
-
   if (subagent.asyncStatus === 'completed') {
-    textEl.setText('DONE');
+    createStatusRow(contentEl, 'DONE');
   } else if (subagent.asyncStatus === 'error') {
-    textEl.setText('ERROR');
+    createStatusRow(contentEl, 'ERROR');
   } else if (subagent.asyncStatus === 'orphaned') {
-    textEl.setText('⚠️ Task orphaned');
+    createStatusRow(contentEl, '⚠️ Task orphaned');
   } else {
     // Running state - show prompt
-    textEl.addClass('claudian-async-prompt');
-    textEl.setText(truncatePrompt(subagent.prompt || '') || 'Background task');
+    createStatusRow(contentEl, truncatePrompt(subagent.prompt || '') || 'Background task', { textClass: 'claudian-async-prompt' });
   }
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
