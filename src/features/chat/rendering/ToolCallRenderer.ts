@@ -244,14 +244,13 @@ export function renderToolCall(
   // Collapsible content
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
 
-  // TodoWrite: render todo list directly (same as panel, no branch)
+  // TodoWrite: render todo list directly (same as panel, no border)
   if (toolCall.name === 'TodoWrite') {
+    content.addClass('claudian-tool-content-todo');
     renderTodoWriteResult(content, toolCall.input);
   } else {
-    // Tree-branch result row for other tools
+    // Result row for other tools (border-left styling via CSS)
     const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
-    const branch = resultRow.createSpan({ cls: 'claudian-tool-branch' });
-    branch.setText('└─');
     const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
     resultText.setText('Running...');
   }
@@ -354,14 +353,13 @@ export function renderStoredToolCall(
   // Collapsible content
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
 
-  // TodoWrite: render directly without branch (same as panel)
+  // TodoWrite: render todo list directly (same as panel, no border)
   if (toolCall.name === 'TodoWrite') {
+    content.addClass('claudian-tool-content-todo');
     renderTodoWriteResult(content, toolCall.input);
   } else {
-    // Tree-branch result row for other tools
+    // Result row for other tools (border-left styling via CSS)
     const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
-    const branch = resultRow.createSpan({ cls: 'claudian-tool-branch' });
-    branch.setText('└─');
     const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
     if (toolCall.result) {
       // Try special rendering for specific tools, otherwise use generic line renderer

@@ -129,12 +129,8 @@ export function addSubagentToolCall(
   itemEl.dataset.toolId = toolCall.id;
   state.currentToolEl = itemEl;
 
-  // Tool row (branch + label)
+  // Tool row (border-left provides hierarchy via CSS)
   const toolRowEl = itemEl.createDiv({ cls: 'claudian-subagent-tool-row' });
-
-  // Tree branch indicator
-  const branchEl = toolRowEl.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
 
   // Tool label
   const labelEl = toolRowEl.createDiv({ cls: 'claudian-subagent-tool-text' });
@@ -163,9 +159,9 @@ export function updateSubagentToolResult(
       if (!state.currentResultEl) {
         // Create result row nested inside tool item
         state.currentResultEl = state.currentToolEl.createDiv({ cls: 'claudian-subagent-tool-result' });
-        // Add tree branch for result (indented)
-        const branchEl = state.currentResultEl.createDiv({ cls: 'claudian-subagent-branch' });
-        branchEl.setText('└─');
+        // Add bullet for nested result
+        const bulletEl = state.currentResultEl.createDiv({ cls: 'claudian-subagent-bullet' });
+        bulletEl.setText('•');
         const textEl = state.currentResultEl.createDiv({ cls: 'claudian-subagent-result-text' });
         textEl.setText(truncateResult(toolCall.result));
       } else {
@@ -218,8 +214,6 @@ export function finalizeSubagentBlock(
   state.currentResultEl = null;
 
   const doneEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const branchEl = doneEl.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
   const textEl = doneEl.createDiv({ cls: 'claudian-subagent-done-text' });
   textEl.setText(isError ? 'ERROR' : 'DONE');
 }
@@ -272,8 +266,6 @@ export function renderStoredSubagent(
   // Show "DONE" or "ERROR" for completed subagents
   if (subagent.status === 'completed' || subagent.status === 'error') {
     const doneEl = contentEl.createDiv({ cls: 'claudian-subagent-done' });
-    const branchEl = doneEl.createDiv({ cls: 'claudian-subagent-branch' });
-    branchEl.setText('└─');
     const textEl = doneEl.createDiv({ cls: 'claudian-subagent-done-text' });
     textEl.setText(subagent.status === 'error' ? 'ERROR' : 'DONE');
   } else {
@@ -284,18 +276,16 @@ export function renderStoredSubagent(
         cls: `claudian-subagent-tool-item claudian-subagent-tool-${lastTool.status}`
       });
 
-      // Tool row (branch + label)
+      // Tool row (border-left provides hierarchy via CSS)
       const toolRowEl = itemEl.createDiv({ cls: 'claudian-subagent-tool-row' });
-      const branchEl = toolRowEl.createDiv({ cls: 'claudian-subagent-branch' });
-      branchEl.setText('└─');
       const toolLabelEl = toolRowEl.createDiv({ cls: 'claudian-subagent-tool-text' });
       toolLabelEl.setText(getToolLabel(lastTool.name, lastTool.input));
 
-      // Show result if available (nested under tool)
+      // Show result if available (nested under tool with bullet)
       if (lastTool.result) {
         const resultEl = itemEl.createDiv({ cls: 'claudian-subagent-tool-result' });
-        const resultBranchEl = resultEl.createDiv({ cls: 'claudian-subagent-branch' });
-        resultBranchEl.setText('└─');
+        const bulletEl = resultEl.createDiv({ cls: 'claudian-subagent-bullet' });
+        bulletEl.setText('•');
         const textEl = resultEl.createDiv({ cls: 'claudian-subagent-result-text' });
         textEl.setText(truncateResult(lastTool.result));
       }
@@ -417,8 +407,6 @@ export function createAsyncSubagentBlock(
 
   // Initial content - show prompt
   const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
   const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-prompt' });
   textEl.setText(truncatePrompt(prompt) || 'Background task');
 
@@ -453,8 +441,6 @@ export function updateAsyncSubagentRunning(
   // Update content - keep showing prompt
   state.contentEl.empty();
   const statusRow = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
   const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text claudian-async-prompt' });
   textEl.setText(truncatePrompt(state.info.prompt || '') || 'Background task');
 }
@@ -495,8 +481,6 @@ export function finalizeAsyncSubagent(
   // Show result in content
   state.contentEl.empty();
   const resultEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const branchEl = resultEl.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
   const textEl = resultEl.createDiv({ cls: 'claudian-subagent-done-text' });
 
   if (isError && result) {
@@ -532,8 +516,6 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   // Show orphaned message
   state.contentEl.empty();
   const orphanEl = state.contentEl.createDiv({ cls: 'claudian-subagent-done claudian-async-orphaned' });
-  const branchEl = orphanEl.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
   const textEl = orphanEl.createDiv({ cls: 'claudian-subagent-done-text' });
   textEl.setText('⚠️ Task orphaned');
 }
@@ -595,8 +577,6 @@ export function renderStoredAsyncSubagent(
 
   // Show status-appropriate content
   const statusRow = contentEl.createDiv({ cls: 'claudian-subagent-done' });
-  const branchEl = statusRow.createDiv({ cls: 'claudian-subagent-branch' });
-  branchEl.setText('└─');
   const textEl = statusRow.createDiv({ cls: 'claudian-subagent-done-text' });
 
   if (subagent.asyncStatus === 'completed') {

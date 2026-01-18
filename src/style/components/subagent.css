@@ -43,6 +43,7 @@
 
 .claudian-subagent-label {
   flex: 1;
+  font-family: var(--font-monospace);
   font-size: 13px;
   font-weight: 500;
   color: var(--text-normal);
@@ -77,17 +78,19 @@
   color: var(--color-red);
 }
 
-/* Subagent content */
+/* Subagent content - border-left style (like thinking block) */
 .claudian-subagent-content {
-  padding: 4px 0 4px 24px;
+  padding: 4px 0 4px 16px;
+  margin-left: 7px;
+  border-left: 2px solid var(--background-modifier-border);
 }
 
-/* Tree branch indicator */
-.claudian-subagent-branch {
-  font-family: monospace;
+/* Bullet indicator for nested results */
+.claudian-subagent-bullet {
   color: var(--text-faint);
   flex-shrink: 0;
   line-height: 1.4;
+  margin-right: 4px;
 }
 
 /* Individual tool item container */
@@ -97,29 +100,29 @@
   padding: 2px 0;
 }
 
-/* Tool row (branch + label) */
+/* Tool row */
 .claudian-subagent-tool-row {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
 }
 
 .claudian-subagent-tool-text {
-  font-size: 13px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
   line-height: 1.4;
   flex: 1;
-  color: var(--text-normal);
+  color: var(--text-muted);
 }
 
 /* Tool result area nested under tool (max 2 lines) */
 .claudian-subagent-tool-result {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
-  padding: 2px 0 0 20px;
+  padding: 2px 0 0 8px;
 }
 
 .claudian-subagent-result-text {
+  font-family: var(--font-monospace);
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.4;
@@ -133,11 +136,11 @@
 .claudian-subagent-done {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
   padding: 2px 0;
 }
 
 .claudian-subagent-done-text {
+  font-family: var(--font-monospace);
   font-size: 12px;
   color: var(--text-faint);
   font-weight: 500;
