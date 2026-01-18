@@ -40,7 +40,7 @@
     },
     "autoTitle": {
       "name": "Konversationstitel automatisch generieren",
-      "desc": "Generiert automatisch Konversationstitel nach dem ersten Austausch."
+      "desc": "Generiert automatisch Konversationstitel nach der ersten Nutzernachricht."
     },
     "titleModel": {
       "name": "Titel-Generierungsmodell",

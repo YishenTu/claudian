@@ -276,6 +276,8 @@ export class InputController {
     state.addMessage(userMsg);
     renderer.addMessage(userMsg);
 
+    await this.triggerTitleGeneration();
+
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
       role: 'assistant',
@@ -397,9 +399,6 @@ export class InputController {
 
         await conversationController.save(true);
 
-        // Generate AI title after first complete exchange (user + assistant)
-        await this.triggerTitleGeneration();
-
         this.processQueuedMessage();
       }
     }
@@ -479,32 +478,30 @@ export class InputController {
   // ============================================
 
   /**
-   * Triggers AI title generation after first exchange.
+   * Triggers AI title generation after first user message.
    * Handles setting fallback title, firing async generation, and updating UI.
    */
   private async triggerTitleGeneration(): Promise<void> {
     const { plugin, state, conversationController } = this.deps;
 
-    if (state.messages.length !== 2 || !state.currentConversationId) {
+    if (state.messages.length !== 1) {
       return;
     }
 
-    // Find first user and assistant messages by role (not by index)
-    const firstUserMsg = state.messages.find(m => m.role === 'user');
-    const firstAssistantMsg = state.messages.find(m => m.role === 'assistant');
+    if (!state.currentConversationId) {
+      const sessionId = this.getAgentService()?.getSessionId() ?? undefined;
+      const conversation = await plugin.createConversation(sessionId);
+      state.currentConversationId = conversation.id;
+    }
 
-    if (!firstUserMsg || !firstAssistantMsg) {
+    // Find first user message by role (not by index)
+    const firstUserMsg = state.messages.find(m => m.role === 'user');
+
+    if (!firstUserMsg) {
       return;
     }
 
     const userContent = firstUserMsg.displayContent || firstUserMsg.content;
-
-    // Extract text from assistant response
-    const assistantText = firstAssistantMsg.content ||
-      firstAssistantMsg.contentBlocks
-        ?.filter((b): b is { type: 'text'; content: string } => b.type === 'text')
-        .map(b => b.content)
-        .join('\n') || '';
 
     // Set immediate fallback title
     const fallbackTitle = conversationController.generateFallbackTitle(userContent);
@@ -514,10 +511,10 @@ export class InputController {
       return;
     }
 
-    // Fire async AI title generation only if service and content available
+    // Fire async AI title generation only if service available
     const titleService = this.deps.getTitleGenerationService();
-    if (!titleService || !assistantText) {
-      // No titleService or no assistantText, just keep the fallback title with no status
+    if (!titleService) {
+      // No titleService, just keep the fallback title with no status
       return;
     }
 
@@ -531,7 +528,6 @@ export class InputController {
     titleService.generateTitle(
       convId,
       userContent,
-      assistantText,
       async (conversationId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
         const currentConv = await plugin.getConversationById(conversationId);

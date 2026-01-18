@@ -2,7 +2,7 @@
  * Claudian - Title generation service
  *
  * Lightweight Claude query service for generating conversation titles
- * based on first user message and first AI response.
+ * based on the first user message.
  */
 
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
@@ -35,13 +35,12 @@ export class TitleGenerationService {
   }
 
   /**
-   * Generates a title for a conversation based on first messages.
+   * Generates a title for a conversation based on the first user message.
    * Non-blocking: calls callback when complete.
    */
   async generateTitle(
     conversationId: string,
     userMessage: string,
-    assistantResponse: string,
     callback: TitleGenerationCallback
   ): Promise<void> {
     const vaultPath = getVaultPath(this.plugin.app);
@@ -85,18 +84,12 @@ export class TitleGenerationService {
     const abortController = new AbortController();
     this.activeGenerations.set(conversationId, abortController);
 
-    // Truncate messages if too long (save tokens)
+    // Truncate message if too long (save tokens)
     const truncatedUser = this.truncateText(userMessage, 500);
-    const truncatedAssistant = this.truncateText(assistantResponse, 500);
 
-    const prompt = `User's first message:
+    const prompt = `User's request:
 """
 ${truncatedUser}
-"""
-
-AI's response:
-"""
-${truncatedAssistant}
 """
 
 Generate a title for this conversation:`;
