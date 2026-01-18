@@ -527,6 +527,22 @@ describe('ConversationController - Title Generation', () => {
       );
     });
 
+    it('should regenerate title with only user message (no assistant yet)', async () => {
+      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
+        id: 'conv-1',
+        title: 'Old Title',
+        messages: [{ role: 'user', content: 'Hello world' }],
+      });
+
+      await controller.regenerateTitle('conv-1');
+
+      expect(mockTitleService.generateTitle).toHaveBeenCalledWith(
+        'conv-1',
+        'Hello world',
+        expect.any(Function)
+      );
+    });
+
     it('should rename conversation with generated title', async () => {
       (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
