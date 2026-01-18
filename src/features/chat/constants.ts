@@ -11,6 +11,30 @@ export const LOGO_SVG = {
   fill: '#d97757',
 } as const;
 
+/** Random flavor words shown when response completes (e.g., "Baked for 1:23"). */
+export const COMPLETION_FLAVOR_WORDS = [
+  'Baked',
+  'Cooked',
+  'Brewed',
+  'Crafted',
+  'Forged',
+  'Conjured',
+  'Whipped up',
+  'Stirred',
+  'Simmered',
+  'Toasted',
+  'Sautéed',
+  'Finagled',
+  'Marinated',
+  'Distilled',
+  'Fermented',
+  'Percolated',
+  'Steeped',
+  'Roasted',
+  'Cured',
+  'Smoked',
+] as const;
+
 /** Random flavor texts shown while Claude is thinking. */
 export const FLAVOR_TEXTS = [
   // Classic

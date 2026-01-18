@@ -180,6 +180,11 @@ describe('StreamController - Text Content', () => {
     deps.state.currentContentEl = createMockElement();
   });
 
+  afterEach(() => {
+    // Clean up any timers set by ChatState
+    deps.state.resetStreamingState();
+  });
+
   describe('Text streaming', () => {
     it('should append text content to message', async () => {
       const msg = createTestMessage();

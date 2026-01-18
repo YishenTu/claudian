@@ -17,9 +17,11 @@ import type ClaudianPlugin from '../../../main';
 import { ApprovalModal } from '../../../shared/modals/ApprovalModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { prependCurrentNote } from '../../../utils/context';
+import { formatDurationMmSs } from '../../../utils/date';
 import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { formatSlashCommandWarnings } from '../../../utils/slashCommand';
+import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -292,6 +294,7 @@ export class InputController {
     state.currentTextContent = '';
 
     streamController.showThinkingIndicator();
+    state.responseStartTime = Date.now();
 
     // Extract @-mentioned MCP servers from prompt
     const mcpMentions = plugin.mcpService.extractMentions(promptToSend);
@@ -363,6 +366,26 @@ export class InputController {
         streamController.hideThinkingIndicator();
         state.isStreaming = false;
         state.cancelRequested = false;
+
+        // Capture response duration before resetting state
+        if (state.responseStartTime) {
+          const durationSeconds = Math.floor((Date.now() - state.responseStartTime) / 1000);
+          if (durationSeconds > 0) {
+            const flavorWord =
+              COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
+            assistantMsg.durationSeconds = durationSeconds;
+            assistantMsg.durationFlavorWord = flavorWord;
+            // Add footer to live message in DOM
+            if (contentEl) {
+              const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
+              footerEl.createSpan({
+                text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
+                cls: 'claudian-baked-duration',
+              });
+            }
+          }
+        }
+
         state.currentContentEl = null;
 
         streamController.finalizeCurrentThinkingBlock(assistantMsg);

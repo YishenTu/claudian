@@ -49,6 +49,8 @@ function createInitialState(): ChatStateData {
     currentTodos: null,
     needsAttention: false,
     autoScrollEnabled: true,
+    responseStartTime: null,
+    flavorTimerInterval: null,
   };
 }
 
@@ -333,6 +335,26 @@ export class ChatState {
   }
 
   // ============================================
+  // Response Timer State
+  // ============================================
+
+  get responseStartTime(): number | null {
+    return this.state.responseStartTime;
+  }
+
+  set responseStartTime(value: number | null) {
+    this.state.responseStartTime = value;
+  }
+
+  get flavorTimerInterval(): ReturnType<typeof setInterval> | null {
+    return this.state.flavorTimerInterval;
+  }
+
+  set flavorTimerInterval(value: ReturnType<typeof setInterval> | null) {
+    this.state.flavorTimerInterval = value;
+  }
+
+  // ============================================
   // Reset Methods
   // ============================================
 
@@ -349,6 +371,12 @@ export class ChatState {
       clearTimeout(this.state.thinkingIndicatorTimeout);
       this.state.thinkingIndicatorTimeout = null;
     }
+    // Clear response timer
+    if (this.state.flavorTimerInterval) {
+      clearInterval(this.state.flavorTimerInterval);
+      this.state.flavorTimerInterval = null;
+    }
+    this.state.responseStartTime = null;
   }
 
   /** Clears all maps for a new conversation. */

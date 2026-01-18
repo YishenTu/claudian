@@ -11,6 +11,7 @@ import { parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { formatDurationMmSs } from '../../../utils/date';
 import { FLAVOR_TEXTS } from '../constants';
 import {
   addSubagentToolCall,
@@ -799,7 +800,21 @@ export class StreamController {
       state.thinkingEl = state.currentContentEl.createDiv({ cls: 'claudian-thinking' });
       const randomText = FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
       state.thinkingEl.createSpan({ text: randomText });
-      state.thinkingEl.createSpan({ text: ' (esc to interrupt)', cls: 'claudian-thinking-hint' });
+
+      // Create timer span with initial value
+      const timerSpan = state.thinkingEl.createSpan({ cls: 'claudian-thinking-hint' });
+      const updateTimer = () => {
+        if (!state.responseStartTime) return;
+        const elapsedSeconds = Math.floor((Date.now() - state.responseStartTime) / 1000);
+        timerSpan.setText(` (esc to interrupt · ${formatDurationMmSs(elapsedSeconds)})`);
+      };
+      updateTimer(); // Initial update
+
+      // Start interval to update timer every second
+      if (state.flavorTimerInterval) {
+        clearInterval(state.flavorTimerInterval);
+      }
+      state.flavorTimerInterval = setInterval(updateTimer, 1000);
 
       // Queue indicator line (initially hidden)
       state.queueIndicatorEl = state.thinkingEl.createDiv({ cls: 'claudian-queue-indicator' });
@@ -815,6 +830,12 @@ export class StreamController {
     if (state.thinkingIndicatorTimeout) {
       clearTimeout(state.thinkingIndicatorTimeout);
       state.thinkingIndicatorTimeout = null;
+    }
+
+    // Clear timer interval (but preserve responseStartTime for duration capture)
+    if (state.flavorTimerInterval) {
+      clearInterval(state.flavorTimerInterval);
+      state.flavorTimerInterval = null;
     }
 
     if (state.thinkingEl) {
@@ -847,5 +868,7 @@ export class StreamController {
     state.currentThinkingState = null;
     state.activeSubagents.clear();
     state.pendingTools.clear();
+    // Reset response timer (duration already captured at this point)
+    state.responseStartTime = null;
   }
 }

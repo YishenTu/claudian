@@ -11,6 +11,7 @@ import { MarkdownRenderer } from 'obsidian';
 import { isWriteEditTool, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { renderStoredAsyncSubagent, renderStoredSubagent } from './SubagentRenderer';
@@ -228,6 +229,16 @@ export class MessageRenderer {
           this.renderToolCall(contentEl, toolCall);
         }
       }
+    }
+
+    // Render response duration footer
+    if (msg.durationSeconds && msg.durationSeconds > 0) {
+      const flavorWord = msg.durationFlavorWord || 'Baked';
+      const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
+      footerEl.createSpan({
+        text: `* ${flavorWord} for ${formatDurationMmSs(msg.durationSeconds)}`,
+        cls: 'claudian-baked-duration',
+      });
     }
   }
 
