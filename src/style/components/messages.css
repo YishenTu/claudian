@@ -180,3 +180,15 @@
 .claudian-messages::-webkit-scrollbar-thumb:hover {
   background: var(--background-modifier-border-hover);
 }
+
+/* Response duration footer */
+.claudian-response-footer {
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.claudian-baked-duration {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}

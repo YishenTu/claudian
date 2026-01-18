@@ -175,9 +175,16 @@ describe('StreamController - Text Content', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     deps = createMockDeps();
     controller = new StreamController(deps);
     deps.state.currentContentEl = createMockElement();
+  });
+
+  afterEach(() => {
+    // Clean up any timers set by ChatState
+    deps.state.resetStreamingState();
+    jest.useRealTimers();
   });
 
   describe('Text streaming', () => {
@@ -282,28 +289,23 @@ describe('StreamController - Text Content', () => {
 
   describe('Tool handling', () => {
     it('should record tool_use and add to content blocks', async () => {
-      jest.useFakeTimers();
-      try {
-        const msg = createTestMessage();
-        deps.state.currentContentEl = createMockElement();
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockElement();
 
-        await controller.handleStreamChunk(
-          { type: 'tool_use', id: 'tool-1', name: 'Read', input: { file_path: 'notes/test.md' } },
-          msg
-        );
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'tool-1', name: 'Read', input: { file_path: 'notes/test.md' } },
+        msg
+      );
 
-        expect(msg.toolCalls).toHaveLength(1);
-        expect(msg.toolCalls![0].id).toBe('tool-1');
-        expect(msg.toolCalls![0].status).toBe('running');
-        expect(msg.contentBlocks).toHaveLength(1);
-        expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'tool-1' });
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.toolCalls![0].id).toBe('tool-1');
+      expect(msg.toolCalls![0].status).toBe('running');
+      expect(msg.contentBlocks).toHaveLength(1);
+      expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'tool-1' });
 
-        // Thinking indicator is debounced - advance timer to trigger it
-        jest.advanceTimersByTime(500);
-        expect(deps.updateQueueIndicator).toHaveBeenCalled();
-      } finally {
-        jest.useRealTimers();
-      }
+      // Thinking indicator is debounced - advance timer to trigger it
+      jest.advanceTimersByTime(500);
+      expect(deps.updateQueueIndicator).toHaveBeenCalled();
     });
 
     it('should update tool_result status', async () => {
@@ -633,6 +635,70 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(0);
     });
 
+    it('should clear responseStartTime on resetStreamingState', () => {
+      deps.state.responseStartTime = 12345;
+      expect(deps.state.responseStartTime).toBe(12345);
+
+      controller.resetStreamingState();
+
+      expect(deps.state.responseStartTime).toBeNull();
+    });
+  });
+
+  describe('Timer lifecycle', () => {
+    it('should create timer interval when showing thinking indicator', () => {
+      deps.state.responseStartTime = performance.now();
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500); // Past the debounce delay
+
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
+    });
+
+    it('should clear timer interval when hiding thinking indicator', () => {
+      deps.state.responseStartTime = performance.now();
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
+
+      controller.hideThinkingIndicator();
+
+      expect(deps.state.flavorTimerInterval).toBeNull();
+    });
+
+    it('should clear timer interval in resetStreamingState', () => {
+      deps.state.responseStartTime = performance.now();
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
+
+      controller.resetStreamingState();
+
+      expect(deps.state.flavorTimerInterval).toBeNull();
+    });
+
+    it('should not create duplicate intervals on multiple showThinkingIndicator calls', () => {
+      deps.state.responseStartTime = performance.now();
+      const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+      const firstInterval = deps.state.flavorTimerInterval;
+
+      // Second call while indicator exists should not create a new interval
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+
+      // Should still have the same interval (no new one created since element exists)
+      expect(deps.state.flavorTimerInterval).toBe(firstInterval);
+
+      clearIntervalSpy.mockRestore();
+    });
+  });
+
+  describe('Tool handling - continued', () => {
     it('should handle multiple pending tools and flush in order', async () => {
       const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
       const msg = createTestMessage();

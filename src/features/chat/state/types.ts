@@ -100,6 +100,10 @@ export interface ChatStateData {
 
   // Auto-scroll control during streaming
   autoScrollEnabled: boolean;
+
+  // Response timer state
+  responseStartTime: number | null;
+  flavorTimerInterval: ReturnType<typeof setInterval> | null;
 }
 
 /** Callbacks for ChatState changes. */

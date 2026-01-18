@@ -10,6 +10,7 @@
 .claudian-thinking-hint {
   color: var(--text-muted);
   font-style: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Thinking block (extended thinking) */

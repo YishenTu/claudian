@@ -47,6 +47,10 @@ export interface ChatMessage {
   isInterrupt?: boolean;
   /** True if this message is rebuilt context sent to SDK on session reset (should be hidden). */
   isRebuiltContext?: boolean;
+  /** Duration in seconds from user send to response completion. */
+  durationSeconds?: number;
+  /** Flavor word used for duration display (e.g., "Baked", "Cooked"). */
+  durationFlavorWord?: string;
 }
 
 /** Persisted conversation with messages and session state. */

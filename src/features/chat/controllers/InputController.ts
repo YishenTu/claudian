@@ -17,9 +17,11 @@ import type ClaudianPlugin from '../../../main';
 import { ApprovalModal } from '../../../shared/modals/ApprovalModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { prependCurrentNote } from '../../../utils/context';
+import { formatDurationMmSs } from '../../../utils/date';
 import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { formatSlashCommandWarnings } from '../../../utils/slashCommand';
+import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -292,6 +294,7 @@ export class InputController {
     state.currentTextContent = '';
 
     streamController.showThinkingIndicator();
+    state.responseStartTime = performance.now();
 
     // Extract @-mentioned MCP servers from prompt
     const mcpMentions = plugin.mcpService.extractMentions(promptToSend);
@@ -355,7 +358,10 @@ export class InputController {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
     } finally {
-      // Skip cleanup if stream was invalidated (tab closed or conversation switched)
+      // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks)
+      state.clearFlavorTimerInterval();
+
+      // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)
       if (!wasInvalidated && state.streamGeneration === streamGeneration) {
         if (wasInterrupted) {
           await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
@@ -363,6 +369,26 @@ export class InputController {
         streamController.hideThinkingIndicator();
         state.isStreaming = false;
         state.cancelRequested = false;
+
+        // Capture response duration before resetting state
+        const durationSeconds = state.responseStartTime
+          ? Math.floor((performance.now() - state.responseStartTime) / 1000)
+          : 0;
+        if (durationSeconds > 0) {
+          const flavorWord =
+            COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
+          assistantMsg.durationSeconds = durationSeconds;
+          assistantMsg.durationFlavorWord = flavorWord;
+          // Add footer to live message in DOM
+          if (contentEl) {
+            const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
+            footerEl.createSpan({
+              text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
+              cls: 'claudian-baked-duration',
+            });
+          }
+        }
+
         state.currentContentEl = null;
 
         streamController.finalizeCurrentThinkingBlock(assistantMsg);
