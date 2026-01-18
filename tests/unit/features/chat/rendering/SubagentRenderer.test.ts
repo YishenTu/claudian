@@ -359,18 +359,18 @@ describe('Async Subagent Renderer', () => {
     parentEl = createMockElement('div');
   });
 
-  describe('collapsed by default', () => {
-    it('should start collapsed by default', () => {
+  describe('inline display behavior', () => {
+    it('should start with content hidden', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
       expect(state.info.isExpanded).toBe(false);
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
     });
 
-    it('should set aria-expanded to false by default', () => {
+    it('should have aria-label indicating panel switch action', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+      expect(state.headerEl.getAttribute('aria-label')).toContain('click to show in panel');
     });
 
     it('should hide content by default', () => {
@@ -379,25 +379,18 @@ describe('Async Subagent Renderer', () => {
       expect((state.contentEl as any).style.display).toBe('none');
     });
 
-    it('should toggle expand/collapse on header click', () => {
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
-
-      // Initially collapsed
-      expect(state.info.isExpanded).toBe(false);
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+    it('should call onClick callback when header is clicked', () => {
+      const onClick = jest.fn();
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' }, onClick);
 
       // Trigger click
       (state.headerEl as any).click();
 
-      // Should be expanded
-      expect(state.info.isExpanded).toBe(true);
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
-      expect((state.contentEl as any).style.display).toBe('block');
+      // Should call callback with task ID
+      expect(onClick).toHaveBeenCalledWith('task-1');
 
-      // Click again to collapse
-      (state.headerEl as any).click();
-      expect(state.info.isExpanded).toBe(false);
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+      // Content should remain hidden (panel handles display)
+      expect((state.contentEl as any).style.display).toBe('none');
     });
   });
 

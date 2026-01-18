@@ -51,6 +51,8 @@ export interface StreamControllerDeps {
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
   getAgentService?: () => ClaudianService | null;
+  /** Callback when inline async subagent header is clicked (to switch to panel view). */
+  onAsyncSubagentHeaderClick?: (id: string) => void;
 }
 
 /**
@@ -640,7 +642,13 @@ export class StreamController {
 
     const subagentInfo = asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
 
-    const asyncState = createAsyncSubagentBlock(targetEl, chunk.id, chunk.input);
+    // Pass onClick callback to switch to panel view when header is clicked
+    const asyncState = createAsyncSubagentBlock(
+      targetEl,
+      chunk.id,
+      chunk.input,
+      this.deps.onAsyncSubagentHeaderClick
+    );
     state.asyncSubagentStates.set(chunk.id, asyncState);
 
     msg.subagents = msg.subagents || [];

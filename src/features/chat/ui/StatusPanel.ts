@@ -18,7 +18,22 @@ export interface PanelSubagentInfo {
   id: string;
   description: string;
   status: AsyncSubagentStatus;
+  prompt?: string;
+  result?: string;
 }
+
+/** State for a panel subagent element. */
+interface PanelSubagentState {
+  wrapperEl: HTMLElement;
+  headerEl: HTMLElement;
+  contentEl: HTMLElement;
+  isExpanded: boolean;
+  clickHandler: () => void;
+  keydownHandler: (e: KeyboardEvent) => void;
+}
+
+/** Callback when a panel subagent header is clicked. */
+export type PanelSubagentClickCallback = (id: string) => void;
 
 /**
  * StatusPanel - persistent bottom panel for async subagents and todos.
@@ -29,8 +44,9 @@ export class StatusPanel {
 
   // Async subagent section (above todos)
   private subagentContainerEl: HTMLElement | null = null;
-  private subagentElements: Map<string, HTMLElement> = new Map();
+  private subagentStates: Map<string, PanelSubagentState> = new Map();
   private currentSubagents: Map<string, PanelSubagentInfo> = new Map();
+  private onSubagentClick: PanelSubagentClickCallback | null = null;
 
   // Todo section
   private todoContainerEl: HTMLElement | null = null;
@@ -81,7 +97,7 @@ export class StatusPanel {
     // Clear references and recreate
     this.panelEl = null;
     this.subagentContainerEl = null;
-    this.subagentElements.clear();
+    this.cleanupSubagentStates();
     this.todoContainerEl = null;
     this.todoHeaderEl = null;
     this.todoContentEl = null;
@@ -287,28 +303,62 @@ export class StatusPanel {
   // ============================================
 
   /**
+   * Set callback for when a panel subagent header is clicked.
+   * Used to coordinate with inline renderer visibility.
+   */
+  setOnSubagentClick(callback: PanelSubagentClickCallback | null): void {
+    this.onSubagentClick = callback;
+  }
+
+  /**
    * Add or update an async subagent in the panel.
+   * Panel subagents are hidden by default - use showSubagent() to make visible.
    */
   updateSubagent(info: PanelSubagentInfo): void {
     this.currentSubagents.set(info.id, info);
 
-    const existingEl = this.subagentElements.get(info.id);
-    if (existingEl) {
-      this.updateSubagentElement(existingEl, info);
+    const existingState = this.subagentStates.get(info.id);
+    if (existingState) {
+      this.updateSubagentElement(existingState, info);
     } else {
       this.createSubagentElement(info);
     }
   }
 
   /**
+   * Show a specific subagent in the panel.
+   */
+  showSubagent(id: string): void {
+    const state = this.subagentStates.get(id);
+    if (state) {
+      state.wrapperEl.style.display = 'block';
+      this.scrollToBottom();
+    }
+  }
+
+  /**
+   * Hide a specific subagent in the panel.
+   */
+  hideSubagent(id: string): void {
+    const state = this.subagentStates.get(id);
+    if (state) {
+      state.wrapperEl.style.display = 'none';
+    }
+  }
+
+  /**
+   * Check if a subagent is visible in the panel.
+   */
+  isSubagentVisible(id: string): boolean {
+    const state = this.subagentStates.get(id);
+    return state ? state.wrapperEl.style.display !== 'none' : false;
+  }
+
+  /**
    * Remove a subagent from the panel (e.g., when completed and dismissed).
    */
   removeSubagent(id: string): void {
-    const el = this.subagentElements.get(id);
-    if (el) {
-      el.remove();
-      this.subagentElements.delete(id);
-    }
+    this.cleanupSubagentState(id);
     this.currentSubagents.delete(id);
   }
 
@@ -316,8 +366,7 @@ export class StatusPanel {
    * Clear all subagents from the panel.
    */
   clearSubagents(): void {
-    this.subagentElements.forEach(el => el.remove());
-    this.subagentElements.clear();
+    this.cleanupSubagentStates();
     this.currentSubagents.clear();
   }
 
@@ -330,11 +379,7 @@ export class StatusPanel {
 
     for (const [id, info] of this.currentSubagents) {
       if (terminalStates.includes(info.status)) {
-        const el = this.subagentElements.get(id);
-        if (el) {
-          el.remove();
-          this.subagentElements.delete(id);
-        }
+        this.cleanupSubagentState(id);
         this.currentSubagents.delete(id);
       }
     }
@@ -343,6 +388,7 @@ export class StatusPanel {
   /**
    * Restore async subagents from loaded conversation messages.
    * Running/pending subagents are marked as orphaned since they can't be tracked after reload.
+   * Panel subagents are created but hidden - inline renderers are shown first.
    */
   restoreSubagents(subagents: SubagentInfo[]): void {
     // Clear existing subagents first
@@ -369,12 +415,16 @@ export class StatusPanel {
         id: subagent.id,
         description: subagent.description,
         status,
+        prompt: subagent.prompt,
+        result: subagent.result,
       });
+      // Keep hidden - inline renderer is shown first on restore
     }
   }
 
   /**
    * Create a subagent element in the panel.
+   * Hidden by default - use showSubagent() to make visible.
    */
   private createSubagentElement(info: PanelSubagentInfo): void {
     if (!this.subagentContainerEl) return;
@@ -382,10 +432,15 @@ export class StatusPanel {
     const wrapperEl = document.createElement('div');
     wrapperEl.className = `claudian-subagent-list async ${info.status}`;
     wrapperEl.dataset.panelSubagentId = info.id;
+    // Hidden by default - inline renderer is shown first
+    wrapperEl.style.display = 'none';
 
-    // Header (non-collapsible in panel, just display)
+    // Header (collapsible)
     const headerEl = document.createElement('div');
     headerEl.className = 'claudian-subagent-header';
+    headerEl.setAttribute('tabindex', '0');
+    headerEl.setAttribute('role', 'button');
+    headerEl.setAttribute('aria-expanded', 'false');
 
     // Robot icon
     const iconEl = document.createElement('div');
@@ -418,18 +473,106 @@ export class StatusPanel {
     headerEl.appendChild(statusEl);
 
     wrapperEl.appendChild(headerEl);
+
+    // Content area (collapsed by default)
+    const contentEl = document.createElement('div');
+    contentEl.className = 'claudian-subagent-content';
+    contentEl.style.display = 'none';
+    this.renderSubagentContent(contentEl, info);
+    wrapperEl.appendChild(contentEl);
+
+    // Create state object
+    const state: PanelSubagentState = {
+      wrapperEl,
+      headerEl,
+      contentEl,
+      isExpanded: false,
+      clickHandler: () => this.toggleSubagent(info.id),
+      keydownHandler: (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.toggleSubagent(info.id);
+        }
+      },
+    };
+
+    // Attach event handlers
+    headerEl.addEventListener('click', state.clickHandler);
+    headerEl.addEventListener('keydown', state.keydownHandler);
+
     this.subagentContainerEl.appendChild(wrapperEl);
-    this.subagentElements.set(info.id, wrapperEl);
+    this.subagentStates.set(info.id, state);
+  }
+
+  /**
+   * Render content for a panel subagent (prompt or DONE/ERROR).
+   */
+  private renderSubagentContent(contentEl: HTMLElement, info: PanelSubagentInfo): void {
+    contentEl.empty();
+
+    const rowEl = document.createElement('div');
+    rowEl.className = 'claudian-subagent-done';
+    const textEl = document.createElement('div');
+    textEl.className = 'claudian-subagent-done-text';
+
+    if (info.status === 'completed') {
+      textEl.textContent = 'DONE';
+    } else if (info.status === 'error') {
+      textEl.textContent = 'ERROR';
+    } else if (info.status === 'orphaned') {
+      textEl.textContent = 'Task orphaned';
+    } else {
+      // Running/pending - show prompt
+      textEl.textContent = this.truncatePrompt(info.prompt || 'Background task');
+      textEl.classList.add('claudian-async-prompt');
+    }
+
+    rowEl.appendChild(textEl);
+    contentEl.appendChild(rowEl);
+  }
+
+  /**
+   * Toggle a panel subagent's expanded/collapsed state.
+   */
+  private toggleSubagent(id: string): void {
+    const state = this.subagentStates.get(id);
+    if (!state) return;
+
+    state.isExpanded = !state.isExpanded;
+    if (state.isExpanded) {
+      state.wrapperEl.classList.add('expanded');
+      state.contentEl.style.display = 'block';
+      state.headerEl.setAttribute('aria-expanded', 'true');
+    } else {
+      state.wrapperEl.classList.remove('expanded');
+      state.contentEl.style.display = 'none';
+      state.headerEl.setAttribute('aria-expanded', 'false');
+    }
 
     this.scrollToBottom();
   }
 
   /**
+   * Truncate prompt for display.
+   */
+  private truncatePrompt(prompt: string, maxLength = 200): string {
+    if (!prompt) return '';
+    if (prompt.length <= maxLength) return prompt;
+    return prompt.substring(0, maxLength) + '...';
+  }
+
+  /**
    * Update an existing subagent element.
    */
-  private updateSubagentElement(wrapperEl: HTMLElement, info: PanelSubagentInfo): void {
-    // Update wrapper class for status
+  private updateSubagentElement(state: PanelSubagentState, info: PanelSubagentInfo): void {
+    const { wrapperEl, contentEl } = state;
+
+    // Update wrapper class for status (preserve display and expanded state)
+    const wasExpanded = state.isExpanded;
     wrapperEl.className = `claudian-subagent-list async ${info.status}`;
+    if (wasExpanded) {
+      wrapperEl.classList.add('expanded');
+    }
     if (info.status === 'completed') {
       wrapperEl.classList.add('done');
     } else if (info.status === 'error' || info.status === 'orphaned') {
@@ -461,16 +604,55 @@ export class StatusPanel {
         setIcon(statusEl as HTMLElement, 'alert-circle');
       }
     }
+
+    // Update content
+    this.renderSubagentContent(contentEl, info);
   }
 
   /**
    * Re-render all subagents (after remount).
+   * Preserves visibility state - hidden subagents stay hidden.
    */
   private renderAllSubagents(): void {
-    this.subagentElements.clear();
-    for (const info of this.currentSubagents.values()) {
-      this.createSubagentElement(info);
+    // Store visibility state before clearing
+    const visibilityStates = new Map<string, boolean>();
+    for (const [id, state] of this.subagentStates) {
+      visibilityStates.set(id, state.wrapperEl.style.display !== 'none');
     }
+
+    this.subagentStates.clear();
+    for (const [id, info] of this.currentSubagents) {
+      this.createSubagentElement(info);
+      // Restore visibility state
+      if (visibilityStates.get(id)) {
+        this.showSubagent(id);
+      }
+    }
+  }
+
+  /**
+   * Cleanup a single subagent state (remove listeners and element).
+   */
+  private cleanupSubagentState(id: string): void {
+    const state = this.subagentStates.get(id);
+    if (state) {
+      state.headerEl.removeEventListener('click', state.clickHandler);
+      state.headerEl.removeEventListener('keydown', state.keydownHandler);
+      state.wrapperEl.remove();
+      this.subagentStates.delete(id);
+    }
+  }
+
+  /**
+   * Cleanup all subagent states (remove listeners and elements).
+   */
+  private cleanupSubagentStates(): void {
+    for (const state of this.subagentStates.values()) {
+      state.headerEl.removeEventListener('click', state.clickHandler);
+      state.headerEl.removeEventListener('keydown', state.keydownHandler);
+      state.wrapperEl.remove();
+    }
+    this.subagentStates.clear();
   }
 
   /**
@@ -514,13 +696,16 @@ export class StatusPanel {
     this.todoClickHandler = null;
     this.todoKeydownHandler = null;
 
+    // Cleanup subagent states (removes event listeners)
+    this.cleanupSubagentStates();
+    this.currentSubagents.clear();
+    this.onSubagentClick = null;
+
     if (this.panelEl) {
       this.panelEl.remove();
       this.panelEl = null;
     }
     this.subagentContainerEl = null;
-    this.subagentElements.clear();
-    this.currentSubagents.clear();
     this.todoContainerEl = null;
     this.todoHeaderEl = null;
     this.todoContentEl = null;

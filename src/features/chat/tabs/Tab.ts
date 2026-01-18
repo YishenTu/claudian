@@ -543,6 +543,12 @@ export function initializeTabControllers(
   // Create renderer
   tab.renderer = new MessageRenderer(plugin, component, dom.messagesEl);
 
+  // Wire up async subagent click callback for stored message rendering
+  tab.renderer.setAsyncSubagentClickCallback((id) => {
+    // When inline async subagent header is clicked (stored messages), show the panel
+    ui.statusPanel?.showSubagent(id);
+  });
+
   // Selection controller
   tab.controllers.selectionController = new SelectionController(
     plugin.app,
@@ -562,6 +568,10 @@ export function initializeTabControllers(
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
     getAgentService: () => tab.service,
+    // When inline async subagent header is clicked, show the panel
+    onAsyncSubagentHeaderClick: (id) => {
+      ui.statusPanel?.showSubagent(id);
+    },
   });
 
   // Wire async subagent callback now that StreamController exists
@@ -570,7 +580,7 @@ export function initializeTabControllers(
       // Update inline renderer
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
 
-      // Update status panel
+      // Update status panel (hidden by default - inline is shown first)
       if (subagent.mode === 'async' && ui.statusPanel) {
         ui.statusPanel.updateSubagent({
           id: subagent.id,
@@ -580,6 +590,8 @@ export function initializeTabControllers(
             : subagent.asyncStatus === 'orphaned' ? 'orphaned'
             : subagent.asyncStatus === 'running' ? 'running'
             : 'pending',
+          prompt: subagent.prompt,
+          result: subagent.result,
         });
       }
     }

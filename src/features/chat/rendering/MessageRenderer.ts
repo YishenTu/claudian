@@ -14,7 +14,11 @@ import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
-import { renderStoredAsyncSubagent, renderStoredSubagent } from './SubagentRenderer';
+import {
+  type AsyncSubagentClickCallback,
+  renderStoredAsyncSubagent,
+  renderStoredSubagent,
+} from './SubagentRenderer';
 import { renderStoredThinkingBlock } from './ThinkingBlockRenderer';
 import { renderStoredToolCall } from './ToolCallRenderer';
 import { renderStoredWriteEdit } from './WriteEditRenderer';
@@ -32,6 +36,7 @@ export class MessageRenderer {
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
+  private asyncSubagentClickCallback: AsyncSubagentClickCallback | null = null;
 
   constructor(
     plugin: ClaudianPlugin,
@@ -45,6 +50,11 @@ export class MessageRenderer {
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
+  }
+
+  /** Sets the callback for when an async subagent header is clicked. */
+  setAsyncSubagentClickCallback(callback: AsyncSubagentClickCallback | null): void {
+    this.asyncSubagentClickCallback = callback;
   }
 
   /** Sets the messages container element. */
@@ -210,7 +220,7 @@ export class MessageRenderer {
           if (subagent) {
             const mode = block.mode || subagent.mode || 'sync';
             if (mode === 'async') {
-              renderStoredAsyncSubagent(contentEl, subagent);
+              renderStoredAsyncSubagent(contentEl, subagent, this.asyncSubagentClickCallback ?? undefined);
             } else {
               renderStoredSubagent(contentEl, subagent);
             }
@@ -250,10 +260,21 @@ export class MessageRenderer {
       renderStoredWriteEdit(contentEl, toolCall);
     } else if (toolCall.name === TOOL_TASK) {
       // Backward compatibility: render Task tools as subagents
+      let status: 'completed' | 'error' | 'running';
+      switch (toolCall.status) {
+        case 'completed':
+          status = 'completed';
+          break;
+        case 'error':
+          status = 'error';
+          break;
+        default:
+          status = 'running';
+      }
       const subagentInfo = {
         id: toolCall.id,
         description: (toolCall.input?.description as string) || 'Subagent task',
-        status: toolCall.status === 'completed' ? 'completed' as const : toolCall.status === 'error' ? 'error' as const : 'running' as const,
+        status,
         toolCalls: [],
         isExpanded: false,
         result: toolCall.result,

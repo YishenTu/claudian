@@ -309,6 +309,9 @@ export function renderStoredSubagent(
   return wrapperEl;
 }
 
+/** Callback when an async subagent header is clicked. */
+export type AsyncSubagentClickCallback = (id: string) => void;
+
 /** State for an async subagent block. */
 export interface AsyncSubagentState {
   wrapperEl: HTMLElement;
@@ -318,6 +321,8 @@ export interface AsyncSubagentState {
   statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
   statusEl: HTMLElement;
   info: SubagentInfo;
+  clickHandler?: () => void;
+  keydownHandler?: (e: KeyboardEvent) => void;
 }
 
 function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
@@ -329,30 +334,36 @@ function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
 
 /** Normalize async status for display. */
 function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'completed' | 'error' | 'orphaned' {
-  if (asyncStatus === 'completed') return 'completed';
-  if (asyncStatus === 'error') return 'error';
-  if (asyncStatus === 'orphaned') return 'orphaned';
-  return 'running';
+  switch (asyncStatus) {
+    case 'completed': return 'completed';
+    case 'error': return 'error';
+    case 'orphaned': return 'orphaned';
+    default: return 'running';
+  }
 }
 
 function getAsyncStatusText(asyncStatus: string | undefined): string {
-  if (asyncStatus === 'pending') return 'Initializing';
-  if (asyncStatus === 'completed') return ''; // Just show tick icon, no text
-  if (asyncStatus === 'error') return 'Error';
-  if (asyncStatus === 'orphaned') return 'Orphaned';
-  return 'Running in background';
+  switch (asyncStatus) {
+    case 'pending': return 'Initializing';
+    case 'completed': return ''; // Just show tick icon, no text
+    case 'error': return 'Error';
+    case 'orphaned': return 'Orphaned';
+    default: return 'Running in background';
+  }
 }
 
 /** Get status text for aria-label (always returns meaningful text for accessibility). */
 function getAsyncStatusAriaLabel(asyncStatus: string | undefined): string {
-  if (asyncStatus === 'pending') return 'Initializing';
-  if (asyncStatus === 'completed') return 'Completed';
-  if (asyncStatus === 'error') return 'Error';
-  if (asyncStatus === 'orphaned') return 'Orphaned';
-  return 'Running in background';
+  switch (asyncStatus) {
+    case 'pending': return 'Initializing';
+    case 'completed': return 'Completed';
+    case 'error': return 'Error';
+    case 'orphaned': return 'Orphaned';
+    default: return 'Running in background';
+  }
 }
 
-function updateAsyncLabel(state: AsyncSubagentState, _displayStatus: 'running' | 'completed' | 'error' | 'orphaned'): void {
+function updateAsyncLabel(state: AsyncSubagentState): void {
   // Always show label (description) for immediate visibility
   state.labelEl.setText(truncateDescription(state.info.description));
 }
@@ -364,11 +375,16 @@ function truncatePrompt(prompt: string, maxLength = 200): string {
   return prompt.substring(0, maxLength) + '...';
 }
 
-/** Create an async subagent block for a background Task tool call. */
+/**
+ * Create an async subagent block for a background Task tool call.
+ * Content area is not shown - clicking header triggers the onClick callback
+ * which switches to the panel view.
+ */
 export function createAsyncSubagentBlock(
   parentEl: HTMLElement,
   taskToolId: string,
-  taskInput: Record<string, unknown>
+  taskInput: Record<string, unknown>,
+  onClick?: AsyncSubagentClickCallback
 ): AsyncSubagentState {
   const description = (taskInput.description as string) || 'Background task';
   const prompt = (taskInput.prompt as string) || '';
@@ -380,7 +396,7 @@ export function createAsyncSubagentBlock(
     mode: 'async',
     status: 'running',
     toolCalls: [],
-    isExpanded: false, // Collapsed by default for async
+    isExpanded: false,
     asyncStatus: 'pending',
   };
 
@@ -392,8 +408,7 @@ export function createAsyncSubagentBlock(
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'false');
-  headerEl.setAttribute('aria-label', `Background task: ${description} - Status: running`);
+  headerEl.setAttribute('aria-label', `Background task: ${description} - click to show in panel`);
 
   // Robot icon (decorative)
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
@@ -412,14 +427,22 @@ export function createAsyncSubagentBlock(
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
 
-  // Content (collapsed by default)
+  // Content area (not displayed in inline view - only shows in panel)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-
-  // Initial content - show prompt
+  contentEl.style.display = 'none';
   createStatusRow(contentEl, truncatePrompt(prompt) || 'Background task', { textClass: 'claudian-async-prompt' });
 
-  // Setup collapsible behavior - use info as state (it has isExpanded property)
-  setupCollapsible(wrapperEl, headerEl, contentEl, info);
+  // Click handler - calls onClick to switch to panel view
+  const clickHandler = () => onClick?.(taskToolId);
+  const keydownHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick?.(taskToolId);
+    }
+  };
+
+  headerEl.addEventListener('click', clickHandler);
+  headerEl.addEventListener('keydown', keydownHandler);
 
   return {
     wrapperEl,
@@ -429,6 +452,8 @@ export function createAsyncSubagentBlock(
     statusTextEl,
     statusEl,
     info,
+    clickHandler,
+    keydownHandler,
   };
 }
 
@@ -441,7 +466,7 @@ export function updateAsyncSubagentRunning(
   state.info.agentId = agentId;
 
   setAsyncWrapperStatus(state.wrapperEl, 'running');
-  updateAsyncLabel(state, 'running');
+  updateAsyncLabel(state);
 
   // Update status text
   state.statusTextEl.setText('Running in background');
@@ -462,7 +487,7 @@ export function finalizeAsyncSubagent(
   state.info.result = result;
 
   setAsyncWrapperStatus(state.wrapperEl, isError ? 'error' : 'completed');
-  updateAsyncLabel(state, isError ? 'error' : 'completed');
+  updateAsyncLabel(state);
 
   // Update status text (empty for completed - just show tick icon)
   state.statusTextEl.setText(isError ? 'Error' : '');
@@ -504,7 +529,7 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   state.info.result = 'Conversation ended before task completed';
 
   setAsyncWrapperStatus(state.wrapperEl, 'orphaned');
-  updateAsyncLabel(state, 'orphaned');
+  updateAsyncLabel(state);
 
   // Update status text
   state.statusTextEl.setText('Orphaned');
@@ -523,10 +548,15 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   createStatusRow(state.contentEl, '⚠️ Task orphaned', { rowClass: 'claudian-async-orphaned' });
 }
 
-/** Render a stored async subagent from conversation history. Collapsed by default. */
+/**
+ * Render a stored async subagent from conversation history.
+ * Content area is hidden - clicking header triggers the onClick callback
+ * which switches to the panel view.
+ */
 export function renderStoredAsyncSubagent(
   parentEl: HTMLElement,
-  subagent: SubagentInfo
+  subagent: SubagentInfo,
+  onClick?: AsyncSubagentClickCallback
 ): HTMLElement {
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   const statusClass = getAsyncDisplayStatus(subagent.asyncStatus);
@@ -548,7 +578,7 @@ export function renderStoredAsyncSubagent(
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - Status: ${statusAriaLabel}`);
+  headerEl.setAttribute('aria-label', `Background task: ${subagent.description} - click to show in panel`);
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -563,36 +593,61 @@ export function renderStoredAsyncSubagent(
   statusTextEl.setText(statusText);
 
   // Status indicator
-  const statusIconClass = (displayStatus === 'error' || displayStatus === 'orphaned')
-    ? 'status-error'
-    : (displayStatus === 'completed' ? 'status-completed' : 'status-running');
+  let statusIconClass: string;
+  switch (displayStatus) {
+    case 'error':
+    case 'orphaned':
+      statusIconClass = 'status-error';
+      break;
+    case 'completed':
+      statusIconClass = 'status-completed';
+      break;
+    default:
+      statusIconClass = 'status-running';
+  }
   const statusEl = headerEl.createDiv({ cls: `claudian-subagent-status ${statusIconClass}` });
   statusEl.setAttribute('aria-label', `Status: ${statusAriaLabel}`);
 
-  if (subagent.asyncStatus === 'completed') {
-    setIcon(statusEl, 'check');
-  } else if (subagent.asyncStatus === 'error' || subagent.asyncStatus === 'orphaned') {
-    setIcon(statusEl, subagent.asyncStatus === 'orphaned' ? 'alert-circle' : 'x');
+  switch (subagent.asyncStatus) {
+    case 'completed':
+      setIcon(statusEl, 'check');
+      break;
+    case 'error':
+      setIcon(statusEl, 'x');
+      break;
+    case 'orphaned':
+      setIcon(statusEl, 'alert-circle');
+      break;
   }
 
-  // Content
+  // Content area (hidden in inline view - only shows in panel)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
+  contentEl.style.display = 'none';
 
-  // Show status-appropriate content
-  if (subagent.asyncStatus === 'completed') {
-    createStatusRow(contentEl, 'DONE');
-  } else if (subagent.asyncStatus === 'error') {
-    createStatusRow(contentEl, 'ERROR');
-  } else if (subagent.asyncStatus === 'orphaned') {
-    createStatusRow(contentEl, '⚠️ Task orphaned');
-  } else {
-    // Running state - show prompt
-    createStatusRow(contentEl, truncatePrompt(subagent.prompt || '') || 'Background task', { textClass: 'claudian-async-prompt' });
+  // Show status-appropriate content (for panel when clicked)
+  switch (subagent.asyncStatus) {
+    case 'completed':
+      createStatusRow(contentEl, 'DONE');
+      break;
+    case 'error':
+      createStatusRow(contentEl, 'ERROR');
+      break;
+    case 'orphaned':
+      createStatusRow(contentEl, '⚠️ Task orphaned');
+      break;
+    default:
+      // Running state - show prompt
+      createStatusRow(contentEl, truncatePrompt(subagent.prompt || '') || 'Background task', { textClass: 'claudian-async-prompt' });
   }
 
-  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
-  const state = { isExpanded: false };
-  setupCollapsible(wrapperEl, headerEl, contentEl, state);
+  // Click handler - calls onClick to switch to panel view
+  headerEl.addEventListener('click', () => onClick?.(subagent.id));
+  headerEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick?.(subagent.id);
+    }
+  });
 
   return wrapperEl;
 }

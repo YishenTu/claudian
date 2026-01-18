@@ -71,6 +71,9 @@ const createMockStatusPanel = () => ({
   clearSubagents: jest.fn(),
   restoreSubagents: jest.fn(),
   destroy: jest.fn(),
+  setOnSubagentClick: jest.fn(),
+  showSubagent: jest.fn(),
+  hideSubagent: jest.fn(),
 });
 
 const createMockModelSelector = () => ({
@@ -112,7 +115,7 @@ let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
 let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
 let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
 let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
-let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock };
+let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setAsyncSubagentClickCallback: jest.Mock };
 let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockStreamController: { onAsyncSubagentStateChange: jest.Mock };
 let mockConversationController: { save: jest.Mock };
@@ -178,7 +181,10 @@ jest.mock('@/shared/components/SlashCommandDropdown', () => ({
 // Mock rendering
 jest.mock('@/features/chat/rendering', () => ({
   MessageRenderer: jest.fn().mockImplementation(() => {
-    mockMessageRenderer = { scrollToBottomIfNeeded: jest.fn() };
+    mockMessageRenderer = {
+      scrollToBottomIfNeeded: jest.fn(),
+      setAsyncSubagentClickCallback: jest.fn(),
+    };
     return mockMessageRenderer;
   }),
   cleanupThinkingBlock: jest.fn(),
