@@ -38,4 +38,21 @@ describe('formatDurationMmSs', () => {
     // 1 hour 5 minutes = 65 minutes = 3900 seconds
     expect(formatDurationMmSs(3900)).toBe('65:00');
   });
+
+  describe('input validation', () => {
+    it('returns 00:00 for negative values', () => {
+      expect(formatDurationMmSs(-1)).toBe('00:00');
+      expect(formatDurationMmSs(-60)).toBe('00:00');
+      expect(formatDurationMmSs(-100)).toBe('00:00');
+    });
+
+    it('returns 00:00 for NaN', () => {
+      expect(formatDurationMmSs(NaN)).toBe('00:00');
+    });
+
+    it('returns 00:00 for Infinity', () => {
+      expect(formatDurationMmSs(Infinity)).toBe('00:00');
+      expect(formatDurationMmSs(-Infinity)).toBe('00:00');
+    });
+  });
 });

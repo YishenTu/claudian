@@ -358,7 +358,13 @@ export class InputController {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
     } finally {
-      // Skip cleanup if stream was invalidated (tab closed or conversation switched)
+      // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks)
+      if (state.flavorTimerInterval) {
+        clearInterval(state.flavorTimerInterval);
+        state.flavorTimerInterval = null;
+      }
+
+      // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)
       if (!wasInvalidated && state.streamGeneration === streamGeneration) {
         if (wasInterrupted) {
           await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
@@ -375,13 +381,17 @@ export class InputController {
               COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
             assistantMsg.durationSeconds = durationSeconds;
             assistantMsg.durationFlavorWord = flavorWord;
-            // Add footer to live message in DOM
-            if (contentEl) {
-              const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
-              footerEl.createSpan({
-                text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
-                cls: 'claudian-baked-duration',
-              });
+            // Add footer to live message in DOM (non-critical, shouldn't break cleanup)
+            try {
+              if (contentEl) {
+                const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
+                footerEl.createSpan({
+                  text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
+                  cls: 'claudian-baked-duration',
+                });
+              }
+            } catch {
+              // DOM update failed - duration is still saved to message, just not displayed live
             }
           }
         }

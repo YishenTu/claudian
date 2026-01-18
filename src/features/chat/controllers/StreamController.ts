@@ -805,6 +805,14 @@ export class StreamController {
       const timerSpan = state.thinkingEl.createSpan({ cls: 'claudian-thinking-hint' });
       const updateTimer = () => {
         if (!state.responseStartTime) return;
+        // Check if element is still connected to DOM (prevents orphaned interval updates)
+        if (!timerSpan.isConnected) {
+          if (state.flavorTimerInterval) {
+            clearInterval(state.flavorTimerInterval);
+            state.flavorTimerInterval = null;
+          }
+          return;
+        }
         const elapsedSeconds = Math.floor((performance.now() - state.responseStartTime) / 1000);
         timerSpan.setText(` (esc to interrupt · ${formatDurationMmSs(elapsedSeconds)})`);
       };

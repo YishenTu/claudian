@@ -19,6 +19,10 @@ export function getTodayDate(): string {
 
 /** Formats a duration in seconds as mm:ss (e.g., "01:23"). */
 export function formatDurationMmSs(seconds: number): string {
+  // Validate input - return safe fallback for invalid values
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return '00:00';
+  }
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
