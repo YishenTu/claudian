@@ -382,7 +382,7 @@ Discover and enable Claude Code plugins installed via the CLI.
 
 ### Auto Title Generation
 AI-powered conversation titles generated from the first user message.
-- **Trigger**: After first exchange (uses first user message only)
+- **Trigger**: After first user message is sent
 - **Model**: Configurable via `titleGenerationModel` setting, falls back to `ANTHROPIC_DEFAULT_HAIKU_MODEL` env var, then `claude-haiku-4-5`
 - **Concurrent**: Each conversation has its own AbortController; multiple can generate simultaneously
 - **UI**: Loading spinner while generating, refresh icon if failed (click to retry)

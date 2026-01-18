@@ -54,6 +54,7 @@ function createMockAgentService() {
     getApprovedPlanContent: jest.fn().mockReturnValue(null),
     clearApprovedPlanContent: jest.fn(),
     ensureReady: jest.fn().mockResolvedValue(true),
+    getSessionId: jest.fn().mockReturnValue(null),
   };
 }
 
@@ -87,6 +88,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       renameConversation: jest.fn(),
       updateConversation: jest.fn(),
       getConversationById: jest.fn().mockResolvedValue(null),
+      createConversation: jest.fn().mockResolvedValue({ id: 'conv-1' }),
     } as any,
     state,
     renderer: {
@@ -476,7 +478,7 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('Title generation', () => {
-    it('should set pending status and fallback title after first exchange', async () => {
+    it('should set pending status and fallback title after first user message', async () => {
       const mockTitleService = {
         generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
@@ -497,7 +499,6 @@ describe('InputController - Message Queue', () => {
         getImageContextManager: () => imageContextManager as any,
         getTitleGenerationService: () => mockTitleService as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       // Mock the agent query to return a text response
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
@@ -520,7 +521,9 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // After first exchange (2 messages), should set pending status (only when titleService available and content exists)
+      expect(deps.plugin.createConversation).toHaveBeenCalled();
+
+      // After first user message, should set pending status (only when titleService available)
       expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { titleGenerationStatus: 'pending' });
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
     });

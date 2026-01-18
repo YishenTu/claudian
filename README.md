@@ -121,7 +121,7 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Excluded tags**: Tags that prevent notes from auto-loading (e.g., `sensitive`, `private`)
 - **Media folder**: Configure where vault stores attachments for embedded image support (e.g., `attachments`)
 - **Custom system prompt**: Additional instructions appended to the default system prompt (Instruction Mode `#` saves here)
-- **Auto-generate conversation titles**: Toggle AI-powered title generation after first exchange
+- **Auto-generate conversation titles**: Toggle AI-powered title generation after the first user message is sent
 - **Title generation model**: Model used for auto-generating conversation titles (default: Auto/Haiku)
 - **Vim-style navigation mappings**: Configure key bindings with lines like `map w scrollUp`, `map s scrollDown`, `map i focusInput`
 

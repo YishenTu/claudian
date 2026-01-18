@@ -276,6 +276,8 @@ export class InputController {
     state.addMessage(userMsg);
     renderer.addMessage(userMsg);
 
+    await this.triggerTitleGeneration();
+
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
       role: 'assistant',
@@ -397,9 +399,6 @@ export class InputController {
 
         await conversationController.save(true);
 
-        // Generate AI title after first complete exchange (user + assistant)
-        await this.triggerTitleGeneration();
-
         this.processQueuedMessage();
       }
     }
@@ -479,14 +478,20 @@ export class InputController {
   // ============================================
 
   /**
-   * Triggers AI title generation after first exchange.
+   * Triggers AI title generation after first user message.
    * Handles setting fallback title, firing async generation, and updating UI.
    */
   private async triggerTitleGeneration(): Promise<void> {
     const { plugin, state, conversationController } = this.deps;
 
-    if (state.messages.length !== 2 || !state.currentConversationId) {
+    if (state.messages.length !== 1) {
       return;
+    }
+
+    if (!state.currentConversationId) {
+      const sessionId = this.getAgentService()?.getSessionId() ?? undefined;
+      const conversation = await plugin.createConversation(sessionId);
+      state.currentConversationId = conversation.id;
     }
 
     // Find first user message by role (not by index)

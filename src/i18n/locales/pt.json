@@ -40,7 +40,7 @@
     },
     "autoTitle": {
       "name": "Gerar automaticamente títulos de conversa",
-      "desc": "Gera automaticamente títulos de conversa após o primeiro intercâmbio."
+      "desc": "Gera automaticamente títulos de conversa após a primeira mensagem do usuário."
     },
     "titleModel": {
       "name": "Modelo de geração de título",

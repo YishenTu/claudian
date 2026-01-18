@@ -40,7 +40,7 @@
     },
     "autoTitle": {
       "name": "Auto-generate conversation titles",
-      "desc": "Automatically generate conversation titles after the first exchange."
+      "desc": "Automatically generate conversation titles after the first user message is sent."
     },
     "titleModel": {
       "name": "Title generation model",
