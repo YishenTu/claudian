@@ -137,7 +137,7 @@ export class StatusPanel {
 
     // Todo content (expanded list)
     this.todoContentEl = document.createElement('div');
-    this.todoContentEl.className = 'claudian-status-panel-content';
+    this.todoContentEl.className = 'claudian-status-panel-content claudian-todo-list-container';
     this.todoContentEl.style.display = 'none';
     this.todoContainerEl.appendChild(this.todoContentEl);
 

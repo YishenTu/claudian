@@ -110,31 +110,27 @@
   padding: 2px 0 2px 2px;
 }
 
-/* Individual todo item - shared by status panel and inline tool */
-.claudian-status-panel-content .claudian-todo-item,
-.claudian-todo-panel-content .claudian-todo-item {
+/* Individual todo item - shared by status panel and inline tool via .claudian-todo-list-container */
+.claudian-todo-list-container .claudian-todo-item {
   display: flex;
   align-items: flex-start;
   padding: 1px 0;
 }
 
 /* Status icon - no left padding, natural size */
-.claudian-status-panel-content .claudian-todo-status-icon,
-.claudian-todo-panel-content .claudian-todo-status-icon {
+.claudian-todo-list-container .claudian-todo-status-icon {
   display: flex;
   align-items: center;
   flex-shrink: 0;
 }
 
-.claudian-status-panel-content .claudian-todo-status-icon svg,
-.claudian-todo-panel-content .claudian-todo-status-icon svg {
+.claudian-todo-list-container .claudian-todo-status-icon svg {
   width: 12px;
   height: 12px;
 }
 
 /* Text - fixed padding from left */
-.claudian-status-panel-content .claudian-todo-text,
-.claudian-todo-panel-content .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-text {
   font-family: var(--font-monospace);
   font-size: 12px;
   line-height: 1.4;
@@ -143,42 +139,34 @@
 }
 
 /* Status colors */
-.claudian-status-panel-content .claudian-todo-pending .claudian-todo-status-icon,
-.claudian-todo-panel-content .claudian-todo-pending .claudian-todo-status-icon {
+.claudian-todo-list-container .claudian-todo-pending .claudian-todo-status-icon {
   color: var(--text-normal);
 }
 
-.claudian-status-panel-content .claudian-todo-pending .claudian-todo-status-icon svg,
-.claudian-todo-panel-content .claudian-todo-pending .claudian-todo-status-icon svg {
+.claudian-todo-list-container .claudian-todo-pending .claudian-todo-status-icon svg {
   transform: scale(2);
 }
 
-.claudian-status-panel-content .claudian-todo-pending .claudian-todo-text,
-.claudian-todo-panel-content .claudian-todo-pending .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-pending .claudian-todo-text {
   color: var(--text-normal);
 }
 
-.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-status-icon,
-.claudian-todo-panel-content .claudian-todo-in_progress .claudian-todo-status-icon {
+.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-status-icon {
   color: var(--interactive-accent);
 }
 
-.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-status-icon svg,
-.claudian-todo-panel-content .claudian-todo-in_progress .claudian-todo-status-icon svg {
+.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-status-icon svg {
   transform: scale(2);
 }
 
-.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-text,
-.claudian-todo-panel-content .claudian-todo-in_progress .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-text {
   color: var(--text-normal);
 }
 
-.claudian-status-panel-content .claudian-todo-completed .claudian-todo-status-icon,
-.claudian-todo-panel-content .claudian-todo-completed .claudian-todo-status-icon {
+.claudian-todo-list-container .claudian-todo-completed .claudian-todo-status-icon {
   color: var(--color-green);
 }
 
-.claudian-status-panel-content .claudian-todo-completed .claudian-todo-text,
-.claudian-todo-panel-content .claudian-todo-completed .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-completed .claudian-todo-text {
   color: var(--text-muted);
 }

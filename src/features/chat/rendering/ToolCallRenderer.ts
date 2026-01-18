@@ -148,18 +148,88 @@ export function renderReadResult(container: HTMLElement, result: string): void {
   item.setText(`${lines.length} lines read`);
 }
 
+/** Get todos array from input, or undefined if invalid. */
+function getTodos(input: Record<string, unknown>): TodoItem[] | undefined {
+  const todos = input.todos;
+  if (!todos || !Array.isArray(todos)) return undefined;
+  return todos as TodoItem[];
+}
+
 /** Get the current in_progress task from todos. */
 export function getCurrentTask(input: Record<string, unknown>): TodoItem | undefined {
-  const todos = input.todos as TodoItem[] | undefined;
-  if (!todos || !Array.isArray(todos)) return undefined;
+  const todos = getTodos(input);
+  if (!todos) return undefined;
   return todos.find(t => t.status === 'in_progress');
 }
 
 /** Check if all todos are completed. */
 export function areAllTodosCompleted(input: Record<string, unknown>): boolean {
-  const todos = input.todos as TodoItem[] | undefined;
-  if (!todos || !Array.isArray(todos) || todos.length === 0) return false;
+  const todos = getTodos(input);
+  if (!todos || todos.length === 0) return false;
   return todos.every(t => t.status === 'completed');
+}
+
+/** Set status indicator for TodoWrite tool (check only when all complete). */
+function setTodoWriteStatus(statusEl: HTMLElement, input: Record<string, unknown>): void {
+  statusEl.className = 'claudian-tool-status';
+  statusEl.empty();
+  if (areAllTodosCompleted(input)) {
+    statusEl.addClass('status-completed');
+    statusEl.setAttribute('aria-label', 'Status: completed');
+    setIcon(statusEl, 'check');
+  } else {
+    statusEl.addClass('status-running');
+    statusEl.setAttribute('aria-label', 'Status: in progress');
+  }
+}
+
+/** Set status indicator for a standard tool call. */
+function setToolStatus(statusEl: HTMLElement, status: ToolCallInfo['status']): void {
+  statusEl.className = 'claudian-tool-status';
+  statusEl.empty();
+  statusEl.addClass(`status-${status}`);
+  statusEl.setAttribute('aria-label', `Status: ${status}`);
+  if (status === 'completed') {
+    setIcon(statusEl, 'check');
+  } else if (status === 'error') {
+    setIcon(statusEl, 'x');
+  } else if (status === 'blocked') {
+    setIcon(statusEl, 'shield-off');
+  }
+}
+
+/** Render tool result content based on tool type. */
+function renderToolResultContent(
+  container: HTMLElement,
+  toolName: string,
+  result: string | undefined
+): void {
+  if (!result) {
+    container.setText('No result');
+    return;
+  }
+  if (toolName === 'WebSearch') {
+    if (!renderWebSearchResult(container, result, 3)) {
+      renderResultLines(container, result, 3);
+    }
+  } else if (toolName === 'Read') {
+    renderReadResult(container, result);
+  } else {
+    renderResultLines(container, result, 3);
+  }
+}
+
+/** Create current task preview element for TodoWrite tools. */
+function createCurrentTaskPreview(
+  header: HTMLElement,
+  input: Record<string, unknown>
+): HTMLElement {
+  const currentTaskEl = header.createSpan({ cls: 'claudian-tool-current' });
+  const currentTask = getCurrentTask(input);
+  if (currentTask) {
+    currentTaskEl.setText(currentTask.activeForm);
+  }
+  return currentTaskEl;
 }
 
 /** Render TodoWrite result showing todo items (reuses panel CSS). */
@@ -169,6 +239,7 @@ export function renderTodoWriteResult(
 ): void {
   container.empty();
   container.addClass('claudian-todo-panel-content');
+  container.addClass('claudian-todo-list-container');
 
   const todos = input.todos as TodoItem[] | undefined;
   if (!todos || !Array.isArray(todos)) {
@@ -251,14 +322,9 @@ export function renderToolCall(
   labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
 
   // Current task preview (TodoWrite only, shown when collapsed)
-  let currentTaskEl: HTMLElement | null = null;
-  if (toolCall.name === 'TodoWrite') {
-    currentTaskEl = header.createSpan({ cls: 'claudian-tool-current' });
-    const currentTask = getCurrentTask(toolCall.input);
-    if (currentTask) {
-      currentTaskEl.setText(currentTask.activeForm);
-    }
-  }
+  const currentTaskEl = toolCall.name === 'TodoWrite'
+    ? createCurrentTaskPreview(header, toolCall.input)
+    : null;
 
   // Status indicator
   const statusEl = header.createSpan({ cls: 'claudian-tool-status' });
@@ -308,17 +374,9 @@ export function updateToolCallResult(
 
   // TodoWrite: special handling for status based on todo completion
   if (toolCall.name === 'TodoWrite') {
-    const statusEl = toolEl.querySelector('.claudian-tool-status');
+    const statusEl = toolEl.querySelector('.claudian-tool-status') as HTMLElement;
     if (statusEl) {
-      statusEl.className = 'claudian-tool-status';
-      statusEl.empty();
-      // Show check only when all todos are completed
-      if (areAllTodosCompleted(toolCall.input)) {
-        statusEl.addClass('status-completed');
-        setIcon(statusEl as HTMLElement, 'check');
-      } else {
-        statusEl.addClass('status-running');
-      }
+      setTodoWriteStatus(statusEl, toolCall.input);
     }
     const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
     if (content) {
@@ -339,33 +397,15 @@ export function updateToolCallResult(
   }
 
   // Update status indicator for other tools
-  const statusEl = toolEl.querySelector('.claudian-tool-status');
+  const statusEl = toolEl.querySelector('.claudian-tool-status') as HTMLElement;
   if (statusEl) {
-    statusEl.className = 'claudian-tool-status';
-    statusEl.addClass(`status-${toolCall.status}`);
-    statusEl.empty();
-    if (toolCall.status === 'completed') {
-      setIcon(statusEl as HTMLElement, 'check');
-    } else if (toolCall.status === 'error') {
-      setIcon(statusEl as HTMLElement, 'x');
-    } else if (toolCall.status === 'blocked') {
-      setIcon(statusEl as HTMLElement, 'shield-off');
-    }
+    setToolStatus(statusEl, toolCall.status);
   }
 
   // Update result text (max 3 lines) for other tools
   const resultText = toolEl.querySelector('.claudian-tool-result-text') as HTMLElement;
-  if (resultText && toolCall.result) {
-    // Try special rendering for specific tools, otherwise use generic line renderer
-    if (toolCall.name === 'WebSearch') {
-      if (!renderWebSearchResult(resultText, toolCall.result, 3)) {
-        renderResultLines(resultText, toolCall.result, 3);
-      }
-    } else if (toolCall.name === 'Read') {
-      renderReadResult(resultText, toolCall.result);
-    } else {
-      renderResultLines(resultText, toolCall.result, 3);
-    }
+  if (resultText) {
+    renderToolResultContent(resultText, toolCall.name, toolCall.result);
   }
 }
 
@@ -392,37 +432,16 @@ export function renderStoredToolCall(
   labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
 
   // Current task preview (TodoWrite only, shown when collapsed)
-  let currentTaskEl: HTMLElement | null = null;
-  if (toolCall.name === 'TodoWrite') {
-    currentTaskEl = header.createSpan({ cls: 'claudian-tool-current' });
-    const currentTask = getCurrentTask(toolCall.input);
-    if (currentTask) {
-      currentTaskEl.setText(currentTask.activeForm);
-    }
-  }
+  const currentTaskEl = toolCall.name === 'TodoWrite'
+    ? createCurrentTaskPreview(header, toolCall.input)
+    : null;
 
   // Status indicator
   const statusEl = header.createSpan({ cls: 'claudian-tool-status' });
   if (toolCall.name === 'TodoWrite') {
-    // TodoWrite: show check only when all todos are completed
-    if (areAllTodosCompleted(toolCall.input)) {
-      statusEl.addClass('status-completed');
-      statusEl.setAttribute('aria-label', 'Status: completed');
-      setIcon(statusEl, 'check');
-    } else {
-      statusEl.addClass('status-running');
-      statusEl.setAttribute('aria-label', 'Status: in progress');
-    }
+    setTodoWriteStatus(statusEl, toolCall.input);
   } else {
-    statusEl.addClass(`status-${toolCall.status}`);
-    statusEl.setAttribute('aria-label', `Status: ${toolCall.status}`);
-    if (toolCall.status === 'completed') {
-      setIcon(statusEl, 'check');
-    } else if (toolCall.status === 'error') {
-      setIcon(statusEl, 'x');
-    } else if (toolCall.status === 'blocked') {
-      setIcon(statusEl, 'shield-off');
-    }
+    setToolStatus(statusEl, toolCall.status);
   }
 
   // Collapsible content
@@ -436,20 +455,7 @@ export function renderStoredToolCall(
     // Result row for other tools (border-left styling via CSS)
     const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
     const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
-    if (toolCall.result) {
-      // Try special rendering for specific tools, otherwise use generic line renderer
-      if (toolCall.name === 'WebSearch') {
-        if (!renderWebSearchResult(resultText, toolCall.result, 3)) {
-          renderResultLines(resultText, toolCall.result, 3);
-        }
-      } else if (toolCall.name === 'Read') {
-        renderReadResult(resultText, toolCall.result);
-      } else {
-        renderResultLines(resultText, toolCall.result, 3);
-      }
-    } else {
-      resultText.setText('No result');
-    }
+    renderToolResultContent(resultText, toolCall.name, toolCall.result);
   }
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
