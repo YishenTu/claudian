@@ -8,13 +8,16 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
-import { isWriteEditTool, TOOL_TASK } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
-import { renderStoredAsyncSubagent, renderStoredSubagent } from './SubagentRenderer';
+import {
+  renderStoredAsyncSubagent,
+  renderStoredSubagent,
+} from './SubagentRenderer';
 import { renderStoredThinkingBlock } from './ThinkingBlockRenderer';
 import { renderStoredToolCall } from './ToolCallRenderer';
 import { renderStoredWriteEdit } from './WriteEditRenderer';
@@ -244,16 +247,32 @@ export class MessageRenderer {
 
   /**
    * Renders a tool call with special handling for Write/Edit and Task (subagent).
+   * TaskOutput is hidden as it's an internal tool for async subagent communication.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
+    // Skip TaskOutput - it's invisible (internal async subagent communication)
+    if (toolCall.name === TOOL_AGENT_OUTPUT) {
+      return;
+    }
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
     } else if (toolCall.name === TOOL_TASK) {
       // Backward compatibility: render Task tools as subagents
+      let status: 'completed' | 'error' | 'running';
+      switch (toolCall.status) {
+        case 'completed':
+          status = 'completed';
+          break;
+        case 'error':
+          status = 'error';
+          break;
+        default:
+          status = 'running';
+      }
       const subagentInfo = {
         id: toolCall.id,
         description: (toolCall.input?.description as string) || 'Subagent task',
-        status: toolCall.status === 'completed' ? 'completed' as const : toolCall.status === 'error' ? 'error' as const : 'running' as const,
+        status,
         toolCalls: [],
         isExpanded: false,
         result: toolCall.result,

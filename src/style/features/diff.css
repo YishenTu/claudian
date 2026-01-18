@@ -16,7 +16,7 @@
 .claudian-write-edit-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 0;
   cursor: pointer;
   user-select: none;
@@ -40,7 +40,7 @@
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text-normal);
   overflow: hidden;
   text-overflow: ellipsis;

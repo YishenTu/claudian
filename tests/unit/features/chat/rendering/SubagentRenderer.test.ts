@@ -6,6 +6,7 @@ import {
   createSubagentBlock,
   finalizeAsyncSubagent,
   markAsyncSubagentOrphaned,
+  renderStoredAsyncSubagent,
   renderStoredSubagent,
   updateAsyncSubagentRunning,
 } from '@/features/chat/rendering/SubagentRenderer';
@@ -17,6 +18,7 @@ interface MockElement {
   hasClass: (cls: string) => boolean;
   getClasses: () => string[];
   addEventListener: (event: string, handler: (e: any) => void) => void;
+  removeEventListener: (event: string, handler: (e: any) => void) => void;
   dispatchEvent: (event: { type: string; target?: any }) => void;
   click: () => void;
   createDiv: (opts?: { cls?: string; text?: string }) => MockElement;
@@ -29,6 +31,7 @@ interface MockElement {
   empty: () => void;
   setAttribute: (name: string, value: string) => void;
   getAttribute: (name: string) => string | null;
+  getEventListenerCount: (event: string) => number;
 }
 
 function createMockElement(tag = 'div'): MockElement {
@@ -57,6 +60,18 @@ function createMockElement(tag = 'div'): MockElement {
         eventListeners.set(event, []);
       }
       eventListeners.get(event)!.push(handler);
+    },
+    removeEventListener: (event: string, handler: (e: any) => void) => {
+      const handlers = eventListeners.get(event);
+      if (handlers) {
+        const idx = handlers.indexOf(handler);
+        if (idx !== -1) {
+          handlers.splice(idx, 1);
+        }
+      }
+    },
+    getEventListenerCount: (event: string) => {
+      return eventListeners.get(event)?.length ?? 0;
     },
     dispatchEvent: (event) => {
       const handlers = eventListeners.get(event.type) || [];
@@ -359,45 +374,61 @@ describe('Async Subagent Renderer', () => {
     parentEl = createMockElement('div');
   });
 
-  describe('collapsed by default', () => {
-    it('should start collapsed by default', () => {
+  describe('inline display behavior', () => {
+    it('should start collapsed', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
       expect(state.info.isExpanded).toBe(false);
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
     });
 
-    it('should set aria-expanded to false by default', () => {
+    it('should have aria-label indicating expand action', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+      expect(state.headerEl.getAttribute('aria-label')).toContain('click to expand');
     });
 
-    it('should hide content by default', () => {
-      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
-
-      expect((state.contentEl as any).style.display).toBe('none');
-    });
-
-    it('should toggle expand/collapse on header click', () => {
+    it('should expand content when header is clicked', () => {
       const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
       // Initially collapsed
       expect(state.info.isExpanded).toBe(false);
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
 
-      // Trigger click
+      // Trigger click to expand
       (state.headerEl as any).click();
 
-      // Should be expanded
       expect(state.info.isExpanded).toBe(true);
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
-      expect((state.contentEl as any).style.display).toBe('block');
+    });
 
-      // Click again to collapse
+    it('should toggle expansion on repeated clicks', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+      // Click to expand
+      (state.headerEl as any).click();
+      expect(state.info.isExpanded).toBe(true);
+
+      // Click to collapse
       (state.headerEl as any).click();
       expect(state.info.isExpanded).toBe(false);
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
+
+    it('should expand when Enter key is pressed', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' });
+
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
+
+      expect(state.info.isExpanded).toBe(true);
+    });
+
+    it('should expand when Space key is pressed', () => {
+      const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Test' });
+
+      const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
+
+      expect(state.info.isExpanded).toBe(true);
     });
   });
 
@@ -461,5 +492,104 @@ describe('Async Subagent Renderer', () => {
     expect((state.wrapperEl as any).hasClass('orphaned')).toBe(true);
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-done-text')[0];
     expect(contentText).toContain('Task orphaned');
+  });
+
+  describe('renderStoredAsyncSubagent', () => {
+    it('should return wrapper element', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+
+      expect(wrapperEl).toBeDefined();
+      expect((wrapperEl as any).hasClass('claudian-subagent-list')).toBe(true);
+    });
+
+    it('should expand content when header is clicked', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
+
+      // Click to expand
+      headerEl.click();
+
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+    });
+
+    it('should expand on Enter key', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
+
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
+
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+    });
+
+    it('should have aria-label indicating expand action', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
+
+      expect(headerEl.getAttribute('aria-label')).toContain('click to expand');
+    });
+
+    it('should toggle expansion on repeated clicks', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const headerEl = (wrapperEl as any).children[0];
+
+      // Click to expand
+      headerEl.click();
+      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+
+      // Click to collapse
+      headerEl.click();
+      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+    });
   });
 });

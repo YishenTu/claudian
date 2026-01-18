@@ -141,10 +141,14 @@ Spawn subagents for complex multi-step tasks. Parameters: \`prompt\`, \`descript
 
 **When to use:**
 - Parallelizable work (main + subagent or multiple subagents)
-- Preserve main context budget for sub-tasks
+- Preserve main agent's context window for sub-tasks
 - Offload contained tasks while continuing other work
 
-**Sync Mode (Default - \`run_in_background=false\`)**:
+**IMPORTANT:** Always explicitly set \`run_in_background\` - never omit it:
+- \`run_in_background=false\` for sync (inline) tasks
+- \`run_in_background=true\` for async (background) tasks
+
+**Sync Mode (\`run_in_background=false\`)**:
 - Runs inline, result returned directly.
 - **DEFAULT** to this unless explicitly asked or the task is very long-running.
 

@@ -288,9 +288,8 @@ export class StreamController {
   ): void {
     const { state } = this.deps;
 
-    // Check if Task is still pending - render it first before processing result
+    // Check if Task is still pending - render as sync before processing result
     if (state.pendingTaskTools.has(chunk.id)) {
-      // Result arrived, render as sync (run_in_background defaults to false)
       void this.renderPendingTask(chunk.id, msg);
     }
 
@@ -420,8 +419,10 @@ export class StreamController {
   // ============================================
 
   /**
-   * Handles Task tool_use with buffering until run_in_background is known.
-   * This prevents creating wrong block type when input arrives in chunks.
+   * Handles Task tool_use with minimal buffering to determine sync vs async.
+   * - run_in_background === true → async (render immediately)
+   * - run_in_background === false → sync (render immediately)
+   * - run_in_background undefined → buffer until confirmed by child chunk or result
    */
   private async handleTaskToolUseBuffered(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
@@ -430,30 +431,31 @@ export class StreamController {
     const { state } = this.deps;
     if (!state.currentContentEl) return;
 
-    // Check if already rendered as sync subagent
+    // Check if already rendered as sync subagent - update label if needed
     const existingSyncState = state.activeSubagents.get(chunk.id);
     if (existingSyncState) {
       this.updateSubagentLabel(existingSyncState.wrapperEl, existingSyncState.info, chunk.input);
       return;
     }
 
-    // Check if already rendered as async subagent
+    // Check if already rendered as async subagent - update label if needed
     const existingAsyncState = state.asyncSubagentStates.get(chunk.id);
     if (existingAsyncState) {
       this.updateSubagentLabel(existingAsyncState.wrapperEl, existingAsyncState.info, chunk.input);
       return;
     }
 
-    // Check if already buffered - merge input
+    // Check if already buffered - merge input and check if we can render
     const pending = state.pendingTaskTools.get(chunk.id);
     if (pending) {
       const newInput = chunk.input || {};
       if (Object.keys(newInput).length > 0) {
         pending.toolCall.input = { ...pending.toolCall.input, ...newInput };
       }
-      // Check if we can now render (run_in_background is known)
-      if (pending.toolCall.input.run_in_background !== undefined) {
-        this.renderPendingTask(chunk.id, msg);
+      // Check if run_in_background is now known
+      const runInBackground = pending.toolCall.input.run_in_background;
+      if (runInBackground !== undefined) {
+        await this.renderPendingTask(chunk.id, msg);
       }
       return;
     }
@@ -471,7 +473,7 @@ export class StreamController {
       return;
     }
 
-    // Unknown - buffer until we know
+    // Unknown - buffer until we know (child chunk or result will trigger render)
     const toolCall: ToolCallInfo = {
       id: chunk.id,
       name: chunk.name,
@@ -484,24 +486,6 @@ export class StreamController {
       parentEl: state.currentContentEl,
     });
     this.showThinkingIndicator();
-  }
-
-  /** Updates subagent label with new description from input. */
-  private updateSubagentLabel(
-    wrapperEl: HTMLElement,
-    info: SubagentInfo,
-    newInput: Record<string, unknown>
-  ): void {
-    if (!newInput || Object.keys(newInput).length === 0) return;
-    const description = (newInput.description as string) || '';
-    if (description) {
-      info.description = description;
-      const labelEl = wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
-      if (labelEl) {
-        const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
-        labelEl.setText(truncated);
-      }
-    }
   }
 
   /** Renders a pending Task tool and removes it from the buffer. */
@@ -520,12 +504,35 @@ export class StreamController {
       input: pending.toolCall.input,
     };
 
-    // Use the stored parentEl to ensure rendering in correct location
-    const isAsync = this.deps.asyncSubagentManager.isAsyncTask(chunk.input);
-    if (isAsync) {
-      await this.handleAsyncTaskToolUse(chunk, msg, pending.parentEl);
-    } else {
-      await this.handleTaskToolUse(chunk, msg, pending.parentEl);
+    try {
+      // Use the stored parentEl to ensure rendering in correct location
+      if (chunk.input.run_in_background === true) {
+        await this.handleAsyncTaskToolUse(chunk, msg, pending.parentEl);
+      } else {
+        await this.handleTaskToolUse(chunk, msg, pending.parentEl);
+      }
+    } catch {
+      // Errors during rendering are non-fatal - the task will appear
+      // incomplete but won't crash the stream. No recovery action needed
+      // since state was already updated above.
+    }
+  }
+
+  /** Updates subagent label with new description from input. */
+  private updateSubagentLabel(
+    wrapperEl: HTMLElement,
+    info: SubagentInfo,
+    newInput: Record<string, unknown>
+  ): void {
+    if (!newInput || Object.keys(newInput).length === 0) return;
+    const description = (newInput.description as string) || '';
+    if (description) {
+      info.description = description;
+      const labelEl = wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
+      if (labelEl) {
+        const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
+        labelEl.setText(truncated);
+      }
     }
   }
 
@@ -558,6 +565,12 @@ export class StreamController {
     }
     const parentToolUseId = chunk.parentToolUseId;
     const { state } = this.deps;
+
+    // If parent Task is still pending, child chunk confirms it's sync - render now
+    if (state.pendingTaskTools.has(parentToolUseId)) {
+      await this.renderPendingTask(parentToolUseId, msg);
+    }
+
     const subagentState = state.activeSubagents.get(parentToolUseId);
 
     if (!subagentState) {
@@ -633,7 +646,12 @@ export class StreamController {
 
     const subagentInfo = asyncSubagentManager.createAsyncSubagent(chunk.id, chunk.input);
 
-    const asyncState = createAsyncSubagentBlock(targetEl, chunk.id, chunk.input);
+    // Create expandable async subagent block (no click-to-panel behavior)
+    const asyncState = createAsyncSubagentBlock(
+      targetEl,
+      chunk.id,
+      chunk.input
+    );
     state.asyncSubagentStates.set(chunk.id, asyncState);
 
     msg.subagents = msg.subagents || [];

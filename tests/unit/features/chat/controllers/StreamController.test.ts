@@ -734,4 +734,92 @@ describe('StreamController - Text Content', () => {
       expect(calls[2][1].id).toBe('glob-1');
     });
   });
+
+  describe('Pending Task tool handling', () => {
+    it('should render pending Task as sync when child chunk arrives', async () => {
+      const { createSubagentBlock } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockElement();
+
+      // Task without run_in_background - should be buffered
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        msg
+      );
+
+      // Should be buffered in pendingTaskTools
+      expect(deps.state.pendingTaskTools.size).toBe(1);
+      expect(createSubagentBlock).not.toHaveBeenCalled();
+
+      // Child chunk arrives with parentToolUseId - should trigger render as sync
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, parentToolUseId: 'task-1' } as any,
+        msg
+      );
+
+      // Pending task should now be rendered
+      expect(deps.state.pendingTaskTools.size).toBe(0);
+      expect(createSubagentBlock).toHaveBeenCalled();
+    });
+
+    it('should not crash stream when pending Task rendering throws an error via child chunk', async () => {
+      const { createSubagentBlock } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockElement();
+
+      // Task without run_in_background - should be buffered
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        msg
+      );
+
+      expect(deps.state.pendingTaskTools.size).toBe(1);
+
+      // Make createSubagentBlock throw an error when child chunk triggers rendering
+      createSubagentBlock.mockImplementationOnce(() => {
+        throw new Error('Render failed');
+      });
+
+      // Child chunk arrives - should trigger renderPendingTask which has try-catch
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, parentToolUseId: 'task-1' } as any,
+        msg
+      );
+
+      // Should not throw, state should be updated (subagent spawned counter incremented)
+      expect(deps.state.subagentsSpawnedThisStream).toBe(1);
+      // Pending task should be removed even though rendering failed
+      expect(deps.state.pendingTaskTools.size).toBe(0);
+    });
+
+    it('should not crash stream when pending Task rendering throws an error via tool_result', async () => {
+      const { createSubagentBlock } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockElement();
+
+      // Task without run_in_background - should be buffered
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        msg
+      );
+
+      expect(deps.state.pendingTaskTools.size).toBe(1);
+
+      // Make createSubagentBlock throw an error when result triggers rendering
+      createSubagentBlock.mockImplementationOnce(() => {
+        throw new Error('Render failed');
+      });
+
+      // Tool result arrives - should trigger renderPendingTask which has try-catch
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'task-1', content: 'Task completed' },
+        msg
+      );
+
+      // Should not throw, state should be updated (subagent spawned counter incremented)
+      expect(deps.state.subagentsSpawnedThisStream).toBe(1);
+      // Pending task should be removed even though rendering failed
+      expect(deps.state.pendingTaskTools.size).toBe(0);
+    });
+  });
 });

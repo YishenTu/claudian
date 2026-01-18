@@ -570,7 +570,7 @@ export function initializeTabControllers(
       // Update inline renderer
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
 
-      // Update status panel
+      // Update status panel (hidden by default - inline is shown first)
       if (subagent.mode === 'async' && ui.statusPanel) {
         ui.statusPanel.updateSubagent({
           id: subagent.id,
@@ -580,6 +580,8 @@ export function initializeTabControllers(
             : subagent.asyncStatus === 'orphaned' ? 'orphaned'
             : subagent.asyncStatus === 'running' ? 'running'
             : 'pending',
+          prompt: subagent.prompt,
+          result: subagent.result,
         });
       }
     }
