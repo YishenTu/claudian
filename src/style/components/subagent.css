@@ -89,6 +89,7 @@
 .claudian-subagent-bullet {
   color: var(--text-faint);
   flex-shrink: 0;
+  font-size: 12px;
   line-height: 1.4;
   margin-right: 4px;
 }
@@ -117,7 +118,7 @@
 /* Tool result area nested under tool (max 2 lines) */
 .claudian-subagent-tool-result {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   padding: 2px 0 0 8px;
 }
 
