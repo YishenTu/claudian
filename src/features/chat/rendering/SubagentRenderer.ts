@@ -427,17 +427,27 @@ export function createAsyncSubagentBlock(
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
 
-  // Content area (not displayed in inline view - only shows in panel)
+  // Content area (always hidden - panel renders its own content separately)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
   contentEl.style.display = 'none';
   createStatusRow(contentEl, truncatePrompt(prompt) || 'Background task', { textClass: 'claudian-async-prompt' });
 
   // Click handler - calls onClick to switch to panel view
-  const clickHandler = () => onClick?.(taskToolId);
+  const clickHandler = () => {
+    try {
+      onClick?.(taskToolId);
+    } catch {
+      // Click handler errors are non-fatal
+    }
+  };
   const keydownHandler = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onClick?.(taskToolId);
+      try {
+        onClick?.(taskToolId);
+      } catch {
+        // Keyboard handler errors are non-fatal
+      }
     }
   };
 
@@ -558,7 +568,7 @@ export interface StoredAsyncSubagentResult {
  * Render a stored async subagent from conversation history.
  * Content area is hidden - clicking header triggers the onClick callback
  * which switches to the panel view.
- * Returns a cleanup function to remove event listeners.
+ * @returns Object with wrapper element and cleanup function to remove event listeners.
  */
 export function renderStoredAsyncSubagent(
   parentEl: HTMLElement,
@@ -627,7 +637,7 @@ export function renderStoredAsyncSubagent(
       break;
   }
 
-  // Content area (hidden in inline view - only shows in panel)
+  // Content area (always hidden - panel renders its own content separately)
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
   contentEl.style.display = 'none';
 
@@ -648,11 +658,21 @@ export function renderStoredAsyncSubagent(
   }
 
   // Click handler - calls onClick to switch to panel view
-  const clickHandler = () => onClick?.(subagent.id);
+  const clickHandler = () => {
+    try {
+      onClick?.(subagent.id);
+    } catch {
+      // Click handler errors are non-fatal
+    }
+  };
   const keydownHandler = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onClick?.(subagent.id);
+      try {
+        onClick?.(subagent.id);
+      } catch {
+        // Keyboard handler errors are non-fatal
+      }
     }
   };
 

@@ -10,7 +10,7 @@ import { renderStoredToolCall } from '@/features/chat/rendering/ToolCallRenderer
 import { renderStoredWriteEdit } from '@/features/chat/rendering/WriteEditRenderer';
 
 jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
-  renderStoredAsyncSubagent: jest.fn(),
+  renderStoredAsyncSubagent: jest.fn().mockReturnValue({ wrapperEl: {}, cleanup: jest.fn() }),
   renderStoredSubagent: jest.fn(),
 }));
 jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({

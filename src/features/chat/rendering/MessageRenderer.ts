@@ -37,6 +37,8 @@ export class MessageRenderer {
   private component: Component;
   private messagesEl: HTMLElement;
   private asyncSubagentClickCallback: AsyncSubagentClickCallback | null = null;
+  /** Cleanup functions for stored async subagent event listeners. */
+  private asyncSubagentCleanups: Map<string, () => void> = new Map();
 
   constructor(
     plugin: ClaudianPlugin,
@@ -55,6 +57,14 @@ export class MessageRenderer {
   /** Sets the callback for when an async subagent header is clicked. */
   setAsyncSubagentClickCallback(callback: AsyncSubagentClickCallback | null): void {
     this.asyncSubagentClickCallback = callback;
+  }
+
+  /** Cleans up all stored async subagent event listeners. */
+  cleanupAsyncSubagents(): void {
+    for (const cleanup of this.asyncSubagentCleanups.values()) {
+      cleanup();
+    }
+    this.asyncSubagentCleanups.clear();
   }
 
   /** Sets the messages container element. */
@@ -118,6 +128,8 @@ export class MessageRenderer {
     messages: ChatMessage[],
     getGreeting: () => string
   ): HTMLElement {
+    // Cleanup event listeners before clearing DOM
+    this.cleanupAsyncSubagents();
     this.messagesEl.empty();
 
     // Recreate welcome element after clearing
@@ -220,7 +232,8 @@ export class MessageRenderer {
           if (subagent) {
             const mode = block.mode || subagent.mode || 'sync';
             if (mode === 'async') {
-              renderStoredAsyncSubagent(contentEl, subagent, this.asyncSubagentClickCallback ?? undefined);
+              const result = renderStoredAsyncSubagent(contentEl, subagent, this.asyncSubagentClickCallback ?? undefined);
+              this.asyncSubagentCleanups.set(subagent.id, result.cleanup);
             } else {
               renderStoredSubagent(contentEl, subagent);
             }

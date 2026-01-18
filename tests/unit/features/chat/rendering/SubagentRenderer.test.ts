@@ -18,6 +18,7 @@ interface MockElement {
   hasClass: (cls: string) => boolean;
   getClasses: () => string[];
   addEventListener: (event: string, handler: (e: any) => void) => void;
+  removeEventListener: (event: string, handler: (e: any) => void) => void;
   dispatchEvent: (event: { type: string; target?: any }) => void;
   click: () => void;
   createDiv: (opts?: { cls?: string; text?: string }) => MockElement;
@@ -30,6 +31,7 @@ interface MockElement {
   empty: () => void;
   setAttribute: (name: string, value: string) => void;
   getAttribute: (name: string) => string | null;
+  getEventListenerCount: (event: string) => number;
 }
 
 function createMockElement(tag = 'div'): MockElement {
@@ -58,6 +60,18 @@ function createMockElement(tag = 'div'): MockElement {
         eventListeners.set(event, []);
       }
       eventListeners.get(event)!.push(handler);
+    },
+    removeEventListener: (event: string, handler: (e: any) => void) => {
+      const handlers = eventListeners.get(event);
+      if (handlers) {
+        const idx = handlers.indexOf(handler);
+        if (idx !== -1) {
+          handlers.splice(idx, 1);
+        }
+      }
+    },
+    getEventListenerCount: (event: string) => {
+      return eventListeners.get(event)?.length ?? 0;
     },
     dispatchEvent: (event) => {
       const handlers = eventListeners.get(event.type) || [];
@@ -598,6 +612,65 @@ describe('Async Subagent Renderer', () => {
       const headerEl = (result.wrapperEl as any).children[0];
 
       expect(headerEl.getAttribute('aria-label')).toContain('click to show in panel');
+    });
+
+    it('should remove event listeners when cleanup is called', () => {
+      const onClick = jest.fn();
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
+      const headerEl = (result.wrapperEl as any).children[0];
+
+      // Click works before cleanup
+      headerEl.click();
+      expect(onClick).toHaveBeenCalledTimes(1);
+
+      // Call cleanup
+      result.cleanup();
+
+      // Click should no longer work after cleanup
+      headerEl.click();
+      expect(onClick).toHaveBeenCalledTimes(1); // Still 1, not 2
+
+      // Verify event listeners were removed
+      expect(headerEl.getEventListenerCount('click')).toBe(0);
+      expect(headerEl.getEventListenerCount('keydown')).toBe(0);
+    });
+
+    it('should remove keydown event listener when cleanup is called', () => {
+      const onClick = jest.fn();
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const result = renderStoredAsyncSubagent(parentEl as any, subagent, onClick);
+      const headerEl = (result.wrapperEl as any).children[0];
+
+      // Keydown works before cleanup
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
+      expect(onClick).toHaveBeenCalledTimes(1);
+
+      // Call cleanup
+      result.cleanup();
+
+      // Keydown should no longer work after cleanup
+      headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
+      expect(onClick).toHaveBeenCalledTimes(1); // Still 1, not 2
     });
   });
 });

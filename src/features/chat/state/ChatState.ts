@@ -388,10 +388,24 @@ export class ChatState {
   clearMaps(): void {
     this.state.toolCallElements.clear();
     this.state.activeSubagents.clear();
+    // Cleanup event listeners before clearing async subagent states
+    this.cleanupAsyncSubagentListeners();
     this.state.asyncSubagentStates.clear();
     this.state.writeEditStates.clear();
     this.state.pendingTools.clear();
     this.state.pendingTaskTools.clear();
+  }
+
+  /** Removes event listeners from all async subagent states. */
+  private cleanupAsyncSubagentListeners(): void {
+    for (const state of this.state.asyncSubagentStates.values()) {
+      if (state.clickHandler) {
+        state.headerEl.removeEventListener('click', state.clickHandler);
+      }
+      if (state.keydownHandler) {
+        state.headerEl.removeEventListener('keydown', state.keydownHandler);
+      }
+    }
   }
 
   /** Resets all state for a new conversation. */

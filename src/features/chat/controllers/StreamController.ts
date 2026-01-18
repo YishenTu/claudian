@@ -292,9 +292,7 @@ export class StreamController {
 
     // Check if Task is still pending - render as sync before processing result
     if (state.pendingTaskTools.has(chunk.id)) {
-      this.renderPendingTask(chunk.id, msg).catch(() => {
-        // Error already handled in renderPendingTask - just prevent unhandled rejection
-      });
+      void this.renderPendingTask(chunk.id, msg);
     }
 
     // Check if it's a sync subagent result
@@ -508,11 +506,17 @@ export class StreamController {
       input: pending.toolCall.input,
     };
 
-    // Use the stored parentEl to ensure rendering in correct location
-    if (chunk.input.run_in_background === true) {
-      await this.handleAsyncTaskToolUse(chunk, msg, pending.parentEl);
-    } else {
-      await this.handleTaskToolUse(chunk, msg, pending.parentEl);
+    try {
+      // Use the stored parentEl to ensure rendering in correct location
+      if (chunk.input.run_in_background === true) {
+        await this.handleAsyncTaskToolUse(chunk, msg, pending.parentEl);
+      } else {
+        await this.handleTaskToolUse(chunk, msg, pending.parentEl);
+      }
+    } catch {
+      // Errors during rendering are non-fatal - the task will appear
+      // incomplete but won't crash the stream. No recovery action needed
+      // since state was already updated above.
     }
   }
 
