@@ -489,22 +489,14 @@ export class InputController {
       return;
     }
 
-    // Find first user and assistant messages by role (not by index)
+    // Find first user message by role (not by index)
     const firstUserMsg = state.messages.find(m => m.role === 'user');
-    const firstAssistantMsg = state.messages.find(m => m.role === 'assistant');
 
-    if (!firstUserMsg || !firstAssistantMsg) {
+    if (!firstUserMsg) {
       return;
     }
 
     const userContent = firstUserMsg.displayContent || firstUserMsg.content;
-
-    // Extract text from assistant response
-    const assistantText = firstAssistantMsg.content ||
-      firstAssistantMsg.contentBlocks
-        ?.filter((b): b is { type: 'text'; content: string } => b.type === 'text')
-        .map(b => b.content)
-        .join('\n') || '';
 
     // Set immediate fallback title
     const fallbackTitle = conversationController.generateFallbackTitle(userContent);
@@ -514,10 +506,10 @@ export class InputController {
       return;
     }
 
-    // Fire async AI title generation only if service and content available
+    // Fire async AI title generation only if service available
     const titleService = this.deps.getTitleGenerationService();
-    if (!titleService || !assistantText) {
-      // No titleService or no assistantText, just keep the fallback title with no status
+    if (!titleService) {
+      // No titleService, just keep the fallback title with no status
       return;
     }
 
@@ -531,7 +523,6 @@ export class InputController {
     titleService.generateTitle(
       convId,
       userContent,
-      assistantText,
       async (conversationId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
         const currentConv = await plugin.getConversationById(conversationId);

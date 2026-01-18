@@ -464,11 +464,11 @@ describe('ConversationController - Title Generation', () => {
       expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
     });
 
-    it('should not regenerate if conversation has less than 2 messages', async () => {
+    it('should not regenerate if conversation has no messages', async () => {
       (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
         id: 'conv-1',
         title: 'Title',
-        messages: [{ role: 'user', content: 'Hello' }],
+        messages: [],
       });
 
       await controller.regenerateTitle('conv-1');
@@ -483,36 +483,6 @@ describe('ConversationController - Title Generation', () => {
         messages: [
           { role: 'assistant', content: 'Hi' },
           { role: 'assistant', content: 'There' },
-        ],
-      });
-
-      await controller.regenerateTitle('conv-1');
-
-      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
-    });
-
-    it('should not regenerate if no assistant message found', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
-        id: 'conv-1',
-        title: 'Title',
-        messages: [
-          { role: 'user', content: 'Hello' },
-          { role: 'user', content: 'There' },
-        ],
-      });
-
-      await controller.regenerateTitle('conv-1');
-
-      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
-    });
-
-    it('should not regenerate if assistant text is empty', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
-        id: 'conv-1',
-        title: 'Title',
-        messages: [
-          { role: 'user', content: 'Hello' },
-          { role: 'assistant', content: '' },
         ],
       });
 
@@ -553,7 +523,6 @@ describe('ConversationController - Title Generation', () => {
       expect(mockTitleService.generateTitle).toHaveBeenCalledWith(
         'conv-1',
         'Hello world!', // Uses displayContent
-        'Hi there!',
         expect.any(Function)
       );
     });
@@ -570,7 +539,7 @@ describe('ConversationController - Title Generation', () => {
 
       // Simulate callback being called
       mockTitleService.generateTitle.mockImplementation(
-        async (convId: string, _user: string, _assistant: string, callback: any) => {
+        async (convId: string, _user: string, callback: any) => {
           await callback(convId, { success: true, title: 'New Generated Title' });
         }
       );
@@ -580,34 +549,6 @@ describe('ConversationController - Title Generation', () => {
       await controller.regenerateTitle('conv-1');
 
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'New Generated Title');
-    });
-
-    it('should extract text from contentBlocks if content is empty', async () => {
-      (deps.plugin.getConversationById as any) = jest.fn().mockResolvedValue({
-        id: 'conv-1',
-        title: 'Title',
-        messages: [
-          { role: 'user', content: 'Hello' },
-          {
-            role: 'assistant',
-            content: '',
-            contentBlocks: [
-              { type: 'text', content: 'Block 1' },
-              { type: 'thinking', content: 'Thinking...' },
-              { type: 'text', content: 'Block 2' },
-            ],
-          },
-        ],
-      });
-
-      await controller.regenerateTitle('conv-1');
-
-      expect(mockTitleService.generateTitle).toHaveBeenCalledWith(
-        'conv-1',
-        'Hello',
-        'Block 1\nBlock 2', // Joins text blocks with newline
-        expect.any(Function)
-      );
     });
   });
 

@@ -42,7 +42,7 @@ describe('TitleGenerationService', () => {
   });
 
   describe('generateTitle', () => {
-    it('should generate a title from user and assistant messages', async () => {
+    it('should generate a title from user message', async () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         {
@@ -58,7 +58,6 @@ describe('TitleGenerationService', () => {
       await service.generateTitle(
         'conv-123',
         'How do I set up a React project?',
-        'You can use create-react-app...',
         callback
       );
 
@@ -81,7 +80,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.tools).toEqual([]);
@@ -103,7 +102,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.model).toBe('opus');
@@ -127,7 +126,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.model).toBe('sonnet');
@@ -151,7 +150,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.model).toBe('custom-haiku');
@@ -170,7 +169,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.model).toBe('claude-haiku-4-5');
@@ -189,7 +188,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: true,
@@ -210,7 +209,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: true,
@@ -232,7 +231,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: true,
@@ -253,7 +252,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: false,
@@ -265,7 +264,7 @@ describe('TitleGenerationService', () => {
       mockPlugin.app.vault.adapter.basePath = undefined;
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: false,
@@ -277,7 +276,7 @@ describe('TitleGenerationService', () => {
       mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: false,
@@ -300,7 +299,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.settingSources).toEqual(['project']);
@@ -321,7 +320,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', 'test', 'response', callback);
+      await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
       expect(options?.settingSources).toEqual(['user', 'project']);
@@ -341,7 +340,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       const callback = jest.fn();
-      await service.generateTitle('conv-123', longMessage, 'response', callback);
+      await service.generateTitle('conv-123', longMessage, callback);
 
       // Service should still complete successfully with truncated message
       expect(callback).toHaveBeenCalledWith('conv-123', {
@@ -368,8 +367,8 @@ describe('TitleGenerationService', () => {
       const callback2 = jest.fn();
 
       // Start two generations concurrently
-      const promise1 = service.generateTitle('conv-1', 'msg1', 'resp1', callback1);
-      const promise2 = service.generateTitle('conv-2', 'msg2', 'resp2', callback2);
+      const promise1 = service.generateTitle('conv-1', 'msg1', callback1);
+      const promise2 = service.generateTitle('conv-2', 'msg2', callback2);
 
       await Promise.all([promise1, promise2]);
 
@@ -395,7 +394,7 @@ describe('TitleGenerationService', () => {
       ]);
 
       // Start first generation (won't await it)
-      const promise1 = service.generateTitle('conv-1', 'msg1', 'resp1', callback1);
+      const promise1 = service.generateTitle('conv-1', 'msg1', callback1);
 
       // Immediately start second generation for same conversation
       setMockMessages([
@@ -408,7 +407,7 @@ describe('TitleGenerationService', () => {
         },
         { type: 'result' },
       ]);
-      const promise2 = service.generateTitle('conv-1', 'msg2', 'resp2', callback2);
+      const promise2 = service.generateTitle('conv-1', 'msg2', callback2);
 
       await Promise.all([promise1, promise2]);
 
@@ -433,7 +432,7 @@ describe('TitleGenerationService', () => {
       const callback = jest.fn();
 
       // Start generation then cancel immediately
-      const promise = service.generateTitle('conv-1', 'msg', 'resp', callback);
+      const promise = service.generateTitle('conv-1', 'msg', callback);
       service.cancel();
 
       await promise;
@@ -460,7 +459,7 @@ describe('TitleGenerationService', () => {
 
       // Should not throw
       await expect(
-        service.generateTitle('conv-123', 'test', 'response', throwingCallback)
+        service.generateTitle('conv-123', 'test', throwingCallback)
       ).resolves.not.toThrow();
     });
   });

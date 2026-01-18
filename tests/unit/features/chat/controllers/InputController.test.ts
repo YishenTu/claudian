@@ -659,7 +659,7 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       // Get the callback and simulate it being called
-      const callback = mockTitleService.generateTitle.mock.calls[0][3];
+      const callback = mockTitleService.generateTitle.mock.calls[0][2];
       await callback('conv-1', { success: true, title: 'AI Generated Title' });
 
       // Should clear status since user manually renamed (not apply AI title)
@@ -705,54 +705,6 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       // Should NOT set pending status when no titleService
-      const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
-      const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
-        call[1]?.titleGenerationStatus === 'pending'
-      );
-      expect(pendingCall).toBeUndefined();
-    });
-
-    it('should not set pending status when assistantText is empty', async () => {
-      const mockTitleService = {
-        generateTitle: jest.fn().mockResolvedValue(undefined),
-        cancel: jest.fn(),
-      };
-      const welcomeEl = { style: { display: '' } } as any;
-      const fileContextManager = {
-        startSession: jest.fn(),
-        getCurrentNotePath: jest.fn().mockReturnValue(null),
-        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
-        markCurrentNoteSent: jest.fn(),
-        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
-      };
-      const imageContextManager = createMockImageContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
-        getTitleGenerationService: () => mockTitleService as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-
-      // Return empty stream - no text content
-      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
-        createMockStream([{ type: 'done' }])
-      );
-
-      // Don't populate assistant content (leave it empty)
-      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => { });
-
-      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
-      inputEl.value = 'Test message';
-      controller = new InputController(deps);
-
-      await controller.sendMessage();
-
-      // Should NOT call title service when assistantText is empty
-      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
-
-      // Should NOT set pending status when assistantText is empty
       const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
       const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
         call[1]?.titleGenerationStatus === 'pending'

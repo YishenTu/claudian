@@ -788,23 +788,13 @@ export class ConversationController {
 
     // Get the full conversation from cache
     const fullConv = await plugin.getConversationById(conversationId);
-    if (!fullConv || fullConv.messages.length < 2) return;
+    if (!fullConv || fullConv.messages.length < 1) return;
 
-    // Find first user and assistant messages by role (not by index)
+    // Find first user message by role (not by index)
     const firstUserMsg = fullConv.messages.find(m => m.role === 'user');
-    const firstAssistantMsg = fullConv.messages.find(m => m.role === 'assistant');
-    if (!firstUserMsg || !firstAssistantMsg) return;
+    if (!firstUserMsg) return;
 
     const userContent = firstUserMsg.displayContent || firstUserMsg.content;
-
-    // Extract text from assistant response
-    const assistantText = firstAssistantMsg.content ||
-      firstAssistantMsg.contentBlocks
-        ?.filter((b): b is { type: 'text'; content: string } => b.type === 'text')
-        .map(b => b.content)
-        .join('\n') || '';
-
-    if (!assistantText) return;
 
     // Store current title to check if user renames during generation
     const expectedTitle = fullConv.title;
@@ -817,7 +807,6 @@ export class ConversationController {
     await titleService.generateTitle(
       conversationId,
       userContent,
-      assistantText,
       async (convId, result) => {
         // Check if conversation still exists and user hasn't manually renamed
         const currentConv = await plugin.getConversationById(convId);
@@ -826,7 +815,7 @@ export class ConversationController {
         // Only apply AI title if user hasn't manually renamed (title still matches expected)
         const userManuallyRenamed = currentConv.title !== expectedTitle;
 
-        if (result.success && result.title && !userManuallyRenamed) {
+        if (result.success && !userManuallyRenamed) {
           await plugin.renameConversation(convId, result.title);
           await plugin.updateConversation(convId, { titleGenerationStatus: 'success' });
         } else if (!userManuallyRenamed) {
