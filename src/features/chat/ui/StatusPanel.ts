@@ -137,7 +137,7 @@ export class StatusPanel {
 
     // Todo content (expanded list)
     this.todoContentEl = document.createElement('div');
-    this.todoContentEl.className = 'claudian-status-panel-content';
+    this.todoContentEl.className = 'claudian-status-panel-content claudian-todo-list-container';
     this.todoContentEl.style.display = 'none';
     this.todoContainerEl.appendChild(this.todoContentEl);
 
@@ -211,6 +211,15 @@ export class StatusPanel {
       current.textContent = currentTask.activeForm;
       this.todoHeaderEl.appendChild(current);
     }
+
+    // Status indicator (tick only when all todos complete)
+    const status = document.createElement('span');
+    status.className = 'claudian-status-panel-status';
+    if (completedCount === totalCount && totalCount > 0) {
+      status.classList.add('status-completed');
+      setIcon(status, 'check');
+    }
+    this.todoHeaderEl.appendChild(status);
   }
 
   /**

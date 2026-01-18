@@ -26,7 +26,6 @@
 }
 
 .claudian-tool-label {
-  flex: 1;
   font-family: var(--font-monospace);
   font-size: 13px;
   font-weight: 500;
@@ -34,6 +33,16 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Current task preview (for TodoWrite when collapsed) */
+.claudian-tool-current {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .claudian-tool-status {
@@ -62,23 +71,24 @@
 .claudian-tool-status.status-blocked {
   color: var(--color-orange);
 }
-/* Tool call content - tree-branch style */
+/* Tool call content - border-left style (like thinking block) */
 .claudian-tool-content {
-  padding: 4px 0 4px 24px;
+  padding: 4px 0 4px 16px;
+  margin-left: 7px;
+  border-left: 2px solid var(--background-modifier-border);
 }
 
-/* Tree-branch result row */
+/* TodoWrite content - no border (renders todo panel directly) */
+.claudian-tool-content-todo {
+  border-left: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/* Result row */
 .claudian-tool-result-row {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
-}
-
-.claudian-tool-branch {
-  font-family: monospace;
-  color: var(--text-faint);
-  flex-shrink: 0;
-  line-height: 1.4;
 }
 
 .claudian-tool-result-text {

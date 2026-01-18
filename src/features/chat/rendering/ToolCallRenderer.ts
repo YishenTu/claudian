@@ -148,6 +148,105 @@ export function renderReadResult(container: HTMLElement, result: string): void {
   item.setText(`${lines.length} lines read`);
 }
 
+/** Get todos array from input, or undefined if invalid. */
+function getTodos(input: Record<string, unknown>): TodoItem[] | undefined {
+  const todos = input.todos;
+  if (!todos || !Array.isArray(todos)) return undefined;
+  return todos as TodoItem[];
+}
+
+/** Get the current in_progress task from todos. */
+export function getCurrentTask(input: Record<string, unknown>): TodoItem | undefined {
+  const todos = getTodos(input);
+  if (!todos) return undefined;
+  return todos.find(t => t.status === 'in_progress');
+}
+
+/** Check if all todos are completed. */
+export function areAllTodosCompleted(input: Record<string, unknown>): boolean {
+  const todos = getTodos(input);
+  if (!todos || todos.length === 0) return false;
+  return todos.every(t => t.status === 'completed');
+}
+
+/** Reset status element to base state with class and aria-label. */
+function resetStatusElement(statusEl: HTMLElement, statusClass: string, ariaLabel: string): void {
+  statusEl.className = 'claudian-tool-status';
+  statusEl.empty();
+  statusEl.addClass(statusClass);
+  statusEl.setAttribute('aria-label', ariaLabel);
+}
+
+/** Icon mapping for tool status. */
+const STATUS_ICONS: Record<string, string> = {
+  completed: 'check',
+  error: 'x',
+  blocked: 'shield-off',
+};
+
+/** Set status indicator for TodoWrite tool (check only when all complete). */
+function setTodoWriteStatus(statusEl: HTMLElement, input: Record<string, unknown>): void {
+  const isComplete = areAllTodosCompleted(input);
+  const status = isComplete ? 'completed' : 'running';
+  const ariaLabel = isComplete ? 'Status: completed' : 'Status: in progress';
+  resetStatusElement(statusEl, `status-${status}`, ariaLabel);
+  if (isComplete) setIcon(statusEl, 'check');
+}
+
+/** Set status indicator for a standard tool call. */
+function setToolStatus(statusEl: HTMLElement, status: ToolCallInfo['status']): void {
+  resetStatusElement(statusEl, `status-${status}`, `Status: ${status}`);
+  const icon = STATUS_ICONS[status];
+  if (icon) setIcon(statusEl, icon);
+}
+
+/** Render tool result content based on tool type. */
+function renderToolResultContent(
+  container: HTMLElement,
+  toolName: string,
+  result: string | undefined
+): void {
+  if (!result) {
+    container.setText('No result');
+    return;
+  }
+  if (toolName === 'WebSearch') {
+    if (!renderWebSearchResult(container, result, 3)) {
+      renderResultLines(container, result, 3);
+    }
+  } else if (toolName === 'Read') {
+    renderReadResult(container, result);
+  } else {
+    renderResultLines(container, result, 3);
+  }
+}
+
+/** Create current task preview element for TodoWrite tools. */
+function createCurrentTaskPreview(
+  header: HTMLElement,
+  input: Record<string, unknown>
+): HTMLElement {
+  const currentTaskEl = header.createSpan({ cls: 'claudian-tool-current' });
+  const currentTask = getCurrentTask(input);
+  if (currentTask) {
+    currentTaskEl.setText(currentTask.activeForm);
+  }
+  return currentTaskEl;
+}
+
+/** Create toggle handler that hides current task preview when expanded (TodoWrite only). */
+function createCurrentTaskToggleHandler(
+  currentTaskEl: HTMLElement | null,
+  onExpandChange?: (expanded: boolean) => void
+): (expanded: boolean) => void {
+  return (expanded: boolean) => {
+    if (onExpandChange) onExpandChange(expanded);
+    if (currentTaskEl) {
+      currentTaskEl.style.display = expanded ? 'none' : '';
+    }
+  };
+}
+
 /** Render TodoWrite result showing todo items (reuses panel CSS). */
 export function renderTodoWriteResult(
   container: HTMLElement,
@@ -155,6 +254,7 @@ export function renderTodoWriteResult(
 ): void {
   container.empty();
   container.addClass('claudian-todo-panel-content');
+  container.addClass('claudian-todo-list-container');
 
   const todos = input.todos as TodoItem[] | undefined;
   if (!todos || !Array.isArray(todos)) {
@@ -211,15 +311,22 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
   return false;
 }
 
-/** Renders a tool call UI element (for streaming). Collapsed by default. */
-export function renderToolCall(
+/** Common structure returned by createToolElementStructure. */
+interface ToolElementStructure {
+  toolEl: HTMLElement;
+  header: HTMLElement;
+  labelEl: HTMLElement;
+  statusEl: HTMLElement;
+  content: HTMLElement;
+  currentTaskEl: HTMLElement | null;
+}
+
+/** Create common tool element structure (header with icon, label, status, and content). */
+function createToolElementStructure(
   parentEl: HTMLElement,
-  toolCall: ToolCallInfo,
-  toolCallElements: Map<string, HTMLElement>
-): HTMLElement {
+  toolCall: ToolCallInfo
+): ToolElementStructure {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
-  toolEl.dataset.toolId = toolCall.id;
-  toolCallElements.set(toolCall.id, toolEl);
 
   // Header (clickable to expand/collapse)
   const header = toolEl.createDiv({ cls: 'claudian-tool-header' });
@@ -236,32 +343,68 @@ export function renderToolCall(
   const labelEl = header.createSpan({ cls: 'claudian-tool-label' });
   labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
 
-  // Status indicator
+  // Current task preview (TodoWrite only, shown when collapsed)
+  const currentTaskEl = toolCall.name === 'TodoWrite'
+    ? createCurrentTaskPreview(header, toolCall.input)
+    : null;
+
+  // Status indicator (caller sets the status)
   const statusEl = header.createSpan({ cls: 'claudian-tool-status' });
-  statusEl.addClass(`status-${toolCall.status}`);
-  statusEl.setAttribute('aria-label', `Status: ${toolCall.status}`);
 
   // Collapsible content
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
 
-  // TodoWrite: render todo list directly (same as panel, no branch)
+  return { toolEl, header, labelEl, statusEl, content, currentTaskEl };
+}
+
+/** Render tool content (TodoWrite or result row). */
+function renderToolContent(
+  content: HTMLElement,
+  toolCall: ToolCallInfo,
+  initialText?: string
+): void {
   if (toolCall.name === 'TodoWrite') {
+    content.addClass('claudian-tool-content-todo');
     renderTodoWriteResult(content, toolCall.input);
   } else {
-    // Tree-branch result row for other tools
     const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
-    const branch = resultRow.createSpan({ cls: 'claudian-tool-branch' });
-    branch.setText('└─');
     const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
-    resultText.setText('Running...');
+    if (initialText) {
+      resultText.setText(initialText);
+    } else {
+      renderToolResultContent(resultText, toolCall.name, toolCall.result);
+    }
   }
+}
+
+/** Renders a tool call UI element (for streaming). Collapsed by default. */
+export function renderToolCall(
+  parentEl: HTMLElement,
+  toolCall: ToolCallInfo,
+  toolCallElements: Map<string, HTMLElement>
+): HTMLElement {
+  const { toolEl, header, statusEl, content, currentTaskEl } =
+    createToolElementStructure(parentEl, toolCall);
+
+  // Register in map for updates
+  toolEl.dataset.toolId = toolCall.id;
+  toolCallElements.set(toolCall.id, toolEl);
+
+  // Set initial status (streaming - not yet complete)
+  statusEl.addClass(`status-${toolCall.status}`);
+  statusEl.setAttribute('aria-label', `Status: ${toolCall.status}`);
+
+  // Render content with "Running..." for non-TodoWrite
+  renderToolContent(content, toolCall, 'Running...');
 
   // Setup collapsible behavior and sync state to toolCall
   const state = { isExpanded: false };
   toolCall.isExpanded = false;
   setupCollapsible(toolEl, header, content, state, {
     initiallyExpanded: false,
-    onToggle: (expanded) => { toolCall.isExpanded = expanded; },
+    onToggle: createCurrentTaskToggleHandler(currentTaskEl, (expanded) => {
+      toolCall.isExpanded = expanded;
+    }),
     baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });
 
@@ -277,43 +420,40 @@ export function updateToolCallResult(
   const toolEl = toolCallElements.get(toolId);
   if (!toolEl) return;
 
-  // Update status indicator
-  const statusEl = toolEl.querySelector('.claudian-tool-status');
-  if (statusEl) {
-    statusEl.className = 'claudian-tool-status';
-    statusEl.addClass(`status-${toolCall.status}`);
-    statusEl.empty();
-    if (toolCall.status === 'completed') {
-      setIcon(statusEl as HTMLElement, 'check');
-    } else if (toolCall.status === 'error') {
-      setIcon(statusEl as HTMLElement, 'x');
-    } else if (toolCall.status === 'blocked') {
-      setIcon(statusEl as HTMLElement, 'shield-off');
-    }
-  }
-
-  // TodoWrite: re-render to content area (no resultText element)
+  // TodoWrite: special handling for status based on todo completion
   if (toolCall.name === 'TodoWrite') {
+    const statusEl = toolEl.querySelector('.claudian-tool-status') as HTMLElement;
+    if (statusEl) {
+      setTodoWriteStatus(statusEl, toolCall.input);
+    }
     const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
     if (content) {
       renderTodoWriteResult(content, toolCall.input);
     }
+    // Update label with new counts
+    const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement;
+    if (labelEl) {
+      labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
+    }
+    // Update current task preview
+    const currentTaskEl = toolEl.querySelector('.claudian-tool-current') as HTMLElement;
+    if (currentTaskEl) {
+      const currentTask = getCurrentTask(toolCall.input);
+      currentTaskEl.setText(currentTask ? currentTask.activeForm : '');
+    }
     return;
+  }
+
+  // Update status indicator for other tools
+  const statusEl = toolEl.querySelector('.claudian-tool-status') as HTMLElement;
+  if (statusEl) {
+    setToolStatus(statusEl, toolCall.status);
   }
 
   // Update result text (max 3 lines) for other tools
   const resultText = toolEl.querySelector('.claudian-tool-result-text') as HTMLElement;
-  if (resultText && toolCall.result) {
-    // Try special rendering for specific tools, otherwise use generic line renderer
-    if (toolCall.name === 'WebSearch') {
-      if (!renderWebSearchResult(resultText, toolCall.result, 3)) {
-        renderResultLines(resultText, toolCall.result, 3);
-      }
-    } else if (toolCall.name === 'Read') {
-      renderReadResult(resultText, toolCall.result);
-    } else {
-      renderResultLines(resultText, toolCall.result, 3);
-    }
+  if (resultText) {
+    renderToolResultContent(resultText, toolCall.name, toolCall.result);
   }
 }
 
@@ -322,67 +462,24 @@ export function renderStoredToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo
 ): HTMLElement {
-  const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
+  const { toolEl, header, statusEl, content, currentTaskEl } =
+    createToolElementStructure(parentEl, toolCall);
 
-  // Header
-  const header = toolEl.createDiv({ cls: 'claudian-tool-header' });
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('role', 'button');
-  // aria-label is set dynamically by setupCollapsible based on expand state
-
-  // Tool icon (decorative)
-  const iconEl = header.createSpan({ cls: 'claudian-tool-icon' });
-  iconEl.setAttribute('aria-hidden', 'true');
-  setToolIcon(iconEl, toolCall.name);
-
-  // Tool label
-  const labelEl = header.createSpan({ cls: 'claudian-tool-label' });
-  labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
-
-  // Status indicator (already completed)
-  const statusEl = header.createSpan({ cls: 'claudian-tool-status' });
-  statusEl.addClass(`status-${toolCall.status}`);
-  statusEl.setAttribute('aria-label', `Status: ${toolCall.status}`);
-  if (toolCall.status === 'completed') {
-    setIcon(statusEl, 'check');
-  } else if (toolCall.status === 'error') {
-    setIcon(statusEl, 'x');
-  } else if (toolCall.status === 'blocked') {
-    setIcon(statusEl, 'shield-off');
-  }
-
-  // Collapsible content
-  const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
-
-  // TodoWrite: render directly without branch (same as panel)
+  // Set status (stored - already has final status)
   if (toolCall.name === 'TodoWrite') {
-    renderTodoWriteResult(content, toolCall.input);
+    setTodoWriteStatus(statusEl, toolCall.input);
   } else {
-    // Tree-branch result row for other tools
-    const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
-    const branch = resultRow.createSpan({ cls: 'claudian-tool-branch' });
-    branch.setText('└─');
-    const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
-    if (toolCall.result) {
-      // Try special rendering for specific tools, otherwise use generic line renderer
-      if (toolCall.name === 'WebSearch') {
-        if (!renderWebSearchResult(resultText, toolCall.result, 3)) {
-          renderResultLines(resultText, toolCall.result, 3);
-        }
-      } else if (toolCall.name === 'Read') {
-        renderReadResult(resultText, toolCall.result);
-      } else {
-        renderResultLines(resultText, toolCall.result, 3);
-      }
-    } else {
-      resultText.setText('No result');
-    }
+    setToolStatus(statusEl, toolCall.status);
   }
+
+  // Render content with result
+  renderToolContent(content, toolCall);
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
   const state = { isExpanded: false };
   setupCollapsible(toolEl, header, content, state, {
     initiallyExpanded: false,
+    onToggle: createCurrentTaskToggleHandler(currentTaskEl),
     baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });
 

@@ -41,8 +41,8 @@
 .claudian-status-panel-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 4px 0 4px 2px;
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.15s ease;
@@ -62,7 +62,7 @@
 .claudian-status-panel-icon {
   display: flex;
   align-items: center;
-  color: var(--interactive-accent);
+  color: var(--text-accent);
   flex-shrink: 0;
 }
 
@@ -76,7 +76,7 @@
   font-family: var(--font-monospace);
   font-size: 13px;
   font-weight: 500;
-  color: var(--interactive-accent);
+  color: var(--text-normal);
 }
 
 /* Current task preview (collapsed state) */
@@ -87,78 +87,86 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+}
+
+/* Status indicator */
+.claudian-status-panel-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.claudian-status-panel-status svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-status-panel-status.status-completed {
+  color: var(--color-green);
 }
 
 /* Content (expanded list) */
 .claudian-status-panel-content {
-  padding: 2px 0;
+  padding: 2px 0 2px 2px;
 }
 
-/* Individual todo item - reuses existing styles */
-.claudian-status-panel-content .claudian-todo-item {
+/* Individual todo item - shared by status panel and inline tool via .claudian-todo-list-container */
+.claudian-todo-list-container .claudian-todo-item {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
   padding: 1px 0;
 }
 
-.claudian-status-panel-content .claudian-todo-status-icon {
+/* Status icon - no left padding, natural size */
+.claudian-todo-list-container .claudian-todo-status-icon {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin-top: 1px;
 }
 
-.claudian-status-panel-content .claudian-todo-status-icon svg {
-  width: 16px;
-  height: 16px;
+.claudian-todo-list-container .claudian-todo-status-icon svg {
+  width: 12px;
+  height: 12px;
 }
 
-.claudian-status-panel-content .claudian-todo-text {
+/* Text - fixed padding from left */
+.claudian-todo-list-container .claudian-todo-text {
   font-family: var(--font-monospace);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   flex: 1;
+  padding-left: 12px;
 }
 
-/* Status-specific styling */
-.claudian-status-panel-content .claudian-todo-pending .claudian-todo-status-icon {
+/* Status colors */
+.claudian-todo-list-container .claudian-todo-pending .claudian-todo-status-icon {
   color: var(--text-normal);
 }
 
-.claudian-status-panel-content .claudian-todo-pending .claudian-todo-status-icon svg {
+.claudian-todo-list-container .claudian-todo-pending .claudian-todo-status-icon svg {
   transform: scale(2);
 }
 
-.claudian-status-panel-content .claudian-todo-pending .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-pending .claudian-todo-text {
   color: var(--text-normal);
 }
 
-.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-status-icon {
+.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-status-icon {
   color: var(--interactive-accent);
 }
 
-.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-status-icon svg {
+.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-status-icon svg {
   transform: scale(2);
 }
 
-.claudian-status-panel-content .claudian-todo-in_progress .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-text {
   color: var(--text-normal);
 }
 
-.claudian-status-panel-content .claudian-todo-completed .claudian-todo-status-icon {
+.claudian-todo-list-container .claudian-todo-completed .claudian-todo-status-icon {
   color: var(--color-green);
 }
 
-.claudian-status-panel-content .claudian-todo-completed .claudian-todo-status-icon svg {
-  width: 12px;
-  height: 12px;
-  transform: translateX(3px);
-}
-
-.claudian-status-panel-content .claudian-todo-completed .claudian-todo-text {
+.claudian-todo-list-container .claudian-todo-completed .claudian-todo-text {
   color: var(--text-muted);
 }
