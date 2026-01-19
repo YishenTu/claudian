@@ -3,6 +3,8 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 import { ExternalContextSelector } from '@/features/chat/ui/InputToolbar';
 
@@ -213,6 +215,77 @@ describe('ExternalContextSelector', () => {
     });
   });
 
+  describe('addExternalContext', () => {
+    it('should reject relative paths', () => {
+      const onChange = jest.fn();
+      selector.setOnChange(onChange);
+
+      const result = selector.addExternalContext('relative/path');
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Path must be absolute. Usage: /add-dir /absolute/path',
+      });
+      expect(selector.getExternalContexts()).toEqual([]);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('should add absolute paths and call onChange', () => {
+      const onChange = jest.fn();
+      selector.setOnChange(onChange);
+      const absolutePath = path.resolve('external', 'ctx');
+
+      const result = selector.addExternalContext(absolutePath);
+
+      expect(result.success).toBe(true);
+      expect(selector.getExternalContexts()).toEqual([absolutePath]);
+      expect(onChange).toHaveBeenCalledWith([absolutePath]);
+    });
+
+    it('should accept quoted absolute paths', () => {
+      const absolutePath = path.resolve('external', 'dir with spaces');
+
+      const result = selector.addExternalContext(`"${absolutePath}"`);
+
+      expect(result.success).toBe(true);
+      expect(selector.getExternalContexts()).toEqual([absolutePath]);
+    });
+
+    it('should expand home paths', () => {
+      const homeDir = os.homedir();
+
+      const result = selector.addExternalContext('~');
+
+      expect(result.success).toBe(true);
+      expect(selector.getExternalContexts()).toEqual([homeDir]);
+    });
+
+    it('should reject duplicate paths', () => {
+      const absolutePath = path.resolve('external', 'ctx');
+
+      selector.addExternalContext(absolutePath);
+      const result = selector.addExternalContext(absolutePath);
+
+      expect(result).toEqual({
+        success: false,
+        error: 'This folder is already added as an external context.',
+      });
+      expect(selector.getExternalContexts()).toEqual([absolutePath]);
+    });
+
+    it('should reject nested paths', () => {
+      const parentPath = path.resolve('external');
+      const childPath = path.join(parentPath, 'child');
+
+      selector.addExternalContext(parentPath);
+      const result = selector.addExternalContext(childPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('inside existing path');
+      expect(selector.getExternalContexts()).toEqual([parentPath]);
+    });
+  });
+
   describe('Callbacks', () => {
     it('should call onChange when paths are removed via removePath', () => {
       const onChange = jest.fn();
@@ -329,6 +402,29 @@ describe('ExternalContextSelector', () => {
 
       // Persistent paths should remain unchanged
       expect(selector.getPersistentPaths()).toEqual(['/persistent/path']);
+    });
+  });
+
+  describe('shortenPath', () => {
+    it('should not shorten paths outside home directory', () => {
+      const homeDir = os.homedir();
+      const outsidePath = path.join(path.parse(homeDir).root, 'tmp');
+
+      const result = (selector as any).shortenPath(outsidePath);
+
+      expect(result).toBe(outsidePath);
+    });
+
+    it('should shorten paths inside home directory', () => {
+      const homeDir = os.homedir();
+      const insidePath = path.join(homeDir, 'project');
+
+      const result = (selector as any).shortenPath(insidePath);
+
+      const normalizedHome = homeDir.replace(/\\/g, '/');
+      const normalizedInside = insidePath.replace(/\\/g, '/');
+      const expected = '~' + normalizedInside.slice(normalizedHome.length);
+      expect(result).toBe(expected);
     });
   });
 

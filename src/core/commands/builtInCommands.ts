@@ -6,7 +6,7 @@
  */
 
 /** Built-in command action types. */
-export type BuiltInCommandAction = 'clear';
+export type BuiltInCommandAction = 'clear' | 'add-dir';
 
 /** Built-in command definition. */
 export interface BuiltInCommand {
@@ -14,6 +14,15 @@ export interface BuiltInCommand {
   aliases?: string[];
   description: string;
   action: BuiltInCommandAction;
+  /** Whether this command accepts arguments. */
+  hasArgs?: boolean;
+}
+
+/** Result from detecting a built-in command. */
+export interface BuiltInCommandResult {
+  command: BuiltInCommand;
+  /** Arguments passed to the command (trimmed, after command name). */
+  args: string;
 }
 
 /** All built-in commands. */
@@ -23,6 +32,12 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     aliases: ['new'],
     description: 'Start a new conversation',
     action: 'clear',
+  },
+  {
+    name: 'add-dir',
+    description: 'Add external context directory',
+    action: 'add-dir',
+    hasArgs: true,
   },
 ];
 
@@ -41,18 +56,24 @@ for (const cmd of BUILT_IN_COMMANDS) {
 
 /**
  * Checks if input is a built-in command.
- * Returns the command if found, null otherwise.
+ * Returns the command and arguments if found, null otherwise.
  */
-export function detectBuiltInCommand(input: string): BuiltInCommand | null {
+export function detectBuiltInCommand(input: string): BuiltInCommandResult | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith('/')) return null;
 
   // Extract command name (first word after /)
-  const match = trimmed.match(/^\/([a-zA-Z0-9_-]+)(?:\s|$)/);
+  const match = trimmed.match(/^\/([a-zA-Z0-9_-]+)(?:\s(.*))?$/);
   if (!match) return null;
 
   const cmdName = match[1].toLowerCase();
-  return commandMap.get(cmdName) ?? null;
+  const command = commandMap.get(cmdName);
+  if (!command) return null;
+
+  // Extract arguments (everything after command name)
+  const args = (match[2] || '').trim();
+
+  return { command, args };
 }
 
 /**

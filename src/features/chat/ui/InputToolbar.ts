@@ -3,6 +3,7 @@
  */
 
 import { Notice, setIcon } from 'obsidian';
+import * as path from 'path';
 
 import type { McpService } from '../../../core/mcp/McpService';
 import type {
@@ -19,6 +20,7 @@ import {
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../../shared/icons';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../../utils/env';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath } from '../../../utils/externalContext';
+import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
 
 /** Settings access interface for toolbar components. */
 export interface ToolbarSettings {
@@ -233,6 +235,12 @@ export class PermissionToggle {
   }
 }
 
+/** Result of adding an external context path. */
+export interface AddExternalContextResult {
+  success: boolean;
+  error?: string;
+}
+
 /** External context selector component (folder icon). */
 export class ExternalContextSelector {
   private container: HTMLElement;
@@ -351,6 +359,57 @@ export class ExternalContextSelector {
   }
 
   /**
+   * Add an external context path programmatically (e.g., from /add-dir command).
+   * Validates the path and handles duplicates/conflicts.
+   * @param pathInput - Path string (supports ~/ expansion)
+   * @returns Result with success status and optional error message
+   */
+  addExternalContext(pathInput: string): AddExternalContextResult {
+    if (!pathInput || !pathInput.trim()) {
+      return { success: false, error: 'No path provided. Usage: /add-dir /absolute/path' };
+    }
+
+    // Strip surrounding quotes if present (e.g., "/path/with spaces")
+    let cleanPath = pathInput.trim();
+    if ((cleanPath.startsWith('"') && cleanPath.endsWith('"')) ||
+        (cleanPath.startsWith("'") && cleanPath.endsWith("'"))) {
+      cleanPath = cleanPath.slice(1, -1);
+    }
+
+    // Expand home directory and normalize path
+    const expandedPath = expandHomePath(cleanPath);
+    const normalizedPath = normalizePathForFilesystem(expandedPath);
+
+    if (!path.isAbsolute(normalizedPath)) {
+      return { success: false, error: 'Path must be absolute. Usage: /add-dir /absolute/path' };
+    }
+
+    // Validate path exists and is a directory
+    if (!isValidDirectoryPath(normalizedPath)) {
+      return { success: false, error: `Path does not exist or is not a directory: ${pathInput}` };
+    }
+
+    // Check for duplicate (normalized comparison for cross-platform support)
+    if (isDuplicatePath(normalizedPath, this.externalContextPaths)) {
+      return { success: false, error: 'This folder is already added as an external context.' };
+    }
+
+    // Check for nested/overlapping paths
+    const conflict = findConflictingPath(normalizedPath, this.externalContextPaths);
+    if (conflict) {
+      return { success: false, error: this.formatConflictMessage(normalizedPath, conflict) };
+    }
+
+    // Add the path
+    this.externalContextPaths = [...this.externalContextPaths, normalizedPath];
+    this.onChangeCallback?.(this.externalContextPaths);
+    this.updateDisplay();
+    this.renderDropdown();
+
+    return { success: true };
+  }
+
+  /**
    * Clear session-only external context paths (call on new conversation).
    * Uses persistent paths from settings if provided, otherwise falls back to local cache.
    * Validates paths before using them (silently filters invalid during session init).
@@ -411,8 +470,7 @@ export class ExternalContextSelector {
         // Check for nested/overlapping paths
         const conflict = findConflictingPath(selectedPath, this.externalContextPaths);
         if (conflict) {
-          // Show warning notice
-          this.showConflictNotice(selectedPath, conflict);
+          new Notice(this.formatConflictMessage(selectedPath, conflict), 5000);
           return;
         }
 
@@ -426,19 +484,13 @@ export class ExternalContextSelector {
     }
   }
 
-  /** Shows a notice when a conflicting path is detected. */
-  private showConflictNotice(newPath: string, conflict: { path: string; type: 'parent' | 'child' }) {
+  /** Formats a conflict error message for display. */
+  private formatConflictMessage(newPath: string, conflict: { path: string; type: 'parent' | 'child' }): string {
     const shortNew = this.shortenPath(newPath);
     const shortExisting = this.shortenPath(conflict.path);
-
-    let message: string;
-    if (conflict.type === 'parent') {
-      message = `Cannot add "${shortNew}" - it's inside existing path "${shortExisting}"`;
-    } else {
-      message = `Cannot add "${shortNew}" - it contains existing path "${shortExisting}"`;
-    }
-
-    new Notice(message, 5000);
+    return conflict.type === 'parent'
+      ? `Cannot add "${shortNew}" - it's inside existing path "${shortExisting}"`
+      : `Cannot add "${shortNew}" - it contains existing path "${shortExisting}"`;
   }
 
   private renderDropdown() {
@@ -501,7 +553,7 @@ export class ExternalContextSelector {
       const normalizedHome = normalize(homeDir);
       const compareFull = process.platform === 'win32'
         ? normalizedFull.toLowerCase()
-        : normalizedHome;
+        : normalizedFull;
       const compareHome = process.platform === 'win32'
         ? normalizedHome.toLowerCase()
         : normalizedHome;

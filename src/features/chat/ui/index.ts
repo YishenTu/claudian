@@ -5,6 +5,7 @@
 export { type FileContextCallbacks,FileContextManager } from './FileContext';
 export { type ImageContextCallbacks,ImageContextManager } from './ImageContext';
 export {
+  type AddExternalContextResult,
   ContextUsageMeter,
   createInputToolbar,
   ExternalContextSelector,

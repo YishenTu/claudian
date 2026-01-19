@@ -238,6 +238,7 @@ src/
 ## Roadmap
 
 - [x] Claude Code Plugin support
+- [ ] Subagent support
 - [ ] Hooks and other advanced features
 - [ ] More to come!
 

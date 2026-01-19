@@ -13,15 +13,16 @@ describe('builtInCommands', () => {
     it('detects /clear command', () => {
       const result = detectBuiltInCommand('/clear');
       expect(result).not.toBeNull();
-      expect(result?.name).toBe('clear');
-      expect(result?.action).toBe('clear');
+      expect(result?.command.name).toBe('clear');
+      expect(result?.command.action).toBe('clear');
+      expect(result?.args).toBe('');
     });
 
     it('detects /new command as alias for clear', () => {
       const result = detectBuiltInCommand('/new');
       expect(result).not.toBeNull();
-      expect(result?.name).toBe('clear');
-      expect(result?.action).toBe('clear');
+      expect(result?.command.name).toBe('clear');
+      expect(result?.command.action).toBe('clear');
     });
 
     it('is case-insensitive', () => {
@@ -33,13 +34,30 @@ describe('builtInCommands', () => {
     it('detects command with trailing whitespace', () => {
       const result = detectBuiltInCommand('/clear ');
       expect(result).not.toBeNull();
-      expect(result?.name).toBe('clear');
+      expect(result?.command.name).toBe('clear');
+      expect(result?.args).toBe('');
     });
 
-    it('detects command with arguments (arguments ignored)', () => {
+    it('detects command with arguments', () => {
       const result = detectBuiltInCommand('/clear some arguments');
       expect(result).not.toBeNull();
-      expect(result?.name).toBe('clear');
+      expect(result?.command.name).toBe('clear');
+      expect(result?.args).toBe('some arguments');
+    });
+
+    it('detects /add-dir command with path argument', () => {
+      const result = detectBuiltInCommand('/add-dir /path/to/dir');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('add-dir');
+      expect(result?.command.action).toBe('add-dir');
+      expect(result?.args).toBe('/path/to/dir');
+    });
+
+    it('detects /add-dir command with home path', () => {
+      const result = detectBuiltInCommand('/add-dir ~/projects');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('add-dir');
+      expect(result?.args).toBe('~/projects');
     });
 
     it('returns null for non-slash input', () => {
@@ -93,6 +111,14 @@ describe('builtInCommands', () => {
       expect(clearCmd).toBeDefined();
       expect(clearCmd?.aliases).toContain('new');
       expect(clearCmd?.action).toBe('clear');
+    });
+
+    it('has add-dir command that accepts args', () => {
+      const addDirCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'add-dir');
+      expect(addDirCmd).toBeDefined();
+      expect(addDirCmd?.action).toBe('add-dir');
+      expect(addDirCmd?.hasArgs).toBe(true);
+      expect(addDirCmd?.description).toBe('Add external context directory');
     });
   });
 });

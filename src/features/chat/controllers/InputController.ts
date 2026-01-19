@@ -27,7 +27,7 @@ import type { InstructionRefineService } from '../services/InstructionRefineServ
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
-import type { FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector, StatusPanel } from '../ui';
+import type { AddExternalContextResult, FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector, StatusPanel } from '../ui';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
@@ -47,7 +47,10 @@ export interface InputControllerDeps {
   getImageContextManager: () => ImageContextManager | null;
   getSlashCommandManager: () => SlashCommandManager | null;
   getMcpServerSelector: () => McpServerSelector | null;
-  getExternalContextSelector: () => { getExternalContexts: () => string[] } | null;
+  getExternalContextSelector: () => {
+    getExternalContexts: () => string[];
+    addExternalContext: (path: string) => AddExternalContextResult;
+  } | null;
   getInstructionModeManager: () => InstructionModeManager | null;
   getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
@@ -113,14 +116,14 @@ export class InputController {
     this.deps.getStatusPanel()?.clearTerminalSubagents();
     this.deps.conversationController.clearTerminalSubagentsFromMessages();
 
-    // Check for built-in commands first (e.g., /clear, /new)
+    // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content);
     if (builtInCmd) {
       if (shouldUseInput) {
         inputEl.value = '';
         this.deps.resetInputHeight();
       }
-      await this.executeBuiltInCommand(builtInCmd.action);
+      await this.executeBuiltInCommand(builtInCmd.command.action, builtInCmd.args);
       return;
     }
 
@@ -707,13 +710,27 @@ export class InputController {
   // ============================================
 
   /** Executes a built-in command action. */
-  private async executeBuiltInCommand(action: string): Promise<void> {
+  private async executeBuiltInCommand(action: string, args: string): Promise<void> {
     const { conversationController } = this.deps;
 
     switch (action) {
       case 'clear':
         await conversationController.createNew();
         break;
+      case 'add-dir': {
+        const externalContextSelector = this.deps.getExternalContextSelector();
+        if (!externalContextSelector) {
+          new Notice('External context selector not available.');
+          return;
+        }
+        const result = externalContextSelector.addExternalContext(args);
+        if (result.success) {
+          new Notice(`Added external context: ${args}`);
+        } else {
+          new Notice(result.error || 'Failed to add external context.');
+        }
+        break;
+      }
       default:
         // Unknown command - ignore
     }
