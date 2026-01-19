@@ -11,7 +11,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.85) !important;
+  background: var(--background-secondary) !important;
   border: 1px solid var(--background-modifier-border) !important;
   border-radius: 6px;
   cursor: pointer;
@@ -30,7 +30,7 @@
 }
 
 .claudian-scroll-to-bottom:hover {
-  background: rgba(0, 0, 0, 0.95) !important;
+  background: var(--background-modifier-hover) !important;
   color: var(--text-normal);
   border-color: var(--background-modifier-border-hover) !important;
 }
