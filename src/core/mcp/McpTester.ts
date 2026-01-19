@@ -35,6 +35,12 @@ export interface McpTestResult {
   error?: string;
 }
 
+/** Extract error message from MCP JSON-RPC response. */
+function getMcpError(response: Record<string, unknown>): string | undefined {
+  const error = response.error as { message?: string } | undefined;
+  return error?.message;
+}
+
 /** Test an MCP server connection and retrieve its tools. */
 export async function testMcpServer(server: ClaudianMcpServer): Promise<McpTestResult> {
   const type = getMcpServerType(server.config);
@@ -268,7 +274,7 @@ async function testStdioServer(server: ClaudianMcpServer): Promise<McpTestResult
   });
 }
 
-/** Make an HTTP request and return parsed JSON response. */
+/** Make an HTTP POST request and return the raw response body. */
 function httpRequest(
   url: URL,
   headers: Record<string, string>,
@@ -308,6 +314,7 @@ function httpRequest(
 
 /**
  * Parse a response that may be JSON or SSE format.
+ * For SSE format, extracts JSON from the first `data:` line only.
  * Returns the parsed object or null if parsing fails.
  */
 function parseJsonOrSse(data: string): Record<string, unknown> | null {
@@ -387,12 +394,13 @@ async function testHttpServer(server: ClaudianMcpServer): Promise<McpTestResult>
           return;
         }
 
-        if ((initResult as { error?: { message?: string } }).error) {
+        const initError = getMcpError(initResult);
+        if (initError) {
           clearTimeout(timeout);
           resolve({
             success: false,
             tools: [],
-            error: (initResult as { error: { message?: string } }).error.message || 'Server error',
+            error: initError,
           });
           return;
         }
@@ -437,7 +445,7 @@ async function testHttpServer(server: ClaudianMcpServer): Promise<McpTestResult>
           return;
         }
 
-        if ((toolsResult as { error?: { message?: string } }).error) {
+        if (getMcpError(toolsResult)) {
           // Tools request failed but init succeeded - partial success
           resolve({
             success: true,
