@@ -372,22 +372,24 @@ export class InputController {
         state.isStreaming = false;
         state.cancelRequested = false;
 
-        // Capture response duration before resetting state
-        const durationSeconds = state.responseStartTime
-          ? Math.floor((performance.now() - state.responseStartTime) / 1000)
-          : 0;
-        if (durationSeconds > 0) {
-          const flavorWord =
-            COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
-          assistantMsg.durationSeconds = durationSeconds;
-          assistantMsg.durationFlavorWord = flavorWord;
-          // Add footer to live message in DOM
-          if (contentEl) {
-            const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
-            footerEl.createSpan({
-              text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
-              cls: 'claudian-baked-duration',
-            });
+        // Capture response duration before resetting state (skip for interrupted responses)
+        if (!wasInterrupted) {
+          const durationSeconds = state.responseStartTime
+            ? Math.floor((performance.now() - state.responseStartTime) / 1000)
+            : 0;
+          if (durationSeconds > 0) {
+            const flavorWord =
+              COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
+            assistantMsg.durationSeconds = durationSeconds;
+            assistantMsg.durationFlavorWord = flavorWord;
+            // Add footer to live message in DOM
+            if (contentEl) {
+              const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
+              footerEl.createSpan({
+                text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
+                cls: 'claudian-baked-duration',
+              });
+            }
           }
         }
 

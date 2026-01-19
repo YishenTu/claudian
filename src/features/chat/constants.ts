@@ -15,6 +15,7 @@ export const LOGO_SVG = {
 export const COMPLETION_FLAVOR_WORDS = [
   'Baked',
   'Cooked',
+  'Crunched',
   'Brewed',
   'Crafted',
   'Forged',
