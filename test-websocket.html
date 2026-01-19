@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>iFlow WebSocket Test</title>
+</head>
+<body>
+    <h1>iFlow WebSocket Connection Test</h1>
+    <div id="status">Testing...</div>
+    <div id="output"></div>
+    
+    <script>
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+        
+        function log(msg) {
+            output.innerHTML += '<p>' + msg + '</p>';
+            console.log(msg);
+        }
+        
+        // Test different WebSocket endpoints
+        const endpoints = [
+            'ws://localhost:8765',
+            'ws://localhost:8765/',
+            'ws://localhost:8765/ws',
+            'ws://localhost:8765/websocket',
+            'ws://localhost:8765/acp',
+        ];
+        
+        let currentIndex = 0;
+        
+        function testEndpoint(url) {
+            log('Testing: ' + url);
+            
+            const ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                log('✅ Connected to: ' + url);
+                status.textContent = '✅ Connected!';
+                status.style.color = 'green';
+                
+                // Try sending a test message
+                ws.send(JSON.stringify({
+                    type: 'query',
+                    data: { content: 'hello' }
+                }));
+            };
+            
+            ws.onerror = (event) => {
+                log('❌ Error connecting to: ' + url);
+                testNext();
+            };
+            
+            ws.onclose = () => {
+                log('Connection closed: ' + url);
+            };
+            
+            ws.onmessage = (event) => {
+                log('📨 Received: ' + event.data);
+            };
+            
+            // Timeout after 3 seconds
+            setTimeout(() => {
+                if (ws.readyState !== WebSocket.OPEN) {
+                    ws.close();
+                    testNext();
+                }
+            }, 3000);
+        }
+        
+        function testNext() {
+            currentIndex++;
+            if (currentIndex < endpoints.length) {
+                testEndpoint(endpoints[currentIndex]);
+            } else {
+                status.textContent = '❌ All endpoints failed';
+                status.style.color = 'red';
+                log('All endpoints tested. None worked.');
+            }
+        }
+        
+        // Start testing
+        testEndpoint(endpoints[0]);
+    </script>
+</body>
+</html>

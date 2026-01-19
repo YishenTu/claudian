@@ -1,13 +1,11 @@
 /**
  * Claudian - Inline edit service
  *
- * Lightweight Claude query service for inline text editing.
+ * Lightweight query service for inline text editing.
  * Uses read-only tools only and supports multi-turn clarification.
  */
 
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-
+import { query, type QueryAdapterOptions, type QueryMessage } from '../../core/agent';
 import { getInlineEditSystemPrompt } from '../../core/prompts/inlineEdit';
 import { getPathFromToolInput } from '../../core/tools/toolInput';
 import {
@@ -55,7 +53,23 @@ export interface InlineEditResult {
   error?: string;
 }
 
-/** Service for inline text editing with Claude using read-only tools. */
+/** Hook input type */
+interface HookInput {
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+}
+
+/** Hook result type */
+interface HookResult {
+  continue: boolean;
+  hookSpecificOutput?: {
+    hookEventName: 'PreToolUse';
+    permissionDecision: 'deny';
+    permissionDecisionReason: string;
+  };
+}
+
+/** Service for inline text editing with read-only tools. */
 export class InlineEditService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
@@ -98,7 +112,7 @@ export class InlineEditService {
 
     const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
     if (!resolvedClaudePath) {
-      return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
+      return { success: false, error: 'CLI not found. Please install the CLI.' };
     }
 
     this.abortController = new AbortController();
@@ -106,20 +120,18 @@ export class InlineEditService {
     // Parse custom environment variables
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
 
-    const options: Options = {
+    const options: QueryAdapterOptions = {
       cwd: vaultPath,
       systemPrompt: getInlineEditSystemPrompt(),
       model: this.plugin.settings.model,
       abortController: this.abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
+      cliPath: resolvedClaudePath,
       env: {
-        ...process.env,
+        ...process.env as Record<string, string>,
         ...customEnv,
         PATH: getEnhancedPath(customEnv.PATH, resolvedClaudePath),
       },
-      tools: [...READ_ONLY_TOOLS], // Only read-only tools needed
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
+      tools: [...READ_ONLY_TOOLS],
       settingSources: this.plugin.settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
@@ -142,7 +154,7 @@ export class InlineEditService {
     }
 
     try {
-      const response = agentQuery({ prompt, options });
+      const response = await query(prompt, options);
       let responseText = '';
 
       for await (const message of response) {
@@ -248,14 +260,11 @@ export class InlineEditService {
   }
 
   /** Creates PreToolUse hook to enforce read-only mode. */
-  private createReadOnlyHook(): HookCallbackMatcher {
+  private createReadOnlyHook(): { hooks: Array<(input: unknown) => Promise<HookResult>> } {
     return {
       hooks: [
-        async (hookInput) => {
-          const input = hookInput as {
-            tool_name: string;
-            tool_input: Record<string, unknown>;
-          };
+        async (hookInput: unknown): Promise<HookResult> => {
+          const input = hookInput as HookInput;
           const toolName = input.tool_name;
 
           if (isReadOnlyTool(toolName)) {
@@ -276,16 +285,13 @@ export class InlineEditService {
   }
 
   /** Creates PreToolUse hook to restrict file tools to allowed paths. */
-  private createVaultRestrictionHook(vaultPath: string): HookCallbackMatcher {
+  private createVaultRestrictionHook(vaultPath: string): { hooks: Array<(input: unknown) => Promise<HookResult>> } {
     const fileTools = [TOOL_READ, TOOL_GLOB, TOOL_GREP, TOOL_LS] as const;
 
     return {
       hooks: [
-        async (hookInput) => {
-          const input = hookInput as {
-            tool_name: string;
-            tool_input: Record<string, unknown>;
-          };
+        async (hookInput: unknown): Promise<HookResult> => {
+          const input = hookInput as HookInput;
 
           const toolName = input.tool_name;
           if (!fileTools.includes(toolName as (typeof fileTools)[number])) {
@@ -294,7 +300,6 @@ export class InlineEditService {
 
           const filePath = getPathFromToolInput(toolName, input.tool_input);
           if (!filePath) {
-            // Fail-closed: deny if we can't determine the path for a file tool
             return {
               continue: false,
               hookSpecificOutput: {
@@ -305,13 +310,10 @@ export class InlineEditService {
             };
           }
 
-          // Use getPathAccessType for consistent path access control
-          // This allows vault and ~/.claude/ paths (context/readwrite params are undefined)
           let accessType: PathAccessType;
           try {
             accessType = getPathAccessType(filePath, undefined, undefined, vaultPath);
           } catch {
-            // Fail-closed: deny if path validation throws (ENOENT, ELOOP, EPERM, etc.)
             return {
               continue: false,
               hookSpecificOutput: {
@@ -331,7 +333,7 @@ export class InlineEditService {
             hookSpecificOutput: {
               hookEventName: 'PreToolUse' as const,
               permissionDecision: 'deny' as const,
-              permissionDecisionReason: `Access denied: Path "${filePath}" is outside allowed paths. Inline edit is restricted to vault and ~/.claude/ directories.`,
+              permissionDecisionReason: `Access denied: Path "${filePath}" is outside allowed paths.`,
             },
           };
         },
@@ -339,7 +341,7 @@ export class InlineEditService {
     };
   }
 
-  private extractTextFromMessage(message: any): string | null {
+  private extractTextFromMessage(message: QueryMessage): string | null {
     if (message.type === 'assistant' && message.message?.content) {
       for (const block of message.message.content) {
         if (block.type === 'text' && block.text) {

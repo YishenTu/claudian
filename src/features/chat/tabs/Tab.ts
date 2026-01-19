@@ -11,7 +11,7 @@
 
 import type { Component } from 'obsidian';
 
-import { ClaudianService } from '../../../core/agent';
+import { createAgentService, type IAgentService } from '../../../core/agent';
 import { SlashCommandManager } from '../../../core/commands';
 import type { McpServerManager } from '../../../core/mcp';
 import type { ClaudeModel, Conversation, ThinkingBudget } from '../../../core/types';
@@ -245,11 +245,11 @@ export async function initializeTabService(
     return;
   }
 
-  let service: ClaudianService | null = null;
+  let service: IAgentService | null = null;
 
   try {
-    // Create per-tab ClaudianService
-    service = new ClaudianService(plugin, mcpManager);
+    // Create per-tab agent service using factory
+    service = createAgentService(plugin, mcpManager);
 
     // Load Claude Code permissions with error handling
     try {

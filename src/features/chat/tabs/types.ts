@@ -2,12 +2,12 @@
  * Type definitions for the multi-tab system.
  *
  * Each tab represents an independent chat conversation with its own
- * ClaudianService instance for concurrent streaming support.
+ * agent service instance for concurrent streaming support.
  */
 
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
-import type { ClaudianService } from '../../../core/agent';
+import type { IAgentService } from '../../../core/agent';
 import type { SlashCommandManager } from '../../../core/commands';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import type {
@@ -39,7 +39,7 @@ import type {
  * Default number of tabs allowed.
  *
  * Set to 3 to balance usability with resource usage:
- * - Each tab has its own ClaudianService and persistent query
+ * - Each tab has its own agent service and persistent connection
  * - More tabs = more memory and potential SDK processes
  * - 3 tabs allows multi-tasking without excessive overhead
  */
@@ -174,8 +174,8 @@ export interface TabData {
   /** Conversation ID bound to this tab (null for new/empty tabs). */
   conversationId: string | null;
 
-  /** Per-tab ClaudianService instance for independent streaming. */
-  service: ClaudianService | null;
+  /** Per-tab agent service instance for independent streaming. */
+  service: IAgentService | null;
 
   /** Whether the service has been initialized (lazy start). */
   serviceInitialized: boolean;

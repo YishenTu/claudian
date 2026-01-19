@@ -5,7 +5,7 @@
  * state tracking, and thinking indicator display.
  */
 
-import type { ClaudianService } from '../../../core/agent';
+import type { IAgentService } from '../../../core/agent';
 import { getDiffData } from '../../../core/hooks';
 import { parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
@@ -49,7 +49,7 @@ export interface StreamControllerDeps {
   getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
-  getAgentService?: () => ClaudianService | null;
+  getAgentService?: () => IAgentService | null;
 }
 
 /**

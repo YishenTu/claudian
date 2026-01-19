@@ -40,6 +40,8 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.5",
-    "tslib": "^2.8.1"
+    "@types/ws": "^8.18.1",
+    "tslib": "^2.8.1",
+    "ws": "^8.19.0"
   }
 }

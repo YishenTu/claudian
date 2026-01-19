@@ -50,11 +50,11 @@ export class ClaudianView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Claudian';
+    return 'iFlow';
   }
 
   getIcon(): string {
-    return 'bot';
+    return 'iflow';
   }
 
   /** Refreshes the model selector display (used after env var changes). */
@@ -160,12 +160,41 @@ export class ClaudianView extends ItemView {
     svg.setAttribute('width', LOGO_SVG.width);
     svg.setAttribute('height', LOGO_SVG.height);
     svg.setAttribute('fill', 'none');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', LOGO_SVG.path);
-    path.setAttribute('fill', LOGO_SVG.fill);
-    svg.appendChild(path);
+    
+    // Add stroke paths
+    for (const pathData of LOGO_SVG.paths) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathData.d);
+      path.setAttribute('stroke', LOGO_SVG.fill);
+      path.setAttribute('stroke-width', pathData.strokeWidth);
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('fill', 'none');
+      svg.appendChild(path);
+    }
+    
+    // Add tail ellipse
+    const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+    ellipse.setAttribute('cx', LOGO_SVG.ellipse.cx);
+    ellipse.setAttribute('cy', LOGO_SVG.ellipse.cy);
+    ellipse.setAttribute('rx', LOGO_SVG.ellipse.rx);
+    ellipse.setAttribute('ry', LOGO_SVG.ellipse.ry);
+    ellipse.setAttribute('fill', LOGO_SVG.fill);
+    svg.appendChild(ellipse);
+    
+    // Add eyes
+    for (const eye of LOGO_SVG.eyes) {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', eye.x);
+      rect.setAttribute('y', eye.y);
+      rect.setAttribute('width', eye.width);
+      rect.setAttribute('height', eye.height);
+      rect.setAttribute('rx', eye.rx);
+      rect.setAttribute('fill', LOGO_SVG.fill);
+      svg.appendChild(rect);
+    }
+    
     logoEl.appendChild(svg);
-    titleContainer.createEl('h4', { text: 'Claudian' });
+    titleContainer.createEl('h4', { text: 'iFlow' });
   }
 
   /**

@@ -7,7 +7,7 @@
 
 import { Notice } from 'obsidian';
 
-import type { ClaudianService } from '../../../core/agent';
+import type { IAgentService } from '../../../core/agent';
 import { detectBuiltInCommand, type SlashCommandManager } from '../../../core/commands';
 import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
 import { TOOL_BASH } from '../../../core/tools/toolNames';
@@ -53,7 +53,7 @@ export interface InputControllerDeps {
   resetContextMeter: () => void;
   resetInputHeight: () => void;
   /** Get the agent service from the tab. */
-  getAgentService?: () => ClaudianService | null;
+  getAgentService?: () => IAgentService | null;
   /** Ensures the agent service is initialized (lazy loading). Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
 }
@@ -69,7 +69,7 @@ export class InputController {
   }
 
   /** Gets the agent service from the tab. */
-  private getAgentService(): ClaudianService | null {
+  private getAgentService(): IAgentService | null {
     return this.deps.getAgentService?.() ?? null;
   }
 

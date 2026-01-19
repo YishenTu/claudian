@@ -1,13 +1,11 @@
 /**
  * Claudian - Title generation service
  *
- * Lightweight Claude query service for generating conversation titles
+ * Lightweight query service for generating conversation titles
  * based on first user message and first AI response.
  */
 
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-
+import { query, type QueryAdapterOptions } from '../../../core/agent';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../../../core/prompts/titleGeneration';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
@@ -61,7 +59,7 @@ export class TitleGenerationService {
     if (!resolvedClaudePath) {
       await this.safeCallback(callback, conversationId, {
         success: false,
-        error: 'Claude CLI not found',
+        error: 'CLI not found',
       });
       return;
     }
@@ -101,28 +99,25 @@ ${truncatedAssistant}
 
 Generate a title for this conversation:`;
 
-    const options: Options = {
+    const options: QueryAdapterOptions = {
       cwd: vaultPath,
       systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
       model: titleModel,
       abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
+      cliPath: resolvedClaudePath,
       env: {
-        ...process.env,
+        ...process.env as Record<string, string>,
         ...envVars,
         PATH: getEnhancedPath(envVars.PATH, resolvedClaudePath),
       },
       tools: [], // No tools needed for title generation
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
       settingSources: this.plugin.settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
-      persistSession: false, // Don't save title generation queries to session history
     };
 
     try {
-      const response = agentQuery({ prompt, options });
+      const response = await query(prompt, options);
       let responseText = '';
 
       for await (const message of response) {

@@ -1,13 +1,11 @@
 /**
  * Claudian - Instruction refine service
  *
- * Lightweight Claude query service for refining user instructions.
+ * Lightweight query service for refining user instructions.
  * Parses <instruction> tags from response.
  */
 
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-
+import { query, type QueryAdapterOptions } from '../../../core/agent';
 import { buildRefineSystemPrompt } from '../../../core/prompts/instructionRefine';
 import { type InstructionRefineResult, THINKING_BUDGETS } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -17,7 +15,7 @@ import { getVaultPath } from '../../../utils/path';
 /** Callback for streaming progress updates. */
 export type RefineProgressCallback = (update: InstructionRefineResult) => void;
 
-/** Service for refining user instructions with Claude. */
+/** Service for refining user instructions. */
 export class InstructionRefineService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
@@ -75,7 +73,7 @@ export class InstructionRefineService {
 
     const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
     if (!resolvedClaudePath) {
-      return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
+      return { success: false, error: 'CLI not found. Please install the CLI.' };
     }
 
     this.abortController = new AbortController();
@@ -83,20 +81,18 @@ export class InstructionRefineService {
     // Parse custom environment variables
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
 
-    const options: Options = {
+    const options: QueryAdapterOptions = {
       cwd: vaultPath,
       systemPrompt: buildRefineSystemPrompt(this.existingInstructions),
       model: this.plugin.settings.model,
       abortController: this.abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
+      cliPath: resolvedClaudePath,
       env: {
-        ...process.env,
+        ...process.env as Record<string, string>,
         ...customEnv,
         PATH: getEnhancedPath(customEnv.PATH, resolvedClaudePath),
       },
       tools: [], // No tools needed for instruction refinement
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
       settingSources: this.plugin.settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
@@ -113,7 +109,7 @@ export class InstructionRefineService {
     }
 
     try {
-      const response = agentQuery({ prompt, options });
+      const response = await query(prompt, options);
       let responseText = '';
 
       for await (const message of response) {

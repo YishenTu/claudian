@@ -6,7 +6,7 @@
  */
 
 import type { Editor, MarkdownView } from 'obsidian';
-import { Notice, Plugin } from 'obsidian';
+import { addIcon, Notice, Plugin } from 'obsidian';
 
 import { clearDiffState } from './core/hooks';
 import { McpServerManager } from './core/mcp';
@@ -31,6 +31,7 @@ import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
+import { IFLOW_ICON_SVG } from './shared/icons';
 import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
@@ -82,12 +83,15 @@ export default class ClaudianPlugin extends Plugin {
     // Load slash commands from enabled plugins and merge with vault commands
     this.loadPluginSlashCommands();
 
+    // Register custom iFlow icon (must be before registerView)
+    addIcon('iflow', IFLOW_ICON_SVG);
+
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
       (leaf) => new ClaudianView(leaf, this)
     );
 
-    this.addRibbonIcon('bot', 'Open Claudian', () => {
+    this.addRibbonIcon('iflow', 'Open iFlow', () => {
       this.activateView();
     });
 

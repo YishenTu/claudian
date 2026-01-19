@@ -7,7 +7,7 @@
 
 import { setIcon } from 'obsidian';
 
-import type { ClaudianService } from '../../../core/agent';
+import type { IAgentService } from '../../../core/agent';
 import { extractLastTodosFromMessages } from '../../../core/tools';
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -46,7 +46,7 @@ export interface ConversationControllerDeps {
   /** Get TodoPanel for remounting after messagesEl.empty(). */
   getTodoPanel: () => TodoPanel | null;
   /** Get the agent service (for multi-tab, returns tab's service). */
-  getAgentService?: () => ClaudianService | null;
+  getAgentService?: () => IAgentService | null;
 }
 
 /**
@@ -62,7 +62,7 @@ export class ConversationController {
   }
 
   /** Gets the agent service from the tab. */
-  private getAgentService(): ClaudianService | null {
+  private getAgentService(): IAgentService | null {
     return this.deps.getAgentService?.() ?? null;
   }
 
