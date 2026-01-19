@@ -306,7 +306,35 @@ function httpRequest(
   });
 }
 
-/** Test an HTTP MCP server. */
+/**
+ * Parse a response that may be JSON or SSE format.
+ * Returns the parsed object or null if parsing fails.
+ */
+function parseJsonOrSse(data: string): Record<string, unknown> | null {
+  const trimmed = data.trim();
+
+  // Try parsing as JSON first
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // May be SSE format - extract JSON from data lines
+    const dataMatch = trimmed.match(/^data:\s*(.+)$/m);
+    if (dataMatch) {
+      try {
+        return JSON.parse(dataMatch[1]);
+      } catch {
+        // Not valid JSON in SSE
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Test an HTTP MCP server.
+ * Supports both standard JSON and streaming (SSE) response formats.
+ */
 async function testHttpServer(server: ClaudianMcpServer): Promise<McpTestResult> {
   const config = server.config as { url: string; headers?: Record<string, string> };
 
@@ -346,29 +374,33 @@ async function testHttpServer(server: ClaudianMcpServer): Promise<McpTestResult>
         let serverName: string | undefined;
         let serverVersion: string | undefined;
 
-        try {
-          const initResult = JSON.parse(initResponse.data);
-          if (initResult.error) {
-            clearTimeout(timeout);
-            resolve({
-              success: false,
-              tools: [],
-              error: initResult.error.message || 'Server error',
-            });
-            return;
-          }
-          if (initResult.result?.serverInfo) {
-            serverName = initResult.result.serverInfo.name;
-            serverVersion = initResult.result.serverInfo.version;
-          }
-        } catch {
+        // Parse response - may be JSON or SSE format
+        const initResult = parseJsonOrSse(initResponse.data);
+
+        if (!initResult) {
           clearTimeout(timeout);
           resolve({
             success: false,
             tools: [],
-            error: `Invalid JSON response: ${initResponse.data.slice(0, 200)}`,
+            error: `Invalid response: ${initResponse.data.slice(0, 200)}`,
           });
           return;
+        }
+
+        if ((initResult as { error?: { message?: string } }).error) {
+          clearTimeout(timeout);
+          resolve({
+            success: false,
+            tools: [],
+            error: (initResult as { error: { message?: string } }).error.message || 'Server error',
+          });
+          return;
+        }
+
+        const resultField = initResult.result as { serverInfo?: { name?: string; version?: string } } | undefined;
+        if (resultField?.serverInfo) {
+          serverName = resultField.serverInfo.name;
+          serverVersion = resultField.serverInfo.version;
         }
 
         // Step 2: Send initialized notification (optional, some servers need it)
@@ -391,45 +423,46 @@ async function testHttpServer(server: ClaudianMcpServer): Promise<McpTestResult>
 
         const toolsResponse = await httpRequest(url, headers, toolsRequest);
 
-        try {
-          const toolsResult = JSON.parse(toolsResponse.data);
-          clearTimeout(timeout);
+        // Parse tools response - may be JSON or SSE format
+        const toolsResult = parseJsonOrSse(toolsResponse.data);
+        clearTimeout(timeout);
 
-          if (toolsResult.error) {
-            // Tools request failed but init succeeded - partial success
-            resolve({
-              success: true,
-              serverName,
-              serverVersion,
-              tools: [],
-            });
-            return;
-          }
-
-          const tools = (toolsResult.result?.tools || []).map(
-            (t: { name: string; description?: string; inputSchema?: Record<string, unknown> }) => ({
-              name: t.name,
-              description: t.description,
-              inputSchema: t.inputSchema,
-            })
-          );
-
-          resolve({
-            success: true,
-            serverName,
-            serverVersion,
-            tools,
-          });
-        } catch {
-          // Tools response not JSON - return success with no tools
-          clearTimeout(timeout);
+        if (!toolsResult) {
           resolve({
             success: true,
             serverName,
             serverVersion,
             tools: [],
           });
+          return;
         }
+
+        if ((toolsResult as { error?: { message?: string } }).error) {
+          // Tools request failed but init succeeded - partial success
+          resolve({
+            success: true,
+            serverName,
+            serverVersion,
+            tools: [],
+          });
+          return;
+        }
+
+        const resultObj = toolsResult.result as { tools?: McpTool[] } | undefined;
+        const tools = (resultObj?.tools || []).map(
+          (t: { name: string; description?: string; inputSchema?: Record<string, unknown> }) => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema,
+          })
+        );
+
+        resolve({
+          success: true,
+          serverName,
+          serverVersion,
+          tools,
+        });
       } catch (error) {
         clearTimeout(timeout);
         resolve({
