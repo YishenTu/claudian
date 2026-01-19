@@ -264,7 +264,7 @@ vault/.claude/
 - **SDK-native** (new conversations): Messages in `~/.claude/projects/`, metadata in `.meta.json`
 - **Legacy** (existing conversations): Full JSONL in `sessions/`, continues to work
 
-**Vault path encoding**: `/` → `-`, `\` → `-`, `:` → `-`, spaces → `-`, `~` → `-`, `'` → `-`
+**Vault path encoding**: All non-alphanumeric characters → `-` (matches SDK behavior)
 
 **Command ID encoding**: `-` → `-_`, `/` → `--` (reversible, no collisions)
 
