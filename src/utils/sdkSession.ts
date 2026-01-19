@@ -71,21 +71,12 @@ export interface SDKNativeContentBlock {
 
 /**
  * Encodes a vault path for the SDK project directory name.
- * The SDK uses simple character replacement:
- * - `/` or `\` → `-`
- * - `:` → `-` (Windows drive letter)
- * - spaces → `-`
- * - `~` → `-`
- * - `'` → `-`
+ * The SDK replaces ALL non-alphanumeric characters with `-`.
+ * This handles Unicode characters (Chinese, Japanese, etc.) and special chars (brackets, etc.).
  */
 export function encodeVaultPathForSDK(vaultPath: string): string {
   const absolutePath = path.resolve(vaultPath);
-  return absolutePath
-    .replace(/[\\/]/g, '-')
-    .replace(/:/g, '-')
-    .replace(/ /g, '-')
-    .replace(/~/g, '-')
-    .replace(/'/g, '-');
+  return absolutePath.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 /**

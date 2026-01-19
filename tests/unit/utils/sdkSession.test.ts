@@ -37,15 +37,33 @@ describe('sdkSession', () => {
   });
 
   describe('encodeVaultPathForSDK', () => {
-    it('encodes vault path using character replacement to match SDK format', () => {
+    it('encodes vault path by replacing all non-alphanumeric chars with dash', () => {
       const encoded = encodeVaultPathForSDK('/Users/test/vault');
-      // SDK uses: `/` → `-`, space → `-`, `~` → `-`, `'` → `-`
+      // SDK replaces ALL non-alphanumeric characters with `-`
       expect(encoded).toBe('-Users-test-vault');
     });
 
     it('handles paths with spaces and special characters', () => {
       const encoded = encodeVaultPathForSDK("/Users/test/My Vault's~Data");
       expect(encoded).toBe('-Users-test-My-Vault-s-Data');
+    });
+
+    it('handles Unicode characters (Chinese, Japanese, etc.)', () => {
+      // Unicode characters should be replaced with `-` to match SDK behavior
+      const encoded = encodeVaultPathForSDK('/Volumes/[Work]弘毅之鹰/学习/东京大学/2025年 秋');
+      // All non-alphanumeric (including Chinese, brackets) become `-`
+      expect(encoded).toBe('-Volumes--Work--------------2025---');
+      // Verify only ASCII alphanumeric and dash remain
+      expect(encoded).toMatch(/^[a-zA-Z0-9-]+$/);
+    });
+
+    it('handles brackets and other special characters', () => {
+      const encoded = encodeVaultPathForSDK('/Users/test/[my-vault](notes)');
+      expect(encoded).toBe('-Users-test--my-vault--notes-');
+      expect(encoded).not.toContain('[');
+      expect(encoded).not.toContain(']');
+      expect(encoded).not.toContain('(');
+      expect(encoded).not.toContain(')');
     });
 
     it('produces consistent encoding', () => {

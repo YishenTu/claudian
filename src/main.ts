@@ -626,7 +626,6 @@ export default class ClaudianPlugin extends Plugin {
 
     // Load messages from all session files
     const allSdkMessages: ChatMessage[] = [];
-    let totalSkippedLines = 0;
     let missingSessionCount = 0;
     let errorCount = 0;
     let successCount = 0;
@@ -645,24 +644,13 @@ export default class ClaudianPlugin extends Plugin {
       }
 
       successCount++;
-      totalSkippedLines += result.skippedLines;
       allSdkMessages.push(...result.messages);
     }
 
-    // Notify user of issues with specific counts
-    if (missingSessionCount > 0 || errorCount > 0) {
-      const parts: string[] = [];
-      if (missingSessionCount > 0) {
-        parts.push(`${missingSessionCount} session file(s) not found`);
-      }
-      if (errorCount > 0) {
-        parts.push(`${errorCount} failed to load`);
-      }
-      new Notice(`Conversation history incomplete: ${parts.join(', ')}`);
-    }
-    if (totalSkippedLines > 0) {
-      new Notice(`Some messages could not be loaded (${totalSkippedLines} corrupted)`);
-    }
+    // Note: We intentionally don't notify users about missing session files.
+    // Session files may be missing due to path encoding differences (special characters
+    // in vault path) or external deletion. Showing a notification every restart is
+    // too intrusive and not actionable for users.
 
     // Only mark as loaded if at least one session was successfully loaded,
     // or if all sessions were missing (no point retrying non-existent files).
