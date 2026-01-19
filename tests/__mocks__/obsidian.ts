@@ -147,9 +147,8 @@ export const MarkdownRenderer = {
 
 export const setIcon = jest.fn();
 
-export class Notice {
-  constructor(_message: string) {}
-}
+// Notice mock that tracks constructor calls
+export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => {});
 
 // TFile class for instanceof checks
 export class TFile {

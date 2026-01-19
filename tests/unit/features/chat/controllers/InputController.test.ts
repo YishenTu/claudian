@@ -2,8 +2,13 @@
  * Tests for InputController - Message Queue and Input Handling
  */
 
+import { Notice } from 'obsidian';
+
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
+
+// Get reference to the mocked Notice from global mock
+const mockNotice = Notice as jest.Mock;
 
 // Helper to create mock DOM element
 function createMockElement() {
@@ -771,6 +776,102 @@ describe('InputController - Message Queue', () => {
 
       // Should still set fallback title
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
+    });
+  });
+
+  describe('Built-in commands - /add-dir', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should show error notice when external context selector is not available', async () => {
+      deps.getExternalContextSelector = () => null;
+      inputEl.value = '/add-dir /some/path';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('External context selector not available.');
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should show success notice when path is added successfully', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn().mockReturnValue({ success: true }),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      inputEl.value = '/add-dir /some/path';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('/some/path');
+      expect(mockNotice).toHaveBeenCalledWith('Added external context: /some/path');
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should show error notice when path addition fails', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn().mockReturnValue({
+          success: false,
+          error: 'Path must be absolute. Usage: /add-dir /absolute/path',
+        }),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      inputEl.value = '/add-dir relative/path';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('relative/path');
+      expect(mockNotice).toHaveBeenCalledWith('Path must be absolute. Usage: /add-dir /absolute/path');
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should handle /add-dir with home path expansion', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn().mockReturnValue({ success: true }),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      inputEl.value = '/add-dir ~/projects';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('~/projects');
+      expect(mockNotice).toHaveBeenCalledWith('Added external context: ~/projects');
+    });
+
+    it('should handle /add-dir with quoted path', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn().mockReturnValue({ success: true }),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      inputEl.value = '/add-dir "/path/with spaces"';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('"/path/with spaces"');
+      expect(mockNotice).toHaveBeenCalledWith('Added external context: "/path/with spaces"');
+    });
+
+    it('should clear terminal subagents when executing built-in command', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn().mockReturnValue({ success: true }),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      inputEl.value = '/add-dir /some/path';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.conversationController.clearTerminalSubagentsFromMessages).toHaveBeenCalled();
     });
   });
 });

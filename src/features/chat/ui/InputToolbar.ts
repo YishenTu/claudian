@@ -235,11 +235,10 @@ export class PermissionToggle {
   }
 }
 
-/** Result of adding an external context path. */
-export interface AddExternalContextResult {
-  success: boolean;
-  error?: string;
-}
+/** Result of adding an external context path (discriminated union for type safety). */
+export type AddExternalContextResult =
+  | { success: true }
+  | { success: false; error: string };
 
 /** External context selector component (folder icon). */
 export class ExternalContextSelector {
@@ -365,12 +364,13 @@ export class ExternalContextSelector {
    * @returns Result with success status and optional error message
    */
   addExternalContext(pathInput: string): AddExternalContextResult {
-    if (!pathInput || !pathInput.trim()) {
+    const trimmed = pathInput?.trim();
+    if (!trimmed) {
       return { success: false, error: 'No path provided. Usage: /add-dir /absolute/path' };
     }
 
     // Strip surrounding quotes if present (e.g., "/path/with spaces")
-    let cleanPath = pathInput.trim();
+    let cleanPath = trimmed;
     if ((cleanPath.startsWith('"') && cleanPath.endsWith('"')) ||
         (cleanPath.startsWith("'") && cleanPath.endsWith("'"))) {
       cleanPath = cleanPath.slice(1, -1);

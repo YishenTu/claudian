@@ -216,6 +216,34 @@ describe('ExternalContextSelector', () => {
   });
 
   describe('addExternalContext', () => {
+    it('should reject empty input', () => {
+      const onChange = jest.fn();
+      selector.setOnChange(onChange);
+
+      const result = selector.addExternalContext('');
+
+      expect(result).toEqual({
+        success: false,
+        error: 'No path provided. Usage: /add-dir /absolute/path',
+      });
+      expect(selector.getExternalContexts()).toEqual([]);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('should reject whitespace-only input', () => {
+      const onChange = jest.fn();
+      selector.setOnChange(onChange);
+
+      const result = selector.addExternalContext('   ');
+
+      expect(result).toEqual({
+        success: false,
+        error: 'No path provided. Usage: /add-dir /absolute/path',
+      });
+      expect(selector.getExternalContexts()).toEqual([]);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('should reject relative paths', () => {
       const onChange = jest.fn();
       selector.setOnChange(onChange);
@@ -242,10 +270,19 @@ describe('ExternalContextSelector', () => {
       expect(onChange).toHaveBeenCalledWith([absolutePath]);
     });
 
-    it('should accept quoted absolute paths', () => {
+    it('should accept double-quoted absolute paths', () => {
       const absolutePath = path.resolve('external', 'dir with spaces');
 
       const result = selector.addExternalContext(`"${absolutePath}"`);
+
+      expect(result.success).toBe(true);
+      expect(selector.getExternalContexts()).toEqual([absolutePath]);
+    });
+
+    it('should accept single-quoted absolute paths', () => {
+      const absolutePath = path.resolve('external', 'dir with spaces');
+
+      const result = selector.addExternalContext(`'${absolutePath}'`);
 
       expect(result.success).toBe(true);
       expect(selector.getExternalContexts()).toEqual([absolutePath]);
@@ -281,7 +318,7 @@ describe('ExternalContextSelector', () => {
       const result = selector.addExternalContext(childPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('inside existing path');
+      expect(result).toMatchObject({ error: expect.stringContaining('inside existing path') });
       expect(selector.getExternalContexts()).toEqual([parentPath]);
     });
   });

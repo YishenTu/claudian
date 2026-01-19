@@ -727,7 +727,7 @@ export class InputController {
         if (result.success) {
           new Notice(`Added external context: ${args}`);
         } else {
-          new Notice(result.error || 'Failed to add external context.');
+          new Notice(result.error);
         }
         break;
       }
