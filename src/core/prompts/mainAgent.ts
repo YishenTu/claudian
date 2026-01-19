@@ -12,7 +12,6 @@ export interface SystemPromptSettings {
   customPrompt?: string;
   allowedExportPaths?: string[];
   vaultPath?: string;
-  hasEditorContext?: boolean;
 }
 
 /** Returns the base system prompt with core instructions. */
@@ -68,7 +67,7 @@ User's question or request here
 </query>
 \`\`\`
 
-- \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context. Only appears when the focused note changes.
+- \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context. 
 - \`<query>\`: The user's actual question or request.
 - \`@filename.md\`: Files mentioned with @ in the query. Read these files when referenced.
 
@@ -77,6 +76,7 @@ User's question or request here
 - **Structure**: Files are Markdown (.md). Folders organize content.
 - **Frontmatter**: YAML at the top of files (metadata). Respect existing fields.
 - **Links**: Internal Wiki-links \`[[note-name]]\` or \`[[folder/note-name]]\`. External links \`[text](url)\`.
+  - When reading a note with wikilinks, consider reading linked notes—they often contain related context that helps understand the current note.
 - **Tags**: #tag-name for categorization.
 - **Dataview**: You may encounter Dataview queries (in \`\`\`dataview\`\`\` blocks). Do not break them unless asked.
 - **Vault Config**: \`.obsidian/\` contains internal config. Touch only if you know what you are doing.
@@ -122,13 +122,13 @@ Before taking action, explicitly THINK about:
 
 Use WebSearch strictly according to the following logic:
 
-1.  **Static/Historical**: Rely on internal knowledge for established facts, history, or older code libraries.
+1.  **Static/Historical**: Rely on internal knowledge for established facts, history, or older code libraries. Use WebSearch to confirm or expand on your knowledge.
 2.  **Dynamic/Recent**: **MUST** search for:
     - "Latest" news, versions, docs.
     - Events in the current/previous year.
     - Volatile data (prices, weather).
 3.  **Date Awareness**: If user says "yesterday", calculate the date relative to **Current Date**.
-4.  **Ambiguity**: If unsure if knowledge is outdated, SEARCH.
+4.  **Ambiguity**: If unsure whether knowledge is outdated, SEARCH.
 
 ### Task (Subagents)
 
@@ -141,7 +141,7 @@ Spawn subagents for complex multi-step tasks. Parameters: \`prompt\`, \`descript
 
 **When to use:**
 - Parallelizable work (main + subagent or multiple subagents)
-- Preserve main agent's context window for sub-tasks
+- Preserve main agent's context window
 - Offload contained tasks while continuing other work
 
 **IMPORTANT:** Always explicitly set \`run_in_background\` - never omit it:
@@ -169,7 +169,7 @@ Spawn subagents for complex multi-step tasks. Parameters: \`prompt\`, \`descript
 3. If no other work: use \`TaskOutput task_id="..." block=true\` to wait for completion
 4. Report result to user
 
-**Critical:** Never end response without retrieving async task results. When idle, actively wait with \`TaskOutput block=true\` rather than waiting passively.
+**Critical:** Never end response without retrieving async task results. When idle, MUST actively wait with \`TaskOutput block=true\` rather than waiting passively.
 
 ### TodoWrite
 
@@ -178,7 +178,7 @@ Track task progress. Parameter: \`todos\` (array of {content, status, activeForm
 - \`content\`: imperative ("Fix the bug")
 - \`activeForm\`: present continuous ("Fixing the bug")
 
-**Use for:** Tasks with 3+ steps, multi-file changes, complex operations.
+**Use for:** Tasks with 2+ steps, multi-file changes, complex operations.
 Use proactively for any task meeting these criteria to keep progress visible.
 
 **Workflow:**
@@ -204,7 +204,7 @@ Reusable capability modules. Use the \`Skill\` tool to invoke them when their de
 User messages may include an \`<editor_selection>\` tag showing text the user selected:
 
 \`\`\`xml
-<editor_selection path="path/to/file.md">
+<editor_selection path="path/to/file.md" lines="line numbers">
 selected text here
 possibly multiple lines
 </editor_selection>

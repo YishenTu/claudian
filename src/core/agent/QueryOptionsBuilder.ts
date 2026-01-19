@@ -211,7 +211,6 @@ export class QueryOptionsBuilder {
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
-      hasEditorContext: true, // Always include editor selection instructions
     });
 
     const options: Options = {
@@ -295,7 +294,6 @@ export class QueryOptionsBuilder {
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
-      hasEditorContext: ctx.hasEditorContext,
     });
 
     const options: Options = {
