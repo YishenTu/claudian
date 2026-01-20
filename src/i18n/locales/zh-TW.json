@@ -160,6 +160,12 @@
       "warning": "超過 5 個標籤可能會影響效能和記憶體使用。",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "標籤列位置",
+      "desc": "選擇標籤徽章和操作按鈕的顯示位置",
+      "input": "輸入框上方（預設）",
+      "header": "在標題列"
+    },
     "cliPath": {
       "name": "Claude CLI 路徑",
       "desc": "Claude Code CLI 的自訂路徑。留空使用自動檢測。",

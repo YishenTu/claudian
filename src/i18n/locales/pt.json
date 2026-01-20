@@ -160,6 +160,12 @@
       "warning": "Mais de 5 abas pode afetar o desempenho e o uso de memória.",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "Posição da barra de abas",
+      "desc": "Escolha onde exibir os emblemas de abas e botões de ação",
+      "input": "Acima da entrada (padrão)",
+      "header": "No cabeçalho"
+    },
     "cliPath": {
       "name": "Caminho CLI Claude",
       "desc": "Caminho personalizado para Claude Code CLI. Deixe vazio para detecção automática.",

@@ -72,6 +72,7 @@ export {
   type PlatformBlockedCommands,
   type PlatformCliPaths,  // Kept for migration
   type SlashCommand,
+  type TabBarPosition,
 } from './settings';
 
 // Re-export getHostnameKey from utils (moved from settings for architecture compliance)

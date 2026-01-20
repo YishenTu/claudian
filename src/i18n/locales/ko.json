@@ -160,6 +160,12 @@
       "warning": "5개 탭을 초과하면 성능 및 메모리 사용량에 영향을 줄 수 있습니다.",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "탭 바 위치",
+      "desc": "탭 배지와 작업 버튼의 표시 위치 선택",
+      "input": "입력창 위(기본값)",
+      "header": "헤더에"
+    },
     "cliPath": {
       "name": "Claude CLI 경로",
       "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",

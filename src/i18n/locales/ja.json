@@ -160,6 +160,12 @@
       "warning": "5 タブを超えるとパフォーマンスやメモリ使用量に影響する可能性があります。",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "タブバーの位置",
+      "desc": "タブバッジとアクションボタンの表示位置を選択",
+      "input": "入力欄の上（デフォルト）",
+      "header": "ヘッダー内"
+    },
     "cliPath": {
       "name": "Claude CLI パス",
       "desc": "Claude Code CLI のカスタムパス。空欄で自動検出を使用。",

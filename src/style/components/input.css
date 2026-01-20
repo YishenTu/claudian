@@ -41,6 +41,11 @@
   min-height: 0;
 }
 
+/* Header mode: hide nav row above input (content moved to header) */
+.claudian-container--header-mode .claudian-input-nav-row {
+  display: none;
+}
+
 /* Selection indicator (shown when text is selected in editor) */
 /* Match file chip height (24px): chip has 16px remove button + 6px padding + 2px border */
 /* Indicator: 12px text + 10px padding (5+5) + 2px border = 24px */

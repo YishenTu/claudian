@@ -160,6 +160,12 @@
       "warning": "Plus de 5 onglets peut affecter les performances et l'utilisation de la mémoire.",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "Position de la barre d'onglets",
+      "desc": "Choisissez où afficher les badges d'onglets et les boutons d'action",
+      "input": "Au-dessus de la saisie (par défaut)",
+      "header": "Dans l'en-tête"
+    },
     "cliPath": {
       "name": "Chemin CLI Claude",
       "desc": "Chemin personnalisé vers Claude Code CLI. Laisser vide pour la détection automatique.",

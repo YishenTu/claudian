@@ -160,6 +160,12 @@
       "warning": "More than 5 tabs may impact performance and memory usage.",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "Tab bar position",
+      "desc": "Choose where to display tab badges and action buttons",
+      "input": "Above input (default)",
+      "header": "In header"
+    },
     "cliPath": {
       "name": "Claude CLI path",
       "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection.",

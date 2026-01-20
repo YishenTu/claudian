@@ -160,6 +160,12 @@
       "warning": "Más de 5 pestañas puede afectar el rendimiento y el uso de memoria.",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "Posición de la barra de pestañas",
+      "desc": "Elige dónde mostrar las insignias de pestañas y los botones de acción",
+      "input": "Sobre el área de entrada (predeterminado)",
+      "header": "En el encabezado"
+    },
     "cliPath": {
       "name": "Ruta CLI Claude",
       "desc": "Ruta personalizada a Claude Code CLI. Dejar vacío para detección automática.",

@@ -1,10 +1,20 @@
-/* Header - just logo and title */
+/* Header - logo, title/tabs slot, and actions */
 .claudian-header {
   display: flex;
   align-items: center;
   padding: 0 12px 12px 12px;
 }
 
+/* Title slot: contains logo + title (or tabs in header mode) */
+.claudian-title-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;  /* Allow flex item to shrink below content size */
+}
+
+/* Legacy class for backwards compatibility */
 .claudian-title {
   display: flex;
   align-items: center;
@@ -12,15 +22,16 @@
   flex-shrink: 0;
 }
 
-.claudian-logo {
-  display: flex;
-  align-items: center;
-}
-
-.claudian-header h4 {
+/* Title text element */
+.claudian-title-text {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
+}
+
+.claudian-logo {
+  display: flex;
+  align-items: center;
 }
 
 /* Header actions (right side - always stays right via margin-left: auto) */
@@ -30,6 +41,17 @@
   gap: 4px;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+/* Header actions slot (in header mode) */
+.claudian-header-actions-slot {
+  /* No margin-left: auto here; it's set by the base .claudian-header-actions */
+}
+
+/* Tab badges in header mode - flex display with gap */
+.claudian-header .claudian-tab-bar-container {
+  display: flex;
+  gap: 4px;
 }
 
 /* Header icon buttons (history, new, etc.) */

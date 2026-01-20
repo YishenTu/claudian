@@ -218,6 +218,9 @@ export interface KeyboardNavigationSettings {
   focusInputKey: string;       // Key to focus input (default: 'i', like vim insert mode)
 }
 
+/** Tab bar position setting. */
+export type TabBarPosition = 'input' | 'header';
+
 /**
  * Claudian-specific settings stored in .claude/claudian-settings.json.
  * These settings are NOT shared with Claude Code CLI.
@@ -277,6 +280,7 @@ export interface ClaudianSettings {
 
   // UI preferences
   maxTabs: number;  // Maximum number of chat tabs (3-10, default 3)
+  tabBarPosition: TabBarPosition;  // Where to show tab bar ('input' or 'header')
 }
 
 /**
@@ -337,6 +341,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // UI preferences
   maxTabs: 3,  // Default to 3 tabs (safe resource usage)
+  tabBarPosition: 'input',  // Default to input mode (current behavior)
 };
 
 /** Default CC-compatible settings. */

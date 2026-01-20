@@ -160,6 +160,12 @@
       "warning": "超过 5 个标签可能会影响性能和内存使用。",
       "range": "{min} - {max}"
     },
+    "tabBarPosition": {
+      "name": "标签栏位置",
+      "desc": "选择标签徽章和操作按钮的显示位置",
+      "input": "输入框上方（默认）",
+      "header": "在标题栏"
+    },
     "cliPath": {
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",

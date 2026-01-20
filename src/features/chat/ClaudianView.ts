@@ -27,6 +27,12 @@ export class ClaudianView extends ItemView {
 
   // DOM Elements
   private viewContainerEl: HTMLElement | null = null;
+  private headerEl: HTMLElement | null = null;
+  private titleSlotEl: HTMLElement | null = null;
+  private logoEl: HTMLElement | null = null;
+  private titleTextEl: HTMLElement | null = null;
+  private headerActionsEl: HTMLElement | null = null;
+  private headerActionsContent: HTMLElement | null = null;
 
   // Header elements
   private historyDropdown: HTMLElement | null = null;
@@ -116,9 +122,8 @@ export class ClaudianView extends ItemView {
     // Restore tabs from persisted state or create default tab
     await this.restoreOrCreateTabs();
 
-    // Update tab bar visibility and nav row location
-    this.updateTabBarVisibility();
-    this.updateNavRowLocation();
+    // Apply initial layout based on tabBarPosition setting
+    this.updateLayoutForPosition();
   }
 
   async onClose() {
@@ -151,10 +156,13 @@ export class ClaudianView extends ItemView {
   // ============================================
 
   private buildHeader(header: HTMLElement) {
-    // Header only contains logo and title now
-    // Tab badges and header actions are in nav row (above input)
-    const titleContainer = header.createDiv({ cls: 'claudian-title' });
-    const logoEl = titleContainer.createSpan({ cls: 'claudian-logo' });
+    this.headerEl = header;
+
+    // Title slot container (logo + title or tabs)
+    this.titleSlotEl = header.createDiv({ cls: 'claudian-title-slot' });
+
+    // Logo (hidden when 2+ tabs)
+    this.logoEl = this.titleSlotEl.createSpan({ cls: 'claudian-logo' });
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', LOGO_SVG.viewBox);
     svg.setAttribute('width', LOGO_SVG.width);
@@ -164,19 +172,25 @@ export class ClaudianView extends ItemView {
     path.setAttribute('d', LOGO_SVG.path);
     path.setAttribute('fill', LOGO_SVG.fill);
     svg.appendChild(path);
-    logoEl.appendChild(svg);
-    titleContainer.createEl('h4', { text: 'Claudian' });
+    this.logoEl.appendChild(svg);
+
+    // Title text (hidden in header mode when 2+ tabs)
+    this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
+
+    // Header actions container (for header mode - initially hidden)
+    this.headerActionsEl = header.createDiv({ cls: 'claudian-header-actions claudian-header-actions-slot' });
+    this.headerActionsEl.style.display = 'none';
   }
 
   /**
    * Builds the nav row content (tab badges + header actions).
-   * This is called once and the content is moved between tabs.
+   * This is called once and the content is moved between locations.
    */
   private buildNavRowContent(): HTMLElement {
     // Create a fragment to hold nav row content
     const fragment = document.createDocumentFragment();
 
-    // Tab badges (left side)
+    // Tab badges (left side in nav row, or in title slot for header mode)
     this.tabBarContainerEl = document.createElement('div');
     this.tabBarContainerEl.className = 'claudian-tab-bar-container';
     this.tabBar = new TabBar(this.tabBarContainerEl, {
@@ -187,11 +201,11 @@ export class ClaudianView extends ItemView {
     fragment.appendChild(this.tabBarContainerEl);
 
     // Header actions (right side)
-    const headerActions = document.createElement('div');
-    headerActions.className = 'claudian-header-actions';
+    this.headerActionsContent = document.createElement('div');
+    this.headerActionsContent.className = 'claudian-header-actions';
 
     // New tab button (plus icon)
-    const newTabBtn = headerActions.createDiv({ cls: 'claudian-header-btn claudian-new-tab-btn' });
+    const newTabBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn claudian-new-tab-btn' });
     setIcon(newTabBtn, 'square-plus');
     newTabBtn.setAttribute('aria-label', 'New tab');
     newTabBtn.addEventListener('click', async () => {
@@ -199,7 +213,7 @@ export class ClaudianView extends ItemView {
     });
 
     // New conversation button (square-pen icon - new conversation in current tab)
-    const newBtn = headerActions.createDiv({ cls: 'claudian-header-btn' });
+    const newBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn' });
     setIcon(newBtn, 'square-pen');
     newBtn.setAttribute('aria-label', 'New conversation');
     newBtn.addEventListener('click', async () => {
@@ -208,7 +222,7 @@ export class ClaudianView extends ItemView {
     });
 
     // History dropdown
-    const historyContainer = headerActions.createDiv({ cls: 'claudian-history-container' });
+    const historyContainer = this.headerActionsContent.createDiv({ cls: 'claudian-history-container' });
     const historyBtn = historyContainer.createDiv({ cls: 'claudian-header-btn' });
     setIcon(historyBtn, 'history');
     historyBtn.setAttribute('aria-label', 'Chat history');
@@ -220,9 +234,9 @@ export class ClaudianView extends ItemView {
       this.toggleHistoryDropdown();
     });
 
-    fragment.appendChild(headerActions);
+    fragment.appendChild(this.headerActionsContent);
 
-    // Create a wrapper div to hold the fragment
+    // Create a wrapper div to hold the fragment (for input mode nav row)
     const wrapper = document.createElement('div');
     wrapper.style.display = 'contents';
     wrapper.appendChild(fragment);
@@ -230,14 +244,57 @@ export class ClaudianView extends ItemView {
   }
 
   /**
-   * Moves nav row content to the active tab's nav row.
+   * Moves nav row content based on tabBarPosition setting.
+   * - 'input' mode: Both tab badges and actions go to active tab's navRowEl
+   * - 'header' mode: Tab badges go to title slot (after logo), actions go to header right side
    */
   private updateNavRowLocation(): void {
-    const activeTab = this.tabManager?.getActiveTab();
-    if (!activeTab || !this.navRowContent) return;
+    if (!this.tabBarContainerEl || !this.headerActionsContent) return;
 
-    // Move nav row content to active tab's navRowEl
-    activeTab.dom.navRowEl.appendChild(this.navRowContent);
+    const isHeaderMode = this.plugin.settings.tabBarPosition === 'header';
+
+    if (isHeaderMode) {
+      // Header mode: Tab badges go to title slot, actions go to header right side
+      if (this.titleSlotEl) {
+        this.titleSlotEl.appendChild(this.tabBarContainerEl);
+      }
+      if (this.headerActionsEl) {
+        this.headerActionsEl.appendChild(this.headerActionsContent);
+        this.headerActionsEl.style.display = 'flex';
+      }
+    } else {
+      // Input mode: Both go to active tab's navRowEl via the wrapper
+      const activeTab = this.tabManager?.getActiveTab();
+      if (activeTab && this.navRowContent) {
+        // Re-assemble the nav row content wrapper
+        this.navRowContent.appendChild(this.tabBarContainerEl);
+        this.navRowContent.appendChild(this.headerActionsContent);
+        activeTab.dom.navRowEl.appendChild(this.navRowContent);
+      }
+      // Hide header actions slot when in input mode
+      if (this.headerActionsEl) {
+        this.headerActionsEl.style.display = 'none';
+      }
+    }
+  }
+
+  /**
+   * Updates layout when tabBarPosition setting changes.
+   * Called from settings when user changes the tab bar position.
+   */
+  updateLayoutForPosition(): void {
+    if (!this.viewContainerEl) return;
+
+    const isHeaderMode = this.plugin.settings.tabBarPosition === 'header';
+
+    // Update container class for CSS styling
+    this.viewContainerEl.toggleClass('claudian-container--header-mode', isHeaderMode);
+
+    // Move nav content to appropriate location
+    this.updateNavRowLocation();
+
+    // Update tab bar and title visibility
+    this.updateTabBarVisibility();
   }
 
   // ============================================
@@ -287,10 +344,19 @@ export class ClaudianView extends ItemView {
   private updateTabBarVisibility(): void {
     if (!this.tabBarContainerEl || !this.tabManager) return;
 
-    // Hide tab badges when only 1 tab, show when 2+
     const tabCount = this.tabManager.getTabCount();
     const showTabBar = tabCount >= 2;
+
+    // Hide tab badges when only 1 tab, show when 2+
     this.tabBarContainerEl.style.display = showTabBar ? 'flex' : 'none';
+
+    // Hide logo and title when 2+ tabs (badges take their place)
+    if (this.logoEl) {
+      this.logoEl.style.display = showTabBar ? 'none' : '';
+    }
+    if (this.titleTextEl) {
+      this.titleTextEl.style.display = showTabBar ? 'none' : '';
+    }
   }
 
   // ============================================
@@ -373,25 +439,15 @@ export class ClaudianView extends ItemView {
     });
 
     // Vault events - forward to active tab's file context manager
-    const createRef = this.plugin.app.vault.on('create', () => {
+    const markDirty = (): void => {
       this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
-    });
-    this.eventRefs.push(createRef);
-
-    const deleteRef = this.plugin.app.vault.on('delete', () => {
-      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
-    });
-    this.eventRefs.push(deleteRef);
-
-    const renameRef = this.plugin.app.vault.on('rename', () => {
-      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
-    });
-    this.eventRefs.push(renameRef);
-
-    const modifyRef = this.plugin.app.vault.on('modify', () => {
-      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
-    });
-    this.eventRefs.push(modifyRef);
+    };
+    this.eventRefs.push(
+      this.plugin.app.vault.on('create', markDirty),
+      this.plugin.app.vault.on('delete', markDirty),
+      this.plugin.app.vault.on('rename', markDirty),
+      this.plugin.app.vault.on('modify', markDirty)
+    );
 
     // File open event
     this.registerEvent(

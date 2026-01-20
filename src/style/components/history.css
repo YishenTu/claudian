@@ -26,6 +26,15 @@
   display: block;
 }
 
+/* Header mode: dropdown instead of dropup */
+.claudian-container--header-mode .claudian-history-menu {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
 .claudian-history-header {
   padding: 8px 12px;
   font-size: 12px;

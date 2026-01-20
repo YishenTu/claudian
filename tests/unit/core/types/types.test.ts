@@ -112,6 +112,7 @@ describe('types.ts', () => {
         loadUserClaudeSettings: false,
         maxTabs: 3,
         show1MModel: false,
+        tabBarPosition: 'input',
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -145,6 +146,7 @@ describe('types.ts', () => {
         loadUserClaudeSettings: false,
         maxTabs: 3,
         show1MModel: false,
+        tabBarPosition: 'input',
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -178,6 +180,7 @@ describe('types.ts', () => {
         loadUserClaudeSettings: false,
         maxTabs: 5,
         show1MModel: true,
+        tabBarPosition: 'header',
       };
 
       expect(settings.lastClaudeModel).toBe('opus');
