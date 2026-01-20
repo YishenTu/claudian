@@ -1,8 +1,8 @@
 import {
   type AgentMentionProvider,
   type McpMentionProvider,
-  MentionDropdownController,
   type MentionDropdownCallbacks,
+  MentionDropdownController,
 } from '@/shared/mention/MentionDropdownController';
 
 // Mock externalContextScanner
@@ -397,6 +397,55 @@ describe('MentionDropdownController', () => {
       controller.updateMcpMentionsFromText('@test');
 
       expect(mcpService.getContextSavingServers).toHaveBeenCalled();
+    });
+  });
+
+  describe('agent selection callback', () => {
+    it('calls onAgentMentionSelect when agent is selected via dropdown', () => {
+      // Setup callback with spy
+      const onAgentMentionSelect = jest.fn();
+      const testCallbacks = createMockCallbacks({ onAgentMentionSelect });
+
+      // Create controller with agent service
+      const testController = new MentionDropdownController(
+        createMockElement(),
+        createMockInput(),
+        testCallbacks
+      );
+
+      const agentService = createMockAgentService([
+        { id: 'custom-agent', name: 'Custom Agent', source: 'vault' },
+      ]);
+      testController.setAgentService(agentService);
+
+      // Access private method to test selection behavior directly
+      // Set up internal state to simulate @ mention at position 0
+      testController['mentionStartIndex'] = 0;
+      testController['filteredMentionItems'] = [
+        {
+          type: 'agent' as const,
+          id: 'custom-agent',
+          name: 'Custom Agent',
+          description: 'Test agent',
+          source: 'vault' as const,
+        },
+      ];
+
+      // Mock the dropdown to return index 0
+      testController['dropdown'].getSelectedIndex = jest.fn().mockReturnValue(0);
+
+      // Simulate input state
+      const testInput = testController['inputEl'];
+      testInput.value = '@';
+      testInput.selectionStart = 1;
+
+      // Call private selectMentionItem method directly
+      testController['selectMentionItem']();
+
+      // Verify callback was called with agent ID
+      expect(onAgentMentionSelect).toHaveBeenCalledWith('custom-agent');
+
+      testController.destroy();
     });
   });
 });

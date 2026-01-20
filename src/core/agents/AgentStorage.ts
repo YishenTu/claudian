@@ -11,8 +11,16 @@ import type { AgentFrontmatter } from '../types';
 /**
  * Parse agent definition file content.
  *
+ * Validates the following criteria:
+ * - File must have YAML frontmatter between `---` markers
+ * - YAML must parse as a valid object
+ * - Required: `name` (non-empty string)
+ * - Required: `description` (non-empty string)
+ * - Optional: `tools` (string or string[] if present)
+ * - Optional: `disallowedTools` (string or string[] if present)
+ *
  * @param content - Raw markdown file content
- * @returns Parsed frontmatter and body, or null if invalid
+ * @returns Parsed frontmatter and body, or null if validation fails
  */
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
   // Extract YAML frontmatter between --- markers

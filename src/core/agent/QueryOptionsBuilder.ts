@@ -254,8 +254,8 @@ export class QueryOptionsBuilder {
       options.plugins = pluginConfigs;
     }
 
-    // Add custom agents via SDK native support
-    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+    // Add custom agents via SDK native support (filter out built-ins - SDK manages those)
+    const agents = ctx.agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
     if (agents.length > 0) {
       options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }
@@ -357,8 +357,8 @@ export class QueryOptionsBuilder {
       options.plugins = pluginConfigs;
     }
 
-    // Add custom agents via SDK native support
-    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+    // Add custom agents via SDK native support (filter out built-ins - SDK manages those)
+    const agents = ctx.agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
     if (agents.length > 0) {
       options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }

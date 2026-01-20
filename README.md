@@ -13,7 +13,8 @@ An Obsidian plugin that embeds Claude Agent (using Claude Agent SDK) as a sideba
 - **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input, with review/edit in a modal.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders, `@file` references, and optional inline bash substitutions.
 - **Skills**: Extend Claudian with reusable capability modules that are automatically invoked based on context, compatible with Claude Code's skill format.
-- **Claude Code Plugins**: Enable Claude Code plugins installed via the CLI, with automatic discovery from `~/.claude/plugins` and per-vault configuration. Plugin skills and slash commands integrate seamlessly.
+- **Custom Agents**: Define custom subagents in markdown files that Claude can invoke via the `Task` tool, with support for tool restrictions and model overrides.
+- **Claude Code Plugins**: Enable Claude Code plugins installed via the CLI, with automatic discovery from `~/.claude/plugins` and per-vault configuration. Plugin skills, agents, and slash commands integrate seamlessly.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, fine-tune thinking budget, and enable 1M context window (requires Max subscription).
 - **Security**: Permission modes (YOLO/Safe), safety blocklist, and vault confinement with symlink-safe checks.
@@ -95,7 +96,8 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 ### Context
 
 - **File**: Auto-attaches focused note; type `@` to attach other files
-- **@-mention dropdown**: Type `@` to see active MCP servers, external contexts, and vault files
+- **@-mention dropdown**: Type `@` to see MCP servers, agents, external contexts, and vault files
+  - `@Agents/` shows custom agents for selection
   - `@mcp-server` enables context-saving MCP servers
   - `@folder/` filters to files from that external context (e.g., `@workspace/`)
   - Vault files shown by default
@@ -109,6 +111,7 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 - **Instruction Mode**: Type `#` to add refined instructions to system prompt
 - **Slash Commands**: Type `/` for custom prompt templates (Settings → Slash Commands)
 - **Skills**: Add `SKILL.md` files to `~/.claude/skills/` or `{vault}/.claude/skills/`, recommended to use Claude Code to manage skills
+- **Custom Agents**: Add agent `.md` files to `~/.claude/agents/` (global) or `{vault}/.claude/agents/` (vault-specific); select via `@Agents/` in chat
 - **Claude Code Plugins**: Enable plugins via Settings → Claude Code Plugins, recommended to use Claude Code to manage plugins
 - **MCP**: Add external tools via Settings → MCP Servers; use `@mcp-server` in chat to activate
 
@@ -210,6 +213,7 @@ src/
 ├── main.ts                      # Plugin entry point
 ├── core/                        # Core infrastructure
 │   ├── agent/                   # Claude Agent SDK wrapper (ClaudianService)
+│   ├── agents/                  # Custom agent management (AgentManager)
 │   ├── commands/                # Slash command management (SlashCommandManager)
 │   ├── hooks/                   # PreToolUse/PostToolUse hooks
 │   ├── images/                  # Image caching and loading
@@ -238,7 +242,7 @@ src/
 ## Roadmap
 
 - [x] Claude Code Plugin support
-- [ ] Subagent support
+- [x] Custom agent (subagent) support
 - [ ] Hooks and other advanced features
 - [ ] More to come!
 

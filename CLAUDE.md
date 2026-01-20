@@ -13,6 +13,9 @@ src/
 │   ├── agent/                   # Claude Agent SDK wrapper
 │   │   ├── ClaudianService.ts
 │   │   └── SessionManager.ts
+│   ├── agents/                  # Custom agent management
+│   │   ├── AgentManager.ts
+│   │   └── AgentStorage.ts
 │   ├── commands/                # Slash command management
 │   │   ├── SlashCommandManager.ts
 │   │   └── builtInCommands.ts
@@ -61,6 +64,7 @@ src/
 | Layer | Folder | Purpose |
 |-------|--------|---------|
 | **core** | `agent/` | Claude Agent SDK wrapper (ClaudianService, SessionManager) |
+| | `agents/` | Custom agent discovery and management (AgentManager, AgentStorage) |
 | | `commands/` | Slash command expansion (SlashCommandManager, builtInCommands) |
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
@@ -71,7 +75,7 @@ src/
 | | `security/` | Approval, blocklist, path validation |
 | | `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
 | | `tools/` | Tool names, icons, input parsing |
-| | `types/` | Type definitions (includes MCP and plugin types) |
+| | `types/` | Type definitions (includes MCP, plugin, and agent types) |
 | **features** | `chat/` | Main chat view with modular controllers |
 | | `chat/state/` | Centralized chat state management (ChatState) |
 | | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
@@ -240,6 +244,8 @@ Hybrid storage using SDK-native sessions with metadata overlay:
 vault/.claude/
 ├── settings.json              # User settings + permissions (shareable)
 ├── mcp.json                   # MCP server configurations
+├── agents/                    # Vault-specific custom agents
+│   └── {name}.md              # YAML frontmatter + system prompt
 ├── commands/                  # Slash commands as Markdown
 │   └── {name}.md              # YAML frontmatter + prompt content
 └── sessions/                  # Session metadata + legacy storage
@@ -330,8 +336,40 @@ Reusable capability modules that Claude discovers and invokes automatically base
 - **Project skills**: `{vault}/.claude/skills/{name}/SKILL.md` (vault-specific)
 - Compatible with [Claude Code skill format](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
 
+### Custom Agents (Subagents)
+Define custom subagents that Claude can invoke via the SDK's native `Task` tool.
+- **Agent files**: Markdown with YAML frontmatter (matches Claude Code format)
+- **Loading order** (earlier sources take precedence for duplicate IDs):
+  1. **Built-in agents**: SDK-provided (Explore, Plan, Bash, general-purpose)
+  2. **Plugin agents**: `{pluginPath}/agents/*.md` (namespaced as `plugin-name:agent-name`)
+  3. **Vault agents**: `{vaultPath}/.claude/agents/*.md`
+  4. **Global agents**: `~/.claude/agents/*.md`
+- **@-mention**: Type `@Agents/` to select custom agents in chat input
+- **SDK integration**: Custom agents passed to `Options.agents` (built-ins filtered out)
+
+**Agent file format**:
+```markdown
+---
+name: My Agent
+description: When to use this agent
+tools: Read, Grep, Glob          # Optional: comma-separated or YAML array
+disallowedTools: Bash, Write     # Optional: tools to exclude
+model: sonnet                    # Optional: sonnet | opus | haiku | inherit (default)
+---
+
+System prompt for the agent goes here.
+```
+
+**Storage**:
+```
+~/.claude/agents/              # Global agents (all vaults)
+{vault}/.claude/agents/        # Vault-specific agents
+{pluginPath}/agents/           # Plugin agents (namespaced)
+```
+
 ### @-Mention Dropdown
 Type `@` in the input to open the mention dropdown for attaching context.
+- **Agents folder**: `@Agents/` shows available custom agents for selection
 - **MCP servers**: `@server-name` enables context-saving MCP servers (persisted per-conversation)
 - **External contexts**: `@folder/` filters to files from that external context (session-only, added via folder icon)
 - **Context files**: Only shown after `@folder/` filter, displays filename with folder badge
@@ -343,11 +381,12 @@ Type `@` in the input to open the mention dropdown for attaching context.
 
 **Session-only state**: External contexts reset when switching conversations or creating new ones.
 
-**Dropdown order**: MCP servers → External contexts → Vault files
+**Dropdown order**: MCP servers → Agents folder → External contexts → Vault files
 
 **Example flow**:
 ```
-@           → [@workspace/] [note.md] [note2.md] ...
+@           → [@Agents/] [@workspace/] [note.md] [note2.md] ...
+@Agents/    → [my-agent] [plugin:agent] ...  (custom agents)
 @workspace/ → [file1.ts] [file2.ts] ...  (files from external context)
 ```
 

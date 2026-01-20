@@ -1,8 +1,9 @@
 /**
  * AgentManager - Discover and manage custom agent definitions.
  *
- * Loads agents from three sources (in priority order):
- * 1. Plugin agents: {pluginPath}/agents/*.md
+ * Loads agents from four sources (earlier sources take precedence for duplicate IDs):
+ * 0. Built-in agents: SDK-provided agents (Explore, Plan, Bash, general-purpose)
+ * 1. Plugin agents: {pluginPath}/agents/*.md (namespaced as plugin-name:agent-name)
  * 2. Vault agents: {vaultPath}/.claude/agents/*.md
  * 3. Global agents: ~/.claude/agents/*.md
  */
@@ -171,7 +172,7 @@ export class AgentManager {
         }
       }
     } catch {
-      // Return empty array if directory listing fails
+      // Non-critical: directory listing failed, skip silently
     }
 
     return files;
@@ -189,9 +190,7 @@ export class AgentManager {
       const content = fs.readFileSync(filePath, 'utf-8');
       const parsed = parseAgentFile(content);
 
-      if (!parsed) {
-        return null;
-      }
+      if (!parsed) return null;
 
       const { frontmatter, body } = parsed;
 
@@ -205,10 +204,8 @@ export class AgentManager {
         id = frontmatter.name;
       }
 
-      // Check for duplicate ID
-      if (this.agents.find(a => a.id === id)) {
-        return null;
-      }
+      // Skip duplicate IDs (earlier sources take precedence)
+      if (this.agents.find(a => a.id === id)) return null;
 
       return {
         id,
@@ -223,6 +220,7 @@ export class AgentManager {
         filePath,
       };
     } catch {
+      // Non-critical: agent file failed to load, skip silently
       return null;
     }
   }
