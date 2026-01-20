@@ -156,6 +156,7 @@ export class PluginSettingsManager {
 
       // Reload plugin slash commands
       this.plugin.loadPluginSlashCommands();
+      await this.plugin.agentManager.loadAgents();
 
       // Restart persistent query to apply plugin changes to all tabs
       const view = this.plugin.getView();
@@ -189,6 +190,7 @@ export class PluginSettingsManager {
 
       // Reload plugin slash commands to pick up new/updated/removed plugins
       this.plugin.loadPluginSlashCommands();
+      await this.plugin.agentManager.loadAgents();
 
       // Restart persistent query to apply plugin tool changes to all tabs
       const view = this.plugin.getView();

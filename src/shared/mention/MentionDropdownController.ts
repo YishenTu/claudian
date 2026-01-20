@@ -40,7 +40,7 @@ export interface AgentMentionProvider {
     id: string;
     name: string;
     description: string;
-    source: 'plugin' | 'vault' | 'global';
+    source: 'plugin' | 'vault' | 'global' | 'builtin';
   }>;
   getAllAgentIds: () => string[];
 }

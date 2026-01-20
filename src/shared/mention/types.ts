@@ -36,7 +36,7 @@ export interface AgentMentionItem {
   /** Brief description */
   description: string;
   /** Source of the agent */
-  source: 'plugin' | 'vault' | 'global';
+  source: 'plugin' | 'vault' | 'global' | 'builtin';
 }
 
 export type MentionItem =

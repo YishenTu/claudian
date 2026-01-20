@@ -32,13 +32,13 @@ export interface AgentDefinition {
   model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
 
   /** Source of the agent definition */
-  source: 'plugin' | 'vault' | 'global';
+  source: 'plugin' | 'vault' | 'global' | 'builtin';
 
   /** Plugin name (only for plugin-sourced agents) */
   pluginName?: string;
 
-  /** Absolute path to the source .md file */
-  filePath: string;
+  /** Absolute path to the source .md file (undefined for built-in agents) */
+  filePath?: string;
 }
 
 /** YAML frontmatter structure for agent definition files */

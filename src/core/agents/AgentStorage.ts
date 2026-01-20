@@ -20,11 +20,26 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
   if (!match) return null;
 
   try {
-    const frontmatter = parseYaml(match[1]) as AgentFrontmatter;
+    const parsed = parseYaml(match[1]);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    const frontmatter = parsed as AgentFrontmatter;
     const body = match[2].trim();
 
     // Validate required fields
-    if (!frontmatter.name || !frontmatter.description) {
+    if (typeof frontmatter.name !== 'string' || !frontmatter.name.trim()) {
+      return null;
+    }
+    if (typeof frontmatter.description !== 'string' || !frontmatter.description.trim()) {
+      return null;
+    }
+
+    // Validate tools fields to avoid unexpected privilege inheritance
+    if (frontmatter.tools !== undefined && !isStringOrArray(frontmatter.tools)) {
+      return null;
+    }
+    if (frontmatter.disallowedTools !== undefined && !isStringOrArray(frontmatter.disallowedTools)) {
       return null;
     }
 
@@ -32,6 +47,10 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
   } catch {
     return null;
   }
+}
+
+function isStringOrArray(value: unknown): value is string | string[] {
+  return typeof value === 'string' || Array.isArray(value);
 }
 
 /**

@@ -24,6 +24,38 @@ const VAULT_AGENTS_DIR = '.claude/agents';
 /** Plugin agents directory name. */
 const PLUGIN_AGENTS_DIR = 'agents';
 
+/** Built-in agents provided by the SDK */
+const BUILTIN_AGENTS: Omit<AgentDefinition, 'filePath'>[] = [
+  {
+    id: 'Explore',
+    name: 'Explore',
+    description: 'Fast codebase exploration and search',
+    prompt: '', // Built-in - prompt managed by SDK
+    source: 'builtin',
+  },
+  {
+    id: 'Plan',
+    name: 'Plan',
+    description: 'Implementation planning and architecture',
+    prompt: '',
+    source: 'builtin',
+  },
+  {
+    id: 'Bash',
+    name: 'Bash',
+    description: 'Command execution specialist',
+    prompt: '',
+    source: 'builtin',
+  },
+  {
+    id: 'general-purpose',
+    name: 'General Purpose',
+    description: 'Multi-step tasks and complex workflows',
+    prompt: '',
+    source: 'builtin',
+  },
+];
+
 export class AgentManager {
   private agents: AgentDefinition[] = [];
   private vaultPath: string;
@@ -40,6 +72,11 @@ export class AgentManager {
    */
   async loadAgents(): Promise<void> {
     this.agents = [];
+
+    // 0. Add built-in agents first
+    for (const agent of BUILTIN_AGENTS) {
+      this.agents.push(agent as AgentDefinition);
+    }
 
     // 1. Load plugin agents (namespaced)
     await this.loadPluginAgents();
@@ -68,7 +105,7 @@ export class AgentManager {
   /**
    * Get agents filtered by source.
    */
-  getAgentsBySource(source: 'plugin' | 'vault' | 'global'): AgentDefinition[] {
+  getAgentsBySource(source: 'plugin' | 'vault' | 'global' | 'builtin'): AgentDefinition[] {
     return this.agents.filter(a => a.source === source);
   }
 

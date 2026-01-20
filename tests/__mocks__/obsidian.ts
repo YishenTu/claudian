@@ -150,6 +150,49 @@ export const setIcon = jest.fn();
 // Notice mock that tracks constructor calls
 export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => {});
 
+export function parseYaml(content: string): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const match = trimmed.match(/^([^:]+):\s*(.*)$/);
+    if (!match) continue;
+
+    const key = match[1].trim();
+    const rawValue = match[2].trim();
+    if (!key) continue;
+
+    if (!rawValue) {
+      result[key] = null;
+      continue;
+    }
+
+    if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
+      const items = rawValue.slice(1, -1).split(',').map(item => item.trim()).filter(Boolean);
+      result[key] = items;
+      continue;
+    }
+
+    if (rawValue === 'true' || rawValue === 'false') {
+      result[key] = rawValue === 'true';
+      continue;
+    }
+
+    const numberValue = Number(rawValue);
+    if (!Number.isNaN(numberValue) && rawValue !== '') {
+      result[key] = numberValue;
+      continue;
+    }
+
+    result[key] = rawValue;
+  }
+
+  return result;
+}
+
 // TFile class for instanceof checks
 export class TFile {
   path: string;
