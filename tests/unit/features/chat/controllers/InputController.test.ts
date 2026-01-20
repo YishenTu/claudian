@@ -879,11 +879,11 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
-      // clearTerminalSubagents is called once at response end when all completed
-      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(1);
+      // clearTerminalSubagents called twice: once at start, once at response end
+      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(2);
     });
 
-    it('should NOT call clearTerminalSubagents when subagents still running', async () => {
+    it('should only call clearTerminalSubagents at start when subagents still running', async () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
@@ -915,8 +915,8 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
-      // clearTerminalSubagents is NOT called when subagents are still running
-      expect(mockStatusPanel.clearTerminalSubagents).not.toHaveBeenCalled();
+      // clearTerminalSubagents called once at start (not at response end since subagents still running)
+      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(1);
     });
 
     it('should handle null statusPanel gracefully', async () => {

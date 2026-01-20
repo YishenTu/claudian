@@ -107,6 +107,9 @@ export class InputController {
     const hasImages = imageContextManager?.hasImages() ?? false;
     if (!content && !hasImages) return;
 
+    // Clear completed/error/orphaned subagents from previous responses
+    this.deps.getStatusPanel()?.clearTerminalSubagents();
+
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content);
     if (builtInCmd) {
