@@ -128,3 +128,19 @@
   color: var(--text-normal);
 }
 
+/* Agent items in @-mention dropdown */
+.claudian-mention-item.agent .claudian-mention-icon {
+  color: #8B5CF6; /* Purple for agents */
+}
+
+.claudian-mention-name-agent {
+  color: #8B5CF6;
+}
+
+.claudian-mention-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

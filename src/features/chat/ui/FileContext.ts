@@ -8,8 +8,9 @@
 import type { App, EventRef } from 'obsidian';
 import { Notice, TFile } from 'obsidian';
 
+import type { AgentManager } from '../../../core/agents';
 import type { McpService } from '../../../core/mcp/McpService';
-import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import { type AgentMentionProvider,MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import { FileContextState } from './file-context/state/FileContextState';
 import { MarkdownFileCache } from './file-context/state/MarkdownFileCache';
@@ -20,6 +21,8 @@ export interface FileContextCallbacks {
   getExcludedTags: () => string[];
   onChipsChanged?: () => void;
   getExternalContexts?: () => string[];
+  /** Called when an agent is selected from the @ mention dropdown. */
+  onAgentMentionSelect?: (agentId: string) => void;
 }
 
 /** Manages file context: current note chip and @ mention dropdown. */
@@ -89,6 +92,7 @@ export class FileContextManager {
         onAttachContextFile: (displayName, absolutePath) =>
           this.state.attachContextFile(displayName, absolutePath),
         onMcpMentionChange: (servers) => this.onMcpMentionChange?.(servers),
+        onAgentMentionSelect: (agentId) => this.callbacks.onAgentMentionSelect?.(agentId),
         getMentionedMcpServers: () => this.state.getMentionedMcpServers(),
         setMentionedMcpServers: (mentions) => this.state.setMentionedMcpServers(mentions),
         addMentionedMcpServer: (name) => this.state.addMentionedMcpServer(name),
@@ -292,6 +296,20 @@ export class FileContextManager {
   setMcpService(service: McpService | null): void {
     this.mcpService = service;
     this.mentionDropdown.setMcpService(service);
+  }
+
+  /** Set the agent manager for @-mention autocomplete. */
+  setAgentService(agentManager: AgentManager | null): void {
+    if (!agentManager) {
+      this.mentionDropdown.setAgentService(null);
+      return;
+    }
+    // Create adapter from AgentManager to AgentMentionProvider
+    const provider: AgentMentionProvider = {
+      searchAgents: (query: string) => agentManager.searchAgents(query),
+      getAllAgentIds: () => agentManager.getAllAgentIds(),
+    };
+    this.mentionDropdown.setAgentService(provider);
   }
 
   /** Set callback for when MCP mentions change (for McpServerSelector integration). */

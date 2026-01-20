@@ -198,11 +198,29 @@ export function isTurnCompleteMessage(message: SDKMessage): boolean {
 
 /** Compute a stable key for system prompt inputs. */
 export function computeSystemPromptKey(settings: SystemPromptSettings): string {
+  // Include only fields surfaced in the system prompt to avoid stale cache hits.
+  const agentsKey = (settings.agents ?? [])
+    .slice()
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(agent => {
+      const tools = agent.tools ? agent.tools.slice().sort() : null;
+      const model = agent.model && agent.model !== 'inherit' ? agent.model : null;
+      return JSON.stringify({
+        id: agent.id ?? '',
+        name: agent.name ?? '',
+        description: agent.description ?? '',
+        tools,
+        model,
+      });
+    })
+    .join('|');
+
   const parts = [
     settings.mediaFolder || '',
     settings.customPrompt || '',
     (settings.allowedExportPaths || []).sort().join('|'),
     settings.vaultPath || '',
+    agentsKey,
     // Note: hasEditorContext is per-message, not tracked here
   ];
   return parts.join('::');

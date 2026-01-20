@@ -1,0 +1,69 @@
+/**
+ * AgentStorage - Parse agent definition files.
+ *
+ * Agent files are markdown with YAML frontmatter, matching Claude Code's format.
+ */
+
+import { parseYaml } from 'obsidian';
+
+import type { AgentFrontmatter } from '../types';
+
+/**
+ * Parse agent definition file content.
+ *
+ * @param content - Raw markdown file content
+ * @returns Parsed frontmatter and body, or null if invalid
+ */
+export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
+  // Extract YAML frontmatter between --- markers
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!match) return null;
+
+  try {
+    const frontmatter = parseYaml(match[1]) as AgentFrontmatter;
+    const body = match[2].trim();
+
+    // Validate required fields
+    if (!frontmatter.name || !frontmatter.description) {
+      return null;
+    }
+
+    return { frontmatter, body };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse tools specification into array.
+ *
+ * Supports multiple YAML formats:
+ * - undefined/empty → undefined (inherit all tools)
+ * - "Read, Grep" → ['Read', 'Grep'] (comma-separated string)
+ * - [] → [] (explicit no tools)
+ * - ['Read', 'Grep'] → ['Read', 'Grep'] (YAML array)
+ *
+ * @param tools - Tools specification from YAML frontmatter
+ * @returns Array of tool names, empty array for explicit none, or undefined to inherit
+ */
+export function parseToolsList(tools?: string | string[]): string[] | undefined {
+  // undefined → inherit all tools
+  if (tools === undefined) return undefined;
+
+  // Already an array (YAML array syntax)
+  if (Array.isArray(tools)) {
+    // Empty array [] means explicit "no tools"
+    // Non-empty array is used as-is
+    return tools.map(t => String(t).trim()).filter(Boolean);
+  }
+
+  // String: empty → inherit, non-empty → parse comma-separated
+  if (typeof tools === 'string') {
+    const trimmed = tools.trim();
+    if (!trimmed) return undefined;
+    return trimmed.split(',').map(t => t.trim()).filter(Boolean);
+  }
+
+  // Unknown type, inherit all
+  return undefined;
+}

@@ -1,6 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { computeSystemPromptKey, createResponseHandler, isTurnCompleteMessage } from '@/core/agent/types';
+import type { AgentDefinition } from '@/core/types/agent';
 
 describe('isTurnCompleteMessage', () => {
   it('returns true for result message', () => {
@@ -31,18 +32,57 @@ describe('isTurnCompleteMessage', () => {
 });
 
 describe('computeSystemPromptKey', () => {
-  it('computes key from all settings', () => {
+  it('computes key from all settings including agents', () => {
+    const agents: AgentDefinition[] = [
+      {
+        id: 'beta',
+        name: 'Beta',
+        description: 'Beta agent',
+        prompt: 'Beta prompt',
+        source: 'vault',
+        filePath: '/tmp/beta.md',
+      },
+      {
+        id: 'alpha',
+        name: 'Alpha',
+        description: 'Alpha agent',
+        prompt: 'Alpha prompt',
+        tools: ['Write', 'Read'],
+        model: 'opus',
+        source: 'plugin',
+        pluginName: 'alpha-plugin',
+        filePath: '/tmp/alpha.md',
+      },
+    ];
     const settings = {
       mediaFolder: 'attachments',
       customPrompt: 'Be helpful',
       allowedExportPaths: ['/path/b', '/path/a'],
       vaultPath: '/vault',
+      agents,
     };
 
     const key = computeSystemPromptKey(settings);
 
-    // Paths should be sorted
-    expect(key).toBe('attachments::Be helpful::/path/a|/path/b::/vault');
+    const expectedAgentsKey = [
+      JSON.stringify({
+        id: 'alpha',
+        name: 'Alpha',
+        description: 'Alpha agent',
+        tools: ['Read', 'Write'],
+        model: 'opus',
+      }),
+      JSON.stringify({
+        id: 'beta',
+        name: 'Beta',
+        description: 'Beta agent',
+        tools: null,
+        model: null,
+      }),
+    ].join('|');
+
+    // Paths and agents are sorted to keep the key stable.
+    expect(key).toBe(`attachments::Be helpful::/path/a|/path/b::/vault::${expectedAgentsKey}`);
   });
 
   it('handles empty/undefined values', () => {
@@ -54,8 +94,8 @@ describe('computeSystemPromptKey', () => {
     };
 
     const key = computeSystemPromptKey(settings);
-    // 4 empty parts joined with '::' = 3 separators = 6 colons
-    expect(key).toBe('::::::');
+    // 5 empty parts joined with '::' = 4 separators = 8 colons
+    expect(key).toBe('::::::::');
   });
 
   it('produces different keys for different inputs', () => {
@@ -70,6 +110,32 @@ describe('computeSystemPromptKey', () => {
       customPrompt: 'Be helpful',
       allowedExportPaths: [],
       vaultPath: '/vault2',
+    };
+
+    expect(computeSystemPromptKey(settings1)).not.toBe(computeSystemPromptKey(settings2));
+  });
+
+  it('produces different keys when agent visible fields change', () => {
+    const agent: AgentDefinition = {
+      id: 'alpha',
+      name: 'Alpha',
+      description: 'Alpha agent',
+      prompt: 'Alpha prompt',
+      tools: ['Read'],
+      model: 'opus',
+      source: 'vault',
+      filePath: '/tmp/alpha.md',
+    };
+    const settings1 = {
+      mediaFolder: 'attachments',
+      customPrompt: 'Be helpful',
+      allowedExportPaths: [],
+      vaultPath: '/vault',
+      agents: [agent],
+    };
+    const settings2 = {
+      ...settings1,
+      agents: [{ ...agent, description: 'Updated description' }],
     };
 
     expect(computeSystemPromptKey(settings1)).not.toBe(computeSystemPromptKey(settings2));
@@ -90,6 +156,66 @@ describe('computeSystemPromptKey', () => {
     };
 
     // Paths are sorted, so order shouldn't matter
+    expect(computeSystemPromptKey(settings1)).toBe(computeSystemPromptKey(settings2));
+  });
+
+  it('produces same key for equivalent agent inputs with different order', () => {
+    const agentAlpha: AgentDefinition = {
+      id: 'alpha',
+      name: 'Alpha',
+      description: 'Alpha agent',
+      prompt: 'Alpha prompt',
+      tools: ['Read', 'Write'],
+      model: 'opus',
+      source: 'vault',
+      filePath: '/tmp/alpha.md',
+    };
+    const agentBeta: AgentDefinition = {
+      id: 'beta',
+      name: 'Beta',
+      description: 'Beta agent',
+      prompt: 'Beta prompt',
+      source: 'vault',
+      filePath: '/tmp/beta.md',
+    };
+    const settings1 = {
+      mediaFolder: '',
+      customPrompt: '',
+      allowedExportPaths: [],
+      vaultPath: '',
+      agents: [agentAlpha, agentBeta],
+    };
+    const settings2 = {
+      ...settings1,
+      agents: [agentBeta, agentAlpha],
+    };
+
+    expect(computeSystemPromptKey(settings1)).toBe(computeSystemPromptKey(settings2));
+  });
+
+  it('produces same key for equivalent tool order', () => {
+    const agent: AgentDefinition = {
+      id: 'alpha',
+      name: 'Alpha',
+      description: 'Alpha agent',
+      prompt: 'Alpha prompt',
+      tools: ['Write', 'Read'],
+      model: 'opus',
+      source: 'vault',
+      filePath: '/tmp/alpha.md',
+    };
+    const settings1 = {
+      mediaFolder: '',
+      customPrompt: '',
+      allowedExportPaths: [],
+      vaultPath: '',
+      agents: [agent],
+    };
+    const settings2 = {
+      ...settings1,
+      agents: [{ ...agent, tools: ['Read', 'Write'] }],
+    };
+
     expect(computeSystemPromptKey(settings1)).toBe(computeSystemPromptKey(settings2));
   });
 });

@@ -113,3 +113,8 @@ export {
   type SdkPluginConfig,
 } from './plugins';
 
+// Agent types
+export {
+  type AgentDefinition,
+  type AgentFrontmatter,
+} from './agent';

@@ -345,6 +345,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
     dom.inputContainerEl
   );
   tab.ui.fileContextManager.setMcpService(plugin.mcpService);
+  tab.ui.fileContextManager.setAgentService(plugin.agentManager);
 
   // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(

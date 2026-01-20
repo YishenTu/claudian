@@ -36,6 +36,7 @@ jest.mock('@/core/commands', () => ({
 // These will be initialized fresh in beforeEach
 const createMockFileContextManager = () => ({
   setMcpService: jest.fn(),
+  setAgentService: jest.fn(),
   setOnMcpMentionChange: jest.fn(),
   preScanExternalContexts: jest.fn(),
   handleInputChange: jest.fn(),
@@ -333,6 +334,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       persistentExternalContextPaths: [],
     },
     mcpService: { getMcpServers: jest.fn().mockReturnValue([]) },
+    agentManager: { searchAgents: jest.fn().mockReturnValue([]), getAllAgentIds: jest.fn().mockReturnValue([]) },
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationSync: jest.fn().mockReturnValue(null),
     saveSettings: jest.fn().mockResolvedValue(undefined),

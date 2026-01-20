@@ -8,6 +8,7 @@
 import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
+import { AgentManager } from './core/agents';
 import { clearDiffState } from './core/hooks';
 import { McpServerManager } from './core/mcp';
 import { McpService } from './core/mcp/McpService';
@@ -46,6 +47,7 @@ export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   mcpService: McpService;
   pluginManager: PluginManager;
+  agentManager: AgentManager;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
   private conversations: Conversation[] = [];
@@ -67,6 +69,10 @@ export default class ClaudianPlugin extends Plugin {
     this.pluginManager = new PluginManager(pluginStorage);
     this.pluginManager.setEnabledPluginIds(this.settings.enabledPlugins);
     await this.pluginManager.loadPlugins();
+
+    // Initialize agent manager (after plugin manager for plugin-sourced agents)
+    this.agentManager = new AgentManager(vaultPath, this.pluginManager);
+    await this.agentManager.loadAgents();
 
     // Clean up unavailable plugins from settings and notify user
     const unavailablePlugins = this.pluginManager.getUnavailableEnabledPlugins();

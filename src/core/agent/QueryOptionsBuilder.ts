@@ -16,6 +16,7 @@ import type {
   Options,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import type { AgentManager } from '../agents';
 import type { McpServerManager } from '../mcp';
 import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
@@ -50,6 +51,8 @@ export interface QueryOptionsContext {
   mcpManager: McpServerManager;
   /** Plugin manager for Claude Code plugins. */
   pluginManager: PluginManager;
+  /** Agent manager for custom subagent definitions. */
+  agentManager?: AgentManager;
 }
 
 /**
@@ -158,11 +161,15 @@ export class QueryOptionsBuilder {
     ctx: QueryOptionsContext,
     externalContextPaths?: string[]
   ): PersistentQueryConfig {
+    // Get agents from agent manager for system prompt
+    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
+      agents,
     };
 
     const budgetSetting = ctx.settings.thinkingBudget;
@@ -205,12 +212,16 @@ export class QueryOptionsBuilder {
     // If show1MModel is enabled, always include 1M beta to allow model switching without restart
     const resolved = resolveModelWithBetas(ctx.settings.model, ctx.settings.show1MModel);
 
+    // Get agents from agent manager for system prompt
+    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+
     // Build system prompt
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
+      agents,
     });
 
     const options: Options = {
@@ -288,12 +299,16 @@ export class QueryOptionsBuilder {
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;
     const resolved = resolveModelWithBetas(selectedModel, ctx.settings.show1MModel);
 
+    // Get agents from agent manager for system prompt
+    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+
     // Build system prompt with settings
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
+      agents,
     });
 
     const options: Options = {
