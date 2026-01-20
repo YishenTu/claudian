@@ -211,6 +211,10 @@ export class ConversationController {
     state.usage = conversation.usage ?? null;
     state.autoScrollEnabled = true;
 
+    // Clear status panels (auto-hide: panels reappear when agent creates new todos/subagents)
+    state.currentTodos = null;
+    this.deps.getStatusPanel()?.clearSubagents();
+
     const hasMessages = state.messages.length > 0;
 
     // Determine external context paths for this session
@@ -279,6 +283,10 @@ export class ConversationController {
       state.messages = [...conversation.messages];
       state.usage = conversation.usage ?? null;
       state.autoScrollEnabled = true;
+
+      // Clear status panels (auto-hide: panels reappear when agent creates new todos/subagents)
+      state.currentTodos = null;
+      this.deps.getStatusPanel()?.clearSubagents();
 
       const hasMessages = state.messages.length > 0;
 
