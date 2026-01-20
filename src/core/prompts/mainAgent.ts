@@ -6,15 +6,12 @@
  */
 
 import { getTodayDate } from '../../utils/date';
-import type { AgentDefinition } from '../types/agent';
 
 export interface SystemPromptSettings {
   mediaFolder?: string;
   customPrompt?: string;
   allowedExportPaths?: string[];
   vaultPath?: string;
-  /** Custom agent definitions from plugins/vault/global. */
-  agents?: AgentDefinition[];
 }
 
 /** Returns the base system prompt with core instructions. */
@@ -279,36 +276,6 @@ cp ./note.md ~/Desktop/note.md
 }
 
 
-/** Returns instructions for available custom agents. */
-function getAgentInstructions(agents: AgentDefinition[]): string {
-  if (!agents || agents.length === 0) {
-    return '';
-  }
-
-  const agentList = agents.map(agent => {
-    // tools: undefined = inherits all (no display)
-    // tools: [] = no tools allowed
-    // tools: ['Read', ...] = specific tools only
-    const toolsInfo = agent.tools === undefined
-      ? ''
-      : agent.tools.length === 0
-        ? ' (No tools)'
-        : ` (Tools: ${agent.tools.join(', ')})`;
-    const modelInfo = agent.model && agent.model !== 'inherit' ? ` [Model: ${agent.model}]` : '';
-    return `- **${agent.name}** (\`subagent_type="${agent.id}"\`): ${agent.description}${toolsInfo}${modelInfo}`;
-  }).join('\n');
-
-  return `
-
-## Available Custom Agents
-
-When launching a Task with \`subagent_type\`, you can use these custom agents in addition to the built-in ones:
-
-${agentList}
-
-**Usage:** \`Task prompt="..." subagent_type="${agents[0]?.id || 'agent-id'}" run_in_background=false\``;
-}
-
 /** Builds the complete system prompt with optional custom settings. */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   let prompt = getBaseSystemPrompt(settings.vaultPath);
@@ -316,7 +283,6 @@ export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   // Stable content (ordered for context cache optimization)
   prompt += getImageInstructions(settings.mediaFolder || '');
   prompt += getExportInstructions(settings.allowedExportPaths || []);
-  prompt += getAgentInstructions(settings.agents || []);
 
   if (settings.customPrompt?.trim()) {
     prompt += '\n\n## Custom Instructions\n\n' + settings.customPrompt.trim();

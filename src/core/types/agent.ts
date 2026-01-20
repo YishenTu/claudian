@@ -25,6 +25,9 @@ export interface AgentDefinition {
   /** Allowed tools. If undefined, inherits all tools from parent */
   tools?: string[];
 
+  /** Disallowed tools. Removed from inherited or specified tools list */
+  disallowedTools?: string[];
+
   /** Model override. 'inherit' (default) uses parent's model */
   model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
 
@@ -44,5 +47,8 @@ export interface AgentFrontmatter {
   description: string;
   /** Tools list: comma-separated string or array from YAML */
   tools?: string | string[];
-  model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  /** Disallowed tools: comma-separated string or array from YAML */
+  disallowedTools?: string | string[];
+  /** Model: validated at parse time, invalid values fall back to 'inherit' */
+  model?: string;
 }

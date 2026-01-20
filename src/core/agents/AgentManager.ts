@@ -13,7 +13,7 @@ import * as path from 'path';
 
 import type { PluginManager } from '../plugins';
 import type { AgentDefinition } from '../types';
-import { parseAgentFile, parseToolsList } from './AgentStorage';
+import { parseAgentFile, parseModel, parseToolsList } from './AgentStorage';
 
 /** Global agents directory. */
 const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents');
@@ -212,7 +212,8 @@ export class AgentManager {
         description: frontmatter.description,
         prompt: body,
         tools: parseToolsList(frontmatter.tools),
-        model: frontmatter.model ?? 'inherit',
+        disallowedTools: parseToolsList(frontmatter.disallowedTools),
+        model: parseModel(frontmatter.model),
         source,
         pluginName: source === 'plugin' ? pluginName : undefined,
         filePath,

@@ -11,6 +11,7 @@
  */
 
 import type {
+  AgentDefinition as SdkAgentDefinition,
   CanUseTool,
   McpServerConfig,
   Options,
@@ -22,6 +23,7 @@ import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudianSettings, PermissionMode } from '../types';
 import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
+import type { AgentDefinition } from '../types/agent';
 import {
   computeSystemPromptKey,
   type PersistentQueryConfig,
@@ -161,15 +163,12 @@ export class QueryOptionsBuilder {
     ctx: QueryOptionsContext,
     externalContextPaths?: string[]
   ): PersistentQueryConfig {
-    // Get agents from agent manager for system prompt
-    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
-
+    // System prompt settings (agents are passed via Options.agents, not system prompt)
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
-      agents,
     };
 
     const budgetSetting = ctx.settings.thinkingBudget;
@@ -212,16 +211,12 @@ export class QueryOptionsBuilder {
     // If show1MModel is enabled, always include 1M beta to allow model switching without restart
     const resolved = resolveModelWithBetas(ctx.settings.model, ctx.settings.show1MModel);
 
-    // Get agents from agent manager for system prompt
-    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
-
-    // Build system prompt
+    // Build system prompt (agents are passed via Options.agents, not system prompt)
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
-      agents,
     });
 
     const options: Options = {
@@ -257,6 +252,12 @@ export class QueryOptionsBuilder {
     const pluginConfigs = ctx.pluginManager.getActivePluginConfigs();
     if (pluginConfigs.length > 0) {
       options.plugins = pluginConfigs;
+    }
+
+    // Add custom agents via SDK native support
+    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+    if (agents.length > 0) {
+      options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }
 
     // Set permission mode
@@ -299,16 +300,12 @@ export class QueryOptionsBuilder {
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;
     const resolved = resolveModelWithBetas(selectedModel, ctx.settings.show1MModel);
 
-    // Get agents from agent manager for system prompt
-    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
-
-    // Build system prompt with settings
+    // Build system prompt (agents are passed via Options.agents, not system prompt)
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
-      agents,
     });
 
     const options: Options = {
@@ -358,6 +355,12 @@ export class QueryOptionsBuilder {
     const pluginConfigs = ctx.pluginManager.getActivePluginConfigs();
     if (pluginConfigs.length > 0) {
       options.plugins = pluginConfigs;
+    }
+
+    // Add custom agents via SDK native support
+    const agents = ctx.agentManager?.getAvailableAgents() ?? [];
+    if (agents.length > 0) {
+      options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }
 
     // Set permission mode
@@ -446,5 +449,28 @@ export class QueryOptionsBuilder {
     if (budgetConfig && budgetConfig.tokens > 0) {
       options.maxThinkingTokens = budgetConfig.tokens;
     }
+  }
+
+  /**
+   * Converts Claudian agent definitions to SDK format.
+   *
+   * @param agents - Array of Claudian agent definitions
+   * @returns Record of agent ID to SDK agent definition
+   */
+  private static buildSdkAgentsRecord(
+    agents: AgentDefinition[]
+  ): Record<string, SdkAgentDefinition> {
+    const record: Record<string, SdkAgentDefinition> = {};
+    for (const agent of agents) {
+      record[agent.id] = {
+        description: agent.description,
+        prompt: agent.prompt,
+        tools: agent.tools,
+        disallowedTools: agent.disallowedTools,
+        // SDK expects undefined for 'inherit', not the string
+        model: agent.model === 'inherit' ? undefined : agent.model,
+      };
+    }
+    return record;
   }
 }

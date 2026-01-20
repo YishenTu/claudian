@@ -67,3 +67,22 @@ export function parseToolsList(tools?: string | string[]): string[] | undefined 
   // Unknown type, inherit all
   return undefined;
 }
+
+/** Valid model values for agent definitions. */
+const VALID_MODELS = ['sonnet', 'opus', 'haiku', 'inherit'] as const;
+
+/**
+ * Parse and validate model specification.
+ *
+ * @param model - Model value from YAML frontmatter
+ * @returns Validated model value, or 'inherit' for invalid/missing values
+ */
+export function parseModel(model?: string): 'sonnet' | 'opus' | 'haiku' | 'inherit' {
+  if (!model) return 'inherit';
+  const normalized = model.toLowerCase().trim();
+  if (VALID_MODELS.includes(normalized as typeof VALID_MODELS[number])) {
+    return normalized as 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  }
+  // Invalid model value, fall back to inherit
+  return 'inherit';
+}

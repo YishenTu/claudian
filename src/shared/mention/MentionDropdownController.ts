@@ -407,7 +407,8 @@ export class MentionDropdownController {
           nameEl.setText(`@${item.name}`);
         } else if (item.type === 'agent') {
           const nameEl = textEl.createSpan({ cls: 'claudian-mention-name claudian-mention-name-agent' });
-          nameEl.setText(`@${item.name}`);
+          // Show ID (which is namespaced for plugin agents) for consistency with inserted text
+          nameEl.setText(`@${item.id}`);
           // Add description as secondary text
           if (item.description) {
             const descEl = textEl.createSpan({ cls: 'claudian-mention-description' });
@@ -476,8 +477,8 @@ export class MentionDropdownController {
       this.callbacks.addMentionedMcpServer(selectedItem.name);
       this.callbacks.onMcpMentionChange?.(this.callbacks.getMentionedMcpServers());
     } else if (selectedItem.type === 'agent') {
-      // Insert agent mention and notify callback
-      const replacement = `@${selectedItem.name} `;
+      // Insert agent mention using ID (which is namespaced for plugin agents)
+      const replacement = `@${selectedItem.id} `;
       this.inputEl.value = beforeAt + replacement + afterCursor;
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
 
