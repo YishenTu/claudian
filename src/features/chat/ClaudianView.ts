@@ -346,16 +346,19 @@ export class ClaudianView extends ItemView {
 
     const tabCount = this.tabManager.getTabCount();
     const showTabBar = tabCount >= 2;
+    const isHeaderMode = this.plugin.settings.tabBarPosition === 'header';
 
     // Hide tab badges when only 1 tab, show when 2+
     this.tabBarContainerEl.style.display = showTabBar ? 'flex' : 'none';
 
-    // Hide logo and title when 2+ tabs (badges take their place)
+    // In header mode, badges replace logo/title in the same location
+    // In input mode, keep logo/title visible (badges are in nav row)
+    const hideBranding = showTabBar && isHeaderMode;
     if (this.logoEl) {
-      this.logoEl.style.display = showTabBar ? 'none' : '';
+      this.logoEl.style.display = hideBranding ? 'none' : '';
     }
     if (this.titleTextEl) {
-      this.titleTextEl.style.display = showTabBar ? 'none' : '';
+      this.titleTextEl.style.display = hideBranding ? 'none' : '';
     }
   }
 

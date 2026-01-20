@@ -15,7 +15,7 @@ import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
 import { formatContextLimit, getCustomModelIds, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
-import type { ClaudianView } from '../chat/ClaudianView';
+import { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
@@ -306,7 +306,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
             // Update all views' layouts immediately
             for (const leaf of this.plugin.app.workspace.getLeavesOfType('claudian-view')) {
-              (leaf.view as ClaudianView)?.updateLayoutForPosition();
+              if (leaf.view instanceof ClaudianView) {
+                leaf.view.updateLayoutForPosition();
+              }
             }
           });
       });
