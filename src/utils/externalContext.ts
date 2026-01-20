@@ -72,18 +72,43 @@ export function getFolderName(p: string): string {
   return segments[segments.length - 1] || normalized;
 }
 
+/** Result of directory path validation. */
+export interface DirectoryValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * Checks if a path exists and is a directory.
+ * @param p - The path to check
+ * @returns Validation result with specific error message if invalid
+ */
+export function validateDirectoryPath(p: string): DirectoryValidationResult {
+  try {
+    const stats = fs.statSync(p);
+    if (!stats.isDirectory()) {
+      return { valid: false, error: 'Path exists but is not a directory' };
+    }
+    return { valid: true };
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') {
+      return { valid: false, error: 'Path does not exist' };
+    }
+    if (error.code === 'EACCES') {
+      return { valid: false, error: 'Permission denied' };
+    }
+    return { valid: false, error: `Cannot access path: ${error.message}` };
+  }
+}
+
 /**
  * Checks if a path exists and is a directory.
  * @param p - The path to check
  * @returns true if path exists and is a directory, false otherwise
  */
 export function isValidDirectoryPath(p: string): boolean {
-  try {
-    const stats = fs.statSync(p);
-    return stats.isDirectory();
-  } catch {
-    return false;
-  }
+  return validateDirectoryPath(p).valid;
 }
 
 /**

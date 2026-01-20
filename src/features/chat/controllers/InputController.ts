@@ -725,14 +725,15 @@ export class InputController {
         }
         const result = externalContextSelector.addExternalContext(args);
         if (result.success) {
-          new Notice(`Added external context: ${args}`);
+          new Notice(`Added external context: ${result.normalizedPath}`);
         } else {
           new Notice(result.error);
         }
         break;
       }
       default:
-        // Unknown command - ignore
+        // Unknown command - notify user
+        new Notice(`Unknown command: ${action}`);
     }
   }
 }

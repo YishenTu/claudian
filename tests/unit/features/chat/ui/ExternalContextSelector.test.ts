@@ -265,9 +265,47 @@ describe('ExternalContextSelector', () => {
 
       const result = selector.addExternalContext(absolutePath);
 
-      expect(result.success).toBe(true);
+      expect(result).toEqual({ success: true, normalizedPath: absolutePath });
       expect(selector.getExternalContexts()).toEqual([absolutePath]);
       expect(onChange).toHaveBeenCalledWith([absolutePath]);
+    });
+
+    it('should reject non-existent paths with specific error', () => {
+      (fs.statSync as jest.Mock).mockImplementation(() => {
+        const error = new Error('ENOENT') as NodeJS.ErrnoException;
+        error.code = 'ENOENT';
+        throw error;
+      });
+
+      const absolutePath = path.resolve('non', 'existent');
+      const result = selector.addExternalContext(absolutePath);
+
+      expect(result.success).toBe(false);
+      expect(result).toMatchObject({ error: expect.stringContaining('Path does not exist') });
+    });
+
+    it('should reject paths with permission denied error', () => {
+      (fs.statSync as jest.Mock).mockImplementation(() => {
+        const error = new Error('EACCES') as NodeJS.ErrnoException;
+        error.code = 'EACCES';
+        throw error;
+      });
+
+      const absolutePath = path.resolve('no', 'access');
+      const result = selector.addExternalContext(absolutePath);
+
+      expect(result.success).toBe(false);
+      expect(result).toMatchObject({ error: expect.stringContaining('Permission denied') });
+    });
+
+    it('should reject paths that exist but are not directories', () => {
+      (fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => false });
+
+      const absolutePath = path.resolve('some', 'file.txt');
+      const result = selector.addExternalContext(absolutePath);
+
+      expect(result.success).toBe(false);
+      expect(result).toMatchObject({ error: expect.stringContaining('Path exists but is not a directory') });
     });
 
     it('should accept double-quoted absolute paths', () => {
@@ -293,7 +331,7 @@ describe('ExternalContextSelector', () => {
 
       const result = selector.addExternalContext('~');
 
-      expect(result.success).toBe(true);
+      expect(result).toEqual({ success: true, normalizedPath: homeDir });
       expect(selector.getExternalContexts()).toEqual([homeDir]);
     });
 
@@ -310,7 +348,7 @@ describe('ExternalContextSelector', () => {
       expect(selector.getExternalContexts()).toEqual([absolutePath]);
     });
 
-    it('should reject nested paths', () => {
+    it('should reject nested paths (child inside parent)', () => {
       const parentPath = path.resolve('external');
       const childPath = path.join(parentPath, 'child');
 
@@ -320,6 +358,19 @@ describe('ExternalContextSelector', () => {
       expect(result.success).toBe(false);
       expect(result).toMatchObject({ error: expect.stringContaining('inside existing path') });
       expect(selector.getExternalContexts()).toEqual([parentPath]);
+    });
+
+    it('should reject parent paths that would contain existing child', () => {
+      const parentPath = path.resolve('external');
+      const childPath = path.join(parentPath, 'child');
+
+      // Add child first, then try to add parent
+      selector.addExternalContext(childPath);
+      const result = selector.addExternalContext(parentPath);
+
+      expect(result.success).toBe(false);
+      expect(result).toMatchObject({ error: expect.stringContaining('contains existing path') });
+      expect(selector.getExternalContexts()).toEqual([childPath]);
     });
   });
 

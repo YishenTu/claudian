@@ -19,7 +19,7 @@ import {
 } from '../../../core/types';
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../../shared/icons';
 import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../../utils/env';
-import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath } from '../../../utils/externalContext';
+import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
 
 /** Settings access interface for toolbar components. */
@@ -237,7 +237,7 @@ export class PermissionToggle {
 
 /** Result of adding an external context path (discriminated union for type safety). */
 export type AddExternalContextResult =
-  | { success: true }
+  | { success: true; normalizedPath: string }
   | { success: false; error: string };
 
 /** External context selector component (folder icon). */
@@ -361,7 +361,7 @@ export class ExternalContextSelector {
    * Add an external context path programmatically (e.g., from /add-dir command).
    * Validates the path and handles duplicates/conflicts.
    * @param pathInput - Path string (supports ~/ expansion)
-   * @returns Result with success status and optional error message
+   * @returns Result with success status and normalized path, or error message on failure
    */
   addExternalContext(pathInput: string): AddExternalContextResult {
     const trimmed = pathInput?.trim();
@@ -384,9 +384,10 @@ export class ExternalContextSelector {
       return { success: false, error: 'Path must be absolute. Usage: /add-dir /absolute/path' };
     }
 
-    // Validate path exists and is a directory
-    if (!isValidDirectoryPath(normalizedPath)) {
-      return { success: false, error: `Path does not exist or is not a directory: ${pathInput}` };
+    // Validate path exists and is a directory with specific error messages
+    const validation = validateDirectoryPath(normalizedPath);
+    if (!validation.valid) {
+      return { success: false, error: `${validation.error}: ${pathInput}` };
     }
 
     // Check for duplicate (normalized comparison for cross-platform support)
@@ -406,7 +407,7 @@ export class ExternalContextSelector {
     this.updateDisplay();
     this.renderDropdown();
 
-    return { success: true };
+    return { success: true, normalizedPath };
   }
 
   /**
