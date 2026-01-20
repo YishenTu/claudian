@@ -337,6 +337,21 @@ export class StatusPanel {
   }
 
   /**
+   * Check if all subagents completed successfully.
+   * Used for auto-hide on response completion.
+   * Returns false if empty or any subagent is pending, running, errored, or orphaned.
+   */
+  areAllSubagentsCompleted(): boolean {
+    if (this.currentSubagents.size === 0) return false;
+    for (const info of this.currentSubagents.values()) {
+      if (info.status !== 'completed') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Restore async subagents from loaded conversation messages.
    * Running/pending subagents are marked as orphaned since they can't be tracked after reload.
    */

@@ -402,6 +402,16 @@ export class InputController {
         streamController.finalizeCurrentTextBlock(assistantMsg);
         state.activeSubagents.clear();
 
+        // Auto-hide completed status panels on response end
+        // Panels reappear only when new TodoWrite/Task tool is called
+        if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
+          state.currentTodos = null;
+        }
+        const statusPanel = this.deps.getStatusPanel();
+        if (statusPanel?.areAllSubagentsCompleted()) {
+          statusPanel.clearTerminalSubagents();
+        }
+
         await conversationController.save(true);
 
         this.processQueuedMessage();

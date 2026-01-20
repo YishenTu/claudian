@@ -755,4 +755,55 @@ describe('StatusPanel', () => {
       expect(runningText?.textContent).toBe('1 background task');
     });
   });
+
+  describe('areAllSubagentsCompleted', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should return false when no subagents', () => {
+      expect(panel.areAllSubagentsCompleted()).toBe(false);
+    });
+
+    it('should return true when all subagents are completed', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'completed' });
+
+      expect(panel.areAllSubagentsCompleted()).toBe(true);
+    });
+
+    it('should return false when any subagent is pending', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'pending' });
+
+      expect(panel.areAllSubagentsCompleted()).toBe(false);
+    });
+
+    it('should return false when any subagent is running', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'running' });
+
+      expect(panel.areAllSubagentsCompleted()).toBe(false);
+    });
+
+    it('should return false when any subagent has error', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'error' });
+
+      expect(panel.areAllSubagentsCompleted()).toBe(false);
+    });
+
+    it('should return false when any subagent is orphaned', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'orphaned' });
+
+      expect(panel.areAllSubagentsCompleted()).toBe(false);
+    });
+
+    it('should return true for single completed subagent', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
+
+      expect(panel.areAllSubagentsCompleted()).toBe(true);
+    });
+  });
 });
