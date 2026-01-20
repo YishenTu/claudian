@@ -701,6 +701,43 @@ describe('types.ts', () => {
       it('should handle undefined custom limits', () => {
         expect(getContextWindowSize('sonnet', false, undefined)).toBe(CONTEXT_WINDOW_STANDARD);
       });
+
+      describe('defensive validation for invalid custom limit values', () => {
+        it('should fall back to default for NaN custom limit', () => {
+          const customLimits = { 'custom-model': NaN };
+          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+        });
+
+        it('should fall back to default for negative custom limit', () => {
+          const customLimits = { 'custom-model': -100000 };
+          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+        });
+
+        it('should fall back to default for zero custom limit', () => {
+          const customLimits = { 'custom-model': 0 };
+          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+        });
+
+        it('should fall back to default for Infinity custom limit', () => {
+          const customLimits = { 'custom-model': Infinity };
+          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+        });
+
+        it('should fall back to default for -Infinity custom limit', () => {
+          const customLimits = { 'custom-model': -Infinity };
+          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+        });
+
+        it('should fall back to 1M for invalid sonnet custom limit when 1M enabled', () => {
+          const customLimits = { 'sonnet': NaN };
+          expect(getContextWindowSize('sonnet', true, customLimits)).toBe(CONTEXT_WINDOW_1M);
+        });
+
+        it('should accept valid positive custom limit', () => {
+          const customLimits = { 'custom-model': 256000 };
+          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(256000);
+        });
+      });
     });
   });
 });

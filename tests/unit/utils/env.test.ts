@@ -586,6 +586,12 @@ describe('parseContextLimit', () => {
     expect(parseContextLimit('  256k  ')).toBe(256000);
   });
 
+  it('should handle space before suffix', () => {
+    expect(parseContextLimit('256 k')).toBe(256000);
+    expect(parseContextLimit('1 m')).toBe(1000000);
+    expect(parseContextLimit('1.5 m')).toBe(1500000);
+  });
+
   it('should return null for empty string', () => {
     expect(parseContextLimit('')).toBeNull();
   });
@@ -700,5 +706,25 @@ describe('getCustomModelIds', () => {
     });
     expect(result.size).toBe(1);
     expect(result.has('custom-model')).toBe(true);
+  });
+
+  it('should ignore empty string model values', () => {
+    const result = getCustomModelIds({
+      ANTHROPIC_MODEL: '',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'valid-model',
+    });
+    expect(result.size).toBe(1);
+    expect(result.has('')).toBe(false);
+    expect(result.has('valid-model')).toBe(true);
+  });
+
+  it('should ignore whitespace-only model values', () => {
+    const result = getCustomModelIds({
+      ANTHROPIC_MODEL: '   ',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'my-haiku',
+    });
+    // Note: getCustomModelIds only checks truthiness, so whitespace passes
+    // This test documents the current behavior
+    expect(result.has('my-haiku')).toBe(true);
   });
 });

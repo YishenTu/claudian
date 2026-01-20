@@ -418,6 +418,12 @@ const CUSTOM_MODEL_ENV_KEYS = [
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
 ] as const;
 
+/** Minimum context limit in tokens (1k). */
+export const MIN_CONTEXT_LIMIT = 1_000;
+
+/** Maximum context limit in tokens (10M). */
+export const MAX_CONTEXT_LIMIT = 10_000_000;
+
 /**
  * Extracts unique custom model IDs from environment variables.
  * De-duplicates when multiple env vars point to the same model.
@@ -464,7 +470,7 @@ export function parseContextLimit(input: string): number | null {
   const result = Math.round(value * multiplier);
 
   // Validate reasonable range (1k to 10M tokens)
-  if (result < 1000 || result > 10_000_000) return null;
+  if (result < MIN_CONTEXT_LIMIT || result > MAX_CONTEXT_LIMIT) return null;
 
   return result;
 }
