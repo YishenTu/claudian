@@ -13,7 +13,7 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { formatContextLimit, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { formatContextLimit, getCustomModelIds, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import type { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
@@ -654,21 +654,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // Detect custom models from environment variables
     const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
-    const customModelEnvKeys = [
-      'ANTHROPIC_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    ];
-
-    // Collect unique model IDs (de-duplicate when multiple env vars point to the same model)
-    const uniqueModelIds = new Set<string>();
-    for (const envKey of customModelEnvKeys) {
-      const modelId = envVars[envKey];
-      if (modelId) {
-        uniqueModelIds.add(modelId);
-      }
-    }
+    const uniqueModelIds = getCustomModelIds(envVars);
 
     // Don't render section if no custom models are detected
     if (uniqueModelIds.size === 0) {
@@ -737,14 +723,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       });
     }
-  }
-
-  /**
-   * Refreshes the context limits section when environment variables change.
-   * Called from plugin when env vars are updated.
-   */
-  public refreshContextLimitsSection(): void {
-    this.renderContextLimitsSection();
   }
 
 }

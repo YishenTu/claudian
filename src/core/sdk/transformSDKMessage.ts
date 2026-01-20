@@ -33,7 +33,7 @@ export interface TransformOptions {
  * (e.g., assistant message with both text and tool_use blocks).
  *
  * @param message - The SDK message to transform
- * @param options - Optional transform options (intendedModel for usage selection)
+ * @param options - Optional transform options for context window calculations
  * @yields StreamChunk events for UI rendering, or SessionInitEvent for session tracking
  */
 export function* transformSDKMessage(

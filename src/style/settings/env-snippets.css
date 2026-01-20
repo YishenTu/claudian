@@ -317,3 +317,32 @@
 .claudian-save-btn:hover {
   opacity: 0.9;
 }
+
+/* Context limits section in snippet modal */
+.claudian-snippet-context-limits {
+  margin-top: 1em;
+}
+
+.claudian-snippet-context-limits .setting-item-description {
+  margin-bottom: 0.5em;
+}
+
+.claudian-snippet-limit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.25em;
+}
+
+.claudian-snippet-limit-model {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-snippet-limit-spacer {
+  flex: 1;
+}
+
+.claudian-snippet-limit-input {
+  width: 80px;
+}

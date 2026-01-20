@@ -154,11 +154,12 @@ describe('MentionDropdownController', () => {
     });
 
     it('can set agent service to null', () => {
-      controller.setAgentService(null);
-      // Should not throw when handling input
-      inputEl.value = '@';
-      inputEl.selectionStart = 1;
-      controller.handleInputChange();
+      expect(() => {
+        controller.setAgentService(null);
+        inputEl.value = '@';
+        inputEl.selectionStart = 1;
+        controller.handleInputChange();
+      }).not.toThrow();
     });
   });
 
@@ -295,15 +296,13 @@ describe('MentionDropdownController', () => {
 
   describe('hide', () => {
     it('can be called without error', () => {
-      controller.hide();
-      // Should not throw
+      expect(() => controller.hide()).not.toThrow();
     });
   });
 
   describe('destroy', () => {
     it('cleans up resources', () => {
-      controller.destroy();
-      // Should not throw
+      expect(() => controller.destroy()).not.toThrow();
     });
   });
 
@@ -311,22 +310,19 @@ describe('MentionDropdownController', () => {
     it('hides dropdown when no @ in text', () => {
       inputEl.value = 'no at sign';
       inputEl.selectionStart = 10;
-      controller.handleInputChange();
-      // Should not throw
+      expect(() => controller.handleInputChange()).not.toThrow();
     });
 
     it('hides dropdown when @ is not at word boundary', () => {
       inputEl.value = 'test@example';
       inputEl.selectionStart = 12;
-      controller.handleInputChange();
-      // Should call hide (dropdown hidden)
+      expect(() => controller.handleInputChange()).not.toThrow();
     });
 
     it('hides dropdown when space follows @mention', () => {
       inputEl.value = '@test ';
       inputEl.selectionStart = 6;
-      controller.handleInputChange();
-      // Whitespace in search text hides dropdown
+      expect(() => controller.handleInputChange()).not.toThrow();
     });
 
     it('handles @ at start of line', () => {
@@ -380,15 +376,13 @@ describe('MentionDropdownController', () => {
 
   describe('preScanExternalContexts', () => {
     it('can be called without error', () => {
-      controller.preScanExternalContexts();
-      // Should not throw
+      expect(() => controller.preScanExternalContexts()).not.toThrow();
     });
   });
 
   describe('updateMcpMentionsFromText', () => {
     it('does nothing without MCP service', () => {
-      controller.updateMcpMentionsFromText('@test');
-      // Should not throw
+      expect(() => controller.updateMcpMentionsFromText('@test')).not.toThrow();
     });
 
     it('updates mentions when MCP service is set', () => {

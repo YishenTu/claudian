@@ -410,12 +410,39 @@ export function getHostnameKey(): string {
   return os.hostname();
 }
 
+/** Environment variable keys that can specify custom models. */
+const CUSTOM_MODEL_ENV_KEYS = [
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+] as const;
+
+/**
+ * Extracts unique custom model IDs from environment variables.
+ * De-duplicates when multiple env vars point to the same model.
+ *
+ * @param envVars - Parsed environment variables
+ * @returns Set of unique model IDs
+ */
+export function getCustomModelIds(envVars: Record<string, string>): Set<string> {
+  const modelIds = new Set<string>();
+  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
+    const modelId = envVars[envKey];
+    if (modelId) {
+      modelIds.add(modelId);
+    }
+  }
+  return modelIds;
+}
+
 /**
  * Parse a context limit string into a number of tokens.
- * Supports formats: "256k", "256K", "1000000", "1m", "1M", "1.5m"
+ * Supports formats: "256k", "1m", "1.5m", or exact token count ("1000000").
+ * Input is case-insensitive ("256K" is treated as "256k").
  *
- * @param input - User input string (e.g., "256k", "1000000")
- * @returns Number of tokens, or null if invalid
+ * @param input - User input string (e.g., "256k", "1M", "1000000")
+ * @returns Number of tokens in range [1000, 10000000], or null if invalid
  */
 export function parseContextLimit(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
@@ -443,7 +470,10 @@ export function parseContextLimit(input: string): number | null {
 }
 
 /**
- * Format a token count for display (e.g., 256000 → "256k").
+ * Format a token count for display.
+ * - Exact millions: "1m", "2m"
+ * - Exact thousands: "256k", "200k"
+ * - Non-round numbers: locale-formatted (e.g., "256,500")
  */
 export function formatContextLimit(tokens: number): string {
   if (tokens >= 1_000_000 && tokens % 1_000_000 === 0) {
