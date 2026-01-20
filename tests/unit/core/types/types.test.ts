@@ -106,7 +106,6 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        enabledPlugins: [],
         maxTabs: 3,
         show1MModel: false,
       };
@@ -139,7 +138,6 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        enabledPlugins: [],
         maxTabs: 3,
         show1MModel: false,
       };
@@ -172,7 +170,6 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        enabledPlugins: [],
         maxTabs: 5,
         show1MModel: true,
       };

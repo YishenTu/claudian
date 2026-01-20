@@ -1,19 +1,29 @@
 /**
  * PluginManager - Manage Claude Code plugin state and SDK configuration.
  *
- * Coordinates plugin discovery from PluginStorage and manages enabled state.
+ * Coordinates plugin discovery from PluginStorage and manages enabled state
+ * via CC settings (.claude/settings.json) for CLI compatibility.
+ *
+ * Plugin enabled state:
+ * - Plugins are enabled by default unless explicitly disabled
+ * - Disabled state is stored in .claude/settings.json as enabledPlugins: { "id": false }
+ * - This ensures the CLI respects Claudian's disable decisions
  */
 
+import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
 import type { ClaudianPlugin, SdkPluginConfig } from '../types';
 import type { PluginStorage } from './PluginStorage';
 
 export class PluginManager {
-  private storage: PluginStorage;
+  private pluginStorage: PluginStorage;
+  private ccSettingsStorage: CCSettingsStorage;
   private plugins: ClaudianPlugin[] = [];
-  private enabledPluginIds: Set<string> = new Set();
+  /** Map of plugin ID to enabled state from CC settings. */
+  private enabledState: Record<string, boolean> = {};
 
-  constructor(storage: PluginStorage) {
-    this.storage = storage;
+  constructor(pluginStorage: PluginStorage, ccSettingsStorage: CCSettingsStorage) {
+    this.pluginStorage = pluginStorage;
+    this.ccSettingsStorage = ccSettingsStorage;
   }
 
   /**
@@ -24,28 +34,39 @@ export class PluginManager {
   }
 
   /**
-   * Set the list of enabled plugin IDs.
-   * Can be called before or after loadPlugins() - enabled state is applied immediately
-   * to any already-loaded plugins and remembered for future loads.
+   * Check if a plugin is enabled based on CC settings.
+   * Plugins are enabled by default unless explicitly set to false.
    */
-  setEnabledPluginIds(ids: string[]): void {
-    this.enabledPluginIds = new Set(ids);
-    // Update enabled state for already-loaded plugins
+  private isPluginEnabled(pluginId: string): boolean {
+    const state = this.enabledState[pluginId];
+    // Enabled by default unless explicitly disabled
+    return state !== false;
+  }
+
+  /**
+   * Apply enabled state to all plugins based on CC settings.
+   */
+  private applyEnabledState(): void {
     for (const plugin of this.plugins) {
-      plugin.enabled = this.enabledPluginIds.has(plugin.id);
+      plugin.enabled = this.isPluginEnabled(plugin.id);
     }
+  }
+
+  /**
+   * Load enabled state from CC settings.
+   * Call this before or after loadPlugins().
+   */
+  async loadEnabledState(): Promise<void> {
+    this.enabledState = await this.ccSettingsStorage.getEnabledPlugins();
+    this.applyEnabledState();
   }
 
   /**
    * Load plugins from the registry and apply enabled state.
    */
   async loadPlugins(): Promise<void> {
-    this.plugins = this.storage.loadPlugins();
-
-    // Apply enabled state
-    for (const plugin of this.plugins) {
-      plugin.enabled = this.enabledPluginIds.has(plugin.id);
-    }
+    this.plugins = this.pluginStorage.loadPlugins();
+    this.applyEnabledState();
   }
 
   /**
@@ -64,16 +85,6 @@ export class PluginManager {
       type: 'local' as const,
       path: plugin.pluginPath,
     }));
-  }
-
-  /**
-   * Get IDs of plugins that are enabled but unavailable.
-   * Use this for cleanup on startup.
-   */
-  getUnavailableEnabledPlugins(): string[] {
-    return this.plugins
-      .filter((plugin) => plugin.enabled && plugin.status !== 'available')
-      .map((plugin) => plugin.id);
   }
 
   /**
@@ -107,49 +118,58 @@ export class PluginManager {
 
   /**
    * Toggle a plugin's enabled state.
-   * Returns the updated enabled IDs array for saving to settings.
+   * Writes to .claude/settings.json so CLI respects the state.
    */
-  togglePlugin(pluginId: string): string[] {
+  async togglePlugin(pluginId: string): Promise<void> {
     const plugin = this.plugins.find((p) => p.id === pluginId);
     if (!plugin) {
-      return Array.from(this.enabledPluginIds);
+      return;
     }
 
-    if (plugin.enabled) {
-      this.enabledPluginIds.delete(pluginId);
-      plugin.enabled = false;
-    } else {
-      this.enabledPluginIds.add(pluginId);
-      plugin.enabled = true;
-    }
+    const newEnabled = !plugin.enabled;
 
-    return Array.from(this.enabledPluginIds);
+    // Update local state
+    this.enabledState[pluginId] = newEnabled;
+    plugin.enabled = newEnabled;
+
+    // Persist to CC settings
+    await this.ccSettingsStorage.setPluginEnabled(pluginId, newEnabled);
   }
 
   /**
    * Enable a plugin by ID.
-   * Returns the updated enabled IDs array for saving to settings.
+   * Writes to .claude/settings.json so CLI respects the state.
    */
-  enablePlugin(pluginId: string): string[] {
+  async enablePlugin(pluginId: string): Promise<void> {
     const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (plugin && !plugin.enabled) {
-      this.enabledPluginIds.add(pluginId);
-      plugin.enabled = true;
+    if (!plugin || plugin.enabled) {
+      return;
     }
-    return Array.from(this.enabledPluginIds);
+
+    // Update local state
+    this.enabledState[pluginId] = true;
+    plugin.enabled = true;
+
+    // Persist to CC settings
+    await this.ccSettingsStorage.setPluginEnabled(pluginId, true);
   }
 
   /**
    * Disable a plugin by ID.
-   * Returns the updated enabled IDs array for saving to settings.
+   * Writes to .claude/settings.json so CLI respects the state.
    */
-  disablePlugin(pluginId: string): string[] {
+  async disablePlugin(pluginId: string): Promise<void> {
     const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (plugin && plugin.enabled) {
-      this.enabledPluginIds.delete(pluginId);
-      plugin.enabled = false;
+    if (!plugin || !plugin.enabled) {
+      return;
     }
-    return Array.from(this.enabledPluginIds);
+
+    // Update local state
+    this.enabledState[pluginId] = false;
+    plugin.enabled = false;
+
+    // Persist to CC settings
+    await this.ccSettingsStorage.setPluginEnabled(pluginId, false);
   }
 
   /**

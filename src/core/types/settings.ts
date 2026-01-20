@@ -185,6 +185,8 @@ export interface CCSettings {
   enableAllProjectMcpServers?: boolean;
   enabledMcpjsonServers?: string[];
   disabledMcpjsonServers?: string[];
+  /** Plugin enabled state (CC format: { "plugin-id": true/false }) */
+  enabledPlugins?: Record<string, boolean>;
   /** Allow additional properties for CC compatibility */
   [key: string]: unknown;
 }
@@ -265,9 +267,6 @@ export interface ClaudianSettings {
   // Slash commands (loaded separately from .claude/commands/)
   slashCommands: SlashCommand[];
 
-  // Claude Code plugins
-  enabledPlugins: string[];  // IDs of enabled plugins (per vault)
-
   // UI preferences
   maxTabs: number;  // Maximum number of chat tabs (3-10, default 3)
 }
@@ -326,9 +325,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // Slash commands (loaded separately)
   slashCommands: [],
-
-  // Claude Code plugins
-  enabledPlugins: [],
 
   // UI preferences
   maxTabs: 3,  // Default to 3 tabs (safe resource usage)

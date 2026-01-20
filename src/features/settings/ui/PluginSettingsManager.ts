@@ -150,9 +150,8 @@ export class PluginSettingsManager {
     const wasEnabled = plugin?.enabled ?? false;
 
     try {
-      const newEnabledIds = this.plugin.pluginManager.togglePlugin(pluginId);
-      this.plugin.settings.enabledPlugins = newEnabledIds;
-      await this.plugin.saveSettings();
+      // Toggle plugin (writes to .claude/settings.json)
+      await this.plugin.pluginManager.togglePlugin(pluginId);
 
       // Reload plugin slash commands
       this.plugin.loadPluginSlashCommands();
@@ -176,7 +175,7 @@ export class PluginSettingsManager {
       }
     } catch (err) {
       // Revert the toggle on failure
-      this.plugin.pluginManager.togglePlugin(pluginId);
+      await this.plugin.pluginManager.togglePlugin(pluginId);
       const message = err instanceof Error ? err.message : 'Unknown error';
       new Notice(`Failed to toggle plugin: ${message}`);
     } finally {

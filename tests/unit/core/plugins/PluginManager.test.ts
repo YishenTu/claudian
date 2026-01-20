@@ -2,9 +2,17 @@ import { PluginManager } from '@/core/plugins/PluginManager';
 import type { ClaudianPlugin } from '@/core/types';
 
 // Create a mock PluginStorage
-function createMockStorage(plugins: ClaudianPlugin[] = []) {
+function createMockPluginStorage(plugins: ClaudianPlugin[] = []) {
   return {
     loadPlugins: jest.fn().mockReturnValue(plugins),
+  } as any;
+}
+
+// Create a mock CCSettingsStorage
+function createMockCCSettingsStorage(enabledPlugins: Record<string, boolean> = {}) {
+  return {
+    getEnabledPlugins: jest.fn().mockResolvedValue(enabledPlugins),
+    setPluginEnabled: jest.fn().mockResolvedValue(undefined),
   } as any;
 }
 
@@ -25,27 +33,46 @@ function createMockPlugin(overrides: Partial<ClaudianPlugin> = {}): ClaudianPlug
 }
 
 describe('PluginManager', () => {
-  describe('setEnabledPluginIds', () => {
-    it('sets enabled state for plugins', async () => {
+  describe('loadEnabledState', () => {
+    it('loads enabled state from CC settings', async () => {
       const plugin = createMockPlugin();
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': true,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
       await manager.loadPlugins();
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
+      await manager.loadEnabledState();
+
+      expect(ccSettings.getEnabledPlugins).toHaveBeenCalled();
+      const plugins = manager.getPlugins();
+      expect(plugins[0].enabled).toBe(true);
+    });
+
+    it('enables plugins by default (not explicitly disabled)', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({}); // Empty = all enabled by default
+      const manager = new PluginManager(pluginStorage, ccSettings);
+
+      await manager.loadPlugins();
+      await manager.loadEnabledState();
 
       const plugins = manager.getPlugins();
       expect(plugins[0].enabled).toBe(true);
     });
 
-    it('disables plugins not in the list', async () => {
-      const plugin = createMockPlugin({ enabled: true });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+    it('disables plugins explicitly set to false', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
       await manager.loadPlugins();
-      manager.setEnabledPluginIds([]);
+      await manager.loadEnabledState();
 
       const plugins = manager.getPlugins();
       expect(plugins[0].enabled).toBe(false);
@@ -55,52 +82,64 @@ describe('PluginManager', () => {
   describe('loadPlugins', () => {
     it('loads plugins from storage', async () => {
       const plugin = createMockPlugin();
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
       await manager.loadPlugins();
 
-      expect(storage.loadPlugins).toHaveBeenCalled();
+      expect(pluginStorage.loadPlugins).toHaveBeenCalled();
       expect(manager.getPlugins()).toHaveLength(1);
     });
 
-    it('applies enabled state from previously set IDs', async () => {
+    it('applies enabled state from CC settings after load', async () => {
       const plugin = createMockPlugin();
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       const plugins = manager.getPlugins();
-      expect(plugins[0].enabled).toBe(true);
+      expect(plugins[0].enabled).toBe(false);
     });
   });
 
   describe('getActivePluginConfigs', () => {
     it('returns configs only for enabled and available plugins', async () => {
       const plugins = [
-        createMockPlugin({ id: 'enabled-plugin', enabled: true, status: 'available' }),
-        createMockPlugin({ id: 'disabled-plugin', enabled: false, status: 'available' }),
-        createMockPlugin({ id: 'unavailable-plugin', enabled: true, status: 'unavailable' }),
+        createMockPlugin({ id: 'enabled-plugin', status: 'available' }),
+        createMockPlugin({ id: 'disabled-plugin', status: 'available' }),
+        createMockPlugin({ id: 'unavailable-plugin', status: 'unavailable' }),
       ];
-      const storage = createMockStorage(plugins);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage(plugins);
+      const ccSettings = createMockCCSettingsStorage({
+        'disabled-plugin': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
+      await manager.loadEnabledState();
       await manager.loadPlugins();
-      manager.setEnabledPluginIds(['enabled-plugin', 'unavailable-plugin']);
 
       const configs = manager.getActivePluginConfigs();
+      // enabled-plugin and unavailable-plugin are enabled by default
+      // but unavailable-plugin is filtered out due to status
       expect(configs).toHaveLength(1);
       expect(configs[0].type).toBe('local');
-      expect(configs[0].path).toBe('/path/to/plugin/.claude-plugin');
     });
 
-    it('returns empty array when no plugins are enabled', async () => {
-      const plugin = createMockPlugin({ enabled: false });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+    it('returns empty array when all plugins are disabled', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       const configs = manager.getActivePluginConfigs();
@@ -108,71 +147,68 @@ describe('PluginManager', () => {
     });
   });
 
-  describe('getUnavailableEnabledPlugins', () => {
-    it('returns IDs of enabled but unavailable plugins', async () => {
-      const plugins = [
-        createMockPlugin({ id: 'available-plugin', enabled: true, status: 'available' }),
-        createMockPlugin({ id: 'unavailable-plugin', enabled: true, status: 'unavailable' }),
-        createMockPlugin({ id: 'invalid-plugin', enabled: true, status: 'invalid-manifest' }),
-      ];
-      const storage = createMockStorage(plugins);
-      const manager = new PluginManager(storage);
-
-      await manager.loadPlugins();
-      manager.setEnabledPluginIds(['available-plugin', 'unavailable-plugin', 'invalid-plugin']);
-
-      const unavailable = manager.getUnavailableEnabledPlugins();
-      expect(unavailable).toHaveLength(2);
-      expect(unavailable).toContain('unavailable-plugin');
-      expect(unavailable).toContain('invalid-plugin');
-    });
-  });
-
   describe('togglePlugin', () => {
-    it('enables a disabled plugin', async () => {
-      const plugin = createMockPlugin({ enabled: false });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
-
-      await manager.loadPlugins();
-      const newIds = manager.togglePlugin('test-plugin@marketplace');
-
-      expect(newIds).toContain('test-plugin@marketplace');
-      expect(manager.getPlugins()[0].enabled).toBe(true);
-    });
-
     it('disables an enabled plugin', async () => {
-      const plugin = createMockPlugin({ enabled: true });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
-      const newIds = manager.togglePlugin('test-plugin@marketplace');
 
-      expect(newIds).not.toContain('test-plugin@marketplace');
+      // Plugin is enabled by default
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+
+      await manager.togglePlugin('test-plugin@marketplace');
+
       expect(manager.getPlugins()[0].enabled).toBe(false);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', false);
     });
 
-    it('returns current IDs when plugin not found', async () => {
+    it('enables a disabled plugin', async () => {
       const plugin = createMockPlugin();
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
-      const newIds = manager.togglePlugin('nonexistent-plugin');
 
-      expect(newIds).toContain('test-plugin@marketplace');
+      // Plugin is disabled
+      expect(manager.getPlugins()[0].enabled).toBe(false);
+
+      await manager.togglePlugin('test-plugin@marketplace');
+
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', true);
+    });
+
+    it('does nothing when plugin not found', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(pluginStorage, ccSettings);
+
+      await manager.loadPlugins();
+      await manager.togglePlugin('nonexistent-plugin');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
     });
   });
 
   describe('getPluginsKey', () => {
     it('returns empty string when no plugins are enabled', async () => {
-      const plugin = createMockPlugin({ enabled: false });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       expect(manager.getPluginsKey()).toBe('');
@@ -180,13 +216,14 @@ describe('PluginManager', () => {
 
     it('returns stable key for active plugins', async () => {
       const plugins = [
-        createMockPlugin({ id: 'plugin-b', enabled: true, pluginPath: '/path/b' }),
-        createMockPlugin({ id: 'plugin-a', enabled: true, pluginPath: '/path/a' }),
+        createMockPlugin({ id: 'plugin-b', pluginPath: '/path/b' }),
+        createMockPlugin({ id: 'plugin-a', pluginPath: '/path/a' }),
       ];
-      const storage = createMockStorage(plugins);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage(plugins);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['plugin-a', 'plugin-b']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       const key = manager.getPluginsKey();
@@ -196,13 +233,14 @@ describe('PluginManager', () => {
 
     it('excludes unavailable plugins from key', async () => {
       const plugins = [
-        createMockPlugin({ id: 'available-plugin', enabled: true, status: 'available' }),
-        createMockPlugin({ id: 'unavailable-plugin', enabled: true, status: 'unavailable' }),
+        createMockPlugin({ id: 'available-plugin', status: 'available' }),
+        createMockPlugin({ id: 'unavailable-plugin', status: 'unavailable' }),
       ];
-      const storage = createMockStorage(plugins);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage(plugins);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['available-plugin', 'unavailable-plugin']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       const key = manager.getPluginsKey();
@@ -213,22 +251,24 @@ describe('PluginManager', () => {
 
   describe('hasEnabledPlugins', () => {
     it('returns true when at least one plugin is enabled and available', async () => {
-      const plugin = createMockPlugin({ enabled: true, status: 'available' });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const plugin = createMockPlugin({ status: 'available' });
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       expect(manager.hasEnabledPlugins()).toBe(true);
     });
 
     it('returns false when all enabled plugins are unavailable', async () => {
-      const plugin = createMockPlugin({ enabled: true, status: 'unavailable' });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const plugin = createMockPlugin({ status: 'unavailable' });
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin@marketplace']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       expect(manager.hasEnabledPlugins()).toBe(false);
@@ -238,8 +278,9 @@ describe('PluginManager', () => {
   describe('hasPlugins', () => {
     it('returns true when plugins exist', async () => {
       const plugin = createMockPlugin();
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
       await manager.loadPlugins();
 
@@ -247,8 +288,9 @@ describe('PluginManager', () => {
     });
 
     it('returns false when no plugins exist', async () => {
-      const storage = createMockStorage([]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([]);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
       await manager.loadPlugins();
 
@@ -263,13 +305,13 @@ describe('PluginManager', () => {
         name: 'Test Plugin',
         installPath: '/path/to/plugin',
         pluginPath: '/path/to/plugin/.claude-plugin',
-        enabled: true,
         status: 'available',
       });
-      const storage = createMockStorage([plugin]);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['test-plugin']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       const paths = manager.getPluginCommandPaths();
@@ -281,19 +323,92 @@ describe('PluginManager', () => {
 
     it('excludes disabled and unavailable plugins', async () => {
       const plugins = [
-        createMockPlugin({ id: 'enabled-available', enabled: true, status: 'available', installPath: '/path/a' }),
-        createMockPlugin({ id: 'disabled-available', enabled: false, status: 'available', installPath: '/path/b' }),
-        createMockPlugin({ id: 'enabled-unavailable', enabled: true, status: 'unavailable', installPath: '/path/c' }),
+        createMockPlugin({ id: 'enabled-available', status: 'available', installPath: '/path/a' }),
+        createMockPlugin({ id: 'disabled-available', status: 'available', installPath: '/path/b' }),
+        createMockPlugin({ id: 'enabled-unavailable', status: 'unavailable', installPath: '/path/c' }),
       ];
-      const storage = createMockStorage(plugins);
-      const manager = new PluginManager(storage);
+      const pluginStorage = createMockPluginStorage(plugins);
+      const ccSettings = createMockCCSettingsStorage({
+        'disabled-available': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
 
-      manager.setEnabledPluginIds(['enabled-available', 'enabled-unavailable']);
+      await manager.loadEnabledState();
       await manager.loadPlugins();
 
       const paths = manager.getPluginCommandPaths();
       expect(paths).toHaveLength(1);
       expect(paths[0].commandsPath).toBe('/path/a');
+    });
+  });
+
+  describe('enablePlugin', () => {
+    it('enables a disabled plugin', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
+
+      await manager.loadEnabledState();
+      await manager.loadPlugins();
+
+      expect(manager.getPlugins()[0].enabled).toBe(false);
+
+      await manager.enablePlugin('test-plugin@marketplace');
+
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', true);
+    });
+
+    it('does nothing if plugin is already enabled', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
+
+      await manager.loadEnabledState();
+      await manager.loadPlugins();
+
+      await manager.enablePlugin('test-plugin@marketplace');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('disablePlugin', () => {
+    it('disables an enabled plugin', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({});
+      const manager = new PluginManager(pluginStorage, ccSettings);
+
+      await manager.loadEnabledState();
+      await manager.loadPlugins();
+
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+
+      await manager.disablePlugin('test-plugin@marketplace');
+
+      expect(manager.getPlugins()[0].enabled).toBe(false);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', false);
+    });
+
+    it('does nothing if plugin is already disabled', async () => {
+      const plugin = createMockPlugin();
+      const pluginStorage = createMockPluginStorage([plugin]);
+      const ccSettings = createMockCCSettingsStorage({
+        'test-plugin@marketplace': false,
+      });
+      const manager = new PluginManager(pluginStorage, ccSettings);
+
+      await manager.loadEnabledState();
+      await manager.loadPlugins();
+
+      await manager.disablePlugin('test-plugin@marketplace');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
     });
   });
 });

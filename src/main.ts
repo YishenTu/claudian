@@ -63,27 +63,16 @@ export default class ClaudianPlugin extends Plugin {
     this.mcpService = new McpService(mcpManager);
     await this.mcpService.loadServers();
 
-    // Initialize plugin manager
+    // Initialize plugin manager (uses CC settings for enabled state)
     const vaultPath = (this.app.vault.adapter as any).basePath;
     const pluginStorage = new PluginStorage(vaultPath);
-    this.pluginManager = new PluginManager(pluginStorage);
-    this.pluginManager.setEnabledPluginIds(this.settings.enabledPlugins);
+    this.pluginManager = new PluginManager(pluginStorage, this.storage.ccSettings);
+    await this.pluginManager.loadEnabledState();
     await this.pluginManager.loadPlugins();
 
     // Initialize agent manager (after plugin manager for plugin-sourced agents)
     this.agentManager = new AgentManager(vaultPath, this.pluginManager);
     await this.agentManager.loadAgents();
-
-    // Clean up unavailable plugins from settings and notify user
-    const unavailablePlugins = this.pluginManager.getUnavailableEnabledPlugins();
-    if (unavailablePlugins.length > 0) {
-      this.settings.enabledPlugins = this.settings.enabledPlugins
-        .filter(id => !unavailablePlugins.includes(id));
-      await this.saveSettings();
-
-      const count = unavailablePlugins.length;
-      new Notice(`${count} plugin${count > 1 ? 's' : ''} became unavailable and ${count > 1 ? 'were' : 'was'} disabled`);
-    }
 
     // Load slash commands from enabled plugins and merge with vault commands
     this.loadPluginSlashCommands();

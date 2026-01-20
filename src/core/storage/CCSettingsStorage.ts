@@ -165,6 +165,11 @@ export class CCSettingsStorage {
       permissions: settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS },
     };
 
+    // Include enabledPlugins if present in settings
+    if (settings.enabledPlugins !== undefined) {
+      merged.enabledPlugins = settings.enabledPlugins;
+    }
+
     const content = JSON.stringify(merged, null, 2);
     await this.adapter.write(CC_SETTINGS_PATH, content);
   }
@@ -235,5 +240,56 @@ export class CCSettingsStorage {
     permissions.deny = permissions.deny?.filter(r => r !== rule);
     permissions.ask = permissions.ask?.filter(r => r !== rule);
     await this.updatePermissions(permissions);
+  }
+
+  // ============================================
+  // Plugin Methods
+  // ============================================
+
+  /**
+   * Get enabled plugins map from CC settings.
+   * Returns empty object if not set.
+   */
+  async getEnabledPlugins(): Promise<Record<string, boolean>> {
+    const settings = await this.load();
+    return settings.enabledPlugins ?? {};
+  }
+
+  /**
+   * Set plugin enabled state.
+   * Writes to .claude/settings.json so CLI respects the state.
+   *
+   * @param pluginId - Full plugin ID (e.g., "plugin-name@source")
+   * @param enabled - true to enable, false to disable
+   */
+  async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
+    const settings = await this.load();
+    const enabledPlugins = settings.enabledPlugins ?? {};
+
+    enabledPlugins[pluginId] = enabled;
+    settings.enabledPlugins = enabledPlugins;
+
+    await this.save(settings);
+  }
+
+  /**
+   * Get list of plugin IDs that are explicitly enabled.
+   * Used for PluginManager initialization.
+   */
+  async getExplicitlyEnabledPluginIds(): Promise<string[]> {
+    const enabledPlugins = await this.getEnabledPlugins();
+    return Object.entries(enabledPlugins)
+      .filter(([, enabled]) => enabled === true)
+      .map(([id]) => id);
+  }
+
+  /**
+   * Check if a plugin is explicitly disabled.
+   * Returns true only if the plugin is set to false.
+   * Returns false if not set (inherits from global) or set to true.
+   */
+  async isPluginDisabled(pluginId: string): Promise<boolean> {
+    const enabledPlugins = await this.getEnabledPlugins();
+    return enabledPlugins[pluginId] === false;
   }
 }
