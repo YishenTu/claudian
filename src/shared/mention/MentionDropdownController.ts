@@ -515,12 +515,12 @@ export class MentionDropdownController {
       // Notify callback with agent ID
       this.callbacks.onAgentMentionSelect?.(selectedItem.id);
     } else if (selectedItem.type === 'context-folder') {
-      // Don't modify input text - just show files submenu
-      this.activeContextFilter = {
-        folderName: selectedItem.name,
-        contextRoot: selectedItem.contextRoot,
-      };
-      this.showMentionDropdown(`${selectedItem.name}/`);
+      const replacement = `@${selectedItem.name}/`;
+      this.inputEl.value = beforeAt + replacement + afterCursor;
+      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+      this.inputEl.focus();
+
+      this.handleInputChange();
       return;
     } else if (selectedItem.type === 'context-file') {
       // Display friendly name, but store mapping for later transformation to absolute path

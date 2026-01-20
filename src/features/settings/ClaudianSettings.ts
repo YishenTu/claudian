@@ -476,13 +476,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .addTextArea((text) => {
         text
           .setPlaceholder('ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model')
-          .setValue(this.plugin.settings.environmentVariables)
-          .onChange(async (value) => {
-            await this.plugin.applyEnvironmentVariables(value);
-          });
+          .setValue(this.plugin.settings.environmentVariables);
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
         text.inputEl.addClass('claudian-settings-env-textarea');
+        // Apply changes only on blur (when user exits the input field)
+        text.inputEl.addEventListener('blur', async () => {
+          await this.plugin.applyEnvironmentVariables(text.inputEl.value);
+        });
       });
 
     // Environment Snippets subsection
