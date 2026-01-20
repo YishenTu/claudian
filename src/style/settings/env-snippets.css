@@ -1,3 +1,94 @@
+/* Context Limits Styles */
+.claudian-context-limits-container {
+  margin-top: 16px;
+}
+
+.claudian-context-limits-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  margin-top: 16px;
+  padding: 0 12px;
+}
+
+.claudian-context-limits-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.claudian-context-limits-desc {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 0 12px;
+  margin-bottom: 8px;
+}
+
+.claudian-context-limits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.claudian-context-limits-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.claudian-context-limits-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-context-limits-model {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.claudian-context-limits-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 16px;
+  flex-shrink: 0;
+}
+
+.claudian-context-limits-input {
+  width: 80px;
+  padding: 4px 8px;
+  font-size: var(--font-ui-small);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.claudian-context-limits-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.claudian-context-limits-input.claudian-input-error {
+  border-color: var(--text-error);
+}
+
+.claudian-context-limit-validation {
+  display: none;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-error);
+  margin-top: 4px;
+}
+
 /* Environment Snippets Styles */
 .claudian-env-snippets-container {
   margin-top: 16px;

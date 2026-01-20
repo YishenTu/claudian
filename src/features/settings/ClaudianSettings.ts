@@ -490,16 +490,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
       });
 
+    // Custom Context Limits subsection (shown only when custom models are configured)
+    this.contextLimitsContainer = containerEl.createDiv({ cls: 'claudian-context-limits-container' });
+    this.renderContextLimitsSection();
+
     // Environment Snippets subsection
     const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
     this.envSnippetManager = new EnvSnippetManager(envSnippetsContainer, this.plugin, () => {
       // Callback to refresh context limits section when snippet is inserted
       this.renderContextLimitsSection();
     });
-
-    // Custom Context Limits subsection (shown only when custom models are configured)
-    this.contextLimitsContainer = containerEl.createDiv({ cls: 'claudian-context-limits-container' });
-    this.renderContextLimitsSection();
 
     // Advanced section
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
@@ -675,65 +675,66 @@ export class ClaudianSettingTab extends PluginSettingTab {
       return;
     }
 
-    // Section heading
-    new Setting(container)
-      .setName(t('settings.customContextLimits.name'))
-      .setHeading();
+    // Header (same hierarchy as EnvSnippetManager)
+    const headerEl = container.createDiv({ cls: 'claudian-context-limits-header' });
+    headerEl.createSpan({ text: t('settings.customContextLimits.name'), cls: 'claudian-context-limits-label' });
 
     // Description
-    const descEl = container.createDiv({ cls: 'setting-item-description' });
+    const descEl = container.createDiv({ cls: 'claudian-context-limits-desc' });
     descEl.setText(t('settings.customContextLimits.desc'));
-    descEl.style.marginBottom = '1em';
+
+    // List container for model inputs
+    const listEl = container.createDiv({ cls: 'claudian-context-limits-list' });
 
     // Create input for each unique model ID
     for (const modelId of uniqueModelIds) {
       const currentValue = this.plugin.settings.customContextLimits?.[modelId];
 
-      const setting = new Setting(container)
-        .setName(modelId);
+      const itemEl = listEl.createDiv({ cls: 'claudian-context-limits-item' });
+
+      const nameEl = itemEl.createDiv({ cls: 'claudian-context-limits-model' });
+      nameEl.setText(modelId);
+
+      const inputWrapper = itemEl.createDiv({ cls: 'claudian-context-limits-input-wrapper' });
+
+      const inputEl = inputWrapper.createEl('input', {
+        type: 'text',
+        placeholder: '200k',
+        cls: 'claudian-context-limits-input',
+        value: currentValue ? formatContextLimit(currentValue) : '',
+      });
 
       // Validation element
-      const validationEl = container.createDiv({ cls: 'claudian-context-limit-validation' });
-      validationEl.style.color = 'var(--text-error)';
-      validationEl.style.fontSize = '0.85em';
-      validationEl.style.marginTop = '-0.5em';
-      validationEl.style.marginBottom = '0.5em';
-      validationEl.style.display = 'none';
+      const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation' });
 
-      setting.addText((text) => {
-        text
-          .setPlaceholder('200k')
-          .setValue(currentValue ? formatContextLimit(currentValue) : '')
-          .onChange(async (value) => {
-            const trimmed = value.trim();
+      inputEl.addEventListener('input', async () => {
+        const trimmed = inputEl.value.trim();
 
-            // Initialize customContextLimits if needed
-            if (!this.plugin.settings.customContextLimits) {
-              this.plugin.settings.customContextLimits = {};
-            }
+        // Initialize customContextLimits if needed
+        if (!this.plugin.settings.customContextLimits) {
+          this.plugin.settings.customContextLimits = {};
+        }
 
-            if (!trimmed) {
-              // Empty = use default (remove from custom limits)
-              delete this.plugin.settings.customContextLimits[modelId];
-              validationEl.style.display = 'none';
-              text.inputEl.style.borderColor = '';
-            } else {
-              const parsed = parseContextLimit(trimmed);
-              if (parsed === null) {
-                validationEl.setText(t('settings.customContextLimits.invalid'));
-                validationEl.style.display = 'block';
-                text.inputEl.style.borderColor = 'var(--text-error)';
-                return; // Don't save invalid value
-              }
+        if (!trimmed) {
+          // Empty = use default (remove from custom limits)
+          delete this.plugin.settings.customContextLimits[modelId];
+          validationEl.style.display = 'none';
+          inputEl.classList.remove('claudian-input-error');
+        } else {
+          const parsed = parseContextLimit(trimmed);
+          if (parsed === null) {
+            validationEl.setText(t('settings.customContextLimits.invalid'));
+            validationEl.style.display = 'block';
+            inputEl.classList.add('claudian-input-error');
+            return; // Don't save invalid value
+          }
 
-              this.plugin.settings.customContextLimits[modelId] = parsed;
-              validationEl.style.display = 'none';
-              text.inputEl.style.borderColor = '';
-            }
+          this.plugin.settings.customContextLimits[modelId] = parsed;
+          validationEl.style.display = 'none';
+          inputEl.classList.remove('claudian-input-error');
+        }
 
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.style.width = '100px';
+        await this.plugin.saveSettings();
       });
     }
   }
