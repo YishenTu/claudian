@@ -17,7 +17,7 @@ import { setIcon } from 'obsidian';
 import type { TodoItem } from '../../../core/tools';
 import { getToolIcon } from '../../../core/tools/toolIcons';
 import { TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
-import type { AsyncSubagentStatus, SubagentInfo } from '../../../core/types';
+import type { AsyncSubagentStatus } from '../../../core/types';
 import { renderTodoItems } from '../rendering/todoUtils';
 
 /** Terminal states for async subagents (no longer trackable). */
@@ -349,36 +349,6 @@ export class StatusPanel {
       }
     }
     return true;
-  }
-
-  /**
-   * Restore async subagents from loaded conversation messages.
-   * Running/pending subagents are marked as orphaned since they can't be tracked after reload.
-   */
-  restoreSubagents(subagents: SubagentInfo[]): void {
-    // Clear existing subagents first
-    this.clearSubagents();
-
-    // Filter to async subagents only
-    const asyncSubagents = subagents.filter(s => s.mode === 'async');
-
-    for (const subagent of asyncSubagents) {
-      // Determine display status - running/pending become orphaned after reload
-      const status: PanelSubagentInfo['status'] = TERMINAL_STATES.includes(
-        subagent.asyncStatus as PanelSubagentInfo['status']
-      )
-        ? (subagent.asyncStatus as PanelSubagentInfo['status'])
-        : 'orphaned';
-
-      this.currentSubagents.set(subagent.id, {
-        id: subagent.id,
-        description: subagent.description,
-        status,
-        prompt: subagent.prompt,
-        result: subagent.result,
-      });
-    }
-    this.renderSubagentStatus();
   }
 
   /**

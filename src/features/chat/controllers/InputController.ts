@@ -107,15 +107,6 @@ export class InputController {
     const hasImages = imageContextManager?.hasImages() ?? false;
     if (!content && !hasImages) return;
 
-    // Clear todo panel if all tasks are done (agent can recreate if needed)
-    if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
-      state.currentTodos = null;
-    }
-
-    // Clear completed/error async subagents from status panel and messages
-    this.deps.getStatusPanel()?.clearTerminalSubagents();
-    this.deps.conversationController.clearTerminalSubagentsFromMessages();
-
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content);
     if (builtInCmd) {

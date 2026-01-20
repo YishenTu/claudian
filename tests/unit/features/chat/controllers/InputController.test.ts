@@ -879,11 +879,11 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
-      // clearTerminalSubagents is called twice: once at start, once at response end
-      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(2);
+      // clearTerminalSubagents is called once at response end when all completed
+      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(1);
     });
 
-    it('should NOT call clearTerminalSubagents at response end when subagents still running', async () => {
+    it('should NOT call clearTerminalSubagents when subagents still running', async () => {
       const welcomeEl = { style: { display: '' } } as any;
       const fileContextManager = {
         startSession: jest.fn(),
@@ -915,9 +915,8 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
-      // clearTerminalSubagents is called once at start (unconditionally),
-      // but NOT again at response end when subagents are still running
-      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(1);
+      // clearTerminalSubagents is NOT called when subagents are still running
+      expect(mockStatusPanel.clearTerminalSubagents).not.toHaveBeenCalled();
     });
 
     it('should handle null statusPanel gracefully', async () => {
@@ -1052,20 +1051,6 @@ describe('InputController - Message Queue', () => {
       expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('"/path/with spaces"');
       // Notice should show the normalized path (quotes stripped)
       expect(mockNotice).toHaveBeenCalledWith(`Added external context: ${normalizedPath}`);
-    });
-
-    it('should clear terminal subagents when executing built-in command', async () => {
-      const mockExternalContextSelector = {
-        getExternalContexts: jest.fn().mockReturnValue([]),
-        addExternalContext: jest.fn().mockReturnValue({ success: true, normalizedPath: '/some/path' }),
-      };
-      deps.getExternalContextSelector = () => mockExternalContextSelector;
-      inputEl.value = '/add-dir /some/path';
-      controller = new InputController(deps);
-
-      await controller.sendMessage();
-
-      expect(deps.conversationController.clearTerminalSubagentsFromMessages).toHaveBeenCalled();
     });
   });
 });
