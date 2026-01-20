@@ -779,6 +779,177 @@ describe('InputController - Message Queue', () => {
     });
   });
 
+  describe('Auto-hide status panels on response end', () => {
+    it('should clear currentTodos when all todos are completed', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.currentTodos = [
+        { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
+        { content: 'Task 2', status: 'completed', activeForm: 'Task 2' },
+      ];
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.state.currentTodos).toBeNull();
+    });
+
+    it('should NOT clear currentTodos when some todos are pending', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.currentTodos = [
+        { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
+        { content: 'Task 2', status: 'pending', activeForm: 'Task 2' },
+      ];
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.state.currentTodos).not.toBeNull();
+      expect(deps.state.currentTodos).toHaveLength(2);
+    });
+
+    it('should call clearTerminalSubagents when all subagents completed', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+      const mockStatusPanel = {
+        areAllSubagentsCompleted: jest.fn().mockReturnValue(true),
+        clearTerminalSubagents: jest.fn(),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getStatusPanel: () => mockStatusPanel as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
+      // clearTerminalSubagents is called twice: once at start, once at response end
+      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(2);
+    });
+
+    it('should NOT call clearTerminalSubagents at response end when subagents still running', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+      const mockStatusPanel = {
+        areAllSubagentsCompleted: jest.fn().mockReturnValue(false),
+        clearTerminalSubagents: jest.fn(),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getStatusPanel: () => mockStatusPanel as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
+      // clearTerminalSubagents is called once at start (unconditionally),
+      // but NOT again at response end when subagents are still running
+      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle null statusPanel gracefully', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getStatusPanel: () => null,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Test message';
+      controller = new InputController(deps);
+
+      // Should not throw
+      await expect(controller.sendMessage()).resolves.not.toThrow();
+    });
+  });
+
   describe('Built-in commands - /add-dir', () => {
     beforeEach(() => {
       mockNotice.mockClear();

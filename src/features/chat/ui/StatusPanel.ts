@@ -339,7 +339,7 @@ export class StatusPanel {
   /**
    * Check if all subagents completed successfully.
    * Used for auto-hide on response completion.
-   * Returns false if empty or any subagent is pending, running, errored, or orphaned.
+   * Returns false if empty or any subagent is pending, running, error, or orphaned.
    */
   areAllSubagentsCompleted(): boolean {
     if (this.currentSubagents.size === 0) return false;
