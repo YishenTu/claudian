@@ -25,7 +25,7 @@ const VAULT_AGENTS_DIR = '.claude/agents';
 const PLUGIN_AGENTS_DIR = 'agents';
 
 /** Built-in agents provided by the SDK */
-const BUILTIN_AGENTS: Omit<AgentDefinition, 'filePath'>[] = [
+const BUILTIN_AGENTS: AgentDefinition[] = [
   {
     id: 'Explore',
     name: 'Explore',
@@ -74,9 +74,7 @@ export class AgentManager {
     this.agents = [];
 
     // 0. Add built-in agents first
-    for (const agent of BUILTIN_AGENTS) {
-      this.agents.push(agent as AgentDefinition);
-    }
+    this.agents.push(...BUILTIN_AGENTS);
 
     // 1. Load plugin agents (namespaced)
     await this.loadPluginAgents();
@@ -103,13 +101,6 @@ export class AgentManager {
   }
 
   /**
-   * Get agents filtered by source.
-   */
-  getAgentsBySource(source: 'plugin' | 'vault' | 'global' | 'builtin'): AgentDefinition[] {
-    return this.agents.filter(a => a.source === source);
-  }
-
-  /**
    * Search agents by name/description (for @ mention filtering).
    */
   searchAgents(query: string): AgentDefinition[] {
@@ -122,35 +113,16 @@ export class AgentManager {
   }
 
   /**
-   * Get all agent IDs for validation.
-   */
-  getAllAgentIds(): string[] {
-    return this.agents.map(a => a.id);
-  }
-
-  /**
    * Load agents from enabled plugins.
    */
   private async loadPluginAgents(): Promise<void> {
-    const plugins = this.pluginManager.getPlugins();
-
-    for (const plugin of plugins) {
-      if (!plugin.enabled || plugin.status !== 'available') {
-        continue;
-      }
-
-      const agentsDir = path.join(plugin.installPath, PLUGIN_AGENTS_DIR);
-      if (!fs.existsSync(agentsDir)) {
-        continue;
-      }
-
-      const files = this.listMarkdownFiles(agentsDir);
-      for (const filePath of files) {
-        const agent = await this.parseAgentFromFile(filePath, 'plugin', plugin.name);
-        if (agent) {
-          this.agents.push(agent);
-        }
-      }
+    for (const plugin of this.pluginManager.getPlugins()) {
+      if (!plugin.enabled || plugin.status !== 'available') continue;
+      await this.loadAgentsFromDirectory(
+        path.join(plugin.installPath, PLUGIN_AGENTS_DIR),
+        'plugin',
+        plugin.name
+      );
     }
   }
 
@@ -158,34 +130,29 @@ export class AgentManager {
    * Load agents from vault .claude/agents directory.
    */
   private async loadVaultAgents(): Promise<void> {
-    const agentsDir = path.join(this.vaultPath, VAULT_AGENTS_DIR);
-    if (!fs.existsSync(agentsDir)) {
-      return;
-    }
-
-    const files = this.listMarkdownFiles(agentsDir);
-    for (const filePath of files) {
-      const agent = await this.parseAgentFromFile(filePath, 'vault');
-      if (agent) {
-        this.agents.push(agent);
-      }
-    }
+    await this.loadAgentsFromDirectory(path.join(this.vaultPath, VAULT_AGENTS_DIR), 'vault');
   }
 
   /**
    * Load agents from global ~/.claude/agents directory.
    */
   private async loadGlobalAgents(): Promise<void> {
-    if (!fs.existsSync(GLOBAL_AGENTS_DIR)) {
-      return;
-    }
+    await this.loadAgentsFromDirectory(GLOBAL_AGENTS_DIR, 'global');
+  }
 
-    const files = this.listMarkdownFiles(GLOBAL_AGENTS_DIR);
-    for (const filePath of files) {
-      const agent = await this.parseAgentFromFile(filePath, 'global');
-      if (agent) {
-        this.agents.push(agent);
-      }
+  /**
+   * Load agents from a directory into this.agents.
+   */
+  private async loadAgentsFromDirectory(
+    dir: string,
+    source: 'plugin' | 'vault' | 'global',
+    pluginName?: string
+  ): Promise<void> {
+    if (!fs.existsSync(dir)) return;
+
+    for (const filePath of this.listMarkdownFiles(dir)) {
+      const agent = await this.parseAgentFromFile(filePath, source, pluginName);
+      if (agent) this.agents.push(agent);
     }
   }
 

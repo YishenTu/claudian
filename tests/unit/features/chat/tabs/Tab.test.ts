@@ -334,7 +334,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       persistentExternalContextPaths: [],
     },
     mcpService: { getMcpServers: jest.fn().mockReturnValue([]) },
-    agentManager: { searchAgents: jest.fn().mockReturnValue([]), getAllAgentIds: jest.fn().mockReturnValue([]) },
+    agentManager: { searchAgents: jest.fn().mockReturnValue([]) },
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationSync: jest.fn().mockReturnValue(null),
     saveSettings: jest.fn().mockResolvedValue(undefined),

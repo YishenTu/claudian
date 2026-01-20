@@ -307,7 +307,6 @@ export class FileContextManager {
     // Create adapter from AgentManager to AgentMentionProvider
     const provider: AgentMentionProvider = {
       searchAgents: (query: string) => agentManager.searchAgents(query),
-      getAllAgentIds: () => agentManager.getAllAgentIds(),
     };
     this.mentionDropdown.setAgentService(provider);
   }
