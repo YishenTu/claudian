@@ -863,7 +863,7 @@ export class ContextUsageMeter {
   }
 
   update(usage: UsageInfo | null): void {
-    if (!usage) {
+    if (!usage || usage.contextTokens <= 0) {
       this.container.style.display = 'none';
       return;
     }
