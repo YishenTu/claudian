@@ -18,6 +18,7 @@ import type { AgentFrontmatter } from '../types';
  * - Required: `description` (non-empty string)
  * - Optional: `tools` (string or string[] if present)
  * - Optional: `disallowedTools` (string or string[] if present)
+ * - Optional: `model` (string, validated separately via parseModel)
  *
  * @param content - Raw markdown file content
  * @returns Parsed frontmatter and body, or null if validation fails

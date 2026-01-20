@@ -138,14 +138,14 @@ export class QueryOptionsBuilder {
     if (currentConfig.show1MModel !== newConfig.show1MModel) return true;
 
     // Export paths affect system prompt
-    const oldExport = [...(currentConfig.allowedExportPaths || [])].sort().join('|');
-    const newExport = [...(newConfig.allowedExportPaths || [])].sort().join('|');
-    if (oldExport !== newExport) return true;
+    if (QueryOptionsBuilder.pathsChanged(currentConfig.allowedExportPaths, newConfig.allowedExportPaths)) {
+      return true;
+    }
 
     // External context paths require restart (additionalDirectories can't be updated dynamically)
-    const oldExternal = [...(currentConfig.externalContextPaths || [])].sort().join('|');
-    const newExternal = [...(newConfig.externalContextPaths || [])].sort().join('|');
-    if (oldExternal !== newExternal) return true;
+    if (QueryOptionsBuilder.pathsChanged(currentConfig.externalContextPaths, newConfig.externalContextPaths)) {
+      return true;
+    }
 
     return false;
   }
@@ -254,11 +254,8 @@ export class QueryOptionsBuilder {
       options.plugins = pluginConfigs;
     }
 
-    // Add custom agents via SDK native support (filter out built-ins - SDK manages those)
-    const agents = ctx.agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
-    if (agents.length > 0) {
-      options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
-    }
+    // Add custom agents via SDK native support
+    QueryOptionsBuilder.applyAgents(options, ctx.agentManager);
 
     // Set permission mode
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
@@ -357,11 +354,8 @@ export class QueryOptionsBuilder {
       options.plugins = pluginConfigs;
     }
 
-    // Add custom agents via SDK native support (filter out built-ins - SDK manages those)
-    const agents = ctx.agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
-    if (agents.length > 0) {
-      options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
-    }
+    // Add custom agents via SDK native support
+    QueryOptionsBuilder.applyAgents(options, ctx.agentManager);
 
     // Set permission mode
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
@@ -448,6 +442,25 @@ export class QueryOptionsBuilder {
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
     if (budgetConfig && budgetConfig.tokens > 0) {
       options.maxThinkingTokens = budgetConfig.tokens;
+    }
+  }
+
+  /**
+   * Compares two path arrays for equality (order-independent).
+   */
+  private static pathsChanged(a?: string[], b?: string[]): boolean {
+    const aKey = [...(a || [])].sort().join('|');
+    const bKey = [...(b || [])].sort().join('|');
+    return aKey !== bKey;
+  }
+
+  /**
+   * Applies custom agents to options (filters out built-ins managed by SDK).
+   */
+  private static applyAgents(options: Options, agentManager?: AgentManager): void {
+    const agents = agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
+    if (agents.length > 0) {
+      options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }
   }
 

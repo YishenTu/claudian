@@ -88,7 +88,7 @@ export class AgentManager {
   }
 
   /**
-   * Get all available agents, sorted by source priority.
+   * Get all available agents in load order (reflects source priority).
    */
   getAvailableAgents(): AgentDefinition[] {
     return [...this.agents];
@@ -102,7 +102,7 @@ export class AgentManager {
   }
 
   /**
-   * Search agents by name/description (for @ mention filtering).
+   * Search agents by ID, name, or description (for @ mention filtering).
    */
   searchAgents(query: string): AgentDefinition[] {
     const q = query.toLowerCase();

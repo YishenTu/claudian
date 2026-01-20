@@ -653,6 +653,88 @@ describe('QueryOptionsBuilder', () => {
 
       expect(options.additionalDirectories).toBeUndefined();
     });
+
+    it('includes custom agents in cold-start options', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'cold-agent',
+          name: 'Cold Agent',
+          description: 'Agent for cold start',
+          prompt: 'Cold prompt',
+          source: 'vault',
+          model: 'sonnet',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.agents).toBeDefined();
+      expect(options.agents?.['cold-agent']).toBeDefined();
+      expect(options.agents?.['cold-agent'].model).toBe('sonnet');
+    });
+
+    it('filters out built-in agents from cold-start options', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'Explore',
+          name: 'Explore',
+          description: 'Built-in explore',
+          prompt: '',
+          source: 'builtin',
+        },
+        {
+          id: 'custom-cold',
+          name: 'Custom Cold',
+          description: 'Custom agent',
+          prompt: 'Custom prompt',
+          source: 'global',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.agents?.['Explore']).toBeUndefined();
+      expect(options.agents?.['custom-cold']).toBeDefined();
+    });
+
+    it('converts inherit model to undefined in cold-start agents', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'inherit-agent',
+          name: 'Inherit Agent',
+          description: 'Uses inherit',
+          prompt: 'Inherit prompt',
+          source: 'vault',
+          model: 'inherit',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.agents?.['inherit-agent']).toBeDefined();
+      expect(options.agents?.['inherit-agent'].model).toBeUndefined();
+    });
   });
 
   describe('getMcpServersConfig', () => {

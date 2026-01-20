@@ -10,7 +10,7 @@ import { Notice, TFile } from 'obsidian';
 
 import type { AgentManager } from '../../../core/agents';
 import type { McpService } from '../../../core/mcp/McpService';
-import { type AgentMentionProvider,MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import { FileContextState } from './file-context/state/FileContextState';
 import { MarkdownFileCache } from './file-context/state/MarkdownFileCache';
@@ -300,15 +300,8 @@ export class FileContextManager {
 
   /** Set the agent manager for @-mention autocomplete. */
   setAgentService(agentManager: AgentManager | null): void {
-    if (!agentManager) {
-      this.mentionDropdown.setAgentService(null);
-      return;
-    }
-    // Create adapter from AgentManager to AgentMentionProvider
-    const provider: AgentMentionProvider = {
-      searchAgents: (query: string) => agentManager.searchAgents(query),
-    };
-    this.mentionDropdown.setAgentService(provider);
+    // AgentManager structurally satisfies AgentMentionProvider
+    this.mentionDropdown.setAgentService(agentManager);
   }
 
   /** Set callback for when MCP mentions change (for McpServerSelector integration). */

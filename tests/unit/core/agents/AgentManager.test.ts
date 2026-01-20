@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
 // Mock fs and os modules BEFORE importing AgentManager
@@ -11,8 +10,23 @@ jest.mock('os', () => ({
 import { AgentManager } from '@/core/agents/AgentManager';
 import type { ClaudianPlugin } from '@/core/types';
 
-const mockFs = fs as jest.Mocked<typeof fs>;
-const mockOs = os as jest.Mocked<typeof os>;
+const mockFs = jest.mocked(fs);
+
+// Helper to create mock Dirent objects
+function createMockDirent(name: string, isFile: boolean): fs.Dirent {
+  return {
+    name,
+    isFile: () => isFile,
+    isDirectory: () => !isFile,
+    isBlockDevice: () => false,
+    isCharacterDevice: () => false,
+    isSymbolicLink: () => false,
+    isFIFO: () => false,
+    isSocket: () => false,
+    path: '',
+    parentPath: '',
+  } as fs.Dirent;
+}
 
 // Create a mock PluginManager
 function createMockPluginManager(plugins: Partial<ClaudianPlugin>[] = []) {
@@ -107,11 +121,9 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === VAULT_AGENTS_DIR) {
-          return [
-            { name: 'test-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('test-agent.md', true)];
         }
         return [];
       });
@@ -134,11 +146,9 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === GLOBAL_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === GLOBAL_AGENTS_DIR) {
-          return [
-            { name: 'global-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('global-agent.md', true)];
         }
         return [];
       });
@@ -166,11 +176,9 @@ describe('AgentManager', () => {
       const pluginAgentsDir = path.join('/plugins/my-plugin', 'agents');
 
       mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === pluginAgentsDir) {
-          return [
-            { name: 'plugin-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('plugin-agent.md', true)];
         }
         return [];
       });
@@ -229,11 +237,9 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === VAULT_AGENTS_DIR) {
-          return [
-            { name: 'invalid-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('invalid-agent.md', true)];
         }
         return [];
       });
@@ -252,10 +258,8 @@ describe('AgentManager', () => {
 
       // Both vault and global have same agent name
       mockFs.existsSync.mockReturnValue(true);
-      mockFs.readdirSync.mockImplementation((dir) => {
-        return [
-          { name: 'duplicate.md', isFile: () => true },
-        ] as unknown as fs.Dirent[];
+      (mockFs.readdirSync as jest.Mock).mockImplementation(() => {
+        return [createMockDirent('duplicate.md', true)];
       });
       mockFs.readFileSync.mockReturnValue(MINIMAL_AGENT_FILE);
 
@@ -289,11 +293,9 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === VAULT_AGENTS_DIR) {
-          return [
-            { name: 'error-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('error-agent.md', true)];
         }
         return [];
       });
@@ -313,13 +315,13 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === VAULT_AGENTS_DIR) {
           return [
-            { name: 'agent.txt', isFile: () => true },
-            { name: 'agent.json', isFile: () => true },
-            { name: 'valid-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+            createMockDirent('agent.txt', true),
+            createMockDirent('agent.json', true),
+            createMockDirent('valid-agent.md', true),
+          ];
         }
         return [];
       });
@@ -338,12 +340,12 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === VAULT_AGENTS_DIR) {
           return [
-            { name: 'subdir', isFile: () => false },
-            { name: 'valid-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+            createMockDirent('subdir', false),
+            createMockDirent('valid-agent.md', true),
+          ];
         }
         return [];
       });
@@ -408,11 +410,9 @@ describe('AgentManager', () => {
       const pluginAgentsDir = path.join('/plugins/my-plugin', 'agents');
 
       mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === pluginAgentsDir) {
-          return [
-            { name: 'plugin-agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('plugin-agent.md', true)];
         }
         return [];
       });
@@ -497,11 +497,9 @@ describe('AgentManager', () => {
       const pluginAgentsDir = path.join('/plugins/my-plugin', 'agents');
 
       mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === pluginAgentsDir) {
-          return [
-            { name: 'agent.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('agent.md', true)];
         }
         return [];
       });
@@ -521,11 +519,9 @@ describe('AgentManager', () => {
       const manager = new AgentManager(VAULT_PATH, pluginManager);
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      mockFs.readdirSync.mockImplementation((dir) => {
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
         if (dir === VAULT_AGENTS_DIR) {
-          return [
-            { name: 'minimal.md', isFile: () => true },
-          ] as unknown as fs.Dirent[];
+          return [createMockDirent('minimal.md', true)];
         }
         return [];
       });
