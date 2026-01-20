@@ -142,6 +142,13 @@
         "cancel": "취소"
       }
     },
+    "customContextLimits": {
+      "name": "사용자 정의 컨텍스트 제한",
+      "desc": "사용자 정의 모델의 컨텍스트 창 크기를 설정합니다. 기본값(200k 토큰)을 사용하려면 비워두세요.",
+      "modelLabel": "{model} 컨텍스트 제한",
+      "modelDesc": "{modelId}의 컨텍스트 창. 256k, 1m 또는 정확한 토큰 수와 같은 형식을 사용하세요.",
+      "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
+    },
     "advanced": "고급",
     "show1MModel": {
       "name": "1M 컨텍스트 창을 가진 Sonnet 활성화",

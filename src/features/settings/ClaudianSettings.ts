@@ -13,7 +13,7 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
+import { formatContextLimit, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import type { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
@@ -73,6 +73,8 @@ function getHotkeyForCommand(app: App, commandId: string): string | null {
 /** Plugin settings tab displayed in Obsidian's settings pane. */
 export class ClaudianSettingTab extends PluginSettingTab {
   plugin: ClaudianPlugin;
+  private envSnippetManager: EnvSnippetManager | null = null;
+  private contextLimitsContainer: HTMLElement | null = null;
 
   constructor(app: App, plugin: ClaudianPlugin) {
     super(app, plugin);
@@ -483,12 +485,21 @@ export class ClaudianSettingTab extends PluginSettingTab {
         // Apply changes only on blur (when user exits the input field)
         text.inputEl.addEventListener('blur', async () => {
           await this.plugin.applyEnvironmentVariables(text.inputEl.value);
+          // Refresh context limits section to show/hide inputs for detected custom models
+          this.renderContextLimitsSection();
         });
       });
 
     // Environment Snippets subsection
     const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
-    new EnvSnippetManager(envSnippetsContainer, this.plugin);
+    this.envSnippetManager = new EnvSnippetManager(envSnippetsContainer, this.plugin, () => {
+      // Callback to refresh context limits section when snippet is inserted
+      this.renderContextLimitsSection();
+    });
+
+    // Custom Context Limits subsection (shown only when custom models are configured)
+    this.contextLimitsContainer = containerEl.createDiv({ cls: 'claudian-context-limits-container' });
+    this.renderContextLimitsSection();
 
     // Advanced section
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
@@ -629,6 +640,110 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.style.borderColor = 'var(--text-error)';
       }
     });
+  }
+
+  /**
+   * Renders the custom context limits section.
+   * Shows input fields for each custom model detected via environment variables.
+   */
+  private renderContextLimitsSection(): void {
+    const container = this.contextLimitsContainer;
+    if (!container) return;
+
+    container.empty();
+
+    // Detect custom models from environment variables
+    const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
+    const customModelEnvKeys = [
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ];
+
+    // Collect unique model IDs (de-duplicate when multiple env vars point to the same model)
+    const uniqueModelIds = new Set<string>();
+    for (const envKey of customModelEnvKeys) {
+      const modelId = envVars[envKey];
+      if (modelId) {
+        uniqueModelIds.add(modelId);
+      }
+    }
+
+    // Don't render section if no custom models are detected
+    if (uniqueModelIds.size === 0) {
+      return;
+    }
+
+    // Section heading
+    new Setting(container)
+      .setName(t('settings.customContextLimits.name'))
+      .setHeading();
+
+    // Description
+    const descEl = container.createDiv({ cls: 'setting-item-description' });
+    descEl.setText(t('settings.customContextLimits.desc'));
+    descEl.style.marginBottom = '1em';
+
+    // Create input for each unique model ID
+    for (const modelId of uniqueModelIds) {
+      const currentValue = this.plugin.settings.customContextLimits?.[modelId];
+
+      const setting = new Setting(container)
+        .setName(modelId);
+
+      // Validation element
+      const validationEl = container.createDiv({ cls: 'claudian-context-limit-validation' });
+      validationEl.style.color = 'var(--text-error)';
+      validationEl.style.fontSize = '0.85em';
+      validationEl.style.marginTop = '-0.5em';
+      validationEl.style.marginBottom = '0.5em';
+      validationEl.style.display = 'none';
+
+      setting.addText((text) => {
+        text
+          .setPlaceholder('200k')
+          .setValue(currentValue ? formatContextLimit(currentValue) : '')
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+
+            // Initialize customContextLimits if needed
+            if (!this.plugin.settings.customContextLimits) {
+              this.plugin.settings.customContextLimits = {};
+            }
+
+            if (!trimmed) {
+              // Empty = use default (remove from custom limits)
+              delete this.plugin.settings.customContextLimits[modelId];
+              validationEl.style.display = 'none';
+              text.inputEl.style.borderColor = '';
+            } else {
+              const parsed = parseContextLimit(trimmed);
+              if (parsed === null) {
+                validationEl.setText(t('settings.customContextLimits.invalid'));
+                validationEl.style.display = 'block';
+                text.inputEl.style.borderColor = 'var(--text-error)';
+                return; // Don't save invalid value
+              }
+
+              this.plugin.settings.customContextLimits[modelId] = parsed;
+              validationEl.style.display = 'none';
+              text.inputEl.style.borderColor = '';
+            }
+
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.style.width = '100px';
+      });
+    }
+  }
+
+  /**
+   * Refreshes the context limits section when environment variables change.
+   * Called from plugin when env vars are updated.
+   */
+  public refreshContextLimitsSection(): void {
+    this.renderContextLimitsSection();
   }
 
 }

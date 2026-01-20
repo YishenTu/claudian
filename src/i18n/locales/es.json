@@ -142,6 +142,13 @@
         "cancel": "Cancelar"
       }
     },
+    "customContextLimits": {
+      "name": "Límites de contexto personalizados",
+      "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",
+      "modelLabel": "Límite de contexto de {model}",
+      "modelDesc": "Ventana de contexto para {modelId}. Use formatos como 256k, 1m o número exacto de tokens.",
+      "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
+    },
     "advanced": "Avanzado",
     "show1MModel": {
       "name": "Habilitar Sonnet con ventana de contexto de 1M",

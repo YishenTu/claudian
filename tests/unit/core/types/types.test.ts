@@ -10,9 +10,12 @@ import type {
 } from '@/core/types';
 import {
   BETA_1M_CONTEXT,
+  CONTEXT_WINDOW_1M,
+  CONTEXT_WINDOW_STANDARD,
   createPermissionRule,
   DEFAULT_SETTINGS,
   getCliPlatformKey,
+  getContextWindowSize,
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
@@ -97,6 +100,7 @@ describe('types.ts', () => {
         mediaFolder: '',
         environmentVariables: '',
         envSnippets: [],
+        customContextLimits: {},
         systemPrompt: '',
         allowedExportPaths: [],
         persistentExternalContextPaths: [],
@@ -129,6 +133,7 @@ describe('types.ts', () => {
         mediaFolder: 'attachments',
         environmentVariables: 'API_KEY=test',
         envSnippets: [],
+        customContextLimits: {},
         systemPrompt: '',
         allowedExportPaths: [],
         persistentExternalContextPaths: [],
@@ -161,6 +166,7 @@ describe('types.ts', () => {
         mediaFolder: '',
         environmentVariables: '',
         envSnippets: [],
+        customContextLimits: {},
         systemPrompt: '',
         allowedExportPaths: [],
         persistentExternalContextPaths: [],
@@ -653,6 +659,47 @@ describe('types.ts', () => {
     describe('BETA_1M_CONTEXT', () => {
       it('should be defined as the correct beta flag', () => {
         expect(BETA_1M_CONTEXT).toBe('context-1m-2025-08-07');
+      });
+    });
+
+    describe('getContextWindowSize', () => {
+      it('should return standard context window by default', () => {
+        expect(getContextWindowSize('sonnet')).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('opus')).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('haiku')).toBe(CONTEXT_WINDOW_STANDARD);
+      });
+
+      it('should return 1M context window for sonnet when enabled', () => {
+        expect(getContextWindowSize('sonnet', true)).toBe(CONTEXT_WINDOW_1M);
+        expect(getContextWindowSize('claude-sonnet-4-5', true)).toBe(CONTEXT_WINDOW_1M);
+      });
+
+      it('should return standard context for non-sonnet models even with 1M enabled', () => {
+        expect(getContextWindowSize('opus', true)).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('haiku', true)).toBe(CONTEXT_WINDOW_STANDARD);
+      });
+
+      it('should use custom limits when provided', () => {
+        const customLimits = { 'custom-model': 256000 };
+        expect(getContextWindowSize('custom-model', false, customLimits)).toBe(256000);
+      });
+
+      it('should prioritize custom limits over 1M setting', () => {
+        const customLimits = { 'custom-sonnet': 500000 };
+        expect(getContextWindowSize('custom-sonnet', true, customLimits)).toBe(500000);
+      });
+
+      it('should fall back to default when model not in custom limits', () => {
+        const customLimits = { 'other-model': 256000 };
+        expect(getContextWindowSize('sonnet', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+      });
+
+      it('should handle empty custom limits object', () => {
+        expect(getContextWindowSize('sonnet', false, {})).toBe(CONTEXT_WINDOW_STANDARD);
+      });
+
+      it('should handle undefined custom limits', () => {
+        expect(getContextWindowSize('sonnet', false, undefined)).toBe(CONTEXT_WINDOW_STANDARD);
       });
     });
   });

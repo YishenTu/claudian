@@ -142,6 +142,13 @@
         "cancel": "Abbrechen"
       }
     },
+    "customContextLimits": {
+      "name": "Benutzerdefinierte Kontextlimits",
+      "desc": "Legen Sie die Kontextfenstergrößen für Ihre benutzerdefinierten Modelle fest. Leer lassen für den Standardwert (200k Token).",
+      "modelLabel": "{model} Kontextlimit",
+      "modelDesc": "Kontextfenster für {modelId}. Verwenden Sie Formate wie 256k, 1m oder exakte Token-Anzahl.",
+      "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
+    },
     "advanced": "Erweitert",
     "show1MModel": {
       "name": "Sonnet mit 1M-Kontextfenster aktivieren",

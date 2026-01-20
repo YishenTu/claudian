@@ -142,6 +142,13 @@
         "cancel": "取消"
       }
     },
+    "customContextLimits": {
+      "name": "自訂上下文限制",
+      "desc": "為您的自訂模型設定上下文視窗大小。留空使用預設值（200k 權杖）。",
+      "modelLabel": "{model} 上下文限制",
+      "modelDesc": "{modelId} 的上下文視窗。使用 256k、1m 或精確權杖數等格式。",
+      "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。"
+    },
     "advanced": "進階",
     "show1MModel": {
       "name": "啟用具有 1M 上下文視窗的 Sonnet",

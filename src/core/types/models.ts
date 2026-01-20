@@ -80,9 +80,19 @@ export const CONTEXT_WINDOW_1M = 1_000_000;
  *
  * @param model - The model identifier
  * @param is1MEnabled - Whether 1M context window is enabled
+ * @param customLimits - Optional custom context limits (model ID → tokens)
  * @returns Context window size in tokens
  */
-export function getContextWindowSize(model: string, is1MEnabled = false): number {
+export function getContextWindowSize(
+  model: string,
+  is1MEnabled = false,
+  customLimits?: Record<string, number>
+): number {
+  // Check custom limits first (highest priority)
+  if (customLimits && model in customLimits) {
+    return customLimits[model];
+  }
+
   // 1M context only applies to sonnet
   if (is1MEnabled && model.includes('sonnet')) {
     return CONTEXT_WINDOW_1M;

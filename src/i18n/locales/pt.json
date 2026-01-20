@@ -142,6 +142,13 @@
         "cancel": "Cancelar"
       }
     },
+    "customContextLimits": {
+      "name": "Limites de contexto personalizados",
+      "desc": "Defina tamanhos de janela de contexto para seus modelos personalizados. Deixe vazio para usar o padrão (200k tokens).",
+      "modelLabel": "Limite de contexto {model}",
+      "modelDesc": "Janela de contexto para {modelId}. Use formatos como 256k, 1m ou número exato de tokens.",
+      "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
+    },
     "advanced": "Avançado",
     "show1MModel": {
       "name": "Habilitar Sonnet com janela de contexto de 1M",

@@ -409,3 +409,48 @@ export function getCurrentModelFromEnvironment(envVars: Record<string, string>):
 export function getHostnameKey(): string {
   return os.hostname();
 }
+
+/**
+ * Parse a context limit string into a number of tokens.
+ * Supports formats: "256k", "256K", "1000000", "1m", "1M", "1.5m"
+ *
+ * @param input - User input string (e.g., "256k", "1000000")
+ * @returns Number of tokens, or null if invalid
+ */
+export function parseContextLimit(input: string): number | null {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) return null;
+
+  // Match number with optional suffix (k, m)
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(k|m)?$/);
+  if (!match) return null;
+
+  const value = parseFloat(match[1]);
+  const suffix = match[2];
+
+  if (isNaN(value) || value <= 0) return null;
+
+  let multiplier = 1;
+  if (suffix === 'k') multiplier = 1000;
+  else if (suffix === 'm') multiplier = 1000000;
+
+  const result = Math.round(value * multiplier);
+
+  // Validate reasonable range (1k to 10M tokens)
+  if (result < 1000 || result > 10_000_000) return null;
+
+  return result;
+}
+
+/**
+ * Format a token count for display (e.g., 256000 → "256k").
+ */
+export function formatContextLimit(tokens: number): string {
+  if (tokens >= 1_000_000 && tokens % 1_000_000 === 0) {
+    return `${tokens / 1_000_000}m`;
+  }
+  if (tokens >= 1000 && tokens % 1000 === 0) {
+    return `${tokens / 1000}k`;
+  }
+  return tokens.toLocaleString();
+}

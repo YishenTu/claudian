@@ -142,6 +142,13 @@
         "cancel": "取消"
       }
     },
+    "customContextLimits": {
+      "name": "自定义上下文限制",
+      "desc": "为您的自定义模型设置上下文窗口大小。留空使用默认值（200k 令牌）。",
+      "modelLabel": "{model} 上下文限制",
+      "modelDesc": "{modelId} 的上下文窗口。使用 256k、1m 或精确令牌数等格式。",
+      "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。"
+    },
     "advanced": "高级",
     "show1MModel": {
       "name": "启用具有 1M 上下文窗口的 Sonnet",

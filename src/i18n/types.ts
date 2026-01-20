@@ -122,6 +122,13 @@ export type TranslationKey =
   | 'settings.envSnippets.modal.save'
   | 'settings.envSnippets.modal.cancel'
 
+  // Settings - Custom Context Limits
+  | 'settings.customContextLimits.name'
+  | 'settings.customContextLimits.desc'
+  | 'settings.customContextLimits.modelLabel'
+  | 'settings.customContextLimits.modelDesc'
+  | 'settings.customContextLimits.invalid'
+
   // Settings - Advanced
   | 'settings.advanced'
   | 'settings.show1MModel.name'

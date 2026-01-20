@@ -142,6 +142,13 @@
         "cancel": "Cancel"
       }
     },
+    "customContextLimits": {
+      "name": "Custom Context Limits",
+      "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",
+      "modelLabel": "{model} Context Limit",
+      "modelDesc": "Context window for {modelId}. Use formats like 256k, 1m, or exact token count.",
+      "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
+    },
     "advanced": "Advanced",
     "show1MModel": {
       "name": "Enable Sonnet with 1M context window",
