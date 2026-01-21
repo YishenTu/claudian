@@ -140,15 +140,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName(t('settings.userName.name'))
       .setDesc(t('settings.userName.desc'))
-      .addText((text) =>
+      .addText((text) => {
         text
           .setPlaceholder(t('settings.userName.name'))
           .setValue(this.plugin.settings.userName)
           .onChange(async (value) => {
             this.plugin.settings.userName = value;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
+      });
 
     new Setting(containerEl)
       .setName(t('settings.excludedTags.name'))
@@ -180,6 +181,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
         text.inputEl.addClass('claudian-settings-media-input');
+        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
       });
 
     new Setting(containerEl)
@@ -195,6 +197,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
+        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
       });
 
     new Setting(containerEl)
@@ -451,6 +454,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
         text.inputEl.rows = 4;
         text.inputEl.cols = 40;
+        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
       });
 
     // Environment Variables section
@@ -706,6 +710,24 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
         await this.plugin.saveSettings();
       });
+    }
+  }
+
+  /**
+   * Restarts the service to apply system prompt changes (userName, systemPrompt).
+   * This ensures prompt changes take effect immediately in active sessions.
+   */
+  private async restartServiceForPromptChange(): Promise<void> {
+    const view = this.plugin.getView();
+    const tabManager = view?.getTabManager();
+    if (!tabManager) return;
+
+    try {
+      await tabManager.broadcastToAllTabs(
+        async (service) => { await service.ensureReady({ force: true }); }
+      );
+    } catch {
+      // Silently ignore restart failures - changes will apply on next conversation
     }
   }
 

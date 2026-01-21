@@ -191,20 +191,6 @@ export class PluginSettingsManager {
       this.plugin.loadPluginSlashCommands();
       await this.plugin.agentManager.loadAgents();
 
-      // Restart persistent query to apply plugin tool changes to all tabs
-      const view = this.plugin.getView();
-      const tabManager = view?.getTabManager();
-      if (tabManager) {
-        try {
-          await tabManager.broadcastToAllTabs(
-            async (service) => { await service.ensureReady({ force: true }); }
-          );
-        } catch {
-          new Notice('Plugins refreshed, but some tabs failed to restart.');
-          return;
-        }
-      }
-
       new Notice('Plugin list refreshed');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';

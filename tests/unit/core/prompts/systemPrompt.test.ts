@@ -40,6 +40,35 @@ describe('systemPrompt', () => {
     });
   });
 
+  describe('userName in system prompt', () => {
+    it('should include user context when userName is provided', () => {
+      const prompt = buildSystemPrompt({ userName: 'Alice' });
+      expect(prompt).toContain('## User Context');
+      expect(prompt).toContain('You are collaborating with **Alice**.');
+    });
+
+    it('should not include user context when userName is empty', () => {
+      const prompt = buildSystemPrompt({ userName: '' });
+      expect(prompt).not.toContain('## User Context');
+    });
+
+    it('should not include user context when userName is whitespace only', () => {
+      const prompt = buildSystemPrompt({ userName: '   ' });
+      expect(prompt).not.toContain('## User Context');
+    });
+
+    it('should not include user context when userName is undefined', () => {
+      const prompt = buildSystemPrompt({});
+      expect(prompt).not.toContain('## User Context');
+    });
+
+    it('should trim whitespace from userName', () => {
+      const prompt = buildSystemPrompt({ userName: '  Bob  ' });
+      expect(prompt).toContain('You are collaborating with **Bob**.');
+      expect(prompt).not.toContain('**  Bob  **');
+    });
+  });
+
   describe('media folder instructions', () => {
     it('should use vault root path when mediaFolder is empty', () => {
       const prompt = buildSystemPrompt({ mediaFolder: '' });

@@ -12,13 +12,18 @@ export interface SystemPromptSettings {
   customPrompt?: string;
   allowedExportPaths?: string[];
   vaultPath?: string;
+  userName?: string;
 }
 
 /** Returns the base system prompt with core instructions. */
-function getBaseSystemPrompt(vaultPath?: string): string {
+function getBaseSystemPrompt(vaultPath?: string, userName?: string): string {
   const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
+  const trimmedUserName = userName?.trim();
+  const userContext = trimmedUserName
+    ? `## User Context\n\nYou are collaborating with **${trimmedUserName}**.\n\n`
+    : '';
 
-  return `## Time Context
+  return `${userContext}## Time Context
 
 - **Current Date**: ${getTodayDate()}
 - **Knowledge Status**: You possess extensive internal knowledge up to your training cutoff. You do not know the exact date of your cutoff, but you must assume that your internal weights are static and "past," while the Current Date is "present."
@@ -278,7 +283,7 @@ cp ./note.md ~/Desktop/note.md
 
 /** Builds the complete system prompt with optional custom settings. */
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
-  let prompt = getBaseSystemPrompt(settings.vaultPath);
+  let prompt = getBaseSystemPrompt(settings.vaultPath, settings.userName);
 
   // Stable content (ordered for context cache optimization)
   prompt += getImageInstructions(settings.mediaFolder || '');

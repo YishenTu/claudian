@@ -210,6 +210,7 @@ export function computeSystemPromptKey(settings: SystemPromptSettings): string {
     settings.customPrompt || '',
     (settings.allowedExportPaths || []).sort().join('|'),
     settings.vaultPath || '',
+    (settings.userName || '').trim(),
     // Note: hasEditorContext is per-message, not tracked here
   ];
   return parts.join('::');

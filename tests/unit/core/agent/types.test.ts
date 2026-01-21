@@ -38,12 +38,13 @@ describe('computeSystemPromptKey', () => {
       customPrompt: 'Be helpful',
       allowedExportPaths: ['/path/b', '/path/a'],
       vaultPath: '/vault',
+      userName: 'Alice',
     };
 
     const key = computeSystemPromptKey(settings);
 
     // Paths are sorted to keep the key stable.
-    expect(key).toBe('attachments::Be helpful::/path/a|/path/b::/vault');
+    expect(key).toBe('attachments::Be helpful::/path/a|/path/b::/vault::Alice');
   });
 
   it('handles empty/undefined values', () => {
@@ -52,11 +53,12 @@ describe('computeSystemPromptKey', () => {
       customPrompt: '',
       allowedExportPaths: [],
       vaultPath: '',
+      userName: '',
     };
 
     const key = computeSystemPromptKey(settings);
-    // 4 empty parts joined with '::' = 3 separators = 6 colons
-    expect(key).toBe('::::::');
+    // 5 empty parts joined with '::' = 4 separators = 8 colons
+    expect(key).toBe('::::::::');
   });
 
   it('produces different keys for different inputs', () => {

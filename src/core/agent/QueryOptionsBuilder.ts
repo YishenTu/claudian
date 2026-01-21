@@ -170,6 +170,7 @@ export class QueryOptionsBuilder {
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
+      userName: ctx.settings.userName,
     };
 
     const budgetSetting = ctx.settings.thinkingBudget;
@@ -218,6 +219,7 @@ export class QueryOptionsBuilder {
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
+      userName: ctx.settings.userName,
     });
 
     const options: Options = {
@@ -305,6 +307,7 @@ export class QueryOptionsBuilder {
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
       vaultPath: ctx.vaultPath,
+      userName: ctx.settings.userName,
     });
 
     const options: Options = {
