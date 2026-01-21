@@ -169,6 +169,10 @@
       "input": "Sobre el área de entrada (predeterminado)",
       "header": "En el encabezado"
     },
+    "enableAutoScroll": {
+      "name": "Desplazamiento automático durante streaming",
+      "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
+    },
     "cliPath": {
       "name": "Ruta CLI Claude",
       "desc": "Ruta personalizada a Claude Code CLI. Dejar vacío para detección automática.",

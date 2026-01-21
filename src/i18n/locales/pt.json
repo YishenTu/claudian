@@ -169,6 +169,10 @@
       "input": "Acima da entrada (padrão)",
       "header": "No cabeçalho"
     },
+    "enableAutoScroll": {
+      "name": "Rolagem automática durante streaming",
+      "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."
+    },
     "cliPath": {
       "name": "Caminho CLI Claude",
       "desc": "Caminho personalizado para Claude Code CLI. Deixe vazio para detecção automática.",

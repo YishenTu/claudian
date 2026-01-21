@@ -591,7 +591,7 @@ describe('Tab - Event Wiring', () => {
         showHighlight: jest.fn(),
       } as any;
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       // Check that event listeners were added (cast to any to access mock method)
       const listeners = (tab.dom.inputEl as any).getEventListeners();
@@ -608,7 +608,7 @@ describe('Tab - Event Wiring', () => {
       tab.controllers.inputController = { sendMessage: jest.fn() } as any;
       tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       expect(tab.dom.eventCleanups.length).toBe(5); // keydown, input, focus, scroll, scroll-to-bottom click
     });
@@ -1030,7 +1030,7 @@ describe('Tab - Event Handler Behavior', () => {
       // Make instruction mode handle the trigger
       mockInstructionModeManager.handleTriggerKey.mockReturnValueOnce(true);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       // Simulate keydown
       const listeners = (tab.dom.inputEl as any).getEventListeners();
@@ -1055,7 +1055,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValueOnce(true);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1079,7 +1079,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValueOnce(true);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1104,7 +1104,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValueOnce(true);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1130,7 +1130,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1157,7 +1157,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1183,7 +1183,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1209,7 +1209,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1235,7 +1235,7 @@ describe('Tab - Event Handler Behavior', () => {
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const keydownHandler = listeners.get('keydown')[0];
@@ -1257,7 +1257,7 @@ describe('Tab - Event Handler Behavior', () => {
       tab.controllers.inputController = mockInputController as any;
       tab.controllers.selectionController = mockSelectionController as any;
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const inputHandler = listeners.get('input')[0];
@@ -1276,7 +1276,7 @@ describe('Tab - Event Handler Behavior', () => {
       tab.controllers.selectionController = mockSelectionController as any;
       tab.controllers.inputController = mockInputController as any;
 
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       const listeners = (tab.dom.inputEl as any).getEventListeners();
       const focusHandler = listeners.get('focus')[0];
@@ -1907,7 +1907,7 @@ describe('Tab - Scroll to Bottom Button', () => {
       tab.controllers.inputController = { sendMessage: jest.fn() } as any;
       tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
       initializeTabUI(tab, options.plugin);
-      wireTabInputEvents(tab);
+      wireTabInputEvents(tab, options.plugin);
 
       // Disable auto-scroll
       tab.state.autoScrollEnabled = false;

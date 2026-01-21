@@ -169,6 +169,10 @@
       "input": "Au-dessus de la saisie (par défaut)",
       "header": "Dans l'en-tête"
     },
+    "enableAutoScroll": {
+      "name": "Défilement automatique pendant le streaming",
+      "desc": "Défiler automatiquement vers le bas pendant que Claude diffuse les réponses. Désactiver pour rester en haut et lire depuis le début."
+    },
     "cliPath": {
       "name": "Chemin CLI Claude",
       "desc": "Chemin personnalisé vers Claude Code CLI. Laisser vide pour la détection automatique.",

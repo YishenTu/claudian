@@ -122,7 +122,7 @@ export class TabManager implements TabManagerInterface {
     initializeTabControllers(tab, this.plugin, this.view, this.mcpManager);
 
     // Wire input event handlers
-    wireTabInputEvents(tab);
+    wireTabInputEvents(tab, this.plugin);
 
     this.tabs.set(tab.id, tab);
     this.callbacks.onTabCreated?.(tab);

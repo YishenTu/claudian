@@ -198,6 +198,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName(t('settings.enableAutoScroll.name'))
+      .setDesc(t('settings.enableAutoScroll.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableAutoScroll ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableAutoScroll = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName(t('settings.autoTitle.name'))
       .setDesc(t('settings.autoTitle.desc'))
       .addToggle((toggle) =>
@@ -536,19 +548,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
       // Show warning on initial load if needed
       updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
     });
-
-    // Auto-scroll setting
-    new Setting(containerEl)
-      .setName(t('settings.enableAutoScroll.name'))
-      .setDesc(t('settings.enableAutoScroll.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableAutoScroll ?? true)
-          .onChange(async (value) => {
-            this.plugin.settings.enableAutoScroll = value;
-            await this.plugin.saveSettings();
-          })
-      );
 
     // Get hostname key for per-device CLI path storage
     const hostnameKey = getHostnameKey();

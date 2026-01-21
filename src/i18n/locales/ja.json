@@ -169,6 +169,10 @@
       "input": "入力欄の上（デフォルト）",
       "header": "ヘッダー内"
     },
+    "enableAutoScroll": {
+      "name": "ストリーミング中の自動スクロール",
+      "desc": "Claudeが応答をストリーミングしている間、自動的に下にスクロールします。無効にすると上部に留まり、最初から読むことができます。"
+    },
     "cliPath": {
       "name": "Claude CLI パス",
       "desc": "Claude Code CLI のカスタムパス。空欄で自動検出を使用。",

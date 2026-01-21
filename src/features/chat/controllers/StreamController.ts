@@ -874,7 +874,8 @@ export class StreamController {
 
   /** Scrolls messages to bottom if auto-scroll is enabled. */
   private scrollToBottom(): void {
-    const { state } = this.deps;
+    const { state, plugin } = this.deps;
+    if (!(plugin.settings.enableAutoScroll ?? true)) return;
     if (!state.autoScrollEnabled) return;
 
     const messagesEl = this.deps.getMessagesEl();
