@@ -48,7 +48,7 @@ function createInitialState(): ChatStateData {
     subagentsSpawnedThisStream: 0,
     currentTodos: null,
     needsAttention: false,
-    autoScrollEnabled: true,
+    autoScrollEnabled: true, // Default; controllers will override based on settings
     responseStartTime: null,
     flavorTimerInterval: null,
   };

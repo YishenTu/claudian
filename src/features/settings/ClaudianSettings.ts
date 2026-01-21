@@ -537,6 +537,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
     });
 
+    // Auto-scroll setting
+    new Setting(containerEl)
+      .setName(t('settings.enableAutoScroll.name'))
+      .setDesc(t('settings.enableAutoScroll.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableAutoScroll ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableAutoScroll = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // Get hostname key for per-device CLI path storage
     const hostnameKey = getHostnameKey();
 
