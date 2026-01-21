@@ -690,7 +690,7 @@ export function initializeTabControllers(
  * Call this after controllers are initialized.
  * Stores cleanup functions in dom.eventCleanups for proper memory management.
  */
-export function wireTabInputEvents(tab: TabData): void {
+export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   const { dom, ui, state, controllers } = tab;
 
   // Input keydown handler
@@ -750,7 +750,18 @@ export function wireTabInputEvents(tab: TabData): void {
   const RE_ENABLE_DELAY = 150; // ms to wait before re-enabling auto-scroll
   let reEnableTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  const isAutoScrollAllowed = (): boolean => plugin.settings.enableAutoScroll ?? true;
+
   const scrollHandler = () => {
+    if (!isAutoScrollAllowed()) {
+      if (reEnableTimeout) {
+        clearTimeout(reEnableTimeout);
+        reEnableTimeout = null;
+      }
+      state.autoScrollEnabled = false;
+      return;
+    }
+
     const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
     const isAtBottom = scrollHeight - scrollTop - clientHeight <= SCROLL_THRESHOLD;
 
@@ -782,8 +793,10 @@ export function wireTabInputEvents(tab: TabData): void {
     const scrollToBottomHandler = () => {
       // Scroll to bottom
       dom.messagesEl.scrollTop = dom.messagesEl.scrollHeight;
-      // Re-enable auto-scroll
-      state.autoScrollEnabled = true;
+      // Re-enable auto-scroll only if allowed by settings
+      if (isAutoScrollAllowed()) {
+        state.autoScrollEnabled = true;
+      }
     };
     dom.scrollToBottomEl.addEventListener('click', scrollToBottomHandler);
     dom.eventCleanups.push(() => dom.scrollToBottomEl?.removeEventListener('click', scrollToBottomHandler));

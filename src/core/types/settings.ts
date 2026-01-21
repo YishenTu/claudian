@@ -281,6 +281,7 @@ export interface ClaudianSettings {
   // UI preferences
   maxTabs: number;  // Maximum number of chat tabs (3-10, default 3)
   tabBarPosition: TabBarPosition;  // Where to show tab bar ('input' or 'header')
+  enableAutoScroll: boolean;  // Enable auto-scroll during streaming (default: true)
 }
 
 /**
@@ -342,6 +343,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   // UI preferences
   maxTabs: 3,  // Default to 3 tabs (safe resource usage)
   tabBarPosition: 'input',  // Default to input mode (current behavior)
+  enableAutoScroll: true,  // Default to auto-scroll enabled
 };
 
 /** Default CC-compatible settings. */

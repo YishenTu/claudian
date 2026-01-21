@@ -116,7 +116,7 @@ export class ConversationController {
       state.clearMessages();
       state.usage = null;
       state.currentTodos = null;
-      state.autoScrollEnabled = true;
+      state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
       // Reset agent service session (no session ID for entry point)
       // Pass persistent paths to prevent stale external contexts
@@ -175,7 +175,7 @@ export class ConversationController {
       state.clearMessages();
       state.usage = null;
       state.currentTodos = null;
-      state.autoScrollEnabled = true;
+      state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
       // Pass persistent paths to prevent stale external contexts
       this.getAgentService()?.setSessionId(
@@ -209,7 +209,7 @@ export class ConversationController {
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
-    state.autoScrollEnabled = true;
+    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
     // Clear status panels (auto-hide: panels reappear when agent creates new todos/subagents)
     state.currentTodos = null;
@@ -282,7 +282,7 @@ export class ConversationController {
       state.currentConversationId = conversation.id;
       state.messages = [...conversation.messages];
       state.usage = conversation.usage ?? null;
-      state.autoScrollEnabled = true;
+      state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
       // Clear status panels (auto-hide: panels reappear when agent creates new todos/subagents)
       state.currentTodos = null;

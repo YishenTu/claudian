@@ -162,7 +162,7 @@ export class InputController {
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
     state.subagentsSpawnedThisStream = 0; // Reset subagent counter for new query
-    state.autoScrollEnabled = true; // Re-enable auto-scroll for new interaction
+    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true; // Reset auto-scroll based on setting
     const streamGeneration = state.bumpStreamGeneration();
 
     // Hide welcome message when sending first message
