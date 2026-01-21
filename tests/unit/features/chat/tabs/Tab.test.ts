@@ -1930,6 +1930,146 @@ describe('Tab - Scroll to Bottom Button', () => {
       // Button should be hidden now
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
     });
+
+    it('should scroll to bottom but NOT re-enable auto-scroll when enableAutoScroll setting is false', () => {
+      const plugin = createMockPlugin({
+        settings: {
+          excludedTags: [],
+          model: 'claude-sonnet-4-5',
+          thinkingBudget: 'low',
+          permissionMode: 'yolo',
+          slashCommands: [],
+          keyboardNavigation: {
+            scrollUpKey: 'k',
+            scrollDownKey: 'j',
+            focusInputKey: 'i',
+          },
+          persistentExternalContextPaths: [],
+          enableAutoScroll: false,
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      // Set up messagesEl with scroll properties
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, writable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 500, writable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, plugin);
+      wireTabInputEvents(tab, plugin);
+
+      // State starts false (respecting setting)
+      tab.state.autoScrollEnabled = false;
+
+      // Get the click handler
+      const eventListeners = (tab.dom.scrollToBottomEl as any).getEventListeners();
+      const clickHandlers = eventListeners.get('click');
+      clickHandlers[0]();
+
+      // Should have scrolled to bottom
+      expect(tab.dom.messagesEl.scrollTop).toBe(1000);
+
+      // Should NOT have re-enabled auto-scroll (respects global setting)
+      expect(tab.state.autoScrollEnabled).toBe(false);
+    });
+  });
+
+  describe('scroll handler - enableAutoScroll disabled', () => {
+    it('should keep autoScrollEnabled false and not re-enable when scrolling to bottom', () => {
+      const plugin = createMockPlugin({
+        settings: {
+          excludedTags: [],
+          model: 'claude-sonnet-4-5',
+          thinkingBudget: 'low',
+          permissionMode: 'yolo',
+          slashCommands: [],
+          keyboardNavigation: {
+            scrollUpKey: 'k',
+            scrollDownKey: 'j',
+            focusInputKey: 'i',
+          },
+          persistentExternalContextPaths: [],
+          enableAutoScroll: false,
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      // Set up messagesEl with scroll properties - at bottom position
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 980, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 20, configurable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, plugin);
+      wireTabInputEvents(tab, plugin);
+
+      // State starts false
+      tab.state.autoScrollEnabled = false;
+
+      // Trigger scroll event
+      const eventListeners = (tab.dom.messagesEl as any).getEventListeners();
+      const scrollHandlers = eventListeners.get('scroll');
+      expect(scrollHandlers).toBeDefined();
+      scrollHandlers[0]();
+
+      // Should stay false even at bottom (setting overrides scroll behavior)
+      expect(tab.state.autoScrollEnabled).toBe(false);
+    });
+
+    it('should not attempt to re-enable auto-scroll via timeout when setting is disabled', () => {
+      jest.useFakeTimers();
+
+      const plugin = createMockPlugin({
+        settings: {
+          excludedTags: [],
+          model: 'claude-sonnet-4-5',
+          thinkingBudget: 'low',
+          permissionMode: 'yolo',
+          slashCommands: [],
+          keyboardNavigation: {
+            scrollUpKey: 'k',
+            scrollDownKey: 'j',
+            focusInputKey: 'i',
+          },
+          persistentExternalContextPaths: [],
+          enableAutoScroll: false,
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      // Set up messagesEl - scrolled to bottom
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 980, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 20, configurable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, plugin);
+      wireTabInputEvents(tab, plugin);
+
+      tab.state.autoScrollEnabled = false;
+
+      // Trigger scroll
+      const eventListeners = (tab.dom.messagesEl as any).getEventListeners();
+      const scrollHandlers = eventListeners.get('scroll');
+      scrollHandlers[0]();
+
+      // Fast-forward past the re-enable delay (150ms)
+      jest.advanceTimersByTime(200);
+
+      // Should still be false - timeout should not have re-enabled it
+      expect(tab.state.autoScrollEnabled).toBe(false);
+
+      jest.useRealTimers();
+    });
   });
 
   describe('accessibility', () => {
