@@ -49,6 +49,28 @@ export class ClaudianView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
     super(leaf);
     this.plugin = plugin;
+
+    // Hover Editor compatibility: Define load as an instance method that can't be
+    // overwritten by prototype patching. Hover Editor patches ClaudianView.prototype.load
+    // after our class is defined, but instance methods take precedence over prototype methods.
+    const originalLoad = Object.getPrototypeOf(this).load.bind(this);
+    Object.defineProperty(this, 'load', {
+      value: async () => {
+        // Ensure containerEl exists before any patched load code tries to use it
+        if (!this.containerEl) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (this as any).containerEl = createDiv({ cls: 'view-content' });
+        }
+        // Wrap in try-catch to prevent Hover Editor errors from breaking our view
+        try {
+          return await originalLoad();
+        } catch {
+          // Hover Editor may throw if its DOM setup fails - continue anyway
+        }
+      },
+      writable: false,
+      configurable: false,
+    });
   }
 
   getViewType(): string {
@@ -71,7 +93,24 @@ export class ClaudianView extends ItemView {
   }
 
   async onOpen() {
-    this.viewContainerEl = this.containerEl.children[1] as HTMLElement;
+    // Guard: Hover Editor and similar plugins may call onOpen before DOM is ready.
+    // containerEl must exist before we can access contentEl or create elements.
+    if (!this.containerEl) {
+      return;
+    }
+
+    // Use contentEl (standard Obsidian API) as primary target.
+    // Hover Editor and other plugins may modify the DOM structure,
+    // so we need fallbacks to handle non-standard scenarios.
+    let container: HTMLElement | null =
+      this.contentEl ?? (this.containerEl.children[1] as HTMLElement | null);
+
+    if (!container) {
+      // Last resort: create our own container inside containerEl
+      container = this.containerEl.createDiv();
+    }
+
+    this.viewContainerEl = container;
     this.viewContainerEl.empty();
     this.viewContainerEl.addClass('claudian-container');
 
