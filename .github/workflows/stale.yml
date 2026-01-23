@@ -14,8 +14,8 @@ jobs:
       - uses: actions/stale@v9
         with:
           days-before-stale: 7
-          days-before-close: 0
-          stale-issue-message: 'This issue has been inactive for 7 days and is now being closed.'
-          close-issue-message: 'Closed due to inactivity.'
+          days-before-close: 7
+          stale-issue-message: 'This issue has been inactive for 7 days and will be closed in 7 days if no further activity occurs.'
+          close-issue-message: 'Closed due to 14 days of inactivity.'
           stale-issue-label: 'stale'
           exempt-issue-labels: 'pinned,security,bug'
