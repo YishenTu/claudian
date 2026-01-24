@@ -366,10 +366,14 @@ export class StreamController {
 
   /** Finalizes the current text block. */
   finalizeCurrentTextBlock(msg?: ChatMessage): void {
-    const { state } = this.deps;
+    const { state, renderer } = this.deps;
     if (msg && state.currentTextContent) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'text', content: state.currentTextContent });
+      // Add copy button to streaming text blocks
+      if (state.currentTextEl) {
+        renderer.addTextCopyButton(state.currentTextEl, state.currentTextContent);
+      }
     }
     state.currentTextEl = null;
     state.currentTextContent = '';

@@ -437,7 +437,7 @@ export class MessageRenderer {
    * @param textEl The rendered text element
    * @param markdown The original markdown content to copy
    */
-  private addTextCopyButton(textEl: HTMLElement, markdown: string): void {
+  addTextCopyButton(textEl: HTMLElement, markdown: string): void {
     const copyBtn = textEl.createSpan({ cls: 'claudian-text-copy-btn' });
     copyBtn.innerHTML = MessageRenderer.COPY_ICON;
 
