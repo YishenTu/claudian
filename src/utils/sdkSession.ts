@@ -14,6 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, ToolCallInfo } from '../core/types';
+import { extractContentBeforeXmlContext } from './context';
 
 /** Result of reading an SDK session file. */
 export interface SDKSessionReadResult {
@@ -220,36 +221,12 @@ function isRebuiltContextContent(textContent: string): boolean {
 
 /**
  * Extracts display content from user messages by removing XML context wrappers.
+ * Uses shared extraction logic from context utilities.
  *
- * Handles two formats:
- * 1. Legacy: <query>user content</query> with context prepended
- * 2. Current: User content first, context XML appended after
- *
- * Context tags include:
- * - <current_note>...</current_note>
- * - <editor_selection>...</editor_selection>
- * - <editor_cursor>...</editor_cursor>
- * - <context_files>...</context_files>
+ * Returns undefined if no XML context found (plain user message).
  */
 function extractDisplayContent(textContent: string): string | undefined {
-  if (!textContent) return undefined;
-
-  // Legacy format: content inside <query> tags
-  const queryMatch = textContent.match(/<query>\n?([\s\S]*?)\n?<\/query>/);
-  if (queryMatch) {
-    return queryMatch[1].trim();
-  }
-
-  // Current format: user content before any XML context tags
-  // Context tags are always appended with \n\n separator, so anchor to that
-  const xmlContextPattern = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files)[\s>]/;
-  const xmlMatch = textContent.match(xmlContextPattern);
-  if (xmlMatch && xmlMatch.index !== undefined && xmlMatch.index >= 0) {
-    return textContent.substring(0, xmlMatch.index).trim();
-  }
-
-  // No XML context - plain user message, displayContent equals content
-  return undefined;
+  return extractContentBeforeXmlContext(textContent);
 }
 
 /**

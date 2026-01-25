@@ -25,7 +25,7 @@ import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../main';
-import { stripCurrentNotePrefix } from '../../utils/context';
+import { stripCurrentNoteContext } from '../../utils/context';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../utils/env';
 import { getPathAccessType, getVaultPath } from '../../utils/path';
 import {
@@ -736,7 +736,7 @@ export class ClaudianService {
     // Inject history to restore context without forcing cold-start
     if (this.sessionManager.needsHistoryRebuild() && conversationHistory && conversationHistory.length > 0) {
       const historyContext = buildContextFromHistory(conversationHistory);
-      const actualPrompt = stripCurrentNotePrefix(prompt);
+      const actualPrompt = stripCurrentNoteContext(prompt);
       promptToSend = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
       this.sessionManager.clearHistoryRebuild();
     }
@@ -746,7 +746,7 @@ export class ClaudianService {
 
     if (noSessionButHasHistory) {
       const historyContext = buildContextFromHistory(conversationHistory!);
-      const actualPrompt = stripCurrentNotePrefix(prompt);
+      const actualPrompt = stripCurrentNoteContext(prompt);
       promptToSend = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory!);
 
       // Note: Do NOT call invalidateSession() here. The cold-start will capture
@@ -856,7 +856,7 @@ export class ClaudianService {
     conversationHistory: ChatMessage[]
   ): { prompt: string; images?: ImageAttachment[] } {
     const historyContext = buildContextFromHistory(conversationHistory);
-    const actualPrompt = stripCurrentNotePrefix(prompt);
+    const actualPrompt = stripCurrentNoteContext(prompt);
     const fullPrompt = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, conversationHistory);
     const lastUserMessage = getLastUserMessage(conversationHistory);
 

@@ -9,6 +9,13 @@ const CURRENT_NOTE_PREFIX_REGEX = /^<current_note>\n[\s\S]*?<\/current_note>\n\n
 // Matches <current_note> at the END of prompt (current format)
 const CURRENT_NOTE_SUFFIX_REGEX = /\n\n<current_note>\n[\s\S]*?<\/current_note>$/;
 
+/**
+ * Pattern to match XML context tags appended to prompts.
+ * These tags are always preceded by \n\n separator.
+ * Matches: current_note, editor_selection (with attributes), editor_cursor (with attributes), context_files
+ */
+export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files)[\s>]/;
+
 /** Formats current note in XML format. */
 export function formatCurrentNote(notePath: string): string {
   return `<current_note>\n${notePath}\n</current_note>`;
@@ -23,7 +30,7 @@ export function appendCurrentNote(prompt: string, notePath: string): string {
  * Strips current note context from a prompt (both prefix and suffix formats).
  * Handles legacy (prefix) and current (suffix) formats.
  */
-export function stripCurrentNotePrefix(prompt: string): string {
+export function stripCurrentNoteContext(prompt: string): string {
   // Try prefix format first (legacy)
   const strippedPrefix = prompt.replace(CURRENT_NOTE_PREFIX_REGEX, '');
   if (strippedPrefix !== prompt) {
@@ -34,28 +41,49 @@ export function stripCurrentNotePrefix(prompt: string): string {
 }
 
 /**
- * Extracts the actual user query from an XML-wrapped prompt.
- * Used for comparing prompts during history deduplication.
+ * Extracts user content that appears before XML context tags.
+ * Returns the content before any XML context tags, or undefined if no tags found.
  *
  * Handles two formats:
- * 1. Legacy: <query>user content</query> with context prepended
- * 2. Current: User content first, context XML appended after
+ * 1. Legacy: content inside <query> tags
+ * 2. Current: user content first, context XML appended after
+ *
+ * @param text - The text to extract from
+ * @returns The extracted content, or undefined if no XML context found
  */
-export function extractUserQuery(prompt: string): string {
-  if (!prompt) return '';
+export function extractContentBeforeXmlContext(text: string): string | undefined {
+  if (!text) return undefined;
 
   // Legacy format: content inside <query> tags
-  const queryMatch = prompt.match(/<query>\n?([\s\S]*?)\n?<\/query>/);
+  const queryMatch = text.match(/<query>\n?([\s\S]*?)\n?<\/query>/);
   if (queryMatch) {
     return queryMatch[1].trim();
   }
 
   // Current format: user content before any XML context tags
-  // Context tags are always appended with \n\n separator, so anchor to that
-  const xmlContextPattern = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files)[\s>]/;
-  const xmlMatch = prompt.match(xmlContextPattern);
+  // Context tags are always appended with \n\n separator
+  const xmlMatch = text.match(XML_CONTEXT_PATTERN);
   if (xmlMatch && xmlMatch.index !== undefined && xmlMatch.index >= 0) {
-    return prompt.substring(0, xmlMatch.index).trim();
+    return text.substring(0, xmlMatch.index).trim();
+  }
+
+  return undefined;
+}
+
+/**
+ * Extracts the actual user query from an XML-wrapped prompt.
+ * Used for comparing prompts during history deduplication.
+ *
+ * Always returns a string - falls back to stripping all XML tags if no
+ * structured context is found.
+ */
+export function extractUserQuery(prompt: string): string {
+  if (!prompt) return '';
+
+  // Try to extract content before XML context
+  const extracted = extractContentBeforeXmlContext(prompt);
+  if (extracted !== undefined) {
+    return extracted;
   }
 
   // No XML context - return the whole prompt stripped of any remaining tags
