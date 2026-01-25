@@ -166,6 +166,9 @@ export interface TabDOMElements {
   /** Scroll-to-bottom button (shown when user scrolls up). */
   scrollToBottomEl: HTMLElement | null;
 
+  /** Updates scroll-to-bottom button visibility (called on tab activation). */
+  updateScrollVisibility?: () => void;
+
   /** Cleanup functions for event listeners (prevents memory leaks). */
   eventCleanups: Array<() => void>;
 }

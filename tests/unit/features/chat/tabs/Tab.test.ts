@@ -16,6 +16,20 @@ import {
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
 
+// Mock ResizeObserver (not available in jsdom)
+const resizeObserverInstances: MockResizeObserver[] = [];
+class MockResizeObserver {
+  callback: ResizeObserverCallback;
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    resizeObserverInstances.push(this);
+  }
+  observe = jest.fn();
+  unobserve = jest.fn();
+  disconnect = jest.fn();
+}
+global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+
 // Mock ClaudianService
 jest.mock('@/core/agent', () => ({
   ClaudianService: jest.fn().mockImplementation(() => ({
@@ -1843,9 +1857,13 @@ describe('Tab - Scroll to Bottom Button', () => {
       // Set autoScrollEnabled to false before initializing UI
       tab.state.autoScrollEnabled = false;
 
+      // Mock overflow condition (scrollHeight > clientHeight)
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
       initializeTabUI(tab, options.plugin);
 
-      // Button should have 'visible' class since autoScrollEnabled is false
+      // Button should have 'visible' class since autoScrollEnabled is false AND there's overflow
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
     });
 
@@ -1860,25 +1878,50 @@ describe('Tab - Scroll to Bottom Button', () => {
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
     });
 
+    it('should hide button when no scrollable content (no overflow)', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // No overflow: scrollHeight equals clientHeight
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 500, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      initializeTabUI(tab, options.plugin);
+
+      // Set autoScrollEnabled to false
+      tab.state.autoScrollEnabled = false;
+
+      // Button should still be hidden because there's no overflow
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+    });
+
     it('should show button when autoScrollEnabled changes to false', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
+      // Mock overflow condition (scrollHeight > clientHeight)
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
       initializeTabUI(tab, options.plugin);
 
-      // Initially hidden
+      // Initially hidden (autoScrollEnabled is true by default)
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
 
       // Change state
       tab.state.autoScrollEnabled = false;
 
-      // Now visible
+      // Now visible (autoScrollEnabled is false AND there's overflow)
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
     });
 
     it('should hide button when autoScrollEnabled changes to true', () => {
       const options = createMockOptions();
       const tab = createTab(options);
+
+      // Mock overflow condition (scrollHeight > clientHeight)
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
 
       initializeTabUI(tab, options.plugin);
 
@@ -2080,6 +2123,155 @@ describe('Tab - Scroll to Bottom Button', () => {
       // Check that scrollToBottomEl exists and has correct attributes
       expect(tab.dom.scrollToBottomEl).toBeDefined();
       expect(tab.dom.scrollToBottomEl?.tagName).toBe('BUTTON');
+    });
+  });
+
+  describe('updateScrollVisibility function', () => {
+    it('should store updateScrollVisibility function on dom after initializeTabUI', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Before initialization, function should not be set
+      expect(tab.dom.updateScrollVisibility).toBeUndefined();
+
+      initializeTabUI(tab, options.plugin);
+
+      // After initialization, function should be available
+      expect(tab.dom.updateScrollVisibility).toBeDefined();
+      expect(typeof tab.dom.updateScrollVisibility).toBe('function');
+    });
+
+    it('should refresh button visibility when activateTab is called', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Initialize UI while tab is hidden (dimensions would be 0)
+      initializeTabUI(tab, options.plugin);
+
+      // Set autoScrollEnabled to false
+      tab.state.autoScrollEnabled = false;
+
+      // Initially no overflow (dimensions are 0), button should be hidden
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+
+      // Now simulate that tab becomes visible and has content (overflow condition)
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      // activateTab should refresh visibility
+      activateTab(tab);
+
+      // Button should now be visible (autoScrollEnabled is false AND there's overflow)
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
+    });
+
+    it('should keep button hidden on activateTab when no overflow', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+      tab.state.autoScrollEnabled = false;
+
+      // No overflow: scrollHeight equals clientHeight
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 500, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      activateTab(tab);
+
+      // Button should remain hidden (no overflow)
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+    });
+
+    it('should keep button hidden on activateTab when autoScrollEnabled is true', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // autoScrollEnabled is true by default
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      // Even with overflow
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      activateTab(tab);
+
+      // Button should remain hidden (autoScrollEnabled is true)
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+    });
+  });
+
+  describe('ResizeObserver integration', () => {
+    beforeEach(() => {
+      // Clear instances between tests
+      resizeObserverInstances.length = 0;
+    });
+
+    it('should set up ResizeObserver on messagesEl during initializeTabUI', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      const instancesBefore = resizeObserverInstances.length;
+      initializeTabUI(tab, options.plugin);
+      const instancesAfter = resizeObserverInstances.length;
+
+      // ResizeObserver should have been created
+      expect(instancesAfter).toBe(instancesBefore + 1);
+
+      // observe should have been called with messagesEl
+      const observer = resizeObserverInstances[resizeObserverInstances.length - 1];
+      expect(observer.observe).toHaveBeenCalledWith(tab.dom.messagesEl);
+    });
+
+    it('should register ResizeObserver cleanup in eventCleanups', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      // Should have a cleanup for ResizeObserver
+      const cleanupCount = tab.dom.eventCleanups.length;
+      expect(cleanupCount).toBeGreaterThan(0);
+
+      // Get the observer before running cleanups
+      const observer = resizeObserverInstances[resizeObserverInstances.length - 1];
+
+      // Run cleanups
+      for (const cleanup of tab.dom.eventCleanups) {
+        cleanup();
+      }
+
+      // ResizeObserver.disconnect should have been called
+      expect(observer.disconnect).toHaveBeenCalled();
+    });
+
+    it('should update button visibility when ResizeObserver callback fires', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set autoScrollEnabled to false
+      tab.state.autoScrollEnabled = false;
+
+      // No overflow initially
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 100, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 100, configurable: true });
+
+      initializeTabUI(tab, options.plugin);
+
+      // Button should be hidden (no overflow)
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(false);
+
+      // Simulate content growth causing overflow
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+
+      // Get the last ResizeObserver instance and trigger its callback
+      const lastObserver = resizeObserverInstances[resizeObserverInstances.length - 1];
+      expect(lastObserver).toBeDefined();
+      lastObserver.callback([], lastObserver as unknown as ResizeObserver);
+
+      // Button should now be visible (autoScrollEnabled is false AND overflow exists)
+      expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
     });
   });
 });

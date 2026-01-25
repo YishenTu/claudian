@@ -520,11 +520,15 @@ export function initializeTabUI(
   // Helper to update scroll-to-bottom button visibility
   const updateScrollToBottomVisibility = () => {
     if (dom.scrollToBottomEl) {
-      // Show button when user has scrolled up (auto-scroll disabled)
-      const shouldShow = !state.autoScrollEnabled;
+      // Show button when user has scrolled up AND there's content to scroll to
+      const hasOverflow = dom.messagesEl.scrollHeight > dom.messagesEl.clientHeight;
+      const shouldShow = !state.autoScrollEnabled && hasOverflow;
       dom.scrollToBottomEl.classList.toggle('visible', shouldShow);
     }
   };
+
+  // Store reference for use in activateTab
+  dom.updateScrollVisibility = updateScrollToBottomVisibility;
 
   // Update ChatState callbacks for UI updates
   state.callbacks = {
@@ -533,6 +537,13 @@ export function initializeTabUI(
     onTodosChanged: (todos) => tab.ui.statusPanel?.updateTodos(todos),
     onAutoScrollChanged: () => updateScrollToBottomVisibility(),
   };
+
+  // ResizeObserver to detect overflow changes (e.g., content growth)
+  const resizeObserver = new ResizeObserver(() => {
+    updateScrollToBottomVisibility();
+  });
+  resizeObserver.observe(dom.messagesEl);
+  dom.eventCleanups.push(() => resizeObserver.disconnect());
 
   // Sync initial button visibility with current state
   updateScrollToBottomVisibility();
@@ -776,13 +787,17 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       // Debounce re-enabling to avoid bounce during scroll animation
       if (!reEnableTimeout) {
         reEnableTimeout = setTimeout(() => {
-          state.autoScrollEnabled = true;
           reEnableTimeout = null;
+          // Re-verify position before enabling (content may have changed)
+          const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
+          if (scrollHeight - scrollTop - clientHeight <= SCROLL_THRESHOLD) {
+            state.autoScrollEnabled = true;
+          }
         }, RE_ENABLE_DELAY);
       }
     }
   };
-  dom.messagesEl.addEventListener('scroll', scrollHandler);
+  dom.messagesEl.addEventListener('scroll', scrollHandler, { passive: true });
   dom.eventCleanups.push(() => {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
     if (reEnableTimeout) clearTimeout(reEnableTimeout);
@@ -809,6 +824,8 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 export function activateTab(tab: TabData): void {
   tab.dom.contentEl.style.display = 'flex';
   tab.controllers.selectionController?.start();
+  // Refresh scroll-to-bottom button visibility (dimensions now available after display)
+  tab.dom.updateScrollVisibility?.();
 }
 
 /**
