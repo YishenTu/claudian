@@ -19,6 +19,7 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
+  SlashCommand,
   SubagentInfo,
   ToolDiffData,
 } from './core/types';
@@ -1016,5 +1017,23 @@ export default class ClaudianPlugin extends Plugin {
       }
     }
     return null;
+  }
+
+  /**
+   * Gets SDK supported commands from any ready service.
+   * The command list is the same for all services, so we just need one ready.
+   * Used by inline edit and other contexts that don't have direct TabManager access.
+   */
+  async getSdkCommands(): Promise<SlashCommand[]> {
+    for (const view of this.getAllViews()) {
+      const tabManager = view.getTabManager();
+      if (tabManager) {
+        const commands = await tabManager.getSdkCommands();
+        if (commands.length > 0) {
+          return commands;
+        }
+      }
+    }
+    return [];
   }
 }

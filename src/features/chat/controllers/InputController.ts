@@ -1,18 +1,15 @@
 /**
  * Input controller for handling user input and message sending.
  *
- * Manages message sending, queue handling, slash command expansion,
- * instruction mode, and approval dialogs.
+ * Manages message sending, queue handling, instruction mode, and approval dialogs.
+ * Slash command expansion is handled by the SDK.
  */
 
 import { Notice } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
-import { detectBuiltInCommand, type SlashCommandManager } from '../../../core/commands';
-import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
-import { TOOL_BASH } from '../../../core/tools/toolNames';
+import { detectBuiltInCommand } from '../../../core/commands';
 import type { ChatMessage } from '../../../core/types';
-import { getBashToolBlockedCommands } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { ApprovalModal } from '../../../shared/modals/ApprovalModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
@@ -20,7 +17,6 @@ import { prependCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
-import { formatSlashCommandWarnings } from '../../../utils/slashCommand';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
@@ -45,7 +41,6 @@ export interface InputControllerDeps {
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   getImageContextManager: () => ImageContextManager | null;
-  getSlashCommandManager: () => SlashCommandManager | null;
   getMcpServerSelector: () => McpServerSelector | null;
   getExternalContextSelector: () => {
     getExternalContexts: () => string[];
@@ -96,13 +91,12 @@ export class InputController {
     const inputEl = this.deps.getInputEl();
     const imageContextManager = this.deps.getImageContextManager();
     const fileContextManager = this.deps.getFileContextManager();
-    const slashCommandManager = this.deps.getSlashCommandManager();
     const mcpServerSelector = this.deps.getMcpServerSelector();
     const externalContextSelector = this.deps.getExternalContextSelector();
 
     const contentOverride = options?.content;
     const shouldUseInput = contentOverride === undefined;
-    let content = (contentOverride ?? inputEl.value).trim();
+    const content = (contentOverride ?? inputEl.value).trim();
     const hasImages = imageContextManager?.hasImages() ?? false;
     if (!content && !hasImages) return;
 
@@ -173,47 +167,10 @@ export class InputController {
 
     fileContextManager?.startSession();
 
-    // Check for slash command and expand it
+    // Slash commands are passed directly to SDK for handling
+    // SDK handles expansion, $ARGUMENTS, @file references, and frontmatter options
     const displayContent = content;
     let queryOptions: QueryOptions | undefined;
-    if (content && slashCommandManager) {
-      slashCommandManager.setCommands(plugin.settings.slashCommands);
-      const detected = slashCommandManager.detectCommand(content);
-      if (detected) {
-        const cmd = plugin.settings.slashCommands.find(
-          c => c.name.toLowerCase() === detected.commandName.toLowerCase()
-        );
-        if (cmd) {
-          const result = await slashCommandManager.expandCommand(cmd, detected.args, {
-            bash: {
-              enabled: true,
-              shouldBlockCommand: (bashCommand) =>
-                isCommandBlocked(
-                  bashCommand,
-                  getBashToolBlockedCommands(plugin.settings.blockedCommands),
-                  plugin.settings.enableBlocklist
-                ),
-              requestApproval:
-                plugin.settings.permissionMode !== 'yolo'
-                  ? (bashCommand) => this.requestInlineBashApproval(bashCommand)
-                  : undefined,
-            },
-          });
-          content = result.expandedPrompt;
-
-          if (result.errors.length > 0) {
-            new Notice(formatSlashCommandWarnings(result.errors));
-          }
-
-          if (result.allowedTools || result.model) {
-            queryOptions = {
-              allowedTools: result.allowedTools,
-              model: result.model,
-            };
-          }
-        }
-      }
-    }
 
     const images = imageContextManager?.getAttachedImages() || [];
     const imagesForMessage = images.length > 0 ? [...images] : undefined;
@@ -687,23 +644,6 @@ export class InputController {
     const { plugin } = this.deps;
     return new Promise((resolve) => {
       const modal = new ApprovalModal(plugin.app, toolName, input, description, resolve);
-      modal.open();
-    });
-  }
-
-  /** Requests approval for inline bash commands. */
-  async requestInlineBashApproval(command: string): Promise<boolean> {
-    const { plugin } = this.deps;
-    const description = `Execute inline bash command:\n${command}`;
-    return new Promise((resolve) => {
-      const modal = new ApprovalModal(
-        plugin.app,
-        TOOL_BASH,
-        { command },
-        description,
-        (decision) => resolve(decision === 'allow' || decision === 'allow-always'),
-        { showAlwaysAllow: false, showAlwaysDeny: false, title: 'Inline bash execution' }
-      );
       modal.open();
     });
   }

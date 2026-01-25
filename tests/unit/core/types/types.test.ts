@@ -114,6 +114,7 @@ describe('types.ts', () => {
         show1MModel: false,
         tabBarPosition: 'input',
         enableAutoScroll: true,
+        hiddenSlashCommands: [],
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -149,6 +150,7 @@ describe('types.ts', () => {
         show1MModel: false,
         tabBarPosition: 'input',
         enableAutoScroll: true,
+        hiddenSlashCommands: [],
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -184,6 +186,7 @@ describe('types.ts', () => {
         show1MModel: true,
         tabBarPosition: 'header',
         enableAutoScroll: false,
+        hiddenSlashCommands: [],
       };
 
       expect(settings.lastClaudeModel).toBe('opus');

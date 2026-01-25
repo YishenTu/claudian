@@ -8,10 +8,4 @@ export {
   detectBuiltInCommand,
   getBuiltInCommandsForDropdown,
 } from './builtInCommands';
-export {
-  type BashExpansionOptions,
-  type DetectedCommand,
-  type ExpansionResult,
-  type SlashCommandExpansionOptions,
-  SlashCommandManager,
-} from './SlashCommandManager';
+export { SlashCommandManager } from './SlashCommandManager';

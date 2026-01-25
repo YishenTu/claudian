@@ -91,6 +91,11 @@
       "name": "Slash Commands",
       "desc": "Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output."
     },
+    "hiddenSlashCommands": {
+      "name": "Hidden Commands",
+      "desc": "Hide specific slash commands from the dropdown. Useful for hiding Claude Code commands that are not relevant to Claudian. Enter command names without the leading slash, one per line.",
+      "placeholder": "commit\nbuild\ntest"
+    },
     "mcpServers": {
       "name": "MCP Servers",
       "desc": "Configure Model Context Protocol servers to extend Claude's capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate."

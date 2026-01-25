@@ -442,4 +442,73 @@ describe('ClaudianService', () => {
     });
   });
 
+  describe('SDK Skills (Supported Commands)', () => {
+    it('should report not ready when no persistent query exists', () => {
+      expect(service.isReady()).toBe(false);
+    });
+
+    it('should report ready when persistent query is active', () => {
+      // Simulate active persistent query
+      (service as any).persistentQuery = {};
+      (service as any).shuttingDown = false;
+
+      expect(service.isReady()).toBe(true);
+    });
+
+    it('should report not ready when shutting down', () => {
+      (service as any).persistentQuery = {};
+      (service as any).shuttingDown = true;
+
+      expect(service.isReady()).toBe(false);
+    });
+
+    it('should return empty array when no persistent query', async () => {
+      const commands = await service.getSupportedCommands();
+      expect(commands).toEqual([]);
+    });
+
+    it('should convert SDK skills to SlashCommand format', async () => {
+      const mockSdkCommands = [
+        { name: 'commit', description: 'Create a git commit', argumentHint: '' },
+        { name: 'pr', description: 'Create a pull request', argumentHint: '<title>' },
+      ];
+
+      const mockQuery = {
+        supportedCommands: jest.fn().mockResolvedValue(mockSdkCommands),
+      };
+      (service as any).persistentQuery = mockQuery;
+
+      const commands = await service.getSupportedCommands();
+
+      expect(mockQuery.supportedCommands).toHaveBeenCalled();
+      expect(commands).toHaveLength(2);
+      expect(commands[0]).toEqual({
+        id: 'sdk:commit',
+        name: 'commit',
+        description: 'Create a git commit',
+        argumentHint: '',
+        content: '',
+        source: 'sdk',
+      });
+      expect(commands[1]).toEqual({
+        id: 'sdk:pr',
+        name: 'pr',
+        description: 'Create a pull request',
+        argumentHint: '<title>',
+        content: '',
+        source: 'sdk',
+      });
+    });
+
+    it('should return empty array on SDK error', async () => {
+      const mockQuery = {
+        supportedCommands: jest.fn().mockRejectedValue(new Error('SDK error')),
+      };
+      (service as any).persistentQuery = mockQuery;
+
+      const commands = await service.getSupportedCommands();
+
+      expect(commands).toEqual([]);
+    });
+  });
 });

@@ -822,15 +822,6 @@ describe('Tab - UI Initialization', () => {
       expect(tab.dom.selectionIndicatorEl!.style.display).toBe('none');
     });
 
-    it('should create SlashCommandManager when vault path exists', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      initializeTabUI(tab, options.plugin);
-
-      expect(tab.ui.slashCommandManager).toBeDefined();
-    });
-
     it('should create SlashCommandDropdown', () => {
       const options = createMockOptions();
       const tab = createTab(options);
@@ -1532,26 +1523,25 @@ describe('Tab - UI Callback Wiring', () => {
       expect(wrapper).toBe(tab.dom.inputWrapper);
     });
 
-    it('should wire getCommands to return slash commands from settings', () => {
-      const commands = [{ name: 'test', content: 'test content' }];
-      const plugin = createMockPlugin({
-        settings: {
-          ...createMockPlugin().settings,
-          slashCommands: commands,
-        },
-      });
+    it('should wire getSdkCommands callback when provided in options', async () => {
+      const mockSdkCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+      const getSdkCommands = jest.fn().mockResolvedValue(mockSdkCommands);
+      const plugin = createMockPlugin();
       const options = createMockOptions({ plugin });
       const tab = createTab(options);
 
-      initializeTabUI(tab, plugin);
+      initializeTabUI(tab, plugin, { getSdkCommands });
 
       const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
       const constructorCall = SlashCommandDropdown.mock.calls[0];
       const callbacks = constructorCall[2]; // 3rd argument is callbacks
 
-      const returnedCommands = callbacks.getCommands();
+      // Verify getSdkCommands callback is wired
+      expect(callbacks.getSdkCommands).toBe(getSdkCommands);
 
-      expect(returnedCommands).toEqual(commands);
+      // Verify it returns the expected commands
+      const returnedCommands = await callbacks.getSdkCommands();
+      expect(returnedCommands).toEqual(mockSdkCommands);
     });
   });
 });
@@ -1668,7 +1658,6 @@ describe('Tab - Controller Configuration', () => {
       expect(config.getMessagesEl()).toBe(tab.dom.messagesEl);
       expect(config.getFileContextManager()).toBe(tab.ui.fileContextManager);
       expect(config.getImageContextManager()).toBe(tab.ui.imageContextManager);
-      expect(config.getSlashCommandManager()).toBe(tab.ui.slashCommandManager);
       expect(config.getMcpServerSelector()).toBe(tab.ui.mcpServerSelector);
       expect(config.getExternalContextSelector()).toBe(tab.ui.externalContextSelector);
       expect(config.getInstructionModeManager()).toBe(tab.ui.instructionModeManager);

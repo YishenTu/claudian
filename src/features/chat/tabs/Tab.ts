@@ -12,13 +12,11 @@
 import type { Component } from 'obsidian';
 
 import { ClaudianService } from '../../../core/agent';
-import { SlashCommandManager } from '../../../core/commands';
 import type { McpServerManager } from '../../../core/mcp';
-import type { ClaudeModel, Conversation, ThinkingBudget } from '../../../core/types';
+import type { ClaudeModel, Conversation, SlashCommand, ThinkingBudget } from '../../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
-import { getVaultPath } from '../../../utils/path';
 import {
   ConversationController,
   InputController,
@@ -139,7 +137,6 @@ export function createTab(options: TabCreateOptions): TabData {
       externalContextSelector: null,
       mcpServerSelector: null,
       permissionToggle: null,
-      slashCommandManager: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
       contextUsageMeter: null,
@@ -363,26 +360,29 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
 }
 
 /**
- * Initializes slash command manager and dropdown for a tab.
+ * Initializes slash command dropdown for a tab.
+ * @param getSdkCommands Callback to get SDK commands from any ready service (shared across tabs).
+ * @param getHiddenCommands Callback to get current hidden commands from settings.
  */
-function initializeSlashCommands(tab: TabData, plugin: ClaudianPlugin): void {
+function initializeSlashCommands(
+  tab: TabData,
+  getSdkCommands?: () => Promise<SlashCommand[]>,
+  getHiddenCommands?: () => Set<string>
+): void {
   const { dom } = tab;
-  const vaultPath = getVaultPath(plugin.app);
 
-  if (vaultPath) {
-    tab.ui.slashCommandManager = new SlashCommandManager(plugin.app, vaultPath);
-    tab.ui.slashCommandManager.setCommands(plugin.settings.slashCommands);
-
-    tab.ui.slashCommandDropdown = new SlashCommandDropdown(
-      dom.inputContainerEl,
-      dom.inputEl,
-      {
-        onSelect: () => {},
-        onHide: () => {},
-        getCommands: () => plugin.settings.slashCommands,
-      }
-    );
-  }
+  tab.ui.slashCommandDropdown = new SlashCommandDropdown(
+    dom.inputContainerEl,
+    dom.inputEl,
+    {
+      onSelect: () => {},
+      onHide: () => {},
+      getSdkCommands,
+    },
+    {
+      hiddenCommands: getHiddenCommands?.() ?? new Set(),
+    }
+  );
 }
 
 /**
@@ -491,13 +491,20 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
   });
 }
 
+/** Options for initializing tab UI. */
+export interface InitializeTabUIOptions {
+  /** Callback to get SDK commands from any ready service (shared across tabs). */
+  getSdkCommands?: () => Promise<SlashCommand[]>;
+}
+
 /**
  * Initializes the tab's UI components.
  * Call this after the tab is created and before it becomes active.
  */
 export function initializeTabUI(
   tab: TabData,
-  plugin: ClaudianPlugin
+  plugin: ClaudianPlugin,
+  options: InitializeTabUIOptions = {}
 ): void {
   const { dom, state } = tab;
 
@@ -508,8 +515,12 @@ export function initializeTabUI(
   dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
 
-  // Initialize slash commands
-  initializeSlashCommands(tab, plugin);
+  // Initialize slash commands with shared SDK commands callback and hidden commands
+  initializeSlashCommands(
+    tab,
+    options.getSdkCommands,
+    () => new Set((plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase()))
+  );
 
   // Initialize instruction mode and todo panel
   initializeInstructionAndTodo(tab, plugin);
@@ -651,7 +662,6 @@ export function initializeTabControllers(
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
     getImageContextManager: () => ui.imageContextManager,
-    getSlashCommandManager: () => ui.slashCommandManager,
     getMcpServerSelector: () => ui.mcpServerSelector,
     getExternalContextSelector: () => ui.externalContextSelector,
     getInstructionModeManager: () => ui.instructionModeManager,
@@ -856,7 +866,6 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.fileContextManager?.destroy();
   tab.ui.slashCommandDropdown?.destroy();
   tab.ui.slashCommandDropdown = null;
-  tab.ui.slashCommandManager = null;
   tab.ui.instructionModeManager?.destroy();
   tab.ui.instructionModeManager = null;
   tab.services.instructionRefineService?.cancel();

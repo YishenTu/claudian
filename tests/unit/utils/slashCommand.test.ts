@@ -4,32 +4,7 @@
  * Tests for parseSlashCommandContent including YAML block scalar support.
  */
 
-import { formatSlashCommandWarnings,parseSlashCommandContent } from '@/utils/slashCommand';
-
-// ============================================================================
-// formatSlashCommandWarnings Tests
-// ============================================================================
-
-describe('formatSlashCommandWarnings', () => {
-  it('should format single warning', () => {
-    const result = formatSlashCommandWarnings(['File not found']);
-    expect(result).toBe('Slash command expansion warnings:\n- File not found');
-  });
-
-  it('should format multiple warnings up to max', () => {
-    const result = formatSlashCommandWarnings(['Error 1', 'Error 2', 'Error 3']);
-    expect(result).toBe('Slash command expansion warnings:\n- Error 1\n- Error 2\n- Error 3');
-  });
-
-  it('should truncate with count when exceeding max', () => {
-    const result = formatSlashCommandWarnings(['Error 1', 'Error 2', 'Error 3', 'Error 4', 'Error 5']);
-    expect(result).toBe('Slash command expansion warnings:\n- Error 1\n- Error 2\n- Error 3\n...and 2 more');
-  });
-});
-
-// ============================================================================
-// parseSlashCommandContent Tests
-// ============================================================================
+import { parseSlashCommandContent } from '@/utils/slashCommand';
 
 describe('parseSlashCommandContent', () => {
   describe('basic parsing', () => {

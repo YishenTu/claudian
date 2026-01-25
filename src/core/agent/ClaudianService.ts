@@ -19,6 +19,7 @@ import type {
   Query,
   SDKMessage,
   SDKUserMessage,
+  SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
@@ -51,6 +52,7 @@ import type {
   CCPermissions,
   ChatMessage,
   ImageAttachment,
+  SlashCommand,
   StreamChunk,
 } from '../types';
 import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
@@ -1372,6 +1374,39 @@ export class ClaudianService {
   /** Consume session invalidation flag for persistence updates. */
   consumeSessionInvalidation(): boolean {
     return this.sessionManager.consumeInvalidation();
+  }
+
+  /**
+   * Check if the service is ready (persistent query is active).
+   * Used to determine if SDK skills are available.
+   */
+  isReady(): boolean {
+    return this.isPersistentQueryActive();
+  }
+
+  /**
+   * Get supported commands (SDK skills) from the persistent query.
+   * Returns an empty array if the query is not ready.
+   */
+  async getSupportedCommands(): Promise<SlashCommand[]> {
+    if (!this.persistentQuery) {
+      return [];
+    }
+
+    try {
+      const sdkCommands: SDKSlashCommand[] = await this.persistentQuery.supportedCommands();
+      return sdkCommands.map((cmd) => ({
+        id: `sdk:${cmd.name}`,
+        name: cmd.name,
+        description: cmd.description,
+        argumentHint: cmd.argumentHint,
+        content: '', // SDK skills don't need content - they're handled by the SDK
+        source: 'sdk' as const,
+      }));
+    } catch {
+      // Silently return empty array on error
+      return [];
+    }
   }
 
   /**

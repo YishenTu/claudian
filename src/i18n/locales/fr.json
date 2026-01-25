@@ -91,6 +91,11 @@
       "name": "Commandes slash",
       "desc": "Créez des modèles de prompts personnalisés déclenchés par /command. Utilisez $ARGUMENTS pour tous les arguments, $1/$2 pour les arguments positionnels, @file pour le contenu du fichier et !`bash` pour la sortie de commande."
     },
+    "hiddenSlashCommands": {
+      "name": "Commandes masquées",
+      "desc": "Masquer des commandes slash spécifiques du menu déroulant. Utile pour masquer les commandes Claude Code qui ne sont pas pertinentes pour Claudian. Entrez les noms de commandes sans le slash initial, un par ligne.",
+      "placeholder": "commit\nbuild\ntest"
+    },
     "mcpServers": {
       "name": "Serveurs MCP",
       "desc": "Configurez les serveurs Model Context Protocol pour étendre les capacités de Claude avec des outils et sources de données externes. Les serveurs avec mode de sauvegarde de contexte nécessitent une @mention pour s'activer."

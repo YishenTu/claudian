@@ -91,6 +91,11 @@
       "name": "斜線命令",
       "desc": "建立由 /command 觸發的自訂提示範本。使用 $ARGUMENTS 獲取所有參數，$1/$2 獲取位置參數，@file 獲取檔案內容，!`bash` 獲取命令輸出。"
     },
+    "hiddenSlashCommands": {
+      "name": "隱藏命令",
+      "desc": "從下拉選單中隱藏特定的斜線命令。適用於隱藏與 Claudian 無關的 Claude Code 命令。每行輸入一個命令名稱，無需前導斜線。",
+      "placeholder": "commit\nbuild\ntest"
+    },
     "mcpServers": {
       "name": "MCP 伺服器",
       "desc": "設定模型上下文協定伺服器，透過外部工具和資料來源擴展 Claude 的能力。啟用上下文保存模式的伺服器需要 @ 提及才能啟用。"

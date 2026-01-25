@@ -80,6 +80,9 @@ export type TranslationKey =
   // Settings - Slash Commands
   | 'settings.slashCommands.name'
   | 'settings.slashCommands.desc'
+  | 'settings.hiddenSlashCommands.name'
+  | 'settings.hiddenSlashCommands.desc'
+  | 'settings.hiddenSlashCommands.placeholder'
 
   // Settings - MCP Servers
   | 'settings.mcpServers.name'

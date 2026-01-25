@@ -8,7 +8,6 @@
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
-import type { SlashCommandManager } from '../../../core/commands';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import type {
   ConversationController,
@@ -133,7 +132,6 @@ export interface TabUIComponents {
   externalContextSelector: ExternalContextSelector | null;
   mcpServerSelector: McpServerSelector | null;
   permissionToggle: PermissionToggle | null;
-  slashCommandManager: SlashCommandManager | null;
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   contextUsageMeter: ContextUsageMeter | null;

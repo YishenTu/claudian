@@ -91,6 +91,11 @@
       "name": "Schrägstrich-Befehle",
       "desc": "Erstelle benutzerdefinierte Prompt-Vorlagen, die durch /command ausgelöst werden. Verwende $ARGUMENTS für alle Argumente, $1/$2 für Positionsargumente, @file für Dateiinhalt und !`bash` für Befehlsausgabe."
     },
+    "hiddenSlashCommands": {
+      "name": "Ausgeblendete Befehle",
+      "desc": "Bestimmte Schrägstrich-Befehle aus dem Dropdown ausblenden. Nützlich, um Claude Code-Befehle auszublenden, die für Claudian nicht relevant sind. Gib Befehlsnamen ohne führenden Schrägstrich ein, einen pro Zeile.",
+      "placeholder": "commit\nbuild\ntest"
+    },
     "mcpServers": {
       "name": "MCP-Server",
       "desc": "Konfiguriere Model Context Protocol Server, um Claude mit externen Tools und Datenquellen zu erweitern. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."

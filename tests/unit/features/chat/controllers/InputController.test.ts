@@ -129,7 +129,6 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       transformContextMentions: jest.fn().mockImplementation((text: string) => text),
     }) as any,
     getImageContextManager: () => imageContextManager as any,
-    getSlashCommandManager: () => null,
     getMcpServerSelector: () => null,
     getExternalContextSelector: () => null,
     getInstructionModeManager: () => null,

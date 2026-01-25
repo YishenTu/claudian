@@ -91,6 +91,11 @@
       "name": "斜杠命令",
       "desc": "创建由 /command 触发的自定义提示模板。使用 $ARGUMENTS 获取所有参数，$1/$2 获取位置参数，@file 获取文件内容，!`bash` 获取命令输出。"
     },
+    "hiddenSlashCommands": {
+      "name": "隐藏命令",
+      "desc": "从下拉菜单中隐藏特定的斜杠命令。适用于隐藏与 Claudian 无关的 Claude Code 命令。每行输入一个命令名称，无需前导斜杠。",
+      "placeholder": "commit\nbuild\ntest"
+    },
     "mcpServers": {
       "name": "MCP 服务器",
       "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"

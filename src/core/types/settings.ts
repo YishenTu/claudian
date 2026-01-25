@@ -200,6 +200,9 @@ export interface EnvSnippet {
   contextLimits?: Record<string, number>;  // Optional: context limits for custom models
 }
 
+/** Source of a slash command. */
+export type SlashCommandSource = 'builtin' | 'user' | 'plugin' | 'sdk';
+
 /** Slash command configuration with Claude Code compatibility. */
 export interface SlashCommand {
   id: string;
@@ -209,6 +212,7 @@ export interface SlashCommand {
   allowedTools?: string[];     // Restrict tools when command is used
   model?: ClaudeModel;         // Override model for this command
   content: string;             // Prompt template with placeholders
+  source?: SlashCommandSource; // Origin of the command (builtin, user, plugin, sdk)
 }
 
 /** Keyboard navigation settings for vim-style scrolling. */
@@ -282,6 +286,9 @@ export interface ClaudianSettings {
   maxTabs: number;  // Maximum number of chat tabs (3-10, default 3)
   tabBarPosition: TabBarPosition;  // Where to show tab bar ('input' or 'header')
   enableAutoScroll: boolean;  // Enable auto-scroll during streaming (default: true)
+
+  // Slash commands
+  hiddenSlashCommands: string[];  // Command names to hide from dropdown (user preference)
 }
 
 /**
@@ -344,6 +351,9 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   maxTabs: 3,  // Default to 3 tabs (safe resource usage)
   tabBarPosition: 'input',  // Default to input mode (current behavior)
   enableAutoScroll: true,  // Default to auto-scroll enabled
+
+  // Slash commands
+  hiddenSlashCommands: [],  // No commands hidden by default
 };
 
 /** Default CC-compatible settings. */

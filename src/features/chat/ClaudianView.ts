@@ -92,6 +92,16 @@ export class ClaudianView extends ItemView {
     activeTab?.ui.modelSelector?.renderOptions();
   }
 
+  /** Updates hidden slash commands on all tabs (used after settings change). */
+  updateHiddenSlashCommands(): void {
+    const hiddenCommands = new Set(
+      (this.plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase())
+    );
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      tab.ui.slashCommandDropdown?.setHiddenCommands(hiddenCommands);
+    }
+  }
+
   async onOpen() {
     // Guard: Hover Editor and similar plugins may call onOpen before DOM is ready.
     // containerEl must exist before we can access contentEl or create elements.

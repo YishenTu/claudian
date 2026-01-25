@@ -8,16 +8,35 @@
 import { getBuiltInCommandsForDropdown } from '../../core/commands';
 import type { SlashCommand } from '../../core/types';
 
+/**
+ * SDK commands to filter out from the dropdown.
+ * These are either handled differently in Claudian or don't apply.
+ */
+const FILTERED_SDK_COMMANDS = new Set([
+  'compact',
+  'context',
+  'cost',
+  'init',
+  'release-notes',
+  'security-review',
+]);
+
 /** Callbacks for slash command dropdown interactions. */
 export interface SlashCommandDropdownCallbacks {
   onSelect: (command: SlashCommand) => void;
   onHide: () => void;
-  getCommands: () => SlashCommand[];
+  /**
+   * Callback to fetch SDK supported commands.
+   * SDK is the single source of truth for slash commands.
+   * Only available after the service is initialized (first message sent).
+   */
+  getSdkCommands?: () => Promise<SlashCommand[]>;
 }
 
 /** Options for dropdown configuration. */
 export interface SlashCommandDropdownOptions {
   fixed?: boolean; // Use fixed positioning (for inline editor)
+  hiddenCommands?: Set<string>; // Command names to hide from dropdown
 }
 
 /** Dropdown UI for selecting slash commands. */
@@ -31,6 +50,14 @@ export class SlashCommandDropdown {
   private selectedIndex = 0;
   private filteredCommands: SlashCommand[] = [];
   private isFixed: boolean;
+  private hiddenCommands: Set<string>;
+
+  // SDK skills cache
+  private cachedSdkSkills: SlashCommand[] = [];
+  private sdkSkillsFetched = false;
+
+  // Race condition guard for async dropdown rendering
+  private requestId = 0;
 
   constructor(
     containerEl: HTMLElement,
@@ -42,10 +69,16 @@ export class SlashCommandDropdown {
     this.inputEl = inputEl;
     this.callbacks = callbacks;
     this.isFixed = options.fixed ?? false;
+    this.hiddenCommands = options.hiddenCommands ?? new Set();
 
     // Add input listener
     this.onInput = () => this.handleInputChange();
     this.inputEl.addEventListener('input', this.onInput);
+  }
+
+  /** Updates the set of hidden commands. */
+  setHiddenCommands(commands: Set<string>): void {
+    this.hiddenCommands = commands;
   }
 
   /** Handles input changes to detect / trigger. */
@@ -127,6 +160,16 @@ export class SlashCommandDropdown {
     }
   }
 
+  /**
+   * Resets the SDK skills cache.
+   * Call this when switching conversations or creating a new chat.
+   */
+  resetSdkSkillsCache(): void {
+    this.cachedSdkSkills = [];
+    this.sdkSkillsFetched = false;
+    this.requestId = 0;
+  }
+
   private getInputValue(): string {
     return this.inputEl.value;
   }
@@ -144,13 +187,63 @@ export class SlashCommandDropdown {
     this.inputEl.selectionEnd = pos;
   }
 
-  private showDropdown(searchText: string): void {
-    const userCommands = this.callbacks.getCommands();
+  private async showDropdown(searchText: string): Promise<void> {
+    // Increment request ID to track this request for race condition handling
+    const currentRequest = ++this.requestId;
+
     const builtInCommands = getBuiltInCommandsForDropdown();
     const searchLower = searchText.toLowerCase();
 
-    // Merge built-in commands with user commands
-    const allCommands = [...builtInCommands, ...userCommands];
+    // Fetch SDK commands if not cached and callback is available
+    // SDK is the single source of truth for slash commands
+    // Only mark as fetched when we get non-empty results (service is ready)
+    // This allows retries when service isn't ready yet or on transient errors
+    if (!this.sdkSkillsFetched && this.callbacks.getSdkCommands) {
+      try {
+        const sdkCommands = await this.callbacks.getSdkCommands();
+        // Discard results if a newer request was made during await
+        if (currentRequest !== this.requestId) return;
+        if (sdkCommands.length > 0) {
+          this.cachedSdkSkills = sdkCommands;
+          this.sdkSkillsFetched = true;
+        }
+        // Keep sdkSkillsFetched false to allow retry on empty results
+      } catch {
+        // Keep sdkSkillsFetched false to allow retry on error
+        if (currentRequest !== this.requestId) return;
+      }
+    }
+
+    // Merge Claudian built-in commands with SDK commands
+    // Built-in commands (like /clear, /add-dir) are Claudian-specific actions
+    // SDK commands include user commands from .claude/commands/ and skills
+    const seenNames = new Set<string>();
+    const allCommands: SlashCommand[] = [];
+
+    // Add Claudian built-in commands first (highest priority)
+    // Built-in commands are not subject to user hiding (they are essential UI actions)
+    for (const cmd of builtInCommands) {
+      const nameLower = cmd.name.toLowerCase();
+      if (!seenNames.has(nameLower)) {
+        seenNames.add(nameLower);
+        allCommands.push(cmd);
+      }
+    }
+
+    // Add SDK commands (deduplicated and filtered)
+    for (const cmd of this.cachedSdkSkills) {
+      const nameLower = cmd.name.toLowerCase();
+      // Skip filtered commands, duplicates, and user-hidden commands
+      if (
+        FILTERED_SDK_COMMANDS.has(nameLower) ||
+        seenNames.has(nameLower) ||
+        this.hiddenCommands.has(nameLower)
+      ) {
+        continue;
+      }
+      seenNames.add(nameLower);
+      allCommands.push(cmd);
+    }
 
     this.filteredCommands = allCommands
       .filter(cmd =>
@@ -158,6 +251,9 @@ export class SlashCommandDropdown {
         cmd.description?.toLowerCase().includes(searchLower)
       )
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Final race condition check before rendering
+    if (currentRequest !== this.requestId) return;
 
     if (searchText.length > 0 && this.filteredCommands.length === 0) {
       this.hide();

@@ -9,19 +9,13 @@
 import type { App, Editor} from 'obsidian';
 import { MarkdownView, Notice } from 'obsidian';
 
-import { SlashCommandManager } from '../../../core/commands';
-import { isCommandBlocked } from '../../../core/security/BlocklistChecker';
-import { TOOL_BASH } from '../../../core/tools/toolNames';
-import { getBashToolBlockedCommands } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
-import { ApprovalModal } from '../../../shared/modals/ApprovalModal';
 import { type CursorContext, getEditorView } from '../../../utils/editor';
 import { escapeHtml, normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
-import { formatSlashCommandWarnings } from '../../../utils/slashCommand';
 import { type InlineEditMode, InlineEditService } from '../InlineEditService';
 
 export type InlineEditContext =
@@ -273,7 +267,6 @@ class InlineEditController {
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
   private selectionListener: ((e: Event) => void) | null = null;
   private isConversing = false;  // True when agent asked clarification
-  private slashCommandManager: SlashCommandManager | null = null;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
   private attachedFiles: Set<string> = new Set();
@@ -424,25 +417,23 @@ class InlineEditController {
     this.spinnerEl.style.display = 'none';
     inputWrap.appendChild(this.spinnerEl);
 
-    // Initialize slash command manager and dropdown with fixed positioning
-    const vaultPath = getVaultPath(this.app);
-    if (vaultPath) {
-      this.slashCommandManager = new SlashCommandManager(this.app, vaultPath);
-      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
-
-      this.slashCommandDropdown = new SlashCommandDropdown(
-        document.body, // Use body for fixed positioning
-        this.inputEl,
-        {
-          onSelect: () => {
-            // Command selected, ready for arguments
-          },
-          onHide: () => {},
-          getCommands: () => this.plugin.settings.slashCommands,
+    // Initialize slash command dropdown with fixed positioning
+    this.slashCommandDropdown = new SlashCommandDropdown(
+      document.body, // Use body for fixed positioning
+      this.inputEl,
+      {
+        onSelect: () => {
+          // Command selected, ready for arguments
         },
-        { fixed: true }
-      );
-    }
+        onHide: () => {},
+        // SDK commands shared from any ready service
+        getSdkCommands: () => this.plugin.getSdkCommands(),
+      },
+      {
+        fixed: true,
+        hiddenCommands: new Set((this.plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase())),
+      }
+    );
 
     // Initialize mention dropdown (vault files only, no cache needed for short-lived modal)
     this.mentionDropdown = new MentionDropdownController(
@@ -477,42 +468,10 @@ class InlineEditController {
 
   private async generate() {
     if (!this.inputEl || !this.spinnerEl) return;
-    let userMessage = this.inputEl.value.trim();
+    const userMessage = this.inputEl.value.trim();
     if (!userMessage) return;
 
-    // Expand slash command if detected
-    if (this.slashCommandManager) {
-      // Refresh commands from settings to pick up any changes
-      this.slashCommandManager.setCommands(this.plugin.settings.slashCommands);
-      const detected = this.slashCommandManager.detectCommand(userMessage);
-      if (detected) {
-        const cmd = this.plugin.settings.slashCommands.find(
-          c => c.name.toLowerCase() === detected.commandName.toLowerCase()
-        );
-        if (cmd) {
-          const expansion = await this.slashCommandManager.expandCommand(cmd, detected.args, {
-            bash: {
-              enabled: true,
-              shouldBlockCommand: (bashCommand) =>
-                isCommandBlocked(
-                  bashCommand,
-                  getBashToolBlockedCommands(this.plugin.settings.blockedCommands),
-                  this.plugin.settings.enableBlocklist
-                ),
-              requestApproval:
-                this.plugin.settings.permissionMode !== 'yolo'
-                  ? (bashCommand) => this.requestInlineBashApproval(bashCommand)
-                  : undefined,
-            },
-          });
-          userMessage = expansion.expandedPrompt;
-
-          if (expansion.errors.length > 0) {
-            new Notice(formatSlashCommandWarnings(expansion.errors));
-          }
-        }
-      }
-    }
+    // Slash commands are passed directly to SDK for handling
 
     // Remove selection listeners during generation
     this.removeSelectionListeners();
@@ -713,7 +672,6 @@ class InlineEditController {
     // Clean up slash command dropdown
     this.slashCommandDropdown?.destroy();
     this.slashCommandDropdown = null;
-    this.slashCommandManager = null;
 
     // Clean up mention dropdown
     this.mentionDropdown?.destroy();
@@ -766,18 +724,4 @@ class InlineEditController {
     }
   }
 
-  private async requestInlineBashApproval(command: string): Promise<boolean> {
-    const description = `Execute inline bash command:\n${command}`;
-    return new Promise((resolve) => {
-      const modal = new ApprovalModal(
-        this.app,
-        TOOL_BASH,
-        { command },
-        description,
-        (decision) => resolve(decision === 'allow' || decision === 'allow-always'),
-        { showAlwaysAllow: false, title: 'Inline bash execution' }
-      );
-      modal.open();
-    });
-  }
 }

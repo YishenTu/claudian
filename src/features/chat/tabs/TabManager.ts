@@ -7,6 +7,7 @@
 
 import type { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
+import type { SlashCommand } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import {
   activateTab,
@@ -115,8 +116,10 @@ export class TabManager implements TabManagerInterface {
       },
     });
 
-    // Initialize UI components
-    initializeTabUI(tab, this.plugin);
+    // Initialize UI components with shared SDK commands callback
+    initializeTabUI(tab, this.plugin, {
+      getSdkCommands: () => this.getSdkCommands(),
+    });
 
     // Initialize controllers (pass mcpManager for lazy service initialization)
     initializeTabControllers(tab, this.plugin, this.view, this.mcpManager);
@@ -440,6 +443,25 @@ export class TabManager implements TabManagerInterface {
     } catch {
       // Non-fatal - service will be initialized on first query
     }
+  }
+
+  // ============================================
+  // SDK Commands (Shared)
+  // ============================================
+
+  /**
+   * Gets SDK supported commands from any ready service.
+   * The command list is the same for all tabs, so we just need one ready service.
+   * @returns Array of SDK commands, or empty array if no service is ready.
+   */
+  async getSdkCommands(): Promise<SlashCommand[]> {
+    // Find any tab with a ready service
+    for (const tab of this.tabs.values()) {
+      if (tab.service?.isReady()) {
+        return tab.service.getSupportedCommands();
+      }
+    }
+    return [];
   }
 
   // ============================================

@@ -348,6 +348,27 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const slashCommandsContainer = containerEl.createDiv({ cls: 'claudian-slash-commands-container' });
     new SlashCommandSettings(slashCommandsContainer, this.plugin);
 
+    // Hidden Commands setting
+    new Setting(containerEl)
+      .setName(t('settings.hiddenSlashCommands.name'))
+      .setDesc(t('settings.hiddenSlashCommands.desc'))
+      .addTextArea((text) => {
+        text
+          .setPlaceholder(t('settings.hiddenSlashCommands.placeholder'))
+          .setValue((this.plugin.settings.hiddenSlashCommands || []).join('\n'))
+          .onChange(async (value) => {
+            this.plugin.settings.hiddenSlashCommands = value
+              .split(/\r?\n/)
+              .map((s) => s.trim().replace(/^\//, ''))  // Remove leading / if present
+              .filter((s) => s.length > 0);
+            await this.plugin.saveSettings();
+            // Update all open tabs immediately
+            this.plugin.getView()?.updateHiddenSlashCommands();
+          });
+        text.inputEl.rows = 4;
+        text.inputEl.cols = 30;
+      });
+
     // MCP Servers section
     new Setting(containerEl).setName(t('settings.mcpServers.name')).setHeading();
 
