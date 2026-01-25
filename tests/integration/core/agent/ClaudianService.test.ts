@@ -350,7 +350,7 @@ describe('ClaudianService', () => {
     });
 
     it('should use custom CLI path when valid file is specified', async () => {
-      const customPath = '/custom/path/to/cli.js';
+      const customPath = '/custom/path/to/claude';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
       mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
@@ -417,7 +417,7 @@ describe('ClaudianService', () => {
     });
 
     it('should fall back to auto-detection when custom path does not exist', async () => {
-      const customPath = '/nonexistent/path/cli.js';
+      const customPath = '/nonexistent/path/claude';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
       mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
@@ -453,7 +453,7 @@ describe('ClaudianService', () => {
     });
 
     it('should fall back to auto-detection when custom path stat fails', async () => {
-      const customPath = '/custom/path/to/cli.js';
+      const customPath = '/custom/path/to/claude';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
       mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
@@ -498,8 +498,8 @@ describe('ClaudianService', () => {
     });
 
     it('should reload CLI path after cleanup', async () => {
-      const firstPath = '/custom/path/to/cli-1.js';
-      const secondPath = '/custom/path/to/cli-2.js';
+      const firstPath = '/custom/path/to/claude-1';
+      const secondPath = '/custom/path/to/claude-2';
       mockPlugin = createMockPlugin({ claudeCliPath: firstPath });
       mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
