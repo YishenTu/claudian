@@ -729,5 +729,100 @@ describe('session utilities', () => {
 
       expect(result).toBe(historyContext);
     });
+
+    describe('new format (user content before XML context)', () => {
+      it('avoids duplication when actualPrompt matches last user message', () => {
+        const prompt = 'Explain this\n\n<current_note>\ntest.md\n</current_note>';
+        const actualPrompt = 'Explain this\n\n<current_note>\ntest.md\n</current_note>';
+        const messages: ChatMessage[] = [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: prompt,
+            displayContent: 'Explain this',
+            timestamp: 1000,
+          },
+        ];
+        const historyContext = 'User: Explain this';
+
+        const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
+
+        expect(result).toBe(historyContext);
+      });
+
+      it('appends prompt when actualPrompt differs from last user message', () => {
+        const oldPrompt = 'First question\n\n<current_note>\nold.md\n</current_note>';
+        const newPrompt = 'Second question\n\n<current_note>\nnew.md\n</current_note>';
+        const messages: ChatMessage[] = [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: oldPrompt,
+            displayContent: 'First question',
+            timestamp: 1000,
+          },
+        ];
+        const historyContext = 'User: First question\n\nAssistant: response';
+
+        const result = buildPromptWithHistoryContext(historyContext, newPrompt, newPrompt, messages);
+
+        expect(result).toContain(historyContext);
+        expect(result).toContain('User: Second question');
+      });
+
+      it('extracts user query from editor_selection format', () => {
+        const prompt = 'Refactor this\n\n<editor_selection path="src/main.ts">\ncode here\n</editor_selection>';
+        const messages: ChatMessage[] = [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: prompt,
+            displayContent: 'Refactor this',
+            timestamp: 1000,
+          },
+        ];
+        const historyContext = 'User: Refactor this';
+
+        const result = buildPromptWithHistoryContext(historyContext, prompt, prompt, messages);
+
+        expect(result).toBe(historyContext);
+      });
+
+      it('extracts user query from content with multiple XML context tags', () => {
+        const prompt = 'Update code\n\n<current_note>\ntest.md\n</current_note>\n\n<editor_selection path="test.md">\nselected\n</editor_selection>';
+        const messages: ChatMessage[] = [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: prompt,
+            displayContent: 'Update code',
+            timestamp: 1000,
+          },
+        ];
+        const historyContext = 'User: Update code';
+
+        const result = buildPromptWithHistoryContext(historyContext, prompt, prompt, messages);
+
+        expect(result).toBe(historyContext);
+      });
+
+      it('falls back to extractUserQuery when displayContent is not available', () => {
+        const prompt = 'Help me\n\n<current_note>\nfile.md\n</current_note>';
+        const messages: ChatMessage[] = [
+          {
+            id: 'msg-1',
+            role: 'user',
+            content: prompt,
+            // No displayContent - should extract from content
+            timestamp: 1000,
+          },
+        ];
+        const historyContext = 'User: Help me';
+
+        const result = buildPromptWithHistoryContext(historyContext, prompt, prompt, messages);
+
+        expect(result).toBe(historyContext);
+      });
+    });
   });
 });

@@ -548,6 +548,71 @@ describe('sdkSession', () => {
       expect(chatMsg).not.toBeNull();
       expect(chatMsg!.isRebuiltContext).toBeUndefined();
     });
+
+    it('extracts displayContent from user message with current_note tag', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-note',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: 'Explain this file\n\n<current_note>\nnotes/test.md\n</current_note>',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.content).toBe('Explain this file\n\n<current_note>\nnotes/test.md\n</current_note>');
+      expect(chatMsg!.displayContent).toBe('Explain this file');
+    });
+
+    it('extracts displayContent from user message with editor_selection tag', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-selection',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: 'Refactor this code\n\n<editor_selection path="src/main.ts">\nfunction foo() {}\n</editor_selection>',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.displayContent).toBe('Refactor this code');
+    });
+
+    it('extracts displayContent from user message with multiple context tags', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-multi',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: 'Update this\n\n<current_note>\ntest.md\n</current_note>\n\n<editor_selection path="test.md">\nselected\n</editor_selection>',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.displayContent).toBe('Update this');
+    });
+
+    it('does not set displayContent for plain user messages without XML context', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-plain',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: 'Just a regular question',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.displayContent).toBeUndefined();
+    });
   });
 
   describe('loadSDKSessionMessages', () => {
