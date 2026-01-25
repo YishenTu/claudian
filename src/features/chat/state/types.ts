@@ -25,7 +25,6 @@ export interface QueuedMessage {
   content: string;
   images?: ImageAttachment[];
   editorContext: EditorSelectionContext | null;
-  promptPrefix?: string;
 }
 
 /** Pending tool call waiting to be rendered (buffered until input is complete). */

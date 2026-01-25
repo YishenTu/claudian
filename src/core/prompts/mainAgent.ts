@@ -60,20 +60,23 @@ The current working directory is the user's vault root.${vaultInfo}
 
 ## User Message Format
 
-User messages use XML tags for structured context:
+User messages have the query first, followed by optional XML context tags:
 
-\`\`\`xml
+\`\`\`
+User's question or request here
+
 <current_note>
 path/to/note.md
 </current_note>
 
-<query>
-User's question or request here
-</query>
+<editor_selection path="path/to/note.md" lines="10-15">
+selected text content
+</editor_selection>
 \`\`\`
 
-- \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context. 
-- \`<query>\`: The user's actual question or request.
+- The user's query/instruction always comes first in the message.
+- \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context.
+- \`<editor_selection>\`: Text currently selected in the editor, with file path and line numbers.
 - \`@filename.md\`: Files mentioned with @ in the query. Read these files when referenced.
 
 ## Obsidian Context

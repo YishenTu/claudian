@@ -108,8 +108,8 @@ export function formatEditorContext(context: EditorSelectionContext): string {
   return '';
 }
 
-/** Prepends editor context to a prompt. */
-export function prependEditorContext(prompt: string, context: EditorSelectionContext): string {
+/** Appends editor context to a prompt. */
+export function appendEditorContext(prompt: string, context: EditorSelectionContext): string {
   const formatted = formatEditorContext(context);
-  return formatted ? `${formatted}\n\n${prompt}` : prompt;
+  return formatted ? `${prompt}\n\n${formatted}` : prompt;
 }

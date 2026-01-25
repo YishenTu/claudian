@@ -13,9 +13,9 @@ import type { ChatMessage } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { ApprovalModal } from '../../../shared/modals/ApprovalModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
-import { prependCurrentNote } from '../../../utils/context';
+import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
-import { type EditorSelectionContext, prependEditorContext } from '../../../utils/editor';
+import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
@@ -81,7 +81,6 @@ export class InputController {
   async sendMessage(options?: {
     editorContextOverride?: EditorSelectionContext | null;
     content?: string;
-    promptPrefix?: string;
   }): Promise<void> {
     const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
 
@@ -118,8 +117,6 @@ export class InputController {
     if (state.isStreaming) {
       const images = hasImages ? [...(imageContextManager?.getAttachedImages() || [])] : undefined;
       const editorContext = selectionController.getContext();
-      const promptPrefix = options?.promptPrefix;
-
       // Append to existing queued message if any
       if (state.queuedMessage) {
         state.queuedMessage.content += '\n\n' + content;
@@ -127,15 +124,11 @@ export class InputController {
           state.queuedMessage.images = [...(state.queuedMessage.images || []), ...images];
         }
         state.queuedMessage.editorContext = editorContext;
-        if (promptPrefix) {
-          state.queuedMessage.promptPrefix = state.queuedMessage.promptPrefix ?? promptPrefix;
-        }
       } else {
         state.queuedMessage = {
           content,
           images,
           editorContext,
-          promptPrefix,
         };
       }
 
@@ -189,25 +182,20 @@ export class InputController {
       : selectionController.getContext();
 
     const externalContextPaths = externalContextSelector?.getExternalContexts();
-    const hasExternalContexts = externalContextPaths && externalContextPaths.length > 0;
 
-    // Only wrap in <query> when there are other XML context tags
-    const hasXmlContext = !!editorContext || (shouldSendCurrentNote && !!currentNotePath) || hasExternalContexts;
-    let promptToSend = hasXmlContext ? `<query>\n${content}\n</query>` : content;
+    // User content first, context XML appended after (enables slash command detection)
+    let promptToSend = content;
     let currentNoteForMessage: string | undefined;
 
-    // Prepend editor context if available
-    if (editorContext) {
-      promptToSend = prependEditorContext(promptToSend, editorContext);
-    }
-
+    // Append current note context if available
     if (shouldSendCurrentNote && currentNotePath) {
-      promptToSend = prependCurrentNote(promptToSend, currentNotePath);
+      promptToSend = appendCurrentNote(promptToSend, currentNotePath);
       currentNoteForMessage = currentNotePath;
     }
 
-    if (options?.promptPrefix) {
-      promptToSend = `${options.promptPrefix}\n\n${promptToSend}`;
+    // Append editor context if available
+    if (editorContext) {
+      promptToSend = appendEditorContext(promptToSend, editorContext);
     }
 
     // Transform context file mentions (e.g., @folder/file.ts) to absolute paths
@@ -425,7 +413,7 @@ export class InputController {
     const { state } = this.deps;
     if (!state.queuedMessage) return;
 
-    const { content, images, editorContext, promptPrefix } = state.queuedMessage;
+    const { content, images, editorContext } = state.queuedMessage;
     state.queuedMessage = null;
     this.updateQueueIndicator();
 
@@ -435,7 +423,7 @@ export class InputController {
       this.deps.getImageContextManager()?.setImages(images);
     }
 
-    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, promptPrefix }), 0);
+    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext }), 0);
   }
 
   // ============================================

@@ -167,7 +167,6 @@ describe('InputController - Message Queue', () => {
         images: undefined,
         editorContext: null,
         hidden: undefined,
-        promptPrefix: undefined,
       });
       expect(inputEl.value).toBe('');
     });
@@ -187,7 +186,6 @@ describe('InputController - Message Queue', () => {
         images: mockImages,
         editorContext: null,
         hidden: undefined,
-        promptPrefix: undefined,
       });
       expect(imageContextManager.clearImages).toHaveBeenCalled();
     });
@@ -201,15 +199,6 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(deps.state.queuedMessage!.content).toBe('first message\n\nsecond message');
-    });
-
-    it('should preserve prompt prefix when queuing', async () => {
-      deps.state.isStreaming = true;
-      inputEl.value = 'queued plan';
-
-      await controller.sendMessage({ promptPrefix: 'Plan prefix' });
-
-      expect(deps.state.queuedMessage?.promptPrefix).toBe('Plan prefix');
     });
 
     it('should merge images when appending to queue', async () => {
@@ -245,7 +234,7 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('Queued message processing', () => {
-    it('should forward prompt prefix when sending queued message in non-plan mode', async () => {
+    it('should send queued message in non-plan mode', async () => {
       jest.useFakeTimers();
       try {
         deps.plugin.settings.permissionMode = 'normal';
@@ -253,7 +242,6 @@ describe('InputController - Message Queue', () => {
           content: 'queued plan',
           images: undefined,
           editorContext: null,
-          promptPrefix: 'Plan prefix',
         };
 
         const sendSpy = jest.spyOn(controller, 'sendMessage').mockResolvedValue(undefined);
@@ -262,7 +250,7 @@ describe('InputController - Message Queue', () => {
         jest.runAllTimers();
         await Promise.resolve();
 
-        expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({ promptPrefix: 'Plan prefix' }));
+        expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({ editorContextOverride: null }));
         sendSpy.mockRestore();
       } finally {
         jest.useRealTimers();

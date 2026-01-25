@@ -205,12 +205,13 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildPrompt(request);
 
+      // New format: instruction first, then XML context (no <query> wrapper)
+      expect(prompt).toContain('Fix the greeting');
       expect(prompt).toContain('<editor_selection path="notes/test.md">');
       expect(prompt).toContain('Hello world');
       expect(prompt).toContain('</editor_selection>');
-      expect(prompt).toContain('<query>');
-      expect(prompt).toContain('Fix the greeting');
-      expect(prompt).toContain('</query>');
+      // Verify instruction comes before selection
+      expect(prompt.indexOf('Fix the greeting')).toBeLessThan(prompt.indexOf('<editor_selection'));
     });
 
     it('should preserve selected text with newlines', () => {
@@ -236,13 +237,14 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildPrompt(request);
 
-      expect(prompt).toContain('<editor_selection path="empty.md">');
-      expect(prompt).toContain('<query>');
+      // New format: instruction first, then XML context (no <query> wrapper)
       expect(prompt).toContain('Add content');
-      expect(prompt).toContain('</query>');
+      expect(prompt).toContain('<editor_selection path="empty.md">');
+      // Verify instruction comes before selection
+      expect(prompt.indexOf('Add content')).toBeLessThan(prompt.indexOf('<editor_selection'));
     });
 
-    it('should prepend context files when provided', () => {
+    it('should append context files when provided', () => {
       const request: InlineEditRequest = {
         mode: 'selection',
         selectedText: 'test',
@@ -253,14 +255,17 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildPrompt(request);
 
-      // Context files should be prepended with <context_files> tag
+      // Context files should be appended with <context_files> tag
       expect(prompt).toContain('<context_files>');
       expect(prompt).toContain('notes/helper.md');
       expect(prompt).toContain('docs/api.md');
       expect(prompt).toContain('</context_files>');
       // Original content should still be present
       expect(prompt).toContain('<editor_selection');
-      expect(prompt).toContain('<query>');
+      expect(prompt).toContain('Fix this');
+      // Verify order: instruction, selection, context_files
+      expect(prompt.indexOf('Fix this')).toBeLessThan(prompt.indexOf('<editor_selection'));
+      expect(prompt.indexOf('<editor_selection')).toBeLessThan(prompt.indexOf('<context_files'));
     });
 
     it('should not modify prompt when contextFiles is empty', () => {
@@ -1108,12 +1113,13 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildCursorPrompt(request);
 
+      // New format: instruction first, then XML context (no <query> wrapper)
+      expect(prompt).toContain('add missing word');
       expect(prompt).toContain('<editor_cursor path="notes/test.md" line="6">');
       expect(prompt).toContain('The quick brown | jumps over #inline');
       expect(prompt).toContain('</editor_cursor>');
-      expect(prompt).toContain('<query>');
-      expect(prompt).toContain('add missing word');
-      expect(prompt).toContain('</query>');
+      // Verify instruction comes before cursor context
+      expect(prompt.indexOf('add missing word')).toBeLessThan(prompt.indexOf('<editor_cursor'));
     });
 
     it('should build inbetween cursor prompt with surrounding context', () => {
@@ -1132,14 +1138,15 @@ describe('InlineEditService', () => {
 
       const prompt = (service as any).buildCursorPrompt(request);
 
+      // New format: instruction first, then XML context (no <query> wrapper)
+      expect(prompt).toContain('add a new section');
       expect(prompt).toContain('<editor_cursor path="docs/readme.md" line="4">');
       expect(prompt).toContain('# Introduction');
       expect(prompt).toContain('| #inbetween');
       expect(prompt).toContain('## Features');
       expect(prompt).toContain('</editor_cursor>');
-      expect(prompt).toContain('<query>');
-      expect(prompt).toContain('add a new section');
-      expect(prompt).toContain('</query>');
+      // Verify instruction comes before cursor context
+      expect(prompt.indexOf('add a new section')).toBeLessThan(prompt.indexOf('<editor_cursor'));
     });
 
     it('should handle inbetween with no content before cursor', () => {

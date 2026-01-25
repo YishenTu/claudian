@@ -20,7 +20,7 @@ import {
 } from '../../core/tools/toolNames';
 import { THINKING_BUDGETS } from '../../core/types';
 import type ClaudianPlugin from '../../main';
-import { prependContextFiles } from '../../utils/context';
+import { appendContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../utils/env';
 import { getPathAccessType, getVaultPath, type PathAccessType } from '../../utils/path';
@@ -82,10 +82,10 @@ export class InlineEditService {
     if (!this.sessionId) {
       return { success: false, error: 'No active conversation to continue' };
     }
-    // Prepend new context files if any
+    // Append context files if any (user content first for slash command detection)
     let prompt = message;
     if (contextFiles && contextFiles.length > 0) {
-      prompt = prependContextFiles(message, contextFiles);
+      prompt = appendContextFiles(message, contextFiles);
     }
     return this.sendMessage(prompt);
   }
@@ -201,24 +201,22 @@ export class InlineEditService {
     if (request.mode === 'cursor') {
       prompt = this.buildCursorPrompt(request);
     } else {
-      // Selection mode - XML format with line numbers
+      // Selection mode - instruction first, then XML context (enables slash command detection)
       const lineAttr = request.startLine && request.lineCount
         ? ` lines="${request.startLine}-${request.startLine + request.lineCount - 1}"`
         : '';
       prompt = [
+        request.instruction,
+        '',
         `<editor_selection path="${request.notePath}"${lineAttr}>`,
         request.selectedText,
         '</editor_selection>',
-        '',
-        '<query>',
-        request.instruction,
-        '</query>',
       ].join('\n');
     }
 
-    // Prepend context files if any
+    // Append context files if any (user content first for slash command detection)
     if (request.contextFiles && request.contextFiles.length > 0) {
-      prompt = prependContextFiles(prompt, request.contextFiles);
+      prompt = appendContextFiles(prompt, request.contextFiles);
     }
 
     return prompt;
@@ -241,14 +239,13 @@ export class InlineEditService {
       cursorContent = `${ctx.beforeCursor}|${ctx.afterCursor} #inline`;
     }
 
+    // Instruction first, then XML context (enables slash command detection)
     return [
+      request.instruction,
+      '',
       `<editor_cursor path="${request.notePath}"${lineAttr}>`,
       cursorContent,
       '</editor_cursor>',
-      '',
-      '<query>',
-      request.instruction,
-      '</query>',
     ].join('\n');
   }
 
