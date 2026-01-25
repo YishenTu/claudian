@@ -28,7 +28,7 @@ An Obsidian plugin that embeds Claude Code as an AI collaborator in your vault. 
 
 ## Requirements
 
-- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed
+- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (strongly recommend install Claude Code via Native Install)
 - Obsidian v1.8.9+
 - Claude subscription/API or Custom model provider that supports Anthropic API format ([Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), [GLM](https://docs.z.ai/devpack/tool/claude), [DeepSeek](https://api-docs.deepseek.com/guides/anthropic_api), etc.)
 - Desktop only (macOS, Linux, Windows)
