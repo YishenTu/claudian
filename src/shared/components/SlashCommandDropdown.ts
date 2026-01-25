@@ -214,9 +214,33 @@ export class SlashCommandDropdown {
       }
     }
 
-    // Merge Claudian built-in commands with SDK commands
-    // Built-in commands (like /clear, /add-dir) are Claudian-specific actions
-    // SDK commands include user commands from .claude/commands/ and skills
+    const allCommands = this.buildCommandList(builtInCommands);
+
+    this.filteredCommands = allCommands
+      .filter(cmd =>
+        cmd.name.toLowerCase().includes(searchLower) ||
+        cmd.description?.toLowerCase().includes(searchLower)
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Final race condition check before rendering
+    if (currentRequest !== this.requestId) return;
+
+    if (searchText.length > 0 && this.filteredCommands.length === 0) {
+      this.hide();
+      return;
+    }
+
+    this.selectedIndex = 0;
+    this.render();
+  }
+
+  /**
+   * Builds the merged command list from built-in and SDK commands.
+   * Built-in commands have highest priority and are not subject to hiding.
+   * SDK commands are deduplicated, filtered, and respect user hiding.
+   */
+  private buildCommandList(builtInCommands: SlashCommand[]): SlashCommand[] {
     const seenNames = new Set<string>();
     const allCommands: SlashCommand[] = [];
 
@@ -245,23 +269,7 @@ export class SlashCommandDropdown {
       allCommands.push(cmd);
     }
 
-    this.filteredCommands = allCommands
-      .filter(cmd =>
-        cmd.name.toLowerCase().includes(searchLower) ||
-        cmd.description?.toLowerCase().includes(searchLower)
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    // Final race condition check before rendering
-    if (currentRequest !== this.requestId) return;
-
-    if (searchText.length > 0 && this.filteredCommands.length === 0) {
-      this.hide();
-      return;
-    }
-
-    this.selectedIndex = 0;
-    this.render();
+    return allCommands;
   }
 
   private render(): void {
