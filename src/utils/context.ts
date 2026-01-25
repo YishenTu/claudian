@@ -63,7 +63,7 @@ export function extractContentBeforeXmlContext(text: string): string | undefined
   // Current format: user content before any XML context tags
   // Context tags are always appended with \n\n separator
   const xmlMatch = text.match(XML_CONTEXT_PATTERN);
-  if (xmlMatch && xmlMatch.index !== undefined && xmlMatch.index >= 0) {
+  if (xmlMatch?.index !== undefined) {
     return text.substring(0, xmlMatch.index).trim();
   }
 
