@@ -2115,6 +2115,119 @@ describe('Tab - Scroll to Bottom Button', () => {
     });
   });
 
+  describe('debounce re-verification', () => {
+    it('should re-enable auto-scroll after debounce when user remains at bottom', () => {
+      jest.useFakeTimers();
+
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set up messagesEl with scroll properties - at bottom position
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 480, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, options.plugin);
+      wireTabInputEvents(tab, options.plugin);
+
+      // Disable auto-scroll (simulate user scrolled up)
+      tab.state.autoScrollEnabled = false;
+
+      // Trigger scroll event (user scrolls back to bottom)
+      const eventListeners = (tab.dom.messagesEl as any).getEventListeners();
+      const scrollHandlers = eventListeners.get('scroll');
+      expect(scrollHandlers).toBeDefined();
+      scrollHandlers[0]();
+
+      // Before debounce delay, still disabled
+      expect(tab.state.autoScrollEnabled).toBe(false);
+
+      // After debounce delay (RE_ENABLE_DELAY = 150ms), should be enabled
+      jest.advanceTimersByTime(200);
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      jest.useRealTimers();
+    });
+
+    it('should NOT re-enable auto-scroll if content grows during debounce delay', () => {
+      jest.useFakeTimers();
+
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set up messagesEl with scroll properties - at bottom position
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 480, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, options.plugin);
+      wireTabInputEvents(tab, options.plugin);
+
+      // Disable auto-scroll (simulate user scrolled up)
+      tab.state.autoScrollEnabled = false;
+
+      // Trigger scroll event (user scrolls to bottom)
+      const eventListeners = (tab.dom.messagesEl as any).getEventListeners();
+      const scrollHandlers = eventListeners.get('scroll');
+      scrollHandlers[0]();
+
+      // Before debounce delay, still disabled
+      expect(tab.state.autoScrollEnabled).toBe(false);
+
+      // Simulate content growth during debounce (e.g., streaming adds more messages)
+      // scrollHeight increases but scrollTop stays the same, so user is no longer at bottom
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 2000, configurable: true });
+
+      // After debounce delay, should still be disabled (user no longer at bottom)
+      jest.advanceTimersByTime(200);
+      expect(tab.state.autoScrollEnabled).toBe(false);
+
+      jest.useRealTimers();
+    });
+
+    it('should re-enable auto-scroll if user scrolls to new bottom during content growth', () => {
+      jest.useFakeTimers();
+
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      // Set up messagesEl - initially at bottom
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 480, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { value: 500, configurable: true });
+
+      // Initialize and wire events
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      initializeTabUI(tab, options.plugin);
+      wireTabInputEvents(tab, options.plugin);
+
+      // Disable auto-scroll
+      tab.state.autoScrollEnabled = false;
+
+      // Trigger scroll to bottom
+      const eventListeners = (tab.dom.messagesEl as any).getEventListeners();
+      const scrollHandlers = eventListeners.get('scroll');
+      scrollHandlers[0]();
+
+      // Content grows but user also scrolls to new bottom
+      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { value: 2000, configurable: true });
+      Object.defineProperty(tab.dom.messagesEl, 'scrollTop', { value: 1480, configurable: true });
+
+      // After debounce, should be enabled (user is at new bottom)
+      jest.advanceTimersByTime(200);
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      jest.useRealTimers();
+    });
+  });
+
   describe('accessibility', () => {
     it('should create button element with aria-label', () => {
       const options = createMockOptions();
