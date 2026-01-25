@@ -139,6 +139,7 @@ function createMockDeps(): StreamControllerDeps {
     state,
     renderer: {
       renderContent: jest.fn(),
+      addTextCopyButton: jest.fn(),
     } as any,
     asyncSubagentManager: {
       isAsyncTask: jest.fn().mockReturnValue(false),
@@ -210,6 +211,62 @@ describe('StreamController - Text Content', () => {
       }
 
       expect(msg.content).toBe('This is a test.');
+    });
+  });
+
+  describe('Text block finalization', () => {
+    it('should add copy button when finalizing text block with content', () => {
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockElement();
+      deps.state.currentTextContent = 'Hello World';
+
+      controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.renderer.addTextCopyButton).toHaveBeenCalledWith(
+        expect.anything(),
+        'Hello World'
+      );
+      expect(msg.contentBlocks).toContainEqual({
+        type: 'text',
+        content: 'Hello World',
+      });
+    });
+
+    it('should not add copy button when no text element exists', () => {
+      const msg = createTestMessage();
+      deps.state.currentTextEl = null;
+      deps.state.currentTextContent = 'Hello World';
+
+      controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.renderer.addTextCopyButton).not.toHaveBeenCalled();
+      // Content block should still be added
+      expect(msg.contentBlocks).toContainEqual({
+        type: 'text',
+        content: 'Hello World',
+      });
+    });
+
+    it('should not add copy button when no text content exists', () => {
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockElement();
+      deps.state.currentTextContent = '';
+
+      controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.renderer.addTextCopyButton).not.toHaveBeenCalled();
+      expect(msg.contentBlocks).toEqual([]);
+    });
+
+    it('should reset text state after finalization', () => {
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockElement();
+      deps.state.currentTextContent = 'Test content';
+
+      controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.state.currentTextEl).toBeNull();
+      expect(deps.state.currentTextContent).toBe('');
     });
   });
 

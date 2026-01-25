@@ -370,7 +370,7 @@ export class StreamController {
     if (msg && state.currentTextContent) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'text', content: state.currentTextContent });
-      // Add copy button to streaming text blocks
+      // Copy button added here (not during streaming) to match history-loaded messages
       if (state.currentTextEl) {
         renderer.addTextCopyButton(state.currentTextEl, state.currentTextContent);
       }
