@@ -2,12 +2,9 @@
  * Tests for DiffRenderer - Diff utilities for Write/Edit tool visualization
  */
 
-import type { DiffLine, StructuredPatchHunk } from '@/features/chat/rendering/DiffRenderer';
-import {
-  countLineChanges,
-  splitIntoHunks,
-  structuredPatchToDiffLines,
-} from '@/features/chat/rendering/DiffRenderer';
+import type { DiffLine, StructuredPatchHunk } from '@/core/types/diff';
+import { splitIntoHunks } from '@/features/chat/rendering/DiffRenderer';
+import { countLineChanges, structuredPatchToDiffLines } from '@/utils/diff';
 
 describe('DiffRenderer', () => {
   describe('structuredPatchToDiffLines', () => {

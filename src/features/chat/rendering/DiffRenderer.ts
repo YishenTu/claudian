@@ -1,77 +1,20 @@
 /**
- * DiffRenderer - Diff utilities for Write/Edit tool visualization
+ * DiffRenderer - Diff rendering utilities for Write/Edit tool visualization.
  *
- * Provides line-based diff computation with hunk support for showing
- * only edited regions with context lines and "..." separators.
+ * Provides hunk-based rendering for showing only edited regions
+ * with context lines and "..." separators.
+ *
+ * Pure data functions (structuredPatchToDiffLines, countLineChanges)
+ * and types (DiffLine, DiffStats, StructuredPatchHunk) live in
+ * core/types/diff.ts and utils/diff.ts respectively.
  */
 
-export interface DiffLine {
-  type: 'equal' | 'insert' | 'delete';
-  text: string;
-  oldLineNum?: number;
-  newLineNum?: number;
-}
+import type { DiffLine } from '../../../core/types/diff';
 
 export interface DiffHunk {
   lines: DiffLine[];
   oldStart: number;
   newStart: number;
-}
-
-export interface DiffStats {
-  added: number;
-  removed: number;
-}
-
-/** A single hunk from the SDK's structuredPatch format. */
-export interface StructuredPatchHunk {
-  oldStart: number;
-  oldLines: number;
-  newStart: number;
-  newLines: number;
-  lines: string[];
-}
-
-/**
- * Convert SDK structuredPatch hunks to DiffLine[].
- * Each line in the hunk is prefixed with '+' (insert), '-' (delete), or ' ' (context).
- */
-export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
-  const result: DiffLine[] = [];
-
-  for (const hunk of hunks) {
-    let oldLineNum = hunk.oldStart;
-    let newLineNum = hunk.newStart;
-
-    for (const line of hunk.lines) {
-      const prefix = line[0];
-      const text = line.slice(1);
-
-      if (prefix === '+') {
-        result.push({ type: 'insert', text, newLineNum: newLineNum++ });
-      } else if (prefix === '-') {
-        result.push({ type: 'delete', text, oldLineNum: oldLineNum++ });
-      } else {
-        // Context line (prefix is ' ' or anything else)
-        result.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
-      }
-    }
-  }
-
-  return result;
-}
-
-/** Count lines added and removed. */
-export function countLineChanges(diffLines: DiffLine[]): DiffStats {
-  let added = 0;
-  let removed = 0;
-
-  for (const line of diffLines) {
-    if (line.type === 'insert') added++;
-    else if (line.type === 'delete') removed++;
-  }
-
-  return { added, removed };
 }
 
 /** Split diff into hunks with context lines. */
@@ -168,5 +111,3 @@ export function renderDiffContent(
     }
   });
 }
-
-

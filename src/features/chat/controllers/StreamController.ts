@@ -8,9 +8,10 @@
 import type { ClaudianService } from '../../../core/agent';
 import { parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
-import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo, ToolDiffData } from '../../../core/types';
+import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
+import { extractDiffData } from '../../../utils/diff';
 import { FLAVOR_TEXTS } from '../constants';
 import {
   addSubagentToolCall,
@@ -34,8 +35,6 @@ import {
   updateToolCallResult,
   updateWriteEditWithDiff,
 } from '../rendering';
-import type { DiffLine, StructuredPatchHunk } from '../rendering/DiffRenderer';
-import { countLineChanges, structuredPatchToDiffLines } from '../rendering/DiffRenderer';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { ChatState } from '../state/ChatState';
@@ -330,7 +329,7 @@ export class StreamController {
       const writeEditState = state.writeEditStates.get(chunk.id);
       if (writeEditState && isWriteEditTool(existingToolCall.name)) {
         if (!chunk.isError && !isBlocked) {
-          const diffData = StreamController.extractDiffData(chunk.toolUseResult, existingToolCall);
+          const diffData = extractDiffData(chunk.toolUseResult, existingToolCall);
           if (diffData) {
             existingToolCall.diffData = diffData;
             updateWriteEditWithDiff(writeEditState, diffData);
@@ -343,77 +342,6 @@ export class StreamController {
     }
 
     this.showThinkingIndicator();
-  }
-
-  /**
-   * Extracts ToolDiffData from SDK toolUseResult or tool input.
-   *
-   * Primary: Use structuredPatch from SDK toolUseResult (available in JSONL, possibly streaming).
-   * Fallback: Compute diff from tool input (Edit: old_string→new_string, Write create: all inserts).
-   * This fallback ensures diffs display during live streaming even when the SDK hasn't yet
-   * enriched the tool result with structuredPatch.
-   */
-  static extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
-    const filePath = (toolCall.input.file_path as string) || 'file';
-
-    // Primary: try SDK structuredPatch
-    if (toolUseResult && typeof toolUseResult === 'object') {
-      const result = toolUseResult as Record<string, unknown>;
-      if (Array.isArray(result.structuredPatch) && result.structuredPatch.length > 0) {
-        const hunks = result.structuredPatch as StructuredPatchHunk[];
-        const diffLines = structuredPatchToDiffLines(hunks);
-        const stats = countLineChanges(diffLines);
-        return {
-          filePath: (typeof result.filePath === 'string' ? result.filePath : null) || filePath,
-          diffLines,
-          stats,
-        };
-      }
-    }
-
-    // Fallback: compute diff from tool input (for streaming)
-    return StreamController.diffFromToolInput(toolCall, filePath);
-  }
-
-  /**
-   * Computes diff data from tool input when SDK structuredPatch is unavailable.
-   * Edit: old_string lines as deletes, new_string lines as inserts.
-   * Write: all content lines as inserts (file create/full rewrite).
-   */
-  private static diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffData | undefined {
-    if (toolCall.name === 'Edit') {
-      const oldStr = toolCall.input.old_string;
-      const newStr = toolCall.input.new_string;
-      if (typeof oldStr === 'string' && typeof newStr === 'string') {
-        const diffLines: DiffLine[] = [];
-        const oldLines = oldStr.split('\n');
-        const newLines = newStr.split('\n');
-        let oldLineNum = 1;
-        for (const line of oldLines) {
-          diffLines.push({ type: 'delete', text: line, oldLineNum: oldLineNum++ });
-        }
-        let newLineNum = 1;
-        for (const line of newLines) {
-          diffLines.push({ type: 'insert', text: line, newLineNum: newLineNum++ });
-        }
-        return { filePath, diffLines, stats: countLineChanges(diffLines) };
-      }
-    }
-
-    if (toolCall.name === 'Write') {
-      const content = toolCall.input.content;
-      if (typeof content === 'string') {
-        const newLines = content.split('\n');
-        const diffLines: DiffLine[] = newLines.map((text, i) => ({
-          type: 'insert' as const,
-          text,
-          newLineNum: i + 1,
-        }));
-        return { filePath, diffLines, stats: { added: newLines.length, removed: 0 } };
-      }
-    }
-
-    return undefined;
   }
 
   // ============================================

@@ -11,8 +11,8 @@ import { setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../../core/tools/toolIcons';
 import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
+import type { DiffLine } from '../../../core/types/diff';
 import { setupCollapsible } from './collapsible';
-import type { DiffLine } from './DiffRenderer';
 import { renderDiffContent } from './DiffRenderer';
 
 /** State for a streaming Write/Edit block. */

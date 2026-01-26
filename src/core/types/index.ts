@@ -78,6 +78,14 @@ export {
 // Re-export getHostnameKey from utils (moved from settings for architecture compliance)
 export { getHostnameKey } from '../../utils/env';
 
+// Diff types
+export {
+  type DiffLine,
+  type DiffStats,
+  type SDKToolUseResult,
+  type StructuredPatchHunk,
+} from './diff';
+
 // Tool types
 export {
   type AsyncSubagentStatus,

@@ -28,25 +28,6 @@ const SESSION_ERROR_COMPOUND_PATTERNS = [
   { includes: ['resume', 'error'] },
 ] as const;
 
-// ============================================
-// Content Hashing
-// ============================================
-
-/**
- * Generates a hash key for message content.
- * Used to match messages when SDK message IDs are not available.
- * Combines a sanitized prefix, length, and checksum for reasonable uniqueness.
- */
-export function hashContent(content: string): string {
-  const prefix = content.slice(0, 100);
-  const len = content.length;
-  let checksum = 0;
-  for (let i = 0; i < content.length; i++) {
-    checksum = ((checksum << 5) - checksum + content.charCodeAt(i)) | 0;
-  }
-  return `${prefix.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50)}_${len}_${checksum >>> 0}`;
-}
-
 /** Checks if an error indicates session needs recovery. */
 export function isSessionExpiredError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message.toLowerCase() : '';
