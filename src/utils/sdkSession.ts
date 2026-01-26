@@ -13,7 +13,9 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, ToolCallInfo } from '../core/types';
+import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, ToolCallInfo, ToolDiffData } from '../core/types';
+import type { DiffLine, StructuredPatchHunk } from '../features/chat/rendering/DiffRenderer';
+import { countLineChanges, structuredPatchToDiffLines } from '../features/chat/rendering/DiffRenderer';
 import { extractContentBeforeXmlContext } from './context';
 
 /** Result of reading an SDK session file. */
@@ -430,6 +432,100 @@ function collectToolResults(sdkMessages: SDKNativeMessage[]): Map<string, { cont
 }
 
 /**
+ * Collects toolUseResult objects from SDK messages, keyed by tool_use_id.
+ * These contain structuredPatch data for Write/Edit diff rendering.
+ */
+function collectToolUseResults(sdkMessages: SDKNativeMessage[]): Map<string, unknown> {
+  const results = new Map<string, unknown>();
+
+  for (const sdkMsg of sdkMessages) {
+    if (sdkMsg.type !== 'user' || !sdkMsg.toolUseResult) continue;
+
+    // Find the tool_use_id from the content blocks
+    const content = sdkMsg.message?.content;
+    if (!content || typeof content === 'string') continue;
+
+    for (const block of content) {
+      if (block.type === 'tool_result' && block.tool_use_id) {
+        results.set(block.tool_use_id, sdkMsg.toolUseResult);
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Extracts ToolDiffData from an SDK toolUseResult object.
+ *
+ * Primary: Use structuredPatch hunks from the SDK result.
+ * Fallback: Compute diff from tool input (Edit: old/new string, Write: content as inserts).
+ */
+function extractDiffDataFromToolUseResult(
+  toolUseResult: unknown,
+  toolCall: ToolCallInfo
+): ToolDiffData | undefined {
+  const filePath = (toolCall.input.file_path as string) || 'file';
+
+  if (toolUseResult && typeof toolUseResult === 'object') {
+    const result = toolUseResult as Record<string, unknown>;
+
+    // Use structuredPatch if available and non-empty
+    if (Array.isArray(result.structuredPatch) && result.structuredPatch.length > 0) {
+      const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null) || filePath;
+      const hunks = result.structuredPatch as StructuredPatchHunk[];
+      const diffLines = structuredPatchToDiffLines(hunks);
+      const stats = countLineChanges(diffLines);
+      return { filePath: resultFilePath, diffLines, stats };
+    }
+  }
+
+  // Fallback: compute diff from tool input
+  return diffFromToolInput(toolCall, filePath);
+}
+
+/**
+ * Computes diff data from tool input when structuredPatch is unavailable or empty.
+ * Edit: old_string lines as deletes, new_string lines as inserts.
+ * Write: all content lines as inserts (file create/full rewrite).
+ */
+function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffData | undefined {
+  if (toolCall.name === 'Edit') {
+    const oldStr = toolCall.input.old_string;
+    const newStr = toolCall.input.new_string;
+    if (typeof oldStr === 'string' && typeof newStr === 'string') {
+      const diffLines: DiffLine[] = [];
+      const oldLines = oldStr.split('\n');
+      const newLines = newStr.split('\n');
+      let oldLineNum = 1;
+      for (const line of oldLines) {
+        diffLines.push({ type: 'delete', text: line, oldLineNum: oldLineNum++ });
+      }
+      let newLineNum = 1;
+      for (const line of newLines) {
+        diffLines.push({ type: 'insert', text: line, newLineNum: newLineNum++ });
+      }
+      return { filePath, diffLines, stats: countLineChanges(diffLines) };
+    }
+  }
+
+  if (toolCall.name === 'Write') {
+    const content = toolCall.input.content;
+    if (typeof content === 'string') {
+      const newLines = content.split('\n');
+      const diffLines: DiffLine[] = newLines.map((text, i) => ({
+        type: 'insert' as const,
+        text,
+        newLineNum: i + 1,
+      }));
+      return { filePath, diffLines, stats: { added: newLines.length, removed: 0 } };
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Checks if a user message is system-injected (not actual user input).
  * These include:
  * - Tool result messages (`toolUseResult` field)
@@ -497,8 +593,9 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
   }
 
-  // First pass: collect all tool results for cross-message matching
+  // First pass: collect all tool results and toolUseResults for cross-message matching
   const toolResults = collectToolResults(result.messages);
+  const toolUseResults = collectToolUseResults(result.messages);
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
@@ -532,6 +629,19 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
   // Don't forget the last pending assistant message
   if (pendingAssistant) {
     chatMessages.push(pendingAssistant);
+  }
+
+  // Third pass: attach diff data from toolUseResults to tool calls
+  if (toolUseResults.size > 0) {
+    for (const msg of chatMessages) {
+      if (msg.role !== 'assistant' || !msg.toolCalls) continue;
+      for (const toolCall of msg.toolCalls) {
+        const toolUseResult = toolUseResults.get(toolCall.id);
+        if (toolUseResult && !toolCall.diffData) {
+          toolCall.diffData = extractDiffDataFromToolUseResult(toolUseResult, toolCall);
+        }
+      }
+    }
   }
 
   // Sort by timestamp ascending

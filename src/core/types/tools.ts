@@ -2,12 +2,13 @@
  * Tool-related type definitions.
  */
 
-/** Diff data for Write/Edit tool operations. */
+import type { DiffLine, DiffStats } from '../../features/chat/rendering/DiffRenderer';
+
+/** Diff data for Write/Edit tool operations (pre-computed from SDK structuredPatch). */
 export interface ToolDiffData {
-  originalContent?: string;
-  newContent?: string;
   filePath: string;
-  skippedReason?: 'too_large' | 'unavailable';
+  diffLines: DiffLine[];
+  stats: DiffStats;
 }
 
 /** Tool call tracking with status and result. */

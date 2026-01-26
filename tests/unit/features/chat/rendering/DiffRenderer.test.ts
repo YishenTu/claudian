@@ -2,149 +2,138 @@
  * Tests for DiffRenderer - Diff utilities for Write/Edit tool visualization
  */
 
-import type { DiffLine } from '@/features/chat/rendering/DiffRenderer';
+import type { DiffLine, StructuredPatchHunk } from '@/features/chat/rendering/DiffRenderer';
 import {
-  computeLineDiff,
   countLineChanges,
   splitIntoHunks,
+  structuredPatchToDiffLines,
 } from '@/features/chat/rendering/DiffRenderer';
 
 describe('DiffRenderer', () => {
-  describe('computeLineDiff', () => {
-    it('should handle empty string as single empty line', () => {
-      // Empty string split on '\n' yields [''] - one empty line
-      const result = computeLineDiff('', '');
-      expect(result).toHaveLength(1);
-      expect(result[0].type).toBe('equal');
-      expect(result[0].text).toBe('');
+  describe('structuredPatchToDiffLines', () => {
+    it('should return empty array for empty hunks', () => {
+      const result = structuredPatchToDiffLines([]);
+      expect(result).toEqual([]);
     });
 
-    it('should return single equal line for identical single-line texts', () => {
-      const result = computeLineDiff('hello', 'hello');
-      expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({
-        type: 'equal',
-        text: 'hello',
-        oldLineNum: 1,
-        newLineNum: 1,
-      });
-    });
+    it('should convert a simple insertion hunk', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 1, oldLines: 2, newStart: 1, newLines: 3,
+        lines: [' line1', '+inserted', ' line2'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
 
-    it('should detect single line insert with empty baseline', () => {
-      // '' split yields [''], 'hello' split yields ['hello']
-      // So this is a change from empty line to 'hello'
-      const result = computeLineDiff('', 'hello');
-      expect(result).toHaveLength(2);
-      // Delete empty line, insert 'hello'
-      expect(result[0].type).toBe('delete');
-      expect(result[0].text).toBe('');
-      expect(result[1].type).toBe('insert');
-      expect(result[1].text).toBe('hello');
-    });
-
-    it('should detect single line delete to empty', () => {
-      // 'hello' split yields ['hello'], '' split yields ['']
-      const result = computeLineDiff('hello', '');
-      expect(result).toHaveLength(2);
-      expect(result[0].type).toBe('delete');
-      expect(result[0].text).toBe('hello');
-      expect(result[1].type).toBe('insert');
-      expect(result[1].text).toBe('');
-    });
-
-    it('should detect single line change', () => {
-      const result = computeLineDiff('hello', 'world');
-      expect(result).toHaveLength(2);
-      expect(result[0].type).toBe('delete');
-      expect(result[0].text).toBe('hello');
-      expect(result[1].type).toBe('insert');
-      expect(result[1].text).toBe('world');
-    });
-
-    it('should handle multi-line diffs with insertions', () => {
-      const oldText = 'line1\nline2\nline3';
-      const newText = 'line1\ninserted\nline2\nline3';
-      const result = computeLineDiff(oldText, newText);
-
-      const insertedLines = result.filter(l => l.type === 'insert');
-      expect(insertedLines).toHaveLength(1);
-      expect(insertedLines[0].text).toBe('inserted');
-
-      const equalLines = result.filter(l => l.type === 'equal');
-      expect(equalLines).toHaveLength(3);
-    });
-
-    it('should handle multi-line diffs with deletions', () => {
-      const oldText = 'line1\ndeleted\nline2\nline3';
-      const newText = 'line1\nline2\nline3';
-      const result = computeLineDiff(oldText, newText);
-
-      const deletedLines = result.filter(l => l.type === 'delete');
-      expect(deletedLines).toHaveLength(1);
-      expect(deletedLines[0].text).toBe('deleted');
-
-      const equalLines = result.filter(l => l.type === 'equal');
-      expect(equalLines).toHaveLength(3);
-    });
-
-    it('should handle complete replacement', () => {
-      const oldText = 'old1\nold2\nold3';
-      const newText = 'new1\nnew2\nnew3';
-      const result = computeLineDiff(oldText, newText);
-
-      const deletedLines = result.filter(l => l.type === 'delete');
-      const insertedLines = result.filter(l => l.type === 'insert');
-
-      expect(deletedLines).toHaveLength(3);
-      expect(insertedLines).toHaveLength(3);
-    });
-
-    it('should assign correct line numbers', () => {
-      const oldText = 'a\nb\nc';
-      const newText = 'a\nx\nb\nc';
-      const result = computeLineDiff(oldText, newText);
-
-      // First line should be equal with oldLineNum=1, newLineNum=1
-      expect(result[0]).toMatchObject({
-        type: 'equal',
-        text: 'a',
-        oldLineNum: 1,
-        newLineNum: 1,
-      });
-
-      // Inserted line should have only newLineNum
-      const inserted = result.find(l => l.type === 'insert');
-      expect(inserted).toBeDefined();
-      expect(inserted!.newLineNum).toBeDefined();
-      expect(inserted!.oldLineNum).toBeUndefined();
-    });
-
-    it('should handle trailing newlines correctly', () => {
-      const oldText = 'line1\nline2\n';
-      const newText = 'line1\nline2\n';
-      const result = computeLineDiff(oldText, newText);
-
-      // Should have 3 equal lines (line1, line2, empty)
-      expect(result.every(l => l.type === 'equal')).toBe(true);
       expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({ type: 'equal', text: 'line1', oldLineNum: 1, newLineNum: 1 });
+      expect(result[1]).toEqual({ type: 'insert', text: 'inserted', newLineNum: 2 });
+      expect(result[2]).toEqual({ type: 'equal', text: 'line2', oldLineNum: 2, newLineNum: 3 });
     });
 
-    it('should handle LCS algorithm for complex diffs', () => {
-      const oldText = 'A\nB\nC\nD\nE';
-      const newText = 'A\nX\nC\nY\nE';
-      const result = computeLineDiff(oldText, newText);
+    it('should convert a simple deletion hunk', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 1, oldLines: 3, newStart: 1, newLines: 2,
+        lines: [' line1', '-deleted', ' line2'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
 
-      // A, C, E should be equal
-      const equalLines = result.filter(l => l.type === 'equal');
-      expect(equalLines.map(l => l.text)).toEqual(['A', 'C', 'E']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toEqual({ type: 'equal', text: 'line1', oldLineNum: 1, newLineNum: 1 });
+      expect(result[1]).toEqual({ type: 'delete', text: 'deleted', oldLineNum: 2 });
+      expect(result[2]).toEqual({ type: 'equal', text: 'line2', oldLineNum: 3, newLineNum: 2 });
+    });
 
-      // B, D should be deleted
-      const deletedLines = result.filter(l => l.type === 'delete');
-      expect(deletedLines.map(l => l.text)).toEqual(['B', 'D']);
+    it('should convert a replacement (delete + insert)', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 1, oldLines: 3, newStart: 1, newLines: 3,
+        lines: [' line1', '-old', '+new', ' line3'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
 
-      // X, Y should be inserted
-      const insertedLines = result.filter(l => l.type === 'insert');
-      expect(insertedLines.map(l => l.text)).toEqual(['X', 'Y']);
+      expect(result).toHaveLength(4);
+      expect(result[0]).toEqual({ type: 'equal', text: 'line1', oldLineNum: 1, newLineNum: 1 });
+      expect(result[1]).toEqual({ type: 'delete', text: 'old', oldLineNum: 2 });
+      expect(result[2]).toEqual({ type: 'insert', text: 'new', newLineNum: 2 });
+      expect(result[3]).toEqual({ type: 'equal', text: 'line3', oldLineNum: 3, newLineNum: 3 });
+    });
+
+    it('should handle multiple hunks', () => {
+      const hunks: StructuredPatchHunk[] = [
+        {
+          oldStart: 1, oldLines: 2, newStart: 1, newLines: 2,
+          lines: [' ctx', '-old1', '+new1'],
+        },
+        {
+          oldStart: 10, oldLines: 2, newStart: 10, newLines: 2,
+          lines: [' ctx2', '-old2', '+new2'],
+        },
+      ];
+      const result = structuredPatchToDiffLines(hunks);
+
+      expect(result).toHaveLength(6);
+      // First hunk
+      expect(result[0]).toEqual({ type: 'equal', text: 'ctx', oldLineNum: 1, newLineNum: 1 });
+      expect(result[1]).toEqual({ type: 'delete', text: 'old1', oldLineNum: 2 });
+      expect(result[2]).toEqual({ type: 'insert', text: 'new1', newLineNum: 2 });
+      // Second hunk
+      expect(result[3]).toEqual({ type: 'equal', text: 'ctx2', oldLineNum: 10, newLineNum: 10 });
+      expect(result[4]).toEqual({ type: 'delete', text: 'old2', oldLineNum: 11 });
+      expect(result[5]).toEqual({ type: 'insert', text: 'new2', newLineNum: 11 });
+    });
+
+    it('should handle hunk with only insertions (new file)', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 0, oldLines: 0, newStart: 1, newLines: 3,
+        lines: ['+line1', '+line2', '+line3'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
+
+      expect(result).toHaveLength(3);
+      expect(result.every(l => l.type === 'insert')).toBe(true);
+      expect(result[0]).toEqual({ type: 'insert', text: 'line1', newLineNum: 1 });
+      expect(result[1]).toEqual({ type: 'insert', text: 'line2', newLineNum: 2 });
+      expect(result[2]).toEqual({ type: 'insert', text: 'line3', newLineNum: 3 });
+    });
+
+    it('should handle lines with special characters', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 1, oldLines: 1, newStart: 1, newLines: 1,
+        lines: ['-return "bar";', '+return `bar`;'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
+
+      expect(result[0].text).toBe('return "bar";');
+      expect(result[1].text).toBe('return `bar`;');
+    });
+
+    it('should handle unicode content', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 1, oldLines: 1, newStart: 1, newLines: 1,
+        lines: ['-こんにちは', '+さようなら'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
+
+      expect(result[0]).toEqual({ type: 'delete', text: 'こんにちは', oldLineNum: 1 });
+      expect(result[1]).toEqual({ type: 'insert', text: 'さようなら', newLineNum: 1 });
+    });
+
+    it('should track line numbers correctly across mixed operations', () => {
+      const hunks: StructuredPatchHunk[] = [{
+        oldStart: 5, oldLines: 4, newStart: 5, newLines: 5,
+        lines: [' ctx', '-del1', '-del2', '+ins1', '+ins2', '+ins3', ' ctx2'],
+      }];
+      const result = structuredPatchToDiffLines(hunks);
+
+      // Context: oldLine=5, newLine=5
+      expect(result[0]).toEqual({ type: 'equal', text: 'ctx', oldLineNum: 5, newLineNum: 5 });
+      // Deletes: oldLine 6,7
+      expect(result[1]).toEqual({ type: 'delete', text: 'del1', oldLineNum: 6 });
+      expect(result[2]).toEqual({ type: 'delete', text: 'del2', oldLineNum: 7 });
+      // Inserts: newLine 6,7,8
+      expect(result[3]).toEqual({ type: 'insert', text: 'ins1', newLineNum: 6 });
+      expect(result[4]).toEqual({ type: 'insert', text: 'ins2', newLineNum: 7 });
+      expect(result[5]).toEqual({ type: 'insert', text: 'ins3', newLineNum: 8 });
+      // Context: oldLine=8, newLine=9
+      expect(result[6]).toEqual({ type: 'equal', text: 'ctx2', oldLineNum: 8, newLineNum: 9 });
     });
   });
 
@@ -306,53 +295,6 @@ describe('DiffRenderer', () => {
       expect(hunks).toHaveLength(1);
       expect(hunks[0].oldStart).toBe(2); // Context starts at line 2
       expect(hunks[0].newStart).toBe(2);
-    });
-  });
-
-  describe('edge cases', () => {
-    it('should handle very long lines', () => {
-      const longLine = 'x'.repeat(10000);
-      const result = computeLineDiff(longLine, longLine);
-      expect(result).toHaveLength(1);
-      expect(result[0].type).toBe('equal');
-    });
-
-    it('should handle many lines efficiently', () => {
-      const lines = Array(100).fill('line').join('\n');
-      const result = computeLineDiff(lines, lines);
-      expect(result).toHaveLength(100);
-      expect(result.every(l => l.type === 'equal')).toBe(true);
-    });
-
-    it('should handle special characters in content', () => {
-      const oldText = 'function foo() {\n  return "bar";\n}';
-      const newText = 'function foo() {\n  return `bar`;\n}';
-      const result = computeLineDiff(oldText, newText);
-
-      expect(result).toHaveLength(4);
-      const changed = result.filter(l => l.type !== 'equal');
-      expect(changed).toHaveLength(2); // One delete, one insert
-    });
-
-    it('should handle unicode characters', () => {
-      const oldText = 'Hello 世界\nこんにちは';
-      const newText = 'Hello 世界\nさようなら';
-      const result = computeLineDiff(oldText, newText);
-
-      const deleted = result.find(l => l.type === 'delete');
-      const inserted = result.find(l => l.type === 'insert');
-
-      expect(deleted?.text).toBe('こんにちは');
-      expect(inserted?.text).toBe('さようなら');
-    });
-
-    it('should handle Windows line endings', () => {
-      const oldText = 'line1\r\nline2\r\n';
-      const newText = 'line1\r\nline2\r\n';
-      const result = computeLineDiff(oldText, newText);
-
-      // Split on \n treats \r as part of line
-      expect(result.every(l => l.type === 'equal')).toBe(true);
     });
   });
 });

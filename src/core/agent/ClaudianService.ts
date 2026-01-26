@@ -36,10 +36,7 @@ import {
 } from '../../utils/session';
 import {
   createBlocklistHook,
-  createFileHashPostHook,
-  createFileHashPreHook,
   createVaultRestrictionHook,
-  type FileEditPostCallback,
 } from '../hooks';
 import type { McpServerManager } from '../mcp';
 import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
@@ -473,7 +470,7 @@ export class ClaudianService {
    *        If not provided, the closure reads this.currentExternalContextPaths at execution
    *        time (for persistent queries where the value may change dynamically).
    */
-  private buildHooks(vaultPath: string, externalContextPaths?: string[]) {
+  private buildHooks(_vaultPath: string, externalContextPaths?: string[]) {
     const blocklistHook = createBlocklistHook(() => ({
       blockedCommands: this.plugin.settings.blockedCommands,
       enableBlocklist: this.plugin.settings.enableBlocklist,
@@ -495,18 +492,8 @@ export class ClaudianService {
       },
     });
 
-    const postCallback: FileEditPostCallback = {
-      trackEditedFile: async () => {
-        // File tracking is delegated to PreToolUse/PostToolUse hooks
-      },
-    };
-
-    const fileHashPreHook = createFileHashPreHook(vaultPath);
-    const fileHashPostHook = createFileHashPostHook(vaultPath, postCallback);
-
     return {
-      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
-      PostToolUse: [fileHashPostHook],
+      PreToolUse: [blocklistHook, vaultRestrictionHook],
     };
   }
 

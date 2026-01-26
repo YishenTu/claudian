@@ -127,6 +127,7 @@ export function* transformSDKMessage(
             : JSON.stringify(message.tool_use_result, null, 2),
           isError: false,
           parentToolUseId,
+          toolUseResult: message.tool_use_result,
         };
       }
       // Also check message.message.content for tool_result blocks

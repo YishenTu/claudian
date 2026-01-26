@@ -255,6 +255,7 @@ describe('transformSDKMessage', () => {
           content: 'File contents here',
           isError: false,
           parentToolUseId: 'tool-123',
+          toolUseResult: 'File contents here',
         },
       ]);
     });

@@ -19,7 +19,6 @@ import type {
   ConversationMeta,
   SessionMetadata,
   SubagentInfo,
-  ToolDiffData,
   UsageInfo,
 } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
@@ -409,8 +408,8 @@ export class SessionStorage {
 
   /** Convert a Conversation to SessionMetadata for native storage. */
   toSessionMetadata(conversation: Conversation): SessionMetadata {
-    // Extract toolDiffData, subagentData, and displayContentMap from all messages for persistence
-    const toolDiffData = this.extractToolDiffData(conversation.messages);
+    // Extract subagentData and displayContentMap from all messages for persistence
+    // Note: toolDiffData is no longer persisted - it's extracted from SDK JSONL at load time
     const subagentData = this.extractSubagentData(conversation.messages);
     const displayContentMap = this.extractDisplayContentMap(conversation.messages);
 
@@ -429,30 +428,9 @@ export class SessionStorage {
       enabledMcpServers: conversation.enabledMcpServers,
       usage: conversation.usage,
       legacyCutoffAt: conversation.legacyCutoffAt,
-      toolDiffData: Object.keys(toolDiffData).length > 0 ? toolDiffData : undefined,
       subagentData: Object.keys(subagentData).length > 0 ? subagentData : undefined,
       displayContentMap: Object.keys(displayContentMap).length > 0 ? displayContentMap : undefined,
     };
-  }
-
-  /**
-   * Extracts toolDiffData from messages for persistence.
-   * Only collects diffData from Write/Edit tool calls that have it.
-   */
-  private extractToolDiffData(messages: ChatMessage[]): Record<string, ToolDiffData> {
-    const result: Record<string, ToolDiffData> = {};
-
-    for (const msg of messages) {
-      if (msg.role !== 'assistant' || !msg.toolCalls) continue;
-
-      for (const toolCall of msg.toolCalls) {
-        if (toolCall.diffData) {
-          result[toolCall.id] = toolCall.diffData;
-        }
-      }
-    }
-
-    return result;
   }
 
   /**

@@ -23,60 +23,38 @@ export interface DiffStats {
   removed: number;
 }
 
-/** Compute line-based diff between two texts using LCS algorithm. */
-export function computeLineDiff(oldText: string, newText: string): DiffLine[] {
-  // Normalize line endings for cross-platform compatibility
-  const oldLines = oldText.replace(/\r\n/g, '\n').split('\n');
-  const newLines = newText.replace(/\r\n/g, '\n').split('\n');
-  const m = oldLines.length;
-  const n = newLines.length;
+/** A single hunk from the SDK's structuredPatch format. */
+export interface StructuredPatchHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
 
-  // Build LCS DP table
-  const dp: number[][] = Array(m + 1)
-    .fill(null)
-    .map(() => Array(n + 1).fill(0));
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] =
-        oldLines[i - 1] === newLines[j - 1]
-          ? dp[i - 1][j - 1] + 1
-          : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-
-  // Backtrack to find diff operations
+/**
+ * Convert SDK structuredPatch hunks to DiffLine[].
+ * Each line in the hunk is prefixed with '+' (insert), '-' (delete), or ' ' (context).
+ */
+export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
   const result: DiffLine[] = [];
-  let i = m,
-    j = n;
-  const temp: DiffLine[] = [];
 
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      temp.push({ type: 'equal', text: oldLines[i - 1] });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      temp.push({ type: 'insert', text: newLines[j - 1] });
-      j--;
-    } else {
-      temp.push({ type: 'delete', text: oldLines[i - 1] });
-      i--;
-    }
-  }
+  for (const hunk of hunks) {
+    let oldLineNum = hunk.oldStart;
+    let newLineNum = hunk.newStart;
 
-  // Reverse and assign line numbers
-  temp.reverse();
-  let oldLineNum = 1;
-  let newLineNum = 1;
+    for (const line of hunk.lines) {
+      const prefix = line[0];
+      const text = line.slice(1);
 
-  for (const line of temp) {
-    if (line.type === 'equal') {
-      result.push({ ...line, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
-    } else if (line.type === 'delete') {
-      result.push({ ...line, oldLineNum: oldLineNum++ });
-    } else {
-      result.push({ ...line, newLineNum: newLineNum++ });
+      if (prefix === '+') {
+        result.push({ type: 'insert', text, newLineNum: newLineNum++ });
+      } else if (prefix === '-') {
+        result.push({ type: 'delete', text, oldLineNum: oldLineNum++ });
+      } else {
+        // Context line (prefix is ' ' or anything else)
+        result.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
+      }
     }
   }
 

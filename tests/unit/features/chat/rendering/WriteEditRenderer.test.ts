@@ -111,6 +111,20 @@ function createToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
   };
 }
 
+// Helper to create pre-computed diff data
+function createDiffData(overrides: Partial<ToolDiffData> = {}): ToolDiffData {
+  return {
+    filePath: 'test.md',
+    diffLines: [
+      { type: 'equal', text: 'line1', oldLineNum: 1, newLineNum: 1 },
+      { type: 'delete', text: 'old', oldLineNum: 2 },
+      { type: 'insert', text: 'new', newLineNum: 2 },
+    ],
+    stats: { added: 1, removed: 1 },
+    ...overrides,
+  };
+}
+
 describe('WriteEditRenderer', () => {
   describe('createWriteEditBlock', () => {
     it('should create a block with correct structure', () => {
@@ -229,16 +243,14 @@ describe('WriteEditRenderer', () => {
   });
 
   describe('updateWriteEditWithDiff', () => {
-    it('should render diff stats when diff is available', () => {
+    it('should render diff stats when diff data is provided', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall();
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      const diffData: ToolDiffData = {
-        filePath: 'test.md',
-        originalContent: 'line1\nline2',
-        newContent: 'line1\nline2\nline3',
-      };
+      const diffData = createDiffData({
+        stats: { added: 1, removed: 0 },
+      });
 
       updateWriteEditWithDiff(state, diffData);
 
@@ -246,66 +258,12 @@ describe('WriteEditRenderer', () => {
       expect((state.statsEl as any)._children.length).toBeGreaterThan(0);
     });
 
-    it('should display "Diff skipped: file too large" for too_large', () => {
-      const parentEl = createMockElement();
-      const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
-
-      const diffData: ToolDiffData = {
-        filePath: 'test.md',
-        skippedReason: 'too_large',
-      };
-
-      updateWriteEditWithDiff(state, diffData);
-
-      // Check content shows skip message
-      const contentText = getTextContent(state.contentEl);
-      expect(contentText).toContain('file too large');
-    });
-
-    it('should display "Diff unavailable" for unavailable reason', () => {
-      const parentEl = createMockElement();
-      const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
-
-      const diffData: ToolDiffData = {
-        filePath: 'test.md',
-        skippedReason: 'unavailable',
-      };
-
-      updateWriteEditWithDiff(state, diffData);
-
-      const contentText = getTextContent(state.contentEl);
-      expect(contentText).toContain('Diff unavailable');
-    });
-
-    it('should display "Diff unavailable" for undefined content', () => {
-      const parentEl = createMockElement();
-      const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
-
-      const diffData: ToolDiffData = {
-        filePath: 'test.md',
-        originalContent: undefined,
-        newContent: undefined,
-      };
-
-      updateWriteEditWithDiff(state, diffData);
-
-      const contentText = getTextContent(state.contentEl);
-      expect(contentText).toContain('Diff unavailable');
-    });
-
     it('should store diffLines in state', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall();
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      const diffData: ToolDiffData = {
-        filePath: 'test.md',
-        originalContent: 'old',
-        newContent: 'new',
-      };
+      const diffData = createDiffData();
 
       updateWriteEditWithDiff(state, diffData);
 
@@ -318,16 +276,30 @@ describe('WriteEditRenderer', () => {
       const toolCall = createToolCall();
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      const diffData: ToolDiffData = {
-        filePath: 'test.md',
-        originalContent: 'old1\nold2',
-        newContent: 'new1',
-      };
+      const diffData = createDiffData({
+        stats: { added: 3, removed: 2 },
+      });
 
       updateWriteEditWithDiff(state, diffData);
 
       // Should have stats children
       expect((state.statsEl as any)._children.length).toBeGreaterThan(0);
+    });
+
+    it('should handle empty diffLines with zero stats', () => {
+      const parentEl = createMockElement();
+      const toolCall = createToolCall();
+      const state = createWriteEditBlock(parentEl, toolCall);
+
+      const diffData = createDiffData({
+        diffLines: [],
+        stats: { added: 0, removed: 0 },
+      });
+
+      updateWriteEditWithDiff(state, diffData);
+
+      // Should not have stats children when no changes
+      expect((state.statsEl as any)._children.length).toBe(0);
     });
   });
 
@@ -338,11 +310,7 @@ describe('WriteEditRenderer', () => {
       const state = createWriteEditBlock(parentEl, toolCall);
 
       // Add diff data first
-      updateWriteEditWithDiff(state, {
-        filePath: 'test.md',
-        originalContent: 'old',
-        newContent: 'new',
-      });
+      updateWriteEditWithDiff(state, createDiffData());
 
       finalizeWriteEditBlock(state, false);
 
@@ -425,11 +393,9 @@ describe('WriteEditRenderer', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall({
         status: 'completed',
-        diffData: {
-          filePath: 'test.md',
-          originalContent: 'old line',
-          newContent: 'new line\nanother line',
-        },
+        diffData: createDiffData({
+          stats: { added: 2, removed: 1 },
+        }),
       });
 
       const block = renderStoredWriteEdit(parentEl, toolCall);
@@ -438,11 +404,14 @@ describe('WriteEditRenderer', () => {
       expect(block.dataset.toolId).toBe('tool-123');
     });
 
-    it('should handle stored block with skipped diff', () => {
+    it('should handle stored block with empty diffLines', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall({
         status: 'completed',
-        diffData: { filePath: 'test.md', skippedReason: 'too_large' },
+        diffData: createDiffData({
+          diffLines: [],
+          stats: { added: 0, removed: 0 },
+        }),
       });
 
       const block = renderStoredWriteEdit(parentEl, toolCall);
@@ -554,15 +523,18 @@ describe('WriteEditRenderer', () => {
   });
 
   describe('diff rendering', () => {
-    it('should render new file correctly', () => {
+    it('should render new file correctly (all inserts)', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall();
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
         filePath: 'test.md',
-        originalContent: '',
-        newContent: 'new content\nline 2',
+        diffLines: [
+          { type: 'insert', text: 'new content', newLineNum: 1 },
+          { type: 'insert', text: 'line 2', newLineNum: 2 },
+        ],
+        stats: { added: 2, removed: 0 },
       };
 
       updateWriteEditWithDiff(state, diffData);
@@ -572,20 +544,21 @@ describe('WriteEditRenderer', () => {
       expect(state.diffLines!.filter(l => l.type === 'insert').length).toBe(2);
     });
 
-    it('should handle empty file being written', () => {
+    it('should handle file deletion (all deletes)', () => {
       const parentEl = createMockElement();
       const toolCall = createToolCall();
       const state = createWriteEditBlock(parentEl, toolCall);
 
       const diffData: ToolDiffData = {
         filePath: 'test.md',
-        originalContent: 'content',
-        newContent: '',
+        diffLines: [
+          { type: 'delete', text: 'content', oldLineNum: 1 },
+        ],
+        stats: { added: 0, removed: 1 },
       };
 
       updateWriteEditWithDiff(state, diffData);
 
-      // Should show -1 for deleted line
       expect(state.diffLines).toBeDefined();
       expect(state.diffLines!.filter(l => l.type === 'delete').length).toBe(1);
     });
@@ -597,14 +570,19 @@ describe('WriteEditRenderer', () => {
 
       const diffData: ToolDiffData = {
         filePath: 'test.md',
-        originalContent: 'line1\nold\nline3',
-        newContent: 'line1\nnew1\nnew2\nline3',
+        diffLines: [
+          { type: 'equal', text: 'line1', oldLineNum: 1, newLineNum: 1 },
+          { type: 'delete', text: 'old', oldLineNum: 2 },
+          { type: 'insert', text: 'new1', newLineNum: 2 },
+          { type: 'insert', text: 'new2', newLineNum: 3 },
+          { type: 'equal', text: 'line3', oldLineNum: 3, newLineNum: 4 },
+        ],
+        stats: { added: 2, removed: 1 },
       };
 
       updateWriteEditWithDiff(state, diffData);
 
       expect(state.diffLines).toBeDefined();
-      // 1 delete, 2 inserts, 2 equal
       const types = state.diffLines!.reduce(
         (acc, l) => {
           acc[l.type] = (acc[l.type] || 0) + 1;

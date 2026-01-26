@@ -55,6 +55,7 @@ Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`.
 
 ## Development Notes
 
+- - **SDK-first**: Proactively use native Claude SDK features over custom implementations. If the SDK provides a capability, use it — do not reinvent it. This ensures compatibility with Claude Code.
 - Test Driven Development
 - Run `npm run typecheck && npm run lint && npm run test && npm run build` after editing
 - No `console.*` in production code - use Obsidian's notification system

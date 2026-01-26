@@ -12,13 +12,8 @@ import { setIcon } from 'obsidian';
 import { getToolIcon } from '../../../core/tools/toolIcons';
 import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
 import { setupCollapsible } from './collapsible';
-import type {
-  DiffLine} from './DiffRenderer';
-import {
-  computeLineDiff,
-  countLineChanges,
-  renderDiffContent,
-} from './DiffRenderer';
+import type { DiffLine } from './DiffRenderer';
+import { renderDiffContent } from './DiffRenderer';
 
 /** State for a streaming Write/Edit block. */
 export interface WriteEditState {
@@ -117,38 +112,15 @@ export function createWriteEditBlock(
   return state;
 }
 
-/** Update Write/Edit block with diff data. */
+/** Update Write/Edit block with pre-computed diff data from SDK toolUseResult. */
 export function updateWriteEditWithDiff(state: WriteEditState, diffData: ToolDiffData): void {
   state.statsEl.empty();
   state.contentEl.empty();
 
-  // Handle skipped reasons or missing content
-  if (diffData.skippedReason === 'too_large') {
-    const row = state.contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
-    const skipEl = row.createDiv({ cls: 'claudian-write-edit-binary' });
-    skipEl.setText('Diff skipped: file too large');
-    return;
-  }
-
-  if (
-    diffData.skippedReason === 'unavailable' ||
-    diffData.originalContent === undefined ||
-    diffData.newContent === undefined
-  ) {
-    const row = state.contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
-    const skipEl = row.createDiv({ cls: 'claudian-write-edit-binary' });
-    skipEl.setText('Diff unavailable');
-    return;
-  }
-
-  const { originalContent, newContent } = diffData;
-
-  // Compute diff
-  const diffLines = computeLineDiff(originalContent, newContent);
+  const { diffLines, stats } = diffData;
   state.diffLines = diffLines;
 
   // Update stats
-  const stats = countLineChanges(diffLines);
   if (stats.added > 0) {
     const addedEl = state.statsEl.createSpan({ cls: 'added' });
     addedEl.setText(`+${stats.added}`);
@@ -223,16 +195,10 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   const labelEl = headerEl.createDiv({ cls: 'claudian-write-edit-label' });
   labelEl.setText(`${toolName}: ${shortenPath(filePath)}`);
 
-  // Stats (compute from stored diffData if available)
+  // Stats (from stored pre-computed diffData)
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
-  if (
-    toolCall.diffData &&
-    !toolCall.diffData.skippedReason &&
-    toolCall.diffData.originalContent !== undefined &&
-    toolCall.diffData.newContent !== undefined
-  ) {
-    const diffLines = computeLineDiff(toolCall.diffData.originalContent, toolCall.diffData.newContent);
-    const stats = countLineChanges(diffLines);
+  if (toolCall.diffData) {
+    const { stats } = toolCall.diffData;
     if (stats.added > 0) {
       const addedEl = statsEl.createSpan({ cls: 'added' });
       addedEl.setText(`+${stats.added}`);
@@ -259,22 +225,9 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   // Render diff if available
   const row = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
 
-  if (toolCall.diffData) {
-    if (toolCall.diffData.skippedReason === 'too_large') {
-      const skipEl = row.createDiv({ cls: 'claudian-write-edit-binary' });
-      skipEl.setText('Diff skipped: file too large');
-    } else if (
-      toolCall.diffData.skippedReason === 'unavailable' ||
-      toolCall.diffData.originalContent === undefined ||
-      toolCall.diffData.newContent === undefined
-    ) {
-      const skipEl = row.createDiv({ cls: 'claudian-write-edit-binary' });
-      skipEl.setText('Diff unavailable');
-    } else {
-      const diffEl = row.createDiv({ cls: 'claudian-write-edit-diff' });
-      const diffLines = computeLineDiff(toolCall.diffData.originalContent, toolCall.diffData.newContent);
-      renderDiffContent(diffEl, diffLines);
-    }
+  if (toolCall.diffData && toolCall.diffData.diffLines.length > 0) {
+    const diffEl = row.createDiv({ cls: 'claudian-write-edit-diff' });
+    renderDiffContent(diffEl, toolCall.diffData.diffLines);
   } else if (isError && toolCall.result) {
     const errorEl = row.createDiv({ cls: 'claudian-write-edit-error' });
     errorEl.setText(toolCall.result);

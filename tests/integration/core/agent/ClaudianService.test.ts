@@ -24,7 +24,6 @@ jest.mock('@/core/types', () => {
 
 // Now import after all mocks are set up
 import { ClaudianService } from '@/core/agent/ClaudianService';
-import { clearDiffState, createFileHashPostHook, createFileHashPreHook, getDiffData } from '@/core/hooks/DiffTrackingHooks';
 import { createVaultRestrictionHook } from '@/core/hooks/SecurityHooks';
 import { transformSDKMessage } from '@/core/sdk';
 import { getActionDescription, getActionPattern } from '@/core/security/ApprovalManager';
@@ -2110,9 +2109,6 @@ describe('ClaudianService', () => {
     });
   });
 
-  // DiffTrackingHooks tests (file hash hooks and diff data) moved to:
-  // tests/unit/core/hooks/DiffTrackingHooks.test.ts
-
   describe('remaining business branches', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
@@ -2213,88 +2209,6 @@ describe('ClaudianService', () => {
       expect(getActionDescription('Other', { foo: 'bar' })).toContain('foo');
     });
 
-    it('marks diff unavailable when pre-hook stat fails', async () => {
-      clearDiffState();
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.statSync as jest.Mock).mockImplementation(() => { throw new Error('boom'); });
-
-      try {
-        const vaultPath = '/test/vault/path';
-
-        const preHook = createFileHashPreHook(vaultPath);
-        await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' } } as any, 'tool-bad', {} as any);
-
-        const postHook = createFileHashPostHook(vaultPath);
-        await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'bad.md' }, tool_result: {} } as any, 'tool-bad', {} as any);
-
-        const diff = getDiffData('tool-bad');
-        expect(diff).toEqual({ filePath: 'bad.md', skippedReason: 'unavailable' });
-      } finally {
-        clearDiffState();
-      }
-    });
-
-    it('marks diff unavailable when post-hook lacks original entry', async () => {
-      clearDiffState();
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce('new');
-
-      const vaultPath = '/test/vault/path';
-
-      // Call post-hook without calling pre-hook (no original entry)
-      const postHook = createFileHashPostHook(vaultPath);
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'no-orig.md' }, tool_result: {} } as any, 'tool-no-orig', {} as any);
-
-      const diff = getDiffData('tool-no-orig');
-      expect(diff).toEqual({ filePath: 'no-orig.md', skippedReason: 'unavailable' });
-      clearDiffState();
-    });
-
-    it('marks diff unavailable when post-hook read fails', async () => {
-      clearDiffState();
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.statSync as jest.Mock).mockReturnValue({ size: 10 });
-      (fs.readFileSync as jest.Mock)
-        .mockReturnValueOnce('original') // pre-hook reads successfully
-        .mockImplementation(() => { throw new Error('boom'); }); // post-hook fails
-
-
-      try {
-        const vaultPath = '/test/vault/path';
-
-        const preHook = createFileHashPreHook(vaultPath);
-        await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'err.md' } } as any, 'tool-read-err', {} as any);
-
-        const postHook = createFileHashPostHook(vaultPath);
-        await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'err.md' }, tool_result: {} } as any, 'tool-read-err', {} as any);
-
-        const diff = getDiffData('tool-read-err');
-        expect(diff).toEqual({ filePath: 'err.md', skippedReason: 'unavailable' });
-      } finally {
-        clearDiffState();
-      }
-    });
-
-    it('marks too_large when post-hook sees large new file', async () => {
-      clearDiffState();
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
-
-      const vaultPath = '/test/vault/path';
-
-      const preHook = createFileHashPreHook(vaultPath);
-      await preHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'large.md' } } as any, 'tool-large', {} as any);
-
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.statSync as jest.Mock).mockReturnValue({ size: 200 * 1024 });
-
-      const postHook = createFileHashPostHook(vaultPath);
-      await postHook.hooks[0]({ tool_name: 'Write', tool_input: { file_path: 'large.md' }, tool_result: {} } as any, 'tool-large', {} as any);
-
-      const diff = getDiffData('tool-large');
-      expect(diff).toEqual({ filePath: 'large.md', skippedReason: 'too_large' });
-      clearDiffState();
-    });
   });
 
   describe('persistent query configuration detection', () => {
