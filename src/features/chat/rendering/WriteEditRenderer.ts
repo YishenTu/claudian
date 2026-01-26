@@ -4,7 +4,7 @@
  * Displays file modifications with inline diff view:
  * - Header: "Write: filename.md +15 -20" with collapse/expand
  * - Content: Diff view with hunks and "..." separators
- * - Expanded by default during streaming, collapsed for stored
+ * - Collapsed by default
  */
 
 import { setIcon } from 'obsidian';
@@ -162,6 +162,12 @@ export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean):
       const errorEl = row.createDiv({ cls: 'claudian-write-edit-error' });
       errorEl.setText(state.toolCall.result || 'Error');
     }
+  } else if (!state.diffLines) {
+    // Success but no diff data - clear the "Writing..." loading text and show DONE
+    state.contentEl.empty();
+    const row = state.contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
+    const doneEl = row.createDiv({ cls: 'claudian-write-edit-done-text' });
+    doneEl.setText('DONE');
   }
 
   // Update wrapper class

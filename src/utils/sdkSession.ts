@@ -346,7 +346,7 @@ function mapContentBlocks(content: string | SDKNativeContentBlock[] | undefined)
  * @param sdkMsg - The SDK native message
  * @param toolResults - Optional pre-collected tool results for cross-message matching.
  *   If not provided, only matches tool_result in the same message as tool_use.
- *   For full cross-message matching, use loadSDKSessionMessages() which performs two-pass parsing.
+ *   For full cross-message matching, use loadSDKSessionMessages() which performs three-pass parsing.
  * @returns ChatMessage or null if the message should be skipped
  */
 export function parseSDKMessageToChat(
@@ -504,9 +504,10 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
 /**
  * Loads and converts all messages from an SDK native session.
  *
- * Uses two-pass approach:
- * 1. First pass: collect all tool_result from all messages
+ * Uses three-pass approach:
+ * 1. First pass: collect all tool_result and toolUseResult from all messages
  * 2. Second pass: convert messages and attach results to tool calls
+ * 3. Third pass: attach diff data from toolUseResults to tool calls
  *
  * Consecutive assistant messages with the same requestId are merged into one,
  * as the SDK stores multiple JSONL entries for a single API turn (text, then tool_use, etc).

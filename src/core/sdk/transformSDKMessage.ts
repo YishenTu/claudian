@@ -142,6 +142,7 @@ export function* transformSDKMessage(
                 : JSON.stringify(block.content, null, 2),
               isError: block.is_error || false,
               parentToolUseId,
+              toolUseResult: (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined,
             };
           }
         }
