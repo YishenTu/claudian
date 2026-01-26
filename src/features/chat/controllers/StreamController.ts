@@ -261,7 +261,6 @@ export class StreamController {
     state.pendingTools.delete(toolId);
   }
 
-  /** Handles tool_result chunks. */
   private handleToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult },
     msg: ChatMessage
@@ -328,7 +327,6 @@ export class StreamController {
   // Text Block Management
   // ============================================
 
-  /** Appends text to the current text block. */
   async appendText(text: string): Promise<void> {
     const { state, renderer } = this.deps;
     if (!state.currentContentEl) return;
@@ -344,7 +342,6 @@ export class StreamController {
     await renderer.renderContent(state.currentTextEl, state.currentTextContent);
   }
 
-  /** Finalizes the current text block. */
   finalizeCurrentTextBlock(msg?: ChatMessage): void {
     const { state, renderer } = this.deps;
     if (msg && state.currentTextContent) {
@@ -363,7 +360,6 @@ export class StreamController {
   // Thinking Block Management
   // ============================================
 
-  /** Appends thinking content. */
   async appendThinking(content: string, msg: ChatMessage): Promise<void> {
     const { state, renderer } = this.deps;
     if (!state.currentContentEl) return;
@@ -379,7 +375,6 @@ export class StreamController {
     await appendThinkingContent(state.currentThinkingState, content, (el, md) => renderer.renderContent(el, md));
   }
 
-  /** Finalizes the current thinking block. */
   finalizeCurrentThinkingBlock(msg?: ChatMessage): void {
     const { state } = this.deps;
     if (!state.currentThinkingState) return;
@@ -455,7 +450,6 @@ export class StreamController {
     );
   }
 
-  /** Routes chunks from subagents. */
   private async handleSubagentChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
     if (!('parentToolUseId' in chunk) || !chunk.parentToolUseId) {
       return;
@@ -545,7 +539,6 @@ export class StreamController {
     this.showThinkingIndicator();
   }
 
-  /** Handles async Task tool_result to extract agent_id. */
   private handleAsyncTaskToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean }
   ): boolean {
@@ -580,7 +573,6 @@ export class StreamController {
     this.scrollToBottom();
   }
 
-  /** Updates subagent info in messages array. */
   private updateSubagentInMessages(subagent: SubagentInfo): void {
     const { state } = this.deps;
     for (let i = state.messages.length - 1; i >= 0; i--) {
@@ -705,7 +697,6 @@ export class StreamController {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  /** Resets streaming state after completion. */
   resetStreamingState(): void {
     const { state } = this.deps;
     this.hideThinkingIndicator();

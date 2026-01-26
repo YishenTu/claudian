@@ -183,6 +183,36 @@ describe('SubagentManager', () => {
       expect(manager.hasActiveAsync()).toBe(false);
     });
 
+    it('finalizes to error when AgentOutputTool result has isError=true', () => {
+      const { manager, updates } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-err', { description: 'Background', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-err', JSON.stringify({ agent_id: 'agent-err' }));
+
+      const toolCall: ToolCallInfo = {
+        id: 'output-err',
+        name: 'AgentOutputTool',
+        input: { agent_id: 'agent-err' },
+        status: 'running',
+        isExpanded: false,
+      };
+      manager.handleAgentOutputToolUse(toolCall);
+
+      const errored = manager.handleAgentOutputToolResult(
+        'output-err',
+        'agent crashed',
+        true
+      );
+
+      expect(errored?.asyncStatus).toBe('error');
+      expect(errored?.status).toBe('error');
+      expect(errored?.result).toBe('agent crashed');
+      expect(updates[updates.length - 1].asyncStatus).toBe('error');
+      expect(manager.getByAgentId('agent-err')).toBeUndefined();
+      expect(manager.hasActiveAsync()).toBe(false);
+    });
+
     it('marks pending and running async subagents as orphaned', () => {
       const { manager } = createManager();
       const parentEl = createMockEl();
@@ -648,17 +678,30 @@ describe('SubagentManager', () => {
 
     it('renders buffered async task with parentEl override', () => {
       const { manager } = createManager();
-      const parentEl = createMockEl();
       const overrideEl = createMockEl();
 
-      // Buffer with run_in_background=true input
-      manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
+      // Buffer with null parentEl so the task stays pending despite run_in_background being known
+      manager.handleTaskToolUse('task-1', { prompt: 'test', run_in_background: true }, null);
+      expect(manager.hasPendingTask('task-1')).toBe(true);
 
-      // Manually set run_in_background on the pending task (simulate merged input)
-      // Actually, the task was buffered without run_in_background, so renderPendingTask defaults to sync
       const result = manager.renderPendingTask('task-1', overrideEl);
       expect(result).not.toBeNull();
-      expect(result?.mode).toBe('sync');
+      expect(result?.mode).toBe('async');
+    });
+
+    it('does not increment spawned counter when rendering throws', () => {
+      const { createSubagentBlock } = jest.requireMock('@/features/chat/rendering');
+      createSubagentBlock.mockImplementationOnce(() => { throw new Error('DOM error'); });
+
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
+      expect(manager.subagentsSpawnedThisStream).toBe(0);
+
+      const result = manager.renderPendingTask('task-1', parentEl);
+      expect(result).toBeNull();
+      expect(manager.subagentsSpawnedThisStream).toBe(0);
     });
   });
 
