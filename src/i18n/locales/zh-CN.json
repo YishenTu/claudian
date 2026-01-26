@@ -162,6 +162,10 @@
       "name": "启用具有 1M 上下文窗口的 Sonnet",
       "desc": "在模型选择器中将标准 Sonnet 替换为 Sonnet (1M)。在 200k 令牌以下价格相同。需要 Max 订阅。"
     },
+    "enableChrome": {
+      "name": "启用 Chrome 扩展",
+      "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
+    },
     "maxTabs": {
       "name": "最大聊天标签数",
       "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",

@@ -88,6 +88,7 @@ function createMockSettings(overrides: Partial<ClaudianSettings> = {}): Claudian
     },
     claudeCliPath: '',
     show1MModel: false,
+    enableChrome: false,
     ...overrides,
   } as ClaudianSettings;
 }
@@ -122,6 +123,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       expect(QueryOptionsBuilder.needsRestart(null, newConfig)).toBe(true);
@@ -141,6 +143,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       expect(QueryOptionsBuilder.needsRestart(config, { ...config })).toBe(false);
@@ -160,6 +163,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, systemPromptKey: 'key2' };
@@ -180,6 +184,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, disallowedToolsKey: 'tool1|tool2' };
@@ -200,6 +205,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, claudeCliPath: '/new/claude' };
@@ -220,6 +226,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, allowedExportPaths: ['/path/a', '/path/b'] };
@@ -240,6 +247,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, settingSources: 'user,project' };
@@ -260,6 +268,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, pluginsKey: 'plugin-a:/path/a|plugin-b:/path/b' };
@@ -280,6 +289,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, model: 'claude-opus-4-5' };
@@ -300,6 +310,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, show1MModel: true };
@@ -320,9 +331,52 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: true,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, show1MModel: false };
+      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
+    });
+
+    it('returns true when enableChrome changes from false to true', () => {
+      const currentConfig: PersistentQueryConfig = {
+        model: 'sonnet',
+        thinkingTokens: null,
+        permissionMode: 'yolo',
+        systemPromptKey: 'key1',
+        disallowedToolsKey: '',
+        mcpServersKey: '',
+        pluginsKey: '',
+        externalContextPaths: [],
+        allowedExportPaths: [],
+        settingSources: 'project',
+        claudeCliPath: '/mock/claude',
+        show1MModel: false,
+        enableChrome: false,
+      };
+
+      const newConfig = { ...currentConfig, enableChrome: true };
+      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
+    });
+
+    it('returns true when enableChrome changes from true to false', () => {
+      const currentConfig: PersistentQueryConfig = {
+        model: 'sonnet',
+        thinkingTokens: null,
+        permissionMode: 'yolo',
+        systemPromptKey: 'key1',
+        disallowedToolsKey: '',
+        mcpServersKey: '',
+        pluginsKey: '',
+        externalContextPaths: [],
+        allowedExportPaths: [],
+        settingSources: 'project',
+        claudeCliPath: '/mock/claude',
+        show1MModel: false,
+        enableChrome: true,
+      };
+
+      const newConfig = { ...currentConfig, enableChrome: false };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
@@ -340,6 +394,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, externalContextPaths: ['/external/path'] };
@@ -360,6 +415,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, externalContextPaths: ['/path/a', '/path/b'] };
@@ -380,6 +436,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       const newConfig = { ...currentConfig, externalContextPaths: ['/path/a'] };
@@ -400,6 +457,7 @@ describe('QueryOptionsBuilder', () => {
         settingSources: 'project',
         claudeCliPath: '/mock/claude',
         show1MModel: false,
+        enableChrome: false,
       };
 
       // Same paths, different order - should NOT require restart since sorted comparison
@@ -524,6 +582,33 @@ describe('QueryOptionsBuilder', () => {
       expect(options.betas).toContain('context-1m-2025-08-07');
     });
 
+    it('sets extraArgs with chrome flag when enableChrome is enabled', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ enableChrome: true }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.extraArgs).toBeDefined();
+      expect(options.extraArgs).toEqual({ chrome: null });
+    });
+
+    it('does not set extraArgs when enableChrome is disabled', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ enableChrome: false }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.extraArgs).toBeUndefined();
+    });
+
     it('sets additionalDirectories when externalContextPaths provided', () => {
       const ctx = {
         ...createMockContext(),
@@ -626,6 +711,35 @@ describe('QueryOptionsBuilder', () => {
 
       expect(options.model).toBe('sonnet');
       expect(options.betas).toBeUndefined();
+    });
+
+    it('sets extraArgs with chrome flag when enableChrome is enabled', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ enableChrome: true }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.extraArgs).toBeDefined();
+      expect(options.extraArgs).toEqual({ chrome: null });
+    });
+
+    it('does not set extraArgs when enableChrome is disabled', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ enableChrome: false }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.extraArgs).toBeUndefined();
     });
 
     it('sets additionalDirectories when externalContextPaths provided', () => {

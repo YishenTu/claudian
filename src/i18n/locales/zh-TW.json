@@ -162,6 +162,10 @@
       "name": "啟用具有 1M 上下文視窗的 Sonnet",
       "desc": "在模型選擇器中將標準 Sonnet 替換為 Sonnet (1M)。在 200k 權杖以下價格相同。需要 Max 訂閱。"
     },
+    "enableChrome": {
+      "name": "啟用 Chrome 擴充功能",
+      "desc": "允許 Claude 透過 claude-in-chrome 擴充功能與 Chrome 互動。需要安裝該擴充功能。需要重新啟動工作階段。"
+    },
     "maxTabs": {
       "name": "最大聊天標籤數",
       "desc": "同時開啟的最大聊天標籤數（3-10）。每個標籤使用獨立的 Claude 對話。",

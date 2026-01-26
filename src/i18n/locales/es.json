@@ -162,6 +162,10 @@
       "name": "Habilitar Sonnet con ventana de contexto de 1M",
       "desc": "Reemplazar Sonnet estándar con Sonnet (1M) en el selector de modelos. Mismo precio bajo 200k tokens. Requiere suscripción Max."
     },
+    "enableChrome": {
+      "name": "Habilitar extensión de Chrome",
+      "desc": "Permitir que Claude interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada. Requiere reinicio de sesión."
+    },
     "maxTabs": {
       "name": "Máximo de pestañas de chat",
       "desc": "Número máximo de pestañas de chat simultáneas (3-10). Cada pestaña usa una sesión de Claude separada.",

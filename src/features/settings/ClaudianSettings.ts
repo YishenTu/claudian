@@ -508,6 +508,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName(t('settings.enableChrome.name'))
+      .setDesc(t('settings.enableChrome.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableChrome ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.enableChrome = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     const maxTabsSetting = new Setting(containerEl)
       .setName(t('settings.maxTabs.name'))
       .setDesc(t('settings.maxTabs.desc'));

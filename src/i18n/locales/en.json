@@ -162,6 +162,10 @@
       "name": "Enable Sonnet with 1M context window",
       "desc": "Replace standard Sonnet with Sonnet (1M) in the model selector. Same pricing under 200k tokens. Requires Max subscription."
     },
+    "enableChrome": {
+      "name": "Enable Chrome extension",
+      "desc": "Allow Claude to interact with Chrome via the claude-in-chrome extension. Requires the extension to be installed. Requires session restart."
+    },
     "maxTabs": {
       "name": "Maximum chat tabs",
       "desc": "Maximum number of concurrent chat tabs (3-10). Each tab uses a separate Claude session.",
