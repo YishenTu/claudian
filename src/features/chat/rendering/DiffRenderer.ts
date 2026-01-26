@@ -3,10 +3,6 @@
  *
  * Provides hunk-based rendering for showing only edited regions
  * with context lines and "..." separators.
- *
- * Pure data functions (structuredPatchToDiffLines, countLineChanges)
- * and types (DiffLine, DiffStats, StructuredPatchHunk) live in
- * core/types/diff.ts and utils/diff.ts respectively.
  */
 
 import type { DiffLine } from '../../../core/types/diff';

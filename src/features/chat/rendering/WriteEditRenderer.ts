@@ -11,7 +11,7 @@ import { setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../../core/tools/toolIcons';
 import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
-import type { DiffLine } from '../../../core/types/diff';
+import type { DiffLine, DiffStats } from '../../../core/types/diff';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent } from './DiffRenderer';
 
@@ -50,6 +50,21 @@ function shortenPath(filePath: string, maxLength = 40): string {
   }
 
   return `${firstDir}/.../${filename}`;
+}
+
+/** Render "+N -M" stats into a container element. */
+function renderDiffStats(statsEl: HTMLElement, stats: DiffStats): void {
+  if (stats.added > 0) {
+    const addedEl = statsEl.createSpan({ cls: 'added' });
+    addedEl.setText(`+${stats.added}`);
+  }
+  if (stats.removed > 0) {
+    if (stats.added > 0) {
+      statsEl.createSpan({ text: ' ' });
+    }
+    const removedEl = statsEl.createSpan({ cls: 'removed' });
+    removedEl.setText(`-${stats.removed}`);
+  }
 }
 
 /** Create a Write/Edit block during streaming (collapsed by default). */
@@ -121,17 +136,7 @@ export function updateWriteEditWithDiff(state: WriteEditState, diffData: ToolDif
   state.diffLines = diffLines;
 
   // Update stats
-  if (stats.added > 0) {
-    const addedEl = state.statsEl.createSpan({ cls: 'added' });
-    addedEl.setText(`+${stats.added}`);
-  }
-  if (stats.removed > 0) {
-    if (stats.added > 0) {
-      state.statsEl.createSpan({ text: ' ' });
-    }
-    const removedEl = state.statsEl.createSpan({ cls: 'removed' });
-    removedEl.setText(`-${stats.removed}`);
-  }
+  renderDiffStats(state.statsEl, stats);
 
   // Render diff content
   const row = state.contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
@@ -198,18 +203,7 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   // Stats (from stored pre-computed diffData)
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
   if (toolCall.diffData) {
-    const { stats } = toolCall.diffData;
-    if (stats.added > 0) {
-      const addedEl = statsEl.createSpan({ cls: 'added' });
-      addedEl.setText(`+${stats.added}`);
-    }
-    if (stats.removed > 0) {
-      if (stats.added > 0) {
-        statsEl.createSpan({ text: ' ' });
-      }
-      const removedEl = statsEl.createSpan({ cls: 'removed' });
-      removedEl.setText(`-${stats.removed}`);
-    }
+    renderDiffStats(statsEl, toolCall.diffData.stats);
   }
 
   // Status indicator - only show icon on error

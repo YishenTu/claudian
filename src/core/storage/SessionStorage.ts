@@ -407,8 +407,6 @@ export class SessionStorage {
 
   /** Convert a Conversation to SessionMetadata for native storage. */
   toSessionMetadata(conversation: Conversation): SessionMetadata {
-    // Extract subagentData from all messages for persistence
-    // Note: toolDiffData is no longer persisted - it's extracted from SDK JSONL at load time
     const subagentData = this.extractSubagentData(conversation.messages);
 
     return {

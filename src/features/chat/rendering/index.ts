@@ -2,12 +2,6 @@
  * Chat rendering module exports.
  */
 
-// Diff types re-exported from core for convenience
-export type { DiffLine, DiffStats, StructuredPatchHunk } from '../../../core/types/diff';
-// Diff data functions re-exported from utils for convenience
-export { countLineChanges, structuredPatchToDiffLines } from '../../../utils/diff';
-// Rendering-specific diff exports
-export { type DiffHunk, renderDiffContent, splitIntoHunks } from './DiffRenderer';
 export { MessageRenderer } from './MessageRenderer';
 export {
   addSubagentToolCall,

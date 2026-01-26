@@ -1,9 +1,5 @@
 /**
  * Diff utilities for structured patch conversion and diff extraction.
- *
- * Pure data functions shared by streaming (StreamController) and
- * session loading (sdkSession). Rendering-specific functions
- * (splitIntoHunks, renderDiffContent) remain in DiffRenderer.
  */
 
 import type { DiffLine, DiffStats, StructuredPatchHunk } from '../core/types/diff';
@@ -29,7 +25,6 @@ export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLi
       } else if (prefix === '-') {
         result.push({ type: 'delete', text, oldLineNum: oldLineNum++ });
       } else {
-        // Context line (prefix is ' ' or anything else)
         result.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
       }
     }
@@ -60,7 +55,6 @@ export function countLineChanges(diffLines: DiffLine[]): DiffStats {
 export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
   const filePath = (toolCall.input.file_path as string) || 'file';
 
-  // Primary: try SDK structuredPatch
   if (toolUseResult && typeof toolUseResult === 'object') {
     const result = toolUseResult as Record<string, unknown>;
     if (Array.isArray(result.structuredPatch) && result.structuredPatch.length > 0) {
@@ -72,7 +66,6 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
     }
   }
 
-  // Fallback: compute diff from tool input
   return diffFromToolInput(toolCall, filePath);
 }
 
@@ -106,7 +99,7 @@ export function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): Too
     if (typeof content === 'string') {
       const newLines = content.split('\n');
       const diffLines: DiffLine[] = newLines.map((text, i) => ({
-        type: 'insert' as const,
+        type: 'insert',
         text,
         newLineNum: i + 1,
       }));

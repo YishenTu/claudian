@@ -434,7 +434,7 @@ function collectToolResults(sdkMessages: SDKNativeMessage[]): Map<string, { cont
  * Collects toolUseResult objects from SDK messages, keyed by tool_use_id.
  * These contain structuredPatch data for Write/Edit diff rendering.
  */
-function collectToolUseResults(sdkMessages: SDKNativeMessage[]): Map<string, unknown> {
+function collectStructuredPatchResults(sdkMessages: SDKNativeMessage[]): Map<string, unknown> {
   const results = new Map<string, unknown>();
 
   for (const sdkMsg of sdkMessages) {
@@ -524,7 +524,7 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
 
   // First pass: collect all tool results and toolUseResults for cross-message matching
   const toolResults = collectToolResults(result.messages);
-  const toolUseResults = collectToolUseResults(result.messages);
+  const toolUseResults = collectStructuredPatchResults(result.messages);
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;

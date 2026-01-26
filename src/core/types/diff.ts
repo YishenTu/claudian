@@ -1,9 +1,5 @@
 /**
  * Diff-related type definitions.
- *
- * Types for structured patch data from the SDK and diff line representation.
- * Used by rendering (DiffRenderer), streaming (StreamController), and
- * session loading (sdkSession).
  */
 
 export interface DiffLine {
