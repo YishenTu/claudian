@@ -46,7 +46,7 @@ export interface InputControllerDeps {
   generateId: () => string;
   resetInputHeight: () => void;
   getAgentService?: () => ClaudianService | null;
-  getSubagentManager: () => SubagentManager | null;
+  getSubagentManager: () => SubagentManager;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
 }
@@ -136,7 +136,7 @@ export class InputController {
     state.isStreaming = true;
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
-    this.deps.getSubagentManager()?.resetSpawnedCount(); // Reset subagent counter for new query
+    this.deps.getSubagentManager().resetSpawnedCount();
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true; // Reset auto-scroll based on setting
     const streamGeneration = state.bumpStreamGeneration();
 
@@ -326,7 +326,7 @@ export class InputController {
 
         streamController.finalizeCurrentThinkingBlock(assistantMsg);
         streamController.finalizeCurrentTextBlock(assistantMsg);
-        this.deps.getSubagentManager()?.resetStreamingState();
+        this.deps.getSubagentManager().resetStreamingState();
 
         // Auto-hide completed status panels on response end
         // Panels reappear only when new TodoWrite/Task tool is called

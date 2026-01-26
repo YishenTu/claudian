@@ -412,22 +412,14 @@ export class StreamController {
     const result = subagentManager.handleTaskToolUse(chunk.id, chunk.input, state.currentContentEl);
 
     switch (result.action) {
-      case 'created_sync': {
-        msg.subagents = msg.subagents || [];
-        msg.subagents.push(result.subagentState.info);
-        msg.contentBlocks = msg.contentBlocks || [];
-        msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id });
+      case 'created_sync':
+        this.recordSubagentInMessage(msg, result.subagentState.info, chunk.id);
         this.showThinkingIndicator();
         break;
-      }
-      case 'created_async': {
-        msg.subagents = msg.subagents || [];
-        msg.subagents.push(result.info);
-        msg.contentBlocks = msg.contentBlocks || [];
-        msg.contentBlocks.push({ type: 'subagent', subagentId: chunk.id, mode: 'async' });
+      case 'created_async':
+        this.recordSubagentInMessage(msg, result.info, chunk.id, 'async');
         this.showThinkingIndicator();
         break;
-      }
       case 'buffered':
         this.showThinkingIndicator();
         break;
@@ -442,16 +434,25 @@ export class StreamController {
     if (!result) return;
 
     if (result.mode === 'sync') {
-      msg.subagents = msg.subagents || [];
-      msg.subagents.push(result.subagentState.info);
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({ type: 'subagent', subagentId: toolId });
+      this.recordSubagentInMessage(msg, result.subagentState.info, toolId);
     } else {
-      msg.subagents = msg.subagents || [];
-      msg.subagents.push(result.info);
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({ type: 'subagent', subagentId: toolId, mode: 'async' });
+      this.recordSubagentInMessage(msg, result.info, toolId, 'async');
     }
+  }
+
+  private recordSubagentInMessage(
+    msg: ChatMessage,
+    info: SubagentInfo,
+    toolId: string,
+    mode?: 'async'
+  ): void {
+    msg.subagents = msg.subagents || [];
+    msg.subagents.push(info);
+    msg.contentBlocks = msg.contentBlocks || [];
+    msg.contentBlocks.push(mode
+      ? { type: 'subagent', subagentId: toolId, mode }
+      : { type: 'subagent', subagentId: toolId }
+    );
   }
 
   /** Routes chunks from subagents. */

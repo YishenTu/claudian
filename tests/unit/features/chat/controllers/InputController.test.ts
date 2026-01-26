@@ -134,7 +134,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     generateId: () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     resetInputHeight: jest.fn(),
     getAgentService: () => mockAgentService as any,
-    getSubagentManager: () => null,
+    getSubagentManager: () => ({ resetSpawnedCount: jest.fn(), resetStreamingState: jest.fn() }) as any,
     mockAgentService,
     ...overrides,
   };

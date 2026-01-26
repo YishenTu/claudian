@@ -1,5 +1,4 @@
 import type {
-  AsyncSubagentStatus,
   SubagentInfo,
   SubagentMode,
   ToolCallInfo,
@@ -31,21 +30,16 @@ export type RenderPendingResult =
   | { mode: 'async'; info: SubagentInfo; domState: AsyncSubagentState };
 
 export class SubagentManager {
-  // Sync
   private syncSubagents: Map<string, SubagentState> = new Map();
   private pendingTasks: Map<string, PendingToolCall> = new Map();
   private _spawnedThisStream = 0;
 
-  // Async (from AsyncSubagentManager)
   private activeAsyncSubagents: Map<string, SubagentInfo> = new Map();
   private pendingAsyncSubagents: Map<string, SubagentInfo> = new Map();
   private taskIdToAgentId: Map<string, string> = new Map();
   private outputToolIdToAgentId: Map<string, string> = new Map();
-
-  // Async DOM
   private asyncDomStates: Map<string, AsyncSubagentState> = new Map();
 
-  // Callback
   private onStateChange: SubagentStateChangeCallback;
 
   constructor(onStateChange: SubagentStateChangeCallback) {
@@ -175,23 +169,23 @@ export class SubagentManager {
     if (!targetEl) return null;
 
     this.pendingTasks.delete(toolId);
-    this._spawnedThisStream++;
 
     try {
       if (input.run_in_background === true) {
         const result = this.createAsyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_async') {
+          this._spawnedThisStream++;
           return { mode: 'async', info: result.info, domState: result.domState };
         }
       } else {
         const result = this.createSyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_sync') {
+          this._spawnedThisStream++;
           return { mode: 'sync', subagentState: result.subagentState };
         }
       }
     } catch {
-      // Errors during rendering are non-fatal - the task will appear
-      // incomplete but won't crash the stream.
+      // Non-fatal: task appears incomplete but doesn't crash the stream
     }
 
     return null;
@@ -248,27 +242,15 @@ export class SubagentManager {
     if (!subagent) return;
 
     if (isError) {
-      subagent.asyncStatus = 'error';
-      subagent.status = 'error';
-      subagent.result = result || 'Task failed to start';
-      subagent.completedAt = Date.now();
-      this.pendingAsyncSubagents.delete(taskToolId);
-      this.updateAsyncDomState(subagent);
-      this.onStateChange(subagent);
+      this.transitionToError(subagent, taskToolId, result || 'Task failed to start');
       return;
     }
 
     const agentId = this.parseAgentId(result);
 
     if (!agentId) {
-      subagent.asyncStatus = 'error';
-      subagent.status = 'error';
       const truncatedResult = result.length > 100 ? result.substring(0, 100) + '...' : result;
-      subagent.result = `Failed to parse agent_id. Result: ${truncatedResult}`;
-      subagent.completedAt = Date.now();
-      this.pendingAsyncSubagents.delete(taskToolId);
-      this.updateAsyncDomState(subagent);
-      this.onStateChange(subagent);
+      this.transitionToError(subagent, taskToolId, `Failed to parse agent_id. Result: ${truncatedResult}`);
       return;
     }
 
@@ -318,8 +300,7 @@ export class SubagentManager {
       this.outputToolIdToAgentId.set(toolId, agentId);
     }
 
-    const validStates: AsyncSubagentStatus[] = ['running'];
-    if (!validStates.includes(subagent.asyncStatus!)) {
+    if (subagent.asyncStatus !== 'running') {
       return undefined;
     }
 
@@ -393,29 +374,20 @@ export class SubagentManager {
     const orphaned: SubagentInfo[] = [];
 
     for (const subagent of this.pendingAsyncSubagents.values()) {
-      subagent.asyncStatus = 'orphaned';
-      subagent.status = 'error';
-      subagent.result = 'Conversation ended before task completed';
-      subagent.completedAt = Date.now();
+      this.markOrphaned(subagent);
       orphaned.push(subagent);
-      this.updateAsyncDomState(subagent);
-      this.onStateChange(subagent);
     }
 
     for (const subagent of this.activeAsyncSubagents.values()) {
       if (subagent.asyncStatus === 'running') {
-        subagent.asyncStatus = 'orphaned';
-        subagent.status = 'error';
-        subagent.result = 'Conversation ended before task completed';
-        subagent.completedAt = Date.now();
+        this.markOrphaned(subagent);
         orphaned.push(subagent);
-        this.updateAsyncDomState(subagent);
-        this.onStateChange(subagent);
       }
     }
 
     this.pendingAsyncSubagents.clear();
     this.activeAsyncSubagents.clear();
+    this.taskIdToAgentId.clear();
     this.outputToolIdToAgentId.clear();
 
     return orphaned;
@@ -443,6 +415,29 @@ export class SubagentManager {
       this.pendingAsyncSubagents.size > 0 ||
       this.activeAsyncSubagents.size > 0
     );
+  }
+
+  // ============================================
+  // Private: State Transitions
+  // ============================================
+
+  private markOrphaned(subagent: SubagentInfo): void {
+    subagent.asyncStatus = 'orphaned';
+    subagent.status = 'error';
+    subagent.result = 'Conversation ended before task completed';
+    subagent.completedAt = Date.now();
+    this.updateAsyncDomState(subagent);
+    this.onStateChange(subagent);
+  }
+
+  private transitionToError(subagent: SubagentInfo, taskToolId: string, errorResult: string): void {
+    subagent.asyncStatus = 'error';
+    subagent.status = 'error';
+    subagent.result = errorResult;
+    subagent.completedAt = Date.now();
+    this.pendingAsyncSubagents.delete(taskToolId);
+    this.updateAsyncDomState(subagent);
+    this.onStateChange(subagent);
   }
 
   // ============================================
@@ -553,23 +548,7 @@ export class SubagentManager {
 
   private isStillRunningResult(result: string, isError: boolean): boolean {
     const trimmed = result?.trim() || '';
-
-    const unwrapTextPayload = (raw: string): string => {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const textBlock = parsed.find((b: any) => b && typeof b.text === 'string');
-          if (textBlock?.text) return textBlock.text as string;
-        } else if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
-          return parsed.text;
-        }
-      } catch {
-        // Not JSON or not an envelope
-      }
-      return raw;
-    };
-
-    const payload = unwrapTextPayload(trimmed);
+    const payload = this.unwrapTextPayload(trimmed);
 
     if (isError) return false;
     if (!trimmed) return false;
@@ -619,22 +598,7 @@ export class SubagentManager {
   }
 
   private extractAgentResult(result: string, agentId: string): string {
-    const unwrap = (raw: string): string => {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const textBlock = parsed.find((b: any) => b && typeof b.text === 'string');
-          if (textBlock?.text) return textBlock.text as string;
-        } else if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
-          return parsed.text;
-        }
-      } catch {
-        // ignore
-      }
-      return raw;
-    };
-
-    const payload = unwrap(result);
+    const payload = this.unwrapTextPayload(result);
 
     try {
       const parsed = JSON.parse(payload);
@@ -716,6 +680,21 @@ export class SubagentManager {
       // Not JSON
     }
     return null;
+  }
+
+  private unwrapTextPayload(raw: string): string {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const textBlock = parsed.find((b: any) => b && typeof b.text === 'string');
+        if (textBlock?.text) return textBlock.text as string;
+      } else if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
+        return parsed.text;
+      }
+    } catch {
+      // Not JSON or not an envelope
+    }
+    return raw;
   }
 
   private extractAgentIdFromInput(input: Record<string, unknown>): string | null {
