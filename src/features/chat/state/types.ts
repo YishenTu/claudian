@@ -10,8 +10,6 @@ import type {
 } from '../../../core/types';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import type {
-  AsyncSubagentState,
-  SubagentState,
   ThinkingBlockState,
   WriteEditState,
 } from '../rendering';
@@ -26,7 +24,7 @@ export interface QueuedMessage {
 /** Pending tool call waiting to be rendered (buffered until input is complete). */
 export interface PendingToolCall {
   toolCall: ToolCallInfo;
-  parentEl: HTMLElement;
+  parentEl: HTMLElement | null;
 }
 
 /** Stored selection state from editor polling. */
@@ -70,22 +68,16 @@ export interface ChatStateData {
   /** Debounce timeout for showing thinking indicator after inactivity. */
   thinkingIndicatorTimeout: ReturnType<typeof setTimeout> | null;
 
-  // Tool and subagent tracking maps
+  // Tool tracking maps
   toolCallElements: Map<string, HTMLElement>;
-  activeSubagents: Map<string, SubagentState>;
-  asyncSubagentStates: Map<string, AsyncSubagentState>;
   writeEditStates: Map<string, WriteEditState>;
   /** Pending tool calls buffered until input is complete (for non-streaming-style render). */
   pendingTools: Map<string, PendingToolCall>;
-  /** Pending Task tools buffered until sync/async is confirmed. */
-  pendingTaskTools: Map<string, PendingToolCall>;
 
   // Context window usage
   usage: UsageInfo | null;
   // Flag to ignore usage updates (during session reset)
   ignoreUsageUpdates: boolean;
-  // Count of subagents spawned during current streaming session (for filtering usage)
-  subagentsSpawnedThisStream: number;
 
   // Current todo items for the persistent bottom panel
   currentTodos: TodoItem[] | null;
@@ -126,12 +118,10 @@ export interface QueryOptions {
 
 // Re-export types that are used across the chat feature
 export type {
-  AsyncSubagentState,
   ChatMessage,
   EditorSelectionContext,
   ImageAttachment,
   SubagentInfo,
-  SubagentState,
   ThinkingBlockState,
   TodoItem,
   ToolCallInfo,

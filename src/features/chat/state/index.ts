@@ -1,6 +1,5 @@
 export { ChatState, createInitialState } from './ChatState';
 export type {
-  AsyncSubagentState,
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
@@ -10,7 +9,6 @@ export type {
   QueuedMessage,
   StoredSelection,
   SubagentInfo,
-  SubagentState,
   ThinkingBlockState,
   ToolCallInfo,
   WriteEditState,

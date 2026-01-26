@@ -14,8 +14,8 @@ import {
   StreamController,
 } from '../controllers';
 import { cleanupThinkingBlock, MessageRenderer } from '../rendering';
-import { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import { InstructionRefineService } from '../services/InstructionRefineService';
+import { SubagentManager } from '../services/SubagentManager';
 import { TitleGenerationService } from '../services/TitleGenerationService';
 import { ChatState } from '../state';
 import {
@@ -90,11 +90,11 @@ export function createTab(options: TabCreateOptions): TabData {
     },
   });
 
-  // Create async subagent manager with no-op callback.
+  // Create subagent manager with no-op callback.
   // This placeholder is replaced in initializeTabControllers() with the actual
   // callback that updates the StreamController. We defer the real callback
   // because StreamController doesn't exist until controllers are initialized.
-  const asyncSubagentManager = new AsyncSubagentManager(() => {});
+  const subagentManager = new SubagentManager(() => {});
 
   // Create DOM structure
   const dom = buildTabDOM(contentEl);
@@ -114,7 +114,7 @@ export function createTab(options: TabCreateOptions): TabData {
       navigationController: null,
     },
     services: {
-      asyncSubagentManager,
+      subagentManager,
       instructionRefineService: null,
       titleGenerationService: null,
     },
@@ -582,17 +582,19 @@ export function initializeTabControllers(
     plugin,
     state,
     renderer: tab.renderer,
-    asyncSubagentManager: services.asyncSubagentManager,
+    subagentManager: services.subagentManager,
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
     getAgentService: () => tab.service,
   });
 
-  // Wire async subagent callback now that StreamController exists
-  services.asyncSubagentManager.setCallback(
+  // Wire subagent callback now that StreamController exists
+  // DOM updates for async subagents are handled by SubagentManager directly;
+  // this callback handles message persistence and status panel updates.
+  services.subagentManager.setCallback(
     (subagent) => {
-      // Update inline renderer
+      // Update messages (DOM already updated by manager)
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
 
       // Update status panel (hidden by default - inline is shown first)
@@ -618,7 +620,7 @@ export function initializeTabControllers(
       plugin,
       state,
       renderer: tab.renderer,
-      asyncSubagentManager: services.asyncSubagentManager,
+      subagentManager: services.subagentManager,
       getHistoryDropdown: () => null, // Tab doesn't have its own history dropdown
       getWelcomeEl: () => dom.welcomeEl,
       setWelcomeEl: (el) => { dom.welcomeEl = el; },
@@ -663,6 +665,7 @@ export function initializeTabControllers(
     },
     // Override to use tab's service instead of plugin.agentService
     getAgentService: () => tab.service,
+    getSubagentManager: () => services.subagentManager,
     // Lazy initialization: ensure service is ready before first query
     // initializeTabService() handles session ID resolution from tab.conversationId
     ensureServiceInitialized: async () => {
@@ -864,9 +867,9 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.statusPanel?.destroy();
   tab.ui.statusPanel = null;
 
-  // Cleanup async subagents
-  tab.services.asyncSubagentManager.orphanAllActive();
-  tab.state.asyncSubagentStates.clear();
+  // Cleanup subagents
+  tab.services.subagentManager.orphanAllActive();
+  tab.services.subagentManager.clear();
 
   // Remove event listeners to prevent memory leaks
   for (const cleanup of tab.dom.eventCleanups) {

@@ -15,7 +15,7 @@ ClaudianView (lifecycle + assembly)
 │   └── NavigationController    # Keyboard navigation (vim-style)
 ├── Services
 │   ├── TitleGenerationService  # Auto-generate conversation titles
-│   ├── AsyncSubagentManager    # Track background agents
+│   ├── SubagentManager          # Unified sync/async subagent lifecycle
 │   └── InstructionRefineService # "#" instruction mode
 ├── Rendering
 │   ├── MessageRenderer         # Main rendering orchestrator

@@ -230,10 +230,11 @@ jest.mock('@/features/chat/controllers', () => ({
 }));
 
 // Mock services
-jest.mock('@/features/chat/services/AsyncSubagentManager', () => ({
-  AsyncSubagentManager: jest.fn().mockImplementation(() => ({
+jest.mock('@/features/chat/services/SubagentManager', () => ({
+  SubagentManager: jest.fn().mockImplementation(() => ({
     orphanAllActive: jest.fn(),
     setCallback: jest.fn(),
+    clear: jest.fn(),
   })),
 }));
 
@@ -690,16 +691,18 @@ describe('Tab - Destruction', () => {
       expect(tab.dom.contentEl.remove).toHaveBeenCalled();
     });
 
-    it('should cleanup async subagents', async () => {
+    it('should cleanup subagents', async () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
       const orphanAllActive = jest.fn();
-      tab.services.asyncSubagentManager = { orphanAllActive } as any;
+      const clear = jest.fn();
+      tab.services.subagentManager = { orphanAllActive, clear } as any;
 
       await destroyTab(tab);
 
       expect(orphanAllActive).toHaveBeenCalled();
+      expect(clear).toHaveBeenCalled();
     });
 
     it('should cleanup UI components', async () => {
@@ -1001,7 +1004,7 @@ describe('Tab - Controller Initialization', () => {
       expect(mockNavigationController.initialize).toHaveBeenCalled();
     });
 
-    it('should update AsyncSubagentManager with StreamController callback', () => {
+    it('should update SubagentManager with StreamController callback', () => {
       const options = createMockOptions();
       const tab = createTab(options);
       const mockComponent = {} as any;
@@ -1009,8 +1012,8 @@ describe('Tab - Controller Initialization', () => {
       initializeTabUI(tab, options.plugin);
       initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
 
-      // The async subagent manager should be recreated with the new callback
-      expect(tab.services.asyncSubagentManager).toBeDefined();
+      // The subagent manager should have its callback set
+      expect(tab.services.subagentManager).toBeDefined();
     });
   });
 });

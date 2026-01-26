@@ -10,8 +10,8 @@ import type {
   StreamController,
 } from '../controllers';
 import type { MessageRenderer } from '../rendering';
-import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
+import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state';
 import type {
@@ -109,7 +109,7 @@ export interface TabControllers {
  * Services managed per-tab.
  */
 export interface TabServices {
-  asyncSubagentManager: AsyncSubagentManager;
+  subagentManager: SubagentManager;
   instructionRefineService: InstructionRefineService | null;
   titleGenerationService: TitleGenerationService | null;
 }

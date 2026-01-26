@@ -103,8 +103,9 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     renderer: {
       renderMessages: jest.fn().mockReturnValue(createMockElement()),
     } as any,
-    asyncSubagentManager: {
+    subagentManager: {
       orphanAllActive: jest.fn(),
+      clear: jest.fn(),
     } as any,
     getHistoryDropdown: () => historyDropdown as any,
     getWelcomeEl: () => welcomeEl,
