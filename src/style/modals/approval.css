@@ -18,7 +18,7 @@
 }
 
 .claudian-approval-icon {
-  color: #D97757;
+  color: var(--claudian-brand);
 }
 
 .claudian-approval-tool-name {
@@ -85,7 +85,7 @@
 }
 
 .claudian-always-btn {
-  background: #D97757;
+  background: var(--claudian-brand);
   color: white;
   border: none;
 }

@@ -52,41 +52,6 @@
       "desc": "每行一個映射。格式：\"map <鍵> <動作>\"（動作：scrollUp, scrollDown, focusInput）。"
     },
     "hotkeys": "快捷鍵",
-    "inlineEditHotkey": {
-      "name": "內聯編輯快捷鍵",
-      "descNoKey": "未設定快捷鍵。點擊配置。",
-      "descWithKey": "目前：{hotkey}",
-      "btnSet": "設定快捷鍵",
-      "btnChange": "更改"
-    },
-    "openChatHotkey": {
-      "name": "開啟聊天快捷鍵",
-      "descNoKey": "未設定快捷鍵。點擊配置。",
-      "descWithKey": "目前：{hotkey}",
-      "btnSet": "設定快捷鍵",
-      "btnChange": "更改"
-    },
-    "newTabHotkey": {
-      "name": "新建分頁快捷鍵",
-      "descNoKey": "未設定快捷鍵。點擊配置。",
-      "descWithKey": "目前：{hotkey}",
-      "btnSet": "設定快捷鍵",
-      "btnChange": "更改"
-    },
-    "newSessionHotkey": {
-      "name": "新建對話快捷鍵",
-      "descNoKey": "未設定快捷鍵。點擊配置。",
-      "descWithKey": "目前：{hotkey}",
-      "btnSet": "設定快捷鍵",
-      "btnChange": "更改"
-    },
-    "closeTabHotkey": {
-      "name": "關閉分頁快捷鍵",
-      "descNoKey": "未設定快捷鍵。點擊配置。",
-      "descWithKey": "目前：{hotkey}",
-      "btnSet": "設定快捷鍵",
-      "btnChange": "更改"
-    },
     "slashCommands": {
       "name": "斜線命令",
       "desc": "建立由 /command 觸發的自訂提示範本。使用 $ARGUMENTS 獲取所有參數，$1/$2 獲取位置參數，@file 獲取檔案內容，!`bash` 獲取命令輸出。"
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "片段",
       "addBtn": "新增片段",
-      "editBtn": "編輯",
-      "deleteBtn": "刪除",
-      "useBtn": "使用",
       "noSnippets": "尚無保存的環境變數片段。點擊 + 保存當前配置。",
       "nameRequired": "請輸入片段名稱",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "自訂上下文限制",
       "desc": "為您的自訂模型設定上下文視窗大小。留空使用預設值（200k 權杖）。",
-      "modelLabel": "{model} 上下文限制",
-      "modelDesc": "{modelId} 的上下文視窗。使用 256k、1m 或精確權杖數等格式。",
       "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。"
     },
     "advanced": "進階",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "最大聊天標籤數",
       "desc": "同時開啟的最大聊天標籤數（3-10）。每個標籤使用獨立的 Claude 對話。",
-      "warning": "超過 5 個標籤可能會影響效能和記憶體使用。",
-      "range": "{min} - {max}"
+      "warning": "超過 5 個標籤可能會影響效能和記憶體使用。"
     },
     "tabBarPosition": {
       "name": "標籤列位置",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "語言",
-      "desc": "更改插件介面的顯示語言",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "更改插件介面的顯示語言"
     }
   }
 }

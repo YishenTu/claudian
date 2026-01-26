@@ -1,7 +1,3 @@
-/**
- * Tests for MCP utility functions
- */
-
 import { extractMcpMentions, transformMcpMentions } from '@/utils/mcp';
 
 describe('extractMcpMentions', () => {

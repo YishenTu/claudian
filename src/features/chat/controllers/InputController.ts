@@ -13,6 +13,7 @@ import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
+import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
@@ -45,6 +46,7 @@ export interface InputControllerDeps {
   generateId: () => string;
   resetInputHeight: () => void;
   getAgentService?: () => ClaudianService | null;
+  getSubagentManager: () => SubagentManager;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
 }
@@ -134,7 +136,7 @@ export class InputController {
     state.isStreaming = true;
     state.cancelRequested = false;
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
-    state.subagentsSpawnedThisStream = 0; // Reset subagent counter for new query
+    this.deps.getSubagentManager().resetSpawnedCount();
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true; // Reset auto-scroll based on setting
     const streamGeneration = state.bumpStreamGeneration();
 
@@ -324,7 +326,7 @@ export class InputController {
 
         streamController.finalizeCurrentThinkingBlock(assistantMsg);
         streamController.finalizeCurrentTextBlock(assistantMsg);
-        state.activeSubagents.clear();
+        this.deps.getSubagentManager().resetStreamingState();
 
         // Auto-hide completed status panels on response end
         // Panels reappear only when new TodoWrite/Task tool is called

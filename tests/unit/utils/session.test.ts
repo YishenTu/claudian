@@ -1,7 +1,3 @@
-/**
- * Tests for session utilities - Session recovery and history reconstruction
- */
-
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import {
   buildContextFromHistory,

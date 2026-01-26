@@ -1,7 +1,3 @@
-/**
- * Tests for TodoListRenderer - TodoWrite input parsing
- */
-
 import { extractLastTodosFromMessages, parseTodoInput } from '@/features/chat/rendering/TodoListRenderer';
 
 describe('TodoListRenderer', () => {

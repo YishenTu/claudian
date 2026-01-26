@@ -5,7 +5,7 @@ import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
-import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
+import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
 import type { ExternalContextSelector, FileContextManager, ImageContextManager, McpServerSelector, StatusPanel } from '../ui';
@@ -20,7 +20,7 @@ export interface ConversationControllerDeps {
   plugin: ClaudianPlugin;
   state: ChatState;
   renderer: MessageRenderer;
-  asyncSubagentManager: AsyncSubagentManager;
+  subagentManager: SubagentManager;
   getHistoryDropdown: () => HTMLElement | null;
   getWelcomeEl: () => HTMLElement | null;
   setWelcomeEl: (el: HTMLElement | null) => void;
@@ -32,9 +32,7 @@ export interface ConversationControllerDeps {
   getExternalContextSelector: () => ExternalContextSelector | null;
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
-  /** Get StatusPanel for remounting after messagesEl.empty(). */
   getStatusPanel: () => StatusPanel | null;
-  /** Get the agent service (for multi-tab, returns tab's service). */
   getAgentService?: () => ClaudianService | null;
 }
 
@@ -62,8 +60,8 @@ export class ConversationController {
    * first message is sent. This prevents empty conversations cluttering history.
    */
   async createNew(options: { force?: boolean } = {}): Promise<void> {
-    const { plugin, state, asyncSubagentManager } = this.deps;
-    const force = options.force === true;
+    const { plugin, state, subagentManager } = this.deps;
+    const force = !!options.force;
     if (state.isStreaming && !force) return;
     if (state.isCreatingConversation) return;
     if (state.isSwitchingConversation) return;
@@ -83,8 +81,8 @@ export class ConversationController {
         await this.save();
       }
 
-      asyncSubagentManager.orphanAllActive();
-      state.asyncSubagentStates.clear();
+      subagentManager.orphanAllActive();
+      subagentManager.clear();
 
       // Clear streaming state and related DOM references
       cleanupThinkingBlock(state.currentThinkingState);
@@ -93,7 +91,6 @@ export class ConversationController {
       state.currentTextContent = '';
       state.currentThinkingState = null;
       state.toolCallElements.clear();
-      state.activeSubagents.clear();
       state.writeEditStates.clear();
       state.isStreaming = false;
 
@@ -245,7 +242,7 @@ export class ConversationController {
 
   /** Switches to a different conversation. */
   async switchTo(id: string): Promise<void> {
-    const { plugin, state, renderer, asyncSubagentManager } = this.deps;
+    const { plugin, state, renderer, subagentManager } = this.deps;
 
     if (id === state.currentConversationId) return;
     if (state.isStreaming) return;
@@ -257,8 +254,8 @@ export class ConversationController {
     try {
       await this.save();
 
-      asyncSubagentManager.orphanAllActive();
-      state.asyncSubagentStates.clear();
+      subagentManager.orphanAllActive();
+      subagentManager.clear();
 
       const conversation = await plugin.switchConversation(id);
       if (!conversation) {

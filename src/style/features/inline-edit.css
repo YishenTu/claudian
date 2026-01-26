@@ -69,10 +69,10 @@
   height: 14px;
   margin-top: -7px;
   border: 2px solid var(--background-modifier-border);
-  border-top-color: #D97757;
+  border-top-color: var(--claudian-brand);
   border-radius: 50%;
   box-sizing: border-box;
-  animation: claudian-inline-spin 0.8s linear infinite;
+  animation: claudian-spin 0.8s linear infinite;
 }
 
 /* Agent reply - shown when agent asks clarifying question */

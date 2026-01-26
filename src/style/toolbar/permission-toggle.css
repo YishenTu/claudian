@@ -42,10 +42,10 @@
 }
 
 .claudian-toggle-switch.active {
-  background: rgba(217, 119, 87, 0.3);
+  background: rgba(var(--claudian-brand-rgb), 0.3);
 }
 
 .claudian-toggle-switch.active::after {
   transform: translateX(14px);
-  background: #D97757;
+  background: var(--claudian-brand);
 }

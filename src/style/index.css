@@ -2,6 +2,7 @@
 /* Add new modules here to include them in the build. */
 
 /* Base */
+@import "./base/variables.css";
 @import "./base/container.css";
 @import "./base/animations.css";
 

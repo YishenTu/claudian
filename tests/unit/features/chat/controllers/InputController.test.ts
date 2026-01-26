@@ -1,7 +1,3 @@
-/**
- * Tests for InputController - Message Queue and Input Handling
- */
-
 import { Notice } from 'obsidian';
 
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
@@ -138,6 +134,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     generateId: () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     resetInputHeight: jest.fn(),
     getAgentService: () => mockAgentService as any,
+    getSubagentManager: () => ({ resetSpawnedCount: jest.fn(), resetStreamingState: jest.fn() }) as any,
     mockAgentService,
     ...overrides,
   };

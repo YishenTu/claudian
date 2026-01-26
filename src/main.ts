@@ -9,8 +9,7 @@ import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
 import { AgentManager } from './core/agents';
-import { McpServerManager } from './core/mcp';
-import { McpService } from './core/mcp/McpService';
+import { McpServerManager, McpService } from './core/mcp';
 import { loadPluginCommands, PluginManager, PluginStorage } from './core/plugins';
 import { StorageService } from './core/storage';
 import type {

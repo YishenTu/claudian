@@ -17,7 +17,6 @@ import type { SDKMessage, SDKToolUseResult, UsageInfo } from '../types';
 import { getContextWindowSize } from '../types';
 import type { TransformEvent } from './types';
 
-/** Options for transformSDKMessage. */
 export interface TransformOptions {
   /** The intended model from settings/query (used for context window size). */
   intendedModel?: string;

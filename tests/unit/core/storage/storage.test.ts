@@ -1,9 +1,3 @@
-/**
- * Storage module tests.
- *
- * Tests for SessionStorage (JSONL), SlashCommandStorage, and StorageService (migration).
- */
-
 import type { ChatMessage, Conversation, SlashCommand } from '@/core/types';
 import { parseSlashCommandContent } from '@/utils/slashCommand';
 

@@ -100,8 +100,8 @@ export function matchesRulePattern(
   // No pattern means match all
   if (!rulePattern) return true;
 
-  const normalizedAction = normalizeMatchPattern(actionPattern);
-  const normalizedRule = normalizeMatchPattern(rulePattern);
+  const normalizedAction = actionPattern.replace(/\\/g, '/');
+  const normalizedRule = rulePattern.replace(/\\/g, '/');
 
   // Wildcard matches everything
   if (normalizedRule === '*') return true;
@@ -144,9 +144,6 @@ export function matchesRulePattern(
   return false;
 }
 
-function normalizeMatchPattern(value: string): string {
-  return value.replace(/\\/g, '/');
-}
 
 function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
   if (!actionPath.startsWith(approvedPath)) {

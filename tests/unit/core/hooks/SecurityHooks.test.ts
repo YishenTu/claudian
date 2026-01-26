@@ -1,7 +1,3 @@
-/**
- * Tests for Security Hooks - Blocklist and Vault Restriction
- */
-
 import {
   type BlocklistContext,
   createBlocklistHook,

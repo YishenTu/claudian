@@ -1,81 +1,41 @@
 /* Accessibility - Focus Visible Styles */
 
+/* outline + offset + border-radius */
 .claudian-tool-header:focus-visible,
 .claudian-thinking-header:focus-visible,
-.claudian-subagent-header:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.claudian-header-btn:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.claudian-action-btn:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
-.claudian-history-item-content:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
-  border-radius: 4px;
-}
-
-.claudian-approval-btn:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
-.claudian-toggle-switch:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
-.claudian-model-btn:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
+.claudian-subagent-header:focus-visible,
+.claudian-header-btn:focus-visible,
+.claudian-model-btn:focus-visible,
 .claudian-thinking-current:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-.claudian-file-chip:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
-.claudian-image-chip:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
+/* outline + offset only */
+.claudian-action-btn:focus-visible,
+.claudian-approval-btn:focus-visible,
+.claudian-toggle-switch:focus-visible,
+.claudian-file-chip:focus-visible,
+.claudian-image-chip:focus-visible,
 .claudian-file-chip-remove:focus-visible,
 .claudian-image-remove:focus-visible,
-.claudian-image-modal-close:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
+.claudian-image-modal-close:focus-visible,
 .claudian-approved-remove-btn:focus-visible,
 .claudian-save-env-btn:focus-visible,
 .claudian-restore-snippet-btn:focus-visible,
 .claudian-edit-snippet-btn:focus-visible,
 .claudian-delete-snippet-btn:focus-visible,
 .claudian-cancel-btn:focus-visible,
-.claudian-save-btn:focus-visible {
+.claudian-save-btn:focus-visible,
+.claudian-code-lang-label:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
 
-.claudian-code-lang-label:focus-visible {
+/* outline + negative offset + border-radius */
+.claudian-history-item-content:focus-visible {
   outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
+  border-radius: 4px;
 }

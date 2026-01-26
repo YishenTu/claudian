@@ -2,7 +2,6 @@ import { collapseElement, setupCollapsible } from './collapsible';
 
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
-/** State for a streaming thinking block. */
 export interface ThinkingBlockState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
@@ -13,7 +12,6 @@ export interface ThinkingBlockState {
   isExpanded: boolean;
 }
 
-/** Create a streaming thinking block. Collapsed by default. */
 export function createThinkingBlock(
   parentEl: HTMLElement,
   renderContent: RenderContentFn
@@ -58,7 +56,6 @@ export function createThinkingBlock(
   return state;
 }
 
-/** Append content to a streaming thinking block. */
 export async function appendThinkingContent(
   state: ThinkingBlockState,
   content: string,
@@ -68,7 +65,6 @@ export async function appendThinkingContent(
   await renderContent(state.contentEl, state.content);
 }
 
-/** Finalize a thinking block (stop timer, update label, collapse). */
 export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Stop the timer
   if (state.timerInterval) {
@@ -91,14 +87,12 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   return durationSeconds;
 }
 
-/** Clean up a thinking block state (call on view close). */
 export function cleanupThinkingBlock(state: ThinkingBlockState | null) {
   if (state?.timerInterval) {
     clearInterval(state.timerInterval);
   }
 }
 
-/** Render a stored thinking block (non-streaming, collapsed by default). */
 export function renderStoredThinkingBlock(
   parentEl: HTMLElement,
   content: string,

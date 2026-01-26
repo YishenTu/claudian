@@ -407,7 +407,7 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   if (sdkMsg.type !== 'user') return false;
   return 'toolUseResult' in sdkMsg ||
          'sourceToolUseID' in sdkMsg ||
-         sdkMsg.isMeta === true;
+         !!sdkMsg.isMeta;
 }
 
 export interface SDKSessionLoadResult {

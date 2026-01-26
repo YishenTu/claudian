@@ -1,7 +1,3 @@
-/**
- * Tests for WriteEditRenderer - Write/Edit tool UI with diff view
- */
-
 import type { ToolCallInfo, ToolDiffData } from '@/core/types';
 import {
   createWriteEditBlock,

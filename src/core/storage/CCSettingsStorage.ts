@@ -253,7 +253,7 @@ export class CCSettingsStorage {
   async getExplicitlyEnabledPluginIds(): Promise<string[]> {
     const enabledPlugins = await this.getEnabledPlugins();
     return Object.entries(enabledPlugins)
-      .filter(([, enabled]) => enabled === true)
+      .filter(([, enabled]) => enabled)
       .map(([id]) => id);
   }
 

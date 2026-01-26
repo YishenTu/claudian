@@ -1,7 +1,3 @@
-/**
- * Tests for built-in slash commands.
- */
-
 import {
   BUILT_IN_COMMANDS,
   detectBuiltInCommand,

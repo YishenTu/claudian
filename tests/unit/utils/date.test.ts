@@ -1,7 +1,3 @@
-/**
- * Unit tests for date utilities.
- */
-
 import { formatDurationMmSs } from '../../../src/utils/date';
 
 describe('formatDurationMmSs', () => {

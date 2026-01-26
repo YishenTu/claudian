@@ -1,9 +1,3 @@
-/**
- * Tests for SlashCommandManager - command registry for dropdown UI.
- *
- * SDK handles all command expansion. This class only manages the registry.
- */
-
 import { SlashCommandManager } from '@/core/commands/SlashCommandManager';
 import type { SlashCommand } from '@/core/types';
 

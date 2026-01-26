@@ -1,7 +1,3 @@
-/**
- * Tests for ConversationController - Conversation Lifecycle
- */
-
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
@@ -103,8 +99,9 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     renderer: {
       renderMessages: jest.fn().mockReturnValue(createMockElement()),
     } as any,
-    asyncSubagentManager: {
+    subagentManager: {
       orphanAllActive: jest.fn(),
+      clear: jest.fn(),
     } as any,
     getHistoryDropdown: () => historyDropdown as any,
     getWelcomeEl: () => welcomeEl,

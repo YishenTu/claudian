@@ -1,7 +1,3 @@
-/**
- * Tests for ToolCallRenderer - Tool call UI elements
- */
-
 import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';

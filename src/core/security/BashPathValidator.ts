@@ -64,7 +64,6 @@ export function splitBashTokensIntoSegments(tokens: string[]): string[][] {
   return segments;
 }
 
-/** Get the command name and index from a bash segment, skipping wrappers like sudo/env */
 export function getBashSegmentCommandName(segment: string[]): { cmdName: string; cmdIndex: number } {
   const wrappers = new Set(['command', 'env', 'sudo']);
   let cmdIndex = 0;

@@ -1,7 +1,3 @@
-/**
- * Tests for TitleGenerationService - Generating conversation titles with AI
- */
-
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,

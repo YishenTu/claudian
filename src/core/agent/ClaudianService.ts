@@ -76,7 +76,6 @@ export type ApprovalCallback = (
   description: string
 ) => Promise<'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel'>;
 
-/** Options for query execution with optional overrides. */
 export interface QueryOptions {
   allowedTools?: string[];
   model?: string;
@@ -90,7 +89,6 @@ export interface QueryOptions {
   externalContextPaths?: string[];
 }
 
-/** Options for ensureReady(). */
 export interface EnsureReadyOptions {
   /** Session ID to resume. Auto-resolved from sessionManager if not provided. */
   sessionId?: string;
@@ -102,7 +100,6 @@ export interface EnsureReadyOptions {
   preserveHandlers?: boolean;
 }
 
-/** Service for interacting with Claude via the Agent SDK. */
 export class ClaudianService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;

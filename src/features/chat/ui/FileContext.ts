@@ -2,7 +2,7 @@ import type { App, EventRef } from 'obsidian';
 import { Notice, TFile } from 'obsidian';
 
 import type { AgentManager } from '../../../core/agents';
-import type { McpService } from '../../../core/mcp/McpService';
+import type { McpService } from '../../../core/mcp';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import { FileContextState } from './file-context/state/FileContextState';
@@ -205,7 +205,6 @@ export class FileContextManager {
     return this.mentionDropdown.containsElement(el);
   }
 
-  /** Transform context file mentions (e.g., @folder/file.ts) to absolute paths. */
   transformContextMentions(text: string): string {
     return this.state.transformContextMentions(text);
   }
@@ -283,19 +282,16 @@ export class FileContextManager {
   // MCP Server Support
   // ========================================
 
-  /** Set the MCP service for @-mention autocomplete. */
   setMcpService(service: McpService | null): void {
     this.mcpService = service;
     this.mentionDropdown.setMcpService(service);
   }
 
-  /** Set the agent manager for @-mention autocomplete. */
   setAgentService(agentManager: AgentManager | null): void {
     // AgentManager structurally satisfies AgentMentionProvider
     this.mentionDropdown.setAgentService(agentManager);
   }
 
-  /** Set callback for when MCP mentions change (for McpServerSelector integration). */
   setOnMcpMentionChange(callback: (servers: Set<string>) => void): void {
     this.onMcpMentionChange = callback;
   }
@@ -308,17 +304,14 @@ export class FileContextManager {
     this.mentionDropdown.preScanExternalContexts();
   }
 
-  /** Get currently @-mentioned MCP servers. */
   getMentionedMcpServers(): Set<string> {
     return this.state.getMentionedMcpServers();
   }
 
-  /** Clear MCP mentions (call on new conversation). */
   clearMcpMentions(): void {
     this.state.clearMcpMentions();
   }
 
-  /** Update MCP mentions from input text. */
   updateMcpMentionsFromText(text: string): void {
     this.mentionDropdown.updateMcpMentionsFromText(text);
   }

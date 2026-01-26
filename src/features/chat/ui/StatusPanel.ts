@@ -1,8 +1,7 @@
 import { setIcon } from 'obsidian';
 
 import type { TodoItem } from '../../../core/tools';
-import { getToolIcon } from '../../../core/tools/toolIcons';
-import { TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { getToolIcon, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools';
 import type { AsyncSubagentStatus } from '../../../core/types';
 import { renderTodoItems } from '../rendering/todoUtils';
 

@@ -1,12 +1,10 @@
 import type { UsageInfo } from '../../../core/types';
 import type {
-  AsyncSubagentState,
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
   PendingToolCall,
   QueuedMessage,
-  SubagentState,
   ThinkingBlockState,
   TodoItem,
   WriteEditState,
@@ -30,14 +28,10 @@ function createInitialState(): ChatStateData {
     queueIndicatorEl: null,
     thinkingIndicatorTimeout: null,
     toolCallElements: new Map(),
-    activeSubagents: new Map(),
-    asyncSubagentStates: new Map(),
     writeEditStates: new Map(),
     pendingTools: new Map(),
-    pendingTaskTools: new Map(),
     usage: null,
     ignoreUsageUpdates: false,
-    subagentsSpawnedThisStream: 0,
     currentTodos: null,
     needsAttention: false,
     autoScrollEnabled: true, // Default; controllers will override based on settings
@@ -218,19 +212,11 @@ export class ChatState {
   }
 
   // ============================================
-  // Tool and Subagent Tracking Maps (mutable references)
+  // Tool Tracking Maps (mutable references)
   // ============================================
 
   get toolCallElements(): Map<string, HTMLElement> {
     return this.state.toolCallElements;
-  }
-
-  get activeSubagents(): Map<string, SubagentState> {
-    return this.state.activeSubagents;
-  }
-
-  get asyncSubagentStates(): Map<string, AsyncSubagentState> {
-    return this.state.asyncSubagentStates;
   }
 
   get writeEditStates(): Map<string, WriteEditState> {
@@ -239,10 +225,6 @@ export class ChatState {
 
   get pendingTools(): Map<string, PendingToolCall> {
     return this.state.pendingTools;
-  }
-
-  get pendingTaskTools(): Map<string, PendingToolCall> {
-    return this.state.pendingTaskTools;
   }
 
   // ============================================
@@ -264,14 +246,6 @@ export class ChatState {
 
   set ignoreUsageUpdates(value: boolean) {
     this.state.ignoreUsageUpdates = value;
-  }
-
-  get subagentsSpawnedThisStream(): number {
-    return this.state.subagentsSpawnedThisStream;
-  }
-
-  set subagentsSpawnedThisStream(value: number) {
-    this.state.subagentsSpawnedThisStream = value;
   }
 
   // ============================================
@@ -368,11 +342,8 @@ export class ChatState {
 
   clearMaps(): void {
     this.state.toolCallElements.clear();
-    this.state.activeSubagents.clear();
-    this.state.asyncSubagentStates.clear();
     this.state.writeEditStates.clear();
     this.state.pendingTools.clear();
-    this.state.pendingTaskTools.clear();
   }
 
   resetForNewConversation(): void {

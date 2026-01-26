@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import { Modal, setIcon } from 'obsidian';
 
-import { getToolIcon } from '../../core/tools/toolIcons';
+import { getToolIcon } from '../../core/tools';
 
 export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
 

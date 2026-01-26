@@ -118,13 +118,6 @@ function stripSurroundingQuotes(value: string): string {
   return value;
 }
 
-function isPathPlaceholder(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  if (trimmed === '$PATH' || trimmed === '${PATH}') return true;
-  return trimmed.toUpperCase() === '%PATH%';
-}
-
 export function parsePathEntries(pathValue?: string): string[] {
   if (!pathValue) {
     return [];
@@ -135,7 +128,11 @@ export function parsePathEntries(pathValue?: string): string[] {
   return pathValue
     .split(delimiter)
     .map(segment => stripSurroundingQuotes(segment.trim()))
-    .filter(segment => segment.length > 0 && !isPathPlaceholder(segment))
+    .filter(segment => {
+      if (!segment) return false;
+      const upper = segment.toUpperCase();
+      return upper !== '$PATH' && upper !== '${PATH}' && upper !== '%PATH%';
+    })
     .map(segment => translateMsysPath(expandHomePath(segment)));
 }
 

@@ -1,9 +1,3 @@
-/**
- * i18n - Internationalization Module
- *
- * Central entry point for all internationalization functionality
- */
-
 // Types
 export type { LocaleInfo } from './constants';
 export type { Locale, TranslationKey } from './types';

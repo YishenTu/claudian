@@ -28,7 +28,6 @@ export const COMMANDS_PATH = '.claude/commands';
 export class SlashCommandStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
-  /** Load all commands from .claude/commands/ recursively. */
   async loadAll(): Promise<SlashCommand[]> {
     const commands: SlashCommand[] = [];
 
@@ -113,7 +112,6 @@ export class SlashCommandStorage {
     };
   }
 
-  /** Convert a file path to a command ID (reversible encoding). */
   private filePathToId(filePath: string): string {
     // Encoding: escape `-` as `-_`, then replace `/` with `--`
     // This is unambiguous and reversible:
@@ -130,7 +128,6 @@ export class SlashCommandStorage {
     return `cmd-${escaped}`;
   }
 
-  /** Convert a file path to a command name. */
   private filePathToName(filePath: string): string {
     // .claude/commands/nested/foo.md -> nested/foo
     return filePath

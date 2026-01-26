@@ -1,5 +1,5 @@
 .claudian-thinking {
-  color: #D97757;
+  color: var(--claudian-brand);
   font-style: italic;
   padding: 4px 0;
   text-align: left;
@@ -45,7 +45,7 @@
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: #D97757;
+  color: var(--claudian-brand);
 }
 
 /* Thinking block content - tree-branch style */

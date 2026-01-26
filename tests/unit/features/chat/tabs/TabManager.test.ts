@@ -1,7 +1,3 @@
-/**
- * Tests for TabManager - Multi-tab coordination and lifecycle.
- */
-
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import {
   DEFAULT_MAX_TABS,

@@ -85,7 +85,7 @@
 .claudian-mcp-test-spinner {
   width: 20px;
   height: 20px;
-  animation: claudian-mcp-spin 1s linear infinite;
+  animation: claudian-spin 1s linear infinite;
 }
 
 .claudian-mcp-test-spinner svg {

@@ -1,5 +1,3 @@
-/** Claudian slash command core - barrel export. */
-
 export {
   BUILT_IN_COMMANDS,
   type BuiltInCommand,

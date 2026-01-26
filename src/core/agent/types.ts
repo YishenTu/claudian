@@ -78,19 +78,13 @@ export interface ResponseHandler {
   onChunk: (chunk: StreamChunk) => void;
   onDone: () => void;
   onError: (error: Error) => void;
-  /** Whether a stream text event was seen (read-only, use markStreamTextSeen/resetStreamText). */
   readonly sawStreamText: boolean;
-  /** Whether any chunk was seen (read-only, use markChunkSeen). */
   readonly sawAnyChunk: boolean;
-  /** Mark that a stream text event was seen. */
   markStreamTextSeen(): void;
-  /** Reset the stream text flag (call after turn completion). */
   resetStreamText(): void;
-  /** Mark that a chunk was seen (for crash recovery detection). */
   markChunkSeen(): void;
 }
 
-/** Options for creating a ResponseHandler. */
 export interface ResponseHandlerOptions {
   id: string;
   onChunk: (chunk: StreamChunk) => void;
@@ -98,7 +92,6 @@ export interface ResponseHandlerOptions {
   onError: (error: Error) => void;
 }
 
-/** Creates a ResponseHandler with encapsulated mutable state. */
 export function createResponseHandler(options: ResponseHandlerOptions): ResponseHandler {
   let _sawStreamText = false;
   let _sawAnyChunk = false;
@@ -184,7 +177,6 @@ export function isTurnCompleteMessage(message: SDKMessage): boolean {
   return messageType === 'result' || messageType === 'error';
 }
 
-/** Compute a stable key for system prompt inputs. */
 export function computeSystemPromptKey(settings: SystemPromptSettings): string {
   // Include only fields surfaced in the system prompt to avoid stale cache hits.
   // Note: Agents are passed via Options.agents, not system prompt, so not included here.

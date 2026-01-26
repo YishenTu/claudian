@@ -35,7 +35,6 @@ export interface McpTestResult {
   error?: string;
 }
 
-/** Extract error message from MCP JSON-RPC response. */
 function getMcpError(response: Record<string, unknown>): string | undefined {
   const error = response.error as { message?: string } | undefined;
   return error?.message;

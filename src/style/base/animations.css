@@ -18,11 +18,11 @@
 @keyframes external-context-glow {
   0%,
   100% {
-    filter: drop-shadow(0 0 2px rgba(217, 119, 87, 0.4));
+    filter: drop-shadow(0 0 2px rgba(var(--claudian-brand-rgb), 0.4));
   }
 
   50% {
-    filter: drop-shadow(0 0 6px rgba(217, 119, 87, 0.8));
+    filter: drop-shadow(0 0 6px rgba(var(--claudian-brand-rgb), 0.8));
   }
 }
 
@@ -37,20 +37,7 @@
   }
 }
 
-/* Scoped spin aliases (referenced by inline-edit, instruction, mcp-modal) */
-@keyframes claudian-inline-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes claudian-instruction-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes claudian-mcp-spin {
+@keyframes claudian-spin {
   to {
     transform: rotate(360deg);
   }

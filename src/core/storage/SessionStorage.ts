@@ -106,7 +106,6 @@ export class SessionStorage {
     return metas;
   }
 
-  /** Load all conversations (full data). Returns conversations and count of failed loads. */
   async loadAllConversations(): Promise<{ conversations: Conversation[]; failedCount: number }> {
     const conversations: Conversation[] = [];
     let failedCount = 0;
@@ -147,7 +146,6 @@ export class SessionStorage {
     return `${SESSIONS_PATH}/${id}.jsonl`;
   }
 
-  /** Load only metadata from a session file (first line). */
   private async loadMetaOnly(filePath: string): Promise<ConversationMeta | null> {
     const content = await this.adapter.read(filePath);
     // Handle both Unix (LF) and Windows (CRLF) line endings
@@ -289,14 +287,12 @@ export class SessionStorage {
     return `${SESSIONS_PATH}/${id}.meta.json`;
   }
 
-  /** Save session metadata overlay for SDK-native storage. */
   async saveMetadata(metadata: SessionMetadata): Promise<void> {
     const filePath = this.getMetadataPath(metadata.id);
     const content = JSON.stringify(metadata, null, 2);
     await this.adapter.write(filePath, content);
   }
 
-  /** Load session metadata for SDK-native storage. */
   async loadMetadata(id: string): Promise<SessionMetadata | null> {
     const filePath = this.getMetadataPath(id);
 
@@ -393,7 +389,6 @@ export class SessionStorage {
     );
   }
 
-  /** Convert a Conversation to SessionMetadata for native storage. */
   toSessionMetadata(conversation: Conversation): SessionMetadata {
     const subagentData = this.extractSubagentData(conversation.messages);
 

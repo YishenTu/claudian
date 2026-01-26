@@ -1,7 +1,3 @@
-/**
- * Tests for i18n - Internationalization service
- */
-
 import {
   getAvailableLocales,
   getLocale,

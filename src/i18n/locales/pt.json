@@ -52,41 +52,6 @@
       "desc": "Um mapeamento por linha. Formato: \"map <tecla> <ação>\" (ações: scrollUp, scrollDown, focusInput)."
     },
     "hotkeys": "Atalhos",
-    "inlineEditHotkey": {
-      "name": "Atalho de edição em linha",
-      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
-      "descWithKey": "Atual: {hotkey}",
-      "btnSet": "Definir atalho",
-      "btnChange": "Alterar"
-    },
-    "openChatHotkey": {
-      "name": "Atalho para abrir chat",
-      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
-      "descWithKey": "Atual: {hotkey}",
-      "btnSet": "Definir atalho",
-      "btnChange": "Alterar"
-    },
-    "newTabHotkey": {
-      "name": "Atalho nova aba",
-      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
-      "descWithKey": "Atual: {hotkey}",
-      "btnSet": "Definir atalho",
-      "btnChange": "Alterar"
-    },
-    "newSessionHotkey": {
-      "name": "Atalho nova sessão",
-      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
-      "descWithKey": "Atual: {hotkey}",
-      "btnSet": "Definir atalho",
-      "btnChange": "Alterar"
-    },
-    "closeTabHotkey": {
-      "name": "Atalho fechar aba",
-      "descNoKey": "Nenhum atalho definido. Clique para configurar.",
-      "descWithKey": "Atual: {hotkey}",
-      "btnSet": "Definir atalho",
-      "btnChange": "Alterar"
-    },
     "slashCommands": {
       "name": "Comandos slash",
       "desc": "Crie modelos de prompts personalizados acionados por /command. Use $ARGUMENTS para todos os argumentos, $1/$2 para argumentos posicionais, @file para conteúdo de arquivo e !`bash` para saída de comando."
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Adicionar snippet",
-      "editBtn": "Editar",
-      "deleteBtn": "Excluir",
-      "useBtn": "Usar",
       "noSnippets": "Nenhum snippet de ambiente salvo. Clique em + para salvar sua configuração atual.",
       "nameRequired": "Por favor, insira um nome para o snippet",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "Limites de contexto personalizados",
       "desc": "Defina tamanhos de janela de contexto para seus modelos personalizados. Deixe vazio para usar o padrão (200k tokens).",
-      "modelLabel": "Limite de contexto {model}",
-      "modelDesc": "Janela de contexto para {modelId}. Use formatos como 256k, 1m ou número exato de tokens.",
       "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
     },
     "advanced": "Avançado",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "Máximo de abas de chat",
       "desc": "Número máximo de abas de chat simultâneas (3-10). Cada aba usa uma sessão Claude separada.",
-      "warning": "Mais de 5 abas pode afetar o desempenho e o uso de memória.",
-      "range": "{min} - {max}"
+      "warning": "Mais de 5 abas pode afetar o desempenho e o uso de memória."
     },
     "tabBarPosition": {
       "name": "Posição da barra de abas",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "Idioma",
-      "desc": "Alterar o idioma de exibição da interface do plugin",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "Alterar o idioma de exibição da interface do plugin"
     }
   }
 }

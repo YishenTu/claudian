@@ -16,7 +16,6 @@ import { McpSettingsManager } from './ui/McpSettingsManager';
 import { PluginSettingsManager } from './ui/PluginSettingsManager';
 import { SlashCommandSettings } from './ui/SlashCommandSettings';
 
-/** Format a hotkey for display (e.g., "Cmd+Shift+E" on Mac, "Ctrl+Shift+E" on Windows). */
 function formatHotkey(hotkey: { modifiers: string[]; key: string }): string {
   const isMac = navigator.platform.includes('Mac');
   const modMap: Record<string, string> = isMac

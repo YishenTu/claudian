@@ -37,8 +37,7 @@ let currentLocale: Locale = DEFAULT_LOCALE;
  * Get a translation by key with optional parameters
  */
 export function t(key: TranslationKey, params?: Record<string, string | number>): string {
-  const locale = currentLocale;
-  const dict = translations[locale];
+  const dict = translations[currentLocale];
 
   const keys = key.split('.');
   let value: any = dict;
@@ -47,7 +46,7 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
     if (value && typeof value === 'object' && k in value) {
       value = value[k];
     } else {
-      if (locale !== DEFAULT_LOCALE) {
+      if (currentLocale !== DEFAULT_LOCALE) {
         return tFallback(key, params);
       }
       return key;

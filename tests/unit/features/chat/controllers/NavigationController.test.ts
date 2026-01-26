@@ -1,7 +1,3 @@
-/**
- * Tests for NavigationController - Vim-style keyboard navigation
- */
-
 import { NavigationController, type NavigationControllerDeps } from '@/features/chat/controllers/NavigationController';
 
 type Listener = (event: any) => void;

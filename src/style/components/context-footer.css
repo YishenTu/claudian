@@ -54,13 +54,13 @@
 }
 
 .claudian-meter-fill {
-  stroke: #D97757;
+  stroke: var(--claudian-brand);
   transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
 }
 
 .claudian-context-meter-percent {
   font-size: 11px;
-  color: #D97757;
+  color: var(--claudian-brand);
   min-width: 24px;
   text-align: right;
   transition: color 0.3s ease;

@@ -1,9 +1,3 @@
-/**
- * Slash command utilities tests.
- *
- * Tests for parseSlashCommandContent including YAML block scalar support.
- */
-
 import { parseSlashCommandContent } from '@/utils/slashCommand';
 
 describe('parseSlashCommandContent', () => {

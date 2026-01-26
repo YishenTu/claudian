@@ -52,41 +52,6 @@
       "desc": "每行一个映射。格式：\"map <键> <动作>\"（动作：scrollUp, scrollDown, focusInput）。"
     },
     "hotkeys": "快捷键",
-    "inlineEditHotkey": {
-      "name": "内联编辑快捷键",
-      "descNoKey": "未设置快捷键。点击配置。",
-      "descWithKey": "当前：{hotkey}",
-      "btnSet": "设置快捷键",
-      "btnChange": "更改"
-    },
-    "openChatHotkey": {
-      "name": "打开聊天快捷键",
-      "descNoKey": "未设置快捷键。点击配置。",
-      "descWithKey": "当前：{hotkey}",
-      "btnSet": "设置快捷键",
-      "btnChange": "更改"
-    },
-    "newTabHotkey": {
-      "name": "新建标签页快捷键",
-      "descNoKey": "未设置快捷键。点击配置。",
-      "descWithKey": "当前：{hotkey}",
-      "btnSet": "设置快捷键",
-      "btnChange": "更改"
-    },
-    "newSessionHotkey": {
-      "name": "新建会话快捷键",
-      "descNoKey": "未设置快捷键。点击配置。",
-      "descWithKey": "当前：{hotkey}",
-      "btnSet": "设置快捷键",
-      "btnChange": "更改"
-    },
-    "closeTabHotkey": {
-      "name": "关闭标签页快捷键",
-      "descNoKey": "未设置快捷键。点击配置。",
-      "descWithKey": "当前：{hotkey}",
-      "btnSet": "设置快捷键",
-      "btnChange": "更改"
-    },
     "slashCommands": {
       "name": "斜杠命令",
       "desc": "创建由 /command 触发的自定义提示模板。使用 $ARGUMENTS 获取所有参数，$1/$2 获取位置参数，@file 获取文件内容，!`bash` 获取命令输出。"
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "片段",
       "addBtn": "添加片段",
-      "editBtn": "编辑",
-      "deleteBtn": "删除",
-      "useBtn": "使用",
       "noSnippets": "尚无保存的环境变量片段。点击 + 保存当前配置。",
       "nameRequired": "请输入片段名称",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "自定义上下文限制",
       "desc": "为您的自定义模型设置上下文窗口大小。留空使用默认值（200k 令牌）。",
-      "modelLabel": "{model} 上下文限制",
-      "modelDesc": "{modelId} 的上下文窗口。使用 256k、1m 或精确令牌数等格式。",
       "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。"
     },
     "advanced": "高级",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "最大聊天标签数",
       "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",
-      "warning": "超过 5 个标签可能会影响性能和内存使用。",
-      "range": "{min} - {max}"
+      "warning": "超过 5 个标签可能会影响性能和内存使用。"
     },
     "tabBarPosition": {
       "name": "标签栏位置",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "语言",
-      "desc": "更改插件界面的显示语言",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "更改插件界面的显示语言"
     }
   }
 }
