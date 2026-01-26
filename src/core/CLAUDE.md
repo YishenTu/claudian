@@ -9,7 +9,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `agent/` | Claude Agent SDK wrapper | `ClaudianService`, `SessionManager`, `QueryOptionsBuilder`, `MessageChannel`, `customSpawn` |
 | `agents/` | Custom agent discovery | `AgentManager`, `AgentStorage` |
 | `commands/` | Slash command expansion | `SlashCommandManager`, `builtInCommands` |
-| `hooks/` | Pre/Post tool hooks | `SecurityHooks` |
+| `hooks/` | Security hooks | `SecurityHooks` |
 | `images/` | Image caching | SHA-256 dedup, base64 encoding |
 | `mcp/` | Model Context Protocol | `McpServerManager`, `McpService`, `McpTester` |
 | `plugins/` | Claude Code plugins | `PluginManager`, `PluginStorage` |
@@ -18,7 +18,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `security/` | Access control | `ApprovalManager`, `BashPathValidator`, `BlocklistChecker` |
 | `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
 | `tools/` | Tool utilities | `toolNames`, `toolIcons`, `toolInput`, `todo` |
-| `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat`, `tools`, `models`, `sdk`, `plugins` |
+| `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat`, `tools`, `models`, `sdk`, `plugins`, `diff` |
 
 ## Dependency Rules
 

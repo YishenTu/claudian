@@ -26,7 +26,7 @@ npm run test:watch # Run tests in watch mode
 | **features/settings** | Settings tab | UI components for all settings |
 | **shared** | Reusable UI | Dropdowns, modals, @-mention, icons |
 | **i18n** | Internationalization | 10 locales |
-| **utils** | Utility functions | date, path, env, editor, session, markdown |
+| **utils** | Utility functions | date, path, env, editor, session, markdown, diff, context, sdkSession |
 | **style** | Modular CSS | See [`src/style/CLAUDE.md`](src/style/CLAUDE.md) |
 
 ## Tests
