@@ -221,9 +221,7 @@ export class QueryOptionsBuilder {
       options.betas = resolved.betas;
     }
 
-    if (ctx.settings.enableChrome) {
-      options.extraArgs = { ...options.extraArgs, chrome: null };
-    }
+    QueryOptionsBuilder.applyExtraArgs(options, ctx.settings);
 
     options.disallowedTools = [
       ...ctx.mcpManager.getAllDisallowedMcpTools(),
@@ -290,9 +288,7 @@ export class QueryOptionsBuilder {
       options.betas = resolved.betas;
     }
 
-    if (ctx.settings.enableChrome) {
-      options.extraArgs = { ...options.extraArgs, chrome: null };
-    }
+    QueryOptionsBuilder.applyExtraArgs(options, ctx.settings);
 
     const mcpMentions = ctx.mcpMentions || new Set<string>();
     const uiEnabledServers = ctx.enabledMcpServers || new Set<string>();
@@ -375,6 +371,12 @@ export class QueryOptionsBuilder {
       if (canUseTool) {
         options.canUseTool = canUseTool;
       }
+    }
+  }
+
+  private static applyExtraArgs(options: Options, settings: ClaudianSettings): void {
+    if (settings.enableChrome) {
+      options.extraArgs = { ...options.extraArgs, chrome: null };
     }
   }
 

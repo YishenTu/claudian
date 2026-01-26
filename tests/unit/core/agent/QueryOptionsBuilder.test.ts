@@ -93,6 +93,27 @@ function createMockSettings(overrides: Partial<ClaudianSettings> = {}): Claudian
   } as ClaudianSettings;
 }
 
+function createMockPersistentQueryConfig(
+  overrides: Partial<PersistentQueryConfig> = {}
+): PersistentQueryConfig {
+  return {
+    model: 'sonnet',
+    thinkingTokens: null,
+    permissionMode: 'yolo',
+    systemPromptKey: 'key1',
+    disallowedToolsKey: '',
+    mcpServersKey: '',
+    pluginsKey: '',
+    externalContextPaths: [],
+    allowedExportPaths: [],
+    settingSources: 'project',
+    claudeCliPath: '/mock/claude',
+    show1MModel: false,
+    enableChrome: false,
+    ...overrides,
+  };
+}
+
 // Create a base context for tests
 function createMockContext(overrides: Partial<QueryOptionsContext> = {}): QueryOptionsContext {
   return {
@@ -110,356 +131,101 @@ function createMockContext(overrides: Partial<QueryOptionsContext> = {}): QueryO
 describe('QueryOptionsBuilder', () => {
   describe('needsRestart', () => {
     it('returns true when currentConfig is null', () => {
-      const newConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const newConfig = createMockPersistentQueryConfig();
       expect(QueryOptionsBuilder.needsRestart(null, newConfig)).toBe(true);
     });
 
     it('returns false when configs are identical', () => {
-      const config: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const config = createMockPersistentQueryConfig();
       expect(QueryOptionsBuilder.needsRestart(config, { ...config })).toBe(false);
     });
 
     it('returns true when systemPromptKey changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, systemPromptKey: 'key2' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when disallowedToolsKey changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, disallowedToolsKey: 'tool1|tool2' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when claudeCliPath changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, claudeCliPath: '/new/claude' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when allowedExportPaths changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: ['/path/a'],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig({ allowedExportPaths: ['/path/a'] });
       const newConfig = { ...currentConfig, allowedExportPaths: ['/path/a', '/path/b'] };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when settingSources changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, settingSources: 'user,project' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when pluginsKey changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, pluginsKey: 'plugin-a:/path/a|plugin-b:/path/b' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns false when only model changes (dynamic update)', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'claude-sonnet-4-5',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, model: 'claude-opus-4-5' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(false);
     });
 
     it('returns true when show1MModel changes from false to true', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, show1MModel: true };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when show1MModel changes from true to false', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: true,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig({ show1MModel: true });
       const newConfig = { ...currentConfig, show1MModel: false };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when enableChrome changes from false to true', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, enableChrome: true };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when enableChrome changes from true to false', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: true,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig({ enableChrome: true });
       const newConfig = { ...currentConfig, enableChrome: false };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when externalContextPaths changes', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: [],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, externalContextPaths: ['/external/path'] };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when externalContextPaths is added', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: ['/path/a'],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig({ externalContextPaths: ['/path/a'] });
       const newConfig = { ...currentConfig, externalContextPaths: ['/path/a', '/path/b'] };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when externalContextPaths is removed', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: ['/path/a', '/path/b'],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig({ externalContextPaths: ['/path/a', '/path/b'] });
       const newConfig = { ...currentConfig, externalContextPaths: ['/path/a'] };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns false when externalContextPaths order changes (same content)', () => {
-      const currentConfig: PersistentQueryConfig = {
-        model: 'sonnet',
-        thinkingTokens: null,
-        permissionMode: 'yolo',
-        systemPromptKey: 'key1',
-        disallowedToolsKey: '',
-        mcpServersKey: '',
-        pluginsKey: '',
-        externalContextPaths: ['/path/a', '/path/b'],
-        allowedExportPaths: [],
-        settingSources: 'project',
-        claudeCliPath: '/mock/claude',
-        show1MModel: false,
-        enableChrome: false,
-      };
-
+      const currentConfig = createMockPersistentQueryConfig({ externalContextPaths: ['/path/a', '/path/b'] });
       // Same paths, different order - should NOT require restart since sorted comparison
       const newConfig = { ...currentConfig, externalContextPaths: ['/path/b', '/path/a'] };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(false);
@@ -485,6 +251,15 @@ describe('QueryOptionsBuilder', () => {
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
       expect(config.thinkingTokens).toBe(16000);
+    });
+
+    it('includes enableChrome from settings', () => {
+      const ctx = createMockContext({
+        settings: createMockSettings({ enableChrome: true }),
+      });
+      const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
+
+      expect(config.enableChrome).toBe(true);
     });
 
     it('sets settingSources to user,project when loadUserClaudeSettings is true', () => {
