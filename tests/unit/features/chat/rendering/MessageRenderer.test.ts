@@ -1,7 +1,3 @@
-/**
- * Tests for MessageRenderer - Stored Message Rendering
- */
-
 import { TOOL_AGENT_OUTPUT } from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';

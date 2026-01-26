@@ -1,7 +1,3 @@
-/**
- * Tests for InputController - Message Queue and Input Handling
- */
-
 import { Notice } from 'obsidian';
 
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';

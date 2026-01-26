@@ -1,7 +1,3 @@
-/**
- * Tests for TabBar - Minimal numbered badge UI for tab navigation.
- */
-
 import { TabBar, type TabBarCallbacks } from '@/features/chat/tabs/TabBar';
 import type { TabBarItem } from '@/features/chat/tabs/types';
 

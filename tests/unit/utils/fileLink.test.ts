@@ -1,10 +1,3 @@
-/**
- * Tests for fileLink utility - wikilink pattern matching
- *
- * Focuses on testing the regex pattern logic, which is the core value.
- * DOM manipulation is tested manually in Obsidian.
- */
-
 import { extractLinkTarget } from '@/utils/fileLink';
 
 // Extract the pattern from the module for testing

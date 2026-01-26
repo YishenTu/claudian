@@ -8,7 +8,6 @@ import { parseYaml } from 'obsidian';
 
 import type { AgentFrontmatter } from '../types';
 
-/** Parse agent definition file content. Returns null if validation fails. */
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) return null;

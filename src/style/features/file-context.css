@@ -111,7 +111,7 @@
 
 /* Context file items in @-mention dropdown */
 .claudian-mention-item.context-file .claudian-mention-icon {
-  color: #D97757;
+  color: var(--claudian-brand);
 }
 
 .claudian-mention-item.context-file .claudian-mention-text {
@@ -129,11 +129,11 @@
 
 /* Context folder filter items in @-mention dropdown */
 .claudian-mention-item.context-folder .claudian-mention-icon {
-  color: #D97757;
+  color: var(--claudian-brand);
 }
 
 .claudian-mention-name-folder {
-  color: #D97757;
+  color: var(--claudian-brand);
   font-weight: 600;
 }
 

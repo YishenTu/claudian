@@ -52,41 +52,6 @@
       "desc": "한 줄에 하나의 매핑. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."
     },
     "hotkeys": "단축키",
-    "inlineEditHotkey": {
-      "name": "인라인 편집 단축키",
-      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
-      "descWithKey": "현재: {hotkey}",
-      "btnSet": "단축키 설정",
-      "btnChange": "변경"
-    },
-    "openChatHotkey": {
-      "name": "채팅 열기 단축키",
-      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
-      "descWithKey": "현재: {hotkey}",
-      "btnSet": "단축키 설정",
-      "btnChange": "변경"
-    },
-    "newTabHotkey": {
-      "name": "새 탭 단축키",
-      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
-      "descWithKey": "현재: {hotkey}",
-      "btnSet": "단축키 설정",
-      "btnChange": "변경"
-    },
-    "newSessionHotkey": {
-      "name": "새 세션 단축키",
-      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
-      "descWithKey": "현재: {hotkey}",
-      "btnSet": "단축키 설정",
-      "btnChange": "변경"
-    },
-    "closeTabHotkey": {
-      "name": "탭 닫기 단축키",
-      "descNoKey": "단축키가 설정되지 않았습니다. 클릭하여 설정하세요.",
-      "descWithKey": "현재: {hotkey}",
-      "btnSet": "단축키 설정",
-      "btnChange": "변경"
-    },
     "slashCommands": {
       "name": "슬래시 명령어",
       "desc": "/command로 트리거되는 커스텀 프롬프트 템플릿을 생성합니다. $ARGUMENTS로 모든 인자, $1/$2로 위치 인자, @file로 파일 내용, !`bash`로 명령어 출력을 가져올 수 있습니다."
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "스니펫",
       "addBtn": "스니펫 추가",
-      "editBtn": "편집",
-      "deleteBtn": "삭제",
-      "useBtn": "사용",
       "noSnippets": "저장된 환경 변수 스니펫이 없습니다. +를 클릭하여 현재 구성을 저장하세요.",
       "nameRequired": "스니펫 이름을 입력하세요",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "사용자 정의 컨텍스트 제한",
       "desc": "사용자 정의 모델의 컨텍스트 창 크기를 설정합니다. 기본값(200k 토큰)을 사용하려면 비워두세요.",
-      "modelLabel": "{model} 컨텍스트 제한",
-      "modelDesc": "{modelId}의 컨텍스트 창. 256k, 1m 또는 정확한 토큰 수와 같은 형식을 사용하세요.",
       "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
     },
     "advanced": "고급",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "최대 채팅 탭 수",
       "desc": "동시에 열 수 있는 최대 채팅 탭 수(3-10). 각 탭은 별도의 Claude 세션을 사용합니다.",
-      "warning": "5개 탭을 초과하면 성능 및 메모리 사용량에 영향을 줄 수 있습니다.",
-      "range": "{min} - {max}"
+      "warning": "5개 탭을 초과하면 성능 및 메모리 사용량에 영향을 줄 수 있습니다."
     },
     "tabBarPosition": {
       "name": "탭 바 위치",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "언어",
-      "desc": "플러그인 인터페이스의 표시 언어 변경",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "플러그인 인터페이스의 표시 언어 변경"
     }
   }
 }

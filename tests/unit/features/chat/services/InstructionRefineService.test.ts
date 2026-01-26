@@ -1,7 +1,3 @@
-/**
- * Tests for InstructionRefineService - Refining custom instructions
- */
-
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,

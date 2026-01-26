@@ -32,7 +32,7 @@
 }
 
 .claudian-mcp-selector-icon.active {
-  color: #D97757;
+  color: var(--claudian-brand);
   opacity: 1;
   animation: mcp-glow 2s ease-in-out infinite;
 }
@@ -48,7 +48,7 @@
   right: 0;
   font-size: 9px;
   font-weight: 600;
-  color: #D97757;
+  color: var(--claudian-brand);
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
@@ -127,7 +127,7 @@
 }
 
 .claudian-mcp-selector-item.enabled {
-  background: rgba(217, 119, 87, 0.1);
+  background: rgba(var(--claudian-brand-rgb), 0.1);
 }
 
 .claudian-mcp-selector-check {
@@ -138,12 +138,12 @@
   height: 16px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 3px;
-  color: #D97757;
+  color: var(--claudian-brand);
 }
 
 .claudian-mcp-selector-item.enabled .claudian-mcp-selector-check {
-  background: rgba(217, 119, 87, 0.2);
-  border-color: #D97757;
+  background: rgba(var(--claudian-brand-rgb), 0.2);
+  border-color: var(--claudian-brand);
 }
 
 .claudian-mcp-selector-check svg {
@@ -173,8 +173,8 @@
   font-weight: 600;
   padding: 1px 4px;
   border-radius: 3px;
-  background: rgba(217, 119, 87, 0.2);
-  color: #D97757;
+  background: rgba(var(--claudian-brand-rgb), 0.2);
+  color: var(--claudian-brand);
   flex-shrink: 0;
   margin-left: auto;
 }

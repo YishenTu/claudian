@@ -1,6 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import { getToolIcon } from '../../../core/tools/toolIcons';
+import { getToolIcon } from '../../../core/tools';
 import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
 import type { DiffLine, DiffStats } from '../../../core/types/diff';
 import { setupCollapsible } from './collapsible';
@@ -55,7 +55,6 @@ function renderDiffStats(statsEl: HTMLElement, stats: DiffStats): void {
   }
 }
 
-/** Create a Write/Edit block during streaming (collapsed by default). */
 export function createWriteEditBlock(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo
@@ -115,7 +114,6 @@ export function createWriteEditBlock(
   return state;
 }
 
-/** Update Write/Edit block with pre-computed diff data from SDK toolUseResult. */
 export function updateWriteEditWithDiff(state: WriteEditState, diffData: ToolDiffData): void {
   state.statsEl.empty();
   state.contentEl.empty();
@@ -132,7 +130,6 @@ export function updateWriteEditWithDiff(state: WriteEditState, diffData: ToolDif
   renderDiffContent(diffEl, diffLines);
 }
 
-/** Finalize Write/Edit block (update status icon). */
 export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean): void {
   // Update status icon - only show icon on error
   state.statusEl.className = 'claudian-write-edit-status';
@@ -166,7 +163,6 @@ export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean):
   }
 }
 
-/** Render a stored Write/Edit block from conversation history. Collapsed by default. */
 export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallInfo): HTMLElement {
   const filePath = (toolCall.input.file_path as string) || 'file';
   const toolName = toolCall.name;

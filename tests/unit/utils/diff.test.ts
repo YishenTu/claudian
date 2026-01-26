@@ -1,7 +1,3 @@
-/**
- * Unit tests for diff utilities (extractDiffData and diffFromToolInput).
- */
-
 import type { ToolCallInfo } from '../../../src/core/types/tools';
 import { diffFromToolInput,extractDiffData } from '../../../src/utils/diff';
 

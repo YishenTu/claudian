@@ -32,7 +32,6 @@ export const MCP_CONFIG_PATH = '.claude/mcp.json';
 export class McpStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
-  /** Load MCP servers from .claude/mcp.json. */
   async load(): Promise<ClaudianMcpServer[]> {
     try {
       if (!(await this.adapter.exists(MCP_CONFIG_PATH))) {
@@ -77,7 +76,6 @@ export class McpStorage {
     }
   }
 
-  /** Save MCP servers to .claude/mcp.json. */
   async save(servers: ClaudianMcpServer[]): Promise<void> {
     const mcpServers: Record<string, McpServerConfig> = {};
     const claudianServers: Record<

@@ -52,41 +52,6 @@
       "desc": "Un mappage par ligne. Format : \"map <touche> <action>\" (actions : scrollUp, scrollDown, focusInput)."
     },
     "hotkeys": "Raccourcis clavier",
-    "inlineEditHotkey": {
-      "name": "Raccourci d'édition en ligne",
-      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
-      "descWithKey": "Actuel : {hotkey}",
-      "btnSet": "Définir le raccourci",
-      "btnChange": "Changer"
-    },
-    "openChatHotkey": {
-      "name": "Raccourci d'ouverture du chat",
-      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
-      "descWithKey": "Actuel : {hotkey}",
-      "btnSet": "Définir le raccourci",
-      "btnChange": "Changer"
-    },
-    "newTabHotkey": {
-      "name": "Raccourci nouvel onglet",
-      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
-      "descWithKey": "Actuel : {hotkey}",
-      "btnSet": "Définir le raccourci",
-      "btnChange": "Changer"
-    },
-    "newSessionHotkey": {
-      "name": "Raccourci nouvelle session",
-      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
-      "descWithKey": "Actuel : {hotkey}",
-      "btnSet": "Définir le raccourci",
-      "btnChange": "Changer"
-    },
-    "closeTabHotkey": {
-      "name": "Raccourci fermer l'onglet",
-      "descNoKey": "Aucun raccourci défini. Cliquez pour configurer.",
-      "descWithKey": "Actuel : {hotkey}",
-      "btnSet": "Définir le raccourci",
-      "btnChange": "Changer"
-    },
     "slashCommands": {
       "name": "Commandes slash",
       "desc": "Créez des modèles de prompts personnalisés déclenchés par /command. Utilisez $ARGUMENTS pour tous les arguments, $1/$2 pour les arguments positionnels, @file pour le contenu du fichier et !`bash` pour la sortie de commande."
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Ajouter un extrait",
-      "editBtn": "Éditer",
-      "deleteBtn": "Supprimer",
-      "useBtn": "Utiliser",
       "noSnippets": "Aucun extrait d'environnement enregistré. Cliquez sur + pour sauvegarder votre configuration actuelle.",
       "nameRequired": "Veuillez entrer un nom pour l'extrait",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "Limites de contexte personnalisées",
       "desc": "Définissez les tailles de fenêtre de contexte pour vos modèles personnalisés. Laissez vide pour utiliser la valeur par défaut (200k tokens).",
-      "modelLabel": "Limite de contexte {model}",
-      "modelDesc": "Fenêtre de contexte pour {modelId}. Utilisez des formats comme 256k, 1m ou le nombre exact de tokens.",
       "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000)."
     },
     "advanced": "Avancé",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "Maximum d'onglets de chat",
       "desc": "Nombre maximum d'onglets de chat simultanés (3-10). Chaque onglet utilise une session Claude séparée.",
-      "warning": "Plus de 5 onglets peut affecter les performances et l'utilisation de la mémoire.",
-      "range": "{min} - {max}"
+      "warning": "Plus de 5 onglets peut affecter les performances et l'utilisation de la mémoire."
     },
     "tabBarPosition": {
       "name": "Position de la barre d'onglets",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "Langue",
-      "desc": "Changer la langue d'affichage de l'interface du plugin",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "Changer la langue d'affichage de l'interface du plugin"
     }
   }
 }

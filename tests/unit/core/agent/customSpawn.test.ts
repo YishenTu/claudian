@@ -1,7 +1,3 @@
-/**
- * Tests for custom spawn behavior.
- */
-
 import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 

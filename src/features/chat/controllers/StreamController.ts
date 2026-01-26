@@ -47,7 +47,6 @@ export class StreamController {
   // Stream Chunk Handling
   // ============================================
 
-  /** Processes a stream chunk and updates the message. */
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
     const { state } = this.deps;
 

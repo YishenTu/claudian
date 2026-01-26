@@ -1,7 +1,3 @@
-/**
- * Tests for SelectionController - Selection Polling and Highlighting
- */
-
 import { SelectionController } from '@/features/chat/controllers/SelectionController';
 import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 

@@ -52,41 +52,6 @@
       "desc": "Eine Zuordnung pro Zeile. Format: \"map <Taste> <Aktion>\" (Aktionen: scrollUp, scrollDown, focusInput)."
     },
     "hotkeys": "Tastenkürzel",
-    "inlineEditHotkey": {
-      "name": "Inline-Bearbeitung Tastenkürzel",
-      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
-      "descWithKey": "Aktuell: {hotkey}",
-      "btnSet": "Tastenkürzel festlegen",
-      "btnChange": "Ändern"
-    },
-    "openChatHotkey": {
-      "name": "Chat öffnen Tastenkürzel",
-      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
-      "descWithKey": "Aktuell: {hotkey}",
-      "btnSet": "Tastenkürzel festlegen",
-      "btnChange": "Ändern"
-    },
-    "newTabHotkey": {
-      "name": "Neuer Tab Tastenkürzel",
-      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
-      "descWithKey": "Aktuell: {hotkey}",
-      "btnSet": "Tastenkürzel festlegen",
-      "btnChange": "Ändern"
-    },
-    "newSessionHotkey": {
-      "name": "Neue Sitzung Tastenkürzel",
-      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
-      "descWithKey": "Aktuell: {hotkey}",
-      "btnSet": "Tastenkürzel festlegen",
-      "btnChange": "Ändern"
-    },
-    "closeTabHotkey": {
-      "name": "Tab schließen Tastenkürzel",
-      "descNoKey": "Kein Tastenkürzel festgelegt. Klicken zum Konfigurieren.",
-      "descWithKey": "Aktuell: {hotkey}",
-      "btnSet": "Tastenkürzel festlegen",
-      "btnChange": "Ändern"
-    },
     "slashCommands": {
       "name": "Schrägstrich-Befehle",
       "desc": "Erstelle benutzerdefinierte Prompt-Vorlagen, die durch /command ausgelöst werden. Verwende $ARGUMENTS für alle Argumente, $1/$2 für Positionsargumente, @file für Dateiinhalt und !`bash` für Befehlsausgabe."
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Snippet hinzufügen",
-      "editBtn": "Bearbeiten",
-      "deleteBtn": "Löschen",
-      "useBtn": "Verwenden",
       "noSnippets": "Keine gespeicherten Umgebungsvariablen-Snippets. Klicken Sie auf +, um Ihre aktuelle Konfiguration zu speichern.",
       "nameRequired": "Bitte geben Sie einen Namen für das Snippet ein",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "Benutzerdefinierte Kontextlimits",
       "desc": "Legen Sie die Kontextfenstergrößen für Ihre benutzerdefinierten Modelle fest. Leer lassen für den Standardwert (200k Token).",
-      "modelLabel": "{model} Kontextlimit",
-      "modelDesc": "Kontextfenster für {modelId}. Verwenden Sie Formate wie 256k, 1m oder exakte Token-Anzahl.",
       "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
     },
     "advanced": "Erweitert",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "Maximale Chat-Tabs",
       "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",
-      "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen.",
-      "range": "{min} - {max}"
+      "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen."
     },
     "tabBarPosition": {
       "name": "Tab-Leiste Position",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "Sprache",
-      "desc": "Anzeigesprache der Plugin-Oberfläche ändern",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "Anzeigesprache der Plugin-Oberfläche ändern"
     }
   }
 }

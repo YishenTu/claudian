@@ -1,7 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import { getToolIcon } from '../../../core/tools/toolIcons';
-import { TOOL_TASK } from '../../../core/tools/toolNames';
+import { getToolIcon, TOOL_TASK } from '../../../core/tools';
 import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { setupCollapsible } from './collapsible';
 import { getToolLabel } from './ToolCallRenderer';
@@ -50,7 +49,6 @@ function createStatusRow(
 }
 
 
-/** Create a subagent block for a Task tool call (streaming). Collapsed by default. */
 export function createSubagentBlock(
   parentEl: HTMLElement,
   taskToolId: string,
@@ -112,7 +110,6 @@ export function createSubagentBlock(
   };
 }
 
-/** Add a tool call to a subagent's content area. Only shows current tool. */
 export function addSubagentToolCall(
   state: SubagentState,
   toolCall: ToolCallInfo
@@ -142,7 +139,6 @@ export function addSubagentToolCall(
   labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
 }
 
-/** Update a nested tool call with its result. */
 export function updateSubagentToolResult(
   state: SubagentState,
   toolId: string,
@@ -180,7 +176,6 @@ export function updateSubagentToolResult(
   // Note: Don't revert label to description here - wait for next tool or finalize
 }
 
-/** Finalize a subagent when its Task tool_result is received. */
 export function finalizeSubagentBlock(
   state: SubagentState,
   result: string,
@@ -221,7 +216,6 @@ export function finalizeSubagentBlock(
   createStatusRow(state.contentEl, isError ? 'ERROR' : 'DONE');
 }
 
-/** Render a stored subagent from conversation history. Collapsed by default. */
 export function renderStoredSubagent(
   parentEl: HTMLElement,
   subagent: SubagentInfo
@@ -300,7 +294,6 @@ export function renderStoredSubagent(
   return wrapperEl;
 }
 
-/** State for an async subagent block. */
 export interface AsyncSubagentState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
@@ -318,7 +311,6 @@ function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
   wrapperEl.addClass(status);
 }
 
-/** Normalize async status for display. */
 function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'completed' | 'error' | 'orphaned' {
   switch (asyncStatus) {
     case 'completed': return 'completed';
@@ -338,7 +330,6 @@ function getAsyncStatusText(asyncStatus: string | undefined): string {
   }
 }
 
-/** Get status text for aria-label (always returns meaningful text for accessibility). */
 function getAsyncStatusAriaLabel(asyncStatus: string | undefined): string {
   switch (asyncStatus) {
     case 'pending': return 'Initializing';
@@ -354,7 +345,6 @@ function updateAsyncLabel(state: AsyncSubagentState): void {
   state.labelEl.setText(truncateDescription(state.info.description));
 }
 
-/** Truncate prompt for display in expand area. */
 function truncatePrompt(prompt: string, maxLength = 200): string {
   if (!prompt) return '';
   if (prompt.length <= maxLength) return prompt;
@@ -430,7 +420,6 @@ export function createAsyncSubagentBlock(
   };
 }
 
-/** Update async subagent to running state (agent_id received). */
 export function updateAsyncSubagentRunning(
   state: AsyncSubagentState,
   agentId: string
@@ -449,7 +438,6 @@ export function updateAsyncSubagentRunning(
   createStatusRow(state.contentEl, truncatePrompt(state.info.prompt || '') || 'Background task', { textClass: 'claudian-async-prompt' });
 }
 
-/** Finalize async subagent with AgentOutputTool result. */
 export function finalizeAsyncSubagent(
   state: AsyncSubagentState,
   result: string,
@@ -495,7 +483,6 @@ export function finalizeAsyncSubagent(
   createStatusRow(state.contentEl, displayText);
 }
 
-/** Mark async subagent as orphaned (conversation ended before completion). */
 export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   state.info.asyncStatus = 'orphaned';
   state.info.status = 'error';

@@ -28,33 +28,16 @@ import {
 import type { TabData, TabDOMElements, TabId } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
 
-/** Options for creating a new Tab. */
 export interface TabCreateOptions {
-  /** Plugin instance. */
   plugin: ClaudianPlugin;
-
-  /** MCP manager (shared across all tabs). */
   mcpManager: McpServerManager;
 
-  /** Container element to append tab content to. */
   containerEl: HTMLElement;
-
-  /** Optional conversation to load into this tab. */
   conversation?: Conversation;
-
-  /** Optional existing tab ID (for restoration). */
   tabId?: TabId;
-
-  /** Callback when streaming state changes. */
   onStreamingChanged?: (isStreaming: boolean) => void;
-
-  /** Callback when conversation title changes. */
   onTitleChanged?: (title: string) => void;
-
-  /** Callback when attention state changes (approval pending, etc.). */
   onAttentionChanged?: (needsAttention: boolean) => void;
-
-  /** Callback when conversation ID changes (for lazy creation sync). */
   onConversationIdChanged?: (conversationId: string | null) => void;
 }
 
@@ -480,9 +463,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
   });
 }
 
-/** Options for initializing tab UI. */
 export interface InitializeTabUIOptions {
-  /** Callback to get SDK commands from any ready service (shared across tabs). */
   getSdkCommands?: () => Promise<SlashCommand[]>;
 }
 

@@ -1,7 +1,3 @@
-/**
- * Tests for Tab - Individual tab state and lifecycle management.
- */
-
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
   activateTab,

@@ -3,7 +3,7 @@ export {
   parseTodoInput,
   type TodoItem,
 } from './todo';
-export { getToolIcon } from './toolIcons';
+export { getToolIcon, MCP_ICON_MARKER } from './toolIcons';
 export { getPathFromToolInput } from './toolInput';
 export {
   BASH_TOOLS,
@@ -35,6 +35,7 @@ export {
   TOOL_NOTEBOOK_EDIT,
   TOOL_READ,
   TOOL_READ_MCP_RESOURCE,
+  TOOL_SKILL,
   TOOL_TASK,
   TOOL_TODO_WRITE,
   TOOL_WEB_FETCH,

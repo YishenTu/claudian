@@ -17,7 +17,7 @@ export function createCustomSpawnFunction(
   return (options: SpawnOptions): SpawnedProcess => {
     let { command } = options;
     const { args, cwd, env, signal } = options;
-    const shouldPipeStderr = Boolean(env?.DEBUG_CLAUDE_AGENT_SDK);
+    const shouldPipeStderr = !!env?.DEBUG_CLAUDE_AGENT_SDK;
 
     // Resolve full path to avoid PATH lookup issues in GUI apps
     if (command === 'node') {

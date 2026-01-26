@@ -1,9 +1,3 @@
-/**
- * MCP (Model Context Protocol) tests.
- *
- * Tests for MCP types, storage parsing, service logic, and utilities.
- */
-
 import * as childProcess from 'child_process';
 import { EventEmitter } from 'events';
 import * as http from 'http';

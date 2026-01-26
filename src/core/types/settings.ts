@@ -60,7 +60,6 @@ export function getDefaultBlockedCommands(): PlatformBlockedCommands {
   };
 }
 
-/** Get the current platform key ('unix' or 'windows'). */
 export function getCurrentPlatformKey(): keyof PlatformBlockedCommands {
   return process.platform === 'win32' ? 'windows' : 'unix';
 }

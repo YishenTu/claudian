@@ -50,31 +50,6 @@ export type TranslationKey =
 
   // Settings - Hotkeys
   | 'settings.hotkeys'
-  | 'settings.inlineEditHotkey.name'
-  | 'settings.inlineEditHotkey.descNoKey'
-  | 'settings.inlineEditHotkey.descWithKey'
-  | 'settings.inlineEditHotkey.btnSet'
-  | 'settings.inlineEditHotkey.btnChange'
-  | 'settings.openChatHotkey.name'
-  | 'settings.openChatHotkey.descNoKey'
-  | 'settings.openChatHotkey.descWithKey'
-  | 'settings.openChatHotkey.btnSet'
-  | 'settings.openChatHotkey.btnChange'
-  | 'settings.newTabHotkey.name'
-  | 'settings.newTabHotkey.descNoKey'
-  | 'settings.newTabHotkey.descWithKey'
-  | 'settings.newTabHotkey.btnSet'
-  | 'settings.newTabHotkey.btnChange'
-  | 'settings.newSessionHotkey.name'
-  | 'settings.newSessionHotkey.descNoKey'
-  | 'settings.newSessionHotkey.descWithKey'
-  | 'settings.newSessionHotkey.btnSet'
-  | 'settings.newSessionHotkey.btnChange'
-  | 'settings.closeTabHotkey.name'
-  | 'settings.closeTabHotkey.descNoKey'
-  | 'settings.closeTabHotkey.descWithKey'
-  | 'settings.closeTabHotkey.btnSet'
-  | 'settings.closeTabHotkey.btnChange'
 
   // Settings - Slash Commands
   | 'settings.slashCommands.name'
@@ -110,9 +85,6 @@ export type TranslationKey =
   | 'settings.customVariables.desc'
   | 'settings.envSnippets.name'
   | 'settings.envSnippets.addBtn'
-  | 'settings.envSnippets.editBtn'
-  | 'settings.envSnippets.deleteBtn'
-  | 'settings.envSnippets.useBtn'
   | 'settings.envSnippets.noSnippets'
   | 'settings.envSnippets.nameRequired'
   | 'settings.envSnippets.modal.titleEdit'
@@ -130,8 +102,6 @@ export type TranslationKey =
   // Settings - Custom Context Limits
   | 'settings.customContextLimits.name'
   | 'settings.customContextLimits.desc'
-  | 'settings.customContextLimits.modelLabel'
-  | 'settings.customContextLimits.modelDesc'
   | 'settings.customContextLimits.invalid'
 
   // Settings - Advanced
@@ -141,7 +111,6 @@ export type TranslationKey =
   | 'settings.maxTabs.name'
   | 'settings.maxTabs.desc'
   | 'settings.maxTabs.warning'
-  | 'settings.maxTabs.range'
   | 'settings.tabBarPosition.name'
   | 'settings.tabBarPosition.desc'
   | 'settings.tabBarPosition.input'
@@ -157,14 +126,4 @@ export type TranslationKey =
 
   // Settings - Language
   | 'settings.language.name'
-  | 'settings.language.desc'
-  | 'settings.language.en'
-  | 'settings.language.zh-CN'
-  | 'settings.language.zh-TW'
-  | 'settings.language.ja'
-  | 'settings.language.ko'
-  | 'settings.language.de'
-  | 'settings.language.fr'
-  | 'settings.language.es'
-  | 'settings.language.ru'
-  | 'settings.language.pt';
+  | 'settings.language.desc';

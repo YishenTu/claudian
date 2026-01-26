@@ -10,17 +10,14 @@ import type { App } from 'obsidian';
 export class VaultFileAdapter {
   constructor(private app: App) {}
 
-  /** Check if a file or folder exists. */
   async exists(path: string): Promise<boolean> {
     return this.app.vault.adapter.exists(path);
   }
 
-  /** Read file contents as string. */
   async read(path: string): Promise<string> {
     return this.app.vault.adapter.read(path);
   }
 
-  /** Write content to a file, creating parent directories if needed. */
   async write(path: string, content: string): Promise<void> {
     const folder = path.substring(0, path.lastIndexOf('/'));
     if (folder && !(await this.exists(folder))) {
@@ -29,7 +26,6 @@ export class VaultFileAdapter {
     await this.app.vault.adapter.write(path, content);
   }
 
-  /** Append content to a file. Creates the file if it doesn't exist. */
   async append(path: string, content: string): Promise<void> {
     const folder = path.substring(0, path.lastIndexOf('/'));
     if (folder && !(await this.exists(folder))) {
@@ -43,14 +39,12 @@ export class VaultFileAdapter {
     }
   }
 
-  /** Delete a file if it exists. */
   async delete(path: string): Promise<void> {
     if (await this.exists(path)) {
       await this.app.vault.adapter.remove(path);
     }
   }
 
-  /** List files in a folder. Returns relative paths from the folder. */
   async listFiles(folder: string): Promise<string[]> {
     if (!(await this.exists(folder))) {
       return [];
@@ -107,7 +101,6 @@ export class VaultFileAdapter {
     await this.app.vault.adapter.rename(oldPath, newPath);
   }
 
-  /** Get file stats (mtime, size). Returns null if file doesn't exist or on error. */
   async stat(path: string): Promise<{ mtime: number; size: number } | null> {
     try {
       const stat = await this.app.vault.adapter.stat(path);

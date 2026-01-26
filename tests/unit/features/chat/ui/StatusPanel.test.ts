@@ -1,7 +1,3 @@
-/**
- * Tests for StatusPanel component
- */
-
 import type { TodoItem } from '@/core/tools';
 import { StatusPanel } from '@/features/chat/ui/StatusPanel';
 

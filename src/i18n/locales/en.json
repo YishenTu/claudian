@@ -52,41 +52,6 @@
       "desc": "One mapping per line. Format: \"map <key> <action>\" (actions: scrollUp, scrollDown, focusInput)."
     },
     "hotkeys": "Hotkeys",
-    "inlineEditHotkey": {
-      "name": "Inline edit hotkey",
-      "descNoKey": "No hotkey set. Click to configure.",
-      "descWithKey": "Current: {hotkey}",
-      "btnSet": "Set hotkey",
-      "btnChange": "Change"
-    },
-    "openChatHotkey": {
-      "name": "Open chat hotkey",
-      "descNoKey": "No hotkey set. Click to configure.",
-      "descWithKey": "Current: {hotkey}",
-      "btnSet": "Set hotkey",
-      "btnChange": "Change"
-    },
-    "newTabHotkey": {
-      "name": "New tab hotkey",
-      "descNoKey": "No hotkey set. Click to configure.",
-      "descWithKey": "Current: {hotkey}",
-      "btnSet": "Set hotkey",
-      "btnChange": "Change"
-    },
-    "newSessionHotkey": {
-      "name": "New session hotkey",
-      "descNoKey": "No hotkey set. Click to configure.",
-      "descWithKey": "Current: {hotkey}",
-      "btnSet": "Set hotkey",
-      "btnChange": "Change"
-    },
-    "closeTabHotkey": {
-      "name": "Close tab hotkey",
-      "descNoKey": "No hotkey set. Click to configure.",
-      "descWithKey": "Current: {hotkey}",
-      "btnSet": "Set hotkey",
-      "btnChange": "Change"
-    },
     "slashCommands": {
       "name": "Slash Commands",
       "desc": "Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output."
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Add snippet",
-      "editBtn": "Edit",
-      "deleteBtn": "Delete",
-      "useBtn": "Use",
       "noSnippets": "No saved environment snippets yet. Click + to save your current environment configuration.",
       "nameRequired": "Please enter a name for the snippet",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "Custom Context Limits",
       "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",
-      "modelLabel": "{model} Context Limit",
-      "modelDesc": "Context window for {modelId}. Use formats like 256k, 1m, or exact token count.",
       "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
     },
     "advanced": "Advanced",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "Maximum chat tabs",
       "desc": "Maximum number of concurrent chat tabs (3-10). Each tab uses a separate Claude session.",
-      "warning": "More than 5 tabs may impact performance and memory usage.",
-      "range": "{min} - {max}"
+      "warning": "More than 5 tabs may impact performance and memory usage."
     },
     "tabBarPosition": {
       "name": "Tab bar position",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "Language",
-      "desc": "Change the display language of the plugin interface",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "Change the display language of the plugin interface"
     }
   }
 }

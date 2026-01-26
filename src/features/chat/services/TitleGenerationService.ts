@@ -6,21 +6,17 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 
-/** Result of title generation (discriminated union). */
 export type TitleGenerationResult =
   | { success: true; title: string }
   | { success: false; error: string };
 
-/** Callback when title generation completes. */
 export type TitleGenerationCallback = (
   conversationId: string,
   result: TitleGenerationResult
 ) => Promise<void>;
 
-/** Service for generating conversation titles with AI. */
 export class TitleGenerationService {
   private plugin: ClaudianPlugin;
-  /** Map of conversationId to AbortController for concurrent generation support. */
   private activeGenerations: Map<string, AbortController> = new Map();
 
   constructor(plugin: ClaudianPlugin) {

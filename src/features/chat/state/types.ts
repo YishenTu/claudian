@@ -110,9 +110,7 @@ export interface QueryOptions {
   model?: string;
   mcpMentions?: Set<string>;
   enabledMcpServers?: Set<string>;
-  /** Force cold-start query (bypass persistent query). */
   forceColdStart?: boolean;
-  /** Session-specific external context paths (directories with full access). */
   externalContextPaths?: string[];
 }
 

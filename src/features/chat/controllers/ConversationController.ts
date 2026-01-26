@@ -32,9 +32,7 @@ export interface ConversationControllerDeps {
   getExternalContextSelector: () => ExternalContextSelector | null;
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
-  /** Get StatusPanel for remounting after messagesEl.empty(). */
   getStatusPanel: () => StatusPanel | null;
-  /** Get the agent service (for multi-tab, returns tab's service). */
   getAgentService?: () => ClaudianService | null;
 }
 
@@ -63,7 +61,7 @@ export class ConversationController {
    */
   async createNew(options: { force?: boolean } = {}): Promise<void> {
     const { plugin, state, subagentManager } = this.deps;
-    const force = options.force === true;
+    const force = !!options.force;
     if (state.isStreaming && !force) return;
     if (state.isCreatingConversation) return;
     if (state.isSwitchingConversation) return;

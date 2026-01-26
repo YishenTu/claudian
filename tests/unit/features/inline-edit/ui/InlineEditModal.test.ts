@@ -1,11 +1,3 @@
-/**
- * Tests for InlineEditModal - Word-level diff utilities
- *
- * Note: The computeDiff and diffToHtml functions are internal to InlineEditModal.
- * These tests use copied implementations to verify the algorithm behavior.
- * Consider extracting these to a shared module for direct testing.
- */
-
 import { escapeHtml, normalizeInsertionText } from '@/utils/inlineEdit';
 import { normalizePathForVault } from '@/utils/path';
 

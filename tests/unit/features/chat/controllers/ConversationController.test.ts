@@ -1,7 +1,3 @@
-/**
- * Tests for ConversationController - Conversation Lifecycle
- */
-
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
 

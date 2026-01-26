@@ -1,7 +1,7 @@
 import { Notice, setIcon } from 'obsidian';
 import * as path from 'path';
 
-import type { McpService } from '../../../core/mcp/McpService';
+import type { McpService } from '../../../core/mcp';
 import type {
   ClaudeModel,
   ClaudianMcpServer,
@@ -18,7 +18,6 @@ import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../../ut
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
 
-/** Settings access interface for toolbar components. */
 export interface ToolbarSettings {
   model: ClaudeModel;
   thinkingBudget: ThinkingBudget;
@@ -26,7 +25,6 @@ export interface ToolbarSettings {
   show1MModel?: boolean;
 }
 
-/** Callback interface for toolbar changes. */
 export interface ToolbarCallbacks {
   onModelChange: (model: ClaudeModel) => Promise<void>;
   onThinkingBudgetChange: (budget: ThinkingBudget) => Promise<void>;
@@ -35,7 +33,6 @@ export interface ToolbarCallbacks {
   getEnvironmentVariables?: () => string;
 }
 
-/** Model selector dropdown component. */
 export class ModelSelector {
   private container: HTMLElement;
   private buttonEl: HTMLElement | null = null;
@@ -48,7 +45,6 @@ export class ModelSelector {
     this.render();
   }
 
-  /** Returns available models (custom from env vars, or defaults). */
   private getAvailableModels() {
     let models: { value: string; label: string; description: string }[] = [];
 
@@ -129,7 +125,6 @@ export class ModelSelector {
   }
 }
 
-/** Thinking budget selector component. */
 export class ThinkingBudgetSelector {
   private container: HTMLElement;
   private gearsEl: HTMLElement | null = null;
@@ -185,7 +180,6 @@ export class ThinkingBudgetSelector {
   }
 }
 
-/** Permission mode toggle (YOLO/Safe). */
 export class PermissionToggle {
   private container: HTMLElement;
   private toggleEl: HTMLElement | null = null;
@@ -231,12 +225,10 @@ export class PermissionToggle {
   }
 }
 
-/** Result of adding an external context path (discriminated union for type safety). */
 export type AddExternalContextResult =
   | { success: true; normalizedPath: string }
   | { success: false; error: string };
 
-/** External context selector component (folder icon). */
 export class ExternalContextSelector {
   private container: HTMLElement;
   private iconEl: HTMLElement | null = null;
@@ -261,27 +253,22 @@ export class ExternalContextSelector {
     this.render();
   }
 
-  /** Set callback for when external context paths change. */
   setOnChange(callback: (paths: string[]) => void): void {
     this.onChangeCallback = callback;
   }
 
-  /** Set callback for when persistent paths change (to save to settings). */
   setOnPersistenceChange(callback: (paths: string[]) => void): void {
     this.onPersistenceChangeCallback = callback;
   }
 
-  /** Get current external context paths. */
   getExternalContexts(): string[] {
     return [...this.externalContextPaths];
   }
 
-  /** Get current persistent paths. */
   getPersistentPaths(): string[] {
     return [...this.persistentPaths];
   }
 
-  /** Set persistent paths (call on initialization from settings). */
   setPersistentPaths(paths: string[]): void {
     // Validate paths - remove non-existent directories
     const validPaths = filterValidPaths(paths);
@@ -301,7 +288,6 @@ export class ExternalContextSelector {
     }
   }
 
-  /** Toggle persistence for a path. */
   togglePersistence(path: string): void {
     if (this.persistentPaths.has(path)) {
       this.persistentPaths.delete(path);
@@ -317,7 +303,6 @@ export class ExternalContextSelector {
     this.renderDropdown();
   }
 
-  /** Merge persistent paths into externalContextPaths without duplicates. */
   private mergePersistentPaths(): void {
     const pathSet = new Set(this.externalContextPaths);
     for (const path of this.persistentPaths) {
@@ -589,7 +574,6 @@ export class ExternalContextSelector {
   }
 }
 
-/** MCP server selector component (plug icon). */
 export class McpServerSelector {
   private container: HTMLElement;
   private iconEl: HTMLElement | null = null;
@@ -604,7 +588,6 @@ export class McpServerSelector {
     this.render();
   }
 
-  /** Set the MCP service for fetching server list. */
   setMcpService(service: McpService | null): void {
     this.mcpService = service;
     this.pruneEnabledServers();
@@ -612,17 +595,14 @@ export class McpServerSelector {
     this.renderDropdown();
   }
 
-  /** Set callback for when enabled servers change. */
   setOnChange(callback: (enabled: Set<string>) => void): void {
     this.onChangeCallback = callback;
   }
 
-  /** Get currently enabled servers (via click or @-mention). */
   getEnabledServers(): Set<string> {
     return new Set(this.enabledServers);
   }
 
-  /** Add servers from @-mentions. */
   addMentionedServers(names: Set<string>): void {
     let changed = false;
     for (const name of names) {
@@ -637,14 +617,12 @@ export class McpServerSelector {
     }
   }
 
-  /** Clear enabled servers (call on new conversation). */
   clearEnabled(): void {
     this.enabledServers.clear();
     this.updateDisplay();
     this.renderDropdown();
   }
 
-  /** Set enabled servers (call when restoring conversation state). */
   setEnabledServers(names: string[]): void {
     this.enabledServers = new Set(names);
     this.pruneEnabledServers();
@@ -806,7 +784,6 @@ export class McpServerSelector {
   }
 }
 
-/** Context usage meter component (240° arc gauge). */
 export class ContextUsageMeter {
   private container: HTMLElement;
   private fillPath: SVGPathElement | null = null;
@@ -885,7 +862,6 @@ export class ContextUsageMeter {
     this.container.setAttribute('data-tooltip', tooltip);
   }
 
-  /** Format token count (e.g., 45000 -> "45k", 200000 -> "200k") */
   private formatTokens(tokens: number): string {
     if (tokens >= 1000) {
       return `${Math.round(tokens / 1000)}k`;
@@ -894,7 +870,6 @@ export class ContextUsageMeter {
   }
 }
 
-/** Factory function to create all toolbar components. */
 export function createInputToolbar(
   parentEl: HTMLElement,
   callbacks: ToolbarCallbacks

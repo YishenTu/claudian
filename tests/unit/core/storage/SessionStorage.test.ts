@@ -1,7 +1,3 @@
-/**
- * Tests for SessionStorage - Chat session JSONL file management
- */
-
 import { SESSIONS_PATH,SessionStorage } from '@/core/storage/SessionStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';

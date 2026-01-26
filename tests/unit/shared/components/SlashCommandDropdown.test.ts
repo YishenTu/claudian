@@ -1,15 +1,3 @@
-/**
- * Tests for SlashCommandDropdown - dropdown UI for selecting slash commands.
- *
- * Tests cover:
- * - FILTERED_SDK_COMMANDS filtering (SDK commands that don't apply to Claudian)
- * - Hidden commands filtering (user-configured hidden commands)
- * - Built-in commands exemption from hiding (essential UI actions)
- * - Deduplication (built-in commands take priority over SDK)
- * - SDK command caching and retry on empty results
- * - Race condition handling via requestId
- */
-
 import type { SlashCommand } from '@/core/types';
 import {
   SlashCommandDropdown,

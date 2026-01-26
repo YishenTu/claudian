@@ -2,7 +2,6 @@ export interface CollapsibleState {
   isExpanded: boolean;
 }
 
-/** Options for setting up collapsible behavior */
 export interface CollapsibleOptions {
   /** Initial expanded state (default: false) */
   initiallyExpanded?: boolean;

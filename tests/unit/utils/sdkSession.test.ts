@@ -1,7 +1,3 @@
-/**
- * Tests for SDK Session Parser - parsing Claude Agent SDK native session files.
- */
-
 import { existsSync } from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as os from 'os';

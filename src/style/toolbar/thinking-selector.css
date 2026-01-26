@@ -22,7 +22,7 @@
 .claudian-thinking-current {
   padding: 3px 8px;
   font-size: 11px;
-  color: #D97757;
+  color: var(--claudian-brand);
   font-weight: 500;
   cursor: pointer;
   border-radius: 3px;
@@ -70,7 +70,7 @@
 }
 
 .claudian-thinking-gear.selected {
-  background: rgba(217, 119, 87, 0.15);
-  color: #D97757;
+  background: rgba(var(--claudian-brand-rgb), 0.15);
+  color: var(--claudian-brand);
   font-weight: 500;
 }

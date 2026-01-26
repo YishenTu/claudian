@@ -52,41 +52,6 @@
       "desc": "Un mapeo por línea. Formato: \"map <tecla> <acción>\" (acciones: scrollUp, scrollDown, focusInput)."
     },
     "hotkeys": "Atajos de teclado",
-    "inlineEditHotkey": {
-      "name": "Atajo de edición en línea",
-      "descNoKey": "No hay atajo configurado. Clic para configurar.",
-      "descWithKey": "Actual: {hotkey}",
-      "btnSet": "Configurar atajo",
-      "btnChange": "Cambiar"
-    },
-    "openChatHotkey": {
-      "name": "Atajo para abrir chat",
-      "descNoKey": "No hay atajo configurado. Clic para configurar.",
-      "descWithKey": "Actual: {hotkey}",
-      "btnSet": "Configurar atajo",
-      "btnChange": "Cambiar"
-    },
-    "newTabHotkey": {
-      "name": "Atajo nueva pestaña",
-      "descNoKey": "No hay atajo configurado. Clic para configurar.",
-      "descWithKey": "Actual: {hotkey}",
-      "btnSet": "Configurar atajo",
-      "btnChange": "Cambiar"
-    },
-    "newSessionHotkey": {
-      "name": "Atajo nueva sesión",
-      "descNoKey": "No hay atajo configurado. Clic para configurar.",
-      "descWithKey": "Actual: {hotkey}",
-      "btnSet": "Configurar atajo",
-      "btnChange": "Cambiar"
-    },
-    "closeTabHotkey": {
-      "name": "Atajo cerrar pestaña",
-      "descNoKey": "No hay atajo configurado. Clic para configurar.",
-      "descWithKey": "Actual: {hotkey}",
-      "btnSet": "Configurar atajo",
-      "btnChange": "Cambiar"
-    },
     "slashCommands": {
       "name": "Comandos slash",
       "desc": "Crea plantillas de prompts personalizadas activadas por /command. Usa $ARGUMENTS para todos los argumentos, $1/$2 para argumentos posicionales, @file para contenido de archivo y !`bash` para salida de comandos."
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Añadir fragmento",
-      "editBtn": "Editar",
-      "deleteBtn": "Eliminar",
-      "useBtn": "Usar",
       "noSnippets": "No hay fragmentos de entorno guardados. Haga clic en + para guardar su configuración actual.",
       "nameRequired": "Por favor ingrese un nombre para el fragmento",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "Límites de contexto personalizados",
       "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",
-      "modelLabel": "Límite de contexto de {model}",
-      "modelDesc": "Ventana de contexto para {modelId}. Use formatos como 256k, 1m o número exacto de tokens.",
       "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
     },
     "advanced": "Avanzado",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "Máximo de pestañas de chat",
       "desc": "Número máximo de pestañas de chat simultáneas (3-10). Cada pestaña usa una sesión de Claude separada.",
-      "warning": "Más de 5 pestañas puede afectar el rendimiento y el uso de memoria.",
-      "range": "{min} - {max}"
+      "warning": "Más de 5 pestañas puede afectar el rendimiento y el uso de memoria."
     },
     "tabBarPosition": {
       "name": "Posición de la barra de pestañas",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "Idioma",
-      "desc": "Cambiar el idioma de visualización de la interfaz del plugin",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "Cambiar el idioma de visualización de la interfaz del plugin"
     }
   }
 }

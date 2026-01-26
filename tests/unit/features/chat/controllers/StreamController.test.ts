@@ -1,10 +1,3 @@
-/**
- * Tests for StreamController - Stream Chunk Handling
- *
- * Note: These tests focus on the controller logic for text content handling.
- * Tool result tracking and UI rendering are tested through integration tests.
- */
-
 import { TOOL_TASK, TOOL_TODO_WRITE } from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';

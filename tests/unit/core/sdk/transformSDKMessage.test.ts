@@ -1,7 +1,3 @@
-/**
- * Tests for SDK Message Transformer
- */
-
 import { transformSDKMessage } from '@/core/sdk/transformSDKMessage';
 import type { SDKMessage } from '@/core/types';
 

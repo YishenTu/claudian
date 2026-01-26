@@ -62,11 +62,6 @@
   color: inherit;
 }
 
-.claudian-message-user ::-moz-selection {
-  background: rgba(255, 255, 255, 0.35);
-  color: inherit;
-}
-
 .claudian-message-assistant {
   background: transparent;
   align-self: stretch;

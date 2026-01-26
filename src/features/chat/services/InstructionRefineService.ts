@@ -7,10 +7,8 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 
-/** Callback for streaming progress updates. */
 export type RefineProgressCallback = (update: InstructionRefineResult) => void;
 
-/** Service for refining user instructions with Claude. */
 export class InstructionRefineService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;

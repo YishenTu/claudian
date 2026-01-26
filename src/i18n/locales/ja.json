@@ -52,41 +52,6 @@
       "desc": "1行に1つのマッピング。形式：\"map <キー> <アクション>\"（アクション：scrollUp, scrollDown, focusInput）。"
     },
     "hotkeys": "ホットキー",
-    "inlineEditHotkey": {
-      "name": "インライン編集ホットキー",
-      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
-      "descWithKey": "現在：{hotkey}",
-      "btnSet": "ホットキーを設定",
-      "btnChange": "変更"
-    },
-    "openChatHotkey": {
-      "name": "チャットを開くホットキー",
-      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
-      "descWithKey": "現在：{hotkey}",
-      "btnSet": "ホットキーを設定",
-      "btnChange": "変更"
-    },
-    "newTabHotkey": {
-      "name": "新しいタブのホットキー",
-      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
-      "descWithKey": "現在：{hotkey}",
-      "btnSet": "ホットキーを設定",
-      "btnChange": "変更"
-    },
-    "newSessionHotkey": {
-      "name": "新しいセッションのホットキー",
-      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
-      "descWithKey": "現在：{hotkey}",
-      "btnSet": "ホットキーを設定",
-      "btnChange": "変更"
-    },
-    "closeTabHotkey": {
-      "name": "タブを閉じるホットキー",
-      "descNoKey": "ホットキーが設定されていません。クリックして設定します。",
-      "descWithKey": "現在：{hotkey}",
-      "btnSet": "ホットキーを設定",
-      "btnChange": "変更"
-    },
     "slashCommands": {
       "name": "スラッシュコマンド",
       "desc": "/command でトリガーされるカスタムプロンプトテンプレートを作成します。$ARGUMENTS ですべての引数、$1/$2 で位置引数、@file でファイル内容、!`bash` でコマンド出力を取得できます。"
@@ -131,9 +96,6 @@
     "envSnippets": {
       "name": "スニペット",
       "addBtn": "スニペットを追加",
-      "editBtn": "編集",
-      "deleteBtn": "削除",
-      "useBtn": "使用",
       "noSnippets": "保存された環境変数スニペットはありません。+をクリックして現在の設定を保存してください。",
       "nameRequired": "スニペットの名前を入力してください",
       "modal": {
@@ -153,8 +115,6 @@
     "customContextLimits": {
       "name": "カスタムコンテキスト制限",
       "desc": "カスタムモデルのコンテキストウィンドウサイズを設定します。デフォルト（200kトークン）を使用する場合は空欄のままにしてください。",
-      "modelLabel": "{model} コンテキスト制限",
-      "modelDesc": "{modelId} のコンテキストウィンドウ。256k、1m、または正確なトークン数の形式を使用してください。",
       "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。"
     },
     "advanced": "詳細設定",
@@ -165,8 +125,7 @@
     "maxTabs": {
       "name": "最大チャットタブ数",
       "desc": "同時に開ける最大チャットタブ数（3-10）。各タブは個別の Claude セッションを使用します。",
-      "warning": "5 タブを超えるとパフォーマンスやメモリ使用量に影響する可能性があります。",
-      "range": "{min} - {max}"
+      "warning": "5 タブを超えるとパフォーマンスやメモリ使用量に影響する可能性があります。"
     },
     "tabBarPosition": {
       "name": "タブバーの位置",
@@ -190,17 +149,7 @@
     },
     "language": {
       "name": "言語",
-      "desc": "プラグインインターフェースの表示言語を変更",
-      "en": "English",
-      "zh-CN": "简体中文",
-      "zh-TW": "繁體中文",
-      "ja": "日本語",
-      "ko": "한국어",
-      "de": "Deutsch",
-      "fr": "Français",
-      "es": "Español",
-      "ru": "Русский",
-      "pt": "Português"
+      "desc": "プラグインインターフェースの表示言語を変更"
     }
   }
 }

@@ -147,7 +147,7 @@
   border: 2px solid var(--background-modifier-border);
   border-top-color: var(--interactive-accent);
   border-radius: 50%;
-  animation: claudian-instruction-spin 0.8s linear infinite;
+  animation: claudian-spin 0.8s linear infinite;
 }
 
 /* Instruction modal content sections */

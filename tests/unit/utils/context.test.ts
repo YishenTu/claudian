@@ -1,7 +1,3 @@
-/**
- * Unit tests for context utilities.
- */
-
 import {
   appendContextFiles,
   appendCurrentNote,

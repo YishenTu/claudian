@@ -1,10 +1,3 @@
-/**
- * Tests for imageEmbed utility - image wikilink to HTML conversion
- *
- * Tests the regex pattern matching and HTML generation logic.
- * DOM integration is tested manually in Obsidian.
- */
-
 import type { App, TFile } from 'obsidian';
 
 import { replaceImageEmbedsWithHtml } from '@/utils/imageEmbed';

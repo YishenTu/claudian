@@ -1,7 +1,3 @@
-/**
- * Tests for ThinkingBlockRenderer - Extended thinking block UI
- */
-
 import {
   createThinkingBlock,
   finalizeThinkingBlock,

@@ -62,7 +62,6 @@ export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
 export const CONTEXT_WINDOW_STANDARD = 200_000;
 export const CONTEXT_WINDOW_1M = 1_000_000;
 
-/** Get the context window size for a model. Custom limits take priority over defaults. */
 export function getContextWindowSize(
   model: string,
   is1MEnabled = false,

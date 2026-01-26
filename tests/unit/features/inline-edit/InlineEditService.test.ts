@@ -1,7 +1,3 @@
-/**
- * Tests for InlineEditService - Inline text editing with Claude
- */
-
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,
