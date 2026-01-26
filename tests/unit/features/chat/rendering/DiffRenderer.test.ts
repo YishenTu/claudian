@@ -3,8 +3,55 @@
  */
 
 import type { DiffLine, StructuredPatchHunk } from '@/core/types/diff';
-import { splitIntoHunks } from '@/features/chat/rendering/DiffRenderer';
+import { renderDiffContent, splitIntoHunks } from '@/features/chat/rendering/DiffRenderer';
 import { countLineChanges, structuredPatchToDiffLines } from '@/utils/diff';
+
+/** Minimal mock element for renderDiffContent tests. */
+function createMockElement(): any {
+  const children: any[] = [];
+  const classes = new Set<string>();
+  const el: any = {
+    children,
+    textContent: '',
+    empty: () => { children.length = 0; el.textContent = ''; },
+    addClass: (cls: string) => { classes.add(cls); return el; },
+    hasClass: (cls: string) => classes.has(cls),
+    createDiv: (opts?: { cls?: string; text?: string }) => {
+      const child = createMockElement();
+      if (opts?.cls) opts.cls.split(' ').forEach(c => child.addClass(c));
+      if (opts?.text) child.textContent = opts.text;
+      children.push(child);
+      return child;
+    },
+    createSpan: (opts?: { cls?: string; text?: string }) => {
+      const child = createMockElement();
+      if (opts?.cls) opts.cls.split(' ').forEach(c => child.addClass(c));
+      if (opts?.text) child.textContent = opts.text;
+      children.push(child);
+      return child;
+    },
+    setText: (text: string) => { el.textContent = text; },
+    _children: children,
+    _classes: classes,
+  };
+  return el;
+}
+
+/** Recursively count elements matching a class. */
+function countByClass(el: any, cls: string): number {
+  let count = el.hasClass(cls) ? 1 : 0;
+  for (const child of el._children) count += countByClass(child, cls);
+  return count;
+}
+
+/** Generate N insert DiffLines. */
+function makeInsertLines(n: number): DiffLine[] {
+  return Array.from({ length: n }, (_, i) => ({
+    type: 'insert' as const,
+    text: `line ${i + 1}`,
+    newLineNum: i + 1,
+  }));
+}
 
 describe('DiffRenderer', () => {
   describe('structuredPatchToDiffLines', () => {
@@ -292,6 +339,50 @@ describe('DiffRenderer', () => {
       expect(hunks).toHaveLength(1);
       expect(hunks[0].oldStart).toBe(2); // Context starts at line 2
       expect(hunks[0].newStart).toBe(2);
+    });
+  });
+
+  describe('renderDiffContent', () => {
+    it('should render all lines when all-inserts count is within cap', () => {
+      const container = createMockElement();
+      const lines = makeInsertLines(20);
+
+      renderDiffContent(container, lines);
+
+      // All 20 insert lines rendered, no separator
+      expect(countByClass(container, 'claudian-diff-insert')).toBe(20);
+      expect(countByClass(container, 'claudian-diff-separator')).toBe(0);
+    });
+
+    it('should cap all-inserts diff at 20 lines with remainder message', () => {
+      const container = createMockElement();
+      const lines = makeInsertLines(100);
+
+      renderDiffContent(container, lines);
+
+      // Only 20 insert lines rendered
+      expect(countByClass(container, 'claudian-diff-insert')).toBe(20);
+
+      // Separator shows remaining count
+      const separator = container._children.find(
+        (c: any) => c.hasClass('claudian-diff-separator'),
+      );
+      expect(separator).toBeDefined();
+      expect(separator.textContent).toBe('... 80 more lines');
+    });
+
+    it('should not cap mixed diff lines (edits with context)', () => {
+      const container = createMockElement();
+      // Build a diff with equal + insert lines — not all-inserts
+      const lines: DiffLine[] = [
+        { type: 'equal', text: 'ctx', oldLineNum: 1, newLineNum: 1 },
+        ...makeInsertLines(30),
+      ];
+
+      renderDiffContent(container, lines);
+
+      // All 30 insert lines rendered (not capped because not all-inserts)
+      expect(countByClass(container, 'claudian-diff-insert')).toBe(30);
     });
   });
 });

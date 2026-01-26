@@ -70,6 +70,9 @@ export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHun
   return hunks;
 }
 
+/** Max lines to render for all-inserts diffs (new file creation). */
+const NEW_FILE_DISPLAY_CAP = 20;
+
 /** Render diff content to a container element. */
 export function renderDiffContent(
   containerEl: HTMLElement,
@@ -77,6 +80,23 @@ export function renderDiffContent(
   contextLines = 3
 ): void {
   containerEl.empty();
+
+  // New file creation: all lines are inserts — cap display to avoid large DOM
+  const allInserts = diffLines.length > 0 && diffLines.every(l => l.type === 'insert');
+  if (allInserts && diffLines.length > NEW_FILE_DISPLAY_CAP) {
+    const hunkEl = containerEl.createDiv({ cls: 'claudian-diff-hunk' });
+    for (const line of diffLines.slice(0, NEW_FILE_DISPLAY_CAP)) {
+      const lineEl = hunkEl.createDiv({ cls: 'claudian-diff-line claudian-diff-insert' });
+      const prefixEl = lineEl.createSpan({ cls: 'claudian-diff-prefix' });
+      prefixEl.setText('+');
+      const contentEl = lineEl.createSpan({ cls: 'claudian-diff-text' });
+      contentEl.setText(line.text || ' ');
+    }
+    const remaining = diffLines.length - NEW_FILE_DISPLAY_CAP;
+    const separator = containerEl.createDiv({ cls: 'claudian-diff-separator' });
+    separator.setText(`... ${remaining} more lines`);
+    return;
+  }
 
   const hunks = splitIntoHunks(diffLines, contextLines);
 
