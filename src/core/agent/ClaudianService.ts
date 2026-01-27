@@ -22,6 +22,7 @@ import type {
   SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../main';
 import { stripCurrentNoteContext } from '../../utils/context';
@@ -42,6 +43,7 @@ import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
   buildPermissionUpdates,
   getActionDescription,
+  getActionPattern,
 } from '../security';
 import { TOOL_SKILL } from '../tools/toolNames';
 import type {
@@ -104,6 +106,7 @@ export class ClaudianService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
   private approvalCallback: ApprovalCallback | null = null;
+  private sessionDenyPatterns = new Set<string>();
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
 
@@ -1268,6 +1271,7 @@ export class ClaudianService {
     // Reset crash recovery for fresh start
     this.crashRecoveryAttempted = false;
 
+    this.sessionDenyPatterns.clear();
     this.sessionManager.reset();
   }
 
@@ -1379,6 +1383,13 @@ export class ClaudianService {
         return { behavior: 'deny', message: 'No approval handler available.' };
       }
 
+      // Session deny cache — SDK deny result can't carry updatedPermissions,
+      // so we remember session denials locally to avoid re-prompting.
+      const denyKey = `${toolName}:${getActionPattern(toolName, input)}`;
+      if (this.sessionDenyPatterns.has(denyKey)) {
+        return { behavior: 'deny', message: 'User denied this action.' };
+      }
+
       try {
         const description = getActionDescription(toolName, input);
         const decision = await this.approvalCallback(
@@ -1402,7 +1413,7 @@ export class ClaudianService {
         if (decision === 'deny-always') {
           try {
             for (const update of updatedPermissions) {
-              if (update.type === 'addRules' && update.behavior === 'deny') {
+              if ((update.type === 'addRules' || update.type === 'replaceRules') && update.behavior === 'deny') {
                 for (const rule of update.rules) {
                   const ruleStr = rule.ruleContent
                     ? `${rule.toolName}(${rule.ruleContent})`
@@ -1412,8 +1423,13 @@ export class ClaudianService {
               }
             }
           } catch {
-            // Persistence failed — deny still applies for this invocation
+            new Notice('Failed to save deny rule. The action is denied for this invocation only.');
           }
+        }
+
+        // Remember session deny to avoid re-prompting
+        if (decision === 'deny') {
+          this.sessionDenyPatterns.add(denyKey);
         }
 
         return { behavior: 'deny', message: 'User denied this action.' };

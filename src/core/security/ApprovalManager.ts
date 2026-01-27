@@ -96,13 +96,14 @@ export function matchesRulePattern(
   //   - "git *" matches "git status", "git commit", etc.
   //   - "npm:*" matches "npm install", "npm run", etc. (CC format)
   if (toolName === TOOL_BASH) {
-    if (normalizedRule.endsWith('*')) {
-      const prefix = normalizedRule.slice(0, -1);
+    // CC format "npm:*" — colon is a separator, not part of the prefix
+    if (normalizedRule.endsWith(':*')) {
+      const prefix = normalizedRule.slice(0, -2);
       return normalizedAction.startsWith(prefix);
     }
-    // Support trailing ":*" format from CC (e.g., "git:*" or "npm run:*")
-    if (normalizedRule.endsWith(':*')) {
-      const prefix = normalizedRule.slice(0, -2);  // Remove trailing ":*"
+    // Space wildcard "git *"
+    if (normalizedRule.endsWith('*')) {
+      const prefix = normalizedRule.slice(0, -1);
       return normalizedAction.startsWith(prefix);
     }
     // No wildcard present and exact match failed above - reject
@@ -166,9 +167,12 @@ export function buildPermissionUpdates(
 
   if (suggestions) {
     for (const s of suggestions) {
-      if (s.type === 'addRules' || s.type === 'replaceRules' || s.type === 'removeRules') {
-        hasRuleUpdate = hasRuleUpdate || s.type === 'addRules' || s.type === 'replaceRules';
+      if (s.type === 'addRules' || s.type === 'replaceRules') {
+        hasRuleUpdate = true;
         processed.push({ ...s, behavior, destination });
+      } else if (s.type === 'removeRules') {
+        // Preserve original behavior — it specifies which list to remove from, not user intent
+        processed.push({ ...s, destination });
       } else if (s.type === 'addDirectories') {
         // Skip directory grants when user denied the action
         if (!isDeny) {

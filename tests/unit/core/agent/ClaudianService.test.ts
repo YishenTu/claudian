@@ -1,6 +1,10 @@
+import { Notice } from 'obsidian';
+
 import { ClaudianService } from '@/core/agent/ClaudianService';
 import type { McpServerManager } from '@/core/mcp';
 import type ClaudianPlugin from '@/main';
+
+const mockNotice = Notice as jest.Mock;
 
 type MockMcpServerManager = jest.Mocked<McpServerManager>;
 
@@ -431,6 +435,132 @@ describe('ClaudianService', () => {
         expect(result.message).toBe('User denied this action.');
         // Should NOT propagate the storage error or set interrupt
         expect(result.interrupt).toBeUndefined();
+      });
+
+      it('should show Notice when deny-always persistence fails', async () => {
+        mockNotice.mockClear();
+        const callback = jest.fn().mockResolvedValue('deny-always');
+        service.setApprovalCallback(callback);
+        (mockPlugin as any).storage.addDenyRule.mockRejectedValue(new Error('FS write error'));
+
+        const canUseTool = (service as any).createApprovalCallback();
+        await canUseTool('Bash', { command: 'rm -rf /' }, canUseToolOptions);
+
+        expect(mockNotice).toHaveBeenCalledWith(
+          'Failed to save deny rule. The action is denied for this invocation only.',
+        );
+      });
+
+      it('should return deny with interrupt for cancel decisions', async () => {
+        const callback = jest.fn().mockResolvedValue('cancel');
+        service.setApprovalCallback(callback);
+
+        const canUseTool = (service as any).createApprovalCallback();
+        const result = await canUseTool('Bash', { command: 'ls' }, canUseToolOptions);
+
+        expect(result.behavior).toBe('deny');
+        expect(result.message).toBe('User interrupted.');
+        expect(result.interrupt).toBe(true);
+      });
+
+      it('should forward decisionReason and blockedPath to approvalCallback', async () => {
+        const callback = jest.fn().mockResolvedValue('allow');
+        service.setApprovalCallback(callback);
+
+        const canUseTool = (service as any).createApprovalCallback();
+        await canUseTool('Read', { file_path: '/etc/passwd' }, {
+          ...canUseToolOptions,
+          decisionReason: 'Path is outside allowed directories',
+          blockedPath: '/etc/passwd',
+        });
+
+        expect(callback).toHaveBeenCalledWith(
+          'Read',
+          { file_path: '/etc/passwd' },
+          'Read file: /etc/passwd',
+          'Path is outside allowed directories',
+          '/etc/passwd',
+        );
+      });
+
+      it('should deny when no approvalCallback is set', async () => {
+        const canUseTool = (service as any).createApprovalCallback();
+        const result = await canUseTool('Bash', { command: 'ls' }, canUseToolOptions);
+
+        expect(result.behavior).toBe('deny');
+        expect(result.message).toBe('No approval handler available.');
+      });
+
+      it('should return updatedPermissions with session destination for allow decisions', async () => {
+        const callback = jest.fn().mockResolvedValue('allow');
+        service.setApprovalCallback(callback);
+
+        const canUseTool = (service as any).createApprovalCallback();
+        const result = await canUseTool('Bash', { command: 'git status' }, canUseToolOptions);
+
+        expect(result.behavior).toBe('allow');
+        expect(result.updatedPermissions).toBeDefined();
+        expect(result.updatedPermissions[0]).toMatchObject({
+          type: 'addRules',
+          behavior: 'allow',
+          destination: 'session',
+        });
+      });
+
+      it('should auto-deny on second invocation of same action after session deny', async () => {
+        const callback = jest.fn().mockResolvedValue('deny');
+        service.setApprovalCallback(callback);
+
+        const canUseTool = (service as any).createApprovalCallback();
+
+        // First call prompts the user
+        await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1);
+
+        // Second call with same action should auto-deny without prompting
+        const result = await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1); // Not called again
+        expect(result.behavior).toBe('deny');
+        expect(result.message).toBe('User denied this action.');
+      });
+
+      it('should clear session deny cache on resetSession', async () => {
+        const callback = jest.fn().mockResolvedValue('deny');
+        service.setApprovalCallback(callback);
+
+        const canUseTool = (service as any).createApprovalCallback();
+        await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1);
+
+        // Reset session clears the cache
+        jest.spyOn(service, 'closePersistentQuery').mockImplementation(() => {});
+        service.resetSession();
+
+        // Re-create callback (would happen on new persistent query)
+        service.setApprovalCallback(callback);
+        const canUseTool2 = (service as any).createApprovalCallback();
+        await canUseTool2('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(2); // Called again after reset
+      });
+
+      it('should persist deny rules from replaceRules suggestions for deny-always', async () => {
+        const callback = jest.fn().mockResolvedValue('deny-always');
+        service.setApprovalCallback(callback);
+
+        const suggestions = [{
+          type: 'replaceRules' as const,
+          behavior: 'allow' as const,
+          rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+          destination: 'session' as const,
+        }];
+
+        const canUseTool = (service as any).createApprovalCallback();
+        await canUseTool('Bash', { command: 'git push' }, {
+          ...canUseToolOptions,
+          suggestions,
+        });
+
+        expect((mockPlugin as any).storage.addDenyRule).toHaveBeenCalledWith('Bash(git *)');
       });
     });
   });

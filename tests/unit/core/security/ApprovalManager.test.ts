@@ -98,6 +98,12 @@ describe('matchesRulePattern', () => {
     expect(matchesRulePattern('Bash', 'npm install', 'git *')).toBe(false);
   });
 
+  it('matches Bash CC-format colon wildcard', () => {
+    expect(matchesRulePattern('Bash', 'npm install', 'npm:*')).toBe(true);
+    expect(matchesRulePattern('Bash', 'npm run build', 'npm run:*')).toBe(true);
+    expect(matchesRulePattern('Bash', 'yarn install', 'npm:*')).toBe(false);
+  });
+
   it('matches file path prefix for Read tool', () => {
     expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/')).toBe(true);
     expect(matchesRulePattern('Read', '/other/path/file.md', '/test/vault/')).toBe(false);
@@ -340,5 +346,22 @@ describe('buildPermissionUpdates', () => {
       destination: 'session',
     });
     expect(updates[1].type).toBe('removeRules');
+  });
+
+  it('preserves original behavior on removeRules suggestions', () => {
+    const suggestions = [
+      {
+        type: 'removeRules' as const,
+        behavior: 'allow' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
+        destination: 'session' as const,
+      },
+    ];
+    // Even when user denies, removeRules.behavior stays 'allow' (means "remove from allow list")
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'deny-always', suggestions);
+    const removeEntry = updates.find(u => u.type === 'removeRules');
+    expect(removeEntry).toBeDefined();
+    expect(removeEntry!.behavior).toBe('allow');
+    expect(removeEntry!.destination).toBe('projectSettings');
   });
 });
