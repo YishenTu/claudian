@@ -31,7 +31,6 @@ global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 // Mock ClaudianService
 jest.mock('@/core/agent', () => ({
   ClaudianService: jest.fn().mockImplementation(() => ({
-    loadCCPermissions: jest.fn().mockResolvedValue(undefined),
     ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
   })),
@@ -419,28 +418,10 @@ describe('Tab - Service Initialization', () => {
       expect(tab.serviceInitialized).toBe(true);
     });
 
-    it('should handle loadCCPermissions errors gracefully', async () => {
-      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => ({
-        loadCCPermissions: jest.fn().mockRejectedValue(new Error('Permission load failed')),
-        ensureReady: jest.fn().mockResolvedValue(true),
-      }));
-
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      // Should not throw
-      await expect(initializeTabService(tab, options.plugin, options.mcpManager))
-        .resolves.not.toThrow();
-
-      expect(tab.serviceInitialized).toBe(true);
-    });
-
     it('should ensureReady without session ID (just spin up process)', async () => {
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
       agentModule.ClaudianService.mockImplementationOnce(() => ({
-        loadCCPermissions: jest.fn().mockResolvedValue(undefined),
         ensureReady: mockEnsureReady,
       }));
 
@@ -460,7 +441,6 @@ describe('Tab - Service Initialization', () => {
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
       agentModule.ClaudianService.mockImplementationOnce(() => ({
-        loadCCPermissions: jest.fn().mockResolvedValue(undefined),
         ensureReady: mockEnsureReady,
       }));
 
@@ -1510,23 +1490,6 @@ describe('Tab - Service Initialization Error Handling', () => {
     expect(tab.service).not.toBeNull();
   });
 
-  it('should call loadCCPermissions during initialization', async () => {
-    const { ClaudianService } = jest.requireMock('@/core/agent');
-    const loadCCPermissions = jest.fn().mockResolvedValue(undefined);
-
-    ClaudianService.mockImplementation(() => ({
-      loadCCPermissions,
-      ensureReady: jest.fn().mockResolvedValue(true),
-      closePersistentQuery: jest.fn(),
-    }));
-
-    const options = createMockOptions();
-    const tab = createTab(options);
-
-    await initializeTabService(tab, options.plugin, options.mcpManager);
-
-    expect(loadCCPermissions).toHaveBeenCalled();
-  });
 });
 
 describe('Tab - Controller Configuration', () => {

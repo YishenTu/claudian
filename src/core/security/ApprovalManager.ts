@@ -1,9 +1,9 @@
 /**
- * Approval Manager
- *
- * Manages tool action permissions for Safe mode handling.
- * Uses CC-compatible permission format (allow/deny/ask arrays).
+ * Permission utilities for tool action approval.
+ * Standalone functions for pattern matching, rule generation, and SDK permission updates.
  */
+
+import type { PermissionBehavior, PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
 
 import {
   TOOL_BASH,
@@ -14,18 +14,7 @@ import {
   TOOL_READ,
   TOOL_WRITE,
 } from '../tools/toolNames';
-import type { CCPermissions, PermissionRule } from '../types';
-import { createPermissionRule, parseCCPermissionRule } from '../types';
-
-/** Session-scoped permission (not persisted). */
-interface SessionPermission {
-  rule: PermissionRule;
-  type: 'allow' | 'deny';
-}
-
-export type AddAllowRuleCallback = (rule: PermissionRule) => Promise<void>;
-export type AddDenyRuleCallback = (rule: PermissionRule) => Promise<void>;
-export type PermissionCheckResult = 'allow' | 'deny' | 'ask';
+import { createPermissionRule } from '../types';
 
 export function getActionPattern(toolName: string, input: Record<string, unknown>): string {
   switch (toolName) {
@@ -54,7 +43,7 @@ export function getActionPattern(toolName: string, input: Record<string, unknown
  * from tools that serialized their input), the rule falls back to just the
  * tool name, matching all actions for that tool.
  */
-export function generatePermissionRule(toolName: string, input: Record<string, unknown>): PermissionRule {
+export function generatePermissionRule(toolName: string, input: Record<string, unknown>): string {
   const pattern = getActionPattern(toolName, input);
 
   // If pattern is empty, wildcard, or JSON object (legacy), just use tool name
@@ -144,7 +133,6 @@ export function matchesRulePattern(
   return false;
 }
 
-
 function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
   if (!actionPath.startsWith(approvedPath)) {
     return false;
@@ -161,157 +149,68 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
   return actionPath.charAt(approvedPath.length) === '/';
 }
 
-function matchesAnyRule(
-  rules: PermissionRule[] | undefined,
-  toolName: string,
-  actionPattern: string
-): boolean {
-  if (!rules || rules.length === 0) return false;
-
-  return rules.some(rule => {
-    const { tool, pattern } = parseCCPermissionRule(rule);
-    if (tool !== toolName) return false;
-    return matchesRulePattern(toolName, actionPattern, pattern);
-  });
-}
-
 /**
- * Manages tool action permissions for Safe mode.
+ * Convert a user decision + SDK suggestions into PermissionUpdate[].
+ *
+ * For "always" decisions: uses suggestions with destination overridden to
+ * projectSettings, or constructs an addRules update from the action pattern.
+ * For session decisions: uses suggestions as-is or constructs with destination 'session'.
+ *
+ * All suggestion types are preserved (addRules, addDirectories, setMode, etc.),
+ * with behavior/destination overridden to match the user's decision. Directory-grant
+ * suggestions (addDirectories) are excluded for deny decisions to avoid granting
+ * access the user explicitly rejected.
  */
-export class ApprovalManager {
-  private sessionPermissions: SessionPermission[] = [];
-  private addAllowRuleCallback: AddAllowRuleCallback | null = null;
-  private addDenyRuleCallback: AddDenyRuleCallback | null = null;
-  private getPermissions: () => CCPermissions;
+export function buildPermissionUpdates(
+  toolName: string,
+  input: Record<string, unknown>,
+  decision: 'allow' | 'allow-always' | 'deny' | 'deny-always',
+  suggestions?: PermissionUpdate[]
+): PermissionUpdate[] {
+  const isAlways = decision === 'allow-always' || decision === 'deny-always';
+  const destination: PermissionUpdateDestination = isAlways ? 'projectSettings' : 'session';
+  const behavior: PermissionBehavior = decision.startsWith('deny') ? 'deny' : 'allow';
+  const isDeny = decision.startsWith('deny');
 
-  constructor(getPermissions: () => CCPermissions) {
-    this.getPermissions = getPermissions;
-  }
+  // Process all SDK suggestions, overriding behavior/destination as appropriate
+  const processed: PermissionUpdate[] = [];
+  let hasRuleUpdate = false;
 
-  setAddAllowRuleCallback(callback: AddAllowRuleCallback | null): void {
-    this.addAllowRuleCallback = callback;
-  }
-
-  setAddDenyRuleCallback(callback: AddDenyRuleCallback | null): void {
-    this.addDenyRuleCallback = callback;
-  }
-
-  /**
-   * Check permission for an action.
-   *
-   * Priority (highest to lowest):
-   * 1. Session deny (ephemeral, this session only)
-   * 2. Permanent deny (persisted in settings.json)
-   * 3. Permanent ask (forces prompt even if allow rule exists)
-   * 4. Session allow (ephemeral, this session only)
-   * 5. Permanent allow (persisted in settings.json)
-   * 6. Fallback to ask (no matching rule found)
-   *
-   * @returns 'allow' | 'deny' | 'ask'
-   */
-  checkPermission(toolName: string, input: Record<string, unknown>): PermissionCheckResult {
-    const actionPattern = getActionPattern(toolName, input);
-    const permissions = this.getPermissions();
-
-    // 1. Check session denies first (highest priority)
-    const sessionDenied = this.sessionPermissions.some(
-      sp => sp.type === 'deny' && this.matchesSessionPermission(sp.rule, toolName, actionPattern)
-    );
-    if (sessionDenied) return 'deny';
-
-    // 2. Check permanent denies
-    if (matchesAnyRule(permissions.deny, toolName, actionPattern)) {
-      return 'deny';
-    }
-
-    // 3. Check ask list (overrides allow)
-    if (matchesAnyRule(permissions.ask, toolName, actionPattern)) {
-      return 'ask';
-    }
-
-    // 4. Check session allows
-    const sessionAllowed = this.sessionPermissions.some(
-      sp => sp.type === 'allow' && this.matchesSessionPermission(sp.rule, toolName, actionPattern)
-    );
-    if (sessionAllowed) return 'allow';
-
-    // 5. Check permanent allows
-    if (matchesAnyRule(permissions.allow, toolName, actionPattern)) {
-      return 'allow';
-    }
-
-    // 6. Fallback to ask
-    return 'ask';
-  }
-
-  /**
-   * Legacy method for compatibility.
-   * @deprecated Use checkPermission instead
-   */
-  isActionApproved(toolName: string, input: Record<string, unknown>): boolean {
-    return this.checkPermission(toolName, input) === 'allow';
-  }
-
-  private matchesSessionPermission(
-    rule: PermissionRule,
-    toolName: string,
-    actionPattern: string
-  ): boolean {
-    const { tool, pattern } = parseCCPermissionRule(rule);
-    if (tool !== toolName) return false;
-    return matchesRulePattern(toolName, actionPattern, pattern);
-  }
-
-  /**
-   * Approve an action (add to allow list).
-   * @throws Error if scope is 'always' but no callback is registered
-   */
-  async approveAction(
-    toolName: string,
-    input: Record<string, unknown>,
-    scope: 'session' | 'always'
-  ): Promise<void> {
-    const rule = generatePermissionRule(toolName, input);
-
-    if (scope === 'session') {
-      this.sessionPermissions.push({ rule, type: 'allow' });
-    } else {
-      if (!this.addAllowRuleCallback) {
-        throw new Error('[ApprovalManager] Cannot persist allow rule: addAllowRuleCallback not registered');
+  if (suggestions) {
+    for (const s of suggestions) {
+      if (s.type === 'addRules' || s.type === 'replaceRules' || s.type === 'removeRules') {
+        // Rule-based updates: override both behavior and destination
+        hasRuleUpdate = hasRuleUpdate || s.type === 'addRules' || s.type === 'replaceRules';
+        processed.push({ ...s, behavior, destination });
+      } else if (s.type === 'addDirectories') {
+        // Don't grant directory access when user denied the action
+        if (!isDeny) {
+          processed.push({ ...s, destination });
+        }
+      } else {
+        // removeDirectories, setMode: override destination
+        processed.push({ ...s, destination });
       }
-      await this.addAllowRuleCallback(rule);
     }
   }
 
-  /**
-   * Deny an action (add to deny list).
-   * @throws Error if scope is 'always' but no callback is registered
-   */
-  async denyAction(
-    toolName: string,
-    input: Record<string, unknown>,
-    scope: 'session' | 'always'
-  ): Promise<void> {
-    const rule = generatePermissionRule(toolName, input);
-
-    if (scope === 'session') {
-      this.sessionPermissions.push({ rule, type: 'deny' });
-    } else {
-      if (!this.addDenyRuleCallback) {
-        throw new Error('[ApprovalManager] Cannot persist deny rule: addDenyRuleCallback not registered');
-      }
-      await this.addDenyRuleCallback(rule);
+  // Ensure we have a rule update (construct addRules from action pattern if needed).
+  // addRules and replaceRules from SDK suggestions satisfy this — only removeRules alone
+  // does not, since removing rules without adding any would leave no rule for this action.
+  if (!hasRuleUpdate) {
+    const pattern = getActionPattern(toolName, input);
+    const ruleValue: { toolName: string; ruleContent?: string } = { toolName };
+    if (pattern && pattern !== '*' && !pattern.startsWith('{')) {
+      ruleValue.ruleContent = pattern;
     }
+
+    processed.unshift({
+      type: 'addRules' as const,
+      behavior,
+      rules: [ruleValue],
+      destination,
+    });
   }
 
-  clearSessionPermissions(): void {
-    this.sessionPermissions = [];
-  }
-
-  /**
-   * Get session-scoped permissions (for testing/debugging).
-   */
-  getSessionPermissions(): SessionPermission[] {
-    return [...this.sessionPermissions];
-  }
+  return processed;
 }

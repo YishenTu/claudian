@@ -1648,85 +1648,8 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('approval memory system', () => {
-    beforeEach(() => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      // Reset plugin settings
-      mockPlugin = createMockPlugin({
-        permissionMode: 'normal',
-        permissions: [],
-      });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-    });
-
-    it('should store session-scoped approved actions', async () => {
-      // Approve an action with session scope via the approval manager
-      await (service as any).approvalManager.approveAction('Bash', { command: 'ls -la' }, 'session');
-
-      // Check if action is approved
-      const isApproved = (service as any).approvalManager.isActionApproved('Bash', { command: 'ls -la' });
-      expect(isApproved).toBe(true);
-    });
-
-    it('should clear session-scoped approvals on resetSession', async () => {
-      await (service as any).approvalManager.approveAction('Bash', { command: 'ls -la' }, 'session');
-
-      service.resetSession();
-
-      const isApproved = (service as any).approvalManager.isActionApproved('Bash', { command: 'ls -la' });
-      expect(isApproved).toBe(false);
-    });
-
-    it('should store permanent approved actions in CC settings', async () => {
-      await (service as any).approvalManager.approveAction('Read', { file_path: '/test/file.md' }, 'always');
-
-      expect(mockPlugin._ccPermissions.allow.length).toBe(1);
-      expect(mockPlugin._ccPermissions.allow[0]).toBe('Read(/test/file.md)');
-    });
-
-    it('should recognize permanently approved actions', async () => {
-      // Set up CC permissions with allow rule
-      mockPlugin._ccPermissions.allow = ['Read(/test/file.md)'];
-      // Reload permissions into service
-      await service.loadCCPermissions();
-
-      const isApproved = (service as any).approvalManager.isActionApproved('Read', { file_path: '/test/file.md' });
-      expect(isApproved).toBe(true);
-    });
-
-    it('should match Bash commands exactly', async () => {
-      await (service as any).approvalManager.approveAction('Bash', { command: 'ls -la' }, 'session');
-
-      // Exact match should be approved
-      expect((service as any).approvalManager.isActionApproved('Bash', { command: 'ls -la' })).toBe(true);
-
-      // Different command should not be approved
-      expect((service as any).approvalManager.isActionApproved('Bash', { command: 'ls -l' })).toBe(false);
-    });
-
-    it('should match file paths with prefix', async () => {
-      // Set up CC permissions with allow rule (trailing slash for directory)
-      mockPlugin._ccPermissions.allow = ['Read(/test/vault/)'];
-      await service.loadCCPermissions();
-
-      // Path starting with approved prefix should match
-      expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/test/vault/notes/file.md' })).toBe(true);
-
-      // Path not starting with prefix should not match
-      expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/other/path/file.md' })).toBe(false);
-    });
-
-    it('should not match non-segment prefixes for file paths', async () => {
-      // Set up CC permissions with allow rule (no trailing slash)
-      mockPlugin._ccPermissions.allow = ['Read(/test/vault/notes)'];
-      await service.loadCCPermissions();
-
-      expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/test/vault/notes/file.md' })).toBe(true);
-      expect((service as any).approvalManager.isActionApproved('Read', { file_path: '/test/vault/notes2/file.md' })).toBe(false);
-    });
-
+  describe('permission utility functions', () => {
     it('should generate correct action patterns for different tools', () => {
-      // Now test the standalone function directly
       expect(getActionPattern('Bash', { command: 'git status' })).toBe('git status');
       expect(getActionPattern('Read', { file_path: '/test/file.md' })).toBe('/test/file.md');
       expect(getActionPattern('Write', { file_path: '/test/output.md' })).toBe('/test/output.md');
@@ -1736,7 +1659,6 @@ describe('ClaudianService', () => {
     });
 
     it('should generate correct action descriptions', () => {
-      // Now test the standalone function directly
       expect(getActionDescription('Bash', { command: 'git status' })).toBe('Run command: git status');
       expect(getActionDescription('Read', { file_path: '/test/file.md' })).toBe('Read file: /test/file.md');
       expect(getActionDescription('Write', { file_path: '/test/output.md' })).toBe('Write to file: /test/output.md');
@@ -2277,7 +2199,7 @@ describe('ClaudianService', () => {
 
       const response = getLastResponse();
       // Should call setPermissionMode for YOLO -> normal transition
-      expect(response?.setPermissionMode).toHaveBeenCalledWith('default');
+      expect(response?.setPermissionMode).toHaveBeenCalledWith('acceptEdits');
     });
 
     it('updates permission mode via setPermissionMode when going from normal to YOLO', async () => {

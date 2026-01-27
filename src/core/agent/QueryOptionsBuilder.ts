@@ -357,7 +357,7 @@ export class QueryOptionsBuilder {
     if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
     } else {
-      options.permissionMode = 'default';
+      options.permissionMode = 'acceptEdits';
       if (canUseTool) {
         options.canUseTool = canUseTool;
       }

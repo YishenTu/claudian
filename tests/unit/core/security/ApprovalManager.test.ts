@@ -1,59 +1,344 @@
 
-import { ApprovalManager } from '../../../../src/core/security/ApprovalManager';
-import type { CCPermissions} from '../../../../src/core/types';
-import { createPermissionRule } from '../../../../src/core/types';
+import {
+  buildPermissionUpdates,
+  generatePermissionRule,
+  getActionDescription,
+  getActionPattern,
+  matchesRulePattern,
+} from '../../../../src/core/security/ApprovalManager';
 
-describe('ApprovalManager', () => {
-    let manager: ApprovalManager;
-    let mockPermissions: CCPermissions = {
-        allow: [],
-        deny: [],
-        ask: []
-    };
+describe('getActionPattern', () => {
+  it('extracts command from Bash tool input', () => {
+    expect(getActionPattern('Bash', { command: 'git status' })).toBe('git status');
+  });
 
-    beforeEach(() => {
-        mockPermissions = { allow: [], deny: [], ask: [] };
-        // Factory returns reference to our mock
-        manager = new ApprovalManager(() => mockPermissions);
+  it('trims whitespace from Bash commands', () => {
+    expect(getActionPattern('Bash', { command: '  git status  ' })).toBe('git status');
+  });
+
+  it('returns empty string for non-string Bash command', () => {
+    expect(getActionPattern('Bash', { command: 123 })).toBe('');
+  });
+
+  it('extracts file_path for Read/Write/Edit tools', () => {
+    expect(getActionPattern('Read', { file_path: '/test/file.md' })).toBe('/test/file.md');
+    expect(getActionPattern('Write', { file_path: '/test/output.md' })).toBe('/test/output.md');
+    expect(getActionPattern('Edit', { file_path: '/test/edit.md' })).toBe('/test/edit.md');
+  });
+
+  it('returns * when file_path is missing', () => {
+    expect(getActionPattern('Read', {})).toBe('*');
+  });
+
+  it('extracts pattern for Glob/Grep tools', () => {
+    expect(getActionPattern('Glob', { pattern: '**/*.md' })).toBe('**/*.md');
+    expect(getActionPattern('Grep', { pattern: 'TODO' })).toBe('TODO');
+  });
+
+  it('returns JSON for unknown tools', () => {
+    expect(getActionPattern('UnknownTool', { foo: 'bar' })).toBe('{"foo":"bar"}');
+  });
+});
+
+describe('generatePermissionRule', () => {
+  it('creates rule with tool and pattern', () => {
+    expect(generatePermissionRule('Bash', { command: 'git status' })).toBe('Bash(git status)');
+  });
+
+  it('creates tool-only rule for wildcard pattern', () => {
+    expect(generatePermissionRule('Read', {})).toBe('Read');
+  });
+
+  it('creates tool-only rule for JSON pattern (legacy)', () => {
+    expect(generatePermissionRule('UnknownTool', {})).toBe('UnknownTool');
+  });
+});
+
+describe('getActionDescription', () => {
+  it('describes Bash tool actions', () => {
+    expect(getActionDescription('Bash', { command: 'git status' })).toBe('Run command: git status');
+  });
+
+  it('describes file tool actions', () => {
+    expect(getActionDescription('Read', { file_path: '/f.md' })).toBe('Read file: /f.md');
+    expect(getActionDescription('Write', { file_path: '/f.md' })).toBe('Write to file: /f.md');
+    expect(getActionDescription('Edit', { file_path: '/f.md' })).toBe('Edit file: /f.md');
+  });
+
+  it('describes search tool actions', () => {
+    expect(getActionDescription('Glob', { pattern: '*.md' })).toBe('Search files matching: *.md');
+    expect(getActionDescription('Grep', { pattern: 'TODO' })).toBe('Search content matching: TODO');
+  });
+
+  it('describes unknown tools with JSON', () => {
+    expect(getActionDescription('Custom', { a: 1 })).toBe('Custom: {"a":1}');
+  });
+});
+
+describe('matchesRulePattern', () => {
+  it('matches when no rule pattern is provided', () => {
+    expect(matchesRulePattern('Bash', 'git status', undefined)).toBe(true);
+  });
+
+  it('matches wildcard rule', () => {
+    expect(matchesRulePattern('Bash', 'anything', '*')).toBe(true);
+  });
+
+  it('matches exact rule', () => {
+    expect(matchesRulePattern('Bash', 'git status', 'git status')).toBe(true);
+  });
+
+  it('rejects non-matching Bash rule without wildcard', () => {
+    expect(matchesRulePattern('Bash', 'git status', 'git commit')).toBe(false);
+  });
+
+  it('matches Bash wildcard prefix', () => {
+    expect(matchesRulePattern('Bash', 'git status', 'git *')).toBe(true);
+    expect(matchesRulePattern('Bash', 'git commit', 'git *')).toBe(true);
+    expect(matchesRulePattern('Bash', 'npm install', 'git *')).toBe(false);
+  });
+
+  it('matches file path prefix for Read tool', () => {
+    expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/')).toBe(true);
+    expect(matchesRulePattern('Read', '/other/path/file.md', '/test/vault/')).toBe(false);
+  });
+
+  it('respects path segment boundaries', () => {
+    expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/notes')).toBe(true);
+    expect(matchesRulePattern('Read', '/test/vault/notes2/file.md', '/test/vault/notes')).toBe(false);
+  });
+});
+
+describe('buildPermissionUpdates', () => {
+  it('constructs allow rule for allow decision', () => {
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow');
+    expect(updates).toEqual([{
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
+      destination: 'session',
+    }]);
+  });
+
+  it('constructs deny rule for deny decision', () => {
+    const updates = buildPermissionUpdates('Bash', { command: 'rm -rf /' }, 'deny');
+    expect(updates).toEqual([{
+      type: 'addRules',
+      behavior: 'deny',
+      rules: [{ toolName: 'Bash', ruleContent: 'rm -rf /' }],
+      destination: 'session',
+    }]);
+  });
+
+  it('uses projectSettings destination for always decisions', () => {
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always');
+    expect(updates[0].destination).toBe('projectSettings');
+  });
+
+  it('uses projectSettings destination for deny-always decisions', () => {
+    const updates = buildPermissionUpdates('Bash', { command: 'rm' }, 'deny-always');
+    expect(updates[0].destination).toBe('projectSettings');
+    expect(updates[0]).toHaveProperty('behavior', 'deny');
+  });
+
+  it('uses SDK suggestions when available', () => {
+    const suggestions = [{
+      type: 'addRules' as const,
+      behavior: 'allow' as const,
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'session' as const,
+    }];
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always', suggestions);
+    expect(updates).toEqual([{
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'projectSettings',
+    }]);
+  });
+
+  it('overrides behavior and destination from suggestions', () => {
+    const suggestions = [{
+      type: 'addRules' as const,
+      behavior: 'allow' as const,
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'session' as const,
+    }];
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'deny-always', suggestions);
+    expect(updates[0]).toHaveProperty('behavior', 'deny');
+    expect(updates[0].destination).toBe('projectSettings');
+  });
+
+  it('falls back to constructed rule when no addRules suggestions', () => {
+    const updates = buildPermissionUpdates('Bash', { command: 'ls' }, 'allow', []);
+    expect(updates).toEqual([{
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'ls' }],
+      destination: 'session',
+    }]);
+  });
+
+  it('omits ruleContent for wildcard pattern', () => {
+    const updates = buildPermissionUpdates('Read', {}, 'allow');
+    expect(updates).toEqual([{
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Read' }],
+      destination: 'session',
+    }]);
+  });
+
+  it('includes addDirectories suggestions for allow decisions', () => {
+    const suggestions = [
+      {
+        type: 'addRules' as const,
+        behavior: 'allow' as const,
+        rules: [{ toolName: 'Read', ruleContent: '/external/path/*' }],
+        destination: 'session' as const,
+      },
+      {
+        type: 'addDirectories' as const,
+        directories: ['/external/path'],
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Read', { file_path: '/external/path/file.md' }, 'allow-always', suggestions);
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toEqual({
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Read', ruleContent: '/external/path/*' }],
+      destination: 'projectSettings',
     });
-
-    describe('priority order', () => {
-        // Priority: session-deny > persistent-deny > session-allow > persistent-allow > persistent-ask
-
-        it('should prefer session deny over all else', async () => {
-            // allow always
-            const pattern = JSON.stringify({ arg: 'val' });
-            mockPermissions.allow = [createPermissionRule(`tool(${pattern})`)];
-            // session deny
-            await manager.denyAction('tool', { arg: 'val' }, 'session');
-
-            expect(manager.checkPermission('tool', { arg: 'val' })).toBe('deny');
-        });
-
-        it('should prefer persistent deny over session allow', async () => {
-            // deny always - use correct format tool(pattern)
-            const pattern = JSON.stringify({ arg: 'val' });
-            mockPermissions.deny = [createPermissionRule(`tool(${pattern})`)];
-            // session allow
-            await manager.approveAction('tool', { arg: 'val' }, 'session');
-
-            expect(manager.checkPermission('tool', { arg: 'val' })).toBe('deny');
-        });
+    expect(updates[1]).toEqual({
+      type: 'addDirectories',
+      directories: ['/external/path'],
+      destination: 'projectSettings',
     });
+  });
 
-    describe('denyAction', () => {
-        it('should add to session deny list', async () => {
-            await manager.denyAction('tool', { arg: 'val' }, 'session');
-            expect(manager.checkPermission('tool', { arg: 'val' })).toBe('deny');
-        });
-
-        it('should trigger callback for always deny', async () => {
-            const callback = jest.fn();
-            manager.setAddDenyRuleCallback(callback);
-
-            await manager.denyAction('tool', { arg: 'val' }, 'always');
-
-            expect(callback).toHaveBeenCalledWith(expect.stringContaining('tool'));
-        });
+  it('excludes addDirectories suggestions for deny decisions', () => {
+    const suggestions = [
+      {
+        type: 'addRules' as const,
+        behavior: 'allow' as const,
+        rules: [{ toolName: 'Read', ruleContent: '/external/path/*' }],
+        destination: 'session' as const,
+      },
+      {
+        type: 'addDirectories' as const,
+        directories: ['/external/path'],
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Read', { file_path: '/external/path/file.md' }, 'deny-always', suggestions);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({
+      type: 'addRules',
+      behavior: 'deny',
+      rules: [{ toolName: 'Read', ruleContent: '/external/path/*' }],
+      destination: 'projectSettings',
     });
+  });
+
+  it('includes removeDirectories suggestions with destination override', () => {
+    const suggestions = [
+      {
+        type: 'removeDirectories' as const,
+        directories: ['/revoked/path'],
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Bash', { command: 'ls' }, 'deny-always', suggestions);
+    expect(updates).toHaveLength(2);
+    // Constructed addRules prepended (since suggestions had no addRules)
+    expect(updates[0]).toEqual({
+      type: 'addRules',
+      behavior: 'deny',
+      rules: [{ toolName: 'Bash', ruleContent: 'ls' }],
+      destination: 'projectSettings',
+    });
+    expect(updates[1]).toEqual({
+      type: 'removeDirectories',
+      directories: ['/revoked/path'],
+      destination: 'projectSettings',
+    });
+  });
+
+  it('includes setMode suggestions with destination override', () => {
+    const suggestions = [
+      {
+        type: 'setMode' as const,
+        mode: 'default' as const,
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Bash', { command: 'echo hi' }, 'allow-always', suggestions);
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toEqual({
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'echo hi' }],
+      destination: 'projectSettings',
+    });
+    expect(updates[1]).toEqual({
+      type: 'setMode',
+      mode: 'default',
+      destination: 'projectSettings',
+    });
+  });
+
+  it('prepends constructed addRules when suggestions have no addRules type', () => {
+    const suggestions = [
+      {
+        type: 'addDirectories' as const,
+        directories: ['/new/dir'],
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Read', { file_path: '/new/dir/file.md' }, 'allow', suggestions);
+    expect(updates).toHaveLength(2);
+    expect(updates[0].type).toBe('addRules');
+    expect(updates[1].type).toBe('addDirectories');
+  });
+
+  it('does not prepend addRules when replaceRules suggestion is present', () => {
+    const suggestions = [
+      {
+        type: 'replaceRules' as const,
+        behavior: 'allow' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always', suggestions);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual({
+      type: 'replaceRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'projectSettings',
+    });
+  });
+
+  it('prepends addRules when only removeRules suggestion is present', () => {
+    const suggestions = [
+      {
+        type: 'removeRules' as const,
+        behavior: 'allow' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'old-pattern' }],
+        destination: 'session' as const,
+      },
+    ];
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow', suggestions);
+    expect(updates).toHaveLength(2);
+    expect(updates[0].type).toBe('addRules');
+    expect(updates[0]).toMatchObject({
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
+      destination: 'session',
+    });
+    expect(updates[1].type).toBe('removeRules');
+  });
 });

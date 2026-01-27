@@ -50,8 +50,35 @@ export interface Options {
 }
 
 // Type exports that match the real SDK
-export type CanUseTool = (toolName: string, input: Record<string, unknown>, options: any) => Promise<PermissionResult>;
-export type PermissionResult = { behavior: 'allow' | 'deny'; updatedInput?: Record<string, unknown>; message?: string; interrupt?: boolean };
+export type PermissionBehavior = 'allow' | 'deny' | 'ask';
+
+export type PermissionRuleValue = {
+  toolName: string;
+  ruleContent?: string;
+};
+
+export type PermissionUpdateDestination = 'userSettings' | 'projectSettings' | 'localSettings' | 'session' | 'cliArg';
+
+export type PermissionUpdate =
+  | { type: 'addRules'; rules: PermissionRuleValue[]; behavior: PermissionBehavior; destination: PermissionUpdateDestination }
+  | { type: 'replaceRules'; rules: PermissionRuleValue[]; behavior: PermissionBehavior; destination: PermissionUpdateDestination }
+  | { type: 'removeRules'; rules: PermissionRuleValue[]; behavior: PermissionBehavior; destination: PermissionUpdateDestination }
+  | { type: 'setMode'; mode: string; destination: PermissionUpdateDestination }
+  | { type: 'addDirectories'; directories: string[]; destination: PermissionUpdateDestination }
+  | { type: 'removeDirectories'; directories: string[]; destination: PermissionUpdateDestination };
+
+export type CanUseTool = (toolName: string, input: Record<string, unknown>, options: {
+  signal: AbortSignal;
+  suggestions?: PermissionUpdate[];
+  blockedPath?: string;
+  decisionReason?: string;
+  toolUseID: string;
+  agentID?: string;
+}) => Promise<PermissionResult>;
+
+export type PermissionResult =
+  | { behavior: 'allow'; updatedInput?: Record<string, unknown>; updatedPermissions?: PermissionUpdate[]; toolUseID?: string }
+  | { behavior: 'deny'; message: string; interrupt?: boolean; toolUseID?: string };
 
 // Default mock messages for testing
 const mockMessages = [

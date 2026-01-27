@@ -9,6 +9,8 @@ export interface ApprovalModalOptions {
   showAlwaysAllow?: boolean;
   showAlwaysDeny?: boolean;
   title?: string;
+  decisionReason?: string;
+  blockedPath?: string;
 }
 
 export class ApprovalModal extends Modal {
@@ -48,6 +50,16 @@ export class ApprovalModal extends Modal {
     iconEl.setAttribute('aria-hidden', 'true');
     setIcon(iconEl, getToolIcon(this.toolName));
     toolEl.createSpan({ text: this.toolName, cls: 'claudian-approval-tool-name' });
+
+    if (this.options.decisionReason) {
+      const reasonEl = infoEl.createDiv({ cls: 'claudian-approval-reason' });
+      reasonEl.setText(this.options.decisionReason);
+    }
+
+    if (this.options.blockedPath) {
+      const pathEl = infoEl.createDiv({ cls: 'claudian-approval-blocked-path' });
+      pathEl.setText(this.options.blockedPath);
+    }
 
     const descEl = contentEl.createDiv({ cls: 'claudian-approval-desc' });
     descEl.setText(this.description);

@@ -608,11 +608,16 @@ export class InputController {
   async handleApprovalRequest(
     toolName: string,
     input: Record<string, unknown>,
-    description: string
+    description: string,
+    decisionReason?: string,
+    blockedPath?: string,
   ): Promise<'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel'> {
     const { plugin } = this.deps;
     return new Promise((resolve) => {
-      const modal = new ApprovalModal(plugin.app, toolName, input, description, resolve);
+      const modal = new ApprovalModal(plugin.app, toolName, input, description, resolve, {
+        decisionReason,
+        blockedPath,
+      });
       modal.open();
     });
   }

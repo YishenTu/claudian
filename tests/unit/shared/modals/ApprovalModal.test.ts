@@ -185,4 +185,77 @@ describe('ApprovalModal - global keyboard navigation', () => {
 
     expect(resolve).toHaveBeenCalledWith('cancel');
   });
+
+  it('renders decisionReason when provided', () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = createMockDocument();
+
+    const modal = new ApprovalModal({} as any, 'Bash', {}, 'Run command: ls', jest.fn(), {
+      decisionReason: 'No matching allow rule',
+    });
+    (modal as any).setTitle = jest.fn();
+    (modal as any).contentEl = new MockElement('div');
+
+    ApprovalModal.prototype.onOpen.call(modal);
+
+    const contentEl = (modal as any).contentEl as MockElement;
+    const infoEl = contentEl.children[0]; // .claudian-approval-info
+    const reasonEl = infoEl.children.find(
+      (el: MockElement) => el.classList.has('claudian-approval-reason')
+    );
+    expect(reasonEl).toBeDefined();
+    expect(reasonEl!.textContent).toBe('No matching allow rule');
+
+    ApprovalModal.prototype.onClose.call(modal);
+    (global as any).document = originalDocument;
+  });
+
+  it('renders blockedPath when provided', () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = createMockDocument();
+
+    const modal = new ApprovalModal({} as any, 'Read', {}, 'Read file: /etc/passwd', jest.fn(), {
+      blockedPath: '/etc/passwd',
+    });
+    (modal as any).setTitle = jest.fn();
+    (modal as any).contentEl = new MockElement('div');
+
+    ApprovalModal.prototype.onOpen.call(modal);
+
+    const contentEl = (modal as any).contentEl as MockElement;
+    const infoEl = contentEl.children[0]; // .claudian-approval-info
+    const pathEl = infoEl.children.find(
+      (el: MockElement) => el.classList.has('claudian-approval-blocked-path')
+    );
+    expect(pathEl).toBeDefined();
+    expect(pathEl!.textContent).toBe('/etc/passwd');
+
+    ApprovalModal.prototype.onClose.call(modal);
+    (global as any).document = originalDocument;
+  });
+
+  it('does not render reason or path when not provided', () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = createMockDocument();
+
+    const modal = new ApprovalModal({} as any, 'Bash', {}, 'Run: ls', jest.fn(), {});
+    (modal as any).setTitle = jest.fn();
+    (modal as any).contentEl = new MockElement('div');
+
+    ApprovalModal.prototype.onOpen.call(modal);
+
+    const contentEl = (modal as any).contentEl as MockElement;
+    const infoEl = contentEl.children[0];
+    const reasonEl = infoEl.children.find(
+      (el: MockElement) => el.classList.has('claudian-approval-reason')
+    );
+    const pathEl = infoEl.children.find(
+      (el: MockElement) => el.classList.has('claudian-approval-blocked-path')
+    );
+    expect(reasonEl).toBeUndefined();
+    expect(pathEl).toBeUndefined();
+
+    ApprovalModal.prototype.onClose.call(modal);
+    (global as any).document = originalDocument;
+  });
 });

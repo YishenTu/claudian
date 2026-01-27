@@ -296,7 +296,7 @@ describe('QueryOptionsBuilder', () => {
       };
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
-      expect(options.permissionMode).toBe('default');
+      expect(options.permissionMode).toBe('acceptEdits');
       // Always true to enable dynamic switching to bypassPermissions without restart
       expect(options.allowDangerouslySkipPermissions).toBe(true);
       expect(options.canUseTool).toBe(canUseTool);

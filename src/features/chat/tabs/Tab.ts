@@ -244,13 +244,6 @@ export async function initializeTabService(
     // Create per-tab ClaudianService
     service = new ClaudianService(plugin, mcpManager);
 
-    // Load Claude Code permissions with error handling
-    try {
-      await service.loadCCPermissions();
-    } catch {
-      // Continue without permissions - service can still function
-    }
-
     // Resolve session ID and external contexts from conversation if this is an existing chat
     // Single source of truth: tab.conversationId determines if we have a session to resume
     let sessionId: string | undefined;
@@ -889,8 +882,8 @@ export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
 export function setupApprovalCallback(tab: TabData): void {
   if (tab.service && tab.controllers.inputController) {
     tab.service.setApprovalCallback(
-      (toolName, input, description) =>
-        tab.controllers.inputController!.handleApprovalRequest(toolName, input, description)
+      (toolName, input, description, decisionReason, blockedPath) =>
+        tab.controllers.inputController!.handleApprovalRequest(toolName, input, description, decisionReason, blockedPath)
     );
   }
 }

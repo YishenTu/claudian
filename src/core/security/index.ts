@@ -1,12 +1,9 @@
 export {
-  type AddAllowRuleCallback,
-  type AddDenyRuleCallback,
-  ApprovalManager,
+  buildPermissionUpdates,
   generatePermissionRule,
   getActionDescription,
   getActionPattern,
   matchesRulePattern,
-  type PermissionCheckResult,
 } from './ApprovalManager';
 export {
   checkBashPathAccess,
