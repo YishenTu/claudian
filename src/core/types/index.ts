@@ -39,6 +39,7 @@ export {
 
 // Settings types
 export {
+  type ApprovalDecision,
   type CCPermissions,
   type CCSettings,
   type ClaudianSettings,

@@ -120,6 +120,9 @@ export type HostnameCliPaths = Record<string, string>;
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'normal';
 
+/** User decision from the approval modal. */
+export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
+
 /**
  * Legacy permission format (pre-CC compatibility).
  * @deprecated Use CCPermissions instead

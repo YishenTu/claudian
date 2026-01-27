@@ -111,25 +111,9 @@ describe('buildPermissionUpdates', () => {
     }]);
   });
 
-  it('constructs deny rule for deny decision', () => {
-    const updates = buildPermissionUpdates('Bash', { command: 'rm -rf /' }, 'deny');
-    expect(updates).toEqual([{
-      type: 'addRules',
-      behavior: 'deny',
-      rules: [{ toolName: 'Bash', ruleContent: 'rm -rf /' }],
-      destination: 'session',
-    }]);
-  });
-
   it('uses projectSettings destination for always decisions', () => {
     const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always');
     expect(updates[0].destination).toBe('projectSettings');
-  });
-
-  it('uses projectSettings destination for deny-always decisions', () => {
-    const updates = buildPermissionUpdates('Bash', { command: 'rm' }, 'deny-always');
-    expect(updates[0].destination).toBe('projectSettings');
-    expect(updates[0]).toHaveProperty('behavior', 'deny');
   });
 
   it('uses SDK suggestions when available', () => {
@@ -146,18 +130,6 @@ describe('buildPermissionUpdates', () => {
       rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
       destination: 'projectSettings',
     }]);
-  });
-
-  it('overrides behavior and destination from suggestions', () => {
-    const suggestions = [{
-      type: 'addRules' as const,
-      behavior: 'allow' as const,
-      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
-      destination: 'session' as const,
-    }];
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'deny-always', suggestions);
-    expect(updates[0]).toHaveProperty('behavior', 'deny');
-    expect(updates[0].destination).toBe('projectSettings');
   });
 
   it('falls back to constructed rule when no addRules suggestions', () => {
@@ -209,30 +181,6 @@ describe('buildPermissionUpdates', () => {
     });
   });
 
-  it('excludes addDirectories suggestions for deny decisions', () => {
-    const suggestions = [
-      {
-        type: 'addRules' as const,
-        behavior: 'allow' as const,
-        rules: [{ toolName: 'Read', ruleContent: '/external/path/*' }],
-        destination: 'session' as const,
-      },
-      {
-        type: 'addDirectories' as const,
-        directories: ['/external/path'],
-        destination: 'session' as const,
-      },
-    ];
-    const updates = buildPermissionUpdates('Read', { file_path: '/external/path/file.md' }, 'deny-always', suggestions);
-    expect(updates).toHaveLength(1);
-    expect(updates[0]).toEqual({
-      type: 'addRules',
-      behavior: 'deny',
-      rules: [{ toolName: 'Read', ruleContent: '/external/path/*' }],
-      destination: 'projectSettings',
-    });
-  });
-
   it('includes removeDirectories suggestions with destination override', () => {
     const suggestions = [
       {
@@ -241,12 +189,11 @@ describe('buildPermissionUpdates', () => {
         destination: 'session' as const,
       },
     ];
-    const updates = buildPermissionUpdates('Bash', { command: 'ls' }, 'deny-always', suggestions);
+    const updates = buildPermissionUpdates('Bash', { command: 'ls' }, 'allow-always', suggestions);
     expect(updates).toHaveLength(2);
-    // Constructed addRules prepended (since suggestions had no addRules)
     expect(updates[0]).toEqual({
       type: 'addRules',
-      behavior: 'deny',
+      behavior: 'allow',
       rules: [{ toolName: 'Bash', ruleContent: 'ls' }],
       destination: 'projectSettings',
     });
@@ -337,16 +284,16 @@ describe('buildPermissionUpdates', () => {
     const suggestions = [
       {
         type: 'removeRules' as const,
-        behavior: 'allow' as const,
+        behavior: 'deny' as const,
         rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
         destination: 'session' as const,
       },
     ];
-    // Even when user denies, removeRules.behavior stays 'allow' (means "remove from allow list")
-    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'deny-always', suggestions);
+    // removeRules.behavior is NOT overridden — it specifies which list to remove from
+    const updates = buildPermissionUpdates('Bash', { command: 'git status' }, 'allow-always', suggestions);
     const removeEntry = updates.find(u => u.type === 'removeRules');
     expect(removeEntry).toBeDefined();
-    expect(removeEntry!.behavior).toBe('allow');
+    expect(removeEntry!.behavior).toBe('deny');
     expect(removeEntry!.destination).toBe('projectSettings');
   });
 });

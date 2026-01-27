@@ -365,7 +365,7 @@ describe('ClaudianService', () => {
         expect(result).not.toHaveProperty('updatedPermissions');
       });
 
-      it('should return deny with interrupt when approvalCallback throws', async () => {
+      it('should return deny without interrupt when approvalCallback throws', async () => {
         const callback = jest.fn().mockRejectedValue(new Error('Modal render failed'));
         service.setApprovalCallback(callback);
 
@@ -374,7 +374,7 @@ describe('ClaudianService', () => {
 
         expect(result.behavior).toBe('deny');
         expect(result.message).toContain('Modal render failed');
-        expect(result.interrupt).toBe(true);
+        expect(result.interrupt).toBe(false);
       });
 
       it('should return deny with interrupt for cancel decisions', async () => {
@@ -446,6 +446,7 @@ describe('ClaudianService', () => {
 
         expect(result.behavior).toBe('deny');
         expect(result.message).toBe('User denied this action.');
+        expect(result).not.toHaveProperty('updatedPermissions');
       });
 
       it('should return updatedPermissions for allow-always decisions', async () => {

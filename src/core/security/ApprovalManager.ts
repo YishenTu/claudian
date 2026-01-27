@@ -1,6 +1,6 @@
 /** Permission utilities for tool action approval. */
 
-import type { PermissionBehavior, PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
 
 import {
   TOOL_BASH,
@@ -51,7 +51,9 @@ export function getActionDescription(toolName: string, input: Record<string, unk
 }
 
 /**
- * Bash: exact or explicit wildcard ("git *"). File tools: path-prefix matching.
+ * Bash: exact or explicit wildcard ("git *", "npm:*").
+ * File tools: path-prefix matching with segment boundaries.
+ * Other tools: simple prefix matching.
  */
 export function matchesRulePattern(
   toolName: string,
@@ -123,25 +125,24 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
 }
 
 /**
- * Convert a user decision + SDK suggestions into PermissionUpdate[].
+ * Convert a user allow decision + SDK suggestions into PermissionUpdate[].
  *
- * Overrides behavior/destination on addRules/replaceRules suggestions to match the user's choice.
+ * Only handles allow decisions — deny results use the SDK's bare deny path
+ * (PermissionResult deny variant has no updatedPermissions field).
+ *
+ * Overrides destination on addRules/replaceRules suggestions to match the user's choice.
  * removeRules keeps its original behavior (it specifies which list to remove from, not user intent).
- * "always" destinations go to projectSettings; session stays session.
- * addDirectories suggestions are excluded for deny decisions.
+ * "always" destinations go to projectSettings; "allow" stays session.
  * Falls back to constructing an addRules entry from the action pattern
  * when no addRules/replaceRules suggestion is present.
  */
 export function buildPermissionUpdates(
   toolName: string,
   input: Record<string, unknown>,
-  decision: 'allow' | 'allow-always' | 'deny' | 'deny-always',
+  decision: 'allow' | 'allow-always',
   suggestions?: PermissionUpdate[]
 ): PermissionUpdate[] {
-  const isAlways = decision === 'allow-always' || decision === 'deny-always';
-  const isDeny = decision === 'deny' || decision === 'deny-always';
-  const destination: PermissionUpdateDestination = isAlways ? 'projectSettings' : 'session';
-  const behavior: PermissionBehavior = isDeny ? 'deny' : 'allow';
+  const destination: PermissionUpdateDestination = decision === 'allow-always' ? 'projectSettings' : 'session';
 
   const processed: PermissionUpdate[] = [];
   let hasRuleUpdate = false;
@@ -150,22 +151,13 @@ export function buildPermissionUpdates(
     for (const s of suggestions) {
       if (s.type === 'addRules' || s.type === 'replaceRules') {
         hasRuleUpdate = true;
-        processed.push({ ...s, behavior, destination });
-      } else if (s.type === 'removeRules') {
-        // Preserve original behavior — it specifies which list to remove from, not user intent
-        processed.push({ ...s, destination });
-      } else if (s.type === 'addDirectories') {
-        // Skip directory grants when user denied the action
-        if (!isDeny) {
-          processed.push({ ...s, destination });
-        }
+        processed.push({ ...s, behavior: 'allow', destination });
       } else {
         processed.push({ ...s, destination });
       }
     }
   }
 
-  // Construct a fallback addRules when suggestions lacked addRules/replaceRules
   if (!hasRuleUpdate) {
     const pattern = getActionPattern(toolName, input);
     const ruleValue: { toolName: string; ruleContent?: string } = { toolName };
@@ -175,7 +167,7 @@ export function buildPermissionUpdates(
 
     processed.unshift({
       type: 'addRules',
-      behavior,
+      behavior: 'allow',
       rules: [ruleValue],
       destination,
     });

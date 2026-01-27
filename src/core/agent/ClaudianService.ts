@@ -45,6 +45,7 @@ import {
 } from '../security';
 import { TOOL_SKILL } from '../tools/toolNames';
 import type {
+  ApprovalDecision,
   ChatMessage,
   ImageAttachment,
   SlashCommand,
@@ -68,8 +69,7 @@ import {
   type SDKContentBlock,
 } from './types';
 
-/** Mirrors shared/modals/ApprovalModal.ApprovalDecision (core can't import shared). */
-export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
+export type { ApprovalDecision };
 
 export type ApprovalCallback = (
   toolName: string,
@@ -1362,7 +1362,6 @@ export class ClaudianService {
     this.approvalCallback = callback;
   }
 
-  /** Creates canUseTool callback: enforces tool restrictions and prompts user. */
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
       if (this.currentAllowedTools !== null) {
@@ -1400,12 +1399,14 @@ export class ClaudianService {
           return { behavior: 'allow', updatedInput: input, updatedPermissions };
         }
 
-        return { behavior: 'deny', message: 'User denied this action.' };
+        return { behavior: 'deny', message: 'User denied this action.', interrupt: false };
       } catch (error) {
+        // Don't interrupt session — the deny message is sufficient for Claude
+        // to try an alternative approach or ask the user.
         return {
           behavior: 'deny',
           message: `Approval request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          interrupt: true,
+          interrupt: false,
         };
       }
     };

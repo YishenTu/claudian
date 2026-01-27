@@ -2,8 +2,9 @@ import type { App } from 'obsidian';
 import { Modal, setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../core/tools';
+import type { ApprovalDecision } from '../../core/types';
 
-export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
+export type { ApprovalDecision };
 
 export interface ApprovalModalOptions {
   showAlwaysAllow?: boolean;
