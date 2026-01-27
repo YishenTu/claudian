@@ -19,34 +19,38 @@ export function getActionPattern(toolName: string, input: Record<string, unknown
     case TOOL_READ:
     case TOOL_WRITE:
     case TOOL_EDIT:
-      return (input.file_path as string) || '*';
+      return typeof input.file_path === 'string' && input.file_path ? input.file_path : '*';
     case TOOL_NOTEBOOK_EDIT:
-      return (input.notebook_path as string) || (input.file_path as string) || '*';
+      if (typeof input.notebook_path === 'string' && input.notebook_path) {
+        return input.notebook_path;
+      }
+      return typeof input.file_path === 'string' && input.file_path ? input.file_path : '*';
     case TOOL_GLOB:
-      return (input.pattern as string) || '*';
+      return typeof input.pattern === 'string' && input.pattern ? input.pattern : '*';
     case TOOL_GREP:
-      return (input.pattern as string) || '*';
+      return typeof input.pattern === 'string' && input.pattern ? input.pattern : '*';
     default:
       return JSON.stringify(input);
   }
 }
 
 export function getActionDescription(toolName: string, input: Record<string, unknown>): string {
+  const pattern = getActionPattern(toolName, input);
   switch (toolName) {
     case TOOL_BASH:
-      return `Run command: ${input.command}`;
+      return `Run command: ${pattern}`;
     case TOOL_READ:
-      return `Read file: ${input.file_path}`;
+      return `Read file: ${pattern}`;
     case TOOL_WRITE:
-      return `Write to file: ${input.file_path}`;
+      return `Write to file: ${pattern}`;
     case TOOL_EDIT:
-      return `Edit file: ${input.file_path}`;
+      return `Edit file: ${pattern}`;
     case TOOL_GLOB:
-      return `Search files matching: ${input.pattern}`;
+      return `Search files matching: ${pattern}`;
     case TOOL_GREP:
-      return `Search content matching: ${input.pattern}`;
+      return `Search content matching: ${pattern}`;
     default:
-      return `${toolName}: ${JSON.stringify(input)}`;
+      return `${toolName}: ${pattern}`;
   }
 }
 
@@ -81,12 +85,12 @@ export function matchesRulePattern(
     // CC format "npm:*" — colon is a separator, not part of the prefix
     if (normalizedRule.endsWith(':*')) {
       const prefix = normalizedRule.slice(0, -2);
-      return normalizedAction.startsWith(prefix);
+      return matchesBashPrefix(normalizedAction, prefix);
     }
     // Space wildcard "git *"
     if (normalizedRule.endsWith('*')) {
       const prefix = normalizedRule.slice(0, -1);
-      return normalizedAction.startsWith(prefix);
+      return matchesBashPrefix(normalizedAction, prefix);
     }
     // No wildcard present and exact match failed above - reject
     return false;
@@ -124,6 +128,18 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
   return actionPath.charAt(approvedPath.length) === '/';
 }
 
+function matchesBashPrefix(action: string, prefix: string): boolean {
+  if (action === prefix) {
+    return true;
+  }
+
+  if (prefix.endsWith(' ')) {
+    return action.startsWith(prefix);
+  }
+
+  return action.startsWith(`${prefix} `);
+}
+
 /**
  * Convert a user allow decision + SDK suggestions into PermissionUpdate[].
  *
@@ -131,7 +147,8 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
  * (PermissionResult deny variant has no updatedPermissions field).
  *
  * Overrides destination on addRules/replaceRules suggestions to match the user's choice.
- * removeRules keeps its original behavior (it specifies which list to remove from, not user intent).
+ * Other suggestion entries keep their original destinations (they may carry
+ * specific semantics about where the update should be applied).
  * "always" destinations go to projectSettings; "allow" stays session.
  * Falls back to constructing an addRules entry from the action pattern
  * when no addRules/replaceRules suggestion is present.
@@ -153,7 +170,7 @@ export function buildPermissionUpdates(
         hasRuleUpdate = true;
         processed.push({ ...s, behavior: 'allow', destination });
       } else {
-        processed.push({ ...s, destination });
+        processed.push(s);
       }
     }
   }

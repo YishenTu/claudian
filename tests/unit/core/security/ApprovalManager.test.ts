@@ -89,6 +89,12 @@ describe('matchesRulePattern', () => {
     expect(matchesRulePattern('Bash', 'yarn install', 'npm:*')).toBe(false);
   });
 
+  it('does not allow Bash prefix collisions without a separator', () => {
+    expect(matchesRulePattern('Bash', 'github status', 'git:*')).toBe(false);
+    expect(matchesRulePattern('Bash', 'npmish install', 'npm:*')).toBe(false);
+    expect(matchesRulePattern('Bash', 'npm runner build', 'npm run:*')).toBe(false);
+  });
+
   it('matches file path prefix for Read tool', () => {
     expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/')).toBe(true);
     expect(matchesRulePattern('Read', '/other/path/file.md', '/test/vault/')).toBe(false);
@@ -152,7 +158,7 @@ describe('buildPermissionUpdates', () => {
     }]);
   });
 
-  it('includes addDirectories suggestions for allow decisions', () => {
+  it('includes addDirectories suggestions without overriding destination', () => {
     const suggestions = [
       {
         type: 'addRules' as const,
@@ -177,11 +183,11 @@ describe('buildPermissionUpdates', () => {
     expect(updates[1]).toEqual({
       type: 'addDirectories',
       directories: ['/external/path'],
-      destination: 'projectSettings',
+      destination: 'session',
     });
   });
 
-  it('includes removeDirectories suggestions with destination override', () => {
+  it('includes removeDirectories suggestions without overriding destination', () => {
     const suggestions = [
       {
         type: 'removeDirectories' as const,
@@ -200,11 +206,11 @@ describe('buildPermissionUpdates', () => {
     expect(updates[1]).toEqual({
       type: 'removeDirectories',
       directories: ['/revoked/path'],
-      destination: 'projectSettings',
+      destination: 'session',
     });
   });
 
-  it('includes setMode suggestions with destination override', () => {
+  it('includes setMode suggestions without overriding destination', () => {
     const suggestions = [
       {
         type: 'setMode' as const,
@@ -223,7 +229,7 @@ describe('buildPermissionUpdates', () => {
     expect(updates[1]).toEqual({
       type: 'setMode',
       mode: 'default',
-      destination: 'projectSettings',
+      destination: 'session',
     });
   });
 
@@ -294,6 +300,6 @@ describe('buildPermissionUpdates', () => {
     const removeEntry = updates.find(u => u.type === 'removeRules');
     expect(removeEntry).toBeDefined();
     expect(removeEntry!.behavior).toBe('deny');
-    expect(removeEntry!.destination).toBe('projectSettings');
+    expect(removeEntry!.destination).toBe('session');
   });
 });
