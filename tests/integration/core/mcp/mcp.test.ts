@@ -654,6 +654,21 @@ describe('McpTester', () => {
     expect(mockClientInstance.connect).not.toHaveBeenCalled();
   });
 
+  it('should fail for invalid URL', async () => {
+    const server: ClaudianMcpServer = {
+      name: 'bad-url',
+      config: { type: 'http', url: 'not-a-valid-url' },
+      enabled: true,
+      contextSaving: false,
+    };
+
+    const result = await testMcpServer(server);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(mockClientInstance.connect).not.toHaveBeenCalled();
+  });
+
   it('should test http server and return tools', async () => {
     const server: ClaudianMcpServer = {
       name: 'http',

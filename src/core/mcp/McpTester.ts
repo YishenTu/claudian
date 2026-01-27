@@ -31,25 +31,33 @@ export async function testMcpServer(server: ClaudianMcpServer): Promise<McpTestR
   const type = getMcpServerType(server.config);
 
   let transport;
-  if (type === 'stdio') {
-    const config = server.config as { command: string; args?: string[]; env?: Record<string, string> };
-    const { cmd, args } = parseCommand(config.command, config.args);
-    if (!cmd) {
-      return { success: false, tools: [], error: 'Missing command' };
+  try {
+    if (type === 'stdio') {
+      const config = server.config as { command: string; args?: string[]; env?: Record<string, string> };
+      const { cmd, args } = parseCommand(config.command, config.args);
+      if (!cmd) {
+        return { success: false, tools: [], error: 'Missing command' };
+      }
+      transport = new StdioClientTransport({
+        command: cmd,
+        args,
+        env: { ...process.env, ...config.env, PATH: getEnhancedPath(config.env?.PATH) } as Record<string, string>,
+        stderr: 'ignore',
+      });
+    } else {
+      const config = server.config as UrlServerConfig;
+      const url = new URL(config.url);
+      const options = config.headers ? { requestInit: { headers: config.headers } } : undefined;
+      transport = type === 'sse'
+        ? new SSEClientTransport(url, options)
+        : new StreamableHTTPClientTransport(url, options);
     }
-    transport = new StdioClientTransport({
-      command: cmd,
-      args,
-      env: { ...process.env, ...config.env, PATH: getEnhancedPath(config.env?.PATH) } as Record<string, string>,
-      stderr: 'ignore',
-    });
-  } else {
-    const config = server.config as UrlServerConfig;
-    const url = new URL(config.url);
-    const options = config.headers ? { requestInit: { headers: config.headers } } : undefined;
-    transport = type === 'sse'
-      ? new SSEClientTransport(url, options)
-      : new StreamableHTTPClientTransport(url, options);
+  } catch (error) {
+    return {
+      success: false,
+      tools: [],
+      error: error instanceof Error ? error.message : 'Invalid server configuration',
+    };
   }
 
   const client = new Client({ name: 'claudian-tester', version: '1.0.0' });
