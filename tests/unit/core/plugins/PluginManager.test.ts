@@ -108,45 +108,6 @@ describe('PluginManager', () => {
     });
   });
 
-  describe('getActivePluginConfigs', () => {
-    it('returns configs only for enabled and available plugins', async () => {
-      const plugins = [
-        createMockPlugin({ id: 'enabled-plugin', status: 'available' }),
-        createMockPlugin({ id: 'disabled-plugin', status: 'available' }),
-        createMockPlugin({ id: 'unavailable-plugin', status: 'unavailable' }),
-      ];
-      const pluginStorage = createMockPluginStorage(plugins);
-      const ccSettings = createMockCCSettingsStorage({
-        'disabled-plugin': false,
-      });
-      const manager = new PluginManager(pluginStorage, ccSettings);
-
-      await manager.loadEnabledState();
-      await manager.loadPlugins();
-
-      const configs = manager.getActivePluginConfigs();
-      // enabled-plugin and unavailable-plugin are enabled by default
-      // but unavailable-plugin is filtered out due to status
-      expect(configs).toHaveLength(1);
-      expect(configs[0].type).toBe('local');
-    });
-
-    it('returns empty array when all plugins are disabled', async () => {
-      const plugin = createMockPlugin();
-      const pluginStorage = createMockPluginStorage([plugin]);
-      const ccSettings = createMockCCSettingsStorage({
-        'test-plugin@marketplace': false,
-      });
-      const manager = new PluginManager(pluginStorage, ccSettings);
-
-      await manager.loadEnabledState();
-      await manager.loadPlugins();
-
-      const configs = manager.getActivePluginConfigs();
-      expect(configs).toHaveLength(0);
-    });
-  });
-
   describe('togglePlugin', () => {
     it('disables an enabled plugin', async () => {
       const plugin = createMockPlugin();

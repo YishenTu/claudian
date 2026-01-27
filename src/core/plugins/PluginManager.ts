@@ -11,7 +11,7 @@
  */
 
 import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
-import type { ClaudianPlugin, SdkPluginConfig } from '../types';
+import type { ClaudianPlugin } from '../types';
 import type { PluginStorage } from './PluginStorage';
 
 export class PluginManager {
@@ -72,13 +72,6 @@ export class PluginManager {
    */
   getPlugins(): ClaudianPlugin[] {
     return [...this.plugins];
-  }
-
-  getActivePluginConfigs(): SdkPluginConfig[] {
-    return this.getActivePlugins().map((plugin) => ({
-      type: 'local' as const,
-      path: plugin.pluginPath,
-    }));
   }
 
   hasEnabledPlugins(): boolean {

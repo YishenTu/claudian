@@ -22,7 +22,6 @@ function createMockPluginManager() {
     setEnabledPluginIds: jest.fn(),
     loadPlugins: jest.fn().mockResolvedValue(undefined),
     getPlugins: jest.fn().mockReturnValue([]),
-    getActivePluginConfigs: jest.fn().mockReturnValue([]),
     getUnavailableEnabledPlugins: jest.fn().mockReturnValue([]),
     hasEnabledPlugins: jest.fn().mockReturnValue(false),
     getEnabledCount: jest.fn().mockReturnValue(0),
@@ -407,6 +406,15 @@ describe('QueryOptionsBuilder', () => {
 
       expect(options.additionalDirectories).toBeUndefined();
     });
+
+    it('does not pass plugins via SDK options (CLI auto-discovers)', () => {
+      const ctx = createMockContext();
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions({
+        ...ctx, abortController: new AbortController(), hooks: {},
+      });
+
+      expect(options.plugins).toBeUndefined();
+    });
   });
 
   describe('buildColdStartQueryOptions', () => {
@@ -543,6 +551,15 @@ describe('QueryOptionsBuilder', () => {
       expect(options.additionalDirectories).toBeUndefined();
     });
 
+    it('does not pass plugins via SDK options (CLI auto-discovers)', () => {
+      const ctx = createMockContext();
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions({
+        ...ctx, abortController: new AbortController(), hooks: {}, hasEditorContext: false,
+      });
+
+      expect(options.plugins).toBeUndefined();
+    });
+
     it('includes custom agents in cold-start options', () => {
       const agentManager = createMockAgentManager([
         {
@@ -598,6 +615,37 @@ describe('QueryOptionsBuilder', () => {
 
       expect(options.agents?.['Explore']).toBeUndefined();
       expect(options.agents?.['custom-cold']).toBeDefined();
+    });
+
+    it('filters out plugin-sourced agents from cold-start options', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'my-plugin:review',
+          name: 'review',
+          description: 'Plugin agent',
+          prompt: 'Review prompt',
+          source: 'plugin',
+        },
+        {
+          id: 'vault-agent',
+          name: 'Vault Agent',
+          description: 'Vault agent',
+          prompt: 'Vault prompt',
+          source: 'vault',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.agents?.['my-plugin:review']).toBeUndefined();
+      expect(options.agents?.['vault-agent']).toBeDefined();
     });
 
     it('converts inherit model to undefined in cold-start agents', () => {
@@ -751,6 +799,36 @@ describe('QueryOptionsBuilder', () => {
       expect(options.agents?.['Explore']).toBeUndefined();
       // Custom should be included
       expect(options.agents?.['custom-agent']).toBeDefined();
+    });
+
+    it('filters out plugin-sourced agents from SDK options', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'my-plugin:review',
+          name: 'review',
+          description: 'Plugin agent',
+          prompt: 'Review prompt',
+          source: 'plugin',
+        },
+        {
+          id: 'vault-agent',
+          name: 'Vault Agent',
+          description: 'Vault agent',
+          prompt: 'Vault prompt',
+          source: 'vault',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.agents?.['my-plugin:review']).toBeUndefined();
+      expect(options.agents?.['vault-agent']).toBeDefined();
     });
 
     it('includes tools and disallowedTools in SDK agents', () => {

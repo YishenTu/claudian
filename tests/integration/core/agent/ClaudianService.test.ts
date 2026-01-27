@@ -148,7 +148,6 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
     // Mock pluginManager for QueryOptionsBuilder
     pluginManager: {
       getPluginsKey: jest.fn().mockReturnValue(''),
-      getActivePluginConfigs: jest.fn().mockReturnValue([]),
       hasEnabledPlugins: jest.fn().mockReturnValue(false),
     },
   } as any;

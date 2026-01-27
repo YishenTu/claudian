@@ -229,11 +229,6 @@ export class QueryOptionsBuilder {
       ...DISABLED_BUILTIN_SUBAGENTS,
     ];
 
-    const pluginConfigs = ctx.pluginManager.getActivePluginConfigs();
-    if (pluginConfigs.length > 0) {
-      options.plugins = pluginConfigs;
-    }
-
     QueryOptionsBuilder.applyAgents(options, ctx.agentManager);
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
     QueryOptionsBuilder.applyThinkingBudget(options, ctx.settings.thinkingBudget);
@@ -305,11 +300,6 @@ export class QueryOptionsBuilder {
       ...UNSUPPORTED_SDK_TOOLS,
       ...DISABLED_BUILTIN_SUBAGENTS,
     ];
-
-    const pluginConfigs = ctx.pluginManager.getActivePluginConfigs();
-    if (pluginConfigs.length > 0) {
-      options.plugins = pluginConfigs;
-    }
 
     QueryOptionsBuilder.applyAgents(options, ctx.agentManager);
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
@@ -397,10 +387,10 @@ export class QueryOptionsBuilder {
   }
 
   /**
-   * Applies custom agents to options (filters out built-ins managed by SDK).
+   * Applies custom agents to options (filters out built-ins managed by SDK, and plugin agents auto-discovered by CLI).
    */
   private static applyAgents(options: Options, agentManager?: AgentManager): void {
-    const agents = agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
+    const agents = agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin' && a.source !== 'plugin') ?? [];
     if (agents.length > 0) {
       options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }
