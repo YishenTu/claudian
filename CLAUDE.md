@@ -57,7 +57,14 @@ Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`.
 
 - **SDK-first**: Proactively use native Claude SDK features over custom implementations. If the SDK provides a capability, use it — do not reinvent it. This ensures compatibility with Claude Code.
 - **Comments**: Only comment WHY, not WHAT. No JSDoc that restates the function name (`/** Get servers. */` on `getServers()`), no narrating inline comments (`// Create the channel` before `new Channel()`), no module-level docs on barrel `index.ts` files. Keep JSDoc only when it adds non-obvious context (edge cases, constraints, surprising behavior).
-- Test Driven Development
+- **TDD workflow**: For new functions/modules and bug fixes, follow red-green-refactor:
+  1. Write a failing test first in the mirrored path under `tests/unit/` (or `tests/integration/`)
+  2. Run it with `npm run test -- --selectProjects unit --testPathPattern <pattern>` to confirm it fails
+  3. Write the minimal implementation to make it pass
+  4. Refactor, keeping tests green
+  - For bug fixes, write a test that reproduces the bug before fixing it
+  - Test behavior and public API, not internal implementation details
+  - Skip TDD for trivial changes (renaming, moving files, config tweaks) — but still verify existing tests pass
 - Run `npm run typecheck && npm run lint && npm run test && npm run build` after editing
 - No `console.*` in production code - use Obsidian's notification system
-- Generated docs go in `dev/`, agent notes in `.agents/`
+- Generated docs go in `dev/`.
