@@ -4,12 +4,12 @@
 
 ```
 src/style/
-├── base/           # container, animations (@keyframes)
-├── components/     # header, history, messages, code, thinking, toolcalls, todo, subagent, input, context-footer
+├── base/           # container, animations (@keyframes), variables
+├── components/     # header, history, messages, code, thinking, toolcalls, status-panel, subagent, input, context-footer, tabs, scroll-to-bottom
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
-├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands
+├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands, file-link, image-embed
 ├── modals/         # approval, instruction, mcp-modal
-├── settings/       # base, approved-actions, env-snippets, slash-settings, mcp-settings, plugin-settings
+├── settings/       # base, env-snippets, slash-settings, mcp-settings, plugin-settings
 ├── accessibility.css
 └── index.css       # Build order (@import list)
 ```

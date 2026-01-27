@@ -16,7 +16,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `prompts/` | System prompts | `mainAgent`, `inlineEdit`, `instructionRefine`, `titleGeneration` |
 | `sdk/` | SDK message transform | `transformSDKMessage`, `typeGuards`, `types` |
 | `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
-| `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
+| `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SkillStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
 | `tools/` | Tool utilities | `toolNames`, `toolIcons`, `toolInput`, `todo` |
 | `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat`, `tools`, `models`, `sdk`, `plugins`, `diff` |
 
