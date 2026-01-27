@@ -43,7 +43,6 @@ import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
   buildPermissionUpdates,
   getActionDescription,
-  getActionPattern,
 } from '../security';
 import { TOOL_SKILL } from '../tools/toolNames';
 import type {
@@ -109,7 +108,6 @@ export class ClaudianService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
   private approvalCallback: ApprovalCallback | null = null;
-  private sessionDenyPatterns = new Set<string>();
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
 
@@ -1274,7 +1272,6 @@ export class ClaudianService {
     // Reset crash recovery for fresh start
     this.crashRecoveryAttempted = false;
 
-    this.sessionDenyPatterns.clear();
     this.sessionManager.reset();
   }
 
@@ -1366,7 +1363,7 @@ export class ClaudianService {
     this.approvalCallback = callback;
   }
 
-  /** Creates canUseTool callback: enforces tool restrictions, prompts user. Allow returns updatedPermissions for SDK; deny-always persists locally via addDenyRule. */
+  /** Creates canUseTool callback: enforces tool restrictions and prompts user. */
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
       if (this.currentAllowedTools !== null) {
@@ -1386,13 +1383,6 @@ export class ClaudianService {
         return { behavior: 'deny', message: 'No approval handler available.' };
       }
 
-      // Session deny cache — SDK deny result can't carry updatedPermissions,
-      // so we remember session denials locally to avoid re-prompting.
-      const denyKey = `${toolName}:${getActionPattern(toolName, input)}`;
-      if (this.sessionDenyPatterns.has(denyKey)) {
-        return { behavior: 'deny', message: 'User denied this action.' };
-      }
-
       try {
         const description = getActionDescription(toolName, input);
         const decision = await this.approvalCallback(
@@ -1404,36 +1394,11 @@ export class ClaudianService {
           return { behavior: 'deny', message: 'User interrupted.', interrupt: true };
         }
 
-        const updatedPermissions = buildPermissionUpdates(
-          toolName, input, decision, options.suggestions
-        );
-
         if (decision === 'allow' || decision === 'allow-always') {
+          const updatedPermissions = buildPermissionUpdates(
+            toolName, input, decision, options.suggestions
+          );
           return { behavior: 'allow', updatedInput: input, updatedPermissions };
-        }
-
-        // SDK deny result doesn't carry updatedPermissions, so persist locally
-        if (decision === 'deny-always') {
-          try {
-            for (const update of updatedPermissions) {
-              if ((update.type === 'addRules' || update.type === 'replaceRules') && update.behavior === 'deny') {
-                for (const rule of update.rules) {
-                  const ruleStr = rule.ruleContent
-                    ? `${rule.toolName}(${rule.ruleContent})`
-                    : rule.toolName;
-                  await this.plugin.storage.addDenyRule(ruleStr);
-                }
-              }
-            }
-          } catch (e) {
-            const detail = e instanceof Error ? e.message : String(e);
-            new Notice(`Failed to save deny rule: ${detail}. The action will remain denied for this session but won't persist across sessions.`);
-          }
-        }
-
-        // Remember session deny to avoid re-prompting
-        if (decision === 'deny' || decision === 'deny-always') {
-          this.sessionDenyPatterns.add(denyKey);
         }
 
         return { behavior: 'deny', message: 'User denied this action.' };

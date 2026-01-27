@@ -615,6 +615,7 @@ export class InputController {
     const { plugin } = this.deps;
     return new Promise((resolve) => {
       const modal = new ApprovalModal(plugin.app, toolName, input, description, resolve, {
+        showAlwaysDeny: false,
         decisionReason,
         blockedPath,
       });
