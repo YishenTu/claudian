@@ -1,7 +1,4 @@
-/**
- * Permission utilities for tool action approval.
- * Standalone functions for pattern matching, rule generation, and SDK permission updates.
- */
+/** Permission utilities for tool action approval. */
 
 import type { PermissionBehavior, PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
 
@@ -54,9 +51,6 @@ export function generatePermissionRule(toolName: string, input: Record<string, u
   return createPermissionRule(`${toolName}(${pattern})`);
 }
 
-/**
- * Generate a human-readable description of the action.
- */
 export function getActionDescription(toolName: string, input: Record<string, unknown>): string {
   switch (toolName) {
     case TOOL_BASH:
@@ -77,9 +71,7 @@ export function getActionDescription(toolName: string, input: Record<string, unk
 }
 
 /**
- * Check if an action pattern matches a permission rule pattern.
- * Bash commands use prefix matching with wildcard support.
- * File tools use path prefix matching.
+ * Bash: exact or explicit wildcard ("git *"). File tools: path-prefix matching.
  */
 export function matchesRulePattern(
   toolName: string,
@@ -152,14 +144,11 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
 /**
  * Convert a user decision + SDK suggestions into PermissionUpdate[].
  *
- * For "always" decisions: uses suggestions with destination overridden to
- * projectSettings, or constructs an addRules update from the action pattern.
- * For session decisions: uses suggestions as-is or constructs with destination 'session'.
- *
- * All suggestion types are preserved (addRules, addDirectories, setMode, etc.),
- * with behavior/destination overridden to match the user's decision. Directory-grant
- * suggestions (addDirectories) are excluded for deny decisions to avoid granting
- * access the user explicitly rejected.
+ * Overrides behavior/destination on every suggestion to match the user's choice.
+ * "always" destinations go to projectSettings; session stays session.
+ * addDirectories suggestions are excluded for deny decisions.
+ * Falls back to constructing an addRules entry from the action pattern
+ * when no addRules/replaceRules suggestion is present.
  */
 export function buildPermissionUpdates(
   toolName: string,
@@ -168,35 +157,30 @@ export function buildPermissionUpdates(
   suggestions?: PermissionUpdate[]
 ): PermissionUpdate[] {
   const isAlways = decision === 'allow-always' || decision === 'deny-always';
+  const isDeny = decision === 'deny' || decision === 'deny-always';
   const destination: PermissionUpdateDestination = isAlways ? 'projectSettings' : 'session';
-  const behavior: PermissionBehavior = decision.startsWith('deny') ? 'deny' : 'allow';
-  const isDeny = decision.startsWith('deny');
+  const behavior: PermissionBehavior = isDeny ? 'deny' : 'allow';
 
-  // Process all SDK suggestions, overriding behavior/destination as appropriate
   const processed: PermissionUpdate[] = [];
   let hasRuleUpdate = false;
 
   if (suggestions) {
     for (const s of suggestions) {
       if (s.type === 'addRules' || s.type === 'replaceRules' || s.type === 'removeRules') {
-        // Rule-based updates: override both behavior and destination
         hasRuleUpdate = hasRuleUpdate || s.type === 'addRules' || s.type === 'replaceRules';
         processed.push({ ...s, behavior, destination });
       } else if (s.type === 'addDirectories') {
-        // Don't grant directory access when user denied the action
+        // Skip directory grants when user denied the action
         if (!isDeny) {
           processed.push({ ...s, destination });
         }
       } else {
-        // removeDirectories, setMode: override destination
         processed.push({ ...s, destination });
       }
     }
   }
 
-  // Ensure we have a rule update (construct addRules from action pattern if needed).
-  // addRules and replaceRules from SDK suggestions satisfy this — only removeRules alone
-  // does not, since removing rules without adding any would leave no rule for this action.
+  // Construct a fallback addRules when suggestions lacked addRules/replaceRules
   if (!hasRuleUpdate) {
     const pattern = getActionPattern(toolName, input);
     const ruleValue: { toolName: string; ruleContent?: string } = { toolName };

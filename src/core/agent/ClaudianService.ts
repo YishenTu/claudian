@@ -1359,14 +1359,9 @@ export class ClaudianService {
     this.approvalCallback = callback;
   }
 
-  /**
-   * Create approval callback for normal mode.
-   * Enforces tool restrictions, shows approval modal, and returns
-   * updatedPermissions so the SDK persists rules natively.
-   */
+  /** Creates canUseTool callback: enforces tool restrictions, prompts user, returns updatedPermissions for SDK persistence. */
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
-      // Enforce allowedTools restriction
       if (this.currentAllowedTools !== null) {
         if (!this.currentAllowedTools.includes(toolName) && toolName !== TOOL_SKILL) {
           const allowedList = this.currentAllowedTools.length > 0
@@ -1399,30 +1394,29 @@ export class ClaudianService {
           toolName, input, decision, options.suggestions
         );
 
-        if (decision === 'deny' || decision === 'deny-always') {
-          if (decision === 'deny-always') {
-            // SDK deny type doesn't support updatedPermissions, so persist
-            // deny rules locally via settings.json
-            try {
-              for (const update of updatedPermissions) {
-                if (update.type === 'addRules' && update.behavior === 'deny') {
-                  for (const rule of update.rules) {
-                    const ruleStr = rule.ruleContent
-                      ? `${rule.toolName}(${rule.ruleContent})`
-                      : rule.toolName;
-                    await this.plugin.storage.addDenyRule(ruleStr);
-                  }
-                }
-              }
-            } catch {
-              // Persistence failed — deny still takes effect for this invocation,
-              // but the rule won't be remembered across sessions.
-            }
-          }
-          return { behavior: 'deny', message: 'User denied this action.' };
+        if (decision === 'allow' || decision === 'allow-always') {
+          return { behavior: 'allow', updatedInput: input, updatedPermissions };
         }
 
-        return { behavior: 'allow', updatedInput: input, updatedPermissions };
+        // SDK deny result doesn't carry updatedPermissions, so persist locally
+        if (decision === 'deny-always') {
+          try {
+            for (const update of updatedPermissions) {
+              if (update.type === 'addRules' && update.behavior === 'deny') {
+                for (const rule of update.rules) {
+                  const ruleStr = rule.ruleContent
+                    ? `${rule.toolName}(${rule.ruleContent})`
+                    : rule.toolName;
+                  await this.plugin.storage.addDenyRule(ruleStr);
+                }
+              }
+            }
+          } catch {
+            // Persistence failed — deny still applies for this invocation
+          }
+        }
+
+        return { behavior: 'deny', message: 'User denied this action.' };
       } catch (error) {
         return {
           behavior: 'deny',
