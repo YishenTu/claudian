@@ -1422,13 +1422,14 @@ export class ClaudianService {
                 }
               }
             }
-          } catch {
-            new Notice('Failed to save deny rule. The action is denied for this invocation only.');
+          } catch (e) {
+            const detail = e instanceof Error ? e.message : String(e);
+            new Notice(`Failed to save deny rule: ${detail}. The action is denied for this invocation only.`);
           }
         }
 
         // Remember session deny to avoid re-prompting
-        if (decision === 'deny') {
+        if (decision === 'deny' || decision === 'deny-always') {
           this.sessionDenyPatterns.add(denyKey);
         }
 

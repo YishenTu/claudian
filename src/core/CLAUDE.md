@@ -15,7 +15,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `plugins/` | Claude Code plugins | `PluginManager`, `PluginStorage` |
 | `prompts/` | System prompts | `mainAgent`, `inlineEdit`, `instructionRefine`, `titleGeneration` |
 | `sdk/` | SDK message transform | `transformSDKMessage`, `typeGuards`, `types` |
-| `security/` | Access control | `ApprovalManager`, `BashPathValidator`, `BlocklistChecker` |
+| `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
 | `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
 | `tools/` | Tool utilities | `toolNames`, `toolIcons`, `toolInput`, `todo` |
 | `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat`, `tools`, `models`, `sdk`, `plugins`, `diff` |
@@ -60,7 +60,7 @@ await SessionStorage.loadSession(vaultPath, sessionId);
 
 ### Security
 - `BashPathValidator`: Vault-only by default, symlink-safe via `realpath`
-- `ApprovalManager`: Permission checks in Safe mode
+- `ApprovalManager`: Permission utility functions (`buildPermissionUpdates`, `matchesRulePattern`, etc.)
 - `BlocklistChecker`: Platform-specific dangerous commands
 
 ## Gotchas

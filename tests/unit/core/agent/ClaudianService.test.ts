@@ -447,7 +447,7 @@ describe('ClaudianService', () => {
         await canUseTool('Bash', { command: 'rm -rf /' }, canUseToolOptions);
 
         expect(mockNotice).toHaveBeenCalledWith(
-          'Failed to save deny rule. The action is denied for this invocation only.',
+          'Failed to save deny rule: FS write error. The action is denied for this invocation only.',
         );
       });
 
@@ -522,6 +522,40 @@ describe('ClaudianService', () => {
         expect(callback).toHaveBeenCalledTimes(1); // Not called again
         expect(result.behavior).toBe('deny');
         expect(result.message).toBe('User denied this action.');
+      });
+
+      it('should auto-deny on second invocation of same action after deny-always', async () => {
+        const callback = jest.fn().mockResolvedValue('deny-always');
+        service.setApprovalCallback(callback);
+
+        const canUseTool = (service as any).createApprovalCallback();
+
+        // First call prompts the user and persists
+        await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1);
+
+        // Second call with same action should auto-deny without prompting
+        const result = await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1); // Not called again
+        expect(result.behavior).toBe('deny');
+        expect(result.message).toBe('User denied this action.');
+      });
+
+      it('should session-cache deny-always even when persistence fails', async () => {
+        const callback = jest.fn().mockResolvedValue('deny-always');
+        service.setApprovalCallback(callback);
+        (mockPlugin as any).storage.addDenyRule.mockRejectedValue(new Error('FS write error'));
+
+        const canUseTool = (service as any).createApprovalCallback();
+
+        // First call fails to persist but should still cache in session
+        await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1);
+
+        // Second call should auto-deny from session cache
+        const result = await canUseTool('Bash', { command: 'rm -rf /tmp' }, canUseToolOptions);
+        expect(callback).toHaveBeenCalledTimes(1); // Not called again
+        expect(result.behavior).toBe('deny');
       });
 
       it('should clear session deny cache on resetSession', async () => {

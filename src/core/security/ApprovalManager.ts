@@ -145,7 +145,8 @@ function isPathPrefixMatch(actionPath: string, approvedPath: string): boolean {
 /**
  * Convert a user decision + SDK suggestions into PermissionUpdate[].
  *
- * Overrides behavior/destination on every suggestion to match the user's choice.
+ * Overrides behavior/destination on addRules/replaceRules suggestions to match the user's choice.
+ * removeRules keeps its original behavior (it specifies which list to remove from, not user intent).
  * "always" destinations go to projectSettings; session stays session.
  * addDirectories suggestions are excluded for deny decisions.
  * Falls back to constructing an addRules entry from the action pattern
