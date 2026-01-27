@@ -22,7 +22,6 @@ import type {
   SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../main';
 import { stripCurrentNoteContext } from '../../utils/context';
