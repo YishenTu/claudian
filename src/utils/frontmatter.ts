@@ -2,7 +2,6 @@ import { parseYaml } from 'obsidian';
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
-/** Delegates to Obsidian's parseYaml() for YAML parsing. */
 export function parseFrontmatter(
   content: string
 ): { frontmatter: Record<string, unknown>; body: string } | null {
@@ -42,10 +41,7 @@ export function normalizeStringArray(val: unknown): string[] | undefined {
   if (typeof val === 'string') {
     const trimmed = val.trim();
     if (!trimmed) return undefined;
-    if (trimmed.includes(',')) {
-      return trimmed.split(',').map(s => s.trim()).filter(Boolean);
-    }
-    return [trimmed];
+    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
   }
 
   return undefined;

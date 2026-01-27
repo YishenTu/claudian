@@ -134,7 +134,7 @@ Full prompt`,
       expect(skill.content).toBe('Full prompt');
     });
 
-    it('skips skills that fail to parse', async () => {
+    it('loads skills without frontmatter as content-only', async () => {
       const adapter = createMockAdapter({
         '.claude/skills/valid/SKILL.md': `---
 description: Valid

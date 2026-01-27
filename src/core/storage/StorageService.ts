@@ -372,6 +372,12 @@ export class StorageService {
     await this.adapter.ensureFolder(SESSIONS_PATH);
   }
 
+  async loadAllSlashCommands(): Promise<SlashCommand[]> {
+    const commands = await this.commands.loadAll();
+    const skills = await this.skills.loadAll();
+    return [...commands, ...skills];
+  }
+
   getAdapter(): VaultFileAdapter {
     return this.adapter;
   }

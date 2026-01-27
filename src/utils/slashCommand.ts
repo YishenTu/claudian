@@ -15,9 +15,25 @@ export interface ParsedSlashCommandContent {
   // Skill fields
   disableModelInvocation?: boolean;
   userInvocable?: boolean;
-  context?: string;
+  context?: 'fork';
   agent?: string;
-  hooks?: unknown;
+  hooks?: Record<string, unknown>;
+}
+
+const MAX_COMMAND_NAME_LENGTH = 64;
+const COMMAND_NAME_PATTERN = /^[a-z0-9-]+$/;
+
+export function validateCommandName(name: string): string | null {
+  if (!name) {
+    return 'Command name is required';
+  }
+  if (name.length > MAX_COMMAND_NAME_LENGTH) {
+    return `Command name must be ${MAX_COMMAND_NAME_LENGTH} characters or fewer`;
+  }
+  if (!COMMAND_NAME_PATTERN.test(name)) {
+    return 'Command name can only contain lowercase letters, numbers, and hyphens';
+  }
+  return null;
 }
 
 export function isUserCommand(cmd: SlashCommand): boolean {
@@ -68,10 +84,14 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
       extractBoolean(fm, 'disable-model-invocation') ?? extractBoolean(fm, 'disableModelInvocation'),
     userInvocable:
       extractBoolean(fm, 'user-invocable') ?? extractBoolean(fm, 'userInvocable'),
-    context: extractString(fm, 'context'),
+    context: extractString(fm, 'context') === 'fork' ? 'fork' : undefined,
     agent: extractString(fm, 'agent'),
-    hooks: fm.hooks,
+    hooks: isRecord(fm.hooks) ? fm.hooks : undefined,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function yamlString(value: string): string {

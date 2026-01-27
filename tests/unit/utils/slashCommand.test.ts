@@ -1,4 +1,4 @@
-import { parseSlashCommandContent, serializeCommand, serializeSlashCommandMarkdown, yamlString } from '@/utils/slashCommand';
+import { parseSlashCommandContent, serializeCommand, serializeSlashCommandMarkdown, validateCommandName, yamlString } from '@/utils/slashCommand';
 
 describe('parseSlashCommandContent', () => {
   describe('basic parsing', () => {
@@ -684,5 +684,56 @@ describe('serializeSlashCommandMarkdown', () => {
     expect(parsed.context).toBe('fork');
     expect(parsed.agent).toBe('reviewer');
     expect(parsed.promptContent).toBe('Body text');
+  });
+});
+
+describe('validateCommandName', () => {
+  it('accepts valid lowercase names', () => {
+    expect(validateCommandName('my-command')).toBeNull();
+    expect(validateCommandName('test')).toBeNull();
+    expect(validateCommandName('a')).toBeNull();
+    expect(validateCommandName('abc123')).toBeNull();
+    expect(validateCommandName('my-cmd-2')).toBeNull();
+    expect(validateCommandName('a1b2c3')).toBeNull();
+  });
+
+  it('accepts name at exactly 64 characters', () => {
+    const name = 'a'.repeat(64);
+    expect(validateCommandName(name)).toBeNull();
+  });
+
+  it('rejects empty name', () => {
+    expect(validateCommandName('')).not.toBeNull();
+  });
+
+  it('rejects uppercase letters', () => {
+    expect(validateCommandName('MyCommand')).not.toBeNull();
+    expect(validateCommandName('TEST')).not.toBeNull();
+  });
+
+  it('rejects underscores', () => {
+    expect(validateCommandName('my_command')).not.toBeNull();
+  });
+
+  it('rejects slashes', () => {
+    expect(validateCommandName('my/command')).not.toBeNull();
+  });
+
+  it('rejects spaces', () => {
+    expect(validateCommandName('my command')).not.toBeNull();
+  });
+
+  it('rejects colons', () => {
+    expect(validateCommandName('my:command')).not.toBeNull();
+  });
+
+  it('rejects names exceeding 64 characters', () => {
+    const name = 'a'.repeat(65);
+    expect(validateCommandName(name)).not.toBeNull();
+  });
+
+  it('rejects special characters', () => {
+    expect(validateCommandName('cmd!@#')).not.toBeNull();
+    expect(validateCommandName('cmd.test')).not.toBeNull();
   });
 });

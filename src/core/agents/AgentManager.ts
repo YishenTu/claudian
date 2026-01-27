@@ -1,6 +1,6 @@
 /**
  * Agent load order (earlier sources take precedence for duplicate IDs):
- * 0. Built-in agents: SDK-provided (Explore, Plan, Bash, general-purpose)
+ * 0. Built-in agents: dynamically provided via SDK init message
  * 1. Plugin agents: {pluginPath}/agents/*.md (namespaced as plugin-name:agent-name)
  * 2. Vault agents: {vaultPath}/.claude/agents/*.md
  * 3. Global agents: ~/.claude/agents/*.md
@@ -49,10 +49,7 @@ export class AgentManager {
     this.pluginManager = pluginManager;
   }
 
-  /**
-   * Update built-in agent names from the SDK init message.
-   * Built-in agents are those from init that are NOT loaded from files.
-   */
+  /** Built-in agents are those from init that are NOT loaded from files. */
   setBuiltinAgentNames(names: string[]): void {
     this.builtinAgentNames = names;
     // Rebuild agents to reflect the new built-in list

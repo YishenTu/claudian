@@ -9,11 +9,6 @@ export class SkillStorage {
 
   async loadAll(): Promise<SlashCommand[]> {
     const skills: SlashCommand[] = [];
-
-    if (!(await this.adapter.exists(SKILLS_PATH))) {
-      return skills;
-    }
-
     const folders = await this.adapter.listFolders(SKILLS_PATH);
 
     for (const folder of folders) {
