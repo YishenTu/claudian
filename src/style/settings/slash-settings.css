@@ -22,36 +22,6 @@
   gap: 4px;
 }
 
-.claudian-add-slash-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.claudian-add-slash-btn:hover {
-  opacity: 0.9;
-}
-
-.claudian-export-btn,
-.claudian-import-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  background: var(--background-modifier-border);
-  color: var(--text-normal);
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.claudian-export-btn:hover,
-.claudian-import-btn:hover {
-  background: var(--background-modifier-border-hover);
-}
-
 .claudian-slash-empty-state {
   padding: 20px;
   text-align: center;
@@ -110,16 +80,6 @@
   margin-top: 2px;
 }
 
-.claudian-slash-item-preview {
-  font-size: 12px;
-  color: var(--text-faint);
-  font-family: var(--font-monospace);
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .claudian-slash-item-actions {
   display: flex;
   gap: 4px;
@@ -127,32 +87,32 @@
   flex-shrink: 0;
 }
 
-.claudian-edit-slash-btn {
-  padding: 4px 12px;
-  font-size: 12px;
+.claudian-slash-item-badge {
+  font-size: 10px;
+  padding: 2px 6px;
   background: var(--background-modifier-border);
-  color: var(--text-normal);
-  border: none;
   border-radius: 4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.claudian-slash-advanced-section {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 0 12px;
+  margin: 8px 0;
+}
+
+.claudian-slash-advanced-summary {
   cursor: pointer;
+  padding: 8px 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
 }
 
-.claudian-edit-slash-btn:hover {
-  background: var(--background-modifier-border-hover);
-}
-
-.claudian-delete-slash-btn {
-  padding: 4px 12px;
-  font-size: 12px;
-  background: var(--background-modifier-error);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.claudian-delete-slash-btn:hover {
-  opacity: 0.9;
+.claudian-slash-advanced-section[open] .claudian-slash-advanced-summary {
+  margin-bottom: 4px;
 }
 
 /* Slash Command Modal */

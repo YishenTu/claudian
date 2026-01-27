@@ -1,10 +1,4 @@
-/**
- * Claudian - Slash command utilities
- *
- * Core parsing logic for slash command YAML frontmatter.
- * Delegates to Obsidian's parseYaml() via parseFrontmatter().
- */
-
+import type { ClaudeModel, SlashCommand } from '../core/types';
 import {
   extractBoolean,
   extractString,
@@ -12,7 +6,6 @@ import {
   parseFrontmatter,
 } from './frontmatter';
 
-/** Parsed slash command frontmatter and prompt content. */
 export interface ParsedSlashCommandContent {
   description?: string;
   argumentHint?: string;
@@ -27,10 +20,33 @@ export interface ParsedSlashCommandContent {
   hooks?: unknown;
 }
 
-/**
- * Parses YAML frontmatter from command content.
- * Returns parsed metadata and the remaining prompt content.
- */
+export function isUserCommand(cmd: SlashCommand): boolean {
+  return !cmd.id.startsWith('plugin-');
+}
+
+export function isSkill(cmd: SlashCommand): boolean {
+  return cmd.id.startsWith('skill-');
+}
+
+export function parsedToSlashCommand(
+  parsed: ParsedSlashCommandContent,
+  identity: Pick<SlashCommand, 'id' | 'name'> & { source?: SlashCommand['source'] },
+): SlashCommand {
+  return {
+    ...identity,
+    description: parsed.description,
+    argumentHint: parsed.argumentHint,
+    allowedTools: parsed.allowedTools,
+    model: parsed.model as ClaudeModel | undefined,
+    content: parsed.promptContent,
+    disableModelInvocation: parsed.disableModelInvocation,
+    userInvocable: parsed.userInvocable,
+    context: parsed.context,
+    agent: parsed.agent,
+    hooks: parsed.hooks,
+  };
+}
+
 export function parseSlashCommandContent(content: string): ParsedSlashCommandContent {
   const parsed = parseFrontmatter(content);
 
@@ -47,11 +63,68 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
     allowedTools: extractStringArray(fm, 'allowed-tools') ?? extractStringArray(fm, 'allowedTools'),
     model: extractString(fm, 'model'),
     promptContent: parsed.body,
-    // Skill fields
-    disableModelInvocation: extractBoolean(fm, 'disableModelInvocation'),
-    userInvocable: extractBoolean(fm, 'userInvocable'),
+    // Skill fields — kebab-case preferred (CC file format), camelCase for backwards compat
+    disableModelInvocation:
+      extractBoolean(fm, 'disable-model-invocation') ?? extractBoolean(fm, 'disableModelInvocation'),
+    userInvocable:
+      extractBoolean(fm, 'user-invocable') ?? extractBoolean(fm, 'userInvocable'),
     context: extractString(fm, 'context'),
     agent: extractString(fm, 'agent'),
     hooks: fm.hooks,
   };
+}
+
+export function yamlString(value: string): string {
+  if (value.includes(':') || value.includes('#') || value.includes('\n') ||
+      value.startsWith(' ') || value.endsWith(' ')) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
+/** All frontmatter keys are serialized in kebab-case. */
+export function serializeSlashCommandMarkdown(cmd: Partial<SlashCommand>, body: string): string {
+  const lines: string[] = ['---'];
+
+  if (cmd.description) {
+    lines.push(`description: ${yamlString(cmd.description)}`);
+  }
+  if (cmd.argumentHint) {
+    lines.push(`argument-hint: ${yamlString(cmd.argumentHint)}`);
+  }
+  if (cmd.allowedTools && cmd.allowedTools.length > 0) {
+    lines.push('allowed-tools:');
+    for (const tool of cmd.allowedTools) {
+      lines.push(`  - ${tool}`);
+    }
+  }
+  if (cmd.model) {
+    lines.push(`model: ${cmd.model}`);
+  }
+  if (cmd.disableModelInvocation !== undefined) {
+    lines.push(`disable-model-invocation: ${cmd.disableModelInvocation}`);
+  }
+  if (cmd.userInvocable !== undefined) {
+    lines.push(`user-invocable: ${cmd.userInvocable}`);
+  }
+  if (cmd.context) {
+    lines.push(`context: ${cmd.context}`);
+  }
+  if (cmd.agent) {
+    lines.push(`agent: ${cmd.agent}`);
+  }
+  if (cmd.hooks !== undefined) {
+    lines.push(`hooks: ${JSON.stringify(cmd.hooks)}`);
+  }
+
+  // Ensure at least one blank line between --- markers when no metadata exists
+  // (the frontmatter regex requires \n before the closing ---)
+  if (lines.length === 1) {
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push(body);
+
+  return lines.join('\n');
 }

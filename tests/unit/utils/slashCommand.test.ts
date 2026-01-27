@@ -1,4 +1,4 @@
-import { parseSlashCommandContent } from '@/utils/slashCommand';
+import { parseSlashCommandContent, serializeSlashCommandMarkdown, yamlString } from '@/utils/slashCommand';
 
 describe('parseSlashCommandContent', () => {
   describe('basic parsing', () => {
@@ -440,7 +440,29 @@ Prompt`;
   });
 
   describe('skill fields', () => {
-    it('should parse disableModelInvocation boolean', () => {
+    it('should parse kebab-case disable-model-invocation', () => {
+      const content = `---
+description: A skill
+disable-model-invocation: true
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.disableModelInvocation).toBe(true);
+    });
+
+    it('should parse kebab-case user-invocable', () => {
+      const content = `---
+description: A skill
+user-invocable: false
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.userInvocable).toBe(false);
+    });
+
+    it('should parse camelCase disableModelInvocation (backwards compat)', () => {
       const content = `---
 description: A skill
 disableModelInvocation: true
@@ -451,7 +473,7 @@ Prompt`;
       expect(parsed.disableModelInvocation).toBe(true);
     });
 
-    it('should parse userInvocable boolean', () => {
+    it('should parse camelCase userInvocable (backwards compat)', () => {
       const content = `---
 description: A skill
 userInvocable: false
@@ -459,6 +481,20 @@ userInvocable: false
 Prompt`;
 
       const parsed = parseSlashCommandContent(content);
+      expect(parsed.userInvocable).toBe(false);
+    });
+
+    it('should prefer kebab-case over camelCase when both present', () => {
+      const content = `---
+disable-model-invocation: true
+disableModelInvocation: false
+user-invocable: false
+userInvocable: true
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.disableModelInvocation).toBe(true);
       expect(parsed.userInvocable).toBe(false);
     });
 
@@ -518,5 +554,107 @@ Prompt`;
       expect(parsed.agent).toBeUndefined();
       expect(parsed.hooks).toBeUndefined();
     });
+  });
+});
+
+describe('yamlString', () => {
+  it('returns plain value for simple strings', () => {
+    expect(yamlString('hello world')).toBe('hello world');
+  });
+
+  it('quotes strings with colons', () => {
+    expect(yamlString('key: value')).toBe('"key: value"');
+  });
+
+  it('quotes strings with hash', () => {
+    expect(yamlString('has # comment')).toBe('"has # comment"');
+  });
+
+  it('quotes strings with newlines', () => {
+    expect(yamlString('line1\nline2')).toBe('"line1\nline2"');
+  });
+
+  it('quotes strings starting with space', () => {
+    expect(yamlString(' leading')).toBe('" leading"');
+  });
+
+  it('quotes strings ending with space', () => {
+    expect(yamlString('trailing ')).toBe('"trailing "');
+  });
+
+  it('escapes double quotes inside quoted strings', () => {
+    expect(yamlString('has "quotes" inside: yes')).toBe('"has \\"quotes\\" inside: yes"');
+  });
+});
+
+describe('serializeSlashCommandMarkdown', () => {
+  it('serializes all fields in kebab-case', () => {
+    const result = serializeSlashCommandMarkdown({
+      description: 'Test command',
+      argumentHint: '[file]',
+      allowedTools: ['Read', 'Grep'],
+      model: 'claude-sonnet-4-5',
+      disableModelInvocation: true,
+      userInvocable: false,
+      context: 'fork',
+      agent: 'code-reviewer',
+    }, 'Do the thing');
+
+    expect(result).toContain('description: Test command');
+    expect(result).toContain('argument-hint: [file]');
+    expect(result).toContain('allowed-tools:');
+    expect(result).toContain('  - Read');
+    expect(result).toContain('  - Grep');
+    expect(result).toContain('model: claude-sonnet-4-5');
+    expect(result).toContain('disable-model-invocation: true');
+    expect(result).toContain('user-invocable: false');
+    expect(result).toContain('context: fork');
+    expect(result).toContain('agent: code-reviewer');
+    expect(result).toContain('Do the thing');
+  });
+
+  it('omits undefined fields', () => {
+    const result = serializeSlashCommandMarkdown({
+      description: 'Minimal',
+    }, 'Prompt');
+
+    expect(result).toContain('description: Minimal');
+    expect(result).not.toContain('argument-hint');
+    expect(result).not.toContain('allowed-tools');
+    expect(result).not.toContain('model');
+    expect(result).not.toContain('disable-model-invocation');
+    expect(result).not.toContain('user-invocable');
+    expect(result).not.toContain('context');
+    expect(result).not.toContain('agent');
+    expect(result).not.toContain('hooks');
+  });
+
+  it('produces valid frontmatter when no metadata exists', () => {
+    const result = serializeSlashCommandMarkdown({}, 'Just a prompt');
+    expect(result).toBe('---\n\n---\nJust a prompt');
+  });
+
+  it('serializes hooks as JSON', () => {
+    const hooks = { PreToolUse: [{ matcher: 'Bash' }] };
+    const result = serializeSlashCommandMarkdown({ hooks }, 'Prompt');
+    expect(result).toContain(`hooks: ${JSON.stringify(hooks)}`);
+  });
+
+  it('round-trips through parse', () => {
+    const serialized = serializeSlashCommandMarkdown({
+      description: 'Round trip',
+      disableModelInvocation: true,
+      userInvocable: false,
+      context: 'fork',
+      agent: 'reviewer',
+    }, 'Body text');
+
+    const parsed = parseSlashCommandContent(serialized);
+    expect(parsed.description).toBe('Round trip');
+    expect(parsed.disableModelInvocation).toBe(true);
+    expect(parsed.userInvocable).toBe(false);
+    expect(parsed.context).toBe('fork');
+    expect(parsed.agent).toBe('reviewer');
+    expect(parsed.promptContent).toBe('Body text');
   });
 });

@@ -1,8 +1,6 @@
 /**
- * AgentManager - Discover and manage custom agent definitions.
- *
- * Loads agents from four sources (earlier sources take precedence for duplicate IDs):
- * 0. Built-in agents: SDK-provided agents (Explore, Plan, Bash, general-purpose)
+ * Agent load order (earlier sources take precedence for duplicate IDs):
+ * 0. Built-in agents: SDK-provided (Explore, Plan, Bash, general-purpose)
  * 1. Plugin agents: {pluginPath}/agents/*.md (namespaced as plugin-name:agent-name)
  * 2. Vault agents: {vaultPath}/.claude/agents/*.md
  * 3. Global agents: ~/.claude/agents/*.md
@@ -84,23 +82,15 @@ export class AgentManager {
     await this.loadGlobalAgents();
   }
 
-  /**
-   * Get all available agents in load order (reflects source priority).
-   */
   getAvailableAgents(): AgentDefinition[] {
     return [...this.agents];
   }
 
-  /**
-   * Get agent by ID (exact match).
-   */
   getAgentById(id: string): AgentDefinition | undefined {
     return this.agents.find(a => a.id === id);
   }
 
-  /**
-   * Search agents by ID, name, or description (for @ mention filtering).
-   */
+  /** Used for @-mention filtering in the chat input. */
   searchAgents(query: string): AgentDefinition[] {
     const q = query.toLowerCase();
     return this.agents.filter(a =>
@@ -110,9 +100,6 @@ export class AgentManager {
     );
   }
 
-  /**
-   * Load agents from enabled plugins.
-   */
   private async loadPluginAgents(): Promise<void> {
     for (const plugin of this.pluginManager.getPlugins()) {
       if (!plugin.enabled || plugin.status !== 'available') continue;
@@ -124,23 +111,14 @@ export class AgentManager {
     }
   }
 
-  /**
-   * Load agents from vault .claude/agents directory.
-   */
   private async loadVaultAgents(): Promise<void> {
     await this.loadAgentsFromDirectory(path.join(this.vaultPath, VAULT_AGENTS_DIR), 'vault');
   }
 
-  /**
-   * Load agents from global ~/.claude/agents directory.
-   */
   private async loadGlobalAgents(): Promise<void> {
     await this.loadAgentsFromDirectory(GLOBAL_AGENTS_DIR, 'global');
   }
 
-  /**
-   * Load agents from a directory into this.agents.
-   */
   private async loadAgentsFromDirectory(
     dir: string,
     source: 'plugin' | 'vault' | 'global',
@@ -154,9 +132,6 @@ export class AgentManager {
     }
   }
 
-  /**
-   * List all .md files in a directory (non-recursive).
-   */
   private listMarkdownFiles(dir: string): string[] {
     const files: string[] = [];
 
@@ -175,9 +150,6 @@ export class AgentManager {
     return files;
   }
 
-  /**
-   * Parse an agent definition from a markdown file.
-   */
   private async parseAgentFromFile(
     filePath: string,
     source: 'plugin' | 'vault' | 'global',
@@ -191,10 +163,8 @@ export class AgentManager {
 
       const { frontmatter, body } = parsed;
 
-      // Build agent ID
       let id: string;
       if (source === 'plugin' && pluginName) {
-        // Namespace plugin agents with plugin name
         const normalizedPluginName = pluginName.toLowerCase().replace(/\s+/g, '-');
         id = `${normalizedPluginName}:${frontmatter.name}`;
       } else {

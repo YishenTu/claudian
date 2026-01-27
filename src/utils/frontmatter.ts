@@ -2,10 +2,7 @@ import { parseYaml } from 'obsidian';
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
-/**
- * Parse YAML frontmatter from markdown content using Obsidian's parseYaml().
- * Returns parsed object + body text, or null on failure.
- */
+/** Delegates to Obsidian's parseYaml() for YAML parsing. */
 export function parseFrontmatter(
   content: string
 ): { frontmatter: Record<string, unknown>; body: string } | null {

@@ -183,6 +183,27 @@ Just a simple prompt with $ARGUMENTS.`;
       expect(command?.allowedTools).toBeUndefined();
       expect(command?.model).toBeUndefined();
     });
+
+    it('passes through skill fields from frontmatter', async () => {
+      const skillMarkdown = `---
+description: A skill-like command
+disable-model-invocation: true
+user-invocable: false
+context: fork
+agent: code-reviewer
+---
+Do the thing`;
+
+      mockAdapter.read.mockResolvedValue(skillMarkdown);
+
+      const command = await storage.loadFromFile('.claude/commands/skill-cmd.md');
+
+      expect(command).not.toBeNull();
+      expect(command?.disableModelInvocation).toBe(true);
+      expect(command?.userInvocable).toBe(false);
+      expect(command?.context).toBe('fork');
+      expect(command?.agent).toBe('code-reviewer');
+    });
   });
 
   describe('save', () => {
@@ -283,6 +304,77 @@ Just a simple prompt with $ARGUMENTS.`;
         '.claude/commands/level1/level2/level3.md',
         expect.anything()
       );
+    });
+
+    it('serializes skill fields in kebab-case', async () => {
+      const command: SlashCommand = {
+        ...mockCommand1,
+        disableModelInvocation: true,
+        userInvocable: false,
+        context: 'fork',
+        agent: 'code-reviewer',
+      };
+
+      await storage.save(command);
+
+      const written = mockAdapter.write.mock.calls[0][1] as string;
+      expect(written).toContain('disable-model-invocation: true');
+      expect(written).toContain('user-invocable: false');
+      expect(written).toContain('context: fork');
+      expect(written).toContain('agent: code-reviewer');
+      // Should NOT contain camelCase variants
+      expect(written).not.toContain('disableModelInvocation');
+      expect(written).not.toContain('userInvocable');
+    });
+
+    it('omits skill fields when undefined', async () => {
+      await storage.save(mockCommand1);
+
+      const written = mockAdapter.write.mock.calls[0][1] as string;
+      expect(written).not.toContain('disable-model-invocation');
+      expect(written).not.toContain('user-invocable');
+      expect(written).not.toContain('context');
+      expect(written).not.toContain('agent');
+      expect(written).not.toContain('hooks');
+    });
+
+    it('serializes hooks as JSON', async () => {
+      const hooks = { PreToolUse: [{ matcher: 'Bash' }] };
+      const command: SlashCommand = {
+        ...mockCommand1,
+        hooks,
+      };
+
+      await storage.save(command);
+
+      const written = mockAdapter.write.mock.calls[0][1] as string;
+      expect(written).toContain(`hooks: ${JSON.stringify(hooks)}`);
+    });
+
+    it('round-trips skill fields through save and load', async () => {
+      const command: SlashCommand = {
+        id: 'cmd-roundtrip',
+        name: 'roundtrip',
+        description: 'Round trip test',
+        content: 'Do the thing',
+        disableModelInvocation: true,
+        userInvocable: false,
+        context: 'fork',
+        agent: 'code-reviewer',
+      };
+
+      await storage.save(command);
+
+      const written = mockAdapter.write.mock.calls[0][1] as string;
+      mockAdapter.read.mockResolvedValue(written);
+      const loaded = await storage.loadFromFile('.claude/commands/roundtrip.md');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.disableModelInvocation).toBe(true);
+      expect(loaded?.userInvocable).toBe(false);
+      expect(loaded?.context).toBe('fork');
+      expect(loaded?.agent).toBe('code-reviewer');
+      expect(loaded?.content).toBe('Do the thing');
     });
   });
 

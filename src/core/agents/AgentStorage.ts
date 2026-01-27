@@ -1,9 +1,3 @@
-/**
- * AgentStorage - Parse agent definition files.
- *
- * Agent files are markdown with YAML frontmatter, matching Claude Code's format.
- */
-
 import { extractNumber, extractStringArray, parseFrontmatter } from '../../utils/frontmatter';
 import type { AgentFrontmatter } from '../types';
 
@@ -45,7 +39,7 @@ function isStringOrArray(value: unknown): value is string | string[] {
   return typeof value === 'string' || Array.isArray(value);
 }
 
-/** Parse tools specification into array. Returns undefined to inherit all tools. */
+/** Returns undefined to inherit all tools. */
 export function parseToolsList(tools?: string | string[]): string[] | undefined {
   if (tools === undefined) return undefined;
 
@@ -64,7 +58,7 @@ export function parseToolsList(tools?: string | string[]): string[] | undefined 
 
 const VALID_MODELS = ['sonnet', 'opus', 'haiku', 'inherit'] as const;
 
-/** Parse and validate model specification. Falls back to 'inherit'. */
+/** Falls back to 'inherit' for unrecognized values. */
 export function parseModel(model?: string): 'sonnet' | 'opus' | 'haiku' | 'inherit' {
   if (!model) return 'inherit';
   const normalized = model.toLowerCase().trim();

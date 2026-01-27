@@ -3,15 +3,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { SlashCommand } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import { parseSlashCommandContent } from '../../../utils/slashCommand';
-
-function isUserCommand(cmd: SlashCommand): boolean {
-  return !cmd.id.startsWith('plugin-');
-}
-
-function isSkill(cmd: SlashCommand): boolean {
-  return cmd.id.startsWith('skill-');
-}
+import { isSkill, isUserCommand, parseSlashCommandContent } from '../../../utils/slashCommand';
 
 export class SlashCommandModal extends Modal {
   private plugin: ClaudianPlugin;
@@ -31,7 +23,12 @@ export class SlashCommandModal extends Modal {
   }
 
   onOpen() {
-    this.setTitle(this.existingCmd ? 'Edit Slash Command' : 'Add Slash Command');
+    const existingIsSkill = this.existingCmd ? isSkill(this.existingCmd) : false;
+    let selectedType: 'command' | 'skill' = existingIsSkill ? 'skill' : 'command';
+
+    const typeLabel = () => selectedType === 'skill' ? 'Skill' : 'Slash Command';
+
+    this.setTitle(this.existingCmd ? `Edit ${typeLabel()}` : `Add ${typeLabel()}`);
     this.modalEl.addClass('claudian-slash-modal');
 
     const { contentEl } = this;
@@ -41,6 +38,27 @@ export class SlashCommandModal extends Modal {
     let hintInput: HTMLInputElement;
     let modelInput: HTMLInputElement;
     let toolsInput: HTMLInputElement;
+    let disableModelToggle: boolean = this.existingCmd?.disableModelInvocation ?? false;
+    let userInvocableToggle: boolean = this.existingCmd?.userInvocable ?? true;
+    let contextValue: string = this.existingCmd?.context ?? '';
+    let agentInput: HTMLInputElement;
+
+    new Setting(contentEl)
+      .setName('Type')
+      .setDesc('Command or skill')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('command', 'Command')
+          .addOption('skill', 'Skill')
+          .setValue(selectedType)
+          .onChange(value => {
+            selectedType = value as 'command' | 'skill';
+            this.setTitle(this.existingCmd ? `Edit ${typeLabel()}` : `Add ${typeLabel()}`);
+          });
+        if (this.existingCmd) {
+          dropdown.setDisabled(true);
+        }
+      });
 
     new Setting(contentEl)
       .setName('Command name')
@@ -84,6 +102,56 @@ export class SlashCommandModal extends Modal {
         text.setValue(this.existingCmd?.allowedTools?.join(', ') || '');
       });
 
+    const details = contentEl.createEl('details', { cls: 'claudian-slash-advanced-section' });
+    details.createEl('summary', {
+      text: 'Advanced options',
+      cls: 'claudian-slash-advanced-summary',
+    });
+    if (this.existingCmd?.disableModelInvocation || this.existingCmd?.context || this.existingCmd?.agent ||
+        (this.existingCmd?.userInvocable !== undefined && !this.existingCmd.userInvocable)) {
+      details.open = true;
+    }
+
+    new Setting(details)
+      .setName('Disable model invocation')
+      .setDesc('Prevent the model from invoking this command itself')
+      .addToggle(toggle => {
+        toggle.setValue(disableModelToggle)
+          .onChange(value => { disableModelToggle = value; });
+      });
+
+    new Setting(details)
+      .setName('User invocable')
+      .setDesc('Whether the user can invoke this command directly')
+      .addToggle(toggle => {
+        toggle.setValue(userInvocableToggle)
+          .onChange(value => { userInvocableToggle = value; });
+      });
+
+    const agentSetting = new Setting(details)
+      .setName('Agent')
+      .setDesc('Subagent type when context is fork')
+      .addText(text => {
+        agentInput = text.inputEl;
+        text.setValue(this.existingCmd?.agent || '')
+          .setPlaceholder('code-reviewer');
+      });
+    agentSetting.settingEl.style.display = contextValue === 'fork' ? '' : 'none';
+
+    new Setting(details)
+      .setName('Context')
+      .setDesc('Execution context (fork runs in a subagent)')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('', 'None')
+          .addOption('fork', 'Fork')
+          .setValue(contextValue)
+          .onChange(value => {
+            contextValue = value;
+            agentSetting.settingEl.style.display = value === 'fork' ? '' : 'none';
+          });
+      });
+
     new Setting(contentEl)
       .setName('Prompt template')
       .setDesc('Use $ARGUMENTS, $1, $2, @file, !`bash`');
@@ -125,7 +193,7 @@ export class SlashCommandModal extends Modal {
         return;
       }
 
-      // Validate name (alphanumeric, hyphens, underscores, slashes only - colons reserved for plugins)
+      // Colons reserved for plugin-namespaced commands
       if (!/^[a-zA-Z0-9_/-]+$/.test(name)) {
         new Notice('Command name can only contain letters, numbers, hyphens, underscores, and slashes');
         return;
@@ -143,8 +211,14 @@ export class SlashCommandModal extends Modal {
       const parsed = parseSlashCommandContent(content);
       const promptContent = parsed.promptContent;
 
+      const isSkillType = selectedType === 'skill';
+      const id = this.existingCmd?.id ||
+        (isSkillType
+          ? `skill-${name}`
+          : `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`);
+
       const cmd: SlashCommand = {
-        id: this.existingCmd?.id || `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        id,
         name,
         description: descInput.value.trim() || parsed.description || undefined,
         argumentHint: hintInput.value.trim() || parsed.argumentHint || undefined,
@@ -155,6 +229,11 @@ export class SlashCommandModal extends Modal {
             ? parsed.allowedTools
             : undefined,
         content: promptContent,
+        source: isSkillType ? 'user' : undefined,
+        disableModelInvocation: disableModelToggle || undefined,
+        userInvocable: userInvocableToggle ? undefined : false,
+        context: contextValue || undefined,
+        agent: contextValue === 'fork' ? (agentInput.value.trim() || undefined) : undefined,
       };
 
       this.onSave(cmd);
@@ -262,6 +341,21 @@ export class SlashCommandSettings {
     setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => this.openCommandModal(cmd));
 
+    if (!isSkill(cmd)) {
+      const convertBtn = actionsEl.createEl('button', {
+        cls: 'claudian-settings-action-btn',
+        attr: { 'aria-label': 'Convert to skill' },
+      });
+      setIcon(convertBtn, 'package');
+      convertBtn.addEventListener('click', async () => {
+        try {
+          await this.transformToSkill(cmd);
+        } catch {
+          new Notice('Failed to convert to skill');
+        }
+      });
+    }
+
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
       attr: { 'aria-label': 'Delete' },
@@ -304,11 +398,11 @@ export class SlashCommandSettings {
       await oldStorage.delete(existing.id);
     }
 
-    // Reload commands + skills from storage
     await this.reloadCommands();
 
     this.render();
-    new Notice(`Slash command "/${cmd.name}" ${existing ? 'updated' : 'created'}`);
+    const label = isSkill(cmd) ? 'Skill' : 'Slash command';
+    new Notice(`${label} "/${cmd.name}" ${existing ? 'updated' : 'created'}`);
   }
 
   private async deleteCommand(cmd: SlashCommand): Promise<void> {
@@ -318,11 +412,38 @@ export class SlashCommandSettings {
 
     await storage.delete(cmd.id);
 
-    // Reload commands + skills from storage
     await this.reloadCommands();
 
     this.render();
-    new Notice(`Slash command "/${cmd.name}" deleted`);
+    const label = isSkill(cmd) ? 'Skill' : 'Slash command';
+    new Notice(`${label} "/${cmd.name}" deleted`);
+  }
+
+  private async transformToSkill(cmd: SlashCommand): Promise<void> {
+    // Flatten nested names: skills are single-level directories
+    const skillName = cmd.name.replace(/\//g, '-');
+
+    const existingSkill = this.plugin.settings.slashCommands.find(
+      c => isSkill(c) && c.name.toLowerCase() === skillName.toLowerCase()
+    );
+    if (existingSkill) {
+      new Notice(`A skill named "/${skillName}" already exists`);
+      return;
+    }
+
+    const skill: SlashCommand = {
+      ...cmd,
+      id: `skill-${skillName}`,
+      name: skillName,
+      source: 'user',
+    };
+
+    await this.plugin.storage.skills.save(skill);
+    await this.plugin.storage.commands.delete(cmd.id);
+
+    await this.reloadCommands();
+    this.render();
+    new Notice(`Converted "/${cmd.name}" to skill`);
   }
 
   private async reloadCommands(): Promise<void> {
@@ -378,7 +499,7 @@ export class SlashCommandSettings {
             continue;
           }
 
-          // Validate name (alphanumeric, hyphens, underscores, slashes only - colons reserved for plugins)
+          // Colons reserved for plugin-namespaced commands
           if (!/^[a-zA-Z0-9_/-]+$/.test(cmd.name)) {
             continue;
           }

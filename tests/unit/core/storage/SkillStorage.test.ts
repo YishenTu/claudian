@@ -186,6 +186,31 @@ Prompt`,
       expect(written).toContain(JSON.stringify(hooks));
     });
 
+    it('serializes skill fields in kebab-case', async () => {
+      const adapter = createMockAdapter({});
+      const storage = new SkillStorage(adapter);
+
+      await storage.save({
+        id: 'skill-kebab',
+        name: 'kebab',
+        description: 'Kebab test',
+        content: 'prompt',
+        disableModelInvocation: true,
+        userInvocable: false,
+        context: 'fork',
+        agent: 'code-reviewer',
+      });
+
+      const written = (adapter.write as jest.Mock).mock.calls[0][1] as string;
+      expect(written).toContain('disable-model-invocation: true');
+      expect(written).toContain('user-invocable: false');
+      expect(written).toContain('context: fork');
+      expect(written).toContain('agent: code-reviewer');
+      // Should NOT contain camelCase variants
+      expect(written).not.toContain('disableModelInvocation');
+      expect(written).not.toContain('userInvocable');
+    });
+
     it('omits hooks when undefined', async () => {
       const adapter = createMockAdapter({});
       const storage = new SkillStorage(adapter);
