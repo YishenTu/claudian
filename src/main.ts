@@ -200,30 +200,20 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /** Opens the Claudian view, creating it if necessary. */
   async activateView() {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
 
     if (!leaf) {
-      if (this.settings.openInMainTab) {
-        const mainLeaf = workspace.getLeaf('tab');
-        if (mainLeaf) {
-          await mainLeaf.setViewState({
-            type: VIEW_TYPE_CLAUDIAN,
-            active: true,
-          });
-          leaf = mainLeaf;
-        }
-      } else {
-        const rightLeaf = workspace.getRightLeaf(false);
-        if (rightLeaf) {
-          await rightLeaf.setViewState({
-            type: VIEW_TYPE_CLAUDIAN,
-            active: true,
-          });
-          leaf = rightLeaf;
-        }
+      const newLeaf = this.settings.openInMainTab
+        ? workspace.getLeaf('tab')
+        : workspace.getRightLeaf(false);
+      if (newLeaf) {
+        await newLeaf.setViewState({
+          type: VIEW_TYPE_CLAUDIAN,
+          active: true,
+        });
+        leaf = newLeaf;
       }
     }
 

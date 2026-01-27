@@ -36,6 +36,9 @@ describe('ClaudianPlugin', () => {
         getRightLeaf: jest.fn().mockReturnValue({
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
+        getLeaf: jest.fn().mockReturnValue({
+          setViewState: jest.fn().mockResolvedValue(undefined),
+        }),
         revealLeaf: jest.fn(),
       },
     };
@@ -167,6 +170,35 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       // Should not throw
+      await expect(plugin.activateView()).resolves.not.toThrow();
+    });
+
+    it('should create new leaf in main editor area when openInMainTab is enabled', async () => {
+      const mockMainLeaf = {
+        setViewState: jest.fn().mockResolvedValue(undefined),
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
+      mockApp.workspace.getLeaf.mockReturnValue(mockMainLeaf);
+
+      await plugin.onload();
+      plugin.settings.openInMainTab = true;
+      await plugin.activateView();
+
+      expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith('tab');
+      expect(mockApp.workspace.getRightLeaf).not.toHaveBeenCalled();
+      expect(mockMainLeaf.setViewState).toHaveBeenCalledWith({
+        type: VIEW_TYPE_CLAUDIAN,
+        active: true,
+      });
+    });
+
+    it('should handle null main leaf gracefully when openInMainTab is enabled', async () => {
+      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
+      mockApp.workspace.getLeaf.mockReturnValue(null);
+
+      await plugin.onload();
+      plugin.settings.openInMainTab = true;
+
       await expect(plugin.activateView()).resolves.not.toThrow();
     });
   });

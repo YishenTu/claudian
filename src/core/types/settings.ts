@@ -282,7 +282,7 @@ export interface ClaudianSettings {
   maxTabs: number;  // Maximum number of chat tabs (3-10, default 3)
   tabBarPosition: TabBarPosition;  // Where to show tab bar ('input' or 'header')
   enableAutoScroll: boolean;  // Enable auto-scroll during streaming (default: true)
-  openInMainTab?: boolean;  // Open chat panel in main editor area instead of sidebar
+  openInMainTab: boolean;  // Open chat panel in main editor area instead of sidebar
 
   // Slash commands
   hiddenSlashCommands: string[];  // Command names to hide from dropdown (user preference)

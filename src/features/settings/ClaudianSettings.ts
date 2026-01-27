@@ -316,7 +316,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.openInMainTab.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.openInMainTab ?? false)
+          .setValue(this.plugin.settings.openInMainTab)
           .onChange(async (value) => {
             this.plugin.settings.openInMainTab = value;
             await this.plugin.saveSettings();
