@@ -3,7 +3,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@test/*": ["tests/*"]
+      "@test/*": ["tests/*"],
+      "@modelcontextprotocol/sdk/*": ["node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
     },
     "skipLibCheck": true,
     "inlineSourceMap": true,

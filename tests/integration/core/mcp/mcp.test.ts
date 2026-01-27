@@ -1,7 +1,7 @@
-import * as childProcess from 'child_process';
-import { EventEmitter } from 'events';
-import * as http from 'http';
-import { ReadableStream } from 'stream/web';
+import { Client } from '@modelcontextprotocol/sdk/client';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp';
 
 import { McpServerManager, McpService } from '@/core/mcp';
 import { testMcpServer } from '@/core/mcp/McpTester';
@@ -20,16 +20,26 @@ import {
   isValidMcpServerConfig,
 } from '@/core/types/mcp';
 import {
-  consumeSseStream,
   extractMcpMentions,
   parseCommand,
-  parseRpcId,
-  postJsonRpc,
-  resolveSseEndpoint,
   splitCommandString,
-  tryParseJson,
-  waitForRpcResponse,
 } from '@/utils/mcp';
+
+jest.mock('@modelcontextprotocol/sdk/client', () => ({
+  Client: jest.fn(),
+}));
+
+jest.mock('@modelcontextprotocol/sdk/client/stdio', () => ({
+  StdioClientTransport: jest.fn(),
+}));
+
+jest.mock('@modelcontextprotocol/sdk/client/sse', () => ({
+  SSEClientTransport: jest.fn(),
+}));
+
+jest.mock('@modelcontextprotocol/sdk/client/streamableHttp', () => ({
+  StreamableHTTPClientTransport: jest.fn(),
+}));
 
 function createMemoryStorage(initialFile?: Record<string, unknown>): {
   storage: McpStorage;
@@ -49,49 +59,6 @@ function createMemoryStorage(initialFile?: Record<string, unknown>): {
   };
 
   return { storage: new McpStorage(adapter as any), files };
-}
-
-function createReadableStream(chunks: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-      }
-      controller.close();
-    },
-  });
-}
-
-function createControlledStream(): {
-  stream: ReadableStream<Uint8Array>;
-  push: (data: string) => void;
-  close: () => void;
-} {
-  const encoder = new TextEncoder();
-  let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
-  const stream = new ReadableStream<Uint8Array>({
-    start(streamController) {
-      controller = streamController;
-    },
-  });
-
-  return {
-    stream,
-    push: (data: string) => {
-      if (!controller) throw new Error('Stream not initialized');
-      controller.enqueue(encoder.encode(data));
-    },
-    close: () => {
-      if (!controller) throw new Error('Stream not initialized');
-      controller.close();
-    },
-  };
-}
-
-function encodeSseEvent(data: string, event?: string): string {
-  const eventLine = event ? `event: ${event}\n` : '';
-  return `${eventLine}data: ${data}\n\n`;
 }
 
 // ============================================================================
@@ -624,198 +591,6 @@ describe('MCP Utils', () => {
       expect(result.args).toEqual([]);
     });
   });
-
-  describe('parseRpcId', () => {
-    it('should parse number id', () => {
-      expect(parseRpcId(1)).toBe(1);
-      expect(parseRpcId(42)).toBe(42);
-      expect(parseRpcId(0)).toBe(0);
-    });
-
-    it('should parse string id', () => {
-      expect(parseRpcId('1')).toBe(1);
-      expect(parseRpcId('42')).toBe(42);
-      expect(parseRpcId('  123  ')).toBe(123);
-    });
-
-    it('should return null for invalid ids', () => {
-      expect(parseRpcId(null)).toBeNull();
-      expect(parseRpcId(undefined)).toBeNull();
-      expect(parseRpcId('abc')).toBeNull();
-      expect(parseRpcId('')).toBeNull();
-      expect(parseRpcId(NaN)).toBeNull();
-      expect(parseRpcId(Infinity)).toBeNull();
-    });
-  });
-
-  describe('tryParseJson', () => {
-    it('should parse valid JSON', () => {
-      expect(tryParseJson('{"key": "value"}')).toEqual({ key: 'value' });
-      expect(tryParseJson('[1, 2, 3]')).toEqual([1, 2, 3]);
-      expect(tryParseJson('"string"')).toBe('string');
-      expect(tryParseJson('123')).toBe(123);
-      expect(tryParseJson('true')).toBe(true);
-    });
-
-    it('should return null for invalid JSON', () => {
-      expect(tryParseJson('not json')).toBeNull();
-      expect(tryParseJson('{invalid}')).toBeNull();
-      expect(tryParseJson('')).toBeNull();
-    });
-  });
-
-  describe('resolveSseEndpoint', () => {
-    const baseUrl = new URL('http://localhost:3000/sse');
-
-    it('should resolve endpoint from JSON object', () => {
-      const result = resolveSseEndpoint('{"endpoint": "/messages"}', baseUrl);
-      expect(result?.toString()).toBe('http://localhost:3000/messages');
-    });
-
-    it('should resolve messageEndpoint from JSON', () => {
-      const result = resolveSseEndpoint('{"messageEndpoint": "/api/messages"}', baseUrl);
-      expect(result?.toString()).toBe('http://localhost:3000/api/messages');
-    });
-
-    it('should resolve url from JSON', () => {
-      const result = resolveSseEndpoint('{"url": "http://other.com/msg"}', baseUrl);
-      expect(result?.toString()).toBe('http://other.com/msg');
-    });
-
-    it('should resolve messageUrl from JSON', () => {
-      const result = resolveSseEndpoint('{"messageUrl": "/msg"}', baseUrl);
-      expect(result?.toString()).toBe('http://localhost:3000/msg');
-    });
-
-    it('should resolve plain URL string', () => {
-      const result = resolveSseEndpoint('/messages', baseUrl);
-      expect(result?.toString()).toBe('http://localhost:3000/messages');
-    });
-
-    it('should resolve absolute URL string', () => {
-      const result = resolveSseEndpoint('http://other.com/msg', baseUrl);
-      expect(result?.toString()).toBe('http://other.com/msg');
-    });
-
-    it('should return null for empty data', () => {
-      expect(resolveSseEndpoint('', baseUrl)).toBeNull();
-      expect(resolveSseEndpoint('   ', baseUrl)).toBeNull();
-    });
-
-    it('should fall back to raw string as URL when JSON has no endpoint keys', () => {
-      // When JSON doesn't have recognized endpoint keys, the raw string is tried as URL
-      // This is expected fallback behavior
-      const result = resolveSseEndpoint('{"other": "value"}', baseUrl);
-      // The JSON string becomes a URL-encoded path
-      expect(result).not.toBeNull();
-      expect(result?.pathname).toContain('%7B');
-    });
-
-    it('should skip empty endpoint string in JSON', () => {
-      // Empty endpoint string is falsy, so it's skipped
-      // Falls back to trying the raw JSON as URL
-      const result = resolveSseEndpoint('{"endpoint": ""}', baseUrl);
-      expect(result).not.toBeNull(); // Falls back to raw string
-    });
-
-    it('should prefer endpoint over other keys', () => {
-      const data = JSON.stringify({
-        endpoint: '/primary',
-        messageEndpoint: '/secondary',
-        url: '/tertiary',
-      });
-      const result = resolveSseEndpoint(data, baseUrl);
-      expect(result?.toString()).toBe('http://localhost:3000/primary');
-    });
-  });
-
-  describe('consumeSseStream', () => {
-    it('should parse events across chunks and ignore comments', async () => {
-      const stream = createReadableStream([
-        'event: message\ndata: hello',
-        '\n\n: keepalive\n\n',
-        'data: world\n\n',
-      ]);
-      const events: Array<{ event?: string; data: string }> = [];
-
-      await consumeSseStream(stream as any, (event) => events.push(event));
-
-      expect(events).toEqual([
-        { event: 'message', data: 'hello' },
-        { data: 'world' },
-      ]);
-    });
-  });
-
-  describe('waitForRpcResponse', () => {
-    it('should resolve when handler is invoked', async () => {
-      const pending = new Map<number, (msg: Record<string, unknown>) => void>();
-      const promise = waitForRpcResponse(pending, 1, 1000);
-
-      const handler = pending.get(1);
-      expect(handler).toBeDefined();
-      handler?.({ result: 'ok' });
-
-      await expect(promise).resolves.toEqual({ result: 'ok' });
-      expect(pending.has(1)).toBe(false);
-    });
-
-    it('should reject on timeout', async () => {
-      jest.useFakeTimers();
-      try {
-        const pending = new Map<number, (msg: Record<string, unknown>) => void>();
-        const promise = waitForRpcResponse(pending, 1, 50);
-
-        jest.advanceTimersByTime(50);
-
-        await expect(promise).rejects.toThrow('Response timeout (50ms)');
-        expect(pending.has(1)).toBe(false);
-      } finally {
-        jest.useRealTimers();
-      }
-    });
-  });
-
-  describe('postJsonRpc', () => {
-    const originalFetch = globalThis.fetch;
-
-    afterEach(() => {
-      globalThis.fetch = originalFetch;
-    });
-
-    it('should set Content-Type header when missing', async () => {
-      const fetchMock = jest.fn().mockResolvedValue(new Response('', { status: 200 }));
-      globalThis.fetch = fetchMock as any;
-
-      await postJsonRpc(new URL('http://localhost:3000/mcp'), { Authorization: 'token' }, { id: 1 });
-
-      expect(fetchMock).toHaveBeenCalledWith(
-        'http://localhost:3000/mcp',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            Authorization: 'token',
-            'Content-Type': 'application/json',
-          }),
-        })
-      );
-    });
-
-    it('should preserve existing Content-Type header', async () => {
-      const fetchMock = jest.fn().mockResolvedValue(new Response('', { status: 200 }));
-      globalThis.fetch = fetchMock as any;
-
-      await postJsonRpc(
-        new URL('http://localhost:3000/mcp'),
-        { 'Content-Type': 'application/custom' },
-        { id: 1 }
-      );
-
-      const options = fetchMock.mock.calls[0][1] as RequestInit;
-      const headers = options.headers as Record<string, string>;
-      expect(headers['Content-Type']).toBe('application/custom');
-    });
-  });
 });
 
 // ============================================================================
@@ -823,57 +598,27 @@ describe('MCP Utils', () => {
 // ============================================================================
 
 describe('McpTester', () => {
-  type MockChildProcess = EventEmitter & {
-    stdout: EventEmitter;
-    stderr: EventEmitter;
-    stdin: { write: jest.Mock };
-    killed: boolean;
-    kill: jest.Mock;
+  let mockClientInstance: {
+    connect: jest.Mock;
+    listTools: jest.Mock;
+    close: jest.Mock;
+    getServerVersion: jest.Mock;
   };
 
-  const createMockChildProcess = (): MockChildProcess => {
-    const child = new EventEmitter() as MockChildProcess;
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.stdin = { write: jest.fn() };
-    child.killed = false;
-    child.kill = jest.fn(() => {
-      child.killed = true;
-    });
-    return child;
-  };
-
-  const mockHttpRequests = (
-    responses: Array<{ statusCode?: number; body: string }>
-  ): jest.SpyInstance => {
-    return jest.spyOn(http, 'request').mockImplementation(((_options: http.RequestOptions, callback: (res: any) => void) => {
-      const response = responses.shift() ?? { statusCode: 200, body: '' };
-      const res = new EventEmitter() as EventEmitter & { statusCode?: number };
-      res.statusCode = response.statusCode ?? 200;
-      callback(res);
-
-      const req = new EventEmitter() as EventEmitter & {
-        write: jest.Mock;
-        end: () => void;
-      };
-      req.write = jest.fn();
-      req.end = () => {
-        if (response.body) {
-          res.emit('data', response.body);
-        }
-        res.emit('end');
-      };
-      return req as any;
-    }) as any);
-  };
-
-  afterEach(() => {
-    jest.restoreAllMocks();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockClientInstance = {
+      connect: jest.fn().mockResolvedValue(undefined),
+      listTools: jest.fn().mockResolvedValue({
+        tools: [{ name: 'tool-a', description: 'Tool A', inputSchema: { type: 'object' } }],
+      }),
+      close: jest.fn().mockResolvedValue(undefined),
+      getServerVersion: jest.fn().mockReturnValue({ name: 'test-srv', version: '1.0.0' }),
+    };
+    (Client as jest.Mock).mockImplementation(() => mockClientInstance);
   });
 
   it('should test stdio server and return tools', async () => {
-    const child = createMockChildProcess();
-    const spawnSpy = jest.spyOn(childProcess, 'spawn').mockReturnValue(child as any);
     const server: ClaudianMcpServer = {
       name: 'local',
       config: { command: 'node', args: ['server'] },
@@ -881,47 +626,20 @@ describe('McpTester', () => {
       contextSaving: false,
     };
 
-    const resultPromise = testMcpServer(server);
+    const result = await testMcpServer(server);
 
-    child.stdout.emit(
-      'data',
-      Buffer.from(
-        JSON.stringify({
-          id: 1,
-          result: { serverInfo: { name: 'local-srv', version: '1.0.0' } },
-        }) + '\n'
-      )
-    );
-    child.stdout.emit(
-      'data',
-      Buffer.from(
-        JSON.stringify({
-          id: 2,
-          result: { tools: [{ name: 'tool-a', description: 'Tool A' }] },
-        }) + '\n'
-      )
-    );
-
-    const result = await resultPromise;
-
-    expect(spawnSpy).toHaveBeenCalledWith('node', ['server'], expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }));
     expect(result.success).toBe(true);
-    expect(result.serverName).toBe('local-srv');
+    expect(result.serverName).toBe('test-srv');
     expect(result.serverVersion).toBe('1.0.0');
-    expect(result.tools).toMatchObject([{ name: 'tool-a', description: 'Tool A' }]);
-    expect(child.stdin.write).toHaveBeenCalledTimes(3);
-
-    const writes = child.stdin.write.mock.calls.map((call) => JSON.parse(String(call[0]).trim()));
-    expect(writes[0].method).toBe('initialize');
-    expect(writes[1].method).toBe('notifications/initialized');
-    expect(writes[2].method).toBe('tools/list');
-    expect(child.kill).toHaveBeenCalled();
+    expect(result.tools).toEqual([{ name: 'tool-a', description: 'Tool A', inputSchema: { type: 'object' } }]);
+    expect(StdioClientTransport).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'node', args: ['server'] }),
+    );
+    expect(mockClientInstance.connect).toHaveBeenCalledTimes(1);
+    expect(mockClientInstance.listTools).toHaveBeenCalledTimes(1);
   });
 
   it('should fail when stdio command is missing', async () => {
-    const spawnSpy = jest.spyOn(childProcess, 'spawn').mockImplementation(() => {
-      throw new Error('spawn should not be called');
-    });
     const server: ClaudianMcpServer = {
       name: 'missing',
       config: { command: '' },
@@ -933,21 +651,10 @@ describe('McpTester', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('Missing command');
-    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(mockClientInstance.connect).not.toHaveBeenCalled();
   });
 
   it('should test http server and return tools', async () => {
-    const requestSpy = mockHttpRequests([
-      {
-        statusCode: 200,
-        body: JSON.stringify({ result: { serverInfo: { name: 'http-srv', version: '2.0.0' } } }),
-      },
-      { statusCode: 200, body: '{}' },
-      {
-        statusCode: 200,
-        body: JSON.stringify({ result: { tools: [{ name: 'tool-b' }] } }),
-      },
-    ]);
     const server: ClaudianMcpServer = {
       name: 'http',
       config: { type: 'http', url: 'http://localhost:3000/mcp', headers: { Authorization: 'token' } },
@@ -958,52 +665,19 @@ describe('McpTester', () => {
     const result = await testMcpServer(server);
 
     expect(result.success).toBe(true);
-    expect(result.serverName).toBe('http-srv');
-    expect(result.serverVersion).toBe('2.0.0');
-    expect(result.tools).toMatchObject([{ name: 'tool-b' }]);
-    expect(requestSpy).toHaveBeenCalledTimes(3);
-
-    const firstOptions = requestSpy.mock.calls[0][0] as { headers?: Record<string, string> };
-    expect(firstOptions.headers?.Accept).toContain('text/event-stream');
+    expect(result.serverName).toBe('test-srv');
+    expect(result.serverVersion).toBe('1.0.0');
+    expect(result.tools).toEqual([{ name: 'tool-a', description: 'Tool A', inputSchema: { type: 'object' } }]);
+    expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ requestInit: { headers: { Authorization: 'token' } } }),
+    );
   });
 
-  it('should surface initialize errors for http servers', async () => {
-    const requestSpy = mockHttpRequests([
-      {
-        statusCode: 200,
-        body: JSON.stringify({ error: { message: 'init failed' } }),
-      },
-    ]);
+  it('should test sse server and return tools', async () => {
     const server: ClaudianMcpServer = {
-      name: 'http',
-      config: { type: 'http', url: 'http://localhost:3000/mcp' },
-      enabled: true,
-      contextSaving: false,
-    };
-
-    const result = await testMcpServer(server);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('init failed');
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('should auto-detect SSE response format from http server (streamable-http)', async () => {
-    // Streamable HTTP servers may respond with SSE format (data: {...})
-    mockHttpRequests([
-      {
-        statusCode: 200,
-        body: 'data: ' + JSON.stringify({ result: { serverInfo: { name: 'streamable-srv', version: '1.0.0' } } }),
-      },
-      { statusCode: 200, body: '{}' },
-      {
-        statusCode: 200,
-        body: 'data: ' + JSON.stringify({ result: { tools: [{ name: 'stream-tool' }] } }),
-      },
-    ]);
-    const server: ClaudianMcpServer = {
-      name: 'streamable',
-      config: { type: 'http', url: 'http://localhost:3000/mcp' },
+      name: 'sse',
+      config: { type: 'sse', url: 'http://localhost:3000/sse', headers: { Authorization: 'token' } },
       enabled: true,
       contextSaving: false,
     };
@@ -1011,20 +685,20 @@ describe('McpTester', () => {
     const result = await testMcpServer(server);
 
     expect(result.success).toBe(true);
-    expect(result.serverName).toBe('streamable-srv');
+    expect(result.serverName).toBe('test-srv');
     expect(result.serverVersion).toBe('1.0.0');
-    expect(result.tools).toMatchObject([{ name: 'stream-tool' }]);
+    expect(result.tools).toEqual([{ name: 'tool-a', description: 'Tool A', inputSchema: { type: 'object' } }]);
+    expect(SSEClientTransport).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ requestInit: { headers: { Authorization: 'token' } } }),
+    );
   });
 
-  it('should fail with invalid response when neither JSON nor SSE format', async () => {
-    mockHttpRequests([
-      {
-        statusCode: 200,
-        body: 'not json and not sse format',
-      },
-    ]);
+  it('should return failure when connect fails', async () => {
+    mockClientInstance.connect.mockRejectedValue(new Error('Connection refused'));
+
     const server: ClaudianMcpServer = {
-      name: 'invalid-format',
+      name: 'fail',
       config: { type: 'http', url: 'http://localhost:3000/mcp' },
       enabled: true,
       contextSaving: false,
@@ -1033,61 +707,12 @@ describe('McpTester', () => {
     const result = await testMcpServer(server);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Invalid response');
+    expect(result.error).toBe('Connection refused');
   });
 
-  it('should fail when SSE data line contains invalid JSON', async () => {
-    mockHttpRequests([
-      {
-        statusCode: 200,
-        body: 'data: {not valid json}',
-      },
-    ]);
-    const server: ClaudianMcpServer = {
-      name: 'malformed-sse',
-      config: { type: 'http', url: 'http://localhost:3000/mcp' },
-      enabled: true,
-      contextSaving: false,
-    };
+  it('should return partial success when listTools fails', async () => {
+    mockClientInstance.listTools.mockRejectedValue(new Error('tools/list not supported'));
 
-    const result = await testMcpServer(server);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Invalid response');
-  });
-
-  it('should fail with empty response from http server', async () => {
-    mockHttpRequests([
-      {
-        statusCode: 200,
-        body: '',
-      },
-    ]);
-    const server: ClaudianMcpServer = {
-      name: 'empty-response',
-      config: { type: 'http', url: 'http://localhost:3000/mcp' },
-      enabled: true,
-      contextSaving: false,
-    };
-
-    const result = await testMcpServer(server);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Invalid response');
-  });
-
-  it('should return partial success when tools response is unparseable', async () => {
-    mockHttpRequests([
-      {
-        statusCode: 200,
-        body: JSON.stringify({ result: { serverInfo: { name: 'srv', version: '1.0' } } }),
-      },
-      { statusCode: 200, body: '{}' },
-      {
-        statusCode: 200,
-        body: 'unparseable garbage',
-      },
-    ]);
     const server: ClaudianMcpServer = {
       name: 'partial',
       config: { type: 'http', url: 'http://localhost:3000/mcp' },
@@ -1098,73 +723,36 @@ describe('McpTester', () => {
     const result = await testMcpServer(server);
 
     expect(result.success).toBe(true);
-    expect(result.serverName).toBe('srv');
+    expect(result.serverName).toBe('test-srv');
+    expect(result.serverVersion).toBe('1.0.0');
     expect(result.tools).toEqual([]);
   });
 
-  it('should test sse server and return tools', async () => {
-    const originalFetch = globalThis.fetch;
-    const postRequests: Array<{ url: string; body: string }> = [];
-    const { stream, push, close } = createControlledStream();
-    let endpointSent = false;
-
-    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (!init || init.method === 'GET') {
-        if (!endpointSent) {
-          endpointSent = true;
-          push(encodeSseEvent(JSON.stringify({ endpoint: '/messages' })));
-        }
-        return new Response(stream as any, {
-          status: 200,
-          headers: { 'Content-Type': 'text/event-stream' },
-        });
-      }
-      postRequests.push({ url, body: String(init.body ?? '') });
-      try {
-        const payload = JSON.parse(String(init.body ?? '{}')) as { method?: string };
-        if (payload.method === 'initialize') {
-          push(
-            encodeSseEvent(
-              JSON.stringify({
-                id: 1,
-                result: { serverInfo: { name: 'sse-srv', version: '3.0.0' } },
-              })
-            )
-          );
-        }
-        if (payload.method === 'tools/list') {
-          push(encodeSseEvent(JSON.stringify({ id: 2, result: { tools: [{ name: 'tool-c' }] } })));
-          close();
-        }
-      } catch {
-        // Ignore JSON parse errors for unexpected payloads
-      }
-      return new Response('{}', { status: 200 });
-    });
-    globalThis.fetch = fetchMock as any;
-
+  it('should return timeout error when connection times out', async () => {
+    jest.useFakeTimers();
     try {
+      mockClientInstance.connect.mockImplementation(
+        (_transport: unknown, options?: { signal?: AbortSignal }) =>
+          new Promise<void>((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          }),
+      );
+
       const server: ClaudianMcpServer = {
-        name: 'sse',
-        config: { type: 'sse', url: 'http://localhost:3000/sse' },
+        name: 'timeout',
+        config: { type: 'http', url: 'http://localhost:3000/mcp' },
         enabled: true,
         contextSaving: false,
       };
 
-      const result = await testMcpServer(server);
+      const resultPromise = testMcpServer(server);
+      jest.advanceTimersByTime(10000);
+      const result = await resultPromise;
 
-      expect(result.success).toBe(true);
-      expect(result.serverName).toBe('sse-srv');
-      expect(result.serverVersion).toBe('3.0.0');
-      expect(result.tools).toMatchObject([{ name: 'tool-c' }]);
-      expect(postRequests).toHaveLength(3);
-      expect(postRequests[0].url).toBe('http://localhost:3000/messages');
-
-      const methods = postRequests.map((req) => JSON.parse(req.body).method);
-      expect(methods).toEqual(['initialize', 'notifications/initialized', 'tools/list']);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Connection timeout (10s)');
     } finally {
-      globalThis.fetch = originalFetch;
+      jest.useRealTimers();
     }
   });
 });
