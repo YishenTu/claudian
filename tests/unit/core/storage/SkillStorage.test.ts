@@ -222,7 +222,7 @@ Prompt`,
       });
 
       const written = (adapter.write as jest.Mock).mock.calls[0][1] as string;
-      expect(written).not.toContain('hooks');
+      expect(written).not.toContain('hooks:');
     });
   });
 

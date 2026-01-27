@@ -572,13 +572,10 @@ Do the thing`;
 
       await storage.save(commandNoMetadata);
 
-      // Should produce valid frontmatter that can be parsed back
-      // With blank line: ---\n\n---\nJust a prompt
       const writeCall = mockAdapter.write.mock.calls[0];
       const writtenContent = writeCall[1] as string;
 
-      // Verify the structure: should have blank line between --- markers
-      expect(writtenContent).toBe('---\n\n---\nJust a prompt');
+      expect(writtenContent).toBe('---\nname: simple\n---\nJust a prompt');
     });
 
     it('produces parseable frontmatter even with no metadata', async () => {

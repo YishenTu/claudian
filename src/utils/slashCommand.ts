@@ -23,6 +23,12 @@ export interface ParsedSlashCommandContent {
 const MAX_COMMAND_NAME_LENGTH = 64;
 const COMMAND_NAME_PATTERN = /^[a-z0-9-]+$/;
 
+export function extractFirstParagraph(content: string): string | undefined {
+  const paragraph = content.split(/\n\s*\n/).find(p => p.trim());
+  if (!paragraph) return undefined;
+  return paragraph.trim().replace(/\n/g, ' ');
+}
+
 export function validateCommandName(name: string): string | null {
   if (!name) {
     return 'Command name is required';
@@ -112,6 +118,9 @@ export function serializeCommand(cmd: SlashCommand): string {
 export function serializeSlashCommandMarkdown(cmd: Partial<SlashCommand>, body: string): string {
   const lines: string[] = ['---'];
 
+  if (cmd.name) {
+    lines.push(`name: ${cmd.name}`);
+  }
   if (cmd.description) {
     lines.push(`description: ${yamlString(cmd.description)}`);
   }
