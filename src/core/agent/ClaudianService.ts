@@ -70,13 +70,16 @@ import {
   type SDKContentBlock,
 } from './types';
 
+/** Mirrors shared/modals/ApprovalModal.ApprovalDecision (core can't import shared). */
+export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
+
 export type ApprovalCallback = (
   toolName: string,
   input: Record<string, unknown>,
   description: string,
   decisionReason?: string,
   blockedPath?: string,
-) => Promise<'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel'>;
+) => Promise<ApprovalDecision>;
 
 export interface QueryOptions {
   allowedTools?: string[];
@@ -1363,7 +1366,7 @@ export class ClaudianService {
     this.approvalCallback = callback;
   }
 
-  /** Creates canUseTool callback: enforces tool restrictions, prompts user, returns updatedPermissions for SDK persistence. */
+  /** Creates canUseTool callback: enforces tool restrictions, prompts user. Allow returns updatedPermissions for SDK; deny-always persists locally via addDenyRule. */
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
       if (this.currentAllowedTools !== null) {

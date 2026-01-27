@@ -194,7 +194,7 @@ export function buildPermissionUpdates(
     }
 
     processed.unshift({
-      type: 'addRules' as const,
+      type: 'addRules',
       behavior,
       rules: [ruleValue],
       destination,
