@@ -115,6 +115,7 @@ describe('types.ts', () => {
         enableChrome: false,
         tabBarPosition: 'input',
         enableAutoScroll: true,
+        openInMainTab: false,
         hiddenSlashCommands: [],
       };
 
@@ -152,6 +153,7 @@ describe('types.ts', () => {
         enableChrome: false,
         tabBarPosition: 'input',
         enableAutoScroll: true,
+        openInMainTab: false,
         hiddenSlashCommands: [],
       };
 
@@ -189,6 +191,7 @@ describe('types.ts', () => {
         enableChrome: false,
         tabBarPosition: 'header',
         enableAutoScroll: false,
+        openInMainTab: false,
         hiddenSlashCommands: [],
       };
 

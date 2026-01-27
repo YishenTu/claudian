@@ -200,19 +200,20 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /** Opens the Claudian sidebar view, creating it if necessary. */
   async activateView() {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
 
     if (!leaf) {
-      const rightLeaf = workspace.getRightLeaf(false);
-      if (rightLeaf) {
-        await rightLeaf.setViewState({
+      const newLeaf = this.settings.openInMainTab
+        ? workspace.getLeaf('tab')
+        : workspace.getRightLeaf(false);
+      if (newLeaf) {
+        await newLeaf.setViewState({
           type: VIEW_TYPE_CLAUDIAN,
           active: true,
         });
-        leaf = rightLeaf;
+        leaf = newLeaf;
       }
     }
 

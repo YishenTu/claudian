@@ -119,6 +119,8 @@ export type TranslationKey =
   | 'settings.tabBarPosition.header'
   | 'settings.enableAutoScroll.name'
   | 'settings.enableAutoScroll.desc'
+  | 'settings.openInMainTab.name'
+  | 'settings.openInMainTab.desc'
   | 'settings.cliPath.name'
   | 'settings.cliPath.desc'
   | 'settings.cliPath.descWindows'
