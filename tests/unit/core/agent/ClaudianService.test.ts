@@ -437,18 +437,6 @@ describe('ClaudianService', () => {
         });
       });
 
-      it('should treat deny-always as deny (SDK-consistent)', async () => {
-        const callback = jest.fn().mockResolvedValue('deny-always');
-        service.setApprovalCallback(callback);
-
-        const canUseTool = (service as any).createApprovalCallback();
-        const result = await canUseTool('Bash', { command: 'rm -rf /' }, canUseToolOptions);
-
-        expect(result.behavior).toBe('deny');
-        expect(result.message).toBe('User denied this action.');
-        expect(result).not.toHaveProperty('updatedPermissions');
-      });
-
       it('should return updatedPermissions for allow-always decisions', async () => {
         const callback = jest.fn().mockResolvedValue('allow-always');
         service.setApprovalCallback(callback);

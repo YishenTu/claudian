@@ -121,7 +121,7 @@ export type HostnameCliPaths = Record<string, string>;
 export type PermissionMode = 'yolo' | 'normal';
 
 /** User decision from the approval modal. */
-export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'deny-always' | 'cancel';
+export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'cancel';
 
 /**
  * Legacy permission format (pre-CC compatibility).

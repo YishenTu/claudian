@@ -8,7 +8,6 @@ export type { ApprovalDecision };
 
 export interface ApprovalModalOptions {
   showAlwaysAllow?: boolean;
-  showAlwaysDeny?: boolean;
   title?: string;
   decisionReason?: string;
   blockedPath?: string;
@@ -74,16 +73,6 @@ export class ApprovalModal extends Modal {
     });
     denyBtn.addEventListener('click', () => this.handleDecision('deny'));
 
-    let alwaysDenyBtn: HTMLButtonElement | null = null;
-    if (this.options.showAlwaysDeny ?? true) {
-      alwaysDenyBtn = buttonsEl.createEl('button', {
-        text: 'Always deny',
-        cls: 'claudian-approval-btn claudian-always-deny-btn',
-        attr: { 'aria-label': `Always deny ${this.toolName} actions` }
-      });
-      alwaysDenyBtn.addEventListener('click', () => this.handleDecision('deny-always'));
-    }
-
     const allowBtn = buttonsEl.createEl('button', {
       text: 'Allow once',
       cls: 'claudian-approval-btn claudian-allow-btn',
@@ -101,11 +90,7 @@ export class ApprovalModal extends Modal {
       alwaysAllowBtn.addEventListener('click', () => this.handleDecision('allow-always'));
     }
 
-    this.buttons = [denyBtn];
-    if (alwaysDenyBtn) {
-      this.buttons.push(alwaysDenyBtn);
-    }
-    this.buttons.push(allowBtn);
+    this.buttons = [denyBtn, allowBtn];
     if (alwaysAllowBtn) {
       this.buttons.push(alwaysAllowBtn);
     }
