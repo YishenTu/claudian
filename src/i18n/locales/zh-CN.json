@@ -141,6 +141,10 @@
       "name": "流式传输时自动滚动",
       "desc": "在 Claude 流式传输响应时自动滚动到底部。禁用后将停留在顶部，从头开始阅读。"
     },
+    "openInMainTab": {
+      "name": "在主编辑器区域打开",
+      "desc": "在中央编辑器区域以主标签页形式打开聊天面板，而不是在右侧边栏"
+    },
     "cliPath": {
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",

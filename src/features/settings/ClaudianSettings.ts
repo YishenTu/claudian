@@ -310,6 +310,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
       });
 
+    // Open in main tab setting
+    new Setting(containerEl)
+      .setName(t('settings.openInMainTab.name'))
+      .setDesc(t('settings.openInMainTab.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.openInMainTab ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.openInMainTab = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     new Setting(containerEl).setName(t('settings.hotkeys')).setHeading();
 
     addHotkeySettingRow(containerEl, this.app, 'claudian:inline-edit', 'settings.inlineEditHotkey');
