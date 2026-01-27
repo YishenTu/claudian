@@ -9,6 +9,10 @@ function isUserCommand(cmd: SlashCommand): boolean {
   return !cmd.id.startsWith('plugin-');
 }
 
+function isSkill(cmd: SlashCommand): boolean {
+  return cmd.id.startsWith('skill-');
+}
+
 export class SlashCommandModal extends Modal {
   private plugin: ClaudianPlugin;
   private existingCmd: SlashCommand | null;
@@ -185,7 +189,7 @@ export class SlashCommandSettings {
     this.containerEl.empty();
 
     const headerEl = this.containerEl.createDiv({ cls: 'claudian-slash-header' });
-    headerEl.createSpan({ text: 'Slash Commands', cls: 'claudian-slash-label' });
+    headerEl.createSpan({ text: 'Slash Commands & Skills', cls: 'claudian-slash-label' });
 
     const actionsEl = headerEl.createDiv({ cls: 'claudian-slash-header-actions' });
 
@@ -214,7 +218,7 @@ export class SlashCommandSettings {
 
     if (commands.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-slash-empty-state' });
-      emptyEl.setText('No slash commands configured. Click "Add" to create one.');
+      emptyEl.setText('No slash commands or skills configured. Click "Add" to create one.');
       return;
     }
 
@@ -234,6 +238,10 @@ export class SlashCommandSettings {
 
     const nameEl = headerRow.createSpan({ cls: 'claudian-slash-item-name' });
     nameEl.setText(`/${cmd.name}`);
+
+    if (isSkill(cmd)) {
+      headerRow.createSpan({ text: 'skill', cls: 'claudian-slash-item-badge' });
+    }
 
     if (cmd.argumentHint) {
       const hintEl = headerRow.createSpan({ cls: 'claudian-slash-item-hint' });
@@ -281,15 +289,22 @@ export class SlashCommandSettings {
   }
 
   private async saveCommand(cmd: SlashCommand, existing: SlashCommand | null): Promise<void> {
+    const storage = isSkill(cmd)
+      ? this.plugin.storage.skills
+      : this.plugin.storage.commands;
+
     // Save new file first (safer: if this fails, old file still exists)
-    await this.plugin.storage.commands.save(cmd);
+    await storage.save(cmd);
 
     // Delete old file only after successful save (if name changed)
     if (existing && existing.name !== cmd.name) {
-      await this.plugin.storage.commands.delete(existing.id);
+      const oldStorage = isSkill(existing)
+        ? this.plugin.storage.skills
+        : this.plugin.storage.commands;
+      await oldStorage.delete(existing.id);
     }
 
-    // Reload commands from storage
+    // Reload commands + skills from storage
     await this.reloadCommands();
 
     this.render();
@@ -297,10 +312,13 @@ export class SlashCommandSettings {
   }
 
   private async deleteCommand(cmd: SlashCommand): Promise<void> {
-    // Delete from file storage
-    await this.plugin.storage.commands.delete(cmd.id);
+    const storage = isSkill(cmd)
+      ? this.plugin.storage.skills
+      : this.plugin.storage.commands;
 
-    // Reload commands from storage
+    await storage.delete(cmd.id);
+
+    // Reload commands + skills from storage
     await this.reloadCommands();
 
     this.render();
@@ -309,7 +327,8 @@ export class SlashCommandSettings {
 
   private async reloadCommands(): Promise<void> {
     const commands = await this.plugin.storage.commands.loadAll();
-    this.plugin.settings.slashCommands = commands;
+    const skills = await this.plugin.storage.skills.loadAll();
+    this.plugin.settings.slashCommands = [...commands, ...skills];
   }
 
   private exportCommands(): void {
@@ -359,8 +378,8 @@ export class SlashCommandSettings {
             continue;
           }
 
-          // Validate name (alphanumeric, hyphens, underscores, slashes, colons)
-          if (!/^[a-zA-Z0-9_/:-]+$/.test(cmd.name)) {
+          // Validate name (alphanumeric, hyphens, underscores, slashes only - colons reserved for plugins)
+          if (!/^[a-zA-Z0-9_/-]+$/.test(cmd.name)) {
             continue;
           }
 

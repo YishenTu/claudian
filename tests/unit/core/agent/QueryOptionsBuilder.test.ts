@@ -43,6 +43,9 @@ function createMockAgentManager(agents: Array<{
   model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
   tools?: string[];
   disallowedTools?: string[];
+  skills?: string[];
+  maxTurns?: number;
+  mcpServers?: unknown[];
 }> = []) {
   return {
     loadAgents: jest.fn().mockResolvedValue(undefined),
@@ -854,6 +857,61 @@ describe('QueryOptionsBuilder', () => {
 
       expect(options.agents?.['restricted-agent'].tools).toEqual(['Read', 'Grep']);
       expect(options.agents?.['restricted-agent'].disallowedTools).toEqual(['Bash', 'Write']);
+    });
+
+    it('forwards skills, maxTurns, and mcpServers to SDK agents', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'extended-agent',
+          name: 'Extended Agent',
+          description: 'Agent with new fields',
+          prompt: 'Extended prompt',
+          source: 'vault',
+          skills: ['my-skill', 'other-skill'],
+          maxTurns: 5,
+          mcpServers: ['server-a'],
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      const sdkAgent = options.agents?.['extended-agent'];
+      expect(sdkAgent).toBeDefined();
+      expect(sdkAgent?.skills).toEqual(['my-skill', 'other-skill']);
+      expect(sdkAgent?.maxTurns).toBe(5);
+      expect(sdkAgent?.mcpServers).toEqual(['server-a']);
+    });
+
+    it('omits new fields when not set on agent', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'basic-agent',
+          name: 'Basic Agent',
+          description: 'No new fields',
+          prompt: 'Basic prompt',
+          source: 'vault',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      const sdkAgent = options.agents?.['basic-agent'];
+      expect(sdkAgent).toBeDefined();
+      expect(sdkAgent?.skills).toBeUndefined();
+      expect(sdkAgent?.maxTurns).toBeUndefined();
+      expect(sdkAgent?.mcpServers).toBeUndefined();
     });
   });
 });

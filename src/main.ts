@@ -228,7 +228,9 @@ export default class ClaudianPlugin extends Plugin {
     this.storage = new StorageService(this);
     const { claudian } = await this.storage.initialize();
 
-    const slashCommands = await this.storage.commands.loadAll();
+    const commands = await this.storage.commands.loadAll();
+    const skills = await this.storage.skills.loadAll();
+    const slashCommands = [...commands, ...skills];
 
     this.settings = {
       ...DEFAULT_SETTINGS,

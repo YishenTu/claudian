@@ -272,8 +272,8 @@ Prompt`;
 
       const parsed = parseSlashCommandContent(content);
 
-      // Empty block scalar should result in empty string, not consume next field
-      expect(parsed.description).toBe('');
+      // Empty block scalar yields no description (semantically same as absent)
+      expect(parsed.description).toBeUndefined();
       expect(parsed.model).toBe('claude-sonnet-4-5');
     });
 
@@ -436,6 +436,87 @@ Prompt`;
 
       // Leading empty lines are preserved per YAML spec
       expect(parsed.description).toBe('\nContent after empty line');
+    });
+  });
+
+  describe('skill fields', () => {
+    it('should parse disableModelInvocation boolean', () => {
+      const content = `---
+description: A skill
+disableModelInvocation: true
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.disableModelInvocation).toBe(true);
+    });
+
+    it('should parse userInvocable boolean', () => {
+      const content = `---
+description: A skill
+userInvocable: false
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.userInvocable).toBe(false);
+    });
+
+    it('should parse context string', () => {
+      const content = `---
+description: A skill
+context: fork
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.context).toBe('fork');
+    });
+
+    it('should parse agent string', () => {
+      const content = `---
+description: A skill
+agent: code-reviewer
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.agent).toBe('code-reviewer');
+    });
+
+    it('should parse all skill fields together', () => {
+      const content = `---
+description: Full skill
+disableModelInvocation: true
+userInvocable: true
+context: fork
+agent: code-reviewer
+model: sonnet
+---
+Do the thing`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.description).toBe('Full skill');
+      expect(parsed.disableModelInvocation).toBe(true);
+      expect(parsed.userInvocable).toBe(true);
+      expect(parsed.context).toBe('fork');
+      expect(parsed.agent).toBe('code-reviewer');
+      expect(parsed.model).toBe('sonnet');
+      expect(parsed.promptContent).toBe('Do the thing');
+    });
+
+    it('should return undefined for missing skill fields', () => {
+      const content = `---
+description: Simple command
+---
+Prompt`;
+
+      const parsed = parseSlashCommandContent(content);
+      expect(parsed.disableModelInvocation).toBeUndefined();
+      expect(parsed.userInvocable).toBeUndefined();
+      expect(parsed.context).toBeUndefined();
+      expect(parsed.agent).toBeUndefined();
+      expect(parsed.hooks).toBeUndefined();
     });
   });
 });

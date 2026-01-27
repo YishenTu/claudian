@@ -401,7 +401,7 @@ export class QueryOptionsBuilder {
   ): Record<string, SdkAgentDefinition> {
     const record: Record<string, SdkAgentDefinition> = {};
     for (const agent of agents) {
-      record[agent.id] = {
+      const def: SdkAgentDefinition = {
         description: agent.description,
         prompt: agent.prompt,
         tools: agent.tools,
@@ -409,6 +409,10 @@ export class QueryOptionsBuilder {
         // SDK expects undefined for 'inherit', not the string
         model: agent.model === 'inherit' ? undefined : agent.model,
       };
+      if (agent.skills) def.skills = agent.skills;
+      if (agent.maxTurns !== undefined) def.maxTurns = agent.maxTurns;
+      if (agent.mcpServers) def.mcpServers = agent.mcpServers;
+      record[agent.id] = def;
     }
     return record;
   }

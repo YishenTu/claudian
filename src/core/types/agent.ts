@@ -1,3 +1,5 @@
+import type { AgentMcpServerSpec } from '@anthropic-ai/claude-agent-sdk';
+
 /**
  * Agent definition loaded from markdown files with YAML frontmatter.
  * Matches Claude Code's agent format for compatibility.
@@ -30,6 +32,15 @@ export interface AgentDefinition {
 
   /** Absolute path to the source .md file (undefined for built-in agents) */
   filePath?: string;
+
+  /** Skills available to this agent (pass-through to SDK) */
+  skills?: string[];
+
+  /** Max agent turns before stopping (pass-through to SDK) */
+  maxTurns?: number;
+
+  /** MCP server specs (pass-through to SDK) */
+  mcpServers?: AgentMcpServerSpec[];
 }
 
 /** YAML frontmatter structure for agent definition files */
@@ -42,4 +53,10 @@ export interface AgentFrontmatter {
   disallowedTools?: string | string[];
   /** Model: validated at parse time, invalid values fall back to 'inherit' */
   model?: string;
+  /** Skills available to this agent (pass-through to SDK) */
+  skills?: string[];
+  /** Max agent turns before stopping */
+  maxTurns?: number;
+  /** MCP server specs (pass-through raw to SDK) */
+  mcpServers?: AgentMcpServerSpec[];
 }

@@ -575,6 +575,7 @@ export class ClaudianService {
       if (isSessionInitEvent(event)) {
         this.sessionManager.captureSession(event.sessionId);
         this.messageChannel?.setSessionId(event.sessionId);
+        if (event.agents) this.plugin.agentManager.setBuiltinAgentNames(event.agents);
       } else if (isStreamChunk(event)) {
         if (message.type === 'assistant' && handler?.sawStreamText && event.type === 'text') {
           continue;

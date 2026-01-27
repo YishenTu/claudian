@@ -150,12 +150,108 @@ export const setIcon = jest.fn();
 // Notice mock that tracks constructor calls
 export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => {});
 
+function unquoteYaml(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function parseYamlValue(rawValue: string): unknown {
+  if (!rawValue) return null;
+
+  if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
+    return rawValue.slice(1, -1).split(',').map(item => unquoteYaml(item.trim())).filter(Boolean);
+  }
+
+  if (rawValue === 'true' || rawValue === 'false') {
+    return rawValue === 'true';
+  }
+
+  const numberValue = Number(rawValue);
+  if (!Number.isNaN(numberValue) && rawValue !== '') {
+    return numberValue;
+  }
+
+  return unquoteYaml(rawValue);
+}
+
 export function parseYaml(content: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const lines = content.split(/\r?\n/);
+  let currentArrayKey: string | null = null;
+  let currentArray: string[] = [];
+  let blockScalarKey: string | null = null;
+  let blockScalarStyle: 'literal' | 'folded' | null = null;
+  let blockScalarLines: string[] = [];
+  let blockScalarIndent: number | null = null;
 
-  for (const line of lines) {
+  const flushArray = () => {
+    if (currentArrayKey) {
+      result[currentArrayKey] = currentArray;
+      currentArrayKey = null;
+      currentArray = [];
+    }
+  };
+
+  const flushBlockScalar = () => {
+    if (!blockScalarKey) return;
+    let value: string;
+    if (blockScalarStyle === 'literal') {
+      value = blockScalarLines.join('\n');
+    } else {
+      value = blockScalarLines.join('\n').replace(/(?<!\n)\n(?!\n)/g, ' ').trim();
+    }
+    result[blockScalarKey] = value;
+    blockScalarKey = null;
+    blockScalarStyle = null;
+    blockScalarLines = [];
+    blockScalarIndent = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
+
+    // Handle block scalar content
+    if (blockScalarKey) {
+      if (trimmed === '') {
+        blockScalarLines.push('');
+        continue;
+      }
+      const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
+      if (blockScalarIndent === null) {
+        if (leadingSpaces === 0) {
+          flushBlockScalar();
+          // fall through to process this line
+        } else {
+          blockScalarIndent = leadingSpaces;
+          blockScalarLines.push(line.slice(blockScalarIndent));
+          continue;
+        }
+      } else if (leadingSpaces >= blockScalarIndent) {
+        blockScalarLines.push(line.slice(blockScalarIndent));
+        continue;
+      } else {
+        flushBlockScalar();
+        // fall through
+      }
+    }
+
+    // Handle YAML list items (- value)
+    if (currentArrayKey && trimmed.startsWith('- ')) {
+      currentArray.push(unquoteYaml(trimmed.slice(2).trim()));
+      continue;
+    }
+
+    // Not a list item — flush any pending array
+    if (currentArrayKey && trimmed !== '') {
+      flushArray();
+    }
+
     if (!trimmed) continue;
 
     const match = trimmed.match(/^([^:]+):\s*(.*)$/);
@@ -165,30 +261,28 @@ export function parseYaml(content: string): Record<string, unknown> {
     const rawValue = match[2].trim();
     if (!key) continue;
 
+    // Check for block scalar indicator (| or >) with optional chomping
+    const blockMatch = rawValue.match(/^([|>])([+-])?$/);
+    if (blockMatch) {
+      blockScalarKey = key;
+      blockScalarStyle = blockMatch[1] === '|' ? 'literal' : 'folded';
+      blockScalarLines = [];
+      blockScalarIndent = null;
+      continue;
+    }
+
     if (!rawValue) {
-      result[key] = null;
+      // Could be start of a YAML list or a null value — peek ahead
+      currentArrayKey = key;
+      currentArray = [];
       continue;
     }
 
-    if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
-      const items = rawValue.slice(1, -1).split(',').map(item => item.trim()).filter(Boolean);
-      result[key] = items;
-      continue;
-    }
-
-    if (rawValue === 'true' || rawValue === 'false') {
-      result[key] = rawValue === 'true';
-      continue;
-    }
-
-    const numberValue = Number(rawValue);
-    if (!Number.isNaN(numberValue) && rawValue !== '') {
-      result[key] = numberValue;
-      continue;
-    }
-
-    result[key] = rawValue;
+    result[key] = parseYamlValue(rawValue);
   }
+
+  if (blockScalarKey) flushBlockScalar();
+  flushArray();
 
   return result;
 }

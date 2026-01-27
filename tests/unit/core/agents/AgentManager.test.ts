@@ -536,4 +536,55 @@ describe('AgentManager', () => {
       expect(agent?.model).toBe('inherit');
     });
   });
+
+  describe('setBuiltinAgentNames', () => {
+    it('updates built-in agents from init message names', async () => {
+      const pluginManager = createMockPluginManager();
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      mockFs.existsSync.mockReturnValue(false);
+
+      await manager.loadAgents();
+      const before = manager.getAvailableAgents();
+      expect(before.some(a => a.id === 'Explore')).toBe(true);
+
+      // Update with new names from init
+      manager.setBuiltinAgentNames(['Explore', 'Plan', 'Bash', 'general-purpose', 'new-agent']);
+      const after = manager.getAvailableAgents();
+      expect(after.some(a => a.id === 'new-agent' && a.source === 'builtin')).toBe(true);
+    });
+
+    it('excludes file-loaded agents from built-in list', async () => {
+      const pluginManager = createMockPluginManager();
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+
+      // Vault has an agent file matching an init agent name
+      mockFs.existsSync.mockReturnValue(true);
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir.includes('.claude/agents')) {
+          return [createMockDirent('custom.md', true)];
+        }
+        return [];
+      });
+      mockFs.readFileSync.mockReturnValue(`---
+name: custom-agent
+description: Custom vault agent
+---
+Prompt.`);
+
+      await manager.loadAgents();
+
+      // Set init names that include 'custom-agent' (matches vault agent)
+      manager.setBuiltinAgentNames(['Explore', 'custom-agent']);
+      const agents = manager.getAvailableAgents();
+
+      // custom-agent should be vault-sourced, not built-in
+      const customAgent = agents.find(a => a.id === 'custom-agent');
+      expect(customAgent).toBeDefined();
+      expect(customAgent?.source).toBe('vault');
+
+      // Should not have a duplicate built-in 'custom-agent'
+      const customAgents = agents.filter(a => a.id === 'custom-agent');
+      expect(customAgents).toHaveLength(1);
+    });
+  });
 });

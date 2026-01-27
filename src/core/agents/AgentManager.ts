@@ -20,39 +20,29 @@ const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents');
 const VAULT_AGENTS_DIR = '.claude/agents';
 const PLUGIN_AGENTS_DIR = 'agents';
 
-const BUILTIN_AGENTS: AgentDefinition[] = [
-  {
-    id: 'Explore',
-    name: 'Explore',
-    description: 'Fast codebase exploration and search',
-    prompt: '', // Built-in - prompt managed by SDK
+// Fallback built-in agent names for before the init message arrives.
+const FALLBACK_BUILTIN_AGENT_NAMES = ['Explore', 'Plan', 'Bash', 'general-purpose'];
+
+const BUILTIN_AGENT_DESCRIPTIONS: Record<string, string> = {
+  'Explore': 'Fast codebase exploration and search',
+  'Plan': 'Implementation planning and architecture',
+  'Bash': 'Command execution specialist',
+  'general-purpose': 'Multi-step tasks and complex workflows',
+};
+
+function makeBuiltinAgent(name: string): AgentDefinition {
+  return {
+    id: name,
+    name: name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+    description: BUILTIN_AGENT_DESCRIPTIONS[name] ?? '',
+    prompt: '', // Built-in — prompt managed by SDK
     source: 'builtin',
-  },
-  {
-    id: 'Plan',
-    name: 'Plan',
-    description: 'Implementation planning and architecture',
-    prompt: '',
-    source: 'builtin',
-  },
-  {
-    id: 'Bash',
-    name: 'Bash',
-    description: 'Command execution specialist',
-    prompt: '',
-    source: 'builtin',
-  },
-  {
-    id: 'general-purpose',
-    name: 'General Purpose',
-    description: 'Multi-step tasks and complex workflows',
-    prompt: '',
-    source: 'builtin',
-  },
-];
+  };
+}
 
 export class AgentManager {
   private agents: AgentDefinition[] = [];
+  private builtinAgentNames: string[] = FALLBACK_BUILTIN_AGENT_NAMES;
   private vaultPath: string;
   private pluginManager: PluginManager;
 
@@ -62,14 +52,27 @@ export class AgentManager {
   }
 
   /**
-   * Load all agent definitions from all sources.
-   * Call this on plugin load and when agents may have changed.
+   * Update built-in agent names from the SDK init message.
+   * Built-in agents are those from init that are NOT loaded from files.
    */
+  setBuiltinAgentNames(names: string[]): void {
+    this.builtinAgentNames = names;
+    // Rebuild agents to reflect the new built-in list
+    const fileAgentIds = new Set(
+      this.agents.filter(a => a.source !== 'builtin').map(a => a.id)
+    );
+    // Replace built-in entries with updated list
+    this.agents = [
+      ...names.filter(n => !fileAgentIds.has(n)).map(makeBuiltinAgent),
+      ...this.agents.filter(a => a.source !== 'builtin'),
+    ];
+  }
+
   async loadAgents(): Promise<void> {
     this.agents = [];
 
-    // 0. Add built-in agents first
-    this.agents.push(...BUILTIN_AGENTS);
+    // 0. Add built-in agents first (from init message or fallback)
+    this.agents.push(...this.builtinAgentNames.map(makeBuiltinAgent));
 
     // 1. Load plugin agents (namespaced)
     await this.loadPluginAgents();
@@ -212,6 +215,9 @@ export class AgentManager {
         source,
         pluginName: source === 'plugin' ? pluginName : undefined,
         filePath,
+        skills: frontmatter.skills,
+        maxTurns: frontmatter.maxTurns,
+        mcpServers: frontmatter.mcpServers,
       };
     } catch {
       // Non-critical: agent file failed to load, skip silently

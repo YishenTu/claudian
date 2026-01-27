@@ -47,9 +47,25 @@ export interface Options {
   hooks?: {
     PreToolUse?: HookCallbackMatcher[];
   };
+  agents?: Record<string, AgentDefinition>;
 }
 
 // Type exports that match the real SDK
+export type AgentDefinition = {
+  description: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  prompt: string;
+  model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  mcpServers?: unknown[];
+  skills?: string[];
+  maxTurns?: number;
+};
+
+export type AgentMcpServerSpec = string | Record<string, unknown>;
+
+export type McpServerConfig = Record<string, unknown>;
+
 export type PermissionBehavior = 'allow' | 'deny' | 'ask';
 
 export type PermissionRuleValue = {

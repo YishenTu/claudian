@@ -270,54 +270,6 @@ Prompt`;
 });
 
 // ============================================================================
-// SlashCommandManager nested command detection
-// ============================================================================
-
-describe('SlashCommandManager nested commands', () => {
-  describe('detectCommand regex', () => {
-    it('should detect flat command', () => {
-      const match = '/review file.ts'.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
-      expect(match).not.toBeNull();
-      expect(match![1]).toBe('review');
-      expect(match![2]).toBe('file.ts');
-    });
-
-    it('should detect nested command with slash', () => {
-      const match = '/code/review file.ts'.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
-      expect(match).not.toBeNull();
-      expect(match![1]).toBe('code/review');
-      expect(match![2]).toBe('file.ts');
-    });
-
-    it('should detect deeply nested command', () => {
-      const match = '/a/b/c arg'.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
-      expect(match).not.toBeNull();
-      expect(match![1]).toBe('a/b/c');
-      expect(match![2]).toBe('arg');
-    });
-
-    it('should detect command with no args', () => {
-      const match = '/code/refactor'.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
-      expect(match).not.toBeNull();
-      expect(match![1]).toBe('code/refactor');
-      expect(match![2]).toBeUndefined();
-    });
-
-    it('should handle command with hyphen', () => {
-      const match = '/my-command arg'.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
-      expect(match).not.toBeNull();
-      expect(match![1]).toBe('my-command');
-    });
-
-    it('should handle command with underscore', () => {
-      const match = '/my_command arg'.match(/^\/([a-zA-Z0-9_/-]+)(?:\s+([\s\S]*))?$/);
-      expect(match).not.toBeNull();
-      expect(match![1]).toBe('my_command');
-    });
-  });
-});
-
-// ============================================================================
 // Helper Functions (mimic internal logic for testing)
 // ============================================================================
 

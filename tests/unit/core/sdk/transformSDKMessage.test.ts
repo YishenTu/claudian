@@ -39,6 +39,28 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([]);
     });
+
+    it('captures agents, skills, and slashCommands from init message', () => {
+      const message: SDKMessage = {
+        type: 'system',
+        subtype: 'init',
+        session_id: 'test-session-456',
+        agents: ['Explore', 'Plan', 'custom-agent'],
+        skills: ['commit', 'review-pr'],
+        slash_commands: ['clear', 'add-dir'],
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toEqual({
+        type: 'session_init',
+        sessionId: 'test-session-456',
+        agents: ['Explore', 'Plan', 'custom-agent'],
+        skills: ['commit', 'review-pr'],
+        slashCommands: ['clear', 'add-dir'],
+      });
+    });
   });
 
   describe('assistant messages', () => {

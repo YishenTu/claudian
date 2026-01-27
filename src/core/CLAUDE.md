@@ -8,7 +8,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 |--------|---------|-----------|
 | `agent/` | Claude Agent SDK wrapper | `ClaudianService`, `SessionManager`, `QueryOptionsBuilder`, `MessageChannel`, `customSpawn` |
 | `agents/` | Custom agent discovery | `AgentManager`, `AgentStorage` |
-| `commands/` | Slash command expansion | `SlashCommandManager`, `builtInCommands` |
+| `commands/` | Built-in command actions | `builtInCommands` |
 | `hooks/` | Security hooks | `SecurityHooks` |
 | `images/` | Image caching | SHA-256 dedup, base64 encoding |
 | `mcp/` | Model Context Protocol | `McpServerManager`, `McpService`, `McpTester` |

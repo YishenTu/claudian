@@ -43,6 +43,7 @@ import {
   mergeEnvironmentVariables,
 } from './migrationConstants';
 import { SESSIONS_PATH, SessionStorage } from './SessionStorage';
+import { SKILLS_PATH, SkillStorage } from './SkillStorage';
 import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 import { VaultFileAdapter } from './VaultFileAdapter';
 
@@ -111,6 +112,7 @@ export class StorageService {
   readonly ccSettings: CCSettingsStorage;
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly commands: SlashCommandStorage;
+  readonly skills: SkillStorage;
   readonly sessions: SessionStorage;
   readonly mcp: McpStorage;
 
@@ -125,6 +127,7 @@ export class StorageService {
     this.ccSettings = new CCSettingsStorage(this.adapter);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
+    this.skills = new SkillStorage(this.adapter);
     this.sessions = new SessionStorage(this.adapter);
     this.mcp = new McpStorage(this.adapter);
   }
@@ -365,6 +368,7 @@ export class StorageService {
   async ensureDirectories(): Promise<void> {
     await this.adapter.ensureFolder(CLAUDE_PATH);
     await this.adapter.ensureFolder(COMMANDS_PATH);
+    await this.adapter.ensureFolder(SKILLS_PATH);
     await this.adapter.ensureFolder(SESSIONS_PATH);
   }
 

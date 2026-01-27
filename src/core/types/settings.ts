@@ -211,6 +211,12 @@ export interface SlashCommand {
   model?: ClaudeModel;         // Override model for this command
   content: string;             // Prompt template with placeholders
   source?: SlashCommandSource; // Origin of the command (builtin, user, plugin, sdk)
+  // Skill fields (from .claude/skills/ definitions)
+  disableModelInvocation?: boolean;  // Disable model invocation for this skill
+  userInvocable?: boolean;           // Whether user can invoke this skill directly
+  context?: string;                  // 'fork' for subagent execution
+  agent?: string;                    // Subagent type when context='fork'
+  hooks?: unknown;                   // Pass-through to SDK
 }
 
 /** Keyboard navigation settings for vim-style scrolling. */

@@ -58,6 +58,12 @@ export interface SDKNonResultMessage {
   modelUsage?: Record<string, ModelUsageInfo>;
   /** Model name for the message. */
   model?: string;
+  /** Agent names from init message. */
+  agents?: string[];
+  /** Skill names from init message. */
+  skills?: string[];
+  /** Slash command names from init message. */
+  slash_commands?: string[];
 }
 
 /** SDK result message structure (does not include parent_tool_use_id). */

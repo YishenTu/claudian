@@ -122,6 +122,59 @@ Body.`;
     expect(parsed).not.toBeNull();
     expect(parsed?.frontmatter.tools).toBe('Read, Grep, Glob');
   });
+
+  it('parses skills array', () => {
+    const content = `---
+name: TestAgent
+description: Test agent
+skills: [my-skill, another-skill]
+---
+Body.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.frontmatter.skills).toEqual(['my-skill', 'another-skill']);
+  });
+
+  it('parses maxTurns number', () => {
+    const content = `---
+name: TestAgent
+description: Test agent
+maxTurns: 10
+---
+Body.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.frontmatter.maxTurns).toBe(10);
+  });
+
+  it('parses mcpServers array', () => {
+    const content = `---
+name: TestAgent
+description: Test agent
+mcpServers: [server-a, server-b]
+---
+Body.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.frontmatter.mcpServers).toEqual(['server-a', 'server-b']);
+  });
+
+  it('returns undefined for missing new fields', () => {
+    const content = `---
+name: TestAgent
+description: Test agent
+---
+Body.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.frontmatter.skills).toBeUndefined();
+    expect(parsed?.frontmatter.maxTurns).toBeUndefined();
+    expect(parsed?.frontmatter.mcpServers).toBeUndefined();
+  });
 });
 
 describe('parseToolsList', () => {

@@ -6,4 +6,3 @@ export {
   detectBuiltInCommand,
   getBuiltInCommandsForDropdown,
 } from './builtInCommands';
-export { SlashCommandManager } from './SlashCommandManager';

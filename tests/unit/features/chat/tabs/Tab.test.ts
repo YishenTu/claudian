@@ -36,13 +36,6 @@ jest.mock('@/core/agent', () => ({
   })),
 }));
 
-// Mock SlashCommandManager
-jest.mock('@/core/commands', () => ({
-  SlashCommandManager: jest.fn().mockImplementation(() => ({
-    setCommands: jest.fn(),
-  })),
-}));
-
 // Mock factories must be defined before jest.mock calls due to hoisting
 // These will be initialized fresh in beforeEach
 const createMockFileContextManager = () => ({
