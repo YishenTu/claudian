@@ -88,8 +88,8 @@
       "btnSet": "设置快捷键"
     },
     "slashCommands": {
-      "name": "斜杠命令",
-      "desc": "创建由 /command 触发的自定义提示模板。使用 $ARGUMENTS 获取所有参数，$1/$2 获取位置参数，@file 获取文件内容，!`bash` 获取命令输出。"
+      "name": "命令与技能",
+      "desc": "定义由 /名称 触发的自定义命令与技能。"
     },
     "hiddenSlashCommands": {
       "name": "隐藏命令",

@@ -76,7 +76,7 @@ export type TranslationKey =
   | 'settings.closeTabHotkey.btnChange'
   | 'settings.closeTabHotkey.btnSet'
 
-  // Settings - Slash Commands
+  // Settings - Commands and Skills
   | 'settings.slashCommands.name'
   | 'settings.slashCommands.desc'
   | 'settings.hiddenSlashCommands.name'

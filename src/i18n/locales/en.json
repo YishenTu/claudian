@@ -88,8 +88,8 @@
       "btnSet": "Set hotkey"
     },
     "slashCommands": {
-      "name": "Slash Commands",
-      "desc": "Create custom prompt templates triggered by /command. Use $ARGUMENTS for all arguments, $1/$2 for positional args, @file for file content, and !`bash` for command output."
+      "name": "Commands and Skills",
+      "desc": "Define custom commands and skills triggered by /name."
     },
     "hiddenSlashCommands": {
       "name": "Hidden Commands",

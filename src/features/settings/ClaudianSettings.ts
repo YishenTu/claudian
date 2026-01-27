@@ -334,9 +334,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName(t('settings.slashCommands.name')).setHeading();
 
     const slashCommandsDesc = containerEl.createDiv({ cls: 'claudian-slash-settings-desc' });
-    slashCommandsDesc.createEl('p', {
-      text: t('settings.slashCommands.desc'),
-      cls: 'setting-item-description',
+    const descP = slashCommandsDesc.createEl('p', { cls: 'setting-item-description' });
+    descP.appendText(t('settings.slashCommands.desc') + ' ');
+    descP.createEl('a', {
+      text: 'Learn more',
+      href: 'https://code.claude.com/docs/en/skills',
     });
 
     const slashCommandsContainer = containerEl.createDiv({ cls: 'claudian-slash-commands-container' });

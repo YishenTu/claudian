@@ -88,8 +88,8 @@
       "btnSet": "Festlegen"
     },
     "slashCommands": {
-      "name": "Schrägstrich-Befehle",
-      "desc": "Erstelle benutzerdefinierte Prompt-Vorlagen, die durch /command ausgelöst werden. Verwende $ARGUMENTS für alle Argumente, $1/$2 für Positionsargumente, @file für Dateiinhalt und !`bash` für Befehlsausgabe."
+      "name": "Befehle und Fähigkeiten",
+      "desc": "Definiere benutzerdefinierte Befehle und Fähigkeiten, die durch /Name ausgelöst werden."
     },
     "hiddenSlashCommands": {
       "name": "Ausgeblendete Befehle",

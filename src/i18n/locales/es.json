@@ -88,8 +88,8 @@
       "btnSet": "Configurar"
     },
     "slashCommands": {
-      "name": "Comandos slash",
-      "desc": "Crea plantillas de prompts personalizadas activadas por /command. Usa $ARGUMENTS para todos los argumentos, $1/$2 para argumentos posicionales, @file para contenido de archivo y !`bash` para salida de comandos."
+      "name": "Comandos y habilidades",
+      "desc": "Define comandos y habilidades personalizados activados por /nombre."
     },
     "hiddenSlashCommands": {
       "name": "Comandos ocultos",

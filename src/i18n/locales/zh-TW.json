@@ -88,8 +88,8 @@
       "btnSet": "設定快捷鍵"
     },
     "slashCommands": {
-      "name": "斜線命令",
-      "desc": "建立由 /command 觸發的自訂提示範本。使用 $ARGUMENTS 獲取所有參數，$1/$2 獲取位置參數，@file 獲取檔案內容，!`bash` 獲取命令輸出。"
+      "name": "命令與技能",
+      "desc": "定義由 /名稱 觸發的自訂命令與技能。"
     },
     "hiddenSlashCommands": {
       "name": "隱藏命令",

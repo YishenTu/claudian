@@ -88,8 +88,8 @@
       "btnSet": "Definir"
     },
     "slashCommands": {
-      "name": "Comandos slash",
-      "desc": "Crie modelos de prompts personalizados acionados por /command. Use $ARGUMENTS para todos os argumentos, $1/$2 para argumentos posicionais, @file para conteúdo de arquivo e !`bash` para saída de comando."
+      "name": "Comandos e habilidades",
+      "desc": "Defina comandos e habilidades personalizados acionados por /nome."
     },
     "hiddenSlashCommands": {
       "name": "Comandos ocultos",
