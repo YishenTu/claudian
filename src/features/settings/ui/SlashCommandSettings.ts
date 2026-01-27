@@ -5,6 +5,17 @@ import type { SlashCommand } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { isSkill, isUserCommand, parseSlashCommandContent } from '../../../utils/slashCommand';
 
+function resolveAllowedTools(inputValue: string, parsedTools?: string[]): string[] | undefined {
+  const trimmed = inputValue.trim();
+  if (trimmed) {
+    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  if (parsedTools && parsedTools.length > 0) {
+    return parsedTools;
+  }
+  return undefined;
+}
+
 export class SlashCommandModal extends Modal {
   private plugin: ClaudianPlugin;
   private existingCmd: SlashCommand | null;
@@ -221,11 +232,7 @@ export class SlashCommandModal extends Modal {
         description: descInput.value.trim() || parsed.description || undefined,
         argumentHint: hintInput.value.trim() || parsed.argumentHint || undefined,
         model: modelInput.value.trim() || parsed.model || undefined,
-        allowedTools: toolsInput.value.trim()
-          ? toolsInput.value.split(',').map(s => s.trim()).filter(Boolean)
-          : parsed.allowedTools && parsed.allowedTools.length > 0
-            ? parsed.allowedTools
-            : undefined,
+        allowedTools: resolveAllowedTools(toolsInput.value, parsed.allowedTools),
         content: promptContent,
         source: isSkillType ? 'user' : undefined,
         disableModelInvocation: disableModelToggle || undefined,

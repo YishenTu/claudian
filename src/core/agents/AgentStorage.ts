@@ -22,10 +22,10 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
   const model = typeof fm.model === 'string' ? fm.model : undefined;
 
   const frontmatter: AgentFrontmatter = {
-    name: name as string,
-    description: description as string,
-    tools: tools as string | string[] | undefined,
-    disallowedTools: disallowedTools as string | string[] | undefined,
+    name,
+    description,
+    tools,
+    disallowedTools,
     model,
     skills: extractStringArray(fm, 'skills'),
     maxTurns: extractNumber(fm, 'maxTurns'),
