@@ -1,4 +1,4 @@
-import { parsedToSlashCommand, parseSlashCommandContent, serializeSlashCommandMarkdown } from '../../utils/slashCommand';
+import { parsedToSlashCommand, parseSlashCommandContent, serializeCommand } from '../../utils/slashCommand';
 import type { SlashCommand } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
@@ -32,7 +32,7 @@ export class SlashCommandStorage {
     return commands;
   }
 
-  async loadFromFile(filePath: string): Promise<SlashCommand | null> {
+  private async loadFromFile(filePath: string): Promise<SlashCommand | null> {
     try {
       const content = await this.adapter.read(filePath);
       return this.parseFile(content, filePath);
@@ -43,8 +43,7 @@ export class SlashCommandStorage {
 
   async save(command: SlashCommand): Promise<void> {
     const filePath = this.getFilePath(command);
-    const content = this.serializeCommand(command);
-    await this.adapter.write(filePath, content);
+    await this.adapter.write(filePath, serializeCommand(command));
   }
 
   async delete(commandId: string): Promise<void> {
@@ -61,17 +60,12 @@ export class SlashCommandStorage {
     }
   }
 
-  async hasCommands(): Promise<boolean> {
-    const files = await this.adapter.listFilesRecursive(COMMANDS_PATH);
-    return files.some(f => f.endsWith('.md'));
-  }
-
   getFilePath(command: SlashCommand): string {
     const safeName = command.name.replace(/[^a-zA-Z0-9_/-]/g, '-');
     return `${COMMANDS_PATH}/${safeName}.md`;
   }
 
-  parseFile(content: string, filePath: string): SlashCommand {
+  private parseFile(content: string, filePath: string): SlashCommand {
     const parsed = parseSlashCommandContent(content);
     return parsedToSlashCommand(parsed, {
       id: this.filePathToId(filePath),
@@ -99,10 +93,5 @@ export class SlashCommandStorage {
     return filePath
       .replace(`${COMMANDS_PATH}/`, '')
       .replace(/\.md$/, '');
-  }
-
-  private serializeCommand(command: SlashCommand): string {
-    const parsed = parseSlashCommandContent(command.content);
-    return serializeSlashCommandMarkdown(command, parsed.promptContent);
   }
 }

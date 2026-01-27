@@ -1,4 +1,4 @@
-import { parseSlashCommandContent, serializeSlashCommandMarkdown, yamlString } from '@/utils/slashCommand';
+import { parseSlashCommandContent, serializeCommand, serializeSlashCommandMarkdown, yamlString } from '@/utils/slashCommand';
 
 describe('parseSlashCommandContent', () => {
   describe('basic parsing', () => {
@@ -584,6 +584,34 @@ describe('yamlString', () => {
 
   it('escapes double quotes inside quoted strings', () => {
     expect(yamlString('has "quotes" inside: yes')).toBe('"has \\"quotes\\" inside: yes"');
+  });
+});
+
+describe('serializeCommand', () => {
+  it('strips frontmatter from content before serializing', () => {
+    const result = serializeCommand({
+      id: 'cmd-test',
+      name: 'test',
+      description: 'Test',
+      content: '---\ndescription: old\n---\nBody text',
+    });
+
+    // Should use the SlashCommand's description, not the one in content frontmatter
+    expect(result).toContain('description: Test');
+    expect(result).toContain('Body text');
+    expect(result).not.toContain('description: old');
+  });
+
+  it('handles content without frontmatter', () => {
+    const result = serializeCommand({
+      id: 'cmd-test',
+      name: 'test',
+      description: 'Simple',
+      content: 'Just a prompt',
+    });
+
+    expect(result).toContain('description: Simple');
+    expect(result).toContain('Just a prompt');
   });
 });
 

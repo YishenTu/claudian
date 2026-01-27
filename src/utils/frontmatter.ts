@@ -32,11 +32,7 @@ export function extractString(
   return undefined;
 }
 
-export function extractStringArray(
-  fm: Record<string, unknown>,
-  key: string
-): string[] | undefined {
-  const val = fm[key];
+export function normalizeStringArray(val: unknown): string[] | undefined {
   if (val === undefined || val === null) return undefined;
 
   if (Array.isArray(val)) {
@@ -53,6 +49,13 @@ export function extractStringArray(
   }
 
   return undefined;
+}
+
+export function extractStringArray(
+  fm: Record<string, unknown>,
+  key: string
+): string[] | undefined {
+  return normalizeStringArray(fm[key]);
 }
 
 export function extractBoolean(

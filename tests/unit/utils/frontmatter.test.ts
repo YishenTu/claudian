@@ -3,6 +3,7 @@ import {
   extractNumber,
   extractString,
   extractStringArray,
+  normalizeStringArray,
   parseFrontmatter,
 } from '@/utils/frontmatter';
 
@@ -142,6 +143,53 @@ describe('extractStringArray', () => {
   it('converts non-string array elements to strings', () => {
     expect(extractStringArray({ tools: [123, 'Read'] }, 'tools'))
       .toEqual(['123', 'Read']);
+  });
+});
+
+describe('normalizeStringArray', () => {
+  it('returns undefined for undefined', () => {
+    expect(normalizeStringArray(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for null', () => {
+    expect(normalizeStringArray(null)).toBeUndefined();
+  });
+
+  it('normalizes array of strings', () => {
+    expect(normalizeStringArray(['Read', 'Grep'])).toEqual(['Read', 'Grep']);
+  });
+
+  it('trims and filters array elements', () => {
+    expect(normalizeStringArray(['  Read  ', '', '  Grep  ', ''])).toEqual(['Read', 'Grep']);
+  });
+
+  it('converts non-string array elements to strings', () => {
+    expect(normalizeStringArray([123, 'Read'])).toEqual(['123', 'Read']);
+  });
+
+  it('splits comma-separated string', () => {
+    expect(normalizeStringArray('Read, Grep, Glob')).toEqual(['Read', 'Grep', 'Glob']);
+  });
+
+  it('wraps single string in array', () => {
+    expect(normalizeStringArray('Read')).toEqual(['Read']);
+  });
+
+  it('returns undefined for empty string', () => {
+    expect(normalizeStringArray('')).toBeUndefined();
+  });
+
+  it('returns undefined for whitespace-only string', () => {
+    expect(normalizeStringArray('   ')).toBeUndefined();
+  });
+
+  it('filters empty entries from comma-separated string', () => {
+    expect(normalizeStringArray('Read,,Grep,')).toEqual(['Read', 'Grep']);
+  });
+
+  it('returns undefined for non-string/array types', () => {
+    expect(normalizeStringArray(123)).toBeUndefined();
+    expect(normalizeStringArray(true)).toBeUndefined();
   });
 });
 

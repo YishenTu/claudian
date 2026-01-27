@@ -1,4 +1,4 @@
-import { parsedToSlashCommand, parseSlashCommandContent, serializeSlashCommandMarkdown } from '../../utils/slashCommand';
+import { parsedToSlashCommand, parseSlashCommandContent, serializeCommand } from '../../utils/slashCommand';
 import type { SlashCommand } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
@@ -44,10 +44,8 @@ export class SkillStorage {
     const dirPath = `${SKILLS_PATH}/${name}`;
     const filePath = `${dirPath}/SKILL.md`;
 
-    const parsed = parseSlashCommandContent(skill.content);
-
     await this.adapter.ensureFolder(dirPath);
-    await this.adapter.write(filePath, serializeSlashCommandMarkdown(skill, parsed.promptContent));
+    await this.adapter.write(filePath, serializeCommand(skill));
   }
 
   async delete(skillId: string): Promise<void> {

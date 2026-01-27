@@ -1,4 +1,4 @@
-import { extractNumber, extractStringArray, parseFrontmatter } from '../../utils/frontmatter';
+import { extractNumber, extractStringArray, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
 import type { AgentFrontmatter } from '../types';
 
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
@@ -41,19 +41,7 @@ function isStringOrArray(value: unknown): value is string | string[] {
 
 /** Returns undefined to inherit all tools. */
 export function parseToolsList(tools?: string | string[]): string[] | undefined {
-  if (tools === undefined) return undefined;
-
-  if (Array.isArray(tools)) {
-    return tools.map(t => String(t).trim()).filter(Boolean);
-  }
-
-  if (typeof tools === 'string') {
-    const trimmed = tools.trim();
-    if (!trimmed) return undefined;
-    return trimmed.split(',').map(t => t.trim()).filter(Boolean);
-  }
-
-  return undefined;
+  return normalizeStringArray(tools);
 }
 
 const VALID_MODELS = ['sonnet', 'opus', 'haiku', 'inherit'] as const;

@@ -82,6 +82,12 @@ export function yamlString(value: string): string {
   return value;
 }
 
+/** Strips any frontmatter from `cmd.content` and re-serializes the command as Markdown. */
+export function serializeCommand(cmd: SlashCommand): string {
+  const parsed = parseSlashCommandContent(cmd.content);
+  return serializeSlashCommandMarkdown(cmd, parsed.promptContent);
+}
+
 /** All frontmatter keys are serialized in kebab-case. */
 export function serializeSlashCommandMarkdown(cmd: Partial<SlashCommand>, body: string): string {
   const lines: string[] = ['---'];
