@@ -1,6 +1,5 @@
 export {
   buildPermissionUpdates,
-  generatePermissionRule,
   getActionDescription,
   getActionPattern,
   matchesRulePattern,

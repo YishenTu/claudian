@@ -447,7 +447,7 @@ describe('ClaudianService', () => {
         await canUseTool('Bash', { command: 'rm -rf /' }, canUseToolOptions);
 
         expect(mockNotice).toHaveBeenCalledWith(
-          'Failed to save deny rule: FS write error. The action is denied for this invocation only.',
+          "Failed to save deny rule: FS write error. The action will remain denied for this session but won't persist across sessions.",
         );
       });
 

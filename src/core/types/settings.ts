@@ -140,7 +140,7 @@ export type PermissionRule = string & { readonly __brand: 'PermissionRule' };
 
 /**
  * Create a PermissionRule from a string.
- * @internal Use generatePermissionRule or legacyPermissionToCCRule instead.
+ * @internal Use legacyPermissionToCCRule instead.
  */
 export function createPermissionRule(rule: string): PermissionRule {
   return rule as PermissionRule;

@@ -1427,7 +1427,7 @@ export class ClaudianService {
             }
           } catch (e) {
             const detail = e instanceof Error ? e.message : String(e);
-            new Notice(`Failed to save deny rule: ${detail}. The action is denied for this invocation only.`);
+            new Notice(`Failed to save deny rule: ${detail}. The action will remain denied for this session but won't persist across sessions.`);
           }
         }
 

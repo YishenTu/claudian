@@ -1,7 +1,6 @@
 
 import {
   buildPermissionUpdates,
-  generatePermissionRule,
   getActionDescription,
   getActionPattern,
   matchesRulePattern,
@@ -37,20 +36,6 @@ describe('getActionPattern', () => {
 
   it('returns JSON for unknown tools', () => {
     expect(getActionPattern('UnknownTool', { foo: 'bar' })).toBe('{"foo":"bar"}');
-  });
-});
-
-describe('generatePermissionRule', () => {
-  it('creates rule with tool and pattern', () => {
-    expect(generatePermissionRule('Bash', { command: 'git status' })).toBe('Bash(git status)');
-  });
-
-  it('creates tool-only rule for wildcard pattern', () => {
-    expect(generatePermissionRule('Read', {})).toBe('Read');
-  });
-
-  it('creates tool-only rule for JSON pattern (legacy)', () => {
-    expect(generatePermissionRule('UnknownTool', {})).toBe('UnknownTool');
   });
 });
 

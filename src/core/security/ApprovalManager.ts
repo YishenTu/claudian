@@ -11,7 +11,6 @@ import {
   TOOL_READ,
   TOOL_WRITE,
 } from '../tools/toolNames';
-import { createPermissionRule } from '../types';
 
 export function getActionPattern(toolName: string, input: Record<string, unknown>): string {
   switch (toolName) {
@@ -30,25 +29,6 @@ export function getActionPattern(toolName: string, input: Record<string, unknown
     default:
       return JSON.stringify(input);
   }
-}
-
-/**
- * Generate a CC permission rule from tool name and input.
- * Examples: "Bash(git status)", "Read(/path/to/file)"
- *
- * Note: If pattern is empty, wildcard, or a JSON object string (legacy format
- * from tools that serialized their input), the rule falls back to just the
- * tool name, matching all actions for that tool.
- */
-export function generatePermissionRule(toolName: string, input: Record<string, unknown>): string {
-  const pattern = getActionPattern(toolName, input);
-
-  // If pattern is empty, wildcard, or JSON object (legacy), just use tool name
-  if (!pattern || pattern === '*' || pattern.startsWith('{')) {
-    return createPermissionRule(toolName);
-  }
-
-  return createPermissionRule(`${toolName}(${pattern})`);
 }
 
 export function getActionDescription(toolName: string, input: Record<string, unknown>): string {
