@@ -67,8 +67,3 @@ export interface ClaudianPlugin {
   /** Error message if unavailable or invalid. */
   error?: string;
 }
-
-export interface SdkPluginConfig {
-  type: 'local';
-  path: string;
-}

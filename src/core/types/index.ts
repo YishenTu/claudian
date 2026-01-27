@@ -116,7 +116,6 @@ export {
   type PluginManifest,
   type PluginScope,
   type PluginStatus,
-  type SdkPluginConfig,
 } from './plugins';
 
 // Agent types
