@@ -12,6 +12,11 @@
   cursor: pointer;
   color: var(--text-muted);
   font-size: 12px;
+  transition: color 0.2s ease;
+}
+
+.claudian-model-btn.ready {
+  color: var(--claudian-brand);
 }
 
 .claudian-model-label {
