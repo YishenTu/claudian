@@ -109,6 +109,8 @@ export {
 // Plugin types
 export {
   type ClaudianPlugin,
+  type InstalledPluginEntry,
+  type InstalledPluginsFile,
   type PluginScope,
 } from './plugins';
 

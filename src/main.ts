@@ -60,13 +60,13 @@ export default class ClaudianPlugin extends Plugin {
     this.mcpManager = new McpServerManager(this.storage.mcp);
     await this.mcpManager.loadServers();
 
-    // Initialize plugin manager (reads enabledPlugins from settings.json files)
+    // Initialize plugin manager (reads from installed_plugins.json + settings.json)
     const vaultPath = (this.app.vault.adapter as any).basePath;
     this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
     await this.pluginManager.loadPlugins();
 
-    // Initialize agent manager (plugin agents are handled by SDK via settingSources)
-    this.agentManager = new AgentManager(vaultPath);
+    // Initialize agent manager (loads plugin agents from plugin install paths)
+    this.agentManager = new AgentManager(vaultPath, this.pluginManager);
     await this.agentManager.loadAgents();
 
     this.registerView(

@@ -1,14 +1,13 @@
 /**
- * PluginManager - Discover and manage Claude Code plugins from settings.json files.
+ * PluginManager - Discover and manage Claude Code plugins.
  *
- * Plugins are discovered from enabledPlugins in:
- * - Global: ~/.claude/settings.json (scope: 'user')
- * - Project: vault/.claude/settings.json (scope: 'project')
+ * Plugins are discovered from two sources:
+ * - installed_plugins.json: provides install paths for scanning agents
+ * - settings.json: provides enabled state (global + project)
  *
- * Merge logic:
+ * Merge logic for enabled state:
  * - All plugins with `true` from either scope are discoverable
  * - Project `false` can disable a globally-enabled plugin
- * - Project plugins take precedence for scope assignment
  */
 
 import * as fs from 'fs';
@@ -16,24 +15,34 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
-import type { ClaudianPlugin, PluginScope } from '../types';
+import type { ClaudianPlugin, InstalledPluginsFile, PluginScope } from '../types';
 
+const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
 const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
 interface SettingsFile {
   enabledPlugins?: Record<string, boolean>;
 }
 
-function readSettingsFile(filePath: string): SettingsFile | null {
+function readJsonFile<T>(filePath: string): T | null {
   try {
     if (!fs.existsSync(filePath)) {
       return null;
     }
     const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content) as SettingsFile;
+    return JSON.parse(content) as T;
   } catch {
     return null;
   }
+}
+
+function extractPluginName(pluginId: string): string {
+  // Plugin ID format: "plugin-name@source"
+  const atIndex = pluginId.indexOf('@');
+  if (atIndex > 0) {
+    return pluginId.substring(0, atIndex);
+  }
+  return pluginId;
 }
 
 export class PluginManager {
@@ -47,55 +56,62 @@ export class PluginManager {
   }
 
   /**
-   * Load plugins from global and project settings.json files.
-   * Implements merge logic: union of enabled plugins, project `false` disables.
+   * Load plugins from installed_plugins.json and settings.json files.
+   * - Install paths come from installed_plugins.json
+   * - Enabled state comes from settings.json (merged global + project)
    */
   async loadPlugins(): Promise<void> {
-    const globalSettings = readSettingsFile(GLOBAL_SETTINGS_PATH);
+    // Read installed plugins for paths
+    const installedPlugins = readJsonFile<InstalledPluginsFile>(INSTALLED_PLUGINS_PATH);
+
+    // Read enabled state from settings
+    const globalSettings = readJsonFile<SettingsFile>(GLOBAL_SETTINGS_PATH);
     const projectSettings = await this.loadProjectSettings();
 
     const globalEnabled = globalSettings?.enabledPlugins ?? {};
     const projectEnabled = projectSettings?.enabledPlugins ?? {};
 
-    // Collect all plugin IDs from both sources
-    const allPluginIds = new Set<string>([
-      ...Object.keys(globalEnabled),
-      ...Object.keys(projectEnabled),
-    ]);
-
     const plugins: ClaudianPlugin[] = [];
 
-    for (const id of allPluginIds) {
-      const globalValue = globalEnabled[id];
-      const projectValue = projectEnabled[id];
+    // Process each installed plugin
+    if (installedPlugins?.plugins) {
+      for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
+        if (!entries || entries.length === 0) continue;
 
-      // Determine scope: project takes precedence if it has the plugin
-      let scope: PluginScope;
-      if (projectValue !== undefined) {
-        scope = 'project';
-      } else {
-        scope = 'user';
-      }
+        // Use the first (most recent) entry for install path
+        const entry = entries[0];
 
-      // Determine enabled state:
-      // - Project `false` always disables (even if globally enabled)
-      // - Otherwise, use the most specific setting
-      let enabled: boolean;
-      if (projectValue === false) {
-        enabled = false;
-      } else if (projectValue === true) {
-        enabled = true;
-      } else if (globalValue === true) {
-        enabled = true;
-      } else {
-        // Plugin was explicitly set to false globally and not overridden by project
-        enabled = false;
-      }
+        // Determine enabled state from settings
+        const globalValue = globalEnabled[pluginId];
+        const projectValue = projectEnabled[pluginId];
 
-      // Only include plugins that are enabled or were explicitly disabled
-      // (we want to show disabled plugins in the UI for re-enabling)
-      if (globalValue !== undefined || projectValue !== undefined) {
-        plugins.push({ id, enabled, scope });
+        // Scope reflects where the plugin was installed (from installed_plugins.json)
+        const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';
+
+        // Determine enabled state:
+        // - Project `false` always disables (even if globally enabled)
+        // - Otherwise, use the most specific setting
+        let enabled: boolean;
+        if (projectValue === false) {
+          enabled = false;
+        } else if (projectValue === true) {
+          enabled = true;
+        } else if (globalValue === true) {
+          enabled = true;
+        } else if (globalValue === false) {
+          enabled = false;
+        } else {
+          // Not in settings - default to enabled if installed
+          enabled = true;
+        }
+
+        plugins.push({
+          id: pluginId,
+          name: extractPluginName(pluginId),
+          enabled,
+          scope,
+          installPath: entry.installPath,
+        });
       }
     }
 
@@ -110,7 +126,7 @@ export class PluginManager {
 
   private async loadProjectSettings(): Promise<SettingsFile | null> {
     const projectSettingsPath = path.join(this.vaultPath, '.claude', 'settings.json');
-    return readSettingsFile(projectSettingsPath);
+    return readJsonFile(projectSettingsPath);
   }
 
   /**

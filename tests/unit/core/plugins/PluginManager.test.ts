@@ -17,23 +17,24 @@ import { PluginManager } from '@/core/plugins/PluginManager';
 const mockFs = fs as jest.Mocked<typeof fs>;
 
 // Create a mock CCSettingsStorage
-function createMockCCSettingsStorage(enabledPlugins: Record<string, boolean> = {}) {
+function createMockCCSettingsStorage() {
   return {
-    getEnabledPlugins: jest.fn().mockResolvedValue(enabledPlugins),
+    getEnabledPlugins: jest.fn().mockResolvedValue({}),
     setPluginEnabled: jest.fn().mockResolvedValue(undefined),
   } as any;
 }
 
-describe('PluginManager', () => {
-  const globalSettingsPath = path.join(homeDir, '.claude', 'settings.json');
-  const projectSettingsPath = path.join(vaultPath, '.claude', 'settings.json');
+const installedPluginsPath = path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json');
+const globalSettingsPath = path.join(homeDir, '.claude', 'settings.json');
+const projectSettingsPath = path.join(vaultPath, '.claude', 'settings.json');
 
+describe('PluginManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe('loadPlugins', () => {
-    it('returns empty array when no settings files exist', async () => {
+    it('returns empty array when no installed_plugins.json exists', async () => {
       mockFs.existsSync.mockReturnValue(false);
       const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
@@ -43,15 +44,29 @@ describe('PluginManager', () => {
       expect(manager.getPlugins()).toEqual([]);
     });
 
-    it('loads plugins from global settings', async () => {
+    it('loads plugins from installed_plugins.json with enabled state from settings', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
       const globalSettings = {
         enabledPlugins: { 'test-plugin@marketplace': true },
       };
 
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
+        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
+        return '{}';
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
 
       const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
@@ -61,19 +76,30 @@ describe('PluginManager', () => {
       const plugins = manager.getPlugins();
       expect(plugins.length).toBe(1);
       expect(plugins[0].id).toBe('test-plugin@marketplace');
+      expect(plugins[0].name).toBe('test-plugin');
       expect(plugins[0].enabled).toBe(true);
       expect(plugins[0].scope).toBe('user');
+      expect(plugins[0].installPath).toBe('/path/to/test-plugin');
     });
 
-    it('loads plugins from project settings', async () => {
-      const projectSettings = {
-        enabledPlugins: { 'project-plugin@marketplace': true },
+    it('defaults to enabled for installed plugins not in settings', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'new-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/new-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
       };
 
       mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === projectSettingsPath;
+        return String(p) === installedPluginsPath;
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(projectSettings));
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
 
       const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
@@ -82,55 +108,32 @@ describe('PluginManager', () => {
 
       const plugins = manager.getPlugins();
       expect(plugins.length).toBe(1);
-      expect(plugins[0].id).toBe('project-plugin@marketplace');
-      expect(plugins[0].enabled).toBe(true);
-      expect(plugins[0].scope).toBe('project');
-    });
-
-    it('merges plugins from both global and project settings', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'plugin-a': true, 'plugin-b': true },
-      };
-      const projectSettings = {
-        enabledPlugins: { 'plugin-c': true },
-      };
-
-      mockFs.existsSync.mockReturnValue(true);
-      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
-        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
-        if (String(p) === projectSettingsPath) return JSON.stringify(projectSettings);
-        return '{}';
-      });
-
-      const ccSettings = createMockCCSettingsStorage();
-      const manager = new PluginManager(vaultPath, ccSettings);
-
-      await manager.loadPlugins();
-
-      const plugins = manager.getPlugins();
-      expect(plugins.length).toBe(3);
-
-      // Project plugins first
-      expect(plugins[0].id).toBe('plugin-c');
-      expect(plugins[0].scope).toBe('project');
-
-      // Then user plugins (sorted alphabetically)
-      expect(plugins[1].id).toBe('plugin-a');
-      expect(plugins[1].scope).toBe('user');
-      expect(plugins[2].id).toBe('plugin-b');
-      expect(plugins[2].scope).toBe('user');
+      expect(plugins[0].enabled).toBe(true); // Default to enabled
     });
 
     it('project false overrides global true', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'plugin-a@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/plugin-a',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
       const globalSettings = {
-        enabledPlugins: { 'plugin-a': true, 'plugin-b': true },
+        enabledPlugins: { 'plugin-a@marketplace': true },
       };
       const projectSettings = {
-        enabledPlugins: { 'plugin-b': false, 'plugin-c': true },
+        enabledPlugins: { 'plugin-a@marketplace': false },
       };
 
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
         if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
         if (String(p) === projectSettingsPath) return JSON.stringify(projectSettings);
         return '{}';
@@ -142,65 +145,107 @@ describe('PluginManager', () => {
       await manager.loadPlugins();
 
       const plugins = manager.getPlugins();
+      expect(plugins[0].enabled).toBe(false);
+      expect(plugins[0].scope).toBe('user'); // Scope reflects installation, not settings location
+    });
 
-      const pluginB = plugins.find(p => p.id === 'plugin-b');
-      expect(pluginB).toBeDefined();
-      expect(pluginB!.enabled).toBe(false);
-      expect(pluginB!.scope).toBe('project'); // Project scope because it's in project settings
+    it('extracts plugin name from ID correctly', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'feature-dev@claude-plugins-official': [{
+            scope: 'user',
+            installPath: '/path/to/feature-dev',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
 
-      const pluginC = plugins.find(p => p.id === 'plugin-c');
-      expect(pluginC!.enabled).toBe(true);
-      expect(pluginC!.scope).toBe('project');
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
 
-      const pluginA = plugins.find(p => p.id === 'plugin-a');
-      expect(pluginA!.enabled).toBe(true);
-      expect(pluginA!.scope).toBe('user');
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      const plugins = manager.getPlugins();
+      expect(plugins[0].name).toBe('feature-dev');
+    });
+
+    it('sorts plugins: project first, then user', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'user-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/user-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+          'project-plugin@marketplace': [{
+            scope: 'project',
+            installPath: '/path/to/project-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+            projectPath: vaultPath,
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      const plugins = manager.getPlugins();
+      expect(plugins.length).toBe(2);
+      expect(plugins[0].scope).toBe('project');
+      expect(plugins[1].scope).toBe('user');
     });
   });
 
   describe('togglePlugin', () => {
     it('disables an enabled plugin', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': true },
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
       };
 
       mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+        return String(p) === installedPluginsPath;
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
 
-      const ccSettings = createMockCCSettingsStorage({});
+      const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
 
       await manager.loadPlugins();
       expect(manager.getPlugins()[0].enabled).toBe(true);
 
-      await manager.togglePlugin('test-plugin');
+      await manager.togglePlugin('test-plugin@marketplace');
 
       expect(manager.getPlugins()[0].enabled).toBe(false);
-      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin', false);
-    });
-
-    it('enables a disabled plugin', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': false },
-      };
-
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
-      });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
-
-      const ccSettings = createMockCCSettingsStorage({});
-      const manager = new PluginManager(vaultPath, ccSettings);
-
-      await manager.loadPlugins();
-      expect(manager.getPlugins()[0].enabled).toBe(false);
-
-      await manager.togglePlugin('test-plugin');
-
-      expect(manager.getPlugins()[0].enabled).toBe(true);
-      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin', true);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', false);
     });
 
     it('does nothing when plugin not found', async () => {
@@ -217,16 +262,30 @@ describe('PluginManager', () => {
 
   describe('getPluginsKey', () => {
     it('returns empty string when no plugins are enabled', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
       const globalSettings = {
-        enabledPlugins: { 'test-plugin': false },
+        enabledPlugins: { 'test-plugin@marketplace': false },
       };
 
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
+        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
+        return '{}';
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
 
-      const ccSettings = createMockCCSettingsStorage({});
+      const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
 
       await manager.loadPlugins();
@@ -235,38 +294,63 @@ describe('PluginManager', () => {
     });
 
     it('returns stable key for enabled plugins', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'plugin-b': true, 'plugin-a': true },
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'plugin-b@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/plugin-b',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+          'plugin-a@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/plugin-a',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
       };
 
       mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+        return String(p) === installedPluginsPath;
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
 
-      const ccSettings = createMockCCSettingsStorage({});
+      const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
 
       await manager.loadPlugins();
 
       const key = manager.getPluginsKey();
       // Should be sorted alphabetically by ID
-      expect(key).toBe('plugin-a|plugin-b');
+      expect(key).toBe('plugin-a@marketplace|plugin-b@marketplace');
     });
   });
 
   describe('hasEnabledPlugins', () => {
     it('returns true when at least one plugin is enabled', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': true },
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
       };
 
       mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+        return String(p) === installedPluginsPath;
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
 
-      const ccSettings = createMockCCSettingsStorage({});
+      const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
 
       await manager.loadPlugins();
@@ -275,16 +359,30 @@ describe('PluginManager', () => {
     });
 
     it('returns false when all plugins are disabled', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
       const globalSettings = {
-        enabledPlugins: { 'test-plugin': false },
+        enabledPlugins: { 'test-plugin@marketplace': false },
       };
 
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
+        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
+        return '{}';
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
 
-      const ccSettings = createMockCCSettingsStorage({});
+      const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
 
       await manager.loadPlugins();
@@ -295,16 +393,25 @@ describe('PluginManager', () => {
 
   describe('hasPlugins', () => {
     it('returns true when plugins exist', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': true },
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
       };
 
       mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
+        return String(p) === installedPluginsPath;
       });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
 
-      const ccSettings = createMockCCSettingsStorage({});
+      const ccSettings = createMockCCSettingsStorage();
       const manager = new PluginManager(vaultPath, ccSettings);
 
       await manager.loadPlugins();
@@ -320,94 +427,6 @@ describe('PluginManager', () => {
       await manager.loadPlugins();
 
       expect(manager.hasPlugins()).toBe(false);
-    });
-  });
-
-  describe('enablePlugin', () => {
-    it('enables a disabled plugin', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': false },
-      };
-
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
-      });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
-
-      const ccSettings = createMockCCSettingsStorage({});
-      const manager = new PluginManager(vaultPath, ccSettings);
-
-      await manager.loadPlugins();
-      expect(manager.getPlugins()[0].enabled).toBe(false);
-
-      await manager.enablePlugin('test-plugin');
-
-      expect(manager.getPlugins()[0].enabled).toBe(true);
-      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin', true);
-    });
-
-    it('does nothing if plugin is already enabled', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': true },
-      };
-
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
-      });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
-
-      const ccSettings = createMockCCSettingsStorage({});
-      const manager = new PluginManager(vaultPath, ccSettings);
-
-      await manager.loadPlugins();
-
-      await manager.enablePlugin('test-plugin');
-
-      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('disablePlugin', () => {
-    it('disables an enabled plugin', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': true },
-      };
-
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
-      });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
-
-      const ccSettings = createMockCCSettingsStorage({});
-      const manager = new PluginManager(vaultPath, ccSettings);
-
-      await manager.loadPlugins();
-      expect(manager.getPlugins()[0].enabled).toBe(true);
-
-      await manager.disablePlugin('test-plugin');
-
-      expect(manager.getPlugins()[0].enabled).toBe(false);
-      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin', false);
-    });
-
-    it('does nothing if plugin is already disabled', async () => {
-      const globalSettings = {
-        enabledPlugins: { 'test-plugin': false },
-      };
-
-      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
-        return String(p) === globalSettingsPath;
-      });
-      mockFs.readFileSync.mockReturnValue(JSON.stringify(globalSettings));
-
-      const ccSettings = createMockCCSettingsStorage({});
-      const manager = new PluginManager(vaultPath, ccSettings);
-
-      await manager.loadPlugins();
-
-      await manager.disablePlugin('test-plugin');
-
-      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
     });
   });
 });

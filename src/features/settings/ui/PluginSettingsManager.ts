@@ -76,7 +76,7 @@ export class PluginSettingsManager {
     const nameRow = infoEl.createDiv({ cls: 'claudian-plugin-name-row' });
 
     const nameEl = nameRow.createSpan({ cls: 'claudian-plugin-name' });
-    nameEl.setText(plugin.id);
+    nameEl.setText(plugin.name);
 
     const scopeEl = nameRow.createSpan({ cls: 'claudian-plugin-scope-badge' });
     scopeEl.setText(this.getScopeLabel(plugin.scope));

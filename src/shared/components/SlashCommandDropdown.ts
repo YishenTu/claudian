@@ -17,6 +17,7 @@ const FILTERED_SDK_COMMANDS = new Set([
   'context',
   'cost',
   'init',
+  'keybindings-help',
   'release-notes',
   'security-review',
 ]);

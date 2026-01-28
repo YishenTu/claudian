@@ -387,11 +387,12 @@ export class QueryOptionsBuilder {
   }
 
   /**
-   * Applies custom agents to options (filters out built-ins managed by SDK).
-   * Plugin agents are now handled by SDK via settingSources.
+   * Applies custom agents to options (filters out built-ins and plugin agents).
+   * Built-in agents are managed by SDK. Plugin agents are also managed by SDK
+   * via settingSources - we load them in AgentManager just for UI display.
    */
   private static applyAgents(options: Options, agentManager?: AgentManager): void {
-    const agents = agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin') ?? [];
+    const agents = agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin' && a.source !== 'plugin') ?? [];
     if (agents.length > 0) {
       options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
     }
