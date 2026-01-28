@@ -1,7 +1,7 @@
 /**
  * Agent load order (earlier sources take precedence for duplicate IDs):
  * 0. Built-in agents: dynamically provided via SDK init message
- * 1. Plugin agents: {pluginPath}/agents/*.md (namespaced as plugin-name:agent-name)
+ * 1. Plugin agents: {installPath}/agents/*.md (namespaced as plugin-name:agent-name)
  * 2. Vault agents: {vaultPath}/.claude/agents/*.md
  * 3. Global agents: ~/.claude/agents/*.md
  */
@@ -36,6 +36,10 @@ function makeBuiltinAgent(name: string): AgentDefinition {
     prompt: '', // Built-in — prompt managed by SDK
     source: 'builtin',
   };
+}
+
+function normalizePluginName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-');
 }
 
 export class AgentManager {
@@ -99,12 +103,15 @@ export class AgentManager {
 
   private async loadPluginAgents(): Promise<void> {
     for (const plugin of this.pluginManager.getPlugins()) {
-      if (!plugin.enabled || plugin.status !== 'available') continue;
-      await this.loadAgentsFromDirectory(
-        path.join(plugin.installPath, PLUGIN_AGENTS_DIR),
-        'plugin',
-        plugin.name
-      );
+      if (!plugin.enabled) continue;
+
+      const agentsDir = path.join(plugin.installPath, PLUGIN_AGENTS_DIR);
+      if (!fs.existsSync(agentsDir)) continue;
+
+      for (const filePath of this.listMarkdownFiles(agentsDir)) {
+        const agent = await this.parsePluginAgentFromFile(filePath, plugin.name);
+        if (agent) this.agents.push(agent);
+      }
     }
   }
 
@@ -118,13 +125,12 @@ export class AgentManager {
 
   private async loadAgentsFromDirectory(
     dir: string,
-    source: 'plugin' | 'vault' | 'global',
-    pluginName?: string
+    source: 'vault' | 'global'
   ): Promise<void> {
     if (!fs.existsSync(dir)) return;
 
     for (const filePath of this.listMarkdownFiles(dir)) {
-      const agent = await this.parseAgentFromFile(filePath, source, pluginName);
+      const agent = await this.parseAgentFromFile(filePath, source);
       if (agent) this.agents.push(agent);
     }
   }
@@ -141,16 +147,15 @@ export class AgentManager {
         }
       }
     } catch {
-      // Non-critical: directory listing failed, skip silently
+      // skip silently
     }
 
     return files;
   }
 
-  private async parseAgentFromFile(
+  private async parsePluginAgentFromFile(
     filePath: string,
-    source: 'plugin' | 'vault' | 'global',
-    pluginName?: string
+    pluginName: string
   ): Promise<AgentDefinition | null> {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
@@ -159,16 +164,44 @@ export class AgentManager {
       if (!parsed) return null;
 
       const { frontmatter, body } = parsed;
+      const normalizedPluginName = normalizePluginName(pluginName);
+      const id = `${normalizedPluginName}:${frontmatter.name}`;
 
-      let id: string;
-      if (source === 'plugin' && pluginName) {
-        const normalizedPluginName = pluginName.toLowerCase().replace(/\s+/g, '-');
-        id = `${normalizedPluginName}:${frontmatter.name}`;
-      } else {
-        id = frontmatter.name;
-      }
+      if (this.agents.find(a => a.id === id)) return null;
 
-      // Skip duplicate IDs (earlier sources take precedence)
+      return {
+        id,
+        name: frontmatter.name,
+        description: frontmatter.description,
+        prompt: body,
+        tools: parseToolsList(frontmatter.tools),
+        disallowedTools: parseToolsList(frontmatter.disallowedTools),
+        model: parseModel(frontmatter.model),
+        source: 'plugin',
+        pluginName,
+        filePath,
+        skills: frontmatter.skills,
+        maxTurns: frontmatter.maxTurns,
+        mcpServers: frontmatter.mcpServers,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async parseAgentFromFile(
+    filePath: string,
+    source: 'vault' | 'global'
+  ): Promise<AgentDefinition | null> {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const parsed = parseAgentFile(content);
+
+      if (!parsed) return null;
+
+      const { frontmatter, body } = parsed;
+      const id = frontmatter.name;
+
       if (this.agents.find(a => a.id === id)) return null;
 
       return {
@@ -180,14 +213,12 @@ export class AgentManager {
         disallowedTools: parseToolsList(frontmatter.disallowedTools),
         model: parseModel(frontmatter.model),
         source,
-        pluginName: source === 'plugin' ? pluginName : undefined,
         filePath,
         skills: frontmatter.skills,
         maxTurns: frontmatter.maxTurns,
         mcpServers: frontmatter.mcpServers,
       };
     } catch {
-      // Non-critical: agent file failed to load, skip silently
       return null;
     }
   }

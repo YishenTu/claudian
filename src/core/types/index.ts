@@ -111,11 +111,7 @@ export {
   type ClaudianPlugin,
   type InstalledPluginEntry,
   type InstalledPluginsFile,
-  type MarketplaceManifest,
-  type MarketplacePluginEntry,
-  type PluginManifest,
   type PluginScope,
-  type PluginStatus,
 } from './plugins';
 
 // Agent types

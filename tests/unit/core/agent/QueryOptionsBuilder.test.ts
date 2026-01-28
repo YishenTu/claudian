@@ -623,17 +623,17 @@ describe('QueryOptionsBuilder', () => {
     it('filters out plugin-sourced agents from cold-start options', () => {
       const agentManager = createMockAgentManager([
         {
-          id: 'my-plugin:review',
-          name: 'review',
-          description: 'Plugin agent',
+          id: 'pr-review:code-reviewer',
+          name: 'Code Reviewer',
+          description: 'Reviews code',
           prompt: 'Review prompt',
           source: 'plugin',
         },
         {
-          id: 'vault-agent',
-          name: 'Vault Agent',
-          description: 'Vault agent',
-          prompt: 'Vault prompt',
+          id: 'custom-cold',
+          name: 'Custom Cold',
+          description: 'Custom agent',
+          prompt: 'Custom prompt',
           source: 'vault',
         },
       ]);
@@ -647,8 +647,8 @@ describe('QueryOptionsBuilder', () => {
       };
       const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
 
-      expect(options.agents?.['my-plugin:review']).toBeUndefined();
-      expect(options.agents?.['vault-agent']).toBeDefined();
+      expect(options.agents?.['pr-review:code-reviewer']).toBeUndefined();
+      expect(options.agents?.['custom-cold']).toBeDefined();
     });
 
     it('converts inherit model to undefined in cold-start agents', () => {
@@ -807,17 +807,17 @@ describe('QueryOptionsBuilder', () => {
     it('filters out plugin-sourced agents from SDK options', () => {
       const agentManager = createMockAgentManager([
         {
-          id: 'my-plugin:review',
-          name: 'review',
-          description: 'Plugin agent',
+          id: 'pr-review:code-reviewer',
+          name: 'Code Reviewer',
+          description: 'Reviews code',
           prompt: 'Review prompt',
           source: 'plugin',
         },
         {
-          id: 'vault-agent',
-          name: 'Vault Agent',
-          description: 'Vault agent',
-          prompt: 'Vault prompt',
+          id: 'custom-agent',
+          name: 'Custom Agent',
+          description: 'Custom agent',
+          prompt: 'Custom prompt',
           source: 'vault',
         },
       ]);
@@ -830,8 +830,8 @@ describe('QueryOptionsBuilder', () => {
       };
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
-      expect(options.agents?.['my-plugin:review']).toBeUndefined();
-      expect(options.agents?.['vault-agent']).toBeDefined();
+      expect(options.agents?.['pr-review:code-reviewer']).toBeUndefined();
+      expect(options.agents?.['custom-agent']).toBeDefined();
     });
 
     it('includes tools and disallowedTools in SDK agents', () => {

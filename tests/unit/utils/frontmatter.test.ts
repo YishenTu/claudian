@@ -91,6 +91,38 @@ Prompt`;
     expect(result!.frontmatter.count).toBe(5);
     expect(result!.body).toBe('Prompt');
   });
+
+  it('falls back to lenient parsing when YAML has unquoted colons', () => {
+    // This mimics pr-review-toolkit agents with unquoted descriptions containing colons
+    const content = `---
+name: code-reviewer
+description: Use this agent when reviewing. Examples: Context: The user said something. user: hello
+model: opus
+---
+You are a code reviewer.`;
+
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.name).toBe('code-reviewer');
+    // Fallback parser takes first colon-space as separator, so description includes the rest
+    expect(result!.frontmatter.description).toContain('Use this agent');
+    expect(result!.frontmatter.model).toBe('opus');
+    expect(result!.body).toBe('You are a code reviewer.');
+  });
+
+  it('fallback parser handles inline arrays', () => {
+    const content = `---
+name: test-agent
+description: A test agent
+tools: [Read, Grep, Glob]
+---
+Body`;
+
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.name).toBe('test-agent');
+    expect(result!.frontmatter.tools).toEqual(['Read', 'Grep', 'Glob']);
+  });
 });
 
 describe('extractString', () => {

@@ -8,9 +8,22 @@ jest.mock('os', () => ({
 }));
 
 import { AgentManager } from '@/core/agents/AgentManager';
-import type { ClaudianPlugin } from '@/core/types';
+import type { PluginManager } from '@/core/plugins/PluginManager';
 
 const mockFs = jest.mocked(fs);
+
+// Create a mock PluginManager
+function createMockPluginManager(plugins: Array<{ name: string; enabled: boolean; installPath: string }> = []): PluginManager {
+  return {
+    getPlugins: jest.fn().mockReturnValue(plugins.map(p => ({
+      id: `${p.name}@test`,
+      name: p.name,
+      enabled: p.enabled,
+      scope: 'user' as const,
+      installPath: p.installPath,
+    }))),
+  } as unknown as PluginManager;
+}
 
 // Helper to create mock Dirent objects
 function createMockDirent(name: string, isFile: boolean): fs.Dirent {
@@ -28,22 +41,6 @@ function createMockDirent(name: string, isFile: boolean): fs.Dirent {
   } as fs.Dirent;
 }
 
-// Create a mock PluginManager
-function createMockPluginManager(plugins: Partial<ClaudianPlugin>[] = []) {
-  return {
-    getPlugins: jest.fn().mockReturnValue(
-      plugins.map(p => ({
-        id: p.id || 'test-plugin',
-        name: p.name || 'Test Plugin',
-        installPath: p.installPath || '/path/to/plugin',
-        enabled: p.enabled ?? false,
-        status: p.status || 'available',
-        ...p,
-      }))
-    ),
-  } as any;
-}
-
 // Sample agent file content
 const VALID_AGENT_FILE = `---
 name: TestAgent
@@ -59,6 +56,14 @@ name: MinimalAgent
 description: Minimal agent
 ---
 Simple prompt.`;
+
+const PLUGIN_AGENT_FILE = `---
+name: code-reviewer
+description: Reviews code for issues
+tools: [Read, Grep]
+model: sonnet
+---
+You review code.`;
 
 const INVALID_AGENT_FILE = `---
 name: [InvalidName]
@@ -80,9 +85,8 @@ describe('AgentManager', () => {
   });
 
   describe('constructor', () => {
-    it('creates an AgentManager with vault path and plugin manager', () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+    it('creates an AgentManager with vault path', () => {
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       expect(manager).toBeInstanceOf(AgentManager);
     });
@@ -90,8 +94,7 @@ describe('AgentManager', () => {
 
   describe('loadAgents', () => {
     it('includes built-in agents by default', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const agents = manager.getAvailableAgents();
@@ -104,8 +107,7 @@ describe('AgentManager', () => {
     });
 
     it('built-in agents have correct properties', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const explore = manager.getAgentById('Explore');
@@ -117,8 +119,7 @@ describe('AgentManager', () => {
     });
 
     it('loads agents from vault directory', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -142,8 +143,7 @@ describe('AgentManager', () => {
     });
 
     it('loads agents from global directory', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === GLOBAL_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -162,79 +162,8 @@ describe('AgentManager', () => {
       expect(globalAgent?.source).toBe('global');
     });
 
-    it('loads agents from enabled plugins with namespace', async () => {
-      const pluginManager = createMockPluginManager([
-        {
-          id: 'my-plugin',
-          name: 'My Plugin',
-          installPath: '/plugins/my-plugin',
-          enabled: true,
-          status: 'available',
-        },
-      ]);
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
-      const pluginAgentsDir = path.join('/plugins/my-plugin', 'agents');
-
-      mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
-      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
-        if (dir === pluginAgentsDir) {
-          return [createMockDirent('plugin-agent.md', true)];
-        }
-        return [];
-      });
-      mockFs.readFileSync.mockReturnValue(VALID_AGENT_FILE);
-
-      await manager.loadAgents();
-      const agents = manager.getAvailableAgents();
-
-      // Plugin agents should be namespaced
-      const pluginAgent = agents.find(a => a.id === 'my-plugin:TestAgent');
-      expect(pluginAgent).toBeDefined();
-      expect(pluginAgent?.source).toBe('plugin');
-      expect(pluginAgent?.pluginName).toBe('My Plugin');
-    });
-
-    it('skips disabled plugins', async () => {
-      const pluginManager = createMockPluginManager([
-        {
-          id: 'disabled-plugin',
-          name: 'Disabled Plugin',
-          installPath: '/plugins/disabled',
-          enabled: false,
-          status: 'available',
-        },
-      ]);
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
-
-      await manager.loadAgents();
-      const agents = manager.getAvailableAgents();
-
-      // Should only have built-in agents
-      expect(agents.every(a => a.source === 'builtin')).toBe(true);
-    });
-
-    it('skips unavailable plugins', async () => {
-      const pluginManager = createMockPluginManager([
-        {
-          id: 'unavailable-plugin',
-          name: 'Unavailable Plugin',
-          installPath: '/plugins/unavailable',
-          enabled: true,
-          status: 'unavailable',
-        },
-      ]);
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
-
-      await manager.loadAgents();
-      const agents = manager.getAvailableAgents();
-
-      // Should only have built-in agents
-      expect(agents.every(a => a.source === 'builtin')).toBe(true);
-    });
-
     it('skips invalid agent files', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -253,8 +182,7 @@ describe('AgentManager', () => {
     });
 
     it('skips duplicate agent IDs', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       // Both vault and global have same agent name
       mockFs.existsSync.mockReturnValue(true);
@@ -273,8 +201,7 @@ describe('AgentManager', () => {
     });
 
     it('handles directory read errors gracefully', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readdirSync.mockImplementation(() => {
@@ -289,8 +216,7 @@ describe('AgentManager', () => {
     });
 
     it('handles file read errors gracefully', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -311,8 +237,7 @@ describe('AgentManager', () => {
     });
 
     it('ignores non-markdown files', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -336,8 +261,7 @@ describe('AgentManager', () => {
     });
 
     it('ignores directories', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -358,12 +282,129 @@ describe('AgentManager', () => {
       const vaultAgents = agents.filter(a => a.source === 'vault');
       expect(vaultAgents.length).toBe(1);
     });
+
+    it('loads plugin agents with namespaced IDs', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'PR Review Toolkit', enabled: true, installPath: '/plugins/pr-review' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const pluginAgentsDir = path.join('/plugins/pr-review', 'agents');
+
+      mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir === pluginAgentsDir) {
+          return [createMockDirent('reviewer.md', true)];
+        }
+        return [];
+      });
+      mockFs.readFileSync.mockReturnValue(PLUGIN_AGENT_FILE);
+
+      await manager.loadAgents();
+      const agents = manager.getAvailableAgents();
+
+      const pluginAgent = agents.find(a => a.source === 'plugin');
+      expect(pluginAgent).toBeDefined();
+      expect(pluginAgent?.id).toBe('pr-review-toolkit:code-reviewer');
+      expect(pluginAgent?.name).toBe('code-reviewer');
+      expect(pluginAgent?.description).toBe('Reviews code for issues');
+      expect(pluginAgent?.tools).toEqual(['Read', 'Grep']);
+      expect(pluginAgent?.model).toBe('sonnet');
+      expect(pluginAgent?.pluginName).toBe('PR Review Toolkit');
+    });
+
+    it('skips disabled plugins', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'Disabled Plugin', enabled: false, installPath: '/plugins/disabled' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+
+      await manager.loadAgents();
+      const agents = manager.getAvailableAgents();
+
+      expect(agents.every(a => a.source !== 'plugin')).toBe(true);
+    });
+
+    it('skips plugins without agents directory', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'No Agents', enabled: true, installPath: '/plugins/no-agents' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+
+      mockFs.existsSync.mockReturnValue(false);
+
+      await manager.loadAgents();
+      const agents = manager.getAvailableAgents();
+
+      expect(agents.every(a => a.source !== 'plugin')).toBe(true);
+    });
+
+    it('normalizes plugin name to lowercase with hyphens in agent ID', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'My  Cool  Plugin', enabled: true, installPath: '/plugins/cool' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const pluginAgentsDir = path.join('/plugins/cool', 'agents');
+
+      mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir === pluginAgentsDir) {
+          return [createMockDirent('agent.md', true)];
+        }
+        return [];
+      });
+      mockFs.readFileSync.mockReturnValue(PLUGIN_AGENT_FILE);
+
+      await manager.loadAgents();
+      const pluginAgent = manager.getAvailableAgents().find(a => a.source === 'plugin');
+
+      expect(pluginAgent?.id).toBe('my-cool-plugin:code-reviewer');
+    });
+
+    it('skips duplicate plugin agent IDs', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'Plugin A', enabled: true, installPath: '/plugins/a' },
+        { name: 'Plugin A', enabled: true, installPath: '/plugins/a-copy' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+
+      mockFs.existsSync.mockReturnValue(true);
+      (mockFs.readdirSync as jest.Mock).mockReturnValue([createMockDirent('agent.md', true)]);
+      mockFs.readFileSync.mockReturnValue(PLUGIN_AGENT_FILE);
+
+      await manager.loadAgents();
+      const pluginAgents = manager.getAvailableAgents().filter(a => a.source === 'plugin');
+
+      expect(pluginAgents.length).toBe(1);
+    });
+
+    it('handles malformed plugin agent files gracefully', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'Bad Plugin', enabled: true, installPath: '/plugins/bad' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const pluginAgentsDir = path.join('/plugins/bad', 'agents');
+
+      mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir === pluginAgentsDir) {
+          return [createMockDirent('broken.md', true)];
+        }
+        return [];
+      });
+      mockFs.readFileSync.mockImplementation(() => {
+        throw new Error('Read error');
+      });
+
+      await manager.loadAgents();
+      const agents = manager.getAvailableAgents();
+
+      expect(agents.every(a => a.source !== 'plugin')).toBe(true);
+    });
   });
 
   describe('getAvailableAgents', () => {
     it('returns a copy of the agents array', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const agents1 = manager.getAvailableAgents();
@@ -376,8 +417,7 @@ describe('AgentManager', () => {
 
   describe('getAgentById', () => {
     it('returns agent by exact ID match', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const agent = manager.getAgentById('Explore');
@@ -387,49 +427,18 @@ describe('AgentManager', () => {
     });
 
     it('returns undefined for non-existent ID', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const agent = manager.getAgentById('NonExistent');
 
       expect(agent).toBeUndefined();
     });
-
-    it('matches namespaced plugin agent IDs', async () => {
-      const pluginManager = createMockPluginManager([
-        {
-          id: 'my-plugin',
-          name: 'My Plugin',
-          installPath: '/plugins/my-plugin',
-          enabled: true,
-          status: 'available',
-        },
-      ]);
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
-      const pluginAgentsDir = path.join('/plugins/my-plugin', 'agents');
-
-      mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
-      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
-        if (dir === pluginAgentsDir) {
-          return [createMockDirent('plugin-agent.md', true)];
-        }
-        return [];
-      });
-      mockFs.readFileSync.mockReturnValue(VALID_AGENT_FILE);
-
-      await manager.loadAgents();
-      const agent = manager.getAgentById('my-plugin:TestAgent');
-
-      expect(agent).toBeDefined();
-      expect(agent?.id).toBe('my-plugin:TestAgent');
-    });
   });
 
   describe('searchAgents', () => {
     it('searches by name (case-insensitive)', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const results = manager.searchAgents('explore');
@@ -439,8 +448,7 @@ describe('AgentManager', () => {
     });
 
     it('searches by ID', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const results = manager.searchAgents('general-purpose');
@@ -450,8 +458,7 @@ describe('AgentManager', () => {
     });
 
     it('searches by description', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const results = manager.searchAgents('codebase');
@@ -461,8 +468,7 @@ describe('AgentManager', () => {
     });
 
     it('returns empty array for no matches', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       const results = manager.searchAgents('xyznonexistent');
@@ -471,8 +477,7 @@ describe('AgentManager', () => {
     });
 
     it('returns multiple matches', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       await manager.loadAgents();
       // 'a' should match multiple built-in agents
@@ -482,41 +487,9 @@ describe('AgentManager', () => {
     });
   });
 
-  describe('plugin name normalization', () => {
-    it('normalizes plugin names with spaces', async () => {
-      const pluginManager = createMockPluginManager([
-        {
-          id: 'my-plugin',
-          name: 'My Awesome Plugin',
-          installPath: '/plugins/my-plugin',
-          enabled: true,
-          status: 'available',
-        },
-      ]);
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
-      const pluginAgentsDir = path.join('/plugins/my-plugin', 'agents');
-
-      mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
-      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
-        if (dir === pluginAgentsDir) {
-          return [createMockDirent('agent.md', true)];
-        }
-        return [];
-      });
-      mockFs.readFileSync.mockReturnValue(VALID_AGENT_FILE);
-
-      await manager.loadAgents();
-      const agent = manager.getAgentById('my-awesome-plugin:TestAgent');
-
-      expect(agent).toBeDefined();
-      expect(agent?.id).toBe('my-awesome-plugin:TestAgent');
-    });
-  });
-
   describe('agent with missing optional fields', () => {
     it('handles agents without tools specification', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
@@ -539,8 +512,7 @@ describe('AgentManager', () => {
 
   describe('setBuiltinAgentNames', () => {
     it('updates built-in agents from init message names', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
       mockFs.existsSync.mockReturnValue(false);
 
       await manager.loadAgents();
@@ -554,8 +526,7 @@ describe('AgentManager', () => {
     });
 
     it('excludes file-loaded agents from built-in list', async () => {
-      const pluginManager = createMockPluginManager();
-      const manager = new AgentManager(VAULT_PATH, pluginManager);
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 
       // Vault has an agent file matching an init agent name
       mockFs.existsSync.mockReturnValue(true);
