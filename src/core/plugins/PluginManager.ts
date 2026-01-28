@@ -11,7 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
-import type { ClaudianPlugin, InstalledPluginsFile, PluginScope } from '../types';
+import type { ClaudianPlugin, InstalledPluginEntry, InstalledPluginsFile, PluginScope } from '../types';
 
 const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
 const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
@@ -30,6 +30,34 @@ function readJsonFile<T>(filePath: string): T | null {
   } catch {
     return null;
   }
+}
+
+function normalizePathForComparison(p: string): string {
+  try {
+    const resolved = fs.realpathSync(p);
+    if (typeof resolved === 'string' && resolved.length > 0) {
+      return resolved;
+    }
+  } catch {
+    // ignore
+  }
+
+  return path.resolve(p);
+}
+
+function selectInstalledPluginEntry(
+  entries: InstalledPluginEntry[],
+  normalizedVaultPath: string
+): InstalledPluginEntry | null {
+  for (const entry of entries) {
+    if (entry.scope !== 'project') continue;
+    if (!entry.projectPath) continue;
+    if (normalizePathForComparison(entry.projectPath) === normalizedVaultPath) {
+      return entry;
+    }
+  }
+
+  return entries.find(e => e.scope === 'user') ?? null;
 }
 
 function extractPluginName(pluginId: string): string {
@@ -59,12 +87,14 @@ export class PluginManager {
     const projectEnabled = projectSettings?.enabledPlugins ?? {};
 
     const plugins: ClaudianPlugin[] = [];
+    const normalizedVaultPath = normalizePathForComparison(this.vaultPath);
 
     if (installedPlugins?.plugins) {
       for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
         if (!entries || entries.length === 0) continue;
 
-        const entry = entries[0];
+        const entry = selectInstalledPluginEntry(entries, normalizedVaultPath);
+        if (!entry) continue;
 
         const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';
 
@@ -120,7 +150,7 @@ export class PluginManager {
       return '';
     }
 
-    return enabledPlugins.map((p) => p.id).join('|');
+    return enabledPlugins.map((p) => `${p.id}:${p.installPath}`).join('|');
   }
 
   /** Writes to project .claude/settings.json so CLI respects the state. */

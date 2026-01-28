@@ -620,6 +620,37 @@ describe('QueryOptionsBuilder', () => {
       expect(options.agents?.['custom-cold']).toBeDefined();
     });
 
+    it('filters out plugin-sourced agents from cold-start options', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'pr-review:code-reviewer',
+          name: 'Code Reviewer',
+          description: 'Reviews code',
+          prompt: 'Review prompt',
+          source: 'plugin',
+        },
+        {
+          id: 'custom-cold',
+          name: 'Custom Cold',
+          description: 'Custom agent',
+          prompt: 'Custom prompt',
+          source: 'vault',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+
+      expect(options.agents?.['pr-review:code-reviewer']).toBeUndefined();
+      expect(options.agents?.['custom-cold']).toBeDefined();
+    });
+
     it('converts inherit model to undefined in cold-start agents', () => {
       const agentManager = createMockAgentManager([
         {
@@ -770,6 +801,36 @@ describe('QueryOptionsBuilder', () => {
       // Built-in should be filtered out
       expect(options.agents?.['Explore']).toBeUndefined();
       // Custom should be included
+      expect(options.agents?.['custom-agent']).toBeDefined();
+    });
+
+    it('filters out plugin-sourced agents from SDK options', () => {
+      const agentManager = createMockAgentManager([
+        {
+          id: 'pr-review:code-reviewer',
+          name: 'Code Reviewer',
+          description: 'Reviews code',
+          prompt: 'Review prompt',
+          source: 'plugin',
+        },
+        {
+          id: 'custom-agent',
+          name: 'Custom Agent',
+          description: 'Custom agent',
+          prompt: 'Custom prompt',
+          source: 'vault',
+        },
+      ]);
+
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        agentManager,
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.agents?.['pr-review:code-reviewer']).toBeUndefined();
       expect(options.agents?.['custom-agent']).toBeDefined();
     });
 

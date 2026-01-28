@@ -214,6 +214,74 @@ describe('PluginManager', () => {
       expect(plugins[0].scope).toBe('project');
       expect(plugins[1].scope).toBe('user');
     });
+
+    it('excludes project plugins installed for other vaults', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'other-project-plugin@marketplace': [{
+            scope: 'project',
+            installPath: '/path/to/other-project-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+            projectPath: '/Users/testuser/Documents/other-vault',
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      expect(manager.getPlugins()).toEqual([]);
+    });
+
+    it('prefers project plugin entry for the current vault', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'multi-scope-plugin@marketplace': [
+            {
+              scope: 'user',
+              installPath: '/path/to/user-install',
+              version: '1.0.0',
+              installedAt: '2026-01-01T00:00:00.000Z',
+              lastUpdated: '2026-01-01T00:00:00.000Z',
+            },
+            {
+              scope: 'project',
+              installPath: '/path/to/project-install',
+              version: '1.0.0',
+              installedAt: '2026-01-01T00:00:00.000Z',
+              lastUpdated: '2026-01-01T00:00:00.000Z',
+              projectPath: vaultPath,
+            },
+          ],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      const plugins = manager.getPlugins();
+      expect(plugins.length).toBe(1);
+      expect(plugins[0].scope).toBe('project');
+      expect(plugins[0].installPath).toBe('/path/to/project-install');
+    });
   });
 
   describe('togglePlugin', () => {
@@ -326,7 +394,7 @@ describe('PluginManager', () => {
 
       const key = manager.getPluginsKey();
       // Should be sorted alphabetically by ID
-      expect(key).toBe('plugin-a@marketplace|plugin-b@marketplace');
+      expect(key).toBe('plugin-a@marketplace:/path/to/plugin-a|plugin-b@marketplace:/path/to/plugin-b');
     });
   });
 

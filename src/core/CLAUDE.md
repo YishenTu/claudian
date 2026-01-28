@@ -12,7 +12,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `hooks/` | Security hooks | `SecurityHooks` |
 | `images/` | Image caching | SHA-256 dedup, base64 encoding |
 | `mcp/` | Model Context Protocol | `McpServerManager`, `McpTester` |
-| `plugins/` | Claude Code plugins | `PluginManager`, `PluginStorage` |
+| `plugins/` | Claude Code plugins | `PluginManager` |
 | `prompts/` | System prompts | `mainAgent`, `inlineEdit`, `instructionRefine`, `titleGeneration` |
 | `sdk/` | SDK message transform | `transformSDKMessage`, `typeGuards`, `types` |
 | `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
