@@ -2,12 +2,8 @@
  * PluginManager - Discover and manage Claude Code plugins.
  *
  * Plugins are discovered from two sources:
- * - installed_plugins.json: provides install paths for scanning agents
- * - settings.json: provides enabled state (global + project)
- *
- * Merge logic for enabled state:
- * - All plugins with `true` from either scope are discoverable
- * - Project `false` can disable a globally-enabled plugin
+ * - installed_plugins.json: install paths for scanning agents
+ * - settings.json: enabled state (project overrides global)
  */
 
 import * as fs from 'fs';
@@ -37,7 +33,6 @@ function readJsonFile<T>(filePath: string): T | null {
 }
 
 function extractPluginName(pluginId: string): string {
-  // Plugin ID format: "plugin-name@source"
   const atIndex = pluginId.indexOf('@');
   if (atIndex > 0) {
     return pluginId.substring(0, atIndex);
@@ -55,16 +50,8 @@ export class PluginManager {
     this.ccSettingsStorage = ccSettingsStorage;
   }
 
-  /**
-   * Load plugins from installed_plugins.json and settings.json files.
-   * - Install paths come from installed_plugins.json
-   * - Enabled state comes from settings.json (merged global + project)
-   */
   async loadPlugins(): Promise<void> {
-    // Read installed plugins for paths
     const installedPlugins = readJsonFile<InstalledPluginsFile>(INSTALLED_PLUGINS_PATH);
-
-    // Read enabled state from settings
     const globalSettings = readJsonFile<SettingsFile>(GLOBAL_SETTINGS_PATH);
     const projectSettings = await this.loadProjectSettings();
 
@@ -73,37 +60,16 @@ export class PluginManager {
 
     const plugins: ClaudianPlugin[] = [];
 
-    // Process each installed plugin
     if (installedPlugins?.plugins) {
       for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
         if (!entries || entries.length === 0) continue;
 
-        // Use the first (most recent) entry for install path
         const entry = entries[0];
 
-        // Determine enabled state from settings
-        const globalValue = globalEnabled[pluginId];
-        const projectValue = projectEnabled[pluginId];
-
-        // Scope reflects where the plugin was installed (from installed_plugins.json)
         const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';
 
-        // Determine enabled state:
-        // - Project `false` always disables (even if globally enabled)
-        // - Otherwise, use the most specific setting
-        let enabled: boolean;
-        if (projectValue === false) {
-          enabled = false;
-        } else if (projectValue === true) {
-          enabled = true;
-        } else if (globalValue === true) {
-          enabled = true;
-        } else if (globalValue === false) {
-          enabled = false;
-        } else {
-          // Not in settings - default to enabled if installed
-          enabled = true;
-        }
+        // Project setting takes precedence, then global, then default enabled
+        const enabled = projectEnabled[pluginId] ?? globalEnabled[pluginId] ?? true;
 
         plugins.push({
           id: pluginId,
@@ -115,7 +81,6 @@ export class PluginManager {
       }
     }
 
-    // Sort: project first, then user; alphabetically within each group
     this.plugins = plugins.sort((a, b) => {
       if (a.scope !== b.scope) {
         return a.scope === 'project' ? -1 : 1;
@@ -129,10 +94,6 @@ export class PluginManager {
     return readJsonFile(projectSettingsPath);
   }
 
-  /**
-   * Get all discovered plugins.
-   * Returns a copy of the plugins array.
-   */
   getPlugins(): ClaudianPlugin[] {
     return [...this.plugins];
   }
@@ -149,10 +110,7 @@ export class PluginManager {
     return this.plugins.filter((p) => p.enabled).length;
   }
 
-  /**
-   * Get a stable key representing enabled plugin configuration.
-   * Used to detect changes that require restarting the persistent query.
-   */
+  /** Used to detect changes that require restarting the persistent query. */
   getPluginsKey(): string {
     const enabledPlugins = this.plugins
       .filter((p) => p.enabled)
@@ -165,10 +123,7 @@ export class PluginManager {
     return enabledPlugins.map((p) => p.id).join('|');
   }
 
-  /**
-   * Toggle a plugin's enabled state.
-   * Writes to project .claude/settings.json so CLI respects the state.
-   */
+  /** Writes to project .claude/settings.json so CLI respects the state. */
   async togglePlugin(pluginId: string): Promise<void> {
     const plugin = this.plugins.find((p) => p.id === pluginId);
     if (!plugin) {

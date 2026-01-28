@@ -147,7 +147,7 @@ export class AgentManager {
         }
       }
     } catch {
-      // Non-critical: directory listing failed, skip silently
+      // skip silently
     }
 
     return files;
@@ -167,7 +167,6 @@ export class AgentManager {
       const normalizedPluginName = normalizePluginName(pluginName);
       const id = `${normalizedPluginName}:${frontmatter.name}`;
 
-      // Skip duplicate IDs (earlier sources take precedence)
       if (this.agents.find(a => a.id === id)) return null;
 
       return {
@@ -186,7 +185,6 @@ export class AgentManager {
         mcpServers: frontmatter.mcpServers,
       };
     } catch {
-      // Non-critical: agent file failed to load, skip silently
       return null;
     }
   }
@@ -204,7 +202,6 @@ export class AgentManager {
       const { frontmatter, body } = parsed;
       const id = frontmatter.name;
 
-      // Skip duplicate IDs (earlier sources take precedence)
       if (this.agents.find(a => a.id === id)) return null;
 
       return {
@@ -222,7 +219,6 @@ export class AgentManager {
         mcpServers: frontmatter.mcpServers,
       };
     } catch {
-      // Non-critical: agent file failed to load, skip silently
       return null;
     }
   }

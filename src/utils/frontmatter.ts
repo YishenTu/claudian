@@ -2,10 +2,7 @@ import { parseYaml } from 'obsidian';
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
-/**
- * Fallback parser for YAML frontmatter that handles unquoted values with colons.
- * Extracts key-value pairs line by line, treating the first colon as the separator.
- */
+/** Handles malformed YAML (e.g. unquoted values with colons) by line-by-line key:value extraction. */
 function parseFrontmatterFallback(yamlContent: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const lines = yamlContent.split('\n');
@@ -14,10 +11,8 @@ function parseFrontmatterFallback(yamlContent: string): Record<string, unknown> 
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
-    // Find the first colon followed by a space (YAML key-value separator)
     const colonIndex = trimmed.indexOf(': ');
     if (colonIndex === -1) {
-      // Try just colon at the end (empty value)
       if (trimmed.endsWith(':')) {
         const key = trimmed.slice(0, -1).trim();
         if (key && /^[\w-]+$/.test(key)) {
@@ -30,15 +25,12 @@ function parseFrontmatterFallback(yamlContent: string): Record<string, unknown> 
     const key = trimmed.slice(0, colonIndex).trim();
     let value: unknown = trimmed.slice(colonIndex + 2);
 
-    // Only accept simple alphanumeric keys (avoid nested YAML confusion)
     if (!key || !/^[\w-]+$/.test(key)) continue;
 
-    // Parse simple values
     if (value === 'true') value = true;
     else if (value === 'false') value = false;
     else if (value === 'null' || value === '') value = null;
     else if (!isNaN(Number(value)) && value !== '') value = Number(value);
-    // Handle arrays like [a, b, c]
     else if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
       value = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
     }
@@ -55,7 +47,6 @@ export function parseFrontmatter(
   const match = content.match(FRONTMATTER_PATTERN);
   if (!match) return null;
 
-  // Try strict YAML parsing first
   try {
     const parsed = parseYaml(match[1]);
     if (parsed !== null && parsed !== undefined && typeof parsed !== 'object') {
@@ -66,7 +57,6 @@ export function parseFrontmatter(
       body: match[2],
     };
   } catch {
-    // Fallback to lenient line-by-line parsing
     const fallbackParsed = parseFrontmatterFallback(match[1]);
     if (Object.keys(fallbackParsed).length > 0) {
       return {
