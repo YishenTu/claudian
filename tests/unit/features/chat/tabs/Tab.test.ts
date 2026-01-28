@@ -605,6 +605,26 @@ describe('Tab - Destruction', () => {
       expect(tab.dom.eventCleanups.length).toBe(0);
     });
 
+    it('should unsubscribe from ready state changes when tab is destroyed', async () => {
+      const unsubscribeFn = jest.fn();
+      const mockOnReadyStateChange = jest.fn(() => unsubscribeFn);
+
+      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
+      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ onReadyStateChange: mockOnReadyStateChange }));
+
+      const options = createMockOptions();
+      const tab = createTab(options);
+      initializeTabUI(tab, options.plugin);
+
+      await initializeTabService(tab, options.plugin, options.mcpManager);
+
+      expect(mockOnReadyStateChange).toHaveBeenCalled();
+
+      await destroyTab(tab);
+
+      expect(unsubscribeFn).toHaveBeenCalled();
+    });
+
     it('should close service persistent query', async () => {
       const mockClosePersistentQuery = jest.fn();
       const options = createMockOptions();
