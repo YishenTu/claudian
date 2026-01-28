@@ -38,6 +38,7 @@ export class ModelSelector {
   private buttonEl: HTMLElement | null = null;
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
+  private isReady = false;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -77,6 +78,7 @@ export class ModelSelector {
     this.container.empty();
 
     this.buttonEl = this.container.createDiv({ cls: 'claudian-model-btn' });
+    this.setReady(this.isReady);
     this.updateDisplay();
 
     this.dropdownEl = this.container.createDiv({ cls: 'claudian-model-dropdown' });
@@ -95,6 +97,11 @@ export class ModelSelector {
 
     const labelEl = this.buttonEl.createSpan({ cls: 'claudian-model-label' });
     labelEl.setText(displayModel?.label || 'Unknown');
+  }
+
+  setReady(ready: boolean) {
+    this.isReady = ready;
+    this.buttonEl?.toggleClass('ready', ready);
   }
 
   renderOptions() {

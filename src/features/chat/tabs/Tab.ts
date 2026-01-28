@@ -239,10 +239,15 @@ export async function initializeTabService(
   }
 
   let service: ClaudianService | null = null;
+  let unsubscribeReadyState: (() => void) | null = null;
 
   try {
     // Create per-tab ClaudianService
     service = new ClaudianService(plugin, mcpManager);
+    unsubscribeReadyState = service.onReadyStateChange((ready) => {
+      tab.ui.modelSelector?.setReady(ready);
+    });
+    tab.dom.eventCleanups.push(() => unsubscribeReadyState?.());
 
     // Resolve session ID and external contexts from conversation if this is an existing chat
     // Single source of truth: tab.conversationId determines if we have a session to resume
@@ -274,6 +279,7 @@ export async function initializeTabService(
     tab.serviceInitialized = true;
   } catch (error) {
     // Clean up partial state on failure
+    unsubscribeReadyState?.();
     service?.closePersistentQuery('initialization failed');
     tab.service = null;
     tab.serviceInitialized = false;

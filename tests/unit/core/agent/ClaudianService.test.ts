@@ -511,6 +511,96 @@ describe('ClaudianService', () => {
     });
   });
 
+  describe('Ready State Change Listeners', () => {
+    it('should call listener immediately with current ready state on subscribe', () => {
+      const listener = jest.fn();
+
+      service.onReadyStateChange(listener);
+
+      expect(listener).toHaveBeenCalledWith(false);
+    });
+
+    it('should call listener with true when service is ready', () => {
+      (service as any).persistentQuery = {};
+      (service as any).shuttingDown = false;
+
+      const listener = jest.fn();
+      service.onReadyStateChange(listener);
+
+      expect(listener).toHaveBeenCalledWith(true);
+    });
+
+    it('should return unsubscribe function that removes listener', () => {
+      const listener = jest.fn();
+      const unsubscribe = service.onReadyStateChange(listener);
+
+      unsubscribe();
+
+      expect((service as any).readyStateListeners.has(listener)).toBe(false);
+    });
+
+    it('should notify multiple listeners when ready state changes', () => {
+      const listener1 = jest.fn();
+      const listener2 = jest.fn();
+
+      service.onReadyStateChange(listener1);
+      service.onReadyStateChange(listener2);
+
+      listener1.mockClear();
+      listener2.mockClear();
+
+      (service as any).notifyReadyStateChange();
+
+      expect(listener1).toHaveBeenCalledWith(false);
+      expect(listener2).toHaveBeenCalledWith(false);
+    });
+
+    it('should not call unsubscribed listeners on notify', () => {
+      const listener1 = jest.fn();
+      const listener2 = jest.fn();
+
+      service.onReadyStateChange(listener1);
+      const unsubscribe2 = service.onReadyStateChange(listener2);
+
+      listener1.mockClear();
+      listener2.mockClear();
+
+      unsubscribe2();
+      (service as any).notifyReadyStateChange();
+
+      expect(listener1).toHaveBeenCalled();
+      expect(listener2).not.toHaveBeenCalled();
+    });
+
+    it('should isolate listener errors and continue notifying other listeners', () => {
+      const errorListener = jest.fn().mockImplementation(() => {
+        throw new Error('Listener error');
+      });
+      const normalListener = jest.fn();
+
+      service.onReadyStateChange(errorListener);
+      service.onReadyStateChange(normalListener);
+
+      normalListener.mockClear();
+
+      expect(() => (service as any).notifyReadyStateChange()).not.toThrow();
+      expect(normalListener).toHaveBeenCalledWith(false);
+    });
+
+    it('should isolate errors on immediate callback during subscribe', () => {
+      const errorListener = jest.fn().mockImplementation(() => {
+        throw new Error('Listener error');
+      });
+
+      expect(() => service.onReadyStateChange(errorListener)).not.toThrow();
+      expect(errorListener).toHaveBeenCalled();
+    });
+
+    it('should skip notification when no listeners registered', () => {
+      expect(() => (service as any).notifyReadyStateChange()).not.toThrow();
+    });
+  });
+
   describe('SDK Skills (Supported Commands)', () => {
     it('should report not ready when no persistent query exists', () => {
       expect(service.isReady()).toBe(false);
