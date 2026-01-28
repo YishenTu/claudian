@@ -33,6 +33,11 @@ jest.mock('@/core/agent', () => ({
   ClaudianService: jest.fn().mockImplementation(() => ({
     ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
+    isReady: jest.fn().mockReturnValue(false),
+    onReadyStateChange: jest.fn((listener: (ready: boolean) => void) => {
+      listener(false);
+      return () => {};
+    }),
   })),
 }));
 
@@ -84,6 +89,20 @@ const createMockStatusPanel = () => ({
 const createMockModelSelector = () => ({
   updateDisplay: jest.fn(),
   renderOptions: jest.fn(),
+  setReady: jest.fn(),
+});
+
+const createMockClaudianService = (overrides?: {
+  ensureReady?: jest.Mock;
+  onReadyStateChange?: jest.Mock;
+}) => ({
+  ensureReady: overrides?.ensureReady ?? jest.fn().mockResolvedValue(true),
+  closePersistentQuery: jest.fn(),
+  isReady: jest.fn().mockReturnValue(false),
+  onReadyStateChange: overrides?.onReadyStateChange ?? jest.fn((listener: (ready: boolean) => void) => {
+    listener(false);
+    return () => {};
+  }),
 });
 
 const createMockThinkingBudgetSelector = () => ({
@@ -414,16 +433,13 @@ describe('Tab - Service Initialization', () => {
     it('should ensureReady without session ID (just spin up process)', async () => {
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => ({
-        ensureReady: mockEnsureReady,
-      }));
+      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ ensureReady: mockEnsureReady }));
 
       const options = createMockOptions();
       const tab = createTab(options);
 
       await initializeTabService(tab, options.plugin, options.mcpManager);
 
-      // ensureReady should be called with persistent external context paths
       expect(mockEnsureReady).toHaveBeenCalledWith({
         sessionId: undefined,
         externalContextPaths: [],
@@ -433,9 +449,7 @@ describe('Tab - Service Initialization', () => {
     it('should ensureReady with saved external contexts for existing conversation', async () => {
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
       const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => ({
-        ensureReady: mockEnsureReady,
-      }));
+      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ ensureReady: mockEnsureReady }));
 
       const conversation = {
         id: 'conv-1',
@@ -460,6 +474,31 @@ describe('Tab - Service Initialization', () => {
         sessionId: 'session-123',
         externalContextPaths: ['/saved/path'],
       });
+    });
+
+    it('should sync model selector ready state with service readiness', async () => {
+      const mockOnReadyStateChange = jest.fn((listener: (ready: boolean) => void) => {
+        listener(false);
+        return () => {};
+      });
+
+      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
+      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ onReadyStateChange: mockOnReadyStateChange }));
+
+      const options = createMockOptions();
+      const tab = createTab(options);
+      initializeTabUI(tab, options.plugin);
+
+      await initializeTabService(tab, options.plugin, options.mcpManager);
+
+      expect(mockModelSelector.setReady).toHaveBeenCalledWith(false);
+
+      const readyListener = mockOnReadyStateChange.mock.calls[0]?.[0] as (ready: boolean) => void;
+      readyListener(true);
+      expect(mockModelSelector.setReady).toHaveBeenCalledWith(true);
+
+      readyListener(false);
+      expect(mockModelSelector.setReady).toHaveBeenCalledWith(false);
     });
   });
 });

@@ -115,6 +115,7 @@ export class ClaudianService {
   private approvalDismisser: (() => void) | null = null;
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
+  private readyStateListeners = new Set<(ready: boolean) => void>();
 
   // Modular components
   private sessionManager = new SessionManager();
@@ -146,6 +147,33 @@ export class ClaudianService {
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
     this.mcpManager = mcpManager;
+  }
+
+  onReadyStateChange(listener: (ready: boolean) => void): () => void {
+    this.readyStateListeners.add(listener);
+    try {
+      listener(this.isReady());
+    } catch {
+      // Ignore listener errors
+    }
+    return () => {
+      this.readyStateListeners.delete(listener);
+    };
+  }
+
+  private notifyReadyStateChange(): void {
+    if (this.readyStateListeners.size === 0) {
+      return;
+    }
+
+    const isReady = this.isReady();
+    for (const listener of this.readyStateListeners) {
+      try {
+        listener(isReady);
+      } catch {
+        // Ignore listener errors
+      }
+    }
   }
 
   async loadMcpServers(): Promise<void> {
@@ -273,6 +301,7 @@ export class ClaudianService {
     this.attachPersistentQueryStdinErrorHandler(this.persistentQuery);
 
     this.startResponseConsumer();
+    this.notifyReadyStateChange();
   }
 
   private attachPersistentQueryStdinErrorHandler(query: Query): void {
@@ -355,6 +384,7 @@ export class ClaudianService {
     // Reset shuttingDown flag so next query can start a new persistent query.
     // This must be done after all cleanup to prevent race conditions with the consumer loop.
     this.shuttingDown = false;
+    this.notifyReadyStateChange();
   }
 
   /**
