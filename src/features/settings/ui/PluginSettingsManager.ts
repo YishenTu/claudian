@@ -30,20 +30,20 @@ export class PluginSettingsManager {
 
     if (plugins.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-plugin-empty' });
-      emptyEl.setText('No Claude Code plugins installed. Install plugins via the Claude CLI.');
+      emptyEl.setText('No Claude Code plugins found. Enable plugins via the Claude CLI.');
       return;
     }
 
-    const projectLocalPlugins = plugins.filter(p => p.scope === 'project' || p.scope === 'local');
+    const projectPlugins = plugins.filter(p => p.scope === 'project');
     const userPlugins = plugins.filter(p => p.scope === 'user');
 
     const listEl = this.containerEl.createDiv({ cls: 'claudian-plugin-list' });
 
-    if (projectLocalPlugins.length > 0) {
+    if (projectPlugins.length > 0) {
       const sectionHeader = listEl.createDiv({ cls: 'claudian-plugin-section-header' });
       sectionHeader.setText('Project Plugins');
 
-      for (const plugin of projectLocalPlugins) {
+      for (const plugin of projectPlugins) {
         this.renderPluginItem(listEl, plugin);
       }
     }
@@ -63,14 +63,9 @@ export class PluginSettingsManager {
     if (!plugin.enabled) {
       itemEl.addClass('claudian-plugin-item-disabled');
     }
-    if (plugin.status !== 'available') {
-      itemEl.addClass('claudian-plugin-item-error');
-    }
 
     const statusEl = itemEl.createDiv({ cls: 'claudian-plugin-status' });
-    if (plugin.status !== 'available') {
-      statusEl.addClass('claudian-plugin-status-error');
-    } else if (plugin.enabled) {
+    if (plugin.enabled) {
       statusEl.addClass('claudian-plugin-status-enabled');
     } else {
       statusEl.addClass('claudian-plugin-status-disabled');
@@ -81,36 +76,19 @@ export class PluginSettingsManager {
     const nameRow = infoEl.createDiv({ cls: 'claudian-plugin-name-row' });
 
     const nameEl = nameRow.createSpan({ cls: 'claudian-plugin-name' });
-    nameEl.setText(plugin.name);
+    nameEl.setText(plugin.id);
 
     const scopeEl = nameRow.createSpan({ cls: 'claudian-plugin-scope-badge' });
     scopeEl.setText(this.getScopeLabel(plugin.scope));
 
-    if (plugin.status !== 'available') {
-      const errorEl = nameRow.createSpan({ cls: 'claudian-plugin-error-badge' });
-      errorEl.setText(plugin.status === 'unavailable' ? 'Unavailable' : 'Invalid');
-    }
-
-    const previewEl = infoEl.createDiv({ cls: 'claudian-plugin-preview' });
-    if (plugin.error) {
-      previewEl.setText(plugin.error);
-      previewEl.addClass('claudian-plugin-preview-error');
-    } else if (plugin.description) {
-      previewEl.setText(plugin.description);
-    } else {
-      previewEl.setText(plugin.id);
-    }
-
     const actionsEl = itemEl.createDiv({ cls: 'claudian-plugin-actions' });
 
-    if (plugin.status === 'available') {
-      const toggleBtn = actionsEl.createEl('button', {
-        cls: 'claudian-plugin-action-btn',
-        attr: { 'aria-label': plugin.enabled ? 'Disable' : 'Enable' },
-      });
-      setIcon(toggleBtn, plugin.enabled ? 'toggle-right' : 'toggle-left');
-      toggleBtn.addEventListener('click', () => this.togglePlugin(plugin.id));
-    }
+    const toggleBtn = actionsEl.createEl('button', {
+      cls: 'claudian-plugin-action-btn',
+      attr: { 'aria-label': plugin.enabled ? 'Disable' : 'Enable' },
+    });
+    setIcon(toggleBtn, plugin.enabled ? 'toggle-right' : 'toggle-left');
+    toggleBtn.addEventListener('click', () => this.togglePlugin(plugin.id));
   }
 
   private getScopeLabel(scope: PluginScope): string {
@@ -119,8 +97,6 @@ export class PluginSettingsManager {
         return 'User';
       case 'project':
         return 'Project';
-      case 'local':
-        return 'Local';
     }
   }
 
@@ -144,9 +120,7 @@ export class PluginSettingsManager {
         }
       }
 
-      if (plugin) {
-        new Notice(`Plugin "${plugin.name}" ${wasEnabled ? 'disabled' : 'enabled'}`);
-      }
+      new Notice(`Plugin "${pluginId}" ${wasEnabled ? 'disabled' : 'enabled'}`);
     } catch (err) {
       await this.plugin.pluginManager.togglePlugin(pluginId);
       const message = err instanceof Error ? err.message : 'Unknown error';

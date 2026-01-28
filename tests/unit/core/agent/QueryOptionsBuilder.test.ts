@@ -620,37 +620,6 @@ describe('QueryOptionsBuilder', () => {
       expect(options.agents?.['custom-cold']).toBeDefined();
     });
 
-    it('filters out plugin-sourced agents from cold-start options', () => {
-      const agentManager = createMockAgentManager([
-        {
-          id: 'my-plugin:review',
-          name: 'review',
-          description: 'Plugin agent',
-          prompt: 'Review prompt',
-          source: 'plugin',
-        },
-        {
-          id: 'vault-agent',
-          name: 'Vault Agent',
-          description: 'Vault agent',
-          prompt: 'Vault prompt',
-          source: 'vault',
-        },
-      ]);
-
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        hasEditorContext: false,
-        agentManager,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.agents?.['my-plugin:review']).toBeUndefined();
-      expect(options.agents?.['vault-agent']).toBeDefined();
-    });
-
     it('converts inherit model to undefined in cold-start agents', () => {
       const agentManager = createMockAgentManager([
         {
@@ -802,36 +771,6 @@ describe('QueryOptionsBuilder', () => {
       expect(options.agents?.['Explore']).toBeUndefined();
       // Custom should be included
       expect(options.agents?.['custom-agent']).toBeDefined();
-    });
-
-    it('filters out plugin-sourced agents from SDK options', () => {
-      const agentManager = createMockAgentManager([
-        {
-          id: 'my-plugin:review',
-          name: 'review',
-          description: 'Plugin agent',
-          prompt: 'Review prompt',
-          source: 'plugin',
-        },
-        {
-          id: 'vault-agent',
-          name: 'Vault Agent',
-          description: 'Vault agent',
-          prompt: 'Vault prompt',
-          source: 'vault',
-        },
-      ]);
-
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        agentManager,
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.agents?.['my-plugin:review']).toBeUndefined();
-      expect(options.agents?.['vault-agent']).toBeDefined();
     });
 
     it('includes tools and disallowedTools in SDK agents', () => {

@@ -10,7 +10,7 @@ import { Notice, Plugin } from 'obsidian';
 
 import { AgentManager } from './core/agents';
 import { McpServerManager } from './core/mcp';
-import { PluginManager, PluginStorage } from './core/plugins';
+import { PluginManager } from './core/plugins';
 import { StorageService } from './core/storage';
 import type {
   ChatMessage,
@@ -60,15 +60,13 @@ export default class ClaudianPlugin extends Plugin {
     this.mcpManager = new McpServerManager(this.storage.mcp);
     await this.mcpManager.loadServers();
 
-    // Initialize plugin manager (uses CC settings for enabled state)
+    // Initialize plugin manager (reads enabledPlugins from settings.json files)
     const vaultPath = (this.app.vault.adapter as any).basePath;
-    const pluginStorage = new PluginStorage(vaultPath);
-    this.pluginManager = new PluginManager(pluginStorage, this.storage.ccSettings);
-    await this.pluginManager.loadEnabledState();
+    this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
     await this.pluginManager.loadPlugins();
 
-    // Initialize agent manager (after plugin manager for plugin-sourced agents)
-    this.agentManager = new AgentManager(vaultPath, this.pluginManager);
+    // Initialize agent manager (plugin agents are handled by SDK via settingSources)
+    this.agentManager = new AgentManager(vaultPath);
     await this.agentManager.loadAgents();
 
     this.registerView(

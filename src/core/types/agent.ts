@@ -25,10 +25,7 @@ export interface AgentDefinition {
   /** Model override. 'inherit' (default) uses parent's model */
   model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
 
-  source: 'plugin' | 'vault' | 'global' | 'builtin';
-
-  /** Plugin name (only for plugin-sourced agents) */
-  pluginName?: string;
+  source: 'vault' | 'global' | 'builtin';
 
   /** Absolute path to the source .md file (undefined for built-in agents) */
   filePath?: string;
