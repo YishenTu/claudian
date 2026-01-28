@@ -60,6 +60,42 @@
   color: var(--text-error);
 }
 
+/* Hotkey grid - 3 columns */
+.claudian-hotkey-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 12px;
+  padding: 4px 0;
+}
+
+.claudian-hotkey-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.claudian-hotkey-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-hotkey-name {
+  flex: 1;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-hotkey-badge {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-monospace);
+}
+
 /* Media folder input width */
 .claudian-settings-media-input {
   width: 200px;

@@ -65,18 +65,12 @@ function addHotkeySettingRow(
   translationPrefix: string
 ): void {
   const hotkey = getHotkeyForCommand(app, commandId);
-  new Setting(containerEl)
-    .setName(t(`${translationPrefix}.name` as TranslationKey))
-    .setDesc(hotkey
-      ? t(`${translationPrefix}.descWithKey` as TranslationKey, { hotkey })
-      : t(`${translationPrefix}.descNoKey` as TranslationKey))
-    .addButton((button) =>
-      button
-        .setButtonText(hotkey
-          ? t(`${translationPrefix}.btnChange` as TranslationKey)
-          : t(`${translationPrefix}.btnSet` as TranslationKey))
-        .onClick(() => openHotkeySettings(app))
-    );
+  const item = containerEl.createDiv({ cls: 'claudian-hotkey-item' });
+  item.createSpan({ cls: 'claudian-hotkey-name', text: t(`${translationPrefix}.name` as TranslationKey) });
+  if (hotkey) {
+    item.createSpan({ cls: 'claudian-hotkey-badge', text: hotkey });
+  }
+  item.addEventListener('click', () => openHotkeySettings(app));
 }
 
 export class ClaudianSettingTab extends PluginSettingTab {
@@ -325,11 +319,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(t('settings.hotkeys')).setHeading();
 
-    addHotkeySettingRow(containerEl, this.app, 'claudian:inline-edit', 'settings.inlineEditHotkey');
-    addHotkeySettingRow(containerEl, this.app, 'claudian:open-view', 'settings.openChatHotkey');
-    addHotkeySettingRow(containerEl, this.app, 'claudian:new-session', 'settings.newSessionHotkey');
-    addHotkeySettingRow(containerEl, this.app, 'claudian:new-tab', 'settings.newTabHotkey');
-    addHotkeySettingRow(containerEl, this.app, 'claudian:close-current-tab', 'settings.closeTabHotkey');
+    const hotkeyGrid = containerEl.createDiv({ cls: 'claudian-hotkey-grid' });
+    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:inline-edit', 'settings.inlineEditHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:open-view', 'settings.openChatHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-session', 'settings.newSessionHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-tab', 'settings.newTabHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:close-current-tab', 'settings.closeTabHotkey');
 
     new Setting(containerEl).setName(t('settings.slashCommands.name')).setHeading();
 
