@@ -1,7 +1,7 @@
 {
   "id": "claudian",
   "name": "Claudian",
-  "version": "1.3.52",
+  "version": "1.3.53",
   "minAppVersion": "1.4.5",
   "description": "Embeds Claude Code as an AI collaborator in your vault. Your vault becomes Claude's working directory, giving it full agentic capabilities: file read/write, search, bash commands, and multi-step workflows.",
   "author": "Yishen Tu",
