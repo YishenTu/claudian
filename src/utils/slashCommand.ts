@@ -147,7 +147,6 @@ export function serializeSlashCommandMarkdown(cmd: Partial<SlashCommand>, body: 
   if (cmd.hooks !== undefined) {
     lines.push(`hooks: ${JSON.stringify(cmd.hooks)}`);
   }
-
   // Ensure at least one blank line between --- markers when no metadata exists
   // (the frontmatter regex requires \n before the closing ---)
   if (lines.length === 1) {

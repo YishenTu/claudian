@@ -104,6 +104,10 @@
       "name": "Claude Code Plugins",
       "desc": "Aktiviere oder deaktiviere Claude Code Plugins aus ~/.claude/plugins. Aktivierte Plugins werden pro Vault gespeichert."
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "Sicherheit",
     "loadUserSettings": {
       "name": "Benutzer-Claude-Einstellungen laden",

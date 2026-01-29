@@ -12,7 +12,7 @@ import * as path from 'path';
 
 import type { PluginManager } from '../plugins';
 import type { AgentDefinition } from '../types';
-import { parseAgentFile, parseModel, parseToolsList } from './AgentStorage';
+import { parseAgentFile, parseModel, parsePermissionMode, parseToolsList } from './AgentStorage';
 
 const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents');
 const VAULT_AGENTS_DIR = '.claude/agents';
@@ -181,8 +181,8 @@ export class AgentManager {
         pluginName,
         filePath,
         skills: frontmatter.skills,
-        maxTurns: frontmatter.maxTurns,
-        mcpServers: frontmatter.mcpServers,
+        permissionMode: parsePermissionMode(frontmatter.permissionMode),
+        hooks: frontmatter.hooks,
       };
     } catch {
       return null;
@@ -215,8 +215,8 @@ export class AgentManager {
         source,
         filePath,
         skills: frontmatter.skills,
-        maxTurns: frontmatter.maxTurns,
-        mcpServers: frontmatter.mcpServers,
+        permissionMode: parsePermissionMode(frontmatter.permissionMode),
+        hooks: frontmatter.hooks,
       };
     } catch {
       return null;

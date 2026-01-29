@@ -104,6 +104,10 @@
       "name": "Claude Code 插件",
       "desc": "启用或禁用从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储。"
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude 设置",

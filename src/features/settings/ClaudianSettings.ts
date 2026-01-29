@@ -11,6 +11,7 @@ import { formatContextLimit, getCustomModelIds, getModelsFromEnvironment, parseC
 import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
+import { AgentSettings } from './ui/AgentSettings';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
 import { PluginSettingsManager } from './ui/PluginSettingsManager';
@@ -357,6 +358,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.rows = 4;
         text.inputEl.cols = 30;
       });
+
+    new Setting(containerEl).setName(t('settings.subagents.name')).setHeading();
+
+    const agentsDesc = containerEl.createDiv({ cls: 'claudian-agent-settings-desc' });
+    agentsDesc.createEl('p', {
+      text: t('settings.subagents.desc'),
+      cls: 'setting-item-description',
+    });
+
+    const agentsContainer = containerEl.createDiv({ cls: 'claudian-agents-container' });
+    new AgentSettings(agentsContainer, this.plugin);
 
     new Setting(containerEl).setName(t('settings.mcpServers.name')).setHeading();
 

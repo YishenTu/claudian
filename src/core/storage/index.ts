@@ -1,3 +1,4 @@
+export { AGENTS_PATH, AgentVaultStorage } from './AgentVaultStorage';
 export { CC_SETTINGS_PATH, CCSettingsStorage, isLegacyPermissionsFormat } from './CCSettingsStorage';
 export {
   CLAUDIAN_SETTINGS_PATH,

@@ -216,7 +216,7 @@ export interface SlashCommand {
   userInvocable?: boolean;           // Whether user can invoke this skill directly
   context?: 'fork';                  // Subagent execution mode
   agent?: string;                    // Subagent type when context='fork'
-  hooks?: Record<string, unknown>;   // Pass-through to SDK
+  hooks?: Record<string, unknown>;   // Lifecycle hooks (pass-through to SDK)
 }
 
 /** Keyboard navigation settings for vim-style scrolling. */

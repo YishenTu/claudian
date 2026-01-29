@@ -104,6 +104,10 @@
       "name": "Claude Code プラグイン",
       "desc": "~/.claude/plugins から検出された Claude Code プラグインを有効化または無効化します。有効化されたプラグインは保管庫ごとに保存されます。"
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーClaude設定を読み込む",

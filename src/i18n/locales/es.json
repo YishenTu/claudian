@@ -104,6 +104,10 @@
       "name": "Plugins de Claude Code",
       "desc": "Habilita o deshabilita plugins de Claude Code descubiertos desde ~/.claude/plugins. Los plugins habilitados se almacenan por bóveda."
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "Seguridad",
     "loadUserSettings": {
       "name": "Cargar configuración de usuario Claude",

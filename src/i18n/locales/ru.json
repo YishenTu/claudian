@@ -104,6 +104,10 @@
       "name": "Плагины Claude Code",
       "desc": "Включите или отключите плагины Claude Code из ~/.claude/plugins. Включенные плагины сохраняются для каждого хранилища."
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "Безопасность",
     "loadUserSettings": {
       "name": "Загружать пользовательские настройки Claude",

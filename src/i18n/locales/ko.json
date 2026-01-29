@@ -104,6 +104,10 @@
       "name": "Claude Code 플러그인",
       "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 활성화 또는 비활성화합니다. 활성화된 플러그인은 볼트별로 저장됩니다."
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude 설정 로드",

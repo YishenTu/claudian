@@ -104,6 +104,10 @@
       "name": "Claude Code Plugins",
       "desc": "Enable or disable Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault."
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude settings",

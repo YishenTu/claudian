@@ -379,8 +379,6 @@ export class QueryOptionsBuilder {
         model: agent.model === 'inherit' ? undefined : agent.model,
       };
       if (agent.skills) def.skills = agent.skills;
-      if (agent.maxTurns !== undefined) def.maxTurns = agent.maxTurns;
-      if (agent.mcpServers) def.mcpServers = agent.mcpServers;
       record[agent.id] = def;
     }
     return record;

@@ -46,6 +46,7 @@ function createMockAgentManager(agents: Array<{
   skills?: string[];
   maxTurns?: number;
   mcpServers?: unknown[];
+  hooks?: Record<string, unknown>;
 }> = []) {
   return {
     loadAgents: jest.fn().mockResolvedValue(undefined),
@@ -831,17 +832,15 @@ describe('QueryOptionsBuilder', () => {
       expect(options.agents?.['restricted-agent'].disallowedTools).toEqual(['Bash', 'Write']);
     });
 
-    it('forwards skills, maxTurns, and mcpServers to SDK agents', () => {
+    it('forwards skills to SDK agents', () => {
       const agentManager = createMockAgentManager([
         {
           id: 'extended-agent',
           name: 'Extended Agent',
-          description: 'Agent with new fields',
+          description: 'Agent with skills',
           prompt: 'Extended prompt',
           source: 'vault',
           skills: ['my-skill', 'other-skill'],
-          maxTurns: 5,
-          mcpServers: ['server-a'],
         },
       ]);
 
@@ -856,16 +855,14 @@ describe('QueryOptionsBuilder', () => {
       const sdkAgent = options.agents?.['extended-agent'];
       expect(sdkAgent).toBeDefined();
       expect(sdkAgent?.skills).toEqual(['my-skill', 'other-skill']);
-      expect(sdkAgent?.maxTurns).toBe(5);
-      expect(sdkAgent?.mcpServers).toEqual(['server-a']);
     });
 
-    it('omits new fields when not set on agent', () => {
+    it('omits skills when not set on agent', () => {
       const agentManager = createMockAgentManager([
         {
           id: 'basic-agent',
           name: 'Basic Agent',
-          description: 'No new fields',
+          description: 'No skills',
           prompt: 'Basic prompt',
           source: 'vault',
         },
@@ -882,8 +879,6 @@ describe('QueryOptionsBuilder', () => {
       const sdkAgent = options.agents?.['basic-agent'];
       expect(sdkAgent).toBeDefined();
       expect(sdkAgent?.skills).toBeUndefined();
-      expect(sdkAgent?.maxTurns).toBeUndefined();
-      expect(sdkAgent?.mcpServers).toBeUndefined();
     });
   });
 });

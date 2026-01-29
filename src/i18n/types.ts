@@ -91,6 +91,10 @@ export type TranslationKey =
   | 'settings.plugins.name'
   | 'settings.plugins.desc'
 
+  // Settings - Subagents
+  | 'settings.subagents.name'
+  | 'settings.subagents.desc'
+
   // Settings - Safety
   | 'settings.safety'
   | 'settings.loadUserSettings.name'

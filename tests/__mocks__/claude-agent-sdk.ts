@@ -60,6 +60,7 @@ export type AgentDefinition = {
   mcpServers?: unknown[];
   skills?: string[];
   maxTurns?: number;
+  hooks?: Record<string, unknown>;
 };
 
 export type AgentMcpServerSpec = string | Record<string, unknown>;

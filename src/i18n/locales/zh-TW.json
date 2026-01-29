@@ -104,6 +104,10 @@
       "name": "Claude Code 外掛程式",
       "desc": "啟用或停用從 ~/.claude/plugins 發現的 Claude Code 外掛程式。已啟用的外掛程式按儲存庫儲存。"
     },
+    "subagents": {
+      "name": "Subagents",
+      "desc": "Configure custom subagents that Claude can delegate to."
+    },
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude 設定",

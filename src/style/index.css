@@ -48,6 +48,7 @@
 @import "./settings/slash-settings.css";
 @import "./settings/mcp-settings.css";
 @import "./settings/plugin-settings.css";
+@import "./settings/agent-settings.css";
 
 /* Accessibility */
 @import "./accessibility.css";

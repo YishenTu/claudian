@@ -660,15 +660,15 @@ describe('serializeSlashCommandMarkdown', () => {
     expect(result).not.toContain('hooks');
   });
 
-  it('produces valid frontmatter when no metadata exists', () => {
-    const result = serializeSlashCommandMarkdown({}, 'Just a prompt');
-    expect(result).toBe('---\n\n---\nJust a prompt');
-  });
-
   it('serializes hooks as JSON', () => {
     const hooks = { PreToolUse: [{ matcher: 'Bash' }] };
     const result = serializeSlashCommandMarkdown({ hooks }, 'Prompt');
     expect(result).toContain(`hooks: ${JSON.stringify(hooks)}`);
+  });
+
+  it('produces valid frontmatter when no metadata exists', () => {
+    const result = serializeSlashCommandMarkdown({}, 'Just a prompt');
+    expect(result).toBe('---\n\n---\nJust a prompt');
   });
 
   it('round-trips through parse', () => {

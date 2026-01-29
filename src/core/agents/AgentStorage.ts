@@ -1,4 +1,4 @@
-import { extractNumber, extractStringArray, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
+import { extractStringArray, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
 import type { AgentFrontmatter } from '../types';
 
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
@@ -28,8 +28,8 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
     disallowedTools,
     model,
     skills: extractStringArray(fm, 'skills'),
-    maxTurns: extractNumber(fm, 'maxTurns'),
-    mcpServers: Array.isArray(fm.mcpServers) ? fm.mcpServers : undefined,
+    permissionMode: typeof fm.permissionMode === 'string' ? fm.permissionMode : undefined,
+    hooks: isRecord(fm.hooks) ? fm.hooks : undefined,
   };
 
   return { frontmatter, body: body.trim() };
@@ -39,9 +39,27 @@ function isStringOrArray(value: unknown): value is string | string[] {
   return typeof value === 'string' || Array.isArray(value);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
 /** Returns undefined to inherit all tools. */
 export function parseToolsList(tools?: string | string[]): string[] | undefined {
   return normalizeStringArray(tools);
+}
+
+const VALID_PERMISSION_MODES = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan'] as const;
+
+type PermissionMode = typeof VALID_PERMISSION_MODES[number];
+
+/** Returns undefined for unrecognized values. */
+export function parsePermissionMode(mode?: string): PermissionMode | undefined {
+  if (!mode) return undefined;
+  const trimmed = mode.trim();
+  if (VALID_PERMISSION_MODES.includes(trimmed as PermissionMode)) {
+    return trimmed as PermissionMode;
+  }
+  return undefined;
 }
 
 const VALID_MODELS = ['sonnet', 'opus', 'haiku', 'inherit'] as const;

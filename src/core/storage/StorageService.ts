@@ -30,6 +30,7 @@ import {
   DEFAULT_SETTINGS,
   legacyPermissionsToCCPermissions,
 } from '../types';
+import { AGENTS_PATH, AgentVaultStorage } from './AgentVaultStorage';
 import { CC_SETTINGS_PATH, CCSettingsStorage, isLegacyPermissionsFormat } from './CCSettingsStorage';
 import {
   ClaudianSettingsStorage,
@@ -115,6 +116,7 @@ export class StorageService {
   readonly skills: SkillStorage;
   readonly sessions: SessionStorage;
   readonly mcp: McpStorage;
+  readonly agents: AgentVaultStorage;
 
   private adapter: VaultFileAdapter;
   private plugin: Plugin;
@@ -130,6 +132,7 @@ export class StorageService {
     this.skills = new SkillStorage(this.adapter);
     this.sessions = new SessionStorage(this.adapter);
     this.mcp = new McpStorage(this.adapter);
+    this.agents = new AgentVaultStorage(this.adapter);
   }
 
   async initialize(): Promise<CombinedSettings> {
@@ -370,6 +373,7 @@ export class StorageService {
     await this.adapter.ensureFolder(COMMANDS_PATH);
     await this.adapter.ensureFolder(SKILLS_PATH);
     await this.adapter.ensureFolder(SESSIONS_PATH);
+    await this.adapter.ensureFolder(AGENTS_PATH);
   }
 
   async loadAllSlashCommands(): Promise<SlashCommand[]> {
