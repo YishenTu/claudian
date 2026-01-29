@@ -111,6 +111,7 @@
       "deleteConfirm": "Delete subagent \"{name}\"?",
       "saveFailed": "Failed to save subagent: {message}",
       "deleteFailed": "Failed to delete subagent: {message}",
+      "renameCleanupFailed": "Warning: could not remove old file for \"{name}\"",
       "saved": "Subagent \"{name}\" {action}",
       "deleted": "Subagent \"{name}\" deleted",
       "duplicateName": "An agent named \"{name}\" already exists",

@@ -310,7 +310,7 @@ export class AgentSettings {
       try {
         await this.plugin.storage.agents.delete(existing);
       } catch {
-        new Notice(`Warning: could not remove old file for "${existing.name}"`);
+        new Notice(t('settings.subagents.renameCleanupFailed', { name: existing.name }));
       }
     }
 

@@ -98,6 +98,7 @@ export type TranslationKey =
   | 'settings.subagents.deleteConfirm'
   | 'settings.subagents.saveFailed'
   | 'settings.subagents.deleteFailed'
+  | 'settings.subagents.renameCleanupFailed'
   | 'settings.subagents.saved'
   | 'settings.subagents.deleted'
   | 'settings.subagents.duplicateName'
