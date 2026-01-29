@@ -705,4 +705,85 @@ describe('PluginManager', () => {
       expect(manager.hasPlugins()).toBe(false);
     });
   });
+
+  describe('readJsonFile error handling', () => {
+    it('returns null when JSON parse fails', async () => {
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue('not valid json {{{');
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      // Should gracefully handle parse error and return empty plugins
+      expect(manager.getPlugins()).toEqual([]);
+    });
+  });
+
+  describe('extractPluginName without @', () => {
+    it('returns full ID when no @ is present', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'simple-plugin': [{
+            scope: 'user' as const,
+            installPath: '/path/to/simple-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      const plugins = manager.getPlugins();
+      expect(plugins.length).toBe(1);
+      expect(plugins[0].name).toBe('simple-plugin');
+      expect(plugins[0].id).toBe('simple-plugin');
+    });
+  });
+
+  describe('normalizePathForComparison', () => {
+    it('uses realpathSync when available', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'project-plugin@marketplace': [{
+            scope: 'project' as const,
+            installPath: '/path/to/project-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+            projectPath: vaultPath,
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+      // realpathSync returns the resolved path
+      mockFs.realpathSync.mockReturnValue(vaultPath);
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      const plugins = manager.getPlugins();
+      expect(plugins.length).toBe(1);
+      expect(plugins[0].scope).toBe('project');
+    });
+  });
 });

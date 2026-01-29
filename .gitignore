@@ -90,7 +90,4 @@ dev
 # Lock files (uncomment based on package manager)
 # yarn.lock
 # package-lock.json
-
-# .claude/
-settings.local.json
-*.local.md
+.claude/

@@ -38,6 +38,18 @@ describe('systemPrompt', () => {
       expect(prompt).toContain('- /tmp');
       expect(prompt).toContain('write-only');
     });
+
+    it('should not include export paths when all paths are whitespace-only', () => {
+      const prompt = buildSystemPrompt({ allowedExportPaths: ['   ', '', '  '] });
+      expect(prompt).not.toContain('# Allowed Export Paths');
+    });
+
+    it('should deduplicate and filter export paths', () => {
+      const prompt = buildSystemPrompt({ allowedExportPaths: ['~/Desktop', '~/Desktop', '', '/tmp'] });
+      expect(prompt).toContain('# Allowed Export Paths');
+      expect(prompt).toContain('- ~/Desktop');
+      expect(prompt).toContain('- /tmp');
+    });
   });
 
   describe('userName in system prompt', () => {

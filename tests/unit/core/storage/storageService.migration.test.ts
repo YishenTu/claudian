@@ -433,6 +433,60 @@ describe('StorageService migration', () => {
     expect(ccSettings.permissions).toHaveProperty('deny');
   });
 
+  it('converts legacy permissions with toolName/pattern format during settings migration', async () => {
+    const legacySettings = {
+      userName: 'Test User',
+      permissions: [
+        { toolName: 'Bash', pattern: 'git *', approvedAt: 1000, scope: 'always' },
+        { toolName: 'Read', pattern: '/vault/*', approvedAt: 2000, scope: 'always' },
+        { toolName: 'Write', pattern: '/tmp/*', approvedAt: 3000, scope: 'session' },
+      ],
+    };
+
+    const { plugin, files } = createMockPlugin({
+      dataJson: null,
+      initialFiles: {
+        '.claude/settings.json': JSON.stringify(legacySettings),
+      },
+    });
+
+    const storage = new StorageService(plugin);
+    await storage.initialize();
+
+    const ccSettings = JSON.parse(files.get('.claude/settings.json') || '{}') as Record<string, any>;
+    // Legacy format should be converted via legacyPermissionsToCCPermissions
+    // Only 'always' scope permissions are converted
+    expect(ccSettings.permissions.allow).toContain('Bash(git *)');
+    expect(ccSettings.permissions.allow).toContain('Read(/vault/*)');
+    // Session scope should be excluded
+    expect(ccSettings.permissions.allow).not.toContain('Write(/tmp/*)');
+    expect(ccSettings.permissions.deny).toEqual([]);
+    expect(ccSettings.permissions.ask).toEqual([]);
+  });
+
+  it('migrates lastClaudeModel from data.json when claudian-settings has falsy value', async () => {
+    const { plugin, files } = createMockPlugin({
+      dataJson: {
+        lastClaudeModel: 'claude-3-sonnet',
+      },
+      initialFiles: {
+        '.claude/settings.json': JSON.stringify({
+          permissions: { allow: [], deny: [], ask: [] },
+        }),
+        '.claude/claudian-settings.json': JSON.stringify({
+          userName: 'Test User',
+          lastClaudeModel: '',
+        }),
+      },
+    });
+
+    const storage = new StorageService(plugin);
+    await storage.initialize();
+
+    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    expect(saved.lastClaudeModel).toBe('claude-3-sonnet');
+  });
+
   it('preserves persistentExternalContextPaths from existing settings', async () => {
     const existingSettings = {
       userName: 'Test User',
