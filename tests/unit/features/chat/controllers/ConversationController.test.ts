@@ -1215,31 +1215,6 @@ describe('ConversationController - toggleHistoryDropdown', () => {
   });
 });
 
-describe('ConversationController - getGreeting', () => {
-  let controller: ConversationController;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    const deps = createMockDeps();
-    controller = new ConversationController(deps);
-  });
-
-  it('should return a non-empty string', () => {
-    const greeting = controller.getGreeting();
-
-    expect(typeof greeting).toBe('string');
-    expect(greeting.length).toBeGreaterThan(0);
-  });
-
-  it('should return a greeting from the pool each time', () => {
-    // Call multiple times to ensure it always returns something valid
-    for (let i = 0; i < 10; i++) {
-      const greeting = controller.getGreeting();
-      expect(greeting.length).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe('ConversationController - save edge cases', () => {
   let controller: ConversationController;
   let deps: ConversationControllerDeps;
@@ -1943,28 +1918,15 @@ describe('ConversationController - Greeting Time Branches', () => {
     controller = new ConversationController(deps);
   });
 
-  it('should include morning greetings (5-12)', () => {
-    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(9);
-    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(1);
-
-    // Run multiple times to ensure morning greetings are in the pool
-    const greetings = new Set<string>();
-    jest.spyOn(Math, 'random').mockReturnValue(0); // Pick first item consistently
-    for (let i = 0; i < 50; i++) {
-      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
-      greetings.add(controller.getGreeting());
-    }
-
-    // Should contain at least one morning-specific greeting
-    const hasTimeBased = [...greetings].some(g => g.includes('morning') || g.includes('Coffee'));
-    expect(hasTimeBased).toBe(true);
-
-    jest.restoreAllMocks();
-  });
-
-  it('should include afternoon greetings (12-18)', () => {
-    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(14);
-    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(2);
+  it.each([
+    { name: 'morning (5-12)', hour: 9, day: 1, patterns: ['morning', 'Coffee'] },
+    { name: 'afternoon (12-18)', hour: 14, day: 2, patterns: ['afternoon'] },
+    { name: 'evening (18-22)', hour: 20, day: 3, patterns: ['evening', 'Evening', 'your day'] },
+    { name: 'night owl (22+)', hour: 23, day: 4, patterns: ['night owl', 'Evening'] },
+    { name: 'early morning night owl (0-4)', hour: 2, day: 0, patterns: ['night owl', 'Evening'] },
+  ])('should include $name greetings', ({ hour, day, patterns }) => {
+    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(hour);
+    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(day);
 
     const greetings = new Set<string>();
     for (let i = 0; i < 50; i++) {
@@ -1972,55 +1934,9 @@ describe('ConversationController - Greeting Time Branches', () => {
       greetings.add(controller.getGreeting());
     }
 
-    const hasTimeBased = [...greetings].some(g => g.includes('afternoon'));
-    expect(hasTimeBased).toBe(true);
-
-    jest.restoreAllMocks();
-  });
-
-  it('should include evening greetings (18-22)', () => {
-    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(20);
-    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(3);
-
-    const greetings = new Set<string>();
-    for (let i = 0; i < 50; i++) {
-      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
-      greetings.add(controller.getGreeting());
-    }
-
-    const hasTimeBased = [...greetings].some(g => g.includes('evening') || g.includes('Evening') || g.includes('day'));
-    expect(hasTimeBased).toBe(true);
-
-    jest.restoreAllMocks();
-  });
-
-  it('should include night owl greetings (22+)', () => {
-    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(23);
-    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(4);
-
-    const greetings = new Set<string>();
-    for (let i = 0; i < 50; i++) {
-      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
-      greetings.add(controller.getGreeting());
-    }
-
-    const hasTimeBased = [...greetings].some(g => g.includes('night owl') || g.includes('Evening'));
-    expect(hasTimeBased).toBe(true);
-
-    jest.restoreAllMocks();
-  });
-
-  it('should include early morning night owl greetings (0-4)', () => {
-    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(2);
-    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(0);
-
-    const greetings = new Set<string>();
-    for (let i = 0; i < 50; i++) {
-      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
-      greetings.add(controller.getGreeting());
-    }
-
-    const hasTimeBased = [...greetings].some(g => g.includes('night owl') || g.includes('Evening'));
+    const hasTimeBased = [...greetings].some(g =>
+      patterns.some(p => g.includes(p))
+    );
     expect(hasTimeBased).toBe(true);
 
     jest.restoreAllMocks();

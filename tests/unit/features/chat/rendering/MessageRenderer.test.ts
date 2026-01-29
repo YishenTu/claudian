@@ -744,63 +744,77 @@ describe('MessageRenderer', () => {
     await renderer.renderContent(el, 'new content');
 
     // After render, old content should be gone (empty() was called before rendering)
-    // Even if renderMarkdown fails, empty() is called first
-    expect(el.children.length >= 0).toBe(true);
+    expect(el.children.length).toBe(0);
   });
 
   // ============================================
   // addTextCopyButton - click behavior
   // ============================================
 
-  it('addTextCopyButton click should copy and show feedback', async () => {
-    const { renderer } = createRenderer();
-    const textEl = createMockEl();
+  describe('addTextCopyButton - click behavior', () => {
+    let originalNavigator: Navigator;
 
-    // Mock navigator.clipboard
-    const writeTextMock = jest.fn().mockResolvedValue(undefined);
-    Object.defineProperty(globalThis, 'navigator', {
-      value: { clipboard: { writeText: writeTextMock } },
-      writable: true,
-      configurable: true,
+    beforeEach(() => {
+      originalNavigator = globalThis.navigator;
     });
 
-    renderer.addTextCopyButton(textEl, 'markdown content');
-
-    const copyBtn = textEl.children[0];
-    expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
-
-    // Simulate click
-    const clickHandlers = copyBtn._eventListeners.get('click');
-    expect(clickHandlers).toBeDefined();
-
-    await clickHandlers![0]({ stopPropagation: jest.fn() });
-
-    expect(writeTextMock).toHaveBeenCalledWith('markdown content');
-    expect(copyBtn.textContent).toBe('copied!');
-    expect(copyBtn.classList.contains('copied')).toBe(true);
-  });
-
-  it('addTextCopyButton should handle clipboard API failure gracefully', async () => {
-    const { renderer } = createRenderer();
-    const textEl = createMockEl();
-
-    const writeTextMock = jest.fn().mockRejectedValue(new Error('not allowed'));
-    Object.defineProperty(globalThis, 'navigator', {
-      value: { clipboard: { writeText: writeTextMock } },
-      writable: true,
-      configurable: true,
+    afterEach(() => {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
     });
 
-    renderer.addTextCopyButton(textEl, 'content');
+    it('click should copy and show feedback', async () => {
+      const { renderer } = createRenderer();
+      const textEl = createMockEl();
 
-    const copyBtn = textEl.children[0];
-    const clickHandlers = copyBtn._eventListeners.get('click');
+      const writeTextMock = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: writeTextMock } },
+        writable: true,
+        configurable: true,
+      });
 
-    // Should not throw
-    await clickHandlers![0]({ stopPropagation: jest.fn() });
+      renderer.addTextCopyButton(textEl, 'markdown content');
 
-    // Should not show feedback on error
-    expect(copyBtn.textContent).not.toBe('copied!');
+      const copyBtn = textEl.children[0];
+      expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
+
+      // Simulate click
+      const clickHandlers = copyBtn._eventListeners.get('click');
+      expect(clickHandlers).toBeDefined();
+
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      expect(writeTextMock).toHaveBeenCalledWith('markdown content');
+      expect(copyBtn.textContent).toBe('copied!');
+      expect(copyBtn.classList.contains('copied')).toBe(true);
+    });
+
+    it('should handle clipboard API failure gracefully', async () => {
+      const { renderer } = createRenderer();
+      const textEl = createMockEl();
+
+      const writeTextMock = jest.fn().mockRejectedValue(new Error('not allowed'));
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: writeTextMock } },
+        writable: true,
+        configurable: true,
+      });
+
+      renderer.addTextCopyButton(textEl, 'content');
+
+      const copyBtn = textEl.children[0];
+      const clickHandlers = copyBtn._eventListeners.get('click');
+
+      // Should not throw
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      // Should not show feedback on error
+      expect(copyBtn.textContent).not.toBe('copied!');
+    });
   });
 
   // ============================================
@@ -1100,7 +1114,10 @@ describe('MessageRenderer', () => {
   // ============================================
 
   describe('addTextCopyButton - rapid click handling', () => {
+    let originalNavigator: Navigator;
+
     beforeEach(() => {
+      originalNavigator = globalThis.navigator;
       jest.useFakeTimers();
       Object.defineProperty(globalThis, 'navigator', {
         value: { clipboard: { writeText: jest.fn().mockResolvedValue(undefined) } },
@@ -1111,6 +1128,11 @@ describe('MessageRenderer', () => {
 
     afterEach(() => {
       jest.useRealTimers();
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
     });
 
     it('rapid clicks clear previous timeout', async () => {
