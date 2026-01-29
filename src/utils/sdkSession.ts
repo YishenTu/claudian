@@ -35,6 +35,7 @@ export interface SDKNativeMessage {
   message?: {
     role?: string;
     content?: string | SDKNativeContentBlock[];
+    model?: string;
   };
   // Result message fields
   subtype?: string;
@@ -169,7 +170,8 @@ function extractTextContent(content: string | SDKNativeContentBlock[] | undefine
 
   return content
     .filter((block): block is SDKNativeContentBlock & { type: 'text'; text: string } =>
-      block.type === 'text' && typeof block.text === 'string'
+      block.type === 'text' && typeof block.text === 'string' &&
+      block.text.trim() !== '(no content)'
     )
     .map(block => block.text)
     .join('\n');
@@ -271,8 +273,9 @@ function mapContentBlocks(content: string | SDKNativeContentBlock[] | undefined)
   for (const block of content) {
     switch (block.type) {
       case 'text':
-        // Trim to avoid visual gaps from leading/trailing whitespace
-        if (block.text && block.text.trim()) {
+        // Trim to avoid visual gaps from leading/trailing whitespace.
+        // Skip "(no content)" placeholder the SDK writes as the first assistant entry.
+        if (block.text && block.text.trim() && block.text.trim() !== '(no content)') {
           blocks.push({ type: 'text', content: block.text.trim() });
         }
         break;
@@ -415,13 +418,30 @@ function collectStructuredPatchResults(sdkMessages: SDKNativeMessage[]): Map<str
  * - Tool result messages (`toolUseResult` field)
  * - Skill prompt injections (`sourceToolUseID` field)
  * - Meta messages (`isMeta` field)
+ * - Compact summary messages (SDK-generated context after /compact)
+ * - Slash command invocations (`<command-name>`)
+ * - Command stdout (`<local-command-stdout>`)
  * Such messages should be skipped as they're internal SDK communication.
  */
 function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   if (sdkMsg.type !== 'user') return false;
-  return 'toolUseResult' in sdkMsg ||
-         'sourceToolUseID' in sdkMsg ||
-         !!sdkMsg.isMeta;
+  if ('toolUseResult' in sdkMsg ||
+      'sourceToolUseID' in sdkMsg ||
+      !!sdkMsg.isMeta) {
+    return true;
+  }
+
+  const text = extractTextContent(sdkMsg.message?.content);
+  if (!text) return false;
+
+  // Compact summary injected by SDK after /compact
+  if (text.startsWith('This session is being continued from a previous conversation')) return true;
+  // Slash command invocations (e.g., /compact, /clear)
+  if (text.includes('<command-name>')) return true;
+  // Command stdout/stderr output
+  if (text.includes('<local-command-stdout>') || text.includes('<local-command-stderr>')) return true;
+
+  return false;
 }
 
 export interface SDKSessionLoadResult {
@@ -482,10 +502,20 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
+  const seenUuids = new Set<string>();
 
   // Merge consecutive assistant messages until an actual user message appears
   for (const sdkMsg of result.messages) {
+    // Dedup: SDK may write the same message twice (e.g., around compaction)
+    if (sdkMsg.uuid) {
+      if (seenUuids.has(sdkMsg.uuid)) continue;
+      seenUuids.add(sdkMsg.uuid);
+    }
+
     if (isSystemInjectedMessage(sdkMsg)) continue;
+
+    // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
+    if (sdkMsg.type === 'assistant' && sdkMsg.message?.model === '<synthetic>') continue;
 
     const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults);
     if (!chatMsg) continue;

@@ -171,25 +171,29 @@ export class InputController {
       : selectionController.getContext();
 
     const externalContextPaths = externalContextSelector?.getExternalContexts();
+    const isCompact = content.trim().toLowerCase().startsWith('/compact');
 
     // User content first, context XML appended after (enables slash command detection)
     let promptToSend = content;
     let currentNoteForMessage: string | undefined;
 
-    // Append current note context if available
-    if (shouldSendCurrentNote && currentNotePath) {
-      promptToSend = appendCurrentNote(promptToSend, currentNotePath);
-      currentNoteForMessage = currentNotePath;
-    }
+    // SDK built-in commands (e.g., /compact) must be sent bare — context XML breaks detection
+    if (!isCompact) {
+      // Append current note context if available
+      if (shouldSendCurrentNote && currentNotePath) {
+        promptToSend = appendCurrentNote(promptToSend, currentNotePath);
+        currentNoteForMessage = currentNotePath;
+      }
 
-    // Append editor context if available
-    if (editorContext) {
-      promptToSend = appendEditorContext(promptToSend, editorContext);
-    }
+      // Append editor context if available
+      if (editorContext) {
+        promptToSend = appendEditorContext(promptToSend, editorContext);
+      }
 
-    // Transform context file mentions (e.g., @folder/file.ts) to absolute paths
-    if (fileContextManager) {
-      promptToSend = fileContextManager.transformContextMentions(promptToSend);
+      // Transform context file mentions (e.g., @folder/file.ts) to absolute paths
+      if (fileContextManager) {
+        promptToSend = fileContextManager.transformContextMentions(promptToSend);
+      }
     }
 
     fileContextManager?.markCurrentNoteSent();
@@ -225,7 +229,10 @@ export class InputController {
     state.currentTextEl = null;
     state.currentTextContent = '';
 
-    streamController.showThinkingIndicator();
+    streamController.showThinkingIndicator(
+      isCompact ? 'Compacting...' : undefined,
+      isCompact ? 'claudian-thinking--compact' : undefined,
+    );
     state.responseStartTime = performance.now();
 
     // Extract @-mentioned MCP servers from prompt
@@ -302,8 +309,9 @@ export class InputController {
         state.isStreaming = false;
         state.cancelRequested = false;
 
-        // Capture response duration before resetting state (skip for interrupted responses)
-        if (!wasInterrupted) {
+        // Capture response duration before resetting state (skip for interrupted responses and compaction)
+        const hasCompactBoundary = assistantMsg.contentBlocks?.some(b => b.type === 'compact_boundary');
+        if (!wasInterrupted && !hasCompactBoundary) {
           const durationSeconds = state.responseStartTime
             ? Math.floor((performance.now() - state.responseStartTime) / 1000)
             : 0;

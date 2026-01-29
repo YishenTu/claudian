@@ -224,8 +224,9 @@ export class MessageRenderer {
       }
     }
 
-    // Render response duration footer
-    if (msg.durationSeconds && msg.durationSeconds > 0) {
+    // Render response duration footer (skip when message contains a compaction boundary)
+    const hasCompactBoundary = msg.contentBlocks?.some(b => b.type === 'compact_boundary');
+    if (msg.durationSeconds && msg.durationSeconds > 0 && !hasCompactBoundary) {
       const flavorWord = msg.durationFlavorWord || 'Baked';
       const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
       footerEl.createSpan({

@@ -6,6 +6,11 @@
   animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
+.claudian-thinking.claudian-thinking--compact {
+  color: var(--text-accent);
+  animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
 .claudian-thinking-hint {
   color: var(--text-muted);
   font-style: normal;
