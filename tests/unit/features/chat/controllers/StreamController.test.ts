@@ -1349,12 +1349,12 @@ describe('StreamController - Text Content', () => {
 
       // Set up: message has a subagent
       msg.subagents = [
-        { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [] },
+        { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [], isExpanded: false },
       ];
 
       // getSyncSubagent returns a subagent state (indicating this is a sync subagent)
       (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
-        info: { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [] },
+        info: { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [], isExpanded: false },
       });
 
       await controller.handleStreamChunk(

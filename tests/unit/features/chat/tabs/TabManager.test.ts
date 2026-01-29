@@ -1095,7 +1095,7 @@ describe('TabManager - Concurrent Switch Guard', () => {
     });
     tab1!.conversationId = 'conv-1';
     tab1!.state.messages = [];
-    tab1!.controllers.conversationController.switchTo = jest.fn().mockReturnValue(hangingPromise);
+    tab1!.controllers.conversationController!.switchTo = jest.fn().mockReturnValue(hangingPromise);
 
     jest.clearAllMocks();
 
