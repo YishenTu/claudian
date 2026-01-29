@@ -865,7 +865,10 @@ export class ContextUsageMeter {
     }
 
     // Set tooltip with detailed usage
-    const tooltip = `${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
+    let tooltip = `${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
+    if (usage.percentage > 80) {
+      tooltip += ' (Approaching limit, run `/compact` to continue)';
+    }
     this.container.setAttribute('data-tooltip', tooltip);
   }
 
