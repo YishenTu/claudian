@@ -109,11 +109,4 @@ export function extractBoolean(
   return undefined;
 }
 
-export function extractNumber(
-  fm: Record<string, unknown>,
-  key: string
-): number | undefined {
-  const val = fm[key];
-  if (typeof val === 'number' && !isNaN(val)) return val;
-  return undefined;
-}
+

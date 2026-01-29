@@ -2,7 +2,6 @@ import * as obsidian from 'obsidian';
 
 import {
   extractBoolean,
-  extractNumber,
   extractString,
   extractStringArray,
   normalizeStringArray,
@@ -242,24 +241,6 @@ describe('extractBoolean', () => {
 
   it('returns undefined for non-boolean', () => {
     expect(extractBoolean({ flag: 'yes' }, 'flag')).toBeUndefined();
-  });
-});
-
-describe('extractNumber', () => {
-  it('extracts number', () => {
-    expect(extractNumber({ count: 5 }, 'count')).toBe(5);
-  });
-
-  it('returns undefined for missing key', () => {
-    expect(extractNumber({}, 'count')).toBeUndefined();
-  });
-
-  it('returns undefined for non-number', () => {
-    expect(extractNumber({ count: 'five' }, 'count')).toBeUndefined();
-  });
-
-  it('returns undefined for NaN', () => {
-    expect(extractNumber({ count: NaN }, 'count')).toBeUndefined();
   });
 });
 

@@ -136,7 +136,6 @@ export class QueryOptionsBuilder {
     ctx: QueryOptionsContext,
     externalContextPaths?: string[]
   ): PersistentQueryConfig {
-    // System prompt settings (agents are passed via Options.agents, not system prompt)
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,

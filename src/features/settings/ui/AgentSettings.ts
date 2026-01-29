@@ -310,7 +310,4 @@ export class AgentSettings {
     new Notice(`Subagent "${agent.name}" deleted`);
   }
 
-  public refresh(): void {
-    this.render();
-  }
 }

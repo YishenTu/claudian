@@ -1,2 +1,2 @@
 export { AgentManager } from './AgentManager';
-export { buildAgentFromFrontmatter, parseAgentFile, parseModel, parsePermissionMode, parseToolsList } from './AgentStorage';
+export { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';

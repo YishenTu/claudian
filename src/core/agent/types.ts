@@ -152,7 +152,6 @@ export function isTurnCompleteMessage(message: SDKMessage): boolean {
 
 export function computeSystemPromptKey(settings: SystemPromptSettings): string {
   // Include only fields surfaced in the system prompt to avoid stale cache hits.
-  // Note: Agents are passed via Options.agents, not system prompt, so not included here.
   const parts = [
     settings.mediaFolder || '',
     settings.customPrompt || '',
