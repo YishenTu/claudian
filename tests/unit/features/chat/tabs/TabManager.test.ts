@@ -1063,3 +1063,279 @@ describe('TabManager - Service Initialization Errors', () => {
     consoleSpy.mockRestore();
   });
 });
+
+describe('TabManager - Concurrent Switch Guard', () => {
+  it('should prevent concurrent tab switches', async () => {
+    jest.clearAllMocks();
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({ id: `tab-${tabCounter}` });
+    });
+
+    const callbacks: TabManagerCallbacks = {
+      onTabSwitched: jest.fn(),
+    };
+    const manager = new TabManager(
+      createMockPlugin(),
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView(),
+      callbacks
+    );
+
+    const tab1 = await manager.createTab();
+    const tab2 = await manager.createTab();
+
+    // Set up tab-1 to trigger the async conversationController.switchTo path
+    // so that switchToTab hangs mid-execution with isSwitchingTab = true
+    let resolveSwitchTo!: () => void;
+    const hangingPromise = new Promise<void>(resolve => {
+      resolveSwitchTo = resolve;
+    });
+    tab1!.conversationId = 'conv-1';
+    tab1!.state.messages = [];
+    tab1!.controllers.conversationController.switchTo = jest.fn().mockReturnValue(hangingPromise);
+
+    jest.clearAllMocks();
+
+    // Start first switch to tab-1 (will hang on conversationController.switchTo)
+    const firstSwitch = manager.switchToTab(tab1!.id);
+
+    // While first switch is in progress, try a second switch.
+    // isSwitchingTab is true, so this should return immediately (lines 143-144)
+    await manager.switchToTab(tab2!.id);
+
+    // Only the first switch should have called deactivateTab/activateTab
+    expect(mockDeactivateTab).toHaveBeenCalledTimes(1);
+    expect(mockActivateTab).toHaveBeenCalledTimes(1);
+
+    // Resolve the hanging first switch
+    resolveSwitchTo();
+    await firstSwitch;
+
+    // onTabSwitched called once from the first switch only
+    expect(callbacks.onTabSwitched).toHaveBeenCalledTimes(1);
+
+    // After first switch completes, isSwitchingTab is false
+    // and subsequent switches should work normally
+    await manager.switchToTab(tab2!.id);
+    expect(callbacks.onTabSwitched).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('TabManager - closeTab Edge Cases', () => {
+  it('should return false for non-existent tab', async () => {
+    jest.clearAllMocks();
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({ id: `tab-${tabCounter}` });
+    });
+
+    const manager = new TabManager(
+      createMockPlugin(),
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+    await manager.createTab();
+
+    const result = await manager.closeTab('non-existent-tab');
+    expect(result).toBe(false);
+  });
+
+  it('should not close last empty tab (preserves warm service)', async () => {
+    jest.clearAllMocks();
+    mockCreateTab.mockReturnValue(
+      createMockTabData({ id: 'only-tab' })
+    );
+
+    const manager = new TabManager(
+      createMockPlugin(),
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+    await manager.createTab();
+
+    const result = await manager.closeTab('only-tab');
+    expect(result).toBe(false);
+    expect(manager.getTabCount()).toBe(1);
+  });
+
+  it('should create new tab and initialize service when closing the last tab with conversation', async () => {
+    jest.clearAllMocks();
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({
+        id: `tab-${tabCounter}`,
+        conversationId: tabCounter === 1 ? 'conv-existing' : null,
+      });
+    });
+
+    const callbacks: TabManagerCallbacks = {
+      onTabCreated: jest.fn(),
+      onTabClosed: jest.fn(),
+    };
+
+    const manager = new TabManager(
+      createMockPlugin(),
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView(),
+      callbacks
+    );
+    await manager.createTab(); // tab-1 with conversationId
+
+    jest.clearAllMocks();
+
+    // Close the only tab (has conversationId so it bypasses the last-empty-tab guard)
+    const result = await manager.closeTab('tab-1');
+
+    expect(result).toBe(true);
+    expect(manager.getTabCount()).toBe(1); // New tab was created
+    expect(mockCreateTab).toHaveBeenCalled();
+    expect(mockInitializeTabService).toHaveBeenCalled();
+    expect(callbacks.onTabClosed).toHaveBeenCalledWith('tab-1');
+  });
+});
+
+describe('TabManager - switchToTab Session Sync', () => {
+  it('should sync service session for already-loaded tab with conversation', async () => {
+    jest.clearAllMocks();
+
+    const mockSetSessionId = jest.fn();
+    const mockService = {
+      setSessionId: mockSetSessionId,
+      closePersistentQuery: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      onReadyStateChange: jest.fn(() => () => {}),
+      isReady: jest.fn().mockReturnValue(true),
+    };
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      const tab = createMockTabData({
+        id: `tab-${tabCounter}`,
+        conversationId: tabCounter === 2 ? 'conv-loaded' : null,
+        service: tabCounter === 2 ? mockService : null,
+        serviceInitialized: tabCounter === 2,
+      });
+      // For tab-2, simulate already having messages loaded
+      if (tabCounter === 2) {
+        tab.state.messages = [{ id: 'msg-1', role: 'user', content: 'test' }] as any;
+      }
+      return tab;
+    });
+
+    const plugin = createMockPlugin();
+    plugin.getConversationById = jest.fn().mockResolvedValue({
+      id: 'conv-loaded',
+      messages: [{ id: 'msg-1', role: 'user', content: 'test' }],
+      sessionId: 'session-xyz',
+      externalContextPaths: ['/some/path'],
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    await manager.createTab(); // tab-1, active
+    await manager.createTab(); // tab-2, auto-switches and triggers session sync
+
+    // Should have synced the service session during auto-switch to tab-2
+    expect(mockSetSessionId).toHaveBeenCalledWith('session-xyz', ['/some/path']);
+  });
+
+  it('should use persistentExternalContextPaths when conversation has no messages', async () => {
+    jest.clearAllMocks();
+
+    const mockSetSessionId = jest.fn();
+    const mockService = {
+      setSessionId: mockSetSessionId,
+    };
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      const tab = createMockTabData({
+        id: `tab-${tabCounter}`,
+        conversationId: tabCounter === 2 ? 'conv-empty' : null,
+        service: tabCounter === 2 ? mockService : null,
+        serviceInitialized: tabCounter === 2,
+      });
+      // Tab has local messages but the persisted conversation does not
+      if (tabCounter === 2) {
+        tab.state.messages = [{ id: 'msg-1', role: 'user', content: 'test' }] as any;
+      }
+      return tab;
+    });
+
+    const plugin = createMockPlugin({
+      settings: {
+        maxTabs: DEFAULT_MAX_TABS,
+        persistentExternalContextPaths: ['/persistent/path'],
+      },
+    });
+    plugin.getConversationById = jest.fn().mockResolvedValue({
+      id: 'conv-empty',
+      messages: [],
+      sessionId: 'session-abc',
+      externalContextPaths: [],
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    await manager.createTab(); // tab-1
+    await manager.createTab(); // tab-2, auto-switches and triggers session sync
+
+    // conversation.messages is empty, so should fall back to persistentExternalContextPaths
+    expect(mockSetSessionId).toHaveBeenCalledWith('session-abc', ['/persistent/path']);
+  });
+
+  it('should initialize welcome for new tab without conversation', async () => {
+    jest.clearAllMocks();
+
+    const mockInitializeWelcome = jest.fn();
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      const tab = createMockTabData({ id: `tab-${tabCounter}` });
+      tab.controllers.conversationController = {
+        ...tab.controllers.conversationController,
+        initializeWelcome: mockInitializeWelcome,
+      };
+      return tab;
+    });
+
+    const manager = new TabManager(
+      createMockPlugin(),
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    await manager.createTab(); // tab-1
+    await manager.createTab(); // tab-2 (now active)
+
+    // Switch to tab-1 first so we can switch back to tab-2
+    await manager.switchToTab('tab-1');
+    mockInitializeWelcome.mockClear();
+
+    // Switch to tab-2 (no conversationId, no messages -> should call initializeWelcome)
+    await manager.switchToTab('tab-2');
+
+    expect(mockInitializeWelcome).toHaveBeenCalled();
+  });
+});

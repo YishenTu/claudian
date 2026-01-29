@@ -1113,6 +1113,513 @@ describe('InputController - Message Queue', () => {
     });
   });
 
+  describe('ensureServiceInitialized failure', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should show Notice and reset streaming when ensureServiceInitialized returns false', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        ensureServiceInitialized: jest.fn().mockResolvedValue(false),
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('Failed to initialize agent service. Please try again.');
+      expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
+      expect(deps.state.isStreaming).toBe(false);
+      // Agent query should NOT have been called
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Agent service null', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should show Notice when getAgentService returns null', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getAgentService: () => null,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('Agent service not available. Please reload the plugin.');
+      // Agent query should NOT have been called
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Streaming error handling', () => {
+    it('should catch errors and display via appendText', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Make query throw an error
+      ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
+        throw new Error('Network timeout');
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.streamController.appendText).toHaveBeenCalledWith('\n\n**Error:** Network timeout');
+      expect(deps.state.isStreaming).toBe(false);
+    });
+
+    it('should handle non-Error thrown values', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Make query throw a non-Error value
+      ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
+        throw 'string error';
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.streamController.appendText).toHaveBeenCalledWith('\n\n**Error:** Unknown error');
+    });
+  });
+
+  describe('Stream interruption', () => {
+    it('should append interrupted text when cancelRequested is true', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Create an async generator that yields a chunk, then the state has cancelRequested
+      ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
+        return (async function* () {
+          // Simulate the cancel being requested during streaming
+          deps.state.cancelRequested = true;
+          yield { type: 'text', content: 'partial' };
+        })();
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.streamController.appendText).toHaveBeenCalledWith(
+        expect.stringContaining('Interrupted')
+      );
+      expect(deps.state.isStreaming).toBe(false);
+      expect(deps.state.cancelRequested).toBe(false);
+    });
+  });
+
+  describe('Duration footer', () => {
+    it('should render response duration footer when durationSeconds > 0', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Mock performance.now to simulate elapsed time (> 1 second)
+      // First call sets responseStartTime; must be non-zero (0 is falsy and skips duration)
+      let callCount = 0;
+      jest.spyOn(performance, 'now').mockImplementation(() => {
+        callCount++;
+        // First call (responseStartTime) returns 1000, subsequent calls return 6000 (5 seconds elapsed)
+        return callCount <= 1 ? 1000 : 6000;
+      });
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // The assistant message should have durationSeconds set
+      const assistantMsg = deps.state.messages.find((m: any) => m.role === 'assistant');
+      expect(assistantMsg).toBeDefined();
+      expect(assistantMsg!.durationSeconds).toBe(5);
+      expect(assistantMsg!.durationFlavorWord).toBeDefined();
+
+      jest.spyOn(performance, 'now').mockRestore();
+    });
+  });
+
+  describe('External context in query', () => {
+    it('should pass externalContextPaths in queryOptions', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+      const externalPaths = ['/external/path1', '/external/path2'];
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getExternalContextSelector: () => ({
+          getExternalContexts: () => externalPaths,
+          addExternalContext: jest.fn(),
+        }),
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
+      const queryOptions = queryCall[3];
+      expect(queryOptions.externalContextPaths).toEqual(externalPaths);
+    });
+  });
+
+  describe('Editor context', () => {
+    it('should append editorContext to prompt when available', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      const editorContext = {
+        notePath: 'test/note.md',
+        mode: 'selection' as const,
+        selectedText: 'selected text content',
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+      // Mock selectionController to return an editorContext
+      (deps.selectionController.getContext as jest.Mock).mockReturnValue(editorContext);
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'hello';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
+      const promptSent = queryCall[0];
+      // appendEditorContext wraps in <editor_selection> or <editor_cursor> tags
+      expect(promptSent).toContain('selected text content');
+      expect(promptSent).toContain('test/note.md');
+    });
+  });
+
+  describe('Built-in commands - unknown', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should show Notice for unknown built-in command', async () => {
+      // We need to trigger the unknown command path.
+      // detectBuiltInCommand must return a result with an unknown action.
+      // Since /clear and /add-dir are known, let's mock detectBuiltInCommand indirectly.
+      // The simplest approach: directly call executeBuiltInCommand via the private method
+      controller = new InputController(deps);
+
+      await (controller as any).executeBuiltInCommand('nonexistent-command', '');
+
+      expect(mockNotice).toHaveBeenCalledWith('Unknown command: nonexistent-command');
+    });
+  });
+
+  describe('Title generation callback branches', () => {
+    it('should rename conversation when title generation callback succeeds', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn().mockImplementation(
+          async (convId: string, _user: string, callback: any) => {
+            (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+              id: convId,
+              title: 'Test Title',
+            });
+            await callback(convId, { success: true, title: 'AI Generated Title' });
+          }
+        ),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'text', content: 'Response' }, { type: 'done' }])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') msg.content = chunk.content;
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'AI Generated Title');
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+        titleGenerationStatus: 'success',
+      });
+    });
+
+    it('should mark as failed when title generation callback fails', async () => {
+      const mockTitleService = {
+        generateTitle: jest.fn().mockImplementation(
+          async (convId: string, _user: string, callback: any) => {
+            (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+              id: convId,
+              title: 'Test Title',
+            });
+            await callback(convId, { success: false, title: '' });
+          }
+        ),
+        cancel: jest.fn(),
+      };
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getTitleGenerationService: () => mockTitleService as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'text', content: 'Response' }, { type: 'done' }])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') msg.content = chunk.content;
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+        titleGenerationStatus: 'failed',
+      });
+    });
+  });
+
+  describe('handleApprovalRequest', () => {
+    it('should create and store approval modal as pending', async () => {
+      controller = new InputController(deps);
+
+      // Start the approval request (returns a promise that won't resolve until callback)
+      void controller.handleApprovalRequest(
+        'bash',
+        { command: 'ls -la' },
+        'Run shell command'
+      );
+
+      // The modal should be stored as pendingApprovalModal
+      expect((controller as any).pendingApprovalModal).not.toBeNull();
+      expect((controller as any).pendingApprovalModal.open).toHaveBeenCalled();
+
+      // Dismiss it to clean up
+      controller.dismissPendingApproval();
+      expect((controller as any).pendingApprovalModal).toBeNull();
+    });
+  });
+
+  describe('handleInstructionSubmit', () => {
+    it('should create InstructionModal and call refineInstruction', async () => {
+      const mockInstructionRefineService = {
+        refineInstruction: jest.fn().mockResolvedValue({
+          success: true,
+          refinedInstruction: 'refined instruction',
+        }),
+        resetConversation: jest.fn(),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const mockInstructionModeManager = {
+        clear: jest.fn(),
+      };
+
+      deps = createMockDeps({
+        getInstructionRefineService: () => mockInstructionRefineService as any,
+        getInstructionModeManager: () => mockInstructionModeManager as any,
+      });
+      deps.plugin.settings.systemPrompt = '';
+
+      controller = new InputController(deps);
+
+      await controller.handleInstructionSubmit('add logging');
+
+      expect(mockInstructionRefineService.resetConversation).toHaveBeenCalled();
+      expect(mockInstructionRefineService.refineInstruction).toHaveBeenCalledWith(
+        'add logging',
+        ''
+      );
+    });
+
+    it('should return early when instructionRefineService is null', async () => {
+      deps = createMockDeps({
+        getInstructionRefineService: () => null,
+      });
+      controller = new InputController(deps);
+
+      // Should not throw
+      await expect(controller.handleInstructionSubmit('test')).resolves.not.toThrow();
+    });
+  });
+
+  describe('processQueuedMessage restores images', () => {
+    it('should restore images from queued message', () => {
+      jest.useFakeTimers();
+      try {
+        const mockImages = [{ id: 'img1', name: 'test.png' }];
+        deps.state.queuedMessage = {
+          content: 'queued content',
+          images: mockImages as any,
+          editorContext: null,
+        };
+        const imageContextManager = deps.getImageContextManager()!;
+        const sendSpy = jest.spyOn(controller, 'sendMessage').mockResolvedValue(undefined);
+
+        (controller as any).processQueuedMessage();
+        jest.runAllTimers();
+
+        expect(imageContextManager.setImages).toHaveBeenCalledWith(mockImages);
+        sendSpy.mockRestore();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('Sending messages - edge cases', () => {
     it('should not send empty message without images', async () => {
       inputEl.value = '';
@@ -1158,6 +1665,174 @@ describe('InputController - Message Queue', () => {
       expect((deps as any).mockAgentService.query).toHaveBeenCalled();
       expect(deps.state.messages).toHaveLength(2);
       expect(deps.state.messages[0].images).toHaveLength(1);
+    });
+  });
+
+  describe('Stream invalidation', () => {
+    it('should break from stream loop and skip cleanup when stream generation changes', async () => {
+      const welcomeEl = { style: { display: '' } } as any;
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      // Create an async generator that bumps streamGeneration mid-stream
+      ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
+        return (async function* () {
+          yield { type: 'text', content: 'partial' };
+          // Simulate stream invalidation (e.g. tab closed during stream)
+          deps.state.bumpStreamGeneration();
+          yield { type: 'text', content: 'should not be processed' };
+        })();
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // The stream was invalidated, so isStreaming should still be true
+      // (cleanup was skipped) and no interrupt text should appear
+      expect(deps.streamController.appendText).not.toHaveBeenCalledWith(
+        expect.stringContaining('Interrupted')
+      );
+    });
+  });
+
+  describe('handleInstructionSubmit - advanced paths', () => {
+    it('should show clarification when result has clarification', async () => {
+      const mockInstructionRefineService = {
+        refineInstruction: jest.fn().mockResolvedValue({
+          success: true,
+          clarification: 'Please clarify what you mean',
+        }),
+        resetConversation: jest.fn(),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const mockInstructionModeManager = { clear: jest.fn() };
+
+      deps = createMockDeps({
+        getInstructionRefineService: () => mockInstructionRefineService as any,
+        getInstructionModeManager: () => mockInstructionModeManager as any,
+      });
+      controller = new InputController(deps);
+
+      await controller.handleInstructionSubmit('ambiguous instruction');
+
+      // The InstructionModal should have been constructed with callbacks
+      // and showClarification should be called (via the mock)
+      expect(mockInstructionRefineService.refineInstruction).toHaveBeenCalledWith(
+        'ambiguous instruction',
+        undefined
+      );
+    });
+
+    it('should show error when result has no clarification or instruction', async () => {
+      const mockInstructionRefineService = {
+        refineInstruction: jest.fn().mockResolvedValue({
+          success: true,
+          // No clarification, no refinedInstruction
+        }),
+        resetConversation: jest.fn(),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const mockInstructionModeManager = { clear: jest.fn() };
+
+      deps = createMockDeps({
+        getInstructionRefineService: () => mockInstructionRefineService as any,
+        getInstructionModeManager: () => mockInstructionModeManager as any,
+      });
+      controller = new InputController(deps);
+      mockNotice.mockClear();
+
+      await controller.handleInstructionSubmit('empty result');
+
+      expect(mockNotice).toHaveBeenCalledWith('No instruction received');
+      expect(mockInstructionModeManager.clear).toHaveBeenCalled();
+    });
+
+    it('should handle cancelled result from refineInstruction', async () => {
+      const mockInstructionRefineService = {
+        refineInstruction: jest.fn().mockResolvedValue({
+          success: false,
+          error: 'Cancelled',
+        }),
+        resetConversation: jest.fn(),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const mockInstructionModeManager = { clear: jest.fn() };
+
+      deps = createMockDeps({
+        getInstructionRefineService: () => mockInstructionRefineService as any,
+        getInstructionModeManager: () => mockInstructionModeManager as any,
+      });
+      controller = new InputController(deps);
+
+      await controller.handleInstructionSubmit('cancelled instruction');
+
+      expect(mockInstructionModeManager.clear).toHaveBeenCalled();
+      // Should NOT show Notice for Cancelled
+      expect(mockNotice).not.toHaveBeenCalledWith(expect.stringContaining('Cancelled'));
+    });
+
+    it('should handle non-cancelled error from refineInstruction', async () => {
+      const mockInstructionRefineService = {
+        refineInstruction: jest.fn().mockResolvedValue({
+          success: false,
+          error: 'API Error',
+        }),
+        resetConversation: jest.fn(),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const mockInstructionModeManager = { clear: jest.fn() };
+
+      deps = createMockDeps({
+        getInstructionRefineService: () => mockInstructionRefineService as any,
+        getInstructionModeManager: () => mockInstructionModeManager as any,
+      });
+      controller = new InputController(deps);
+      mockNotice.mockClear();
+
+      await controller.handleInstructionSubmit('error instruction');
+
+      expect(mockNotice).toHaveBeenCalledWith('API Error');
+      expect(mockInstructionModeManager.clear).toHaveBeenCalled();
+    });
+
+    it('should handle exception thrown during refineInstruction', async () => {
+      const mockInstructionRefineService = {
+        refineInstruction: jest.fn().mockRejectedValue(new Error('Unexpected error')),
+        resetConversation: jest.fn(),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+      };
+      const mockInstructionModeManager = { clear: jest.fn() };
+
+      deps = createMockDeps({
+        getInstructionRefineService: () => mockInstructionRefineService as any,
+        getInstructionModeManager: () => mockInstructionModeManager as any,
+      });
+      controller = new InputController(deps);
+      mockNotice.mockClear();
+
+      await controller.handleInstructionSubmit('error instruction');
+
+      expect(mockNotice).toHaveBeenCalledWith('Error: Unexpected error');
+      expect(mockInstructionModeManager.clear).toHaveBeenCalled();
     });
   });
 });

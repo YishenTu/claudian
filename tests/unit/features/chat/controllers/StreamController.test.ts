@@ -1,6 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
-import { TOOL_TASK, TOOL_TODO_WRITE } from '@/core/tools/toolNames';
+import { TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -1176,6 +1176,330 @@ describe('StreamController - Text Content', () => {
 
       // Should not throw - manager handled errors internally
       expect(deps.subagentManager.renderPendingTask).toHaveBeenCalledWith('task-1', deps.state.currentContentEl);
+    });
+  });
+
+  describe('Text ↔ Thinking transitions', () => {
+    it('text arrives while thinking state is active → finalizeCurrentThinkingBlock is called', async () => {
+      const { finalizeThinkingBlock } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up active thinking state
+      deps.state.currentThinkingState = {
+        content: 'Let me think...',
+        container: createMockEl(),
+        contentEl: createMockEl(),
+        startTime: Date.now(),
+      } as any;
+
+      // Text arrives while thinking is active
+      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
+
+      // finalizeCurrentThinkingBlock should have been called (which calls finalizeThinkingBlock)
+      expect(finalizeThinkingBlock).toHaveBeenCalled();
+      expect(deps.state.currentThinkingState).toBeNull();
+      // Thinking content should be in contentBlocks
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'thinking', content: 'Let me think...' })
+      );
+    });
+
+    it('thinking arrives while textEl exists → finalizeCurrentTextBlock is called', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up active text state
+      deps.state.currentTextEl = createMockEl();
+      deps.state.currentTextContent = 'Some text';
+
+      // Thinking arrives while text is active
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Hmm...' }, msg);
+
+      // Text block should have been finalized
+      expect(deps.state.currentTextEl).toBeNull();
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'text', content: 'Some text' })
+      );
+      expect(deps.renderer.addTextCopyButton).toHaveBeenCalledWith(
+        expect.anything(),
+        'Some text'
+      );
+    });
+
+    it('tool_use arrives while thinking state → finalizeCurrentThinkingBlock is called', async () => {
+      const { finalizeThinkingBlock } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up active thinking state
+      deps.state.currentThinkingState = {
+        content: 'Reasoning...',
+        container: createMockEl(),
+        contentEl: createMockEl(),
+        startTime: Date.now(),
+      } as any;
+
+      // tool_use arrives while thinking is active
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
+        msg
+      );
+
+      // finalizeCurrentThinkingBlock should have been called
+      expect(finalizeThinkingBlock).toHaveBeenCalled();
+      expect(deps.state.currentThinkingState).toBeNull();
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'thinking', content: 'Reasoning...' })
+      );
+    });
+  });
+
+  describe('Agent output tool use/result', () => {
+    it('TOOL_AGENT_OUTPUT chunk creates tool call and delegates to subagentManager.handleAgentOutputToolUse', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'agent-out-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'task-1' } },
+        msg
+      );
+
+      expect(deps.subagentManager.handleAgentOutputToolUse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'agent-out-1',
+          name: TOOL_AGENT_OUTPUT,
+          status: 'running',
+        })
+      );
+      // Agent output tool_use does not add to msg.toolCalls or contentBlocks
+      expect(msg.toolCalls).toEqual([]);
+      expect(msg.contentBlocks).toEqual([]);
+    });
+
+    it('Agent output tool result handled via handleAgentOutputToolResult returning true', async () => {
+      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up: agent output tool is linked
+      (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
+      (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce({});
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'agent-out-1', content: 'agent result' },
+        msg
+      );
+
+      expect(deps.subagentManager.handleAgentOutputToolResult).toHaveBeenCalledWith(
+        'agent-out-1',
+        'agent result',
+        false
+      );
+      // Regular tool result handling should NOT have been applied
+      expect(updateToolCallResult).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Tool label update on input re-dispatch', () => {
+    it('second tool_use with same id updates existing tool input and label', async () => {
+      const { getToolLabel } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // First tool_use - creates the tool call
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
+        msg
+      );
+
+      // Flush the tool so it transitions from pending to rendered
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      // Manually set up a rendered tool element with a label child
+      // (the mock renderToolCall doesn't actually populate toolCallElements)
+      const toolEl = createMockEl();
+      const labelChild = toolEl.createDiv({ cls: 'claudian-tool-label' });
+      labelChild.setText('Read: test.md');
+      deps.state.toolCallElements.set('read-1', toolEl);
+
+      getToolLabel.mockReturnValueOnce('Read: updated.md');
+
+      // Second tool_use with same id - should update input and label
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'updated.md' } },
+        msg
+      );
+
+      // Input should be merged
+      expect(msg.toolCalls![0].input).toEqual(
+        expect.objectContaining({ file_path: 'updated.md' })
+      );
+      // getToolLabel should have been called with updated input
+      expect(getToolLabel).toHaveBeenCalledWith('Read', expect.objectContaining({ file_path: 'updated.md' }));
+      // Label text should be updated
+      expect(labelChild.textContent).toBe('Read: updated.md');
+    });
+  });
+
+  describe('Sync subagent finalization', () => {
+    it('tool_result for a sync subagent calls finalizeSyncSubagent and updates message subagents', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up: message has a subagent
+      msg.subagents = [
+        { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [] },
+      ];
+
+      // getSyncSubagent returns a subagent state (indicating this is a sync subagent)
+      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
+        info: { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [] },
+      });
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'task-1', content: 'Task completed successfully' },
+        msg
+      );
+
+      // finalizeSyncSubagent should have been called
+      expect(deps.subagentManager.finalizeSyncSubagent).toHaveBeenCalledWith(
+        'task-1',
+        'Task completed successfully',
+        false
+      );
+
+      // Message subagent should be updated
+      expect(msg.subagents![0].status).toBe('completed');
+      expect(msg.subagents![0].result).toBe('Task completed successfully');
+    });
+  });
+
+  describe('Async task tool result', () => {
+    it('tool_result for a pending async task returns true from handleAsyncTaskToolResult', async () => {
+      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up: task is a pending async task
+      (deps.subagentManager.isPendingAsyncTask as jest.Mock).mockReturnValueOnce(true);
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'task-1', content: 'Task started in background' },
+        msg
+      );
+
+      // handleTaskToolResult should have been called
+      expect(deps.subagentManager.handleTaskToolResult).toHaveBeenCalledWith(
+        'task-1',
+        'Task started in background',
+        undefined
+      );
+
+      // Regular tool result handling should NOT have been applied
+      expect(updateToolCallResult).not.toHaveBeenCalled();
+      expect(msg.toolCalls).toEqual([]);
+    });
+  });
+
+  describe('showThinkingIndicator - timer disconnection cleanup', () => {
+    it('should clear interval when timerSpan becomes disconnected from DOM', () => {
+      // Use a non-zero value: with fake timers, performance.now() starts at 0,
+      // and !0 is truthy which would cause updateTimer to return early.
+      jest.advanceTimersByTime(1);
+      deps.state.responseStartTime = performance.now();
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500); // Past debounce delay
+
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
+
+      const thinkingEl = deps.state.thinkingEl;
+      expect(thinkingEl).not.toBeNull();
+
+      // The timer span is the second child (first is flavor text, second is hint)
+      const timerSpan = thinkingEl!.children[1];
+      expect(timerSpan).toBeDefined();
+
+      // Mock elements don't have isConnected by default (undefined = falsy),
+      // so first set it to true so the timer runs normally on its first tick.
+      Object.defineProperty(timerSpan, 'isConnected', { value: true, writable: true, configurable: true });
+
+      // Advance time - interval should still run (isConnected is true)
+      jest.advanceTimersByTime(1000);
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
+      // Verify the interval callback actually ran by checking the timer text was updated
+      expect((timerSpan as any).textContent).toContain('esc to interrupt');
+
+      // Now simulate disconnection from DOM
+      (timerSpan as any).isConnected = false;
+
+      // Advance time to trigger the interval callback
+      jest.advanceTimersByTime(1000);
+
+      // Interval should have been cleared because isConnected is false
+      expect(deps.state.flavorTimerInterval).toBeNull();
+    });
+  });
+
+  describe('showThinkingIndicator - pre-existing interval', () => {
+    it('should clear pre-existing interval before creating new one', () => {
+      // Advance fake clock so performance.now() returns non-zero
+      jest.advanceTimersByTime(1);
+      deps.state.responseStartTime = performance.now();
+      const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+
+      // Manually set a pre-existing interval
+      deps.state.flavorTimerInterval = setInterval(() => {}, 9999) as unknown as ReturnType<typeof setInterval>;
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+
+      // clearInterval should have been called for the pre-existing interval
+      expect(clearIntervalSpy).toHaveBeenCalled();
+
+      // A new interval should have been created
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
+
+      clearIntervalSpy.mockRestore();
+    });
+  });
+
+  describe('appendThinking - no currentContentEl', () => {
+    it('should not create thinking state when currentContentEl is null', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = null;
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'test thinking' }, msg);
+
+      // No thinking state should be created
+      expect(deps.state.currentThinkingState).toBeNull();
+    });
+  });
+
+  describe('showThinkingIndicator - responseStartTime null in timer', () => {
+    it('should not update timer text when responseStartTime is null', () => {
+      // Advance fake clock so performance.now() returns non-zero
+      jest.advanceTimersByTime(1);
+      deps.state.responseStartTime = performance.now();
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+
+      expect(deps.state.thinkingEl).not.toBeNull();
+
+      // Get timerSpan and set isConnected to true for proper timer operation
+      const timerSpan = deps.state.thinkingEl!.children[1];
+      Object.defineProperty(timerSpan, 'isConnected', { value: true, configurable: true });
+
+      // Clear responseStartTime to trigger early return in updateTimer
+      deps.state.responseStartTime = null;
+
+      // Advance time to trigger timer callback - should not throw
+      jest.advanceTimersByTime(1000);
+
+      // Timer should still be set (interval not cleared by the null check)
+      expect(deps.state.flavorTimerInterval).not.toBeNull();
     });
   });
 });

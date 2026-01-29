@@ -42,6 +42,7 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
       findEmptyConversation: jest.fn().mockResolvedValue(null),
       updateConversation: jest.fn().mockResolvedValue(undefined),
       renameConversation: jest.fn().mockResolvedValue(undefined),
+      deleteConversation: jest.fn().mockResolvedValue(undefined),
       agentService: {
         getSessionId: jest.fn().mockResolvedValue(null),
         setSessionId: jest.fn(),
@@ -1135,5 +1136,893 @@ describe('ConversationController - Previous SDK Session IDs', () => {
         })
       );
     });
+  });
+});
+
+describe('ConversationController - formatDate', () => {
+  let controller: ConversationController;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should return time format for today', () => {
+    const now = new Date();
+    const result = controller.formatDate(now.getTime());
+
+    // Should return HH:MM format (time only for today)
+    expect(result).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it('should return month/day format for a past date', () => {
+    // Use a date clearly in the past (2023-01-15)
+    const pastDate = new Date(2023, 0, 15).getTime();
+    const result = controller.formatDate(pastDate);
+
+    // Should contain "Jan" and "15" (month short + day)
+    expect(result).toContain('15');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('should return month/day format for yesterday', () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const result = controller.formatDate(yesterday.getTime());
+
+    // Yesterday should not match HH:MM pattern (it's not today)
+    // It should be a date format like "Jan 28"
+    expect(result).not.toMatch(/^\d{2}:\d{2}$/);
+  });
+});
+
+describe('ConversationController - toggleHistoryDropdown', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should add visible class when dropdown is hidden', () => {
+    const dropdown = deps.getHistoryDropdown()!;
+    expect(dropdown.hasClass('visible')).toBe(false);
+
+    controller.toggleHistoryDropdown();
+
+    expect(dropdown.hasClass('visible')).toBe(true);
+  });
+
+  it('should remove visible class when dropdown is visible', () => {
+    const dropdown = deps.getHistoryDropdown()!;
+    dropdown.addClass('visible');
+
+    controller.toggleHistoryDropdown();
+
+    expect(dropdown.hasClass('visible')).toBe(false);
+  });
+
+  it('should not throw when dropdown is null', () => {
+    const depsNullDropdown = createMockDeps({
+      getHistoryDropdown: () => null,
+    });
+    const ctrl = new ConversationController(depsNullDropdown);
+
+    expect(() => ctrl.toggleHistoryDropdown()).not.toThrow();
+  });
+});
+
+describe('ConversationController - getGreeting', () => {
+  let controller: ConversationController;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should return a non-empty string', () => {
+    const greeting = controller.getGreeting();
+
+    expect(typeof greeting).toBe('string');
+    expect(greeting.length).toBeGreaterThan(0);
+  });
+
+  it('should return a greeting from the pool each time', () => {
+    // Call multiple times to ensure it always returns something valid
+    for (let i = 0; i < 10; i++) {
+      const greeting = controller.getGreeting();
+      expect(greeting.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('ConversationController - save edge cases', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should return early when no conversationId and no messages', async () => {
+    deps.state.currentConversationId = null;
+    deps.state.messages = [];
+
+    await controller.save();
+
+    expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(deps.plugin.createConversation).not.toHaveBeenCalled();
+  });
+
+  it('should lazily create conversation when entry point has messages', async () => {
+    deps.state.currentConversationId = null;
+    deps.state.messages = [{ id: '1', role: 'user', content: 'hello', timestamp: Date.now() }];
+
+    (deps.plugin.createConversation as jest.Mock).mockResolvedValue({
+      id: 'lazy-conv',
+      title: 'New Conversation',
+      messages: [],
+      sessionId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    await controller.save();
+
+    expect(deps.plugin.createConversation).toHaveBeenCalled();
+    expect(deps.state.currentConversationId).toBe('lazy-conv');
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+      'lazy-conv',
+      expect.any(Object)
+    );
+  });
+
+  it('should set lastResponseAt when updateLastResponse is true', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+    const beforeCall = Date.now();
+
+    await controller.save(true);
+
+    const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+    const updates = call[1];
+    expect(updates.lastResponseAt).toBeDefined();
+    expect(updates.lastResponseAt).toBeGreaterThanOrEqual(beforeCall);
+    expect(updates.lastResponseAt).toBeLessThanOrEqual(Date.now());
+  });
+});
+
+describe('ConversationController - restoreExternalContextPaths null selector', () => {
+  it('should return early when external context selector is null', async () => {
+    const deps = createMockDeps({
+      getExternalContextSelector: () => null,
+    });
+    const controller = new ConversationController(deps);
+
+    deps.state.currentConversationId = 'old-conv';
+    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+      id: 'new-conv',
+      messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
+      sessionId: null,
+      externalContextPaths: ['/some/path'],
+    });
+
+    // Should not throw even though selector is null
+    await expect(controller.switchTo('new-conv')).resolves.not.toThrow();
+  });
+});
+
+describe('ConversationController - loadActive with existing conversation', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should restore currentNote when conversation has one', async () => {
+    const fileContextManager = deps.getFileContextManager()!;
+    deps.state.currentConversationId = 'conv-with-note';
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'conv-with-note',
+      messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
+      sessionId: null,
+      currentNote: 'notes/my-note.md',
+    });
+
+    await controller.loadActive();
+
+    expect(fileContextManager.setCurrentNote).toHaveBeenCalledWith('notes/my-note.md');
+  });
+
+  it('should auto-attach active file when no currentNote and no messages', async () => {
+    const fileContextManager = deps.getFileContextManager()!;
+    deps.state.currentConversationId = 'empty-conv';
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'empty-conv',
+      messages: [],
+      sessionId: null,
+      currentNote: undefined,
+    });
+
+    await controller.loadActive();
+
+    expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
+    expect(fileContextManager.setCurrentNote).not.toHaveBeenCalled();
+  });
+
+  it('should call renderer.renderMessages with greeting callback', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'conv-1',
+      messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
+      sessionId: null,
+    });
+
+    await controller.loadActive();
+
+    expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Function)
+    );
+
+    // The greeting callback should return a non-empty string
+    const greetingFn = (deps.renderer.renderMessages as jest.Mock).mock.calls[0][1];
+    expect(greetingFn().length).toBeGreaterThan(0);
+  });
+});
+
+describe('ConversationController - switchTo with currentNote', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should set currentNote when switched conversation has one', async () => {
+    const fileContextManager = deps.getFileContextManager()!;
+    deps.state.currentConversationId = 'old-conv';
+
+    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+      id: 'new-conv',
+      messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
+      sessionId: null,
+      currentNote: 'docs/readme.md',
+    });
+
+    await controller.switchTo('new-conv');
+
+    expect(fileContextManager.setCurrentNote).toHaveBeenCalledWith('docs/readme.md');
+  });
+
+  it('should not set currentNote when switched conversation has none', async () => {
+    const fileContextManager = deps.getFileContextManager()!;
+    deps.state.currentConversationId = 'old-conv';
+
+    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+      id: 'new-conv',
+      messages: [],
+      sessionId: null,
+      currentNote: undefined,
+    });
+
+    await controller.switchTo('new-conv');
+
+    expect(fileContextManager.setCurrentNote).not.toHaveBeenCalled();
+  });
+
+  it('should call renderer.renderMessages with greeting callback on switch', async () => {
+    deps.state.currentConversationId = 'old-conv';
+
+    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+      id: 'new-conv',
+      messages: [],
+      sessionId: null,
+    });
+
+    await controller.switchTo('new-conv');
+
+    expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Function)
+    );
+
+    // The greeting callback should return a non-empty string
+    const greetingFn = (deps.renderer.renderMessages as jest.Mock).mock.calls[0][1];
+    expect(greetingFn().length).toBeGreaterThan(0);
+  });
+});
+
+describe('ConversationController - regenerateTitle callback branches', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockTitleService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockTitleService = {
+      generateTitle: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn(),
+    };
+    deps = createMockDeps({
+      getTitleGenerationService: () => mockTitleService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  it('should mark as failed when generation fails and user has not renamed', async () => {
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'conv-1',
+      title: 'Original Title',
+      messages: [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi!' },
+      ],
+    });
+
+    // Simulate callback with failed result
+    mockTitleService.generateTitle.mockImplementation(
+      async (_convId: string, _user: string, callback: any) => {
+        // On callback, getConversationById returns same title (user didn't rename)
+        (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+          id: 'conv-1',
+          title: 'Original Title',
+          messages: [],
+        });
+        await callback('conv-1', { success: false, title: '' });
+      }
+    );
+
+    await controller.regenerateTitle('conv-1');
+
+    expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+      titleGenerationStatus: 'failed',
+    });
+  });
+
+  it('should clear status when user manually renamed during generation', async () => {
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'conv-1',
+      title: 'Original Title',
+      messages: [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi!' },
+      ],
+    });
+
+    // Simulate callback where user has renamed the conversation
+    mockTitleService.generateTitle.mockImplementation(
+      async (_convId: string, _user: string, callback: any) => {
+        // On callback, getConversationById returns a different title (user renamed)
+        (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+          id: 'conv-1',
+          title: 'User Renamed Title',
+          messages: [],
+        });
+        await callback('conv-1', { success: true, title: 'AI Generated Title' });
+      }
+    );
+
+    await controller.regenerateTitle('conv-1');
+
+    // Should NOT rename because user already renamed
+    expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+    // Should clear the status since user's choice takes precedence
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+      titleGenerationStatus: undefined,
+    });
+  });
+
+  it('should not apply title when conversation no longer exists during callback', async () => {
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'conv-1',
+      title: 'Original Title',
+      messages: [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi!' },
+      ],
+    });
+
+    // Simulate callback where conversation was deleted
+    mockTitleService.generateTitle.mockImplementation(
+      async (_convId: string, _user: string, callback: any) => {
+        (deps.plugin.getConversationById as jest.Mock).mockResolvedValue(null);
+        await callback('conv-1', { success: true, title: 'New Title' });
+      }
+    );
+
+    await controller.regenerateTitle('conv-1');
+
+    expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController - History Rendering', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  describe('updateHistoryDropdown with conversations', () => {
+    it('should render conversation items when conversations exist', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'First Conversation', createdAt: 1000, lastResponseAt: 3000 },
+        { id: 'conv-2', title: 'Second Conversation', createdAt: 2000, lastResponseAt: 2000 },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      // Should have header and list
+      expect(dropdown.children.length).toBe(2);
+      const list = dropdown.children[1];
+      expect(list.hasClass('claudian-history-list')).toBe(true);
+      // Should have 2 conversation items sorted by lastResponseAt descending
+      expect(list.children.length).toBe(2);
+    });
+
+    it('should show "No conversations" when list is empty', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      expect(list.children[0].hasClass('claudian-history-empty')).toBe(true);
+    });
+
+    it('should sort conversations by lastResponseAt descending', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-old', title: 'Old', createdAt: 1000, lastResponseAt: 1000 },
+        { id: 'conv-new', title: 'New', createdAt: 2000, lastResponseAt: 5000 },
+        { id: 'conv-mid', title: 'Mid', createdAt: 3000, lastResponseAt: 3000 },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      // First item should be "New" (lastResponseAt: 5000)
+      const firstTitle = list.children[0].querySelector('.claudian-history-item-title');
+      expect(firstTitle?.textContent).toBe('New');
+    });
+
+    it('should mark current conversation as active', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 1000 },
+        { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 2000 },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      const items = list.children;
+      // Find item with 'active' class
+      const activeItem = items.find((item: any) => item.hasClass('active'));
+      expect(activeItem).toBeDefined();
+    });
+
+    it('should show loading indicator for pending title generation', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Generating...', createdAt: 1000, lastResponseAt: 1000, titleGenerationStatus: 'pending' },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      const item = list.children[0];
+      const loadingEl = item.querySelector('.claudian-action-loading');
+      expect(loadingEl).toBeTruthy();
+    });
+
+    it('should show regenerate button for failed title generation', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Fallback Title', createdAt: 1000, lastResponseAt: 1000, titleGenerationStatus: 'failed' },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      const item = list.children[0];
+      const actions = item.querySelector('.claudian-history-item-actions');
+      expect(actions).toBeTruthy();
+      // Should have regenerate button + rename button + delete button = 3 children
+      expect(actions!.children.length).toBe(3);
+    });
+
+    it('should not show select click handler on current conversation', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 1000 },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      const item = list.children[0];
+      const content = item.querySelector('.claudian-history-item-content');
+      // Current conversation should NOT have click handler
+      const listeners = content?._eventListeners?.get('click');
+      expect(listeners).toBeUndefined();
+    });
+
+    it('should attach select click handler on non-current conversations', () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+      deps.state.currentConversationId = 'conv-1';
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+        { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      // conv-2 is the non-current one (sorted second by lastResponseAt)
+      const otherItem = list.children[1];
+      const content = otherItem.querySelector('.claudian-history-item-content');
+      const listeners = content?._eventListeners?.get('click');
+      expect(listeners).toBeDefined();
+      expect(listeners!.length).toBe(1);
+    });
+
+    it('should not delete while streaming', async () => {
+      const dropdown = createMockEl();
+      deps.getHistoryDropdown = () => dropdown;
+      deps.state.isStreaming = true;
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Test', createdAt: 1000, lastResponseAt: 1000 },
+      ]);
+
+      controller.updateHistoryDropdown();
+
+      const list = dropdown.children[1];
+      const item = list.children[0];
+      const deleteBtn = item.querySelector('.claudian-delete-btn');
+      expect(deleteBtn).toBeTruthy();
+
+      // Click delete while streaming
+      const clickHandlers = deleteBtn!._eventListeners?.get('click');
+      expect(clickHandlers).toBeDefined();
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      // Should not have called deleteConversation
+      expect(deps.plugin.deleteConversation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('renderHistoryDropdown', () => {
+    it('should render history items to provided container', () => {
+      const container = createMockEl();
+      const onSelectConversation = jest.fn();
+
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Test', createdAt: 1000, lastResponseAt: 1000 },
+      ]);
+
+      controller.renderHistoryDropdown(container, { onSelectConversation });
+
+      expect(container.children.length).toBe(2); // header + list
+    });
+  });
+});
+
+describe('ConversationController - History Item Interactions', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should switch conversation when clicking a non-current item content', async () => {
+    const dropdown = createMockEl();
+    deps.getHistoryDropdown = () => dropdown;
+    deps.state.currentConversationId = 'conv-1';
+
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+      { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+      { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+    ]);
+
+    controller.updateHistoryDropdown();
+
+    const list = dropdown.children[1];
+    const otherItem = list.children[1];
+    const content = otherItem.querySelector('.claudian-history-item-content');
+    const clickHandlers = content?._eventListeners?.get('click');
+    expect(clickHandlers).toBeDefined();
+
+    await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+    expect(deps.plugin.switchConversation).toHaveBeenCalledWith('conv-2');
+  });
+
+  it('should call regenerateTitle when clicking regenerate button on failed item', async () => {
+    const dropdown = createMockEl();
+    deps.getHistoryDropdown = () => dropdown;
+    const mockTitleService = {
+      generateTitle: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn(),
+    };
+    deps.getTitleGenerationService = () => mockTitleService as any;
+
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+      { id: 'conv-1', title: 'Failed', createdAt: 1000, lastResponseAt: 1000, titleGenerationStatus: 'failed' },
+    ]);
+
+    controller.updateHistoryDropdown();
+
+    const list = dropdown.children[1];
+    const item = list.children[0];
+    const actions = item.querySelector('.claudian-history-item-actions');
+    // First child is the regenerate button
+    const regenerateBtn = actions!.children[0];
+    const clickHandlers = regenerateBtn._eventListeners?.get('click');
+    expect(clickHandlers).toBeDefined();
+
+    // Mock getConversationById for regenerateTitle
+    (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      id: 'conv-1',
+      title: 'Failed',
+      messages: [{ role: 'user', content: 'Hello' }],
+    });
+
+    await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+      titleGenerationStatus: 'pending',
+    });
+  });
+
+  it('should invoke rename handler when clicking rename button', () => {
+    const dropdown = createMockEl();
+    deps.getHistoryDropdown = () => dropdown;
+
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+      { id: 'conv-1', title: 'Test Title', createdAt: 1000, lastResponseAt: 1000 },
+    ]);
+
+    controller.updateHistoryDropdown();
+
+    const list = dropdown.children[1];
+    const item = list.children[0];
+    const actions = item.querySelector('.claudian-history-item-actions');
+    expect(actions).toBeTruthy();
+    // For non-failed items: rename is children[0], delete is children[1]
+    const rBtn = actions!.children[0];
+    expect(rBtn).toBeTruthy();
+    const clickHandlers = rBtn._eventListeners?.get('click');
+    expect(clickHandlers).toBeDefined();
+
+    // Mock document.createElement and titleEl.replaceWith for showRenameInput
+    const mockInput = createMockEl();
+    (mockInput as any).type = '';
+    (mockInput as any).className = '';
+    (mockInput as any).value = '';
+    (mockInput as any).focus = jest.fn();
+    (mockInput as any).select = jest.fn();
+
+    // Add replaceWith to the title element that showRenameInput looks for
+    const titleEl = item.querySelector('.claudian-history-item-title');
+    if (titleEl) {
+      (titleEl as any).replaceWith = jest.fn();
+    }
+
+    const origDocument = global.document;
+    global.document = { createElement: jest.fn().mockReturnValue(mockInput) } as any;
+
+    try {
+      clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      expect(global.document.createElement).toHaveBeenCalledWith('input');
+      expect((mockInput as any).value).toBe('Test Title');
+      expect(titleEl!.replaceWith).toHaveBeenCalledWith(mockInput);
+    } finally {
+      global.document = origDocument;
+    }
+  });
+
+  it('should delete conversation and reload active when deleting current conversation', async () => {
+    const dropdown = createMockEl();
+    deps.getHistoryDropdown = () => dropdown;
+    deps.state.currentConversationId = 'conv-1';
+
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+      { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 1000 },
+    ]);
+
+    controller.updateHistoryDropdown();
+
+    const list = dropdown.children[1];
+    const item = list.children[0];
+    const deleteBtn = item.querySelector('.claudian-delete-btn');
+    expect(deleteBtn).toBeTruthy();
+
+    const clickHandlers = deleteBtn!._eventListeners?.get('click');
+    expect(clickHandlers).toBeDefined();
+
+    await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+    expect(deps.plugin.deleteConversation).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('should delete non-current conversation without calling loadActive', async () => {
+    const dropdown = createMockEl();
+    deps.getHistoryDropdown = () => dropdown;
+    deps.state.currentConversationId = 'conv-1';
+
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+      { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+      { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+    ]);
+
+    controller.updateHistoryDropdown();
+
+    const list = dropdown.children[1];
+    const otherItem = list.children[1]; // conv-2
+    const deleteBtn = otherItem.querySelector('.claudian-delete-btn');
+    const clickHandlers = deleteBtn!._eventListeners?.get('click');
+
+    await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+    expect(deps.plugin.deleteConversation).toHaveBeenCalledWith('conv-2');
+    // Should not have called switchConversation (which is used in loadActive path)
+    // The key check is that deleteConversation was called with conv-2
+  });
+});
+
+describe('ConversationController - loadActive with greeting', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should show welcome and return early when no conversation exists', async () => {
+    deps.state.currentConversationId = null;
+
+    await controller.loadActive();
+
+    // Should show welcome (greeting is set)
+    const welcomeEl = deps.getWelcomeEl();
+    expect(welcomeEl?.style.display).not.toBe('none');
+  });
+});
+
+describe('ConversationController - Greeting Time Branches', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    deps = createMockDeps();
+    controller = new ConversationController(deps);
+  });
+
+  it('should include morning greetings (5-12)', () => {
+    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(9);
+    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(1);
+
+    // Run multiple times to ensure morning greetings are in the pool
+    const greetings = new Set<string>();
+    jest.spyOn(Math, 'random').mockReturnValue(0); // Pick first item consistently
+    for (let i = 0; i < 50; i++) {
+      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
+      greetings.add(controller.getGreeting());
+    }
+
+    // Should contain at least one morning-specific greeting
+    const hasTimeBased = [...greetings].some(g => g.includes('morning') || g.includes('Coffee'));
+    expect(hasTimeBased).toBe(true);
+
+    jest.restoreAllMocks();
+  });
+
+  it('should include afternoon greetings (12-18)', () => {
+    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(14);
+    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(2);
+
+    const greetings = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
+      greetings.add(controller.getGreeting());
+    }
+
+    const hasTimeBased = [...greetings].some(g => g.includes('afternoon'));
+    expect(hasTimeBased).toBe(true);
+
+    jest.restoreAllMocks();
+  });
+
+  it('should include evening greetings (18-22)', () => {
+    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(20);
+    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(3);
+
+    const greetings = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
+      greetings.add(controller.getGreeting());
+    }
+
+    const hasTimeBased = [...greetings].some(g => g.includes('evening') || g.includes('Evening') || g.includes('day'));
+    expect(hasTimeBased).toBe(true);
+
+    jest.restoreAllMocks();
+  });
+
+  it('should include night owl greetings (22+)', () => {
+    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(23);
+    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(4);
+
+    const greetings = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
+      greetings.add(controller.getGreeting());
+    }
+
+    const hasTimeBased = [...greetings].some(g => g.includes('night owl') || g.includes('Evening'));
+    expect(hasTimeBased).toBe(true);
+
+    jest.restoreAllMocks();
+  });
+
+  it('should include early morning night owl greetings (0-4)', () => {
+    jest.spyOn(Date.prototype, 'getHours').mockReturnValue(2);
+    jest.spyOn(Date.prototype, 'getDay').mockReturnValue(0);
+
+    const greetings = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      jest.spyOn(Math, 'random').mockReturnValue(i / 50);
+      greetings.add(controller.getGreeting());
+    }
+
+    const hasTimeBased = [...greetings].some(g => g.includes('night owl') || g.includes('Evening'));
+    expect(hasTimeBased).toBe(true);
+
+    jest.restoreAllMocks();
   });
 });

@@ -158,4 +158,86 @@ describe('InstructionModeManager', () => {
     expect(inputEl.value).toBe('');
     expect(manager.isActive()).toBe(false);
   });
+
+  it('should return false for non-Enter/Escape keys when active', () => {
+    const wrapper = createWrapper();
+    const inputEl = { value: '', placeholder: 'Ask...' } as any;
+    const callbacks = {
+      onSubmit: jest.fn().mockResolvedValue(undefined),
+      getInputWrapper: () => wrapper,
+    };
+
+    const manager = new InstructionModeManager(inputEl, callbacks);
+    manager.handleTriggerKey(createKeyEvent('#'));
+    expect(manager.isActive()).toBe(true);
+
+    inputEl.value = 'some text';
+    manager.handleInputChange();
+
+    const e = createKeyEvent('a');
+    const handled = manager.handleKeydown(e);
+
+    expect(handled).toBe(false);
+    expect(e.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('should return raw instruction text via getRawInstruction', () => {
+    const wrapper = createWrapper();
+    const inputEl = { value: '', placeholder: 'Ask...' } as any;
+    const callbacks = {
+      onSubmit: jest.fn().mockResolvedValue(undefined),
+      getInputWrapper: () => wrapper,
+    };
+
+    const manager = new InstructionModeManager(inputEl, callbacks);
+    manager.handleTriggerKey(createKeyEvent('#'));
+
+    inputEl.value = 'my instruction';
+    manager.handleInputChange();
+
+    expect(manager.getRawInstruction()).toBe('my instruction');
+  });
+
+  it('should clear input, exit mode and reset input height on clear()', () => {
+    const wrapper = createWrapper();
+    const inputEl = { value: '', placeholder: 'Ask...' } as any;
+    const resetInputHeight = jest.fn();
+    const callbacks = {
+      onSubmit: jest.fn().mockResolvedValue(undefined),
+      getInputWrapper: () => wrapper,
+      resetInputHeight,
+    };
+
+    const manager = new InstructionModeManager(inputEl, callbacks);
+    manager.handleTriggerKey(createKeyEvent('#'));
+    expect(manager.isActive()).toBe(true);
+
+    inputEl.value = 'instruction text';
+    manager.handleInputChange();
+
+    manager.clear();
+
+    expect(inputEl.value).toBe('');
+    expect(manager.isActive()).toBe(false);
+    expect(resetInputHeight).toHaveBeenCalled();
+  });
+
+  it('should remove instruction mode class and restore placeholder on destroy()', () => {
+    const wrapper = createWrapper();
+    const inputEl = { value: '', placeholder: 'Ask...' } as any;
+    const callbacks = {
+      onSubmit: jest.fn().mockResolvedValue(undefined),
+      getInputWrapper: () => wrapper,
+    };
+
+    const manager = new InstructionModeManager(inputEl, callbacks);
+    manager.handleTriggerKey(createKeyEvent('#'));
+    expect(manager.isActive()).toBe(true);
+    expect(inputEl.placeholder).toBe('# Save in custom system prompt');
+
+    manager.destroy();
+
+    expect(wrapper.removeClass).toHaveBeenCalledWith('claudian-input-instruction-mode');
+    expect(inputEl.placeholder).toBe('Ask...');
+  });
 });
