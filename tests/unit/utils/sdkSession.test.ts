@@ -410,6 +410,36 @@ describe('sdkSession', () => {
       expect(chatMsg).toBeNull();
     });
 
+    it('returns synthetic assistant message for compact_boundary system messages', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'system',
+        subtype: 'compact_boundary',
+        uuid: 'compact-1',
+        timestamp: '2024-06-15T12:00:00Z',
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.id).toBe('compact-1');
+      expect(chatMsg!.role).toBe('assistant');
+      expect(chatMsg!.content).toBe('');
+      expect(chatMsg!.timestamp).toBe(new Date('2024-06-15T12:00:00Z').getTime());
+      expect(chatMsg!.contentBlocks).toEqual([{ type: 'compact_boundary' }]);
+    });
+
+    it('generates ID for compact_boundary without uuid', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'system',
+        subtype: 'compact_boundary',
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.id).toMatch(/^compact-/);
+    });
+
     it('returns null for result messages', () => {
       const sdkMsg: SDKNativeMessage = {
         type: 'result',

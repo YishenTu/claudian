@@ -310,7 +310,21 @@ export function parseSDKMessageToChat(
   toolResults?: Map<string, { content: string; isError: boolean }>
 ): ChatMessage | null {
   if (sdkMsg.type === 'file-history-snapshot') return null;
-  if (sdkMsg.type === 'system') return null;
+  if (sdkMsg.type === 'system') {
+    if (sdkMsg.subtype === 'compact_boundary') {
+      const timestamp = sdkMsg.timestamp
+        ? new Date(sdkMsg.timestamp).getTime()
+        : Date.now();
+      return {
+        id: sdkMsg.uuid || `compact-${timestamp}-${Math.random().toString(36).slice(2)}`,
+        role: 'assistant',
+        content: '',
+        timestamp,
+        contentBlocks: [{ type: 'compact_boundary' }],
+      };
+    }
+    return null;
+  }
   if (sdkMsg.type === 'result') return null;
   if (sdkMsg.type !== 'user' && sdkMsg.type !== 'assistant') return null;
 

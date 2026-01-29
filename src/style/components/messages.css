@@ -179,3 +179,25 @@
   font-weight: 500;
   font-style: italic;
 }
+
+/* Compact boundary indicator */
+.claudian-compact-boundary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.claudian-compact-boundary::before,
+.claudian-compact-boundary::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--background-modifier-border);
+}
+
+.claudian-compact-boundary-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}

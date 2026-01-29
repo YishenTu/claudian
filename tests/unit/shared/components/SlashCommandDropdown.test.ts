@@ -64,11 +64,11 @@ const SDK_COMMANDS: SlashCommand[] = [
   { id: 'sdk:pr', name: 'pr', description: 'Create a pull request', content: '', source: 'sdk' },
   { id: 'sdk:review', name: 'review', description: 'Review code', content: '', source: 'sdk' },
   { id: 'sdk:my-custom', name: 'my-custom', description: 'Custom command', content: '', source: 'sdk' },
+  { id: 'sdk:compact', name: 'compact', description: 'Compact context', content: '', source: 'sdk' },
 ];
 
 // Commands that should be filtered out (not shown in Claudian)
 const FILTERED_SDK_COMMANDS_LIST: SlashCommand[] = [
-  { id: 'sdk:compact', name: 'compact', description: 'Compact context', content: '', source: 'sdk' },
   { id: 'sdk:context', name: 'context', description: 'Show context', content: '', source: 'sdk' },
   { id: 'sdk:cost', name: 'cost', description: 'Show cost', content: '', source: 'sdk' },
   { id: 'sdk:init', name: 'init', description: 'Initialize project', content: '', source: 'sdk' },
@@ -116,7 +116,7 @@ describe('SlashCommandDropdown', () => {
   });
 
   describe('FILTERED_SDK_COMMANDS filtering', () => {
-    it('should filter out compact, context, cost, init, release-notes, security-review', async () => {
+    it('should filter out context, cost, init, release-notes, security-review', async () => {
       const allSdkCommands = [...SDK_COMMANDS, ...FILTERED_SDK_COMMANDS_LIST];
       const getSdkCommands = jest.fn().mockResolvedValue(allSdkCommands);
 
@@ -137,7 +137,6 @@ describe('SlashCommandDropdown', () => {
       const commandNames = getRenderedCommandNames(containerEl);
 
       // Should NOT include filtered commands
-      expect(commandNames).not.toContain('compact');
       expect(commandNames).not.toContain('context');
       expect(commandNames).not.toContain('cost');
       expect(commandNames).not.toContain('init');
@@ -146,6 +145,7 @@ describe('SlashCommandDropdown', () => {
 
       // Should include other SDK commands
       expect(commandNames).toContain('commit');
+      expect(commandNames).toContain('compact');
       expect(commandNames).toContain('pr');
       expect(commandNames).toContain('review');
       expect(commandNames).toContain('my-custom');

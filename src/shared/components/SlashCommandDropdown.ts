@@ -13,7 +13,6 @@ import type { SlashCommand } from '../../core/types';
  * These are either handled differently in Claudian or don't apply.
  */
 const FILTERED_SDK_COMMANDS = new Set([
-  'compact',
   'context',
   'cost',
   'init',

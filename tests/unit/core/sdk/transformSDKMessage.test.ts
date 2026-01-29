@@ -29,6 +29,19 @@ describe('transformSDKMessage', () => {
       expect(results).toEqual([]);
     });
 
+    it('yields compact_boundary event for compact_boundary subtype', () => {
+      const message: SDKMessage = {
+        type: 'system',
+        subtype: 'compact_boundary',
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        { type: 'compact_boundary' },
+      ]);
+    });
+
     it('yields nothing for init messages without session_id', () => {
       const message: SDKMessage = {
         type: 'system',

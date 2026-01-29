@@ -29,7 +29,8 @@ export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; toolId: string }
   | { type: 'thinking'; content: string; durationSeconds?: number }
-  | { type: 'subagent'; subagentId: string; mode?: SubagentMode };
+  | { type: 'subagent'; subagentId: string; mode?: SubagentMode }
+  | { type: 'compact_boundary' };
 
 /** Chat message with content, tool calls, and attachments. */
 export interface ChatMessage {
@@ -162,7 +163,8 @@ export type StreamChunk =
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
   | { type: 'done' }
-  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null };
+  | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
+  | { type: 'compact_boundary' };
 
 /** Context window usage information. */
 export interface UsageInfo {

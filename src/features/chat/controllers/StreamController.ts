@@ -121,6 +121,18 @@ export class StreamController {
         this.flushPendingTools();
         break;
 
+      case 'compact_boundary': {
+        this.flushPendingTools();
+        if (state.currentThinkingState) {
+          this.finalizeCurrentThinkingBlock(msg);
+        }
+        this.finalizeCurrentTextBlock(msg);
+        msg.contentBlocks = msg.contentBlocks || [];
+        msg.contentBlocks.push({ type: 'compact_boundary' });
+        this.renderCompactBoundary();
+        break;
+      }
+
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
         const currentSessionId = this.deps.getAgentService?.()?.getSessionId() ?? null;
@@ -681,6 +693,18 @@ export class StreamController {
       state.thinkingEl = null;
     }
     state.queueIndicatorEl = null;
+  }
+
+  // ============================================
+  // Compact Boundary
+  // ============================================
+
+  private renderCompactBoundary(): void {
+    const { state } = this.deps;
+    if (!state.currentContentEl) return;
+    this.hideThinkingIndicator();
+    const el = state.currentContentEl.createDiv({ cls: 'claudian-compact-boundary' });
+    el.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
   }
 
   // ============================================

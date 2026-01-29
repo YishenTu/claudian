@@ -195,6 +195,9 @@ export class MessageRenderer {
           if (toolCall) {
             this.renderToolCall(contentEl, toolCall);
           }
+        } else if (block.type === 'compact_boundary') {
+          const boundaryEl = contentEl.createDiv({ cls: 'claudian-compact-boundary' });
+          boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
         } else if (block.type === 'subagent') {
           const subagent = msg.subagents?.find(s => s.id === block.subagentId);
           if (subagent) {

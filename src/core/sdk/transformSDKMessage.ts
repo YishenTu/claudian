@@ -47,8 +47,9 @@ export function* transformSDKMessage(
           sessionId: message.session_id,
           agents: message.agents,
         };
+      } else if (message.subtype === 'compact_boundary') {
+        yield { type: 'compact_boundary' };
       }
-      // Don't yield system messages to the UI
       break;
 
     case 'assistant': {
