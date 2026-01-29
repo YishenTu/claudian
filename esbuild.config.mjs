@@ -19,7 +19,7 @@ const prod = process.argv[2] === 'production';
 
 // Obsidian plugin folder path (set via OBSIDIAN_VAULT env var or .env.local)
 const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT;
-const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT
+const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT && existsSync(OBSIDIAN_VAULT)
   ? path.join(OBSIDIAN_VAULT, '.obsidian', 'plugins', 'claudian')
   : null;
 
