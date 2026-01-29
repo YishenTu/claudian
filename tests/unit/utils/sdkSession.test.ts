@@ -839,13 +839,7 @@ describe('sdkSession', () => {
       };
 
       const chatMsg = parseSDKMessageToChat(sdkMsg);
-      // Has no text content, no tool_use, no images, and content is an array → returns null
-      // because textContent is empty and hasToolUse is false and hasImages is false
-      // BUT content is an array (not string), so the final condition `(!content || typeof content === 'string')` is false
-      // So it should NOT return null - it will proceed
-      // Actually looking at the code: it checks hasToolUse || hasImages || textContent, THEN (!content || typeof content === 'string')
-      // Since content is an array, `typeof content === 'string'` is false, so the whole condition is false
-      // It will create a message with empty content
+      // Array content bypasses the null-return guard even without text/tool_use/images
       expect(chatMsg).not.toBeNull();
     });
 

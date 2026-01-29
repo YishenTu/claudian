@@ -401,6 +401,7 @@ Body`;
     const result = parseFrontmatter(content);
     expect(result).not.toBeNull();
     expect(result!.frontmatter['valid-key']).toBe('value');
+    expect(result!.frontmatter['123start']).toBe('value');
     expect(result!.frontmatter).not.toHaveProperty('invalid key');
   });
 

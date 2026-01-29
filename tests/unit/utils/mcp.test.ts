@@ -1,4 +1,4 @@
-import { extractMcpMentions, parseCommand, splitCommandString,transformMcpMentions } from '@/utils/mcp';
+import { extractMcpMentions, parseCommand, splitCommandString, transformMcpMentions } from '@/utils/mcp';
 
 describe('extractMcpMentions', () => {
   it('extracts valid MCP mentions', () => {

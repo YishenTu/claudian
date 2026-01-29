@@ -606,9 +606,7 @@ describe('expandHomePath - Windows environment variable formats', () => {
 describe('getPathAccessType - edge cases', () => {
   const vaultPath = path.resolve('/tmp/test-vault');
 
-  it('returns none when root flags have neither context nor export', () => {
-    // This covers the final 'none' return at line 661
-    // Pass empty string paths that normalize to empty after trimming
+  it('returns none when no root matches the candidate', () => {
     expect(getPathAccessType('/outside/path', ['  '], ['  '], vaultPath)).toBe('none');
   });
 });
