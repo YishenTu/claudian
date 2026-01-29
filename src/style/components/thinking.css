@@ -7,7 +7,7 @@
 }
 
 .claudian-thinking.claudian-thinking--compact {
-  color: var(--text-accent);
+  color: #5bc0de;
   animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 

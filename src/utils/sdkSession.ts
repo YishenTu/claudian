@@ -343,13 +343,17 @@ export function parseSDKMessageToChat(
     ? new Date(sdkMsg.timestamp).getTime()
     : Date.now();
 
+  // SDK wraps /compact in XML tags — restore clean display
+  const isCompactCommand = sdkMsg.type === 'user' && textContent.includes('<command-name>/compact</command-name>');
+
   const displayContent = sdkMsg.type === 'user'
-    ? extractDisplayContent(textContent)
+    ? (isCompactCommand ? '/compact' : extractDisplayContent(textContent))
     : undefined;
 
   const isInterrupt = sdkMsg.type === 'user' && (
     textContent === '[Request interrupted by user]' ||
-    textContent === '[Request interrupted by user for tool use]'
+    textContent === '[Request interrupted by user for tool use]' ||
+    textContent.includes('Compaction canceled')
   );
 
   const isRebuiltContext = sdkMsg.type === 'user' && isRebuiltContextContent(textContent);
@@ -436,9 +440,12 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
 
   // Compact summary injected by SDK after /compact
   if (text.startsWith('This session is being continued from a previous conversation')) return true;
-  // Slash command invocations (e.g., /compact, /clear)
-  if (text.includes('<command-name>')) return true;
-  // Command stdout/stderr output
+  // Slash command invocations (e.g., /clear) — but preserve /compact for UI display
+  if (text.includes('<command-name>')) {
+    return !text.includes('<command-name>/compact</command-name>');
+  }
+  // Command stdout/stderr output (but compact cancellation stderr is an interrupt, not filtered)
+  if (text.includes('<local-command-stderr>') && text.includes('Compaction canceled')) return false;
   if (text.includes('<local-command-stdout>') || text.includes('<local-command-stderr>')) return true;
 
   return false;
@@ -521,7 +528,14 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
     if (!chatMsg) continue;
 
     if (chatMsg.role === 'assistant') {
-      if (pendingAssistant) {
+      // compact_boundary must not merge with previous assistant (it's a standalone separator)
+      const isCompactBoundary = chatMsg.contentBlocks?.some(b => b.type === 'compact_boundary');
+      if (isCompactBoundary) {
+        if (pendingAssistant) {
+          chatMessages.push(pendingAssistant);
+        }
+        pendingAssistant = chatMsg;
+      } else if (pendingAssistant) {
         mergeAssistantMessage(pendingAssistant, chatMsg);
       } else {
         pendingAssistant = chatMsg;

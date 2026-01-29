@@ -766,6 +766,51 @@ describe('sdkSession', () => {
       expect(result.messages[1].role).toBe('assistant');
     });
 
+    it('preserves /compact command as user message with clean displayContent', async () => {
+      // File ordering mirrors real SDK JSONL: compact_boundary written BEFORE /compact command.
+      // The timestamp sort must reorder so /compact (earlier) precedes boundary (later).
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
+        '{"type":"system","subtype":"compact_boundary","uuid":"c1","timestamp":"2024-01-15T10:02:10Z"}',
+        '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","isMeta":true,"message":{"content":"<local-command-caveat>Caveat</local-command-caveat>"}}',
+        '{"type":"user","uuid":"u3","timestamp":"2024-01-15T10:02:01Z","message":{"content":"<command-name>/compact</command-name>\\n<command-message>compact</command-message>\\n<command-args></command-args>"}}',
+        '{"type":"user","uuid":"u4","timestamp":"2024-01-15T10:02:11Z","message":{"content":"<local-command-stdout>Compacted </local-command-stdout>"}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-compact');
+
+      // Should have: user "Hello", assistant "Hi!", user "/compact", assistant compact_boundary
+      // Meta (u2), stdout (u4) should be skipped
+      // /compact (10:02:01) sorted before compact_boundary (10:02:10) by timestamp
+      expect(result.messages).toHaveLength(4);
+      expect(result.messages[0].role).toBe('user');
+      expect(result.messages[0].content).toBe('Hello');
+      expect(result.messages[1].role).toBe('assistant');
+      expect(result.messages[2].role).toBe('user');
+      expect(result.messages[2].displayContent).toBe('/compact');
+      expect(result.messages[3].role).toBe('assistant');
+      expect(result.messages[3].contentBlocks).toEqual([{ type: 'compact_boundary' }]);
+    });
+
+    it('renders compact cancellation stderr as interrupt (not filtered)', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
+        '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","message":{"content":"<command-name>/compact</command-name>\\n<command-message>compact</command-message>\\n<command-args></command-args>"}}',
+        '{"type":"user","uuid":"u3","timestamp":"2024-01-15T10:02:01Z","message":{"content":"<local-command-stderr>Error: Compaction canceled.</local-command-stderr>"}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-compact-cancel');
+
+      // Compact cancellation stderr should appear as interrupt, not be filtered
+      const interruptMsg = result.messages.find(m => m.isInterrupt);
+      expect(interruptMsg).toBeDefined();
+      expect(interruptMsg!.isInterrupt).toBe(true);
+    });
+
     it('handles tool_result with error flag', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([
@@ -1057,6 +1102,21 @@ describe('sdkSession', () => {
         timestamp: '2024-01-15T10:30:00Z',
         message: {
           content: '[Request interrupted by user for tool use]',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.isInterrupt).toBe(true);
+    });
+
+    it('marks compact cancellation stderr as interrupt', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'interrupt-compact',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: '<local-command-stderr>Error: Compaction canceled.</local-command-stderr>',
         },
       };
 
