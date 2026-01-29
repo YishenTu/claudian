@@ -119,6 +119,17 @@ Run the tests.`;
       expect(agents).toHaveLength(0);
     });
 
+    it('preserves filePath from disk', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/agents/custom-filename.md',
+      ]);
+      mockAdapter.read.mockResolvedValue(validAgentMd);
+
+      const agents = await storage.loadAll();
+
+      expect(agents[0].filePath).toBe('.claude/agents/custom-filename.md');
+    });
+
     it('parses permissionMode from frontmatter', async () => {
       const agentWithPermission = `---
 name: strict-agent
@@ -174,8 +185,27 @@ Be strict.`;
   });
 
   describe('delete', () => {
-    it('deletes the correct file', async () => {
-      await storage.delete('code-reviewer');
+    it('deletes using filePath when available', async () => {
+      await storage.delete({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: 'Reviews code',
+        prompt: 'Review.',
+        source: 'vault',
+        filePath: '.claude/agents/custom-filename.md',
+      });
+
+      expect(mockAdapter.delete).toHaveBeenCalledWith('.claude/agents/custom-filename.md');
+    });
+
+    it('falls back to name-based path when no filePath', async () => {
+      await storage.delete({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: 'Reviews code',
+        prompt: 'Review.',
+        source: 'vault',
+      });
 
       expect(mockAdapter.delete).toHaveBeenCalledWith('.claude/agents/code-reviewer.md');
     });

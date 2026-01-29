@@ -33,6 +33,7 @@ export class AgentVaultStorage {
             disallowedTools: parseToolsList(frontmatter.disallowedTools),
             model: parseModel(frontmatter.model),
             source: 'vault',
+            filePath,
             skills: frontmatter.skills,
             permissionMode: parsePermissionMode(frontmatter.permissionMode),
             hooks: frontmatter.hooks,
@@ -49,12 +50,12 @@ export class AgentVaultStorage {
   }
 
   async save(agent: AgentDefinition): Promise<void> {
-    const filePath = `${AGENTS_PATH}/${agent.name}.md`;
+    const filePath = agent.filePath ?? `${AGENTS_PATH}/${agent.name}.md`;
     await this.adapter.write(filePath, serializeAgent(agent));
   }
 
-  async delete(agentName: string): Promise<void> {
-    const filePath = `${AGENTS_PATH}/${agentName}.md`;
+  async delete(agent: AgentDefinition): Promise<void> {
+    const filePath = agent.filePath ?? `${AGENTS_PATH}/${agent.name}.md`;
     await this.adapter.delete(filePath);
   }
 }

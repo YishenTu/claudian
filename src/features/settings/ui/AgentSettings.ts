@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { AgentDefinition } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { validateAgentName } from '../../../utils/agent';
 
@@ -178,7 +179,10 @@ class AgentModal extends Modal {
         disallowedTools: parseList(disallowedToolsInput),
         model: (modelValue as AgentDefinition['model']) || 'inherit',
         source: 'vault',
+        filePath: this.existingAgent?.filePath,
         skills: parseList(skillsInput),
+        permissionMode: this.existingAgent?.permissionMode,
+        hooks: this.existingAgent?.hooks,
       };
 
       try {
@@ -218,7 +222,7 @@ export class AgentSettings {
     this.containerEl.empty();
 
     const headerEl = this.containerEl.createDiv({ cls: 'claudian-agent-header' });
-    headerEl.createSpan({ text: 'Subagents', cls: 'claudian-agent-label' });
+    headerEl.createSpan({ text: t('settings.subagents.name'), cls: 'claudian-agent-label' });
 
     const actionsEl = headerEl.createDiv({ cls: 'claudian-agent-header-actions' });
 
@@ -299,7 +303,7 @@ export class AgentSettings {
     await this.plugin.storage.agents.save(agent);
 
     if (existing && existing.name !== agent.name) {
-      await this.plugin.storage.agents.delete(existing.name);
+      await this.plugin.storage.agents.delete(existing);
     }
 
     await this.plugin.agentManager.loadAgents();
@@ -308,7 +312,7 @@ export class AgentSettings {
   }
 
   private async deleteAgent(agent: AgentDefinition): Promise<void> {
-    await this.plugin.storage.agents.delete(agent.name);
+    await this.plugin.storage.agents.delete(agent);
 
     await this.plugin.agentManager.loadAgents();
     this.render();
