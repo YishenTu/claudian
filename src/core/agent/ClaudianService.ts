@@ -406,7 +406,6 @@ export class ClaudianService {
       enhancedPath,
       mcpManager: this.mcpManager,
       pluginManager: this.plugin.pluginManager,
-      agentManager: this.plugin.agentManager,
     };
   }
 

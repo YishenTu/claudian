@@ -11,18 +11,15 @@
  */
 
 import type {
-  AgentDefinition as SdkAgentDefinition,
   CanUseTool,
   Options,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { AgentManager } from '../agents';
 import type { McpServerManager } from '../mcp';
 import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudianSettings, PermissionMode } from '../types';
 import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
-import type { AgentDefinition } from '../types/agent';
 import { createCustomSpawnFunction } from './customSpawn';
 import {
   computeSystemPromptKey,
@@ -50,8 +47,6 @@ export interface QueryOptionsContext {
   mcpManager: McpServerManager;
   /** Plugin manager for Claude Code plugins. */
   pluginManager: PluginManager;
-  /** Agent manager for custom subagent definitions. */
-  agentManager?: AgentManager;
 }
 
 /**
@@ -220,7 +215,6 @@ export class QueryOptionsBuilder {
       ...DISABLED_BUILTIN_SUBAGENTS,
     ];
 
-    QueryOptionsBuilder.applyAgents(options, ctx.agentManager);
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
     QueryOptionsBuilder.applyThinkingBudget(options, ctx.settings.thinkingBudget);
     options.hooks = ctx.hooks;
@@ -292,7 +286,6 @@ export class QueryOptionsBuilder {
       ...DISABLED_BUILTIN_SUBAGENTS,
     ];
 
-    QueryOptionsBuilder.applyAgents(options, ctx.agentManager);
     QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
     options.hooks = ctx.hooks;
     QueryOptionsBuilder.applyThinkingBudget(options, ctx.settings.thinkingBudget);
@@ -357,30 +350,4 @@ export class QueryOptionsBuilder {
     return aKey !== bKey;
   }
 
-  /** Filters out built-in and plugin agents (both managed by SDK via settingSources). */
-  private static applyAgents(options: Options, agentManager?: AgentManager): void {
-    const agents = agentManager?.getAvailableAgents().filter(a => a.source !== 'builtin' && a.source !== 'plugin') ?? [];
-    if (agents.length > 0) {
-      options.agents = QueryOptionsBuilder.buildSdkAgentsRecord(agents);
-    }
-  }
-
-  private static buildSdkAgentsRecord(
-    agents: AgentDefinition[]
-  ): Record<string, SdkAgentDefinition> {
-    const record: Record<string, SdkAgentDefinition> = {};
-    for (const agent of agents) {
-      const def: SdkAgentDefinition = {
-        description: agent.description,
-        prompt: agent.prompt,
-        tools: agent.tools,
-        disallowedTools: agent.disallowedTools,
-        // SDK expects undefined for 'inherit', not the string
-        model: agent.model === 'inherit' ? undefined : agent.model,
-      };
-      if (agent.skills) def.skills = agent.skills;
-      record[agent.id] = def;
-    }
-    return record;
-  }
 }
