@@ -821,4 +821,151 @@ describe('session utilities', () => {
       });
     });
   });
+
+  describe('formatToolCallForContext edge cases', () => {
+    it('formats tool call with object input value', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Write',
+        input: { config: { nested: true }, count: 42 },
+        status: 'completed',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      expect(result).toContain('config=[object]');
+      expect(result).toContain('count=42');
+    });
+
+    it('skips null and undefined input values', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Read',
+        input: { path: '/file.md', optional: null, missing: undefined },
+        status: 'completed',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      expect(result).toContain('path=/file.md');
+      expect(result).not.toContain('optional');
+      expect(result).not.toContain('missing');
+    });
+
+    it('truncates long overall input string', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Bash',
+        input: {
+          a: 'x'.repeat(80),
+          b: 'y'.repeat(80),
+          c: 'z'.repeat(80),
+        },
+        status: 'completed',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      // Total input string truncated to 200 chars
+      expect(result).toContain('...');
+    });
+
+    it('formats whitespace-only result for failed tool without error detail', () => {
+      const toolCall: ToolCallInfo = {
+        id: 'tool-1',
+        name: 'Bash',
+        input: {},
+        status: 'error',
+        result: '   \n  ',
+      };
+
+      const result = formatToolCallForContext(toolCall);
+
+      expect(result).toBe('[Tool Bash status=error]');
+    });
+  });
+
+  describe('buildContextFromHistory edge cases', () => {
+    it('skips interrupt messages', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Start task', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Working on it...',
+          timestamp: 2000,
+        },
+        {
+          id: 'msg-3',
+          role: 'user',
+          content: '',
+          timestamp: 3000,
+          isInterrupt: true,
+        },
+        {
+          id: 'msg-4',
+          role: 'assistant',
+          content: 'Stopped.',
+          timestamp: 4000,
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('User: Start task');
+      expect(result).toContain('Assistant: Working on it...');
+      expect(result).toContain('Assistant: Stopped.');
+      // Interrupt message should not appear as a user message
+      expect(result.match(/User:/g)?.length).toBe(1);
+    });
+
+    it('includes assistant message with only thinking blocks and no text', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Think hard', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: '',
+          timestamp: 2000,
+          contentBlocks: [
+            { type: 'thinking', content: 'Deep thought...', durationSeconds: 10 },
+          ],
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('[Thinking: 1 block(s), 10.0s total]');
+    });
+
+    it('handles user message with currentNote but no content', () => {
+      const messages: ChatMessage[] = [
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: '',
+          timestamp: 1000,
+          currentNote: 'notes/active.md',
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('notes/active.md');
+    });
+
+    it('skips messages with unknown roles', () => {
+      const messages = [
+        { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1000 },
+        { id: 'msg-2', role: 'system' as any, content: 'System msg', timestamp: 1500 },
+        { id: 'msg-3', role: 'assistant', content: 'Response', timestamp: 2000 },
+      ] as ChatMessage[];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('User: Hello');
+      expect(result).toContain('Assistant: Response');
+      expect(result).not.toContain('System msg');
+    });
+  });
 });

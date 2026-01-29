@@ -7,6 +7,7 @@ import {
   isDuplicatePath,
   isValidDirectoryPath,
   normalizePathForComparison,
+  validateDirectoryPath,
 } from '@/utils/externalContext';
 
 jest.mock('fs');
@@ -177,6 +178,55 @@ describe('externalContext utilities', () => {
 
     it('should handle root paths', () => {
       expect(getFolderName('/')).toBe('');
+    });
+  });
+
+  describe('validateDirectoryPath', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should return valid for existing directory', () => {
+      (fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => true });
+      expect(validateDirectoryPath('/existing/dir')).toEqual({ valid: true });
+    });
+
+    it('should return not-a-directory error for file path', () => {
+      (fs.statSync as jest.Mock).mockReturnValue({ isDirectory: () => false });
+      expect(validateDirectoryPath('/path/to/file.txt')).toEqual({
+        valid: false,
+        error: 'Path exists but is not a directory',
+      });
+    });
+
+    it('should return ENOENT error for non-existent path', () => {
+      const err = new Error('ENOENT') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      (fs.statSync as jest.Mock).mockImplementation(() => { throw err; });
+      expect(validateDirectoryPath('/non/existent')).toEqual({
+        valid: false,
+        error: 'Path does not exist',
+      });
+    });
+
+    it('should return permission denied error for EACCES', () => {
+      const err = new Error('EACCES') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      (fs.statSync as jest.Mock).mockImplementation(() => { throw err; });
+      expect(validateDirectoryPath('/restricted/path')).toEqual({
+        valid: false,
+        error: 'Permission denied',
+      });
+    });
+
+    it('should return generic error for unknown errors', () => {
+      const err = new Error('Something went wrong') as NodeJS.ErrnoException;
+      err.code = 'EIO';
+      (fs.statSync as jest.Mock).mockImplementation(() => { throw err; });
+      const result = validateDirectoryPath('/some/path');
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('Cannot access path');
+      expect(result.error).toContain('Something went wrong');
     });
   });
 

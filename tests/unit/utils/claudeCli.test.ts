@@ -216,4 +216,73 @@ describe('resolveClaudeCliPath', () => {
 
     expect(result).toBe('/hostname/claude');
   });
+
+  it('should handle null/undefined hostname path', () => {
+    mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
+    mockedStat.mockReturnValue({ isFile: () => true });
+
+    const result = resolveClaudeCliPath(undefined, '/legacy/claude', '');
+
+    expect(result).toBe('/legacy/claude');
+  });
+
+  it('should handle null/undefined legacy path', () => {
+    mockedExists.mockReturnValue(false);
+    mockedFind.mockReturnValue('/auto/claude');
+
+    const result = resolveClaudeCliPath('', undefined, '');
+
+    expect(result).toBe('/auto/claude');
+  });
+
+  it('should fall through hostname path when existsSync returns false', () => {
+    mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
+    mockedStat.mockReturnValue({ isFile: () => true });
+
+    const result = resolveClaudeCliPath('/nonexistent/claude', '/legacy/claude', '');
+
+    expect(result).toBe('/legacy/claude');
+  });
+
+  it('should fall through hostname path when existsSync throws', () => {
+    mockedExists.mockImplementation((p: string) => {
+      if (p.includes('nonexistent')) throw new Error('Access denied');
+      return p === '/legacy/claude';
+    });
+    mockedStat.mockReturnValue({ isFile: () => true });
+
+    const result = resolveClaudeCliPath('/nonexistent/claude', '/legacy/claude', '');
+
+    expect(result).toBe('/legacy/claude');
+  });
+
+  it('should fall through legacy path when existsSync throws', () => {
+    mockedExists.mockImplementation(() => {
+      throw new Error('Access denied');
+    });
+    mockedFind.mockReturnValue('/auto/claude');
+
+    const result = resolveClaudeCliPath('', '/bad/path', '');
+
+    expect(result).toBe('/auto/claude');
+  });
+
+  it('should skip legacy path if it is a directory', () => {
+    mockedExists.mockReturnValue(true);
+    mockedStat.mockReturnValue({ isFile: () => false });
+    mockedFind.mockReturnValue('/auto/claude');
+
+    const result = resolveClaudeCliPath('', '/legacy/dir', '');
+
+    expect(result).toBe('/auto/claude');
+  });
+
+  it('should pass env PATH to findClaudeCLIPath', () => {
+    mockedExists.mockReturnValue(false);
+    mockedFind.mockReturnValue(null);
+
+    resolveClaudeCliPath('', '', 'PATH=/custom/bin');
+
+    expect(mockedFind).toHaveBeenCalledWith('/custom/bin');
+  });
 });

@@ -9,9 +9,11 @@ const {
   findNodeDirectory,
   findNodeExecutable,
   formatContextLimit,
+  getCurrentModelFromEnvironment,
   getCustomModelIds,
   getEnhancedPath,
   getMissingNodeError,
+  getModelsFromEnvironment,
   getHostnameKey,
   parseContextLimit,
   parseEnvironmentVariables,
@@ -242,6 +244,55 @@ describe('getEnhancedPath', () => {
       const segments = result.split(SEP);
       // Should have added some extra paths beyond just process.env.PATH
       expect(segments.length).toBeGreaterThan(1);
+    });
+  });
+
+  describe('Unix environment variable paths', () => {
+    if (isWindows) return;
+
+    it('includes VOLTA_HOME/bin when set', () => {
+      process.env.VOLTA_HOME = '/custom/volta';
+      const result = getEnhancedPath();
+      expect(result).toContain('/custom/volta/bin');
+      delete process.env.VOLTA_HOME;
+    });
+
+    it('includes ASDF_DATA_DIR shims and bin when set', () => {
+      process.env.ASDF_DATA_DIR = '/custom/asdf';
+      const result = getEnhancedPath();
+      expect(result).toContain('/custom/asdf/shims');
+      expect(result).toContain('/custom/asdf/bin');
+      delete process.env.ASDF_DATA_DIR;
+    });
+
+    it('includes ASDF_DIR shims and bin when set', () => {
+      delete process.env.ASDF_DATA_DIR;
+      process.env.ASDF_DIR = '/alt/asdf';
+      const result = getEnhancedPath();
+      expect(result).toContain('/alt/asdf/shims');
+      expect(result).toContain('/alt/asdf/bin');
+      delete process.env.ASDF_DIR;
+    });
+
+    it('includes FNM_MULTISHELL_PATH when set', () => {
+      process.env.FNM_MULTISHELL_PATH = '/tmp/fnm_multishell';
+      const result = getEnhancedPath();
+      expect(result).toContain('/tmp/fnm_multishell');
+      delete process.env.FNM_MULTISHELL_PATH;
+    });
+
+    it('includes FNM_DIR when set', () => {
+      process.env.FNM_DIR = '/custom/fnm';
+      const result = getEnhancedPath();
+      expect(result).toContain('/custom/fnm');
+      delete process.env.FNM_DIR;
+    });
+
+    it('includes NVM_BIN when set', () => {
+      process.env.NVM_BIN = '/home/user/.nvm/versions/node/v20/bin';
+      const result = getEnhancedPath();
+      expect(result).toContain('/home/user/.nvm/versions/node/v20/bin');
+      delete process.env.NVM_BIN;
     });
   });
 
@@ -497,6 +548,34 @@ describe('cliPathRequiresNode', () => {
     jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
     expect(cliPathRequiresNode(scriptPath)).toBe(true);
+  });
+
+  it('returns false when path exists but is a directory', () => {
+    const dirPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
+    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === dirPath);
+    jest.spyOn(fs, 'statSync').mockImplementation(
+      () => ({ isFile: () => false }) as fs.Stats
+    );
+
+    expect(cliPathRequiresNode(dirPath)).toBe(false);
+  });
+
+  it('returns false for scripts without node shebang', () => {
+    const scriptPath = isWindows ? 'C:\\temp\\script' : '/tmp/script';
+    const shebang = '#!/usr/bin/env python\nprint("hi")\n';
+
+    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
+    jest.spyOn(fs, 'statSync').mockImplementation(
+      p => ({ isFile: () => String(p) === scriptPath }) as fs.Stats
+    );
+    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: Buffer) => {
+      buffer.write(shebang);
+      return shebang.length;
+    });
+    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
+
+    expect(cliPathRequiresNode(scriptPath)).toBe(false);
   });
 
   it('returns false for .cmd files', () => {
@@ -834,5 +913,289 @@ describe('getCustomModelIds', () => {
     // Note: getCustomModelIds only checks truthiness, so whitespace passes
     // This test documents the current behavior
     expect(result.has('my-haiku')).toBe(true);
+  });
+});
+
+describe('getModelsFromEnvironment', () => {
+  it('returns empty array when no custom models configured', () => {
+    const result = getModelsFromEnvironment({});
+    expect(result).toEqual([]);
+  });
+
+  it('returns model for ANTHROPIC_MODEL', () => {
+    const result = getModelsFromEnvironment({ ANTHROPIC_MODEL: 'custom-model-v1' });
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe('custom-model-v1');
+    expect(result[0].description).toContain('model');
+  });
+
+  it('formats label from hyphenated model name', () => {
+    const result = getModelsFromEnvironment({ ANTHROPIC_MODEL: 'claude-3-opus' });
+    expect(result[0].label).toBe('Claude 3 Opus');
+  });
+
+  it('formats label from slash-separated model name', () => {
+    const result = getModelsFromEnvironment({ ANTHROPIC_MODEL: 'org/custom-model' });
+    expect(result[0].label).toBe('custom-model');
+  });
+
+  it('returns models for tier-specific env vars', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'my-opus',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'my-sonnet',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'my-haiku',
+    });
+    expect(result).toHaveLength(3);
+    expect(result.map(m => m.value)).toContain('my-opus');
+    expect(result.map(m => m.value)).toContain('my-sonnet');
+    expect(result.map(m => m.value)).toContain('my-haiku');
+  });
+
+  it('deduplicates when multiple env vars point to same model', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_MODEL: 'shared-model',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'shared-model',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe('shared-model');
+    expect(result[0].description).toContain('model');
+    expect(result[0].description).toContain('sonnet');
+  });
+
+  it('sorts by type priority (model > haiku > sonnet > opus)', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-v1',
+      ANTHROPIC_MODEL: 'main-model',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-v1',
+    });
+    expect(result[0].value).toBe('main-model');
+    expect(result[1].value).toBe('haiku-v1');
+    expect(result[2].value).toBe('opus-v1');
+  });
+
+  it('ignores unrelated env vars', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_API_KEY: 'sk-key',
+      OTHER_VAR: 'value',
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('ignores empty model values', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_MODEL: '',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'valid-model',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe('valid-model');
+  });
+});
+
+describe('getCurrentModelFromEnvironment', () => {
+  it('returns null when no model env vars set', () => {
+    expect(getCurrentModelFromEnvironment({})).toBeNull();
+  });
+
+  it('returns ANTHROPIC_MODEL when set', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_MODEL: 'custom-model',
+    })).toBe('custom-model');
+  });
+
+  it('prefers ANTHROPIC_MODEL over tier-specific vars', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_MODEL: 'main-model',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+    })).toBe('main-model');
+  });
+
+  it('falls back to ANTHROPIC_DEFAULT_HAIKU_MODEL', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+    })).toBe('haiku-model');
+  });
+
+  it('falls back to ANTHROPIC_DEFAULT_SONNET_MODEL', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+    })).toBe('sonnet-model');
+  });
+
+  it('falls back to ANTHROPIC_DEFAULT_OPUS_MODEL', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+    })).toBe('opus-model');
+  });
+
+  it('returns null when only unrelated vars set', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_API_KEY: 'sk-key',
+      OTHER_VAR: 'value',
+    })).toBeNull();
+  });
+});
+
+describe('getExtraBinaryPaths (Windows branches)', () => {
+  const originalPlatform = process.platform;
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    Object.keys(process.env).forEach(key => delete process.env[key]);
+    Object.assign(process.env, originalEnv);
+    jest.resetModules();
+  });
+
+  function loadWithWindowsPlatform(): typeof env {
+    jest.resetModules();
+    Object.defineProperty(process, 'platform', { value: 'win32', writable: true });
+    // Dynamic require needed to re-evaluate module with mocked platform
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('../../../src/utils/env');
+  }
+
+  it('includes APPDATA npm path when APPDATA is set', () => {
+    process.env.APPDATA = '/mock/AppData/Roaming';
+    process.env.LOCALAPPDATA = '/mock/AppData/Local';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('npm');
+    expect(result).toContain('Roaming');
+  });
+
+  it('includes LOCALAPPDATA nodejs paths', () => {
+    process.env.LOCALAPPDATA = '/mock/AppData/Local';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('Local');
+    expect(result).toContain('nodejs');
+  });
+
+  it('includes NVM_SYMLINK when set', () => {
+    process.env.NVM_SYMLINK = '/mock/nvm/symlink';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('/mock/nvm/symlink');
+  });
+
+  it('includes NVM_HOME when set', () => {
+    process.env.NVM_HOME = '/mock/nvm/home';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('/mock/nvm/home');
+  });
+
+  it('falls back to APPDATA/nvm when NVM_HOME not set', () => {
+    delete process.env.NVM_HOME;
+    process.env.APPDATA = '/mock/AppData/Roaming';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('nvm');
+  });
+
+  it('includes VOLTA_HOME/bin when set', () => {
+    process.env.VOLTA_HOME = '/mock/volta';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('volta');
+  });
+
+  it('falls back to home/.volta/bin when VOLTA_HOME not set', () => {
+    delete process.env.VOLTA_HOME;
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('.volta');
+  });
+
+  it('includes FNM_MULTISHELL_PATH when set', () => {
+    process.env.FNM_MULTISHELL_PATH = '/mock/fnm/multishell';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('/mock/fnm/multishell');
+  });
+
+  it('includes FNM_DIR when set', () => {
+    process.env.FNM_DIR = '/mock/fnm/dir';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('/mock/fnm/dir');
+  });
+
+  it('falls back to LOCALAPPDATA/fnm when FNM_DIR not set', () => {
+    delete process.env.FNM_DIR;
+    process.env.LOCALAPPDATA = '/mock/AppData/Local';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('fnm');
+  });
+
+  it('includes ChocolateyInstall/bin when set', () => {
+    process.env.ChocolateyInstall = '/mock/choco';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('choco');
+  });
+
+  it('falls back to ProgramData/chocolatey/bin when ChocolateyInstall not set', () => {
+    delete process.env.ChocolateyInstall;
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('chocolatey');
+  });
+
+  it('includes SCOOP paths when set', () => {
+    process.env.SCOOP = '/mock/scoop';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('scoop');
+    expect(result).toContain('shims');
+  });
+
+  it('falls back to home/scoop when SCOOP not set', () => {
+    delete process.env.SCOOP;
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('scoop');
+  });
+
+  it('includes Docker path under Program Files', () => {
+    process.env.ProgramFiles = '/mock/Program Files';
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('Docker');
+  });
+
+  it('includes home/.local/bin on Windows', () => {
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain('.local');
+  });
+
+  it('uses semicolon separator on Windows', () => {
+    process.env.HOME = '/mock/home';
+    process.env.PATH = '/existing';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    expect(result).toContain(';');
   });
 });

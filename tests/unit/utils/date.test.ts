@@ -1,4 +1,31 @@
-import { formatDurationMmSs } from '../../../src/utils/date';
+import { formatDurationMmSs, getTodayDate } from '../../../src/utils/date';
+
+describe('getTodayDate', () => {
+  it('returns readable date with ISO suffix', () => {
+    const result = getTodayDate();
+    // Should end with ISO date in parentheses, e.g. "(2024-01-15)"
+    expect(result).toMatch(/\(\d{4}-\d{2}-\d{2}\)$/);
+  });
+
+  it('includes day of week and full date', () => {
+    const result = getTodayDate();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    const now = new Date();
+    expect(result).toContain(days[now.getDay()]);
+    expect(result).toContain(months[now.getMonth()]);
+    expect(result).toContain(String(now.getFullYear()));
+  });
+
+  it('ISO portion matches current date', () => {
+    const result = getTodayDate();
+    const isoMatch = result.match(/\((\d{4}-\d{2}-\d{2})\)/);
+    expect(isoMatch).not.toBeNull();
+    const today = new Date().toISOString().split('T')[0];
+    expect(isoMatch![1]).toBe(today);
+  });
+});
 
 describe('formatDurationMmSs', () => {
   it('formats 0 seconds as 0s', () => {

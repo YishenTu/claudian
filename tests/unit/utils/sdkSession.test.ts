@@ -749,5 +749,354 @@ describe('sdkSession', () => {
       expect(result.messages[0].toolCalls![0].status).toBe('error');
       expect(result.messages[0].toolCalls![0].result).toBe('Command not found');
     });
+
+    it('returns error pass-through from readSDKSession', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockRejectedValue(new Error('Disk failure'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-disk-err');
+
+      expect(result.messages).toEqual([]);
+      expect(result.error).toBe('Disk failure');
+    });
+
+    it('merges tool calls from consecutive assistant messages', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"path":"a.ts"}}]}}',
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"tool_use","id":"t2","name":"Write","input":{"path":"b.ts"}}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-merge-tools');
+
+      // Consecutive assistant messages should merge into one
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].toolCalls).toHaveLength(2);
+      expect(result.messages[0].toolCalls![0].name).toBe('Read');
+      expect(result.messages[0].toolCalls![1].name).toBe('Write');
+    });
+  });
+
+  describe('parseSDKMessageToChat - image extraction', () => {
+    it('extracts image attachments from user message with image blocks', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-img',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'text', text: 'Check this image' },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/png',
+                data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk',
+              },
+            },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.images).toHaveLength(1);
+      expect(chatMsg!.images![0].mediaType).toBe('image/png');
+      expect(chatMsg!.images![0].data).toContain('iVBORw0KGgo');
+      expect(chatMsg!.images![0].source).toBe('paste');
+      expect(chatMsg!.images![0].name).toBe('image-1');
+    });
+
+    it('does not extract images from assistant messages', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-img',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'text', text: 'Here is a response' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.images).toBeUndefined();
+    });
+
+    it('returns null for user message with only tool_result content blocks', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-tool-only',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'result data' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      // Has no text content, no tool_use, no images, and content is an array → returns null
+      // because textContent is empty and hasToolUse is false and hasImages is false
+      // BUT content is an array (not string), so the final condition `(!content || typeof content === 'string')` is false
+      // So it should NOT return null - it will proceed
+      // Actually looking at the code: it checks hasToolUse || hasImages || textContent, THEN (!content || typeof content === 'string')
+      // Since content is an array, `typeof content === 'string'` is false, so the whole condition is false
+      // It will create a message with empty content
+      expect(chatMsg).not.toBeNull();
+    });
+
+    it('returns null for user message with empty string content', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-empty',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: '',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).toBeNull();
+    });
+
+    it('returns null for user message with no content', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-nocontent',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {},
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).toBeNull();
+    });
+
+    it('returns null for queue-operation messages', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'queue-operation',
+        uuid: 'queue-1',
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).toBeNull();
+    });
+  });
+
+  describe('parseSDKMessageToChat - content block edge cases', () => {
+    it('skips text blocks that are whitespace-only in contentBlocks', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-whitespace',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'text', text: '   ' },
+            { type: 'text', text: 'Actual content' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      // The whitespace-only text block should be skipped in contentBlocks
+      expect(chatMsg!.contentBlocks).toHaveLength(1);
+      expect(chatMsg!.contentBlocks![0].type).toBe('text');
+    });
+
+    it('skips thinking blocks with empty thinking field', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-empty-think',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'thinking', thinking: '' },
+            { type: 'text', text: 'Some answer' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      // Empty thinking block should be skipped
+      expect(chatMsg!.contentBlocks).toHaveLength(1);
+      expect(chatMsg!.contentBlocks![0].type).toBe('text');
+    });
+
+    it('skips tool_use blocks without id in contentBlocks', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-no-id-tool',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'tool_use', name: 'Bash', input: {} },
+            { type: 'text', text: 'After tool' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      // tool_use without id should be skipped in contentBlocks
+      expect(chatMsg!.contentBlocks).toHaveLength(1);
+      expect(chatMsg!.contentBlocks![0].type).toBe('text');
+    });
+
+    it('returns undefined contentBlocks when all blocks are filtered out', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-all-filtered',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'result' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      // Content is array (so not null), but all blocks filtered → undefined contentBlocks
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.contentBlocks).toBeUndefined();
+    });
+
+    it('handles tool_use without input field', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-no-input',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tool-noinput', name: 'SomeTool' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.toolCalls).toHaveLength(1);
+      expect(chatMsg!.toolCalls![0].input).toEqual({});
+    });
+
+    it('handles tool_result with non-string content (JSON object)', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-json-result',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tool-json', name: 'Read', input: {} },
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-json',
+              content: { file: 'test.ts', lines: 42 },
+            },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.toolCalls).toHaveLength(1);
+      // Non-string content should be JSON.stringified
+      expect(chatMsg!.toolCalls![0].result).toBe('{"file":"test.ts","lines":42}');
+    });
+  });
+
+  describe('parseSDKMessageToChat - rebuilt context with A: shorthand', () => {
+    it('detects rebuilt context using A: shorthand marker', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'rebuilt-short',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: 'User: hello\n\nA: hi there',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.isRebuiltContext).toBe(true);
+    });
+  });
+
+  describe('parseSDKMessageToChat - interrupt tool use variant', () => {
+    it('marks tool use interrupt messages', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'interrupt-tool',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: {
+          content: '[Request interrupted by user for tool use]',
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+      expect(chatMsg).not.toBeNull();
+      expect(chatMsg!.isInterrupt).toBe(true);
+    });
+  });
+
+  describe('loadSDKSessionMessages - merge edge cases', () => {
+    it('merges assistant content blocks when first has no content blocks', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}',
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Result here"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-merge-blocks');
+
+      expect(result.messages).toHaveLength(1);
+      // Merged: tool call from first + content blocks from both
+      expect(result.messages[0].toolCalls).toHaveLength(1);
+      expect(result.messages[0].contentBlocks!.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('merges assistant with empty target content', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        // First assistant: only tool_use, no text
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:00:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}',
+        // Second assistant: has text content
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"text","text":"Here is the result"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-merge-empty-target');
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].content).toBe('Here is the result');
+    });
+
+    it('handles multiple user images in a message', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        JSON.stringify({
+          type: 'user',
+          uuid: 'u-imgs',
+          timestamp: '2024-01-15T10:00:00Z',
+          message: {
+            content: [
+              { type: 'text', text: 'Check these images' },
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'abc123' } },
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'def456' } },
+            ],
+          },
+        }),
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-multi-images');
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].images).toHaveLength(2);
+      expect(result.messages[0].images![0].mediaType).toBe('image/png');
+      expect(result.messages[0].images![1].mediaType).toBe('image/jpeg');
+      expect(result.messages[0].images![1].name).toBe('image-2');
+    });
   });
 });

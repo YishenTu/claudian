@@ -1,3 +1,5 @@
+import * as obsidian from 'obsidian';
+
 import {
   extractBoolean,
   extractNumber,
@@ -258,5 +260,167 @@ describe('extractNumber', () => {
 
   it('returns undefined for NaN', () => {
     expect(extractNumber({ count: NaN }, 'count')).toBeUndefined();
+  });
+});
+
+describe('parseFrontmatter non-object return', () => {
+  it('returns null when parseYaml returns a string', () => {
+    jest.spyOn(obsidian, 'parseYaml').mockReturnValueOnce('just a string' as any);
+    const content = `---
+just a string
+---
+Body`;
+    expect(parseFrontmatter(content)).toBeNull();
+  });
+
+  it('returns null when parseYaml returns a number', () => {
+    jest.spyOn(obsidian, 'parseYaml').mockReturnValueOnce(42 as any);
+    const content = `---
+42
+---
+Body`;
+    expect(parseFrontmatter(content)).toBeNull();
+  });
+});
+
+describe('parseFrontmatter fallback parser', () => {
+  beforeEach(() => {
+    jest.spyOn(obsidian, 'parseYaml').mockImplementation(() => {
+      throw new Error('YAML parse error');
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('falls back to line-by-line parsing when parseYaml throws', () => {
+    const content = `---
+name: test
+model: opus
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.name).toBe('test');
+    expect(result!.frontmatter.model).toBe('opus');
+    expect(result!.body).toBe('Body');
+  });
+
+  it('fallback parser handles boolean coercion', () => {
+    const content = `---
+enabled: true
+disabled: false
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.enabled).toBe(true);
+    expect(result!.frontmatter.disabled).toBe(false);
+  });
+
+  it('fallback parser handles null and empty values', () => {
+    const content = `---
+empty: null
+blank:
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.empty).toBeNull();
+    // Trailing colon with no `: ` separator sets value to empty string
+    expect(result!.frontmatter.blank).toBe('');
+  });
+
+  it('fallback parser handles number coercion', () => {
+    const content = `---
+count: 42
+ratio: 3.14
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.count).toBe(42);
+    expect(result!.frontmatter.ratio).toBe(3.14);
+  });
+
+  it('fallback parser handles inline arrays', () => {
+    const content = `---
+tools: [Read, Grep, Glob]
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.tools).toEqual(['Read', 'Grep', 'Glob']);
+  });
+
+  it('fallback parser skips comment lines', () => {
+    const content = `---
+# This is a comment
+name: test
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter).not.toHaveProperty('#');
+    expect(result!.frontmatter.name).toBe('test');
+  });
+
+  it('fallback parser skips empty lines', () => {
+    const content = `---
+name: test
+
+model: opus
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.name).toBe('test');
+    expect(result!.frontmatter.model).toBe('opus');
+  });
+
+  it('fallback parser handles keys with trailing colon only', () => {
+    const content = `---
+emptykey:
+name: test
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.emptykey).toBe('');
+    expect(result!.frontmatter.name).toBe('test');
+  });
+
+  it('fallback parser rejects invalid key names', () => {
+    const content = `---
+valid-key: value
+invalid key: value
+123start: value
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter['valid-key']).toBe('value');
+    expect(result!.frontmatter).not.toHaveProperty('invalid key');
+  });
+
+  it('fallback parser handles string values with colons', () => {
+    const content = `---
+description: Use this: for reviewing
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.description).toBe('Use this: for reviewing');
+  });
+
+  it('returns null when fallback parser finds no valid keys', () => {
+    const content = `---
+invalid key with spaces: value
+another bad key!: value
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).toBeNull();
   });
 });
