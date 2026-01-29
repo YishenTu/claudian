@@ -85,9 +85,10 @@ test-results/
 # Development files
 sandbox/
 dev
-.agents
 
 # Lock files (uncomment based on package manager)
 # yarn.lock
 # package-lock.json
-.claude/
+
+# .claude/
+settings.local.json
