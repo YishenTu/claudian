@@ -1,20 +1,9 @@
 import type { AgentDefinition } from '../core/types';
+import { validateSlugName } from './frontmatter';
 import { yamlString } from './slashCommand';
 
-const MAX_AGENT_NAME_LENGTH = 64;
-const AGENT_NAME_PATTERN = /^[a-z0-9-]+$/;
-
 export function validateAgentName(name: string): string | null {
-  if (!name) {
-    return 'Agent name is required';
-  }
-  if (name.length > MAX_AGENT_NAME_LENGTH) {
-    return `Agent name must be ${MAX_AGENT_NAME_LENGTH} characters or fewer`;
-  }
-  if (!AGENT_NAME_PATTERN.test(name)) {
-    return 'Agent name can only contain lowercase letters, numbers, and hyphens';
-  }
-  return null;
+  return validateSlugName(name, 'Agent');
 }
 
 function pushYamlList(lines: string[], key: string, items?: string[]): void {

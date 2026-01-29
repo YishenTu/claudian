@@ -3,7 +3,9 @@ import {
   extractBoolean,
   extractString,
   extractStringArray,
+  isRecord,
   parseFrontmatter,
+  validateSlugName,
 } from './frontmatter';
 
 export interface ParsedSlashCommandContent {
@@ -20,9 +22,6 @@ export interface ParsedSlashCommandContent {
   hooks?: Record<string, unknown>;
 }
 
-const MAX_COMMAND_NAME_LENGTH = 64;
-const COMMAND_NAME_PATTERN = /^[a-z0-9-]+$/;
-
 export function extractFirstParagraph(content: string): string | undefined {
   const paragraph = content.split(/\n\s*\n/).find(p => p.trim());
   if (!paragraph) return undefined;
@@ -30,16 +29,7 @@ export function extractFirstParagraph(content: string): string | undefined {
 }
 
 export function validateCommandName(name: string): string | null {
-  if (!name) {
-    return 'Command name is required';
-  }
-  if (name.length > MAX_COMMAND_NAME_LENGTH) {
-    return `Command name must be ${MAX_COMMAND_NAME_LENGTH} characters or fewer`;
-  }
-  if (!COMMAND_NAME_PATTERN.test(name)) {
-    return 'Command name can only contain lowercase letters, numbers, and hyphens';
-  }
-  return null;
+  return validateSlugName(name, 'Command');
 }
 
 export function isSkill(cmd: SlashCommand): boolean {
@@ -90,10 +80,6 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
     agent: extractString(fm, 'agent'),
     hooks: isRecord(fm.hooks) ? fm.hooks : undefined,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function yamlString(value: string): string {

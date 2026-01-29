@@ -41,7 +41,7 @@ export class SlashCommandModal extends Modal {
     const typeLabel = () => selectedType === 'skill' ? 'Skill' : 'Slash Command';
 
     this.setTitle(this.existingCmd ? `Edit ${typeLabel()}` : `Add ${typeLabel()}`);
-    this.modalEl.addClass('claudian-slash-modal');
+    this.modalEl.addClass('claudian-sp-modal');
 
     const { contentEl } = this;
 
@@ -104,10 +104,10 @@ export class SlashCommandModal extends Modal {
         text.setValue(this.existingCmd?.description || '');
       });
 
-    const details = contentEl.createEl('details', { cls: 'claudian-slash-advanced-section' });
+    const details = contentEl.createEl('details', { cls: 'claudian-sp-advanced-section' });
     details.createEl('summary', {
       text: 'Advanced options',
-      cls: 'claudian-slash-advanced-summary',
+      cls: 'claudian-sp-advanced-summary',
     });
     if (this.existingCmd?.argumentHint || this.existingCmd?.model || this.existingCmd?.allowedTools?.length ||
         this.existingCmd?.disableModelInvocation || this.existingCmd?.userInvocable === false ||
@@ -185,7 +185,7 @@ export class SlashCommandModal extends Modal {
       .setDesc('Use $ARGUMENTS, $1, $2, @file, !`bash`');
 
     const contentArea = contentEl.createEl('textarea', {
-      cls: 'claudian-slash-content-area',
+      cls: 'claudian-sp-content-area',
       attr: {
         rows: '10',
         placeholder: 'Review this code for:\n$ARGUMENTS\n\n@$1',
@@ -196,7 +196,7 @@ export class SlashCommandModal extends Modal {
       : '';
     contentArea.value = initialContent;
 
-    const buttonContainer = contentEl.createDiv({ cls: 'claudian-slash-modal-buttons' });
+    const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
       text: 'Cancel',
@@ -292,10 +292,10 @@ export class SlashCommandSettings {
   private render(): void {
     this.containerEl.empty();
 
-    const headerEl = this.containerEl.createDiv({ cls: 'claudian-slash-header' });
-    headerEl.createSpan({ text: t('settings.slashCommands.name'), cls: 'claudian-slash-label' });
+    const headerEl = this.containerEl.createDiv({ cls: 'claudian-sp-header' });
+    headerEl.createSpan({ text: t('settings.slashCommands.name'), cls: 'claudian-sp-label' });
 
-    const actionsEl = headerEl.createDiv({ cls: 'claudian-slash-header-actions' });
+    const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
@@ -307,12 +307,12 @@ export class SlashCommandSettings {
     const commands = this.plugin.settings.slashCommands;
 
     if (commands.length === 0) {
-      const emptyEl = this.containerEl.createDiv({ cls: 'claudian-slash-empty-state' });
+      const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
       emptyEl.setText('No commands or skills configured. Click + to create one.');
       return;
     }
 
-    const listEl = this.containerEl.createDiv({ cls: 'claudian-slash-list' });
+    const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
 
     for (const cmd of commands) {
       this.renderCommandItem(listEl, cmd);
@@ -320,13 +320,13 @@ export class SlashCommandSettings {
   }
 
   private renderCommandItem(listEl: HTMLElement, cmd: SlashCommand): void {
-    const itemEl = listEl.createDiv({ cls: 'claudian-slash-item-settings' });
+    const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
 
-    const infoEl = itemEl.createDiv({ cls: 'claudian-slash-info' });
+    const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
 
-    const headerRow = infoEl.createDiv({ cls: 'claudian-slash-item-header' });
+    const headerRow = infoEl.createDiv({ cls: 'claudian-sp-item-header' });
 
-    const nameEl = headerRow.createSpan({ cls: 'claudian-slash-item-name' });
+    const nameEl = headerRow.createSpan({ cls: 'claudian-sp-item-name' });
     nameEl.setText(`/${cmd.name}`);
 
     if (isSkill(cmd)) {
@@ -339,11 +339,11 @@ export class SlashCommandSettings {
     }
 
     if (cmd.description) {
-      const descEl = infoEl.createDiv({ cls: 'claudian-slash-item-desc' });
+      const descEl = infoEl.createDiv({ cls: 'claudian-sp-item-desc' });
       descEl.setText(cmd.description);
     }
 
-    const actionsEl = itemEl.createDiv({ cls: 'claudian-slash-item-actions' });
+    const actionsEl = itemEl.createDiv({ cls: 'claudian-sp-item-actions' });
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',

@@ -29,9 +29,9 @@ export class AgentVaultStorage {
             source: 'vault',
             filePath,
           }));
-        } catch { /* skip */ }
+        } catch { /* Non-critical: skip malformed agent files */ }
       }
-    } catch { /* skip */ }
+    } catch { /* Non-critical: directory may not exist yet */ }
 
     return agents;
   }

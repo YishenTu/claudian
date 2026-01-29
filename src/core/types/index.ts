@@ -115,6 +115,7 @@ export {
 
 // Agent types
 export {
+  AGENT_PERMISSION_MODES,
   type AgentDefinition,
   type AgentFrontmatter,
   type AgentPermissionMode,

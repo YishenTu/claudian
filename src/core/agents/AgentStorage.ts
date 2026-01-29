@@ -1,5 +1,5 @@
-import { extractStringArray, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
-import type { AgentDefinition, AgentFrontmatter, AgentPermissionMode } from '../types';
+import { extractStringArray, isRecord, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
+import { AGENT_PERMISSION_MODES, type AgentDefinition, type AgentFrontmatter, type AgentPermissionMode } from '../types';
 
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
   const parsed = parseFrontmatter(content);
@@ -39,20 +39,14 @@ function isStringOrArray(value: unknown): value is string | string[] {
   return typeof value === 'string' || Array.isArray(value);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
 export function parseToolsList(tools?: string | string[]): string[] | undefined {
   return normalizeStringArray(tools);
 }
 
-const VALID_PERMISSION_MODES: readonly AgentPermissionMode[] = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
-
 export function parsePermissionMode(mode?: string): AgentPermissionMode | undefined {
   if (!mode) return undefined;
   const trimmed = mode.trim();
-  if (VALID_PERMISSION_MODES.includes(trimmed as AgentPermissionMode)) {
+  if ((AGENT_PERMISSION_MODES as readonly string[]).includes(trimmed)) {
     return trimmed as AgentPermissionMode;
   }
   return undefined;

@@ -1,4 +1,5 @@
-export type AgentPermissionMode = 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate';
+export const AGENT_PERMISSION_MODES = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'] as const;
+export type AgentPermissionMode = typeof AGENT_PERMISSION_MODES[number];
 
 /**
  * Agent definition loaded from markdown files with YAML frontmatter.

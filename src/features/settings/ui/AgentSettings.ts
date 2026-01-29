@@ -32,7 +32,7 @@ class AgentModal extends Modal {
 
   onOpen() {
     this.setTitle(this.existingAgent ? 'Edit Subagent' : 'Add Subagent');
-    this.modalEl.addClass('claudian-agent-modal');
+    this.modalEl.addClass('claudian-sp-modal');
 
     const { contentEl } = this;
 
@@ -61,10 +61,10 @@ class AgentModal extends Modal {
           .setPlaceholder('Reviews code for bugs and style');
       });
 
-    const details = contentEl.createEl('details', { cls: 'claudian-agent-advanced-section' });
+    const details = contentEl.createEl('details', { cls: 'claudian-sp-advanced-section' });
     details.createEl('summary', {
       text: 'Advanced options',
-      cls: 'claudian-agent-advanced-summary',
+      cls: 'claudian-sp-advanced-summary',
     });
     if ((this.existingAgent?.model && this.existingAgent.model !== 'inherit') ||
         this.existingAgent?.tools?.length ||
@@ -114,7 +114,7 @@ class AgentModal extends Modal {
       .setDesc('Instructions for the agent');
 
     const contentArea = contentEl.createEl('textarea', {
-      cls: 'claudian-agent-content-area',
+      cls: 'claudian-sp-content-area',
       attr: {
         rows: '10',
         placeholder: 'You are a code reviewer. Analyze the given code for...',
@@ -122,7 +122,7 @@ class AgentModal extends Modal {
     });
     contentArea.value = this.existingAgent?.prompt || '';
 
-    const buttonContainer = contentEl.createDiv({ cls: 'claudian-agent-modal-buttons' });
+    const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
       text: 'Cancel',
@@ -214,10 +214,10 @@ export class AgentSettings {
   private render(): void {
     this.containerEl.empty();
 
-    const headerEl = this.containerEl.createDiv({ cls: 'claudian-agent-header' });
-    headerEl.createSpan({ text: t('settings.subagents.name'), cls: 'claudian-agent-label' });
+    const headerEl = this.containerEl.createDiv({ cls: 'claudian-sp-header' });
+    headerEl.createSpan({ text: t('settings.subagents.name'), cls: 'claudian-sp-label' });
 
-    const actionsEl = headerEl.createDiv({ cls: 'claudian-agent-header-actions' });
+    const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
@@ -230,12 +230,12 @@ export class AgentSettings {
     const vaultAgents = allAgents.filter(a => a.source === 'vault');
 
     if (vaultAgents.length === 0) {
-      const emptyEl = this.containerEl.createDiv({ cls: 'claudian-agent-empty-state' });
+      const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
       emptyEl.setText('No subagents configured. Click + to create one.');
       return;
     }
 
-    const listEl = this.containerEl.createDiv({ cls: 'claudian-agent-list' });
+    const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
 
     for (const agent of vaultAgents) {
       this.renderAgentItem(listEl, agent);
@@ -243,21 +243,21 @@ export class AgentSettings {
   }
 
   private renderAgentItem(listEl: HTMLElement, agent: AgentDefinition): void {
-    const itemEl = listEl.createDiv({ cls: 'claudian-agent-item' });
+    const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
 
-    const infoEl = itemEl.createDiv({ cls: 'claudian-agent-info' });
+    const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
 
-    const headerRow = infoEl.createDiv({ cls: 'claudian-agent-item-header' });
+    const headerRow = infoEl.createDiv({ cls: 'claudian-sp-item-header' });
 
-    const nameEl = headerRow.createSpan({ cls: 'claudian-agent-item-name' });
+    const nameEl = headerRow.createSpan({ cls: 'claudian-sp-item-name' });
     nameEl.setText(agent.name);
 
     if (agent.description) {
-      const descEl = infoEl.createDiv({ cls: 'claudian-agent-item-desc' });
+      const descEl = infoEl.createDiv({ cls: 'claudian-sp-item-desc' });
       descEl.setText(agent.description);
     }
 
-    const actionsEl = itemEl.createDiv({ cls: 'claudian-agent-item-actions' });
+    const actionsEl = itemEl.createDiv({ cls: 'claudian-sp-item-actions' });
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
@@ -272,6 +272,7 @@ export class AgentSettings {
     });
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', async () => {
+      if (!confirm(`Delete subagent "${agent.name}"?`)) return;
       try {
         await this.deleteAgent(agent);
       } catch (err) {
@@ -294,7 +295,11 @@ export class AgentSettings {
     await this.plugin.storage.agents.save(agent);
 
     if (existing && existing.name !== agent.name) {
-      await this.plugin.storage.agents.delete(existing);
+      try {
+        await this.plugin.storage.agents.delete(existing);
+      } catch {
+        new Notice(`Warning: could not remove old file for "${existing.name}"`);
+      }
     }
 
     await this.plugin.agentManager.loadAgents();
@@ -305,7 +310,11 @@ export class AgentSettings {
   private async deleteAgent(agent: AgentDefinition): Promise<void> {
     await this.plugin.storage.agents.delete(agent);
 
-    await this.plugin.agentManager.loadAgents();
+    try {
+      await this.plugin.agentManager.loadAgents();
+    } catch {
+      // Non-critical: agent list will refresh on next settings open
+    }
     this.render();
     new Notice(`Subagent "${agent.name}" deleted`);
   }

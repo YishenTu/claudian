@@ -329,7 +329,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(t('settings.slashCommands.name')).setHeading();
 
-    const slashCommandsDesc = containerEl.createDiv({ cls: 'claudian-slash-settings-desc' });
+    const slashCommandsDesc = containerEl.createDiv({ cls: 'claudian-sp-settings-desc' });
     const descP = slashCommandsDesc.createEl('p', { cls: 'setting-item-description' });
     descP.appendText(t('settings.slashCommands.desc') + ' ');
     descP.createEl('a', {
@@ -361,7 +361,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(t('settings.subagents.name')).setHeading();
 
-    const agentsDesc = containerEl.createDiv({ cls: 'claudian-agent-settings-desc' });
+    const agentsDesc = containerEl.createDiv({ cls: 'claudian-sp-settings-desc' });
     agentsDesc.createEl('p', {
       text: t('settings.subagents.desc'),
       cls: 'setting-item-description',

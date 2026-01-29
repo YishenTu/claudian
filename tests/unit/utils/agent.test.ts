@@ -51,6 +51,15 @@ describe('validateAgentName', () => {
       'Agent name can only contain lowercase letters, numbers, and hyphens'
     );
   });
+
+  it.each(['true', 'false', 'null', 'yes', 'no', 'on', 'off'])(
+    'returns error for YAML reserved word "%s"',
+    (word) => {
+      expect(validateAgentName(word)).toBe(
+        'Agent name cannot be a YAML reserved word (true, false, null, yes, no, on, off)'
+      );
+    }
+  );
 });
 
 describe('serializeAgent', () => {

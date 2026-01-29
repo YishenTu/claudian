@@ -9,7 +9,7 @@ src/style/
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands, file-link, image-embed
 ├── modals/         # approval, instruction, mcp-modal
-├── settings/       # base, env-snippets, slash-settings, mcp-settings, plugin-settings
+├── settings/       # base (shared .claudian-sp-* panel layout), env-snippets, slash-settings, mcp-settings, plugin-settings, agent-settings
 ├── accessibility.css
 └── index.css       # Build order (@import list)
 ```

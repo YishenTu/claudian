@@ -109,4 +109,26 @@ export function extractBoolean(
   return undefined;
 }
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
 
+const MAX_SLUG_LENGTH = 64;
+const SLUG_PATTERN = /^[a-z0-9-]+$/;
+const YAML_RESERVED_WORDS = new Set(['true', 'false', 'null', 'yes', 'no', 'on', 'off']);
+
+export function validateSlugName(name: string, label: string): string | null {
+  if (!name) {
+    return `${label} name is required`;
+  }
+  if (name.length > MAX_SLUG_LENGTH) {
+    return `${label} name must be ${MAX_SLUG_LENGTH} characters or fewer`;
+  }
+  if (!SLUG_PATTERN.test(name)) {
+    return `${label} name can only contain lowercase letters, numbers, and hyphens`;
+  }
+  if (YAML_RESERVED_WORDS.has(name)) {
+    return `${label} name cannot be a YAML reserved word (true, false, null, yes, no, on, off)`;
+  }
+  return null;
+}
