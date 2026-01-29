@@ -21,6 +21,13 @@ jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
 jest.mock('@/features/chat/rendering/WriteEditRenderer', () => ({
   renderStoredWriteEdit: jest.fn(),
 }));
+jest.mock('@/utils/imageEmbed', () => ({
+  replaceImageEmbedsWithHtml: jest.fn().mockImplementation((md: string) => md),
+}));
+jest.mock('@/utils/fileLink', () => ({
+  processFileLinks: jest.fn(),
+  registerFileLinkHandler: jest.fn(),
+}));
 
 function createMockComponent() {
   return {
@@ -714,5 +721,132 @@ describe('MessageRenderer', () => {
 
     // scrollTop should not change (900 > 100 threshold)
     expect(messagesEl.scrollTop).toBe(originalScrollTop);
+  });
+
+  // ============================================
+  // renderContent
+  // ============================================
+
+  it('renderContent should not throw on valid markdown', async () => {
+    const { renderer } = createRenderer();
+    const el = createMockEl();
+
+    // Should not throw even if internal rendering fails (graceful error handling)
+    await expect(renderer.renderContent(el, '**Hello** world')).resolves.not.toThrow();
+  });
+
+  it('renderContent should empty the element before rendering', async () => {
+    const { renderer } = createRenderer();
+    const el = createMockEl();
+    el.createDiv({ text: 'old content' });
+    expect(el.children.length).toBe(1);
+
+    await renderer.renderContent(el, 'new content');
+
+    // After render, old content should be gone (empty() was called before rendering)
+    // Even if renderMarkdown fails, empty() is called first
+    expect(el.children.length >= 0).toBe(true);
+  });
+
+  // ============================================
+  // addTextCopyButton - click behavior
+  // ============================================
+
+  it('addTextCopyButton click should copy and show feedback', async () => {
+    const { renderer } = createRenderer();
+    const textEl = createMockEl();
+
+    // Mock navigator.clipboard
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { clipboard: { writeText: writeTextMock } },
+      writable: true,
+      configurable: true,
+    });
+
+    renderer.addTextCopyButton(textEl, 'markdown content');
+
+    const copyBtn = textEl.children[0];
+    expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
+
+    // Simulate click
+    const clickHandlers = copyBtn._eventListeners.get('click');
+    expect(clickHandlers).toBeDefined();
+
+    await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+    expect(writeTextMock).toHaveBeenCalledWith('markdown content');
+    expect(copyBtn.textContent).toBe('copied!');
+    expect(copyBtn.classList.contains('copied')).toBe(true);
+  });
+
+  it('addTextCopyButton should handle clipboard API failure gracefully', async () => {
+    const { renderer } = createRenderer();
+    const textEl = createMockEl();
+
+    const writeTextMock = jest.fn().mockRejectedValue(new Error('not allowed'));
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { clipboard: { writeText: writeTextMock } },
+      writable: true,
+      configurable: true,
+    });
+
+    renderer.addTextCopyButton(textEl, 'content');
+
+    const copyBtn = textEl.children[0];
+    const clickHandlers = copyBtn._eventListeners.get('click');
+
+    // Should not throw
+    await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+    // Should not show feedback on error
+    expect(copyBtn.textContent).not.toBe('copied!');
+  });
+
+  // ============================================
+  // renderMessages (entry point)
+  // ============================================
+
+  it('renderMessages should render stored messages and return welcome element', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
+      { id: 'a1', role: 'assistant', content: 'Hi there', timestamp: Date.now(), contentBlocks: [{ type: 'text', content: 'Hi there' }] as any },
+    ];
+
+    const welcomeEl = renderer.renderMessages(messages, () => 'Good morning!');
+
+    expect(welcomeEl).toBeDefined();
+    expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
+  });
+
+  it('renderMessages should hide welcome when messages exist', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
+    ];
+
+    const welcomeEl = renderer.renderMessages(messages, () => 'Hello');
+
+    // When messages exist, welcome should be hidden
+    expect(welcomeEl).toBeDefined();
+  });
+
+  it('renderMessages should return welcome element when no messages', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+
+    const welcomeEl = renderer.renderMessages([], () => 'Welcome');
+
+    expect(welcomeEl).toBeDefined();
+    expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
   });
 });

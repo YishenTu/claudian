@@ -754,6 +754,339 @@ describe('StreamController - Text Content', () => {
     });
   });
 
+  describe('Usage handling - edge cases', () => {
+    it('should skip usage when subagentsSpawnedThisStream > 0', async () => {
+      const msg = createTestMessage();
+      (deps.subagentManager as any).subagentsSpawnedThisStream = 1;
+
+      const usage = {
+        model: 'model-a',
+        inputTokens: 100,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 200,
+        contextTokens: 100,
+        percentage: 50,
+      };
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toBeNull();
+    });
+
+    it('should skip usage when chunk has sessionId but currentSessionId is null', async () => {
+      // Override agent service to return null session
+      const nullSessionDeps = createMockDeps();
+      nullSessionDeps.getAgentService = () => ({ getSessionId: jest.fn().mockReturnValue(null) }) as any;
+      nullSessionDeps.state.currentContentEl = createMockEl();
+      const nullSessionController = new StreamController(nullSessionDeps);
+
+      const msg = createTestMessage();
+      const usage = {
+        model: 'model-a',
+        inputTokens: 10,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 100,
+        contextTokens: 10,
+        percentage: 10,
+      };
+
+      await nullSessionController.handleStreamChunk({ type: 'usage', usage, sessionId: 'some-session' }, msg);
+
+      expect(nullSessionDeps.state.usage).toBeNull();
+    });
+
+    it('should update usage when no sessionId on chunk', async () => {
+      const msg = createTestMessage();
+      const usage = {
+        model: 'model-a',
+        inputTokens: 10,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 100,
+        contextTokens: 10,
+        percentage: 10,
+      };
+
+      await controller.handleStreamChunk({ type: 'usage', usage } as any, msg);
+
+      expect(deps.state.usage).toEqual(usage);
+    });
+
+    it('should not update usage when ignoreUsageUpdates is true', async () => {
+      const msg = createTestMessage();
+      deps.state.ignoreUsageUpdates = true;
+
+      const usage = {
+        model: 'model-a',
+        inputTokens: 10,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 100,
+        contextTokens: 10,
+        percentage: 10,
+      };
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toBeNull();
+    });
+  });
+
+  describe('Thinking indicator - edge cases', () => {
+    it('should not show indicator when no currentContentEl', () => {
+      deps.state.currentContentEl = null;
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+
+      expect(deps.state.thinkingEl).toBeNull();
+    });
+
+    it('should not show indicator when currentThinkingState is active', () => {
+      deps.state.currentThinkingState = { content: 'thinking...', container: {}, contentEl: {}, startTime: Date.now() } as any;
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+
+      expect(deps.state.thinkingEl).toBeNull();
+    });
+
+    it('should re-append existing indicator to bottom when called again', () => {
+      deps.state.responseStartTime = performance.now();
+
+      // Create initial indicator
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+
+      const thinkingEl = deps.state.thinkingEl;
+      expect(thinkingEl).not.toBeNull();
+
+      // Call again - should re-append same element
+      controller.showThinkingIndicator();
+
+      // The thinkingEl should be the same object
+      expect(deps.state.thinkingEl).toBe(thinkingEl);
+      expect(deps.updateQueueIndicator).toHaveBeenCalled();
+    });
+  });
+
+  describe('scrollToBottom - settings', () => {
+    it('should not scroll when enableAutoScroll setting is false', async () => {
+      (deps.plugin.settings as any).enableAutoScroll = false;
+      const messagesEl = deps.getMessagesEl();
+      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      messagesEl.scrollTop = 0;
+
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
+
+      expect(messagesEl.scrollTop).toBe(0);
+    });
+
+    it('should not scroll when autoScrollEnabled state is false', async () => {
+      deps.state.autoScrollEnabled = false;
+      const messagesEl = deps.getMessagesEl();
+      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
+      messagesEl.scrollTop = 0;
+
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
+
+      expect(messagesEl.scrollTop).toBe(0);
+    });
+  });
+
+  describe('Subagent chunk handling', () => {
+    it('should ignore subagent chunk with text type (no-op)', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
+        info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
+      });
+
+      await controller.handleStreamChunk(
+        { type: 'text', content: 'Subagent text', parentToolUseId: 'task-1' } as any,
+        msg
+      );
+
+      // No text appended to main message
+      expect(msg.content).toBe('');
+    });
+
+    it('should handle subagent tool_result chunk', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      const toolCall = { id: 'read-1', name: 'Read', input: {}, status: 'running' };
+      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
+        info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [toolCall] },
+      });
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'read-1', content: 'file content', parentToolUseId: 'task-1' } as any,
+        msg
+      );
+
+      expect(deps.subagentManager.updateSyncToolResult).toHaveBeenCalledWith(
+        'task-1',
+        'read-1',
+        expect.objectContaining({ status: 'completed', result: 'file content' })
+      );
+    });
+
+    it('should handle subagent tool_use chunk', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
+        info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
+      });
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, parentToolUseId: 'task-1' } as any,
+        msg
+      );
+
+      expect(deps.subagentManager.addSyncToolCall).toHaveBeenCalledWith(
+        'task-1',
+        expect.objectContaining({ id: 'grep-1', name: 'Grep', status: 'running' })
+      );
+    });
+
+    it('should skip subagent chunk when no sync subagent found', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce(undefined);
+
+      await controller.handleStreamChunk(
+        { type: 'text', content: 'orphan', parentToolUseId: 'unknown-task' } as any,
+        msg
+      );
+
+      // Should not throw
+      expect(msg.content).toBe('');
+    });
+  });
+
+  describe('Async subagent handling', () => {
+    it('should handle created_async action from Task tool use', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      (deps.subagentManager.handleTaskToolUse as jest.Mock).mockReturnValueOnce({
+        action: 'created_async',
+        info: { id: 'task-1', description: 'background task', status: 'running', toolCalls: [], mode: 'async' },
+      });
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', run_in_background: true } },
+        msg
+      );
+
+      expect(msg.subagents).toHaveLength(1);
+      expect(msg.contentBlocks).toContainEqual({ type: 'subagent', subagentId: 'task-1', mode: 'async' });
+    });
+
+    it('should handle label_updated action from Task tool use (no-op for message)', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      (deps.subagentManager.handleTaskToolUse as jest.Mock).mockReturnValueOnce({
+        action: 'label_updated',
+      });
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Updated' } },
+        msg
+      );
+
+      expect(msg.subagents).toBeUndefined();
+      expect(msg.contentBlocks).toEqual([]);
+    });
+  });
+
+  describe('onAsyncSubagentStateChange', () => {
+    it('should update subagent in messages', () => {
+      const subagent = { id: 'task-1', description: 'test', status: 'completed', result: 'done', toolCalls: [] } as any;
+      deps.state.messages = [{
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        subagents: [{ id: 'task-1', description: 'test', status: 'running', toolCalls: [] }],
+      }] as any;
+
+      controller.onAsyncSubagentStateChange(subagent);
+
+      expect(deps.state.messages[0].subagents![0].status).toBe('completed');
+      expect(deps.state.messages[0].subagents![0].result).toBe('done');
+    });
+
+    it('should not crash when subagent not found in messages', () => {
+      const subagent = { id: 'unknown', description: 'test', status: 'completed', toolCalls: [] } as any;
+      deps.state.messages = [{
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        subagents: [{ id: 'task-1', description: 'test', status: 'running', toolCalls: [] }],
+      }] as any;
+
+      expect(() => controller.onAsyncSubagentStateChange(subagent)).not.toThrow();
+    });
+  });
+
+  describe('Thinking block finalization', () => {
+    it('should finalize thinking block and add to contentBlocks', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      // Set up a thinking state
+      deps.state.currentThinkingState = {
+        content: 'Let me think...',
+        container: createMockEl(),
+        contentEl: createMockEl(),
+        startTime: Date.now(),
+      } as any;
+
+      controller.finalizeCurrentThinkingBlock(msg);
+
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'thinking', content: 'Let me think...' })
+      );
+      expect(deps.state.currentThinkingState).toBeNull();
+    });
+
+    it('should not add to contentBlocks when no thinking content', () => {
+      const msg = createTestMessage();
+      deps.state.currentThinkingState = {
+        content: '',
+        container: createMockEl(),
+        contentEl: createMockEl(),
+        startTime: Date.now(),
+      } as any;
+
+      controller.finalizeCurrentThinkingBlock(msg);
+
+      expect(msg.contentBlocks).toEqual([]);
+    });
+
+    it('should be a no-op when no thinking state', () => {
+      const msg = createTestMessage();
+      deps.state.currentThinkingState = null;
+
+      controller.finalizeCurrentThinkingBlock(msg);
+
+      expect(msg.contentBlocks).toEqual([]);
+    });
+  });
+
   describe('Pending Task tool handling', () => {
     it('should render pending Task as sync when child chunk arrives', async () => {
       const msg = createTestMessage();

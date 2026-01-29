@@ -1044,4 +1044,120 @@ describe('InputController - Message Queue', () => {
       expect(mockNotice).toHaveBeenCalledWith(`Added external context: ${normalizedPath}`);
     });
   });
+
+  describe('Built-in commands - /clear', () => {
+    it('should call conversationController.createNew on /clear', async () => {
+      // Add createNew to the mock
+      (deps.conversationController as any).createNew = jest.fn().mockResolvedValue(undefined);
+      inputEl.value = '/clear';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect((deps.conversationController as any).createNew).toHaveBeenCalled();
+      expect(inputEl.value).toBe('');
+    });
+  });
+
+  describe('Cancel streaming - restore behavior', () => {
+    it('should set cancelRequested and call agent cancel', () => {
+      deps.state.isStreaming = true;
+      controller = new InputController(deps);
+
+      controller.cancelStreaming();
+
+      expect(deps.state.cancelRequested).toBe(true);
+      expect((deps as any).mockAgentService.cancel).toHaveBeenCalled();
+    });
+
+    it('should restore queued message to input when cancelling', () => {
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = { content: 'restored text', images: undefined, editorContext: null };
+      controller = new InputController(deps);
+
+      controller.cancelStreaming();
+
+      expect(deps.state.queuedMessage).toBeNull();
+      expect(inputEl.value).toBe('restored text');
+    });
+
+    it('should restore queued images to image context manager when cancelling', () => {
+      deps.state.isStreaming = true;
+      const mockImages = [{ id: 'img1', name: 'test.png' }];
+      deps.state.queuedMessage = { content: 'msg', images: mockImages as any, editorContext: null };
+
+      controller = new InputController(deps);
+      controller.cancelStreaming();
+
+      const imageContextManager = deps.getImageContextManager()!;
+      expect(imageContextManager.setImages).toHaveBeenCalledWith(mockImages);
+    });
+
+    it('should hide thinking indicator when cancelling', () => {
+      deps.state.isStreaming = true;
+      controller = new InputController(deps);
+
+      controller.cancelStreaming();
+
+      expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
+    });
+
+    it('should be a no-op when not streaming', () => {
+      deps.state.isStreaming = false;
+      controller = new InputController(deps);
+
+      controller.cancelStreaming();
+
+      expect(deps.state.cancelRequested).toBe(false);
+      expect((deps as any).mockAgentService.cancel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Sending messages - edge cases', () => {
+    it('should not send empty message without images', async () => {
+      inputEl.value = '';
+      const imageContextManager = deps.getImageContextManager()!;
+      (imageContextManager.hasImages as jest.Mock).mockReturnValue(false);
+
+      await controller.sendMessage();
+
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+    });
+
+    it('should send message with only images (empty text)', async () => {
+      const welcomeEl = createMockEl();
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue(null),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(false),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+      const imageContextManager = createMockImageContextManager();
+      (imageContextManager.hasImages as jest.Mock).mockReturnValue(true);
+      (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue([{ id: 'img1', name: 'test.png' }]);
+
+      deps = createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        getFileContextManager: () => fileContextManager as any,
+        getImageContextManager: () => imageContextManager as any,
+      });
+      deps.state.currentConversationId = 'conv-1';
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = '';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // Should still query the agent with images
+      expect((deps as any).mockAgentService.query).toHaveBeenCalled();
+      expect(deps.state.messages).toHaveLength(2);
+      expect(deps.state.messages[0].images).toHaveLength(1);
+    });
+  });
 });
