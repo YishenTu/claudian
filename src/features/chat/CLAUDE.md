@@ -101,4 +101,4 @@ for await (const message of response) {
 - `ChatState` is per-tab; `TabManager` coordinates across tabs
 - Title generation runs concurrently per-conversation (separate AbortControllers)
 - `FileContext` has nested state in `ui/file-context/state/`
-- `/compact` has a special code path: `InputController` strips context XML so the SDK recognizes the built-in command; `StreamController` handles the `compact_boundary` chunk as a standalone separator (never merged with adjacent assistant messages); ESC during compact produces an SDK stderr (`Compaction canceled`) that `sdkSession.ts` maps to `isInterrupt` for persistent rendering
+- `/compact` has a special code path: `InputController` skips context XML appending so the SDK recognizes the built-in command; `StreamController` handles the `compact_boundary` chunk as a standalone separator; `sdkSession.ts` prevents merge with adjacent assistant messages; ESC during compact produces an SDK stderr (`Compaction canceled`) that `sdkSession.ts` maps to `isInterrupt` for persistent rendering

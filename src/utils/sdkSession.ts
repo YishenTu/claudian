@@ -355,7 +355,7 @@ export function parseSDKMessageToChat(
   const isInterrupt = sdkMsg.type === 'user' && (
     textContent === '[Request interrupted by user]' ||
     textContent === '[Request interrupted by user for tool use]' ||
-    textContent.includes('Compaction canceled')
+    (textContent.includes('<local-command-stderr>') && textContent.includes('Compaction canceled'))
   );
 
   const isRebuiltContext = sdkMsg.type === 'user' && isRebuiltContextContent(textContent);
@@ -440,14 +440,13 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   const text = extractTextContent(sdkMsg.message?.content);
   if (!text) return false;
 
-  // Compact summary injected by SDK after /compact
-  if (text.startsWith('This session is being continued from a previous conversation')) return true;
-  // Slash command invocations (e.g., /clear) — but preserve /compact for UI display
-  if (text.includes('<command-name>')) {
-    return !text.includes('<command-name>/compact</command-name>');
-  }
-  // Command stdout/stderr output (but compact cancellation stderr is an interrupt, not filtered)
+  // Preserve these for UI display
+  if (text.includes('<command-name>/compact</command-name>')) return false;
   if (text.includes('<local-command-stderr>') && text.includes('Compaction canceled')) return false;
+
+  // Filter system-injected messages
+  if (text.startsWith('This session is being continued from a previous conversation')) return true;
+  if (text.includes('<command-name>')) return true;
   if (text.includes('<local-command-stdout>') || text.includes('<local-command-stderr>')) return true;
 
   return false;
@@ -536,7 +535,8 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
         if (pendingAssistant) {
           chatMessages.push(pendingAssistant);
         }
-        pendingAssistant = chatMsg;
+        chatMessages.push(chatMsg);
+        pendingAssistant = null;
       } else if (pendingAssistant) {
         mergeAssistantMessage(pendingAssistant, chatMsg);
       } else {

@@ -171,7 +171,7 @@ export class InputController {
       : selectionController.getContext();
 
     const externalContextPaths = externalContextSelector?.getExternalContexts();
-    const isCompact = content.trim().toLowerCase().startsWith('/compact');
+    const isCompact = /^\/compact(\s|$)/i.test(content);
 
     // User content first, context XML appended after (enables slash command detection)
     let promptToSend = content;

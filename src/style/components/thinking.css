@@ -7,7 +7,7 @@
 }
 
 .claudian-thinking.claudian-thinking--compact {
-  color: #5bc0de;
+  color: var(--claudian-compact);
 }
 
 .claudian-thinking-hint {
