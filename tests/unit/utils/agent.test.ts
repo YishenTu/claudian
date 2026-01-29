@@ -1,3 +1,4 @@
+import { buildAgentFromFrontmatter, parseAgentFile } from '@/core/agents/AgentStorage';
 import type { AgentDefinition } from '@/core/types';
 import { serializeAgent, validateAgentName } from '@/utils/agent';
 
@@ -186,5 +187,86 @@ describe('serializeAgent', () => {
     expect(result).toContain('model: opus');
     expect(result).toContain('permissionMode: acceptEdits');
     expect(result).toContain('skills:\n  - review');
+  });
+});
+
+describe('serializeAgent / parseAgentFile round-trip', () => {
+  it('round-trips a minimal agent', () => {
+    const agent: AgentDefinition = {
+      id: 'my-agent',
+      name: 'my-agent',
+      description: 'A test agent',
+      prompt: 'You are a test agent.',
+      source: 'vault',
+    };
+
+    const serialized = serializeAgent(agent);
+    const parsed = parseAgentFile(serialized);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildAgentFromFrontmatter(parsed!.frontmatter, parsed!.body, {
+      id: parsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt.name).toBe(agent.name);
+    expect(rebuilt.description).toBe(agent.description);
+    expect(rebuilt.prompt).toBe(agent.prompt);
+  });
+
+  it('round-trips a fully populated agent', () => {
+    const agent: AgentDefinition = {
+      id: 'full-agent',
+      name: 'full-agent',
+      description: 'Full agent',
+      prompt: 'Do everything.',
+      tools: ['Read', 'Grep'],
+      disallowedTools: ['Bash'],
+      model: 'opus',
+      permissionMode: 'acceptEdits',
+      skills: ['review', 'deploy'],
+      hooks: { preToolUse: { command: 'echo test' } },
+      source: 'vault',
+    };
+
+    const serialized = serializeAgent(agent);
+    const parsed = parseAgentFile(serialized);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildAgentFromFrontmatter(parsed!.frontmatter, parsed!.body, {
+      id: parsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt.name).toBe(agent.name);
+    expect(rebuilt.description).toBe(agent.description);
+    expect(rebuilt.prompt).toBe(agent.prompt);
+    expect(rebuilt.tools).toEqual(agent.tools);
+    expect(rebuilt.disallowedTools).toEqual(agent.disallowedTools);
+    expect(rebuilt.model).toBe(agent.model);
+    expect(rebuilt.permissionMode).toBe(agent.permissionMode);
+    expect(rebuilt.skills).toEqual(agent.skills);
+    expect(rebuilt.hooks).toEqual(agent.hooks);
+  });
+
+  it('round-trips description with special YAML characters', () => {
+    const agent: AgentDefinition = {
+      id: 'special-desc',
+      name: 'special-desc',
+      description: 'Test: agent with #special chars',
+      prompt: 'Handle edge cases.',
+      source: 'vault',
+    };
+
+    const serialized = serializeAgent(agent);
+    const parsed = parseAgentFile(serialized);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildAgentFromFrontmatter(parsed!.frontmatter, parsed!.body, {
+      id: parsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt.description).toBe(agent.description);
   });
 });

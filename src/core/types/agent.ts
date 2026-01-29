@@ -39,7 +39,7 @@ export interface AgentDefinition {
 
   permissionMode?: AgentPermissionMode;
 
-  /** Parsed from frontmatter; stored for round-trip but not forwarded to SDK agents */
+  /** Parsed from frontmatter; round-tripped on save so the SDK reads hooks from the agent file */
   hooks?: Record<string, unknown>;
 }
 

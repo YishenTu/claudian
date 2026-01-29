@@ -739,6 +739,13 @@ describe('validateCommandName', () => {
     expect(validateCommandName('cmd!@#')).not.toBeNull();
     expect(validateCommandName('cmd.test')).not.toBeNull();
   });
+
+  it.each(['true', 'false', 'null', 'yes', 'no', 'on', 'off'])(
+    'rejects YAML reserved word "%s"',
+    (word) => {
+      expect(validateCommandName(word)).not.toBeNull();
+    }
+  );
 });
 
 describe('extractFirstParagraph', () => {

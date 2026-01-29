@@ -37,12 +37,14 @@ export class AgentVaultStorage {
   }
 
   async save(agent: AgentDefinition): Promise<void> {
-    const filePath = agent.filePath ?? `${AGENTS_PATH}/${agent.name}.md`;
-    await this.adapter.write(filePath, serializeAgent(agent));
+    await this.adapter.write(this.resolvePath(agent), serializeAgent(agent));
   }
 
   async delete(agent: AgentDefinition): Promise<void> {
-    const filePath = agent.filePath ?? `${AGENTS_PATH}/${agent.name}.md`;
-    await this.adapter.delete(filePath);
+    await this.adapter.delete(this.resolvePath(agent));
+  }
+
+  private resolvePath(agent: AgentDefinition): string {
+    return agent.filePath ?? `${AGENTS_PATH}/${agent.name}.md`;
   }
 }

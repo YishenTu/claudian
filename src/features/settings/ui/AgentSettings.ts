@@ -179,7 +179,9 @@ class AgentModal extends Modal {
         disallowedTools: parseList(disallowedToolsInput),
         model: (modelValue as AgentDefinition['model']) || 'inherit',
         source: 'vault',
-        filePath: this.existingAgent?.filePath,
+        filePath: (this.existingAgent && this.existingAgent.name === name)
+          ? this.existingAgent.filePath
+          : undefined,
         skills: parseList(skillsInput),
         permissionMode: this.existingAgent?.permissionMode,
         hooks: this.existingAgent?.hooks,
@@ -302,7 +304,11 @@ export class AgentSettings {
       }
     }
 
-    await this.plugin.agentManager.loadAgents();
+    try {
+      await this.plugin.agentManager.loadAgents();
+    } catch {
+      // Non-critical: agent list will refresh on next settings open
+    }
     this.render();
     new Notice(`Subagent "${agent.name}" ${existing ? 'updated' : 'created'}`);
   }

@@ -188,6 +188,10 @@ function unquoteYaml(value: string): string {
 function parseYamlValue(rawValue: string): unknown {
   if (!rawValue) return null;
 
+  if (rawValue.startsWith('{') && rawValue.endsWith('}')) {
+    try { return JSON.parse(rawValue); } catch { /* fall through */ }
+  }
+
   if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
     return rawValue.slice(1, -1).split(',').map(item => unquoteYaml(item.trim())).filter(Boolean);
   }
