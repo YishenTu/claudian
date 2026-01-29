@@ -32,7 +32,6 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   setupApprovalCallback: (...args: any[]) => mockSetupApprovalCallback(...args),
 }));
 
-// Helper to create mock plugin
 function createMockPlugin(overrides: Record<string, any> = {}): any {
   return {
     app: {
@@ -50,12 +49,10 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
   };
 }
 
-// Helper to create mock MCP manager
 function createMockMcpManager(): any {
   return {};
 }
 
-// Helper to create mock view
 function createMockView(): any {
   return {
     leaf: { id: 'leaf-1' },
@@ -63,7 +60,6 @@ function createMockView(): any {
   };
 }
 
-// Helper to create mock tab data
 function createMockTabData(overrides: Record<string, any> = {}): any {
   const defaultState = {
     isStreaming: false,
@@ -106,19 +102,32 @@ function createMockTabData(overrides: Record<string, any> = {}): any {
   };
 }
 
+function createManager(options: {
+  plugin?: any;
+  callbacks?: TabManagerCallbacks;
+  tabFactory?: (counter: number) => any;
+} = {}): TabManager {
+  jest.clearAllMocks();
+  let tabCounter = 0;
+  const factory = options.tabFactory ?? ((n: number) => createMockTabData({ id: `tab-${n}` }));
+  mockCreateTab.mockImplementation(() => {
+    tabCounter++;
+    return factory(tabCounter);
+  });
+
+  return new TabManager(
+    options.plugin ?? createMockPlugin(),
+    createMockMcpManager(),
+    createMockEl(),
+    createMockView(),
+    options.callbacks
+  );
+}
+
 describe('TabManager - Tab Lifecycle', () => {
-  let plugin: any;
-  let mcpManager: any;
-  let containerEl: any;
-  let view: any;
   let callbacks: TabManagerCallbacks;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    plugin = createMockPlugin();
-    mcpManager = createMockMcpManager();
-    containerEl = createMockEl();
-    view = createMockView();
     callbacks = {
       onTabCreated: jest.fn(),
       onTabSwitched: jest.fn(),
@@ -127,18 +136,11 @@ describe('TabManager - Tab Lifecycle', () => {
       onTabTitleChanged: jest.fn(),
       onTabAttentionChanged: jest.fn(),
     };
-
-    // Setup createTab mock to return valid tab data
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
   });
 
   describe('createTab', () => {
     it('should create a new tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       const tab = await manager.createTab();
 
@@ -150,7 +152,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should call onTabCreated callback', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       await manager.createTab();
 
@@ -158,7 +160,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should activate first tab automatically', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       await manager.createTab();
 
@@ -168,14 +170,12 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should enforce max tabs limit', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
-      // Create DEFAULT_MAX_TABS tabs
       for (let i = 0; i < DEFAULT_MAX_TABS; i++) {
         await manager.createTab();
       }
 
-      // Try to create one more
       const extraTab = await manager.createTab();
 
       expect(extraTab).toBeNull();
@@ -183,7 +183,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should use provided tab ID for restoration', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
       mockCreateTab.mockImplementationOnce(() =>
         createMockTabData({ id: 'restored-tab-id' })
       );
@@ -198,7 +198,7 @@ describe('TabManager - Tab Lifecycle', () => {
 
   describe('switchToTab', () => {
     it('should switch to existing tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       const tab1 = await manager.createTab();
       const tab2 = await manager.createTab();
@@ -206,10 +206,8 @@ describe('TabManager - Tab Lifecycle', () => {
       // First, switch to tab2 to make it active (tab1 is active after creation)
       await manager.switchToTab(tab2!.id);
 
-      // Clear mocks to check switch behavior
       jest.clearAllMocks();
 
-      // Now switch from tab2 (currently active) back to tab1
       await manager.switchToTab(tab1!.id);
 
       expect(mockDeactivateTab).toHaveBeenCalled();
@@ -218,7 +216,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should not switch to non-existent tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
       await manager.createTab();
 
       jest.clearAllMocks();
@@ -228,7 +226,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should NOT initialize service on switch (lazy until first query)', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       await manager.createTab();
 
@@ -239,7 +237,7 @@ describe('TabManager - Tab Lifecycle', () => {
 
   describe('closeTab', () => {
     it('should close a tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       const tab1 = await manager.createTab();
       await manager.createTab(); // Need at least 2 tabs to close one
@@ -258,7 +256,7 @@ describe('TabManager - Tab Lifecycle', () => {
       });
       mockCreateTab.mockReturnValueOnce(streamingTab);
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
       await manager.createTab();
 
       const closed = await manager.closeTab('streaming-tab');
@@ -274,7 +272,7 @@ describe('TabManager - Tab Lifecycle', () => {
       });
       mockCreateTab.mockReturnValueOnce(streamingTab);
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
       await manager.createTab();
       await manager.createTab(); // Need second tab
 
@@ -285,7 +283,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should switch to another tab after closing active tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       // Create two tabs (variables intentionally unused - we just need tabs to exist)
       await manager.createTab();
@@ -299,7 +297,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should prefer previous tab when closing a middle tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       const tab1 = await manager.createTab();
       const tab2 = await manager.createTab();
@@ -315,7 +313,7 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should fall back to next tab when closing the first tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       const tab1 = await manager.createTab();
       const tab2 = await manager.createTab();
@@ -331,24 +329,22 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should create new tab if all tabs are closed', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
       const tab = await manager.createTab();
       await manager.closeTab(tab!.id, true);
 
-      // Should have created a new default tab
       expect(manager.getTabCount()).toBe(1);
     });
 
     it('should save conversation before closing', async () => {
       const mockSave = jest.fn().mockResolvedValue(undefined);
       const tabWithSave = createMockTabData({ id: 'tab-with-save' });
-      // Override save function specifically
       tabWithSave.controllers.conversationController.save = mockSave;
 
       mockCreateTab.mockReturnValueOnce(tabWithSave);
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
       await manager.createTab();
       await manager.createTab(); // Need second tab
 
@@ -358,18 +354,15 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should switch to next tab when closing first tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
-      // Create three tabs: tab-1, tab-2, tab-3
       const tab1 = await manager.createTab();
       const tab2 = await manager.createTab();
       await manager.createTab(); // tab-3
 
-      // Switch to tab-1 (first tab)
       await manager.switchToTab(tab1!.id);
       expect(manager.getActiveTabId()).toBe(tab1!.id);
 
-      // Close tab-1 (first tab)
       await manager.closeTab(tab1!.id);
 
       // Should switch to tab-2 (next tab, not previous since there is none)
@@ -377,18 +370,15 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should switch to previous tab when closing middle tab', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
-      // Create three tabs: tab-1, tab-2, tab-3
       const tab1 = await manager.createTab();
       const tab2 = await manager.createTab();
       await manager.createTab(); // tab-3
 
-      // Switch to tab-2 (middle tab)
       await manager.switchToTab(tab2!.id);
       expect(manager.getActiveTabId()).toBe(tab2!.id);
 
-      // Close tab-2 (middle tab)
       await manager.closeTab(tab2!.id);
 
       // Should switch to tab-1 (previous tab)
@@ -396,18 +386,15 @@ describe('TabManager - Tab Lifecycle', () => {
     });
 
     it('should switch to previous tab when closing last tab in list', async () => {
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = createManager({ callbacks });
 
-      // Create three tabs: tab-1, tab-2, tab-3
       await manager.createTab(); // tab-1
       const tab2 = await manager.createTab();
       const tab3 = await manager.createTab();
 
-      // Switch to tab-3 (last tab)
       await manager.switchToTab(tab3!.id);
       expect(manager.getActiveTabId()).toBe(tab3!.id);
 
-      // Close tab-3 (last tab)
       await manager.closeTab(tab3!.id);
 
       // Should switch to tab-2 (previous tab)
@@ -420,19 +407,7 @@ describe('TabManager - Tab Queries', () => {
   let manager: TabManager;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
-
-    manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
+    manager = createManager();
     await manager.createTab();
   });
 
@@ -501,25 +476,15 @@ describe('TabManager - Tab Bar Data', () => {
   let manager: TabManager;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({
-        id: `tab-${tabCounter}`,
+    manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
         state: {
-          isStreaming: tabCounter === 2,
-          needsAttention: tabCounter === 3,
+          isStreaming: n === 2,
+          needsAttention: n === 3,
         },
-      });
+      }),
     });
-
-    manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
   });
 
   describe('getTabBarItems', () => {
@@ -568,20 +533,8 @@ describe('TabManager - Conversation Management', () => {
   let plugin: any;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
-
     plugin = createMockPlugin();
-    manager = new TabManager(
-      plugin,
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
+    manager = createManager({ plugin });
     await manager.createTab();
   });
 
@@ -641,22 +594,12 @@ describe('TabManager - Persistence', () => {
   let manager: TabManager;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({
-        id: `tab-${tabCounter}`,
-        conversationId: tabCounter === 2 ? 'conv-456' : null,
-      });
+    manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        conversationId: n === 2 ? 'conv-456' : null,
+      }),
     });
-
-    manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
   });
 
   describe('getPersistedState', () => {
@@ -712,7 +655,6 @@ describe('TabManager - Persistence', () => {
 
       await manager.restoreState({ openTabs: [], activeTabId: null });
 
-      // Should have created a default tab since no tabs were in the restore state
       expect(mockCreateTab).toHaveBeenCalled();
       expect(manager.getTabCount()).toBe(1);
     });
@@ -748,23 +690,13 @@ describe('TabManager - Broadcast', () => {
   let manager: TabManager;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({
-        id: `tab-${tabCounter}`,
+    manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
         service: { someMethod: jest.fn() },
         serviceInitialized: true,
-      });
+      }),
     });
-
-    manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
     await manager.createTab();
     await manager.createTab();
   });
@@ -807,19 +739,7 @@ describe('TabManager - Cleanup', () => {
   let manager: TabManager;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
-
-    manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
+    manager = createManager();
     await manager.createTab();
     await manager.createTab();
   });
@@ -854,17 +774,8 @@ describe('TabManager - Cleanup', () => {
 });
 
 describe('TabManager - Callback Wiring', () => {
-  let plugin: any;
-  let containerEl: any;
-  let view: any;
-  let mcpManager: any;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    plugin = createMockPlugin();
-    containerEl = createMockEl();
-    view = createMockView();
-    mcpManager = createMockMcpManager();
   });
 
   describe('ChatState callbacks during tab creation', () => {
@@ -872,14 +783,13 @@ describe('TabManager - Callback Wiring', () => {
       const onTabStreamingChanged = jest.fn();
       const callbacks: TabManagerCallbacks = { onTabStreamingChanged };
 
-      // Capture the callbacks passed to createTab
       let capturedCallbacks: any;
       mockCreateTab.mockImplementation((opts: any) => {
         capturedCallbacks = opts;
         return createMockTabData({ id: 'test-tab' });
       });
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = new TabManager(createMockPlugin(), createMockMcpManager(), createMockEl(), createMockView(), callbacks);
       await manager.createTab();
 
       // Trigger the onStreamingChanged callback
@@ -898,7 +808,7 @@ describe('TabManager - Callback Wiring', () => {
         return createMockTabData({ id: 'test-tab' });
       });
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = new TabManager(createMockPlugin(), createMockMcpManager(), createMockEl(), createMockView(), callbacks);
       await manager.createTab();
 
       capturedCallbacks.onTitleChanged('New Title');
@@ -916,7 +826,7 @@ describe('TabManager - Callback Wiring', () => {
         return createMockTabData({ id: 'test-tab' });
       });
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = new TabManager(createMockPlugin(), createMockMcpManager(), createMockEl(), createMockView(), callbacks);
       await manager.createTab();
 
       capturedCallbacks.onAttentionChanged(true);
@@ -935,7 +845,7 @@ describe('TabManager - Callback Wiring', () => {
         return tabData;
       });
 
-      const manager = new TabManager(plugin, mcpManager, containerEl, view, callbacks);
+      const manager = new TabManager(createMockPlugin(), createMockMcpManager(), createMockEl(), createMockView(), callbacks);
       await manager.createTab();
 
       // Trigger the onConversationIdChanged callback (simulating conversation creation)
@@ -953,21 +863,8 @@ describe('TabManager - openConversation Current Tab Path', () => {
   let plugin: any;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
     plugin = createMockPlugin();
-
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
-
-    manager = new TabManager(
-      plugin,
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
+    manager = createManager({ plugin });
     await manager.createTab();
   });
 
@@ -976,7 +873,6 @@ describe('TabManager - openConversation Current Tab Path', () => {
     const switchTo = jest.fn().mockResolvedValue(undefined);
     activeTab!.controllers.conversationController = { switchTo } as any;
 
-    // Conversation not already open in any tab
     plugin.getConversationById.mockResolvedValue({ id: 'conv-to-open' });
 
     await manager.openConversation('conv-to-open', false);
@@ -1011,12 +907,9 @@ describe('TabManager - openConversation Current Tab Path', () => {
   });
 
   it('should not open in current tab if at max tabs and preferNewTab is true', async () => {
-    // Fill up to max tabs
     for (let i = 0; i < DEFAULT_MAX_TABS - 1; i++) {
       await manager.createTab();
     }
-
-    // Now at max tabs
     expect(manager.getTabCount()).toBe(DEFAULT_MAX_TABS);
 
     const activeTab = manager.getActiveTab();
@@ -1028,7 +921,6 @@ describe('TabManager - openConversation Current Tab Path', () => {
     // preferNewTab=true but at max, so should open in current tab
     await manager.openConversation('conv-max', true);
 
-    // Since we can't create new tab (at max), it opens in current
     expect(switchTo).toHaveBeenCalledWith('conv-max');
   });
 });
@@ -1066,23 +958,10 @@ describe('TabManager - Service Initialization Errors', () => {
 
 describe('TabManager - Concurrent Switch Guard', () => {
   it('should prevent concurrent tab switches', async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
-
     const callbacks: TabManagerCallbacks = {
       onTabSwitched: jest.fn(),
     };
-    const manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView(),
-      callbacks
-    );
+    const manager = createManager({ callbacks });
 
     const tab1 = await manager.createTab();
     const tab2 = await manager.createTab();
@@ -1106,7 +985,6 @@ describe('TabManager - Concurrent Switch Guard', () => {
     // isSwitchingTab is true, so this should return immediately (lines 143-144)
     await manager.switchToTab(tab2!.id);
 
-    // Only the first switch should have called deactivateTab/activateTab
     expect(mockDeactivateTab).toHaveBeenCalledTimes(1);
     expect(mockActivateTab).toHaveBeenCalledTimes(1);
 
@@ -1114,7 +992,6 @@ describe('TabManager - Concurrent Switch Guard', () => {
     resolveSwitchTo();
     await firstSwitch;
 
-    // onTabSwitched called once from the first switch only
     expect(callbacks.onTabSwitched).toHaveBeenCalledTimes(1);
 
     // After first switch completes, isSwitchingTab is false
@@ -1126,19 +1003,7 @@ describe('TabManager - Concurrent Switch Guard', () => {
 
 describe('TabManager - closeTab Edge Cases', () => {
   it('should return false for non-existent tab', async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({ id: `tab-${tabCounter}` });
-    });
-
-    const manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
+    const manager = createManager();
     await manager.createTab();
 
     const result = await manager.closeTab('non-existent-tab');
@@ -1146,17 +1011,9 @@ describe('TabManager - closeTab Edge Cases', () => {
   });
 
   it('should not close last empty tab (preserves warm service)', async () => {
-    jest.clearAllMocks();
-    mockCreateTab.mockReturnValue(
-      createMockTabData({ id: 'only-tab' })
-    );
-
-    const manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView()
-    );
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'only-tab' }),
+    });
     await manager.createTab();
 
     const result = await manager.closeTab('only-tab');
@@ -1165,29 +1022,19 @@ describe('TabManager - closeTab Edge Cases', () => {
   });
 
   it('should create new tab and initialize service when closing the last tab with conversation', async () => {
-    jest.clearAllMocks();
-    let tabCounter = 0;
-    mockCreateTab.mockImplementation(() => {
-      tabCounter++;
-      return createMockTabData({
-        id: `tab-${tabCounter}`,
-        conversationId: tabCounter === 1 ? 'conv-existing' : null,
-      });
-    });
-
     const callbacks: TabManagerCallbacks = {
       onTabCreated: jest.fn(),
       onTabClosed: jest.fn(),
     };
 
-    const manager = new TabManager(
-      createMockPlugin(),
-      createMockMcpManager(),
-      createMockEl(),
-      createMockView(),
-      callbacks
-    );
-    await manager.createTab(); // tab-1 with conversationId
+    const manager = createManager({
+      callbacks,
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        conversationId: n === 1 ? 'conv-existing' : null,
+      }),
+    });
+    await manager.createTab();
 
     jest.clearAllMocks();
 

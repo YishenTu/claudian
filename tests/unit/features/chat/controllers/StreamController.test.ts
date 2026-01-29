@@ -5,14 +5,12 @@ import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
-// Mock core tools module
 jest.mock('@/core/tools', () => {
   return {
     parseTodoInput: jest.fn(),
   };
 });
 
-// Mock chat rendering module
 jest.mock('@/features/chat/rendering', () => {
   return {
     addSubagentToolCall: jest.fn(),
@@ -43,7 +41,6 @@ jest.mock('@/features/chat/rendering', () => {
   };
 });
 
-// Helper to create mock dependencies with minimal UI rendering
 function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockEl();
@@ -100,7 +97,6 @@ function createMockDeps(): StreamControllerDeps {
   };
 }
 
-// Helper to create a test message
 function createTestMessage(): ChatMessage {
   return {
     id: 'assistant-1',
@@ -109,6 +105,19 @@ function createTestMessage(): ChatMessage {
     timestamp: Date.now(),
     toolCalls: [],
     contentBlocks: [],
+  };
+}
+
+function createMockUsage(overrides: Record<string, any> = {}) {
+  return {
+    model: 'model-a',
+    inputTokens: 10,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    contextWindow: 100,
+    contextTokens: 10,
+    percentage: 10,
+    ...overrides,
   };
 }
 
@@ -134,7 +143,6 @@ describe('StreamController - Text Content', () => {
     it('should append text content to message', async () => {
       const msg = createTestMessage();
 
-      // Set up text element for text streaming
       deps.state.currentTextEl = createMockEl();
 
       await controller.handleStreamChunk({ type: 'text', content: 'Hello ' }, msg);
@@ -253,15 +261,7 @@ describe('StreamController - Text Content', () => {
   describe('Usage handling', () => {
     it('should update usage for current session', async () => {
       const msg = createTestMessage();
-      const usage = {
-        model: 'model-a',
-        inputTokens: 10,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 100,
-        contextTokens: 10,
-        percentage: 10,
-      };
+      const usage = createMockUsage();
 
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
 
@@ -270,15 +270,7 @@ describe('StreamController - Text Content', () => {
 
     it('should ignore usage from other sessions', async () => {
       const msg = createTestMessage();
-      const usage = {
-        model: 'model-a',
-        inputTokens: 10,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 100,
-        contextTokens: 10,
-        percentage: 10,
-      };
+      const usage = createMockUsage();
 
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-2' }, msg);
 
@@ -396,7 +388,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add a tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
         msg
@@ -404,7 +395,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(1);
       expect(renderToolCall).not.toHaveBeenCalled();
 
-      // Text chunk should flush pending tools first
       deps.state.currentTextEl = createMockEl();
       await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
 
@@ -421,7 +411,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add a tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' } },
         msg
@@ -429,7 +418,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(1);
       expect(renderToolCall).not.toHaveBeenCalled();
 
-      // Thinking chunk should flush pending tools first
       await controller.handleStreamChunk({ type: 'thinking', content: 'Let me think...' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
@@ -441,7 +429,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add a tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
         msg
@@ -468,7 +455,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add Write tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: 'test.md', content: 'hello' } },
         msg
@@ -478,7 +464,6 @@ describe('StreamController - Text Content', () => {
       expect(createWriteEditBlock).not.toHaveBeenCalled();
       expect(renderToolCall).not.toHaveBeenCalled();
 
-      // Flush via done chunk
       await controller.handleStreamChunk({ type: 'done' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
@@ -497,7 +482,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add Edit tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'edit-1', name: 'Edit', input: { file_path: 'test.md', old_string: 'a', new_string: 'b' } },
         msg
@@ -506,7 +490,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(1);
       expect(createWriteEditBlock).not.toHaveBeenCalled();
 
-      // Flush via text chunk
       deps.state.currentTextEl = createMockEl();
       await controller.handleStreamChunk({ type: 'text', content: 'Done editing' }, msg);
 
@@ -519,14 +502,12 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add a tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'ls' } },
         msg
       );
       expect(deps.state.pendingTools.size).toBe(1);
 
-      // Blocked chunk should flush pending tools first
       await controller.handleStreamChunk({ type: 'blocked', content: 'Command blocked' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
@@ -538,14 +519,12 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add a tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'missing.md' } },
         msg
       );
       expect(deps.state.pendingTools.size).toBe(1);
 
-      // Error chunk should flush pending tools first
       await controller.handleStreamChunk({ type: 'error', content: 'Something went wrong' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
@@ -557,7 +536,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Configure mock to return created_sync
       (deps.subagentManager.handleTaskToolUse as jest.Mock).mockReturnValueOnce({
         action: 'created_sync',
         subagentState: {
@@ -565,7 +543,6 @@ describe('StreamController - Text Content', () => {
         },
       });
 
-      // Add a regular tool - should be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
         msg
@@ -573,16 +550,13 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(1);
       expect(renderToolCall).not.toHaveBeenCalled();
 
-      // Task tool should flush pending tools before delegating to manager
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose', run_in_background: false } },
         msg
       );
 
-      // Pending tools should be flushed
       expect(deps.state.pendingTools.size).toBe(0);
       expect(renderToolCall).toHaveBeenCalled();
-      // Manager should have been called to handle Task
       expect(deps.subagentManager.handleTaskToolUse).toHaveBeenCalledWith(
         'task-1',
         expect.objectContaining({ run_in_background: false }),
@@ -637,7 +611,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add some pending tools
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'a.md' } },
         msg
@@ -648,7 +621,6 @@ describe('StreamController - Text Content', () => {
       );
       expect(deps.state.pendingTools.size).toBe(2);
 
-      // Reset streaming state
       controller.resetStreamingState();
 
       expect(deps.state.pendingTools.size).toBe(0);
@@ -723,7 +695,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Add multiple tools - should all be buffered
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'a.md' } },
         msg
@@ -740,7 +711,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(3);
       expect(renderToolCall).not.toHaveBeenCalled();
 
-      // Flush via done
       await controller.handleStreamChunk({ type: 'done' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
@@ -759,15 +729,7 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       (deps.subagentManager as any).subagentsSpawnedThisStream = 1;
 
-      const usage = {
-        model: 'model-a',
-        inputTokens: 100,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 200,
-        contextTokens: 100,
-        percentage: 50,
-      };
+      const usage = createMockUsage({ inputTokens: 100, contextWindow: 200, contextTokens: 100, percentage: 50 });
 
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
 
@@ -775,22 +737,13 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should skip usage when chunk has sessionId but currentSessionId is null', async () => {
-      // Override agent service to return null session
       const nullSessionDeps = createMockDeps();
       nullSessionDeps.getAgentService = () => ({ getSessionId: jest.fn().mockReturnValue(null) }) as any;
       nullSessionDeps.state.currentContentEl = createMockEl();
       const nullSessionController = new StreamController(nullSessionDeps);
 
       const msg = createTestMessage();
-      const usage = {
-        model: 'model-a',
-        inputTokens: 10,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 100,
-        contextTokens: 10,
-        percentage: 10,
-      };
+      const usage = createMockUsage();
 
       await nullSessionController.handleStreamChunk({ type: 'usage', usage, sessionId: 'some-session' }, msg);
 
@@ -799,15 +752,7 @@ describe('StreamController - Text Content', () => {
 
     it('should update usage when no sessionId on chunk', async () => {
       const msg = createTestMessage();
-      const usage = {
-        model: 'model-a',
-        inputTokens: 10,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 100,
-        contextTokens: 10,
-        percentage: 10,
-      };
+      const usage = createMockUsage();
 
       await controller.handleStreamChunk({ type: 'usage', usage } as any, msg);
 
@@ -818,15 +763,7 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.ignoreUsageUpdates = true;
 
-      const usage = {
-        model: 'model-a',
-        inputTokens: 10,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 100,
-        contextTokens: 10,
-        percentage: 10,
-      };
+      const usage = createMockUsage();
 
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
 
@@ -856,17 +793,14 @@ describe('StreamController - Text Content', () => {
     it('should re-append existing indicator to bottom when called again', () => {
       deps.state.responseStartTime = performance.now();
 
-      // Create initial indicator
       controller.showThinkingIndicator();
       jest.advanceTimersByTime(500);
 
       const thinkingEl = deps.state.thinkingEl;
       expect(thinkingEl).not.toBeNull();
 
-      // Call again - should re-append same element
       controller.showThinkingIndicator();
 
-      // The thinkingEl should be the same object
       expect(deps.state.thinkingEl).toBe(thinkingEl);
       expect(deps.updateQueueIndicator).toHaveBeenCalled();
     });
@@ -1047,7 +981,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up a thinking state
       deps.state.currentThinkingState = {
         content: 'Let me think...',
         container: createMockEl(),
@@ -1185,7 +1118,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up active thinking state
       deps.state.currentThinkingState = {
         content: 'Let me think...',
         container: createMockEl(),
@@ -1193,13 +1125,10 @@ describe('StreamController - Text Content', () => {
         startTime: Date.now(),
       } as any;
 
-      // Text arrives while thinking is active
       await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
 
-      // finalizeCurrentThinkingBlock should have been called (which calls finalizeThinkingBlock)
       expect(finalizeThinkingBlock).toHaveBeenCalled();
       expect(deps.state.currentThinkingState).toBeNull();
-      // Thinking content should be in contentBlocks
       expect(msg.contentBlocks).toContainEqual(
         expect.objectContaining({ type: 'thinking', content: 'Let me think...' })
       );
@@ -1209,14 +1138,11 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up active text state
       deps.state.currentTextEl = createMockEl();
       deps.state.currentTextContent = 'Some text';
 
-      // Thinking arrives while text is active
       await controller.handleStreamChunk({ type: 'thinking', content: 'Hmm...' }, msg);
 
-      // Text block should have been finalized
       expect(deps.state.currentTextEl).toBeNull();
       expect(msg.contentBlocks).toContainEqual(
         expect.objectContaining({ type: 'text', content: 'Some text' })
@@ -1232,7 +1158,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up active thinking state
       deps.state.currentThinkingState = {
         content: 'Reasoning...',
         container: createMockEl(),
@@ -1240,13 +1165,11 @@ describe('StreamController - Text Content', () => {
         startTime: Date.now(),
       } as any;
 
-      // tool_use arrives while thinking is active
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
         msg
       );
 
-      // finalizeCurrentThinkingBlock should have been called
       expect(finalizeThinkingBlock).toHaveBeenCalled();
       expect(deps.state.currentThinkingState).toBeNull();
       expect(msg.contentBlocks).toContainEqual(
@@ -1272,7 +1195,6 @@ describe('StreamController - Text Content', () => {
           status: 'running',
         })
       );
-      // Agent output tool_use does not add to msg.toolCalls or contentBlocks
       expect(msg.toolCalls).toEqual([]);
       expect(msg.contentBlocks).toEqual([]);
     });
@@ -1282,7 +1204,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up: agent output tool is linked
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce({});
 
@@ -1296,7 +1217,6 @@ describe('StreamController - Text Content', () => {
         'agent result',
         false
       );
-      // Regular tool result handling should NOT have been applied
       expect(updateToolCallResult).not.toHaveBeenCalled();
     });
   });
@@ -1347,7 +1267,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up: message has a subagent
       msg.subagents = [
         { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [], isExpanded: false },
       ];
@@ -1362,14 +1281,12 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      // finalizeSyncSubagent should have been called
       expect(deps.subagentManager.finalizeSyncSubagent).toHaveBeenCalledWith(
         'task-1',
         'Task completed successfully',
         false
       );
 
-      // Message subagent should be updated
       expect(msg.subagents![0].status).toBe('completed');
       expect(msg.subagents![0].result).toBe('Task completed successfully');
     });
@@ -1381,7 +1298,6 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      // Set up: task is a pending async task
       (deps.subagentManager.isPendingAsyncTask as jest.Mock).mockReturnValueOnce(true);
 
       await controller.handleStreamChunk(
@@ -1389,14 +1305,12 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      // handleTaskToolResult should have been called
       expect(deps.subagentManager.handleTaskToolResult).toHaveBeenCalledWith(
         'task-1',
         'Task started in background',
         undefined
       );
 
-      // Regular tool result handling should NOT have been applied
       expect(updateToolCallResult).not.toHaveBeenCalled();
       expect(msg.toolCalls).toEqual([]);
     });

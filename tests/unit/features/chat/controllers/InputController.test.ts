@@ -4,10 +4,8 @@ import { Notice } from 'obsidian';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
-// Get reference to the mocked Notice from global mock
 const mockNotice = Notice as jest.Mock;
 
-// Helper to create mock input element
 function createMockInputEl() {
   return {
     value: '',
@@ -15,12 +13,10 @@ function createMockInputEl() {
   } as unknown as HTMLTextAreaElement;
 }
 
-// Helper to create mock welcome element
 function createMockWelcomeEl() {
   return { style: { display: '' } } as any;
 }
 
-// Helper to create mock file context manager
 function createMockFileContextManager() {
   return {
     startSession: jest.fn(),
@@ -31,7 +27,6 @@ function createMockFileContextManager() {
   };
 }
 
-// Helper to create mock image context manager
 function createMockImageContextManager() {
   return {
     hasImages: jest.fn().mockReturnValue(false),
@@ -47,7 +42,6 @@ async function* createMockStream(chunks: any[]) {
   }
 }
 
-// Helper to create mock agent service
 function createMockAgentService() {
   return {
     query: jest.fn(),
@@ -62,7 +56,20 @@ function createMockAgentService() {
   };
 }
 
-// Helper to create mock dependencies
+function createMockInstructionRefineService(overrides: Record<string, jest.Mock> = {}) {
+  return {
+    refineInstruction: jest.fn().mockResolvedValue({ success: true }),
+    resetConversation: jest.fn(),
+    continueConversation: jest.fn(),
+    cancel: jest.fn(),
+    ...overrides,
+  };
+}
+
+function createMockInstructionModeManager() {
+  return { clear: jest.fn() };
+}
+
 function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputControllerDeps & { mockAgentService: ReturnType<typeof createMockAgentService> } {
   const state = new ChatState();
   const inputEl = createMockInputEl();
@@ -71,10 +78,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
   jest.spyOn(queueIndicatorEl, 'setText');
   state.queueIndicatorEl = queueIndicatorEl as any;
 
-  // Store image context manager so tests can access it
   const imageContextManager = createMockImageContextManager();
-
-  // Create mock agent service that can be accessed by tests
   const mockAgentService = createMockAgentService();
 
   return {
@@ -145,6 +149,28 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
   };
 }
 
+/**
+ * Composite helper for tests that need a complete "sendable" deps setup.
+ * Creates welcomeEl + fileContextManager and sets conversationId by default,
+ * eliminating the repeated boilerplate in send-path tests.
+ */
+function createSendableDeps(
+  overrides: Partial<InputControllerDeps> = {},
+  conversationId: string | null = 'conv-1',
+): InputControllerDeps & { mockAgentService: ReturnType<typeof createMockAgentService> } {
+  const welcomeEl = createMockWelcomeEl();
+  const fileContextManager = createMockFileContextManager();
+  const result = createMockDeps({
+    getWelcomeEl: () => welcomeEl,
+    getFileContextManager: () => fileContextManager as any,
+    ...overrides,
+  });
+  if (conversationId !== null) {
+    result.state.currentConversationId = conversationId;
+  }
+  return result;
+}
+
 describe('InputController - Message Queue', () => {
   let controller: InputController;
   let deps: InputControllerDeps;
@@ -207,13 +233,11 @@ describe('InputController - Message Queue', () => {
       deps.state.isStreaming = true;
       const imageContextManager = deps.getImageContextManager()!;
 
-      // First message with image
       inputEl.value = 'first';
       (imageContextManager.hasImages as jest.Mock).mockReturnValue(true);
       (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue([{ id: 'img1' }]);
       await controller.sendMessage();
 
-      // Second message with another image
       inputEl.value = 'second';
       (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue([{ id: 'img2' }]);
       await controller.sendMessage();
@@ -470,18 +494,12 @@ describe('InputController - Message Queue', () => {
         generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-      const imageContextManager = createMockImageContextManager();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
+      // conversationId=null to test the conversation creation path
+      deps = createSendableDeps({
         getTitleGenerationService: () => mockTitleService as any,
-      });
+      }, null);
 
-      // Mock the agent query to return a text response
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
           { type: 'text', content: 'Hello, how can I help?' },
@@ -489,7 +507,6 @@ describe('InputController - Message Queue', () => {
         ])
       );
 
-      // Mock handleStreamChunk to populate assistant content
       (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
         if (chunk.type === 'text') {
           msg.content = chunk.content;
@@ -503,23 +520,12 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(deps.plugin.createConversation).toHaveBeenCalled();
-
-      // After first user message, should set pending status (only when titleService available)
       expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { titleGenerationStatus: 'pending' });
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
     });
 
     it('should find messages by role, not by index', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-      const imageContextManager = createMockImageContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
+      deps = createSendableDeps();
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
@@ -531,7 +537,6 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // Verify messages are found by role
       const userMsg = deps.state.messages.find(m => m.role === 'user');
       const assistantMsg = deps.state.messages.find(m => m.role === 'assistant');
       expect(userMsg).toBeDefined();
@@ -543,17 +548,10 @@ describe('InputController - Message Queue', () => {
         generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-      const imageContextManager = createMockImageContextManager();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
+      deps = createSendableDeps({
         getTitleGenerationService: () => mockTitleService as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
@@ -562,7 +560,6 @@ describe('InputController - Message Queue', () => {
         ])
       );
 
-      // Mock handleStreamChunk to populate assistant content
       (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
         if (chunk.type === 'text') {
           msg.content = chunk.content;
@@ -575,11 +572,10 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // Title service should be called with user and assistant content
       expect(mockTitleService.generateTitle).toHaveBeenCalled();
       const callArgs = mockTitleService.generateTitle.mock.calls[0];
-      expect(callArgs[0]).toBe('conv-1'); // conversationId
-      expect(callArgs[1]).toContain('Hello world'); // user content
+      expect(callArgs[0]).toBe('conv-1');
+      expect(callArgs[1]).toContain('Hello world');
     });
 
     it('should not overwrite user-renamed title in callback', async () => {
@@ -587,17 +583,10 @@ describe('InputController - Message Queue', () => {
         generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-      const imageContextManager = createMockImageContextManager();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
+      deps = createSendableDeps({
         getTitleGenerationService: () => mockTitleService as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
@@ -612,10 +601,10 @@ describe('InputController - Message Queue', () => {
         }
       });
 
-      // Mock getConversationById to return a conversation with different title (user renamed)
+      // Simulate user having renamed the conversation
       (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'conv-1',
-        title: 'User Custom Title', // User renamed it
+        title: 'User Custom Title',
       });
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
@@ -624,7 +613,6 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // Get the callback and simulate it being called
       const callback = mockTitleService.generateTitle.mock.calls[0][2];
       await callback('conv-1', { success: true, title: 'AI Generated Title' });
 
@@ -633,17 +621,9 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should not set pending status when titleService is null', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-      const imageContextManager = createMockImageContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
-        getTitleGenerationService: () => null, // No title service
+      deps = createSendableDeps({
+        getTitleGenerationService: () => null,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
@@ -664,7 +644,6 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // Should NOT set pending status when no titleService
       const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
       const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
         call[1]?.titleGenerationStatus === 'pending'
@@ -677,19 +656,11 @@ describe('InputController - Message Queue', () => {
         generateTitle: jest.fn().mockResolvedValue(undefined),
         cancel: jest.fn(),
       };
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-      const imageContextManager = createMockImageContextManager();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-        getImageContextManager: () => imageContextManager as any,
+      deps = createSendableDeps({
         getTitleGenerationService: () => mockTitleService as any,
       });
-      // Disable auto title generation
       deps.plugin.settings.enableAutoTitleGeneration = false;
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([
@@ -710,31 +681,21 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // Title service should NOT be called when setting is disabled
       expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
 
-      // Should NOT set pending status
       const updateCalls = (deps.plugin.updateConversation as jest.Mock).mock.calls;
       const pendingCall = updateCalls.find((call: [string, { titleGenerationStatus?: string }]) =>
         call[1]?.titleGenerationStatus === 'pending'
       );
       expect(pendingCall).toBeUndefined();
 
-      // Should still set fallback title
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
     });
   });
 
   describe('Auto-hide status panels on response end', () => {
     it('should clear currentTodos when all todos are completed', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
+      deps = createSendableDeps();
       deps.state.currentTodos = [
         { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
         { content: 'Task 2', status: 'completed', activeForm: 'Task 2' },
@@ -754,14 +715,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should NOT clear currentTodos when some todos are pending', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
+      deps = createSendableDeps();
       deps.state.currentTodos = [
         { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
         { content: 'Task 2', status: 'pending', activeForm: 'Task 2' },
@@ -782,19 +736,14 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should call clearTerminalSubagents when all subagents completed', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
       const mockStatusPanel = {
         areAllSubagentsCompleted: jest.fn().mockReturnValue(true),
         clearTerminalSubagents: jest.fn(),
       };
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getStatusPanel: () => mockStatusPanel as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
@@ -812,19 +761,14 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should only call clearTerminalSubagents at start when subagents still running', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
       const mockStatusPanel = {
         areAllSubagentsCompleted: jest.fn().mockReturnValue(false),
         clearTerminalSubagents: jest.fn(),
       };
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getStatusPanel: () => mockStatusPanel as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
@@ -842,15 +786,9 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should handle null statusPanel gracefully', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getStatusPanel: () => null,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
@@ -860,7 +798,6 @@ describe('InputController - Message Queue', () => {
       inputEl.value = 'Test message';
       controller = new InputController(deps);
 
-      // Should not throw
       await expect(controller.sendMessage()).resolves.not.toThrow();
     });
   });
@@ -967,7 +904,6 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('~/projects');
-      // Notice should show the normalized (expanded) path
       expect(mockNotice).toHaveBeenCalledWith(`Added external context: ${expandedPath}`);
     });
 
@@ -984,14 +920,12 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('"/path/with spaces"');
-      // Notice should show the normalized path (quotes stripped)
       expect(mockNotice).toHaveBeenCalledWith(`Added external context: ${normalizedPath}`);
     });
   });
 
   describe('Built-in commands - /clear', () => {
     it('should call conversationController.createNew on /clear', async () => {
-      // Add createNew to the mock
       (deps.conversationController as any).createNew = jest.fn().mockResolvedValue(undefined);
       inputEl.value = '/clear';
       controller = new InputController(deps);
@@ -1063,15 +997,9 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should show Notice and reset streaming when ensureServiceInitialized returns false', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         ensureServiceInitialized: jest.fn().mockResolvedValue(false),
       });
-      deps.state.currentConversationId = 'conv-1';
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
       inputEl.value = 'test message';
@@ -1082,7 +1010,6 @@ describe('InputController - Message Queue', () => {
       expect(mockNotice).toHaveBeenCalledWith('Failed to initialize agent service. Please try again.');
       expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
-      // Agent query should NOT have been called
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
   });
@@ -1093,15 +1020,9 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should show Notice when getAgentService returns null', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getAgentService: () => null,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
       inputEl.value = 'test message';
@@ -1110,23 +1031,14 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockNotice).toHaveBeenCalledWith('Agent service not available. Please reload the plugin.');
-      // Agent query should NOT have been called
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
   });
 
   describe('Streaming error handling', () => {
     it('should catch errors and display via appendText', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
+      deps = createSendableDeps();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-
-      // Make query throw an error
       ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
         throw new Error('Network timeout');
       });
@@ -1142,16 +1054,8 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should handle non-Error thrown values', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
+      deps = createSendableDeps();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-
-      // Make query throw a non-Error value
       ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
         throw 'string error';
       });
@@ -1168,19 +1072,11 @@ describe('InputController - Message Queue', () => {
 
   describe('Stream interruption', () => {
     it('should append interrupted text when cancelRequested is true', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
+      deps = createSendableDeps();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-
-      // Create an async generator that yields a chunk, then the state has cancelRequested
       ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
         return (async function* () {
-          // Simulate the cancel being requested during streaming
+          // Simulate cancel requested during streaming
           deps.state.cancelRequested = true;
           yield { type: 'text', content: 'partial' };
         })();
@@ -1202,21 +1098,13 @@ describe('InputController - Message Queue', () => {
 
   describe('Duration footer', () => {
     it('should render response duration footer when durationSeconds > 0', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
+      deps = createSendableDeps();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-
-      // Mock performance.now to simulate elapsed time (> 1 second)
       // First call sets responseStartTime; must be non-zero (0 is falsy and skips duration)
       let callCount = 0;
       jest.spyOn(performance, 'now').mockImplementation(() => {
         callCount++;
-        // First call (responseStartTime) returns 1000, subsequent calls return 6000 (5 seconds elapsed)
+        // Returns 1000 for responseStartTime, 6000 for elapsed (5 seconds)
         return callCount <= 1 ? 1000 : 6000;
       });
 
@@ -1230,7 +1118,6 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // The assistant message should have durationSeconds set
       const assistantMsg = deps.state.messages.find((m: any) => m.role === 'assistant');
       expect(assistantMsg).toBeDefined();
       expect(assistantMsg!.durationSeconds).toBe(5);
@@ -1242,19 +1129,14 @@ describe('InputController - Message Queue', () => {
 
   describe('External context in query', () => {
     it('should pass externalContextPaths in queryOptions', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
       const externalPaths = ['/external/path1', '/external/path2'];
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getExternalContextSelector: () => ({
           getExternalContexts: () => externalPaths,
           addExternalContext: jest.fn(),
         }),
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
@@ -1274,21 +1156,13 @@ describe('InputController - Message Queue', () => {
 
   describe('Editor context', () => {
     it('should append editorContext to prompt when available', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
-
       const editorContext = {
         notePath: 'test/note.md',
         mode: 'selection' as const,
         selectedText: 'selected text content',
       };
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-      // Mock selectionController to return an editorContext
+      deps = createSendableDeps();
       (deps.selectionController.getContext as jest.Mock).mockReturnValue(editorContext);
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
@@ -1303,7 +1177,6 @@ describe('InputController - Message Queue', () => {
 
       const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
       const promptSent = queryCall[0];
-      // appendEditorContext wraps in <editor_selection> or <editor_cursor> tags
       expect(promptSent).toContain('selected text content');
       expect(promptSent).toContain('test/note.md');
     });
@@ -1315,10 +1188,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should show Notice for unknown built-in command', async () => {
-      // We need to trigger the unknown command path.
-      // detectBuiltInCommand must return a result with an unknown action.
-      // Since /clear and /add-dir are known, let's mock detectBuiltInCommand indirectly.
-      // The simplest approach: directly call executeBuiltInCommand via the private method
+      // Directly call the private method since there's no public API to trigger unknown commands
       controller = new InputController(deps);
 
       await (controller as any).executeBuiltInCommand('nonexistent-command', '');
@@ -1341,15 +1211,10 @@ describe('InputController - Message Queue', () => {
         ),
         cancel: jest.fn(),
       };
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getTitleGenerationService: () => mockTitleService as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'text', content: 'Response' }, { type: 'done' }])
@@ -1385,15 +1250,10 @@ describe('InputController - Message Queue', () => {
         ),
         cancel: jest.fn(),
       };
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getTitleGenerationService: () => mockTitleService as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'text', content: 'Response' }, { type: 'done' }])
@@ -1420,18 +1280,16 @@ describe('InputController - Message Queue', () => {
     it('should create and store approval modal as pending', async () => {
       controller = new InputController(deps);
 
-      // Start the approval request (returns a promise that won't resolve until callback)
+      // void: promise won't resolve until the approval callback fires
       void controller.handleApprovalRequest(
         'bash',
         { command: 'ls -la' },
         'Run shell command'
       );
 
-      // The modal should be stored as pendingApprovalModal
       expect((controller as any).pendingApprovalModal).not.toBeNull();
       expect((controller as any).pendingApprovalModal.open).toHaveBeenCalled();
 
-      // Dismiss it to clean up
       controller.dismissPendingApproval();
       expect((controller as any).pendingApprovalModal).toBeNull();
     });
@@ -1439,18 +1297,13 @@ describe('InputController - Message Queue', () => {
 
   describe('handleInstructionSubmit', () => {
     it('should create InstructionModal and call refineInstruction', async () => {
-      const mockInstructionRefineService = {
+      const mockInstructionRefineService = createMockInstructionRefineService({
         refineInstruction: jest.fn().mockResolvedValue({
           success: true,
           refinedInstruction: 'refined instruction',
         }),
-        resetConversation: jest.fn(),
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-      };
-      const mockInstructionModeManager = {
-        clear: jest.fn(),
-      };
+      });
+      const mockInstructionModeManager = createMockInstructionModeManager();
 
       deps = createMockDeps({
         getInstructionRefineService: () => mockInstructionRefineService as any,
@@ -1475,7 +1328,6 @@ describe('InputController - Message Queue', () => {
       });
       controller = new InputController(deps);
 
-      // Should not throw
       await expect(controller.handleInstructionSubmit('test')).resolves.not.toThrow();
     });
   });
@@ -1516,18 +1368,13 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should send message with only images (empty text)', async () => {
-      const welcomeEl = createMockEl();
-      const fileContextManager = createMockFileContextManager();
       const imageContextManager = createMockImageContextManager();
       (imageContextManager.hasImages as jest.Mock).mockReturnValue(true);
       (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue([{ id: 'img1', name: 'test.png' }]);
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
+      deps = createSendableDeps({
         getImageContextManager: () => imageContextManager as any,
       });
-      deps.state.currentConversationId = 'conv-1';
 
       ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
         createMockStream([{ type: 'done' }])
@@ -1539,7 +1386,6 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // Should still query the agent with images
       expect((deps as any).mockAgentService.query).toHaveBeenCalled();
       expect(deps.state.messages).toHaveLength(2);
       expect(deps.state.messages[0].images).toHaveLength(1);
@@ -1548,16 +1394,8 @@ describe('InputController - Message Queue', () => {
 
   describe('Stream invalidation', () => {
     it('should break from stream loop and skip cleanup when stream generation changes', async () => {
-      const welcomeEl = createMockWelcomeEl();
-      const fileContextManager = createMockFileContextManager();
+      deps = createSendableDeps();
 
-      deps = createMockDeps({
-        getWelcomeEl: () => welcomeEl,
-        getFileContextManager: () => fileContextManager as any,
-      });
-      deps.state.currentConversationId = 'conv-1';
-
-      // Create an async generator that bumps streamGeneration mid-stream
       ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
         return (async function* () {
           yield { type: 'text', content: 'partial' };
@@ -1583,16 +1421,13 @@ describe('InputController - Message Queue', () => {
 
   describe('handleInstructionSubmit - advanced paths', () => {
     it('should show clarification when result has clarification', async () => {
-      const mockInstructionRefineService = {
+      const mockInstructionRefineService = createMockInstructionRefineService({
         refineInstruction: jest.fn().mockResolvedValue({
           success: true,
           clarification: 'Please clarify what you mean',
         }),
-        resetConversation: jest.fn(),
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-      };
-      const mockInstructionModeManager = { clear: jest.fn() };
+      });
+      const mockInstructionModeManager = createMockInstructionModeManager();
 
       deps = createMockDeps({
         getInstructionRefineService: () => mockInstructionRefineService as any,
@@ -1602,8 +1437,6 @@ describe('InputController - Message Queue', () => {
 
       await controller.handleInstructionSubmit('ambiguous instruction');
 
-      // The InstructionModal should have been constructed with callbacks
-      // and showClarification should be called (via the mock)
       expect(mockInstructionRefineService.refineInstruction).toHaveBeenCalledWith(
         'ambiguous instruction',
         undefined
@@ -1611,16 +1444,8 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should show error when result has no clarification or instruction', async () => {
-      const mockInstructionRefineService = {
-        refineInstruction: jest.fn().mockResolvedValue({
-          success: true,
-          // No clarification, no refinedInstruction
-        }),
-        resetConversation: jest.fn(),
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-      };
-      const mockInstructionModeManager = { clear: jest.fn() };
+      const mockInstructionRefineService = createMockInstructionRefineService();
+      const mockInstructionModeManager = createMockInstructionModeManager();
 
       deps = createMockDeps({
         getInstructionRefineService: () => mockInstructionRefineService as any,
@@ -1636,16 +1461,13 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should handle cancelled result from refineInstruction', async () => {
-      const mockInstructionRefineService = {
+      const mockInstructionRefineService = createMockInstructionRefineService({
         refineInstruction: jest.fn().mockResolvedValue({
           success: false,
           error: 'Cancelled',
         }),
-        resetConversation: jest.fn(),
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-      };
-      const mockInstructionModeManager = { clear: jest.fn() };
+      });
+      const mockInstructionModeManager = createMockInstructionModeManager();
 
       deps = createMockDeps({
         getInstructionRefineService: () => mockInstructionRefineService as any,
@@ -1656,21 +1478,17 @@ describe('InputController - Message Queue', () => {
       await controller.handleInstructionSubmit('cancelled instruction');
 
       expect(mockInstructionModeManager.clear).toHaveBeenCalled();
-      // Should NOT show Notice for Cancelled
       expect(mockNotice).not.toHaveBeenCalledWith(expect.stringContaining('Cancelled'));
     });
 
     it('should handle non-cancelled error from refineInstruction', async () => {
-      const mockInstructionRefineService = {
+      const mockInstructionRefineService = createMockInstructionRefineService({
         refineInstruction: jest.fn().mockResolvedValue({
           success: false,
           error: 'API Error',
         }),
-        resetConversation: jest.fn(),
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-      };
-      const mockInstructionModeManager = { clear: jest.fn() };
+      });
+      const mockInstructionModeManager = createMockInstructionModeManager();
 
       deps = createMockDeps({
         getInstructionRefineService: () => mockInstructionRefineService as any,
@@ -1686,13 +1504,10 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should handle exception thrown during refineInstruction', async () => {
-      const mockInstructionRefineService = {
+      const mockInstructionRefineService = createMockInstructionRefineService({
         refineInstruction: jest.fn().mockRejectedValue(new Error('Unexpected error')),
-        resetConversation: jest.fn(),
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-      };
-      const mockInstructionModeManager = { clear: jest.fn() };
+      });
+      const mockInstructionModeManager = createMockInstructionModeManager();
 
       deps = createMockDeps({
         getInstructionRefineService: () => mockInstructionRefineService as any,

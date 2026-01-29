@@ -182,9 +182,7 @@ describe('ImageContextManager', () => {
       const cb = createMockCallbacks();
 
       const mgr = new ImageContextManager(c, input, cb, previewContainer);
-      // Should not throw and should create image preview in previewContainer
       expect(mgr).toBeDefined();
-      // previewContainer should have a child with 'claudian-image-preview' class
       const previewEl = previewContainer.querySelector('.claudian-image-preview');
       expect(previewEl).not.toBeNull();
     });
@@ -200,7 +198,6 @@ describe('ImageContextManager', () => {
       const cb = createMockCallbacks();
 
       new ImageContextManager(c, input, cb, previewContainer);
-      // The image preview should have been inserted before the file indicator
       const children = previewContainer.children;
       const fileIndicatorIdx = children.indexOf(fileIndicator);
       const previewIdx = children.findIndex((el: any) => el.hasClass?.('claudian-image-preview'));
@@ -669,7 +666,6 @@ describe('ImageContextManager - Private Helpers', () => {
       const chipEl = previewEl.children[0];
       expect(chipEl.hasClass('claudian-image-chip')).toBe(true);
 
-      // Should have thumb, info, and remove elements
       const thumbEl = chipEl.querySelector('.claudian-image-thumb');
       expect(thumbEl).not.toBeNull();
 
@@ -694,7 +690,6 @@ describe('ImageContextManager - Private Helpers', () => {
 
       cb.onImagesChanged.mockClear();
 
-      // Click the remove button on the first image
       const firstChip = mgr['imagePreviewEl'].children[0];
       const removeEl = firstChip.querySelector('.claudian-image-remove');
       removeEl.dispatchEvent({ type: 'click', stopPropagation: jest.fn() });
@@ -706,83 +701,59 @@ describe('ImageContextManager - Private Helpers', () => {
   });
 
   describe('showFullImage', () => {
-    it('should create modal overlay with image', () => {
-      const overlayEl = createMockEl();
-      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
-      const origDocument = globalThis.document;
-      (globalThis as any).document = {
-        body: mockBody,
-        addEventListener: jest.fn(),
-        removeEventListener: jest.fn(),
-        createElementNS: jest.fn(() => mockSvgElement()),
-      };
+    let origDocument: typeof globalThis.document;
+    let overlayEl: any;
+    let mockBody: any;
+    let addEventSpy: jest.Mock;
+    let removeEventSpy: jest.Mock;
 
-      try {
-        const image = createImageAttachment({ name: 'test.png', mediaType: 'image/png', data: 'abc123' });
-        manager['showFullImage'](image);
-
-        expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
-    });
-
-    it('should register Escape key handler and close button', () => {
-      const overlayEl = createMockEl();
-      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
-      const addEventSpy = jest.fn();
-      const removeEventSpy = jest.fn();
-      const origDocument = globalThis.document;
+    beforeEach(() => {
+      overlayEl = createMockEl();
+      addEventSpy = jest.fn();
+      removeEventSpy = jest.fn();
+      mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
+      origDocument = globalThis.document;
       (globalThis as any).document = {
         body: mockBody,
         addEventListener: addEventSpy,
         removeEventListener: removeEventSpy,
         createElementNS: jest.fn(() => mockSvgElement()),
       };
+    });
 
-      try {
-        const image = createImageAttachment();
-        manager['showFullImage'](image);
+    afterEach(() => {
+      (globalThis as any).document = origDocument;
+    });
 
-        expect(addEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+    it('should create modal overlay with image', () => {
+      const image = createImageAttachment({ name: 'test.png', mediaType: 'image/png', data: 'abc123' });
+      manager['showFullImage'](image);
 
-        // Simulate Escape key press to close
-        const escHandler = addEventSpy.mock.calls[0][1];
-        escHandler({ key: 'Escape' });
+      expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
+    });
 
-        expect(removeEventSpy).toHaveBeenCalledWith('keydown', escHandler);
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
+    it('should register Escape key handler and close button', () => {
+      const image = createImageAttachment();
+      manager['showFullImage'](image);
+
+      expect(addEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+
+      const escHandler = addEventSpy.mock.calls[0][1];
+      escHandler({ key: 'Escape' });
+
+      expect(removeEventSpy).toHaveBeenCalledWith('keydown', escHandler);
     });
 
     it('should close modal when clicking on overlay background', () => {
-      const overlayEl = createMockEl();
-      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
-      const removeEventSpy = jest.fn();
-      const origDocument = globalThis.document;
-      (globalThis as any).document = {
-        body: mockBody,
-        addEventListener: jest.fn(),
-        removeEventListener: removeEventSpy,
-        createElementNS: jest.fn(() => mockSvgElement()),
-      };
+      const image = createImageAttachment();
+      manager['showFullImage'](image);
 
-      try {
-        const image = createImageAttachment();
-        manager['showFullImage'](image);
+      const clickHandler = overlayEl._eventListeners.get('click')?.[0];
+      expect(clickHandler).toBeDefined();
 
-        // Get the click handler registered on overlay
-        const clickHandler = overlayEl._eventListeners.get('click')?.[0];
-        expect(clickHandler).toBeDefined();
+      clickHandler({ target: overlayEl });
 
-        // Simulate clicking on overlay background (target === overlay)
-        clickHandler({ target: overlayEl });
-
-        expect(removeEventSpy).toHaveBeenCalled();
-      } finally {
-        (globalThis as any).document = origDocument;
-      }
+      expect(removeEventSpy).toHaveBeenCalled();
     });
   });
 
