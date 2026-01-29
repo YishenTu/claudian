@@ -57,6 +57,11 @@ export function isLegacyPermissionsFormat(data: unknown): data is { permissions:
   );
 }
 
+function normalizeRuleList(value: unknown): PermissionRule[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((r): r is string => typeof r === 'string') as PermissionRule[];
+}
+
 function normalizePermissions(permissions: unknown): CCPermissions {
   if (!permissions || typeof permissions !== 'object') {
     return { ...DEFAULT_CC_PERMISSIONS };
@@ -64,9 +69,9 @@ function normalizePermissions(permissions: unknown): CCPermissions {
 
   const p = permissions as Record<string, unknown>;
   return {
-    allow: Array.isArray(p.allow) ? p.allow.filter((r): r is string => typeof r === 'string').map(r => r as PermissionRule) : [],
-    deny: Array.isArray(p.deny) ? p.deny.filter((r): r is string => typeof r === 'string').map(r => r as PermissionRule) : [],
-    ask: Array.isArray(p.ask) ? p.ask.filter((r): r is string => typeof r === 'string').map(r => r as PermissionRule) : [],
+    allow: normalizeRuleList(p.allow),
+    deny: normalizeRuleList(p.deny),
+    ask: normalizeRuleList(p.ask),
     defaultMode: typeof p.defaultMode === 'string' ? p.defaultMode as CCPermissions['defaultMode'] : undefined,
     additionalDirectories: Array.isArray(p.additionalDirectories)
       ? p.additionalDirectories.filter((d): d is string => typeof d === 'string')
@@ -215,10 +220,6 @@ export class CCSettingsStorage {
     permissions.ask = permissions.ask?.filter(r => r !== rule);
     await this.updatePermissions(permissions);
   }
-
-  // ============================================
-  // Plugin Methods
-  // ============================================
 
   /**
    * Get enabled plugins map from CC settings.

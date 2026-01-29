@@ -677,34 +677,6 @@ describe('QueryOptionsBuilder', () => {
     });
   });
 
-  describe('getMcpServersConfig', () => {
-    it('returns empty servers when no mentions', () => {
-      const mcpManager = createMockMcpManager();
-      const result = QueryOptionsBuilder.getMcpServersConfig(mcpManager);
-
-      expect(result.servers).toEqual({});
-      expect(result.key).toBe('{}');
-    });
-
-    it('combines mentions and UI-enabled servers', () => {
-      const mcpManager = createMockMcpManager();
-      mcpManager.getActiveServers.mockReturnValue({
-        'server1': { command: 'cmd1' },
-        'server2': { command: 'cmd2' },
-      });
-
-      QueryOptionsBuilder.getMcpServersConfig(
-        mcpManager,
-        new Set(['server1']),
-        new Set(['server2'])
-      );
-
-      expect(mcpManager.getActiveServers).toHaveBeenCalledWith(
-        new Set(['server1', 'server2'])
-      );
-    });
-  });
-
   describe('buildSdkAgentsRecord model conversion', () => {
     it('converts inherit model to undefined in SDK agents', () => {
       const agentManager = createMockAgentManager([

@@ -382,10 +382,6 @@ export class StorageService {
     return this.adapter;
   }
 
-  // ============================================================================
-  // Convenience methods for common operations
-  // ============================================================================
-
   async getPermissions(): Promise<CCPermissions> {
     return this.ccSettings.getPermissions();
   }
@@ -453,10 +449,6 @@ export class StorageService {
     delete cleaned.activeConversationId;
     await this.plugin.saveData(cleaned);
   }
-
-  // ============================================================================
-  // Tab Manager State Persistence
-  // ============================================================================
 
   /**
    * Get tab manager state from data.json with runtime validation.

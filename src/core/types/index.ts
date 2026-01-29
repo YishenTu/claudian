@@ -61,7 +61,6 @@ export {
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
-  type Permission,
   type PermissionMode,
   type PermissionRule,
   type PlatformBlockedCommands,

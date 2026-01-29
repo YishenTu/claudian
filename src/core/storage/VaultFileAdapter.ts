@@ -19,18 +19,12 @@ export class VaultFileAdapter {
   }
 
   async write(path: string, content: string): Promise<void> {
-    const folder = path.substring(0, path.lastIndexOf('/'));
-    if (folder && !(await this.exists(folder))) {
-      await this.ensureFolder(folder);
-    }
+    await this.ensureParentFolder(path);
     await this.app.vault.adapter.write(path, content);
   }
 
   async append(path: string, content: string): Promise<void> {
-    const folder = path.substring(0, path.lastIndexOf('/'));
-    if (folder && !(await this.exists(folder))) {
-      await this.ensureFolder(folder);
-    }
+    await this.ensureParentFolder(path);
     if (await this.exists(path)) {
       const existing = await this.read(path);
       await this.app.vault.adapter.write(path, existing + content);
@@ -90,6 +84,13 @@ export class VaultFileAdapter {
 
     await processFolder(folder);
     return allFiles;
+  }
+
+  private async ensureParentFolder(filePath: string): Promise<void> {
+    const folder = filePath.substring(0, filePath.lastIndexOf('/'));
+    if (folder && !(await this.exists(folder))) {
+      await this.ensureFolder(folder);
+    }
   }
 
   /** Ensure a folder exists, creating it and parent folders if needed. */

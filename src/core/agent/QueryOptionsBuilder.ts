@@ -13,7 +13,6 @@
 import type {
   AgentDefinition as SdkAgentDefinition,
   CanUseTool,
-  McpServerConfig,
   Options,
 } from '@anthropic-ai/claude-agent-sdk';
 
@@ -31,10 +30,6 @@ import {
   type PersistentQueryConfig,
   UNSUPPORTED_SDK_TOOLS,
 } from './types';
-
-// ============================================
-// Context Types
-// ============================================
 
 /**
  * Context required for building SDK options.
@@ -100,10 +95,6 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   /** External context paths for additionalDirectories SDK option. */
   externalContextPaths?: string[];
 }
-
-// ============================================
-// QueryOptionsBuilder
-// ============================================
 
 /** Static builder for SDK Options and configuration objects. */
 export class QueryOptionsBuilder {
@@ -322,26 +313,6 @@ export class QueryOptionsBuilder {
 
     return options;
   }
-
-  static getMcpServersConfig(
-    mcpManager: McpServerManager,
-    mcpMentions?: Set<string>,
-    enabledMcpServers?: Set<string>
-  ): { servers: Record<string, McpServerConfig>; key: string } {
-    const mentions = mcpMentions || new Set<string>();
-    const uiEnabled = enabledMcpServers || new Set<string>();
-    const combined = new Set([...mentions, ...uiEnabled]);
-    const servers = mcpManager.getActiveServers(combined);
-
-    return {
-      servers: servers as Record<string, McpServerConfig>,
-      key: JSON.stringify(servers),
-    };
-  }
-
-  // ============================================
-  // Private Helpers
-  // ============================================
 
   /**
    * Always sets allowDangerouslySkipPermissions: true to enable dynamic

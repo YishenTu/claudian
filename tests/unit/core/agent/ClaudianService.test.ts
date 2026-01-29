@@ -141,20 +141,9 @@ describe('ClaudianService', () => {
   });
 
   describe('MCP Server Management', () => {
-    it('should load MCP servers', async () => {
-      await service.loadMcpServers();
-
-      expect(mockMcpManager.loadServers).toHaveBeenCalled();
-    });
-
     it('should reload MCP servers', async () => {
       await service.reloadMcpServers();
 
-      expect(mockMcpManager.loadServers).toHaveBeenCalled();
-    });
-
-    it('should handle MCP server loading errors', async () => {
-      await service.loadMcpServers();
       expect(mockMcpManager.loadServers).toHaveBeenCalled();
     });
   });
@@ -718,24 +707,6 @@ describe('ClaudianService', () => {
 
     it('should return false for undefined', () => {
       expect((service as any).isPipeError(undefined)).toBe(false);
-    });
-  });
-
-  describe('shouldUsePersistentQuery', () => {
-    it('should return true by default', () => {
-      expect((service as any).shouldUsePersistentQuery()).toBe(true);
-    });
-
-    it('should return true with empty options', () => {
-      expect((service as any).shouldUsePersistentQuery({})).toBe(true);
-    });
-
-    it('should return false when forceColdStart is set', () => {
-      expect((service as any).shouldUsePersistentQuery({ forceColdStart: true })).toBe(false);
-    });
-
-    it('should return true when forceColdStart is false', () => {
-      expect((service as any).shouldUsePersistentQuery({ forceColdStart: false })).toBe(true);
     });
   });
 

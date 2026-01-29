@@ -66,16 +66,27 @@ export class McpServerManager {
    * @param mentionedNames Set of server names that were @-mentioned in the prompt
    */
   getDisallowedMcpTools(mentionedNames: Set<string>): string[] {
+    return this.collectDisallowedTools(
+      (s) => !s.contextSaving || mentionedNames.has(s.name)
+    );
+  }
+
+  /**
+   * Get all disabled MCP tools from ALL enabled servers (ignoring @-mentions).
+   *
+   * Used for persistent queries to pre-register all disabled tools upfront,
+   * so @-mentioning servers doesn't require cold start.
+   */
+  getAllDisallowedMcpTools(): string[] {
+    return this.collectDisallowedTools().sort();
+  }
+
+  private collectDisallowedTools(filter?: (server: ClaudianMcpServer) => boolean): string[] {
     const disallowed = new Set<string>();
 
     for (const server of this.servers) {
       if (!server.enabled) continue;
-
-      // If context-saving is enabled, only include if @-mentioned (same filter as getActiveServers)
-      if (server.contextSaving && !mentionedNames.has(server.name)) {
-        continue;
-      }
-
+      if (filter && !filter(server)) continue;
       if (!server.disabledTools || server.disabledTools.length === 0) continue;
 
       for (const tool of server.disabledTools) {
@@ -86,29 +97,6 @@ export class McpServerManager {
     }
 
     return Array.from(disallowed);
-  }
-
-  /**
-   * Get all disabled MCP tools from ALL enabled servers (ignoring @-mentions).
-   *
-   * Used for persistent queries to pre-register all disabled tools upfront,
-   * so @-mentioning servers doesn't require cold start.
-   */
-  getAllDisallowedMcpTools(): string[] {
-    const disallowed = new Set<string>();
-
-    for (const server of this.servers) {
-      if (!server.enabled) continue;
-      if (!server.disabledTools || server.disabledTools.length === 0) continue;
-
-      for (const tool of server.disabledTools) {
-        const normalized = tool.trim();
-        if (!normalized) continue;
-        disallowed.add(`mcp__${server.name}__${normalized}`);
-      }
-    }
-
-    return Array.from(disallowed).sort();
   }
 
   hasServers(): boolean {

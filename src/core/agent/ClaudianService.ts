@@ -121,10 +121,6 @@ export class ClaudianService {
   private sessionManager = new SessionManager();
   private mcpManager: McpServerManager;
 
-  // ============================================
-  // Persistent Query State (Phase 1)
-  // ============================================
-
   private persistentQuery: Query | null = null;
   private messageChannel: MessageChannel | null = null;
   private queryAbortController: AbortController | null = null;
@@ -176,17 +172,9 @@ export class ClaudianService {
     }
   }
 
-  async loadMcpServers(): Promise<void> {
-    await this.mcpManager.loadServers();
-  }
-
   async reloadMcpServers(): Promise<void> {
     await this.mcpManager.loadServers();
   }
-
-  // ============================================
-  // Persistent Query Lifecycle (Phase 1.3)
-  // ============================================
 
   /**
    * Ensures the persistent query is running with current configuration.
@@ -324,14 +312,9 @@ export class ClaudianService {
   }
 
   private isPipeError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-    const maybeError = error as { code?: string; message?: string };
-    if (maybeError.code === 'EPIPE') {
-      return true;
-    }
-    return typeof maybeError.message === 'string' && maybeError.message.includes('EPIPE');
+    if (!error || typeof error !== 'object') return false;
+    const e = error as { code?: string; message?: string };
+    return e.code === 'EPIPE' || (typeof e.message === 'string' && e.message.includes('EPIPE'));
   }
 
   /**
@@ -486,10 +469,6 @@ export class ClaudianService {
       PreToolUse: [blocklistHook, vaultRestrictionHook],
     };
   }
-
-  // ============================================
-  // Response Consumer Loop (Phase 1.4)
-  // ============================================
 
   /**
    * Starts the background consumer loop that routes chunks to handlers.
@@ -734,7 +713,7 @@ export class ClaudianService {
     }
 
     // Determine query path: persistent vs cold-start
-    const shouldUsePersistent = this.shouldUsePersistentQuery(effectiveQueryOptions);
+    const shouldUsePersistent = !effectiveQueryOptions?.forceColdStart;
 
     if (shouldUsePersistent) {
       // Start persistent query if not running
@@ -832,11 +811,6 @@ export class ClaudianService {
       prompt: fullPrompt,
       images: lastUserMessage?.images,
     };
-  }
-
-  private shouldUsePersistentQuery(queryOptions?: QueryOptions): boolean {
-    if (queryOptions?.forceColdStart) return false;
-    return true;
   }
 
   /**

@@ -249,25 +249,15 @@ export class SessionStorage {
 
     // Subsequent lines: messages
     for (const message of conversation.messages) {
-      const storedMessage = this.prepareMessageForStorage(message);
       const record: SessionMessageRecord = {
         type: 'message',
-        message: storedMessage,
+        message,
       };
       lines.push(JSON.stringify(record));
     }
 
     return lines.join('\n');
   }
-
-  private prepareMessageForStorage(message: ChatMessage): ChatMessage {
-    // Images are stored with their base64 data as single source of truth
-    return message;
-  }
-
-  // ============================================
-  // SDK-Native Session Metadata (Phase 1)
-  // ============================================
 
   /**
    * Detects if a session uses SDK-native storage.

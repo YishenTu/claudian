@@ -297,11 +297,6 @@ export interface ClaudianSettings {
   hiddenSlashCommands: string[];  // Command names to hide from dropdown (user preference)
 }
 
-/**
- * @deprecated Use LegacyPermission instead. Kept for backward compatibility.
- */
-export type Permission = LegacyPermission;
-
 /** Default Claudian-specific settings. */
 export const DEFAULT_SETTINGS: ClaudianSettings = {
   // User preferences

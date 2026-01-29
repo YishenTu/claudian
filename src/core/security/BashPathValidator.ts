@@ -85,16 +85,20 @@ export function getBashSegmentCommandName(segment: string[]): { cmdName: string;
   return { cmdName, cmdIndex };
 }
 
+const OUTPUT_REDIRECT_OPS = new Set(['>', '>>', '1>', '1>>', '2>', '2>>', '&>', '&>>', '>|']);
+const INPUT_REDIRECT_OPS = new Set(['<', '<<', '0<', '0<<']);
+const OUTPUT_OPTION_FLAGS = new Set(['-o', '--output', '--out', '--outfile', '--output-file']);
+
 export function isBashOutputRedirectOperator(token: string): boolean {
-  return token === '>' || token === '>>' || token === '1>' || token === '1>>' || token === '2>' || token === '2>>' || token === '&>' || token === '&>>' || token === '>|';
+  return OUTPUT_REDIRECT_OPS.has(token);
 }
 
 export function isBashInputRedirectOperator(token: string): boolean {
-  return token === '<' || token === '<<' || token === '0<' || token === '0<<';
+  return INPUT_REDIRECT_OPS.has(token);
 }
 
 export function isBashOutputOptionExpectingValue(token: string): boolean {
-  return token === '-o' || token === '--output' || token === '--out' || token === '--outfile' || token === '--output-file';
+  return OUTPUT_OPTION_FLAGS.has(token);
 }
 
 /** Clean a path token by stripping quotes and delimiters */

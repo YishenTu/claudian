@@ -7,10 +7,6 @@ import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudeModel, PermissionMode, StreamChunk } from '../types';
 
-// ============================================
-// SDK Content Types
-// ============================================
-
 export interface TextContentBlock {
   type: 'text';
   text: string;
@@ -26,10 +22,6 @@ export interface ImageContentBlock {
 }
 
 export type SDKContentBlock = TextContentBlock | ImageContentBlock;
-
-// ============================================
-// Message Channel Types
-// ============================================
 
 /** Overflow: newest message is dropped with a warning. */
 export const MESSAGE_CHANNEL_CONFIG = {
@@ -50,10 +42,6 @@ export interface PendingAttachmentMessage {
 }
 
 export type PendingMessage = PendingTextMessage | PendingAttachmentMessage;
-
-// ============================================
-// Response Handler for Routing
-// ============================================
 
 export interface ClosePersistentQueryOptions {
   preserveHandlers?: boolean;
@@ -109,10 +97,6 @@ export function createResponseHandler(options: ResponseHandlerOptions): Response
   };
 }
 
-// ============================================
-// Persistent Query Configuration State
-// ============================================
-
 /** Tracked configuration for detecting changes that require restart. */
 export interface PersistentQueryConfig {
   model: string | null;
@@ -130,10 +114,6 @@ export interface PersistentQueryConfig {
   enableChrome: boolean;  // Whether --chrome flag is passed to CLI
 }
 
-// ============================================
-// Session State Types
-// ============================================
-
 export interface SessionState {
   sessionId: string | null;
   sessionModel: ClaudeModel | null;
@@ -144,10 +124,6 @@ export interface SessionState {
   /** Set when the current session is invalidated by SDK errors. */
   sessionInvalidated: boolean;
 }
-
-// ============================================
-// Constants
-// ============================================
 
 /** SDK tools that require canUseTool interception (not supported in bypassPermissions mode). */
 export const UNSUPPORTED_SDK_TOOLS = [
@@ -160,10 +136,6 @@ export const UNSUPPORTED_SDK_TOOLS = [
 export const DISABLED_BUILTIN_SUBAGENTS = [
   'Task(statusline-setup)',
 ] as const;
-
-// ============================================
-// Helper Functions
-// ============================================
 
 /**
  * Check if an SDK message signals turn completion.
