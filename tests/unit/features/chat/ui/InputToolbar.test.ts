@@ -532,6 +532,18 @@ describe('ContextUsageMeter', () => {
     const container = parentEl.querySelector('.claudian-context-meter');
     expect(container?.getAttribute('data-tooltip')).toBe('500 / 200k');
   });
+
+  it('should add compact reminder to tooltip when usage > 80%', () => {
+    meter.update(makeUsage({ contextTokens: 170000, contextWindow: 200000, percentage: 85 }));
+    const container = parentEl.querySelector('.claudian-context-meter');
+    expect(container?.getAttribute('data-tooltip')).toBe('170k / 200k (Approaching limit, run `/compact` to continue)');
+  });
+
+  it('should not add compact reminder to tooltip when usage ≤ 80%', () => {
+    meter.update(makeUsage({ contextTokens: 160000, contextWindow: 200000, percentage: 80 }));
+    const container = parentEl.querySelector('.claudian-context-meter');
+    expect(container?.getAttribute('data-tooltip')).toBe('160k / 200k');
+  });
 });
 
 describe('McpServerSelector - toggle and badges', () => {
