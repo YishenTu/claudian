@@ -22,6 +22,14 @@ describe('ClaudianService', () => {
   let mockMcpManager: MockMcpServerManager;
   let service: ClaudianService;
 
+  async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
+    const chunks: any[] = [];
+    for await (const chunk of gen) {
+      chunks.push(chunk);
+    }
+    return chunks;
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -1153,31 +1161,25 @@ describe('ClaudianService', () => {
     it('should add sessionId to usage chunks', async () => {
       service.setSessionId('usage-session');
       const message = {
-        type: 'stream_event',
-        event: {
-          type: 'message_start',
-          message: {
-            usage: {
-              input_tokens: 100,
-              output_tokens: 50,
-              cache_creation_input_tokens: 10,
-              cache_read_input_tokens: 20,
-            },
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: 'Response' }],
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 20,
           },
         },
       };
 
       await (service as any).routeMessage(message);
 
-      // Usage chunks should include sessionId
       const usageChunks = onChunk.mock.calls.filter(
         ([chunk]: any) => chunk.type === 'usage'
       );
-      // The stream_event message may or may not produce a usage chunk depending on the
-      // message structure. If usage chunks are present, they should have sessionId.
-      expect(
-        usageChunks.length === 0 || usageChunks[0][0].sessionId === 'usage-session'
-      ).toBe(true);
+      expect(usageChunks.length).toBeGreaterThan(0);
+      expect(usageChunks[0][0].sessionId).toBe('usage-session');
     });
 
     it('should mark stream text seen on text stream events', async () => {
@@ -1344,14 +1346,6 @@ describe('ClaudianService', () => {
       sdkMock.resetMockMessages();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
-
     it('should yield error when vault path is not available', async () => {
       (mockPlugin as any).app.vault.adapter.basePath = undefined;
 
@@ -1378,7 +1372,7 @@ describe('ClaudianService', () => {
 
       expect(chunks.length).toBeGreaterThan(0);
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should capture session ID from cold-start response', async () => {
@@ -1413,7 +1407,7 @@ describe('ClaudianService', () => {
       const chunks = await collectChunks(service.query('hello'));
 
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should rebuild history context when no session but has history', async () => {
@@ -1431,7 +1425,7 @@ describe('ClaudianService', () => {
       const chunks = await collectChunks(service.query('follow up', undefined, history));
 
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should handle errors in cold-start query', async () => {
@@ -1449,7 +1443,7 @@ describe('ClaudianService', () => {
       );
 
       const errorChunks = chunks.filter(c => c.type === 'error');
-      expect(errorChunks.length).toBeGreaterThan(0);
+      expect(errorChunks).toHaveLength(1);
       expect(errorChunks[0].content).toContain('Simulated consumer crash');
     });
   });
@@ -1644,13 +1638,6 @@ describe('ClaudianService', () => {
       jest.restoreAllMocks();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
 
     it('should yield error when Node.js is missing', async () => {
       jest.spyOn(envUtils, 'getMissingNodeError').mockReturnValueOnce(
@@ -1674,13 +1661,6 @@ describe('ClaudianService', () => {
       sdkMock.resetMockMessages();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
 
     it('should clear interrupted flag before query', async () => {
       sdkMock.setMockMessages([
@@ -1720,7 +1700,7 @@ describe('ClaudianService', () => {
 
       // Should complete successfully
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
       // History rebuild function should have been called
       expect(buildSpy).toHaveBeenCalled();
     });
@@ -1736,13 +1716,6 @@ describe('ClaudianService', () => {
       jest.restoreAllMocks();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
 
     it('should retry with history on session expired error in cold-start', async () => {
       // First call throws session expired, second succeeds
@@ -1784,8 +1757,7 @@ describe('ClaudianService', () => {
 
       // Should have retried and yielded chunks
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
-      // Retry should have happened (callCount > 1)
+      expect(doneChunks).toHaveLength(1);
       expect(callCount).toBeGreaterThanOrEqual(2);
     });
 
@@ -1813,7 +1785,7 @@ describe('ClaudianService', () => {
       );
 
       const errorChunks = chunks.filter(c => c.type === 'error');
-      expect(errorChunks.length).toBeGreaterThan(0);
+      expect(errorChunks).toHaveLength(1);
       expect(errorChunks[0].content).toContain('session expired');
     });
   });
@@ -1945,7 +1917,7 @@ describe('ClaudianService', () => {
   });
 
   describe('routeMessage - usage chunk with sessionId', () => {
-    it('should attach sessionId to usage chunks from stream events', async () => {
+    it('should attach sessionId to usage chunks from assistant messages', async () => {
       service.setSessionId('usage-session-id');
 
       const onChunk = jest.fn();
@@ -1961,31 +1933,28 @@ describe('ClaudianService', () => {
         setSessionId: jest.fn(),
       };
 
-      // Send a result message that transforms into usage chunk
+      // Usage is extracted from assistant messages (not result messages)
       const message = {
-        type: 'result',
-        result: 'completed',
-        usage: {
-          input_tokens: 100,
-          output_tokens: 50,
-          cache_creation_input_tokens: 10,
-          cache_read_input_tokens: 20,
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: 'Response' }],
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 20,
+          },
         },
-        model: 'claude-3-5-sonnet',
-        session_id: 'usage-session-id',
       };
 
       await (service as any).routeMessage(message);
 
-      // Check that usage chunks got sessionId
       const usageChunks = onChunk.mock.calls
         .map(([chunk]: any) => chunk)
         .filter((c: any) => c.type === 'usage');
 
-      // result messages produce usage chunks; verify sessionId is attached
-      expect(
-        usageChunks.length === 0 || usageChunks[0].sessionId === 'usage-session-id'
-      ).toBe(true);
+      expect(usageChunks.length).toBeGreaterThan(0);
+      expect(usageChunks[0].sessionId).toBe('usage-session-id');
     });
   });
 
@@ -2009,7 +1978,7 @@ describe('ClaudianService', () => {
       }
 
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should set allowedTools from query options', async () => {
@@ -2122,7 +2091,7 @@ describe('ClaudianService', () => {
       }
 
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should fall back when persistent query lost after applyDynamicUpdates', async () => {
@@ -2173,7 +2142,7 @@ describe('ClaudianService', () => {
       }
 
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should fall back when channel is closed during enqueue', async () => {
@@ -2221,7 +2190,7 @@ describe('ClaudianService', () => {
 
       // Should fall back to cold-start and complete
       const doneChunks = chunks.filter(c => c.type === 'done');
-      expect(doneChunks.length).toBeGreaterThan(0);
+      expect(doneChunks).toHaveLength(1);
     });
 
     it('should handle onError in handler and re-throw session expired', async () => {
@@ -2329,7 +2298,7 @@ describe('ClaudianService', () => {
       }
 
       const errorChunks = chunks.filter(c => c.type === 'error');
-      expect(errorChunks.length).toBeGreaterThan(0);
+      expect(errorChunks).toHaveLength(1);
       expect(errorChunks[0].content).toContain('Some internal error');
     });
 
@@ -2407,13 +2376,6 @@ describe('ClaudianService', () => {
       jest.restoreAllMocks();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
 
     it('should retry via cold-start when persistent query yields session expired error', async () => {
       // Set up a session and history so retry can happen
@@ -2477,7 +2439,7 @@ describe('ClaudianService', () => {
       const chunks = await collectChunks(service.query('follow up', undefined, history));
 
       const errorChunks = chunks.filter(c => c.type === 'error');
-      expect(errorChunks.length).toBeGreaterThan(0);
+      expect(errorChunks).toHaveLength(1);
       expect(errorChunks[0].content).toContain('retry also failed');
     });
 
@@ -2526,13 +2488,6 @@ describe('ClaudianService', () => {
       jest.restoreAllMocks();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
 
     it('should yield error chunk for non-session-expired errors in cold-start path', async () => {
       jest.spyOn(sdkModule, 'query' as any).mockImplementation(() => {
@@ -2553,7 +2508,7 @@ describe('ClaudianService', () => {
       );
 
       const errorChunks = chunks.filter(c => c.type === 'error');
-      expect(errorChunks.length).toBeGreaterThan(0);
+      expect(errorChunks).toHaveLength(1);
       expect(errorChunks[0].content).toBe('connection timeout');
     });
 
@@ -2576,7 +2531,7 @@ describe('ClaudianService', () => {
       );
 
       const errorChunks = chunks.filter(c => c.type === 'error');
-      expect(errorChunks.length).toBeGreaterThan(0);
+      expect(errorChunks).toHaveLength(1);
       expect(errorChunks[0].content).toBe('Unknown error');
     });
   });
@@ -2858,16 +2813,20 @@ describe('ClaudianService', () => {
   });
 
   describe('buildHooks - null vaultPath', () => {
-    it('should return vault access type when vaultPath is null', () => {
+    it('should allow file access when vaultPath is null', async () => {
       (service as any).vaultPath = null;
 
       const hooks = (service as any).buildHooks();
       const vaultRestrictionHook = hooks.PreToolUse[1];
 
-      // The hook wraps a getPathAccessType callback. We test it indirectly by
-      // invoking the hook with a Bash tool that has a path argument
-      // The hook should call getPathAccessType which returns 'vault' when vaultPath is null
-      expect(vaultRestrictionHook).toBeDefined();
+      // When vaultPath is null, getPathAccessType returns 'vault' for all paths,
+      // so the hook should allow access
+      const result = await vaultRestrictionHook.hooks[0]({
+        tool_name: 'Read',
+        tool_input: { file_path: '/some/external/path' },
+      });
+
+      expect(result.continue).toBe(true);
     });
   });
 
@@ -2881,13 +2840,6 @@ describe('ClaudianService', () => {
       jest.restoreAllMocks();
     });
 
-    async function collectChunks(gen: AsyncGenerator<any>): Promise<any[]> {
-      const chunks: any[] = [];
-      for await (const chunk of gen) {
-        chunks.push(chunk);
-      }
-      return chunks;
-    }
 
     it('should set allowedTools in cold-start query', async () => {
       sdkMock.setMockMessages([
@@ -2926,30 +2878,27 @@ describe('ClaudianService', () => {
       service.setSessionId('usage-cold-session');
       sdkMock.setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'usage-cold-session' },
-        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } },
         {
-          type: 'result',
-          result: 'completed',
-          model: 'claude-3-5-sonnet',
-          usage: {
-            input_tokens: 100,
-            output_tokens: 50,
-            cache_creation_input_tokens: 10,
-            cache_read_input_tokens: 20,
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: 'Hi' }],
+            usage: {
+              input_tokens: 100,
+              output_tokens: 50,
+              cache_creation_input_tokens: 10,
+              cache_read_input_tokens: 20,
+            },
           },
-          session_id: 'usage-cold-session',
         },
-      ], { appendResult: false });
+      ], { appendResult: true });
 
       const chunks = await collectChunks(
         service.query('hello', undefined, undefined, { forceColdStart: true })
       );
 
       const usageChunks = chunks.filter(c => c.type === 'usage');
-      // Usage chunks, if present, should carry the sessionId
-      expect(
-        usageChunks.length === 0 || usageChunks[0].sessionId === 'usage-cold-session'
-      ).toBe(true);
+      expect(usageChunks.length).toBeGreaterThan(0);
+      expect(usageChunks[0].sessionId).toBe('usage-cold-session');
       expect(chunks.some(c => c.type === 'done')).toBe(true);
     });
   });
