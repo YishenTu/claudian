@@ -249,7 +249,7 @@ src/
 - [x] Claude Code Plugin support
 - [x] Custom agent (subagent) support
 - [x] Claude in Chrome support
-- [ ] `/compact` command
+- [x] `/compact` command
 - [ ] Hooks and other advanced features
 - [ ] More to come!
 

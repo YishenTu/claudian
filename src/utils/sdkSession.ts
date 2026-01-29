@@ -272,13 +272,14 @@ function mapContentBlocks(content: string | SDKNativeContentBlock[] | undefined)
 
   for (const block of content) {
     switch (block.type) {
-      case 'text':
-        // Trim to avoid visual gaps from leading/trailing whitespace.
-        // Skip "(no content)" placeholder the SDK writes as the first assistant entry.
-        if (block.text && block.text.trim() && block.text.trim() !== '(no content)') {
-          blocks.push({ type: 'text', content: block.text.trim() });
+      case 'text': {
+        // Skip "(no content)" placeholder the SDK writes as the first assistant entry
+        const trimmed = block.text?.trim();
+        if (trimmed && trimmed !== '(no content)') {
+          blocks.push({ type: 'text', content: trimmed });
         }
         break;
+      }
 
       case 'thinking':
         if (block.thinking) {
@@ -346,9 +347,10 @@ export function parseSDKMessageToChat(
   // SDK wraps /compact in XML tags — restore clean display
   const isCompactCommand = sdkMsg.type === 'user' && textContent.includes('<command-name>/compact</command-name>');
 
-  const displayContent = sdkMsg.type === 'user'
-    ? (isCompactCommand ? '/compact' : extractDisplayContent(textContent))
-    : undefined;
+  let displayContent: string | undefined;
+  if (sdkMsg.type === 'user') {
+    displayContent = isCompactCommand ? '/compact' : extractDisplayContent(textContent);
+  }
 
   const isInterrupt = sdkMsg.type === 'user' && (
     textContent === '[Request interrupted by user]' ||
