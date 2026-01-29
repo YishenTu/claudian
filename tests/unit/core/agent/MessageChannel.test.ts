@@ -335,6 +335,71 @@ describe('MessageChannel', () => {
     });
   });
 
+  describe('extractTextContent with array content blocks', () => {
+    it('should extract and merge text from array-format content during active turn', async () => {
+      const ch = new MessageChannel();
+      const iterator = ch[Symbol.asyncIterator]();
+
+      // Start a turn with a normal message
+      ch.enqueue(createTextUserMessage('initial'));
+      await iterator.next(); // consume → turn active
+
+      // Enqueue a message with array content (text-only, no images)
+      // This goes through extractTextContent → filter/map/join path
+      const arrayContentMessage: SDKUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Hello' },
+            { type: 'text', text: 'World' },
+          ],
+        },
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+
+      ch.enqueue(arrayContentMessage);
+
+      // Complete turn so merged message is delivered
+      ch.onTurnComplete();
+      const result = await iterator.next();
+      // Text blocks should be extracted and joined with \n\n
+      expect(result.value.message.content).toBe('Hello\n\nWorld');
+    });
+
+    it('should filter out non-text blocks from array content', async () => {
+      const ch = new MessageChannel();
+      const iterator = ch[Symbol.asyncIterator]();
+
+      // Start a turn
+      ch.enqueue(createTextUserMessage('initial'));
+      await iterator.next(); // consume → turn active
+
+      // Enqueue array content with mixed blocks but NO images (so treated as text)
+      // Note: only blocks with type='text' should be extracted
+      const mixedContentMessage: SDKUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Visible' },
+            { type: 'tool_result', tool_use_id: 'x', content: 'hidden' } as any,
+            { type: 'text', text: 'Also Visible' },
+          ],
+        },
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+
+      ch.enqueue(mixedContentMessage);
+
+      ch.onTurnComplete();
+      const result = await iterator.next();
+      expect(result.value.message.content).toBe('Visible\n\nAlso Visible');
+    });
+  });
+
   describe('turn management', () => {
     it('should track turn state correctly', async () => {
       expect(channel.isTurnActive()).toBe(false);
