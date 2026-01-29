@@ -69,6 +69,39 @@
   max-width: 100%;
   border-bottom-left-radius: 4px;
   text-align: left;
+  position: relative;
+}
+
+/* Retry button for assistant messages */
+.claudian-retry-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.claudian-message-assistant:hover .claudian-retry-btn {
+  opacity: 1;
+}
+
+.claudian-retry-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-retry-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .claudian-message-content {

@@ -17,11 +17,16 @@ import { renderStoredWriteEdit } from './WriteEditRenderer';
 
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
+export interface MessageRendererCallbacks {
+  onRetry?: (userMessageId: string) => void;
+}
+
 export class MessageRenderer {
   private app: App;
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
+  private callbacks: MessageRendererCallbacks = {};
 
   constructor(
     plugin: ClaudianPlugin,
@@ -35,6 +40,11 @@ export class MessageRenderer {
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
+  }
+
+  /** Sets callbacks for message actions. */
+  setCallbacks(callbacks: MessageRendererCallbacks): void {
+    this.callbacks = callbacks;
   }
 
   /** Sets the messages container element. */
@@ -104,8 +114,27 @@ export class MessageRenderer {
     const newWelcomeEl = this.messagesEl.createDiv({ cls: 'claudian-welcome' });
     newWelcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: getGreeting() });
 
+    // Find the last user message ID for retry button on the last assistant message
+    let lastUserMessageId: string | null = null;
     for (const msg of messages) {
-      this.renderStoredMessage(msg);
+      if (msg.role === 'user') {
+        lastUserMessageId = msg.id;
+      }
+    }
+
+    // Find the index of the last assistant message
+    let lastAssistantIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && !messages[i].isInterrupt) {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const isLastAssistant = i === lastAssistantIndex;
+      this.renderStoredMessage(msg, isLastAssistant ? lastUserMessageId : null);
     }
 
     this.scrollToBottom();
@@ -114,8 +143,10 @@ export class MessageRenderer {
 
   /**
    * Renders a persisted message from history.
+   * @param msg The message to render
+   * @param precedingUserMessageId The ID of the user message that triggered this response (for retry)
    */
-  renderStoredMessage(msg: ChatMessage): void {
+  renderStoredMessage(msg: ChatMessage, precedingUserMessageId?: string | null): void {
     // Render interrupt messages with special styling (not as user bubbles)
     if (msg.isInterrupt) {
       this.renderInterruptMessage();
@@ -155,6 +186,11 @@ export class MessageRenderer {
       }
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
+
+      // Add retry button for assistant messages (only if we have a preceding user message and callback)
+      if (precedingUserMessageId && this.callbacks.onRetry) {
+        this.addRetryButton(msgEl, precedingUserMessageId);
+      }
     }
   }
 
@@ -456,6 +492,52 @@ export class MessageRenderer {
         feedbackTimeout = null;
       }, 1500);
     });
+  }
+
+  // ============================================
+  // Retry Button
+  // ============================================
+
+  /** Retry icon SVG. */
+  private static readonly RETRY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>`;
+
+  /**
+   * Adds a retry button to an assistant message.
+   * Button appears on hover and triggers regeneration of the response.
+   * @param msgEl The message element to add the button to
+   * @param userMessageId The ID of the user message to retry
+   */
+  addRetryButton(msgEl: HTMLElement, userMessageId: string): void {
+    if (!this.callbacks.onRetry) return;
+
+    // Remove existing retry button if any
+    const existingBtn = msgEl.querySelector('.claudian-retry-btn');
+    if (existingBtn) {
+      existingBtn.remove();
+    }
+
+    const retryBtn = msgEl.createEl('button', { cls: 'claudian-retry-btn' });
+    retryBtn.innerHTML = MessageRenderer.RETRY_ICON;
+    retryBtn.setAttribute('aria-label', 'Retry');
+    retryBtn.setAttribute('title', 'Retry');
+
+    retryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.callbacks.onRetry?.(userMessageId);
+    });
+  }
+
+  /**
+   * Removes retry button from all messages except the specified one.
+   * Used to ensure only the last assistant message has a retry button.
+   */
+  removeOtherRetryButtons(keepMsgEl?: HTMLElement): void {
+    const allRetryBtns = this.messagesEl.querySelectorAll('.claudian-retry-btn');
+    for (const btn of allRetryBtns) {
+      if (!keepMsgEl || !keepMsgEl.contains(btn)) {
+        btn.remove();
+      }
+    }
   }
 
   // ============================================

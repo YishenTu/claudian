@@ -31,6 +31,7 @@ export interface InputControllerDeps {
   conversationController: ConversationController;
   getInputEl: () => HTMLTextAreaElement;
   getWelcomeEl: () => HTMLElement | null;
+  setWelcomeEl: (el: HTMLElement | null) => void;
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   getImageContextManager: () => ImageContextManager | null;
@@ -329,6 +330,12 @@ export class InputController {
         streamController.finalizeCurrentTextBlock(assistantMsg);
         this.deps.getSubagentManager().resetStreamingState();
 
+        // Add retry button to the last assistant message (and remove from others)
+        if (!wasInterrupted && msgEl) {
+          renderer.removeOtherRetryButtons(msgEl);
+          renderer.addRetryButton(msgEl, userMsg.id);
+        }
+
         // Auto-hide completed status panels on response end
         // Panels reappear only when new TodoWrite/Task tool is called
         if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
@@ -503,6 +510,48 @@ export class InputController {
     this.restoreQueuedMessageToInput();
     this.getAgentService()?.cancel();
     streamController.hideThinkingIndicator();
+  }
+
+  /**
+   * Retries a response by finding the user message and resending it.
+   * Removes the assistant message(s) that follow the user message before resending.
+   */
+  retryFromMessage(userMessageId: string): void {
+    const { state, renderer, conversationController } = this.deps;
+
+    if (state.isStreaming) return;
+
+    // Find the user message and its index
+    const messages = state.messages;
+    const userMsgIndex = messages.findIndex(m => m.id === userMessageId);
+    if (userMsgIndex === -1) return;
+
+    const userMsg = messages[userMsgIndex];
+    if (userMsg.role !== 'user') return;
+
+    // Keep only messages before the user message (not including it)
+    // sendMessage will re-add the user message
+    const messagesToKeep = messages.slice(0, userMsgIndex);
+    state.messages = messagesToKeep;
+
+    // Re-render messages (without the user message we're about to resend)
+    const welcomeEl = renderer.renderMessages(
+      messagesToKeep,
+      () => conversationController.getGreeting()
+    );
+    this.deps.setWelcomeEl(welcomeEl);
+
+    // Get content and images from the user message
+    const content = userMsg.displayContent ?? userMsg.content;
+    const images = userMsg.images;
+
+    // Restore images if any
+    if (images && images.length > 0) {
+      this.deps.getImageContextManager()?.setImages(images);
+    }
+
+    // Send with the original content (this will add the user message back)
+    void this.sendMessage({ content });
   }
 
   // ============================================

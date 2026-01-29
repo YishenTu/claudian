@@ -125,6 +125,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     } as any,
     getInputEl: () => inputEl,
     getWelcomeEl: () => null,
+    setWelcomeEl: jest.fn(),
     getMessagesEl: () => createMockEl() as any,
     getFileContextManager: () => ({
       startSession: jest.fn(),

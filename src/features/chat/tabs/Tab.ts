@@ -629,6 +629,7 @@ export function initializeTabControllers(
     conversationController: tab.controllers.conversationController,
     getInputEl: () => dom.inputEl,
     getWelcomeEl: () => dom.welcomeEl,
+    setWelcomeEl: (el) => { dom.welcomeEl = el; },
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
     getImageContextManager: () => ui.imageContextManager,
@@ -658,6 +659,13 @@ export function initializeTabControllers(
       } catch {
         return false;
       }
+    },
+  });
+
+  // Set up retry callback for message renderer
+  tab.renderer.setCallbacks({
+    onRetry: (userMessageId) => {
+      tab.controllers.inputController?.retryFromMessage(userMessageId);
     },
   });
 
