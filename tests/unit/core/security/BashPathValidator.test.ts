@@ -637,6 +637,55 @@ describe('BashPathValidator', () => {
       const result = findBashPathViolationInSegment(['echo', '>', 'non-path-word', '/vault/file.txt'], context);
       expect(result).toBeNull();
     });
+
+    it('clears expectWriteNext on standalone input redirect operator', () => {
+      const context = createMockContext({
+        '/vault/data.txt': 'vault',
+        '/vault/out.txt': 'vault',
+      });
+      // '>' sets expectWriteNext=true, then '<' clears it to false,
+      // so /vault/data.txt is treated as read, not write
+      const result = findBashPathViolationInSegment(
+        ['cmd', '>', '/vault/out.txt', '<', '/vault/data.txt'], context
+      );
+      expect(result).toBeNull();
+    });
+
+    it('allows embedded output redirect to vault path', () => {
+      const context = createMockContext({ '/vault/output.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['echo', 'test', '>/vault/output.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('allows --output= with vault path', () => {
+      const context = createMockContext({ '/vault/file.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['tool', '--output=/vault/file.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('allows --out= with vault path', () => {
+      const context = createMockContext({ '/vault/file.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['tool', '--out=/vault/file.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('allows --outfile= with vault path', () => {
+      const context = createMockContext({ '/vault/file.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['tool', '--outfile=/vault/file.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('allows --output-file= with vault path', () => {
+      const context = createMockContext({ '/vault/file.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['tool', '--output-file=/vault/file.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('allows -o with vault path (embedded)', () => {
+      const context = createMockContext({ '/vault/output.log': 'vault' });
+      const result = findBashPathViolationInSegment(['curl', '-o/vault/output.log'], context);
+      expect(result).toBeNull();
+    });
   });
 
   describe('findBashCommandPathViolation', () => {

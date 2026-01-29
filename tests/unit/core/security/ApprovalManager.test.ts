@@ -125,6 +125,12 @@ describe('matchesRulePattern', () => {
     expect(matchesRulePattern('Read', '/test/vault/file.md', '/test/vault/file.md')).toBe(true);
   });
 
+  it('matches file path with backslash normalization for same-length paths', () => {
+    // Both normalize to the same path via backslash→forward slash replacement,
+    // caught by the early exact match check (line 77) before isPathPrefixMatch.
+    expect(matchesRulePattern('Write', '/test/vault\\file.md', '/test/vault/file.md')).toBe(true);
+  });
+
   it('allows simple prefix matching for non-file, non-bash tools', () => {
     expect(matchesRulePattern('Glob', '**/*.md', '**/*')).toBe(true);
     expect(matchesRulePattern('Grep', 'TODO in file', 'TODO')).toBe(true);
