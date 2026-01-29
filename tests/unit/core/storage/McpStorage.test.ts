@@ -120,6 +120,78 @@ describe('McpStorage', () => {
       const servers = await storage.load();
       expect(servers).toEqual([]);
     });
+
+    it('returns empty array when mcpServers is missing', async () => {
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify({}),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+      expect(servers).toEqual([]);
+    });
+
+    it('returns empty array when mcpServers is not an object', async () => {
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify({ mcpServers: 'invalid' }),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+      expect(servers).toEqual([]);
+    });
+
+    it('skips invalid server configs', async () => {
+      const config = {
+        mcpServers: {
+          valid: { command: 'valid-cmd' },
+          invalid: { notACommand: true },
+        },
+      };
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(config),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers).toHaveLength(1);
+      expect(servers[0].name).toBe('valid');
+    });
+
+    it('applies defaults when no _claudian metadata exists', async () => {
+      const config = {
+        mcpServers: {
+          alpha: { command: 'alpha-cmd' },
+        },
+      };
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(config),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers[0]).toMatchObject({
+        name: 'alpha',
+        enabled: true,
+        contextSaving: true,
+        disabledTools: undefined,
+      });
+    });
+
+    it('loads description from _claudian metadata', async () => {
+      const config = {
+        mcpServers: { alpha: { command: 'cmd' } },
+        _claudian: {
+          servers: {
+            alpha: { description: 'My server' },
+          },
+        },
+      };
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(config),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+      expect(servers[0].description).toBe('My server');
+    });
   });
 
   describe('save', () => {
@@ -244,6 +316,303 @@ describe('McpStorage', () => {
         name: 'beta',
         disabledTools: undefined,
       });
+    });
+
+    it('saves description to _claudian metadata', async () => {
+      const adapter = createMockAdapter();
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'alpha',
+          config: { command: 'cmd' },
+          enabled: true,
+          contextSaving: true,
+          description: 'A test server',
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved._claudian.servers.alpha.description).toBe('A test server');
+    });
+
+    it('stores enabled=false in _claudian when different from default', async () => {
+      const adapter = createMockAdapter();
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'alpha',
+          config: { command: 'cmd' },
+          enabled: false,
+          contextSaving: true,
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved._claudian.servers.alpha.enabled).toBe(false);
+    });
+
+    it('stores contextSaving=false in _claudian when different from default', async () => {
+      const adapter = createMockAdapter();
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'alpha',
+          config: { command: 'cmd' },
+          enabled: true,
+          contextSaving: false,
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved._claudian.servers.alpha.contextSaving).toBe(false);
+    });
+
+    it('removes _claudian.servers when all metadata is default', async () => {
+      const existing = {
+        mcpServers: { alpha: { command: 'cmd' } },
+        _claudian: { servers: { alpha: { enabled: false } } },
+      };
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(existing),
+      });
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'alpha',
+          config: { command: 'cmd' },
+          enabled: true,
+          contextSaving: true,
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved._claudian).toBeUndefined();
+    });
+
+    it('preserves non-servers _claudian fields when removing servers', async () => {
+      const existing = {
+        mcpServers: { alpha: { command: 'cmd' } },
+        _claudian: {
+          customField: 'keep',
+          servers: { alpha: { enabled: false } },
+        },
+      };
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(existing),
+      });
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'alpha',
+          config: { command: 'cmd' },
+          enabled: true,
+          contextSaving: true,
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved._claudian).toEqual({ customField: 'keep' });
+    });
+
+    it('handles corrupted existing file gracefully', async () => {
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': 'not json',
+      });
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'alpha',
+          config: { command: 'cmd' },
+          enabled: true,
+          contextSaving: true,
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved.mcpServers.alpha).toEqual({ command: 'cmd' });
+    });
+
+    it('preserves extra top-level fields in existing file', async () => {
+      const existing = {
+        mcpServers: { old: { command: 'old-cmd' } },
+        someExtraField: 'preserved',
+      };
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(existing),
+      });
+      const storage = new McpStorage(adapter);
+
+      await storage.save([
+        {
+          name: 'new',
+          config: { command: 'new-cmd' },
+          enabled: true,
+          contextSaving: true,
+        },
+      ]);
+
+      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
+      expect(saved.someExtraField).toBe('preserved');
+      expect(saved.mcpServers).toEqual({ new: { command: 'new-cmd' } });
+    });
+  });
+
+  describe('exists', () => {
+    it('returns false when mcp.json does not exist', async () => {
+      const adapter = createMockAdapter();
+      const storage = new McpStorage(adapter);
+      expect(await storage.exists()).toBe(false);
+    });
+
+    it('returns true when mcp.json exists', async () => {
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': '{}',
+      });
+      const storage = new McpStorage(adapter);
+      expect(await storage.exists()).toBe(true);
+    });
+  });
+
+  describe('parseClipboardConfig', () => {
+    it('parses full Claude Code format (mcpServers wrapper)', () => {
+      const json = JSON.stringify({
+        mcpServers: {
+          'my-server': { command: 'node', args: ['server.js'] },
+        },
+      });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.needsName).toBe(false);
+      expect(result.servers).toHaveLength(1);
+      expect(result.servers[0].name).toBe('my-server');
+      expect(result.servers[0].config).toEqual({ command: 'node', args: ['server.js'] });
+    });
+
+    it('parses multiple servers in mcpServers format', () => {
+      const json = JSON.stringify({
+        mcpServers: {
+          alpha: { command: 'alpha-cmd' },
+          beta: { type: 'sse', url: 'http://localhost:3000' },
+        },
+      });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.servers).toHaveLength(2);
+      expect(result.needsName).toBe(false);
+    });
+
+    it('parses single server config without name (command-based)', () => {
+      const json = JSON.stringify({ command: 'node', args: ['server.js'] });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.needsName).toBe(true);
+      expect(result.servers).toHaveLength(1);
+      expect(result.servers[0].name).toBe('');
+      expect((result.servers[0].config as { command: string }).command).toBe('node');
+    });
+
+    it('parses single server config without name (url-based)', () => {
+      const json = JSON.stringify({ type: 'sse', url: 'http://example.com' });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.needsName).toBe(true);
+      expect(result.servers[0].config).toEqual({ type: 'sse', url: 'http://example.com' });
+    });
+
+    it('parses single named server', () => {
+      const json = JSON.stringify({
+        'my-server': { command: 'node', args: ['server.js'] },
+      });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.needsName).toBe(false);
+      expect(result.servers).toHaveLength(1);
+      expect(result.servers[0].name).toBe('my-server');
+    });
+
+    it('parses multiple named servers without mcpServers wrapper', () => {
+      const json = JSON.stringify({
+        server1: { command: 'cmd1' },
+        server2: { command: 'cmd2' },
+      });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.needsName).toBe(false);
+      expect(result.servers).toHaveLength(2);
+    });
+
+    it('throws for invalid JSON', () => {
+      expect(() => McpStorage.parseClipboardConfig('not json'))
+        .toThrow('Invalid JSON');
+    });
+
+    it('throws for non-object JSON', () => {
+      expect(() => McpStorage.parseClipboardConfig('"string"'))
+        .toThrow('Invalid JSON object');
+    });
+
+    it('throws when mcpServers contains no valid configs', () => {
+      const json = JSON.stringify({
+        mcpServers: {
+          invalid: { notACommand: true },
+        },
+      });
+
+      expect(() => McpStorage.parseClipboardConfig(json))
+        .toThrow('No valid server configs found');
+    });
+
+    it('throws for unrecognized format', () => {
+      const json = JSON.stringify({ someRandomField: 123 });
+
+      expect(() => McpStorage.parseClipboardConfig(json))
+        .toThrow('Invalid MCP configuration format');
+    });
+
+    it('skips invalid entries in mcpServers but includes valid ones', () => {
+      const json = JSON.stringify({
+        mcpServers: {
+          valid: { command: 'cmd' },
+          invalid: { notACommand: true },
+        },
+      });
+
+      const result = McpStorage.parseClipboardConfig(json);
+      expect(result.servers).toHaveLength(1);
+      expect(result.servers[0].name).toBe('valid');
+    });
+  });
+
+  describe('tryParseClipboardConfig', () => {
+    it('returns parsed config for valid JSON', () => {
+      const text = JSON.stringify({ command: 'node', args: ['server.js'] });
+      const result = McpStorage.tryParseClipboardConfig(text);
+      expect(result).not.toBeNull();
+      expect(result!.needsName).toBe(true);
+    });
+
+    it('returns null for non-JSON text', () => {
+      expect(McpStorage.tryParseClipboardConfig('hello world')).toBeNull();
+    });
+
+    it('returns null for text not starting with {', () => {
+      expect(McpStorage.tryParseClipboardConfig('[1, 2, 3]')).toBeNull();
+    });
+
+    it('returns null for invalid MCP config that is valid JSON', () => {
+      expect(McpStorage.tryParseClipboardConfig('{ "random": 42 }')).toBeNull();
+    });
+
+    it('trims whitespace before checking', () => {
+      const text = '  \n  ' + JSON.stringify({ command: 'node' }) + '  \n';
+      const result = McpStorage.tryParseClipboardConfig(text);
+      expect(result).not.toBeNull();
     });
   });
 });

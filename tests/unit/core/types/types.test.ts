@@ -14,8 +14,12 @@ import {
   CONTEXT_WINDOW_STANDARD,
   createPermissionRule,
   DEFAULT_SETTINGS,
+  getBashToolBlockedCommands,
   getCliPlatformKey,
   getContextWindowSize,
+  getCurrentPlatformBlockedCommands,
+  getCurrentPlatformKey,
+  getDefaultBlockedCommands,
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
@@ -489,10 +493,107 @@ describe('types.ts', () => {
       });
     });
 
+    describe('getCliPlatformKey with mocked platforms', () => {
+      const originalPlatform = process.platform;
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      });
+
+      it('should return macos for darwin', () => {
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+        expect(getCliPlatformKey()).toBe('macos');
+      });
+
+      it('should return windows for win32', () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        expect(getCliPlatformKey()).toBe('windows');
+      });
+
+      it('should return linux for linux', () => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        expect(getCliPlatformKey()).toBe('linux');
+      });
+
+      it('should return linux for unknown platform', () => {
+        Object.defineProperty(process, 'platform', { value: 'freebsd' });
+        expect(getCliPlatformKey()).toBe('linux');
+      });
+    });
+
     describe('DEFAULT_SETTINGS.claudeCliPathsByHost', () => {
       it('should have empty hostname-based CLI paths by default', () => {
         expect(DEFAULT_SETTINGS.claudeCliPathsByHost).toBeDefined();
         expect(DEFAULT_SETTINGS.claudeCliPathsByHost).toEqual({});
+      });
+    });
+  });
+
+  describe('Blocked commands helpers', () => {
+    describe('getDefaultBlockedCommands', () => {
+      it('returns fresh copies each call', () => {
+        const a = getDefaultBlockedCommands();
+        const b = getDefaultBlockedCommands();
+        expect(a).toEqual(b);
+        expect(a).not.toBe(b);
+        expect(a.unix).not.toBe(b.unix);
+      });
+    });
+
+    describe('getCurrentPlatformKey', () => {
+      const originalPlatform = process.platform;
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      });
+
+      it('returns unix for non-Windows platforms', () => {
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+        expect(getCurrentPlatformKey()).toBe('unix');
+      });
+
+      it('returns windows for win32', () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        expect(getCurrentPlatformKey()).toBe('windows');
+      });
+    });
+
+    describe('getCurrentPlatformBlockedCommands', () => {
+      it('returns commands for current platform', () => {
+        const commands = getDefaultBlockedCommands();
+        const result = getCurrentPlatformBlockedCommands(commands);
+        expect(Array.isArray(result)).toBe(true);
+        expect(result.length).toBeGreaterThan(0);
+      });
+    });
+
+    describe('getBashToolBlockedCommands', () => {
+      const originalPlatform = process.platform;
+
+      afterEach(() => {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      });
+
+      it('returns unix commands on non-Windows', () => {
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+        const commands = getDefaultBlockedCommands();
+        const result = getBashToolBlockedCommands(commands);
+        expect(result).toEqual(commands.unix);
+      });
+
+      it('returns merged unix and windows commands on Windows', () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        const commands = getDefaultBlockedCommands();
+        const result = getBashToolBlockedCommands(commands);
+        // Should contain commands from both platforms
+        for (const cmd of commands.unix) {
+          expect(result).toContain(cmd);
+        }
+        for (const cmd of commands.windows) {
+          expect(result).toContain(cmd);
+        }
+        // Should be deduplicated
+        expect(new Set(result).size).toBe(result.length);
       });
     });
   });

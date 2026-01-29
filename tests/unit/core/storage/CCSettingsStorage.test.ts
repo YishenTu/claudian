@@ -94,6 +94,165 @@ describe('CCSettingsStorage', () => {
         });
     });
 
+    describe('addDenyRule', () => {
+        it('should add rule to deny list and save', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: [] }
+            }));
+
+            await storage.addDenyRule(createPermissionRule('dangerous-rule'));
+
+            const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+            const writtenContent = JSON.parse(writeCall[1]);
+            expect(writtenContent.permissions.deny).toContain('dangerous-rule');
+        });
+
+        it('should not duplicate existing deny rule', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: ['existing'], ask: [] }
+            }));
+
+            await storage.addDenyRule(createPermissionRule('existing'));
+
+            expect(mockAdapter.write).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('addAskRule', () => {
+        it('should add rule to ask list and save', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: [] }
+            }));
+
+            await storage.addAskRule(createPermissionRule('ask-rule'));
+
+            const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+            const writtenContent = JSON.parse(writeCall[1]);
+            expect(writtenContent.permissions.ask).toContain('ask-rule');
+        });
+
+        it('should not duplicate existing ask rule', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: ['existing'] }
+            }));
+
+            await storage.addAskRule(createPermissionRule('existing'));
+
+            expect(mockAdapter.write).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('save', () => {
+        it('should handle parse error on existing file', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue('invalid json{{{');
+
+            await storage.save({
+                permissions: { allow: [], deny: [], ask: [] }
+            });
+
+            // Should still write successfully after parse error
+            expect(mockAdapter.write).toHaveBeenCalled();
+            const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+            const writtenContent = JSON.parse(writeCall[1]);
+            expect(writtenContent.permissions).toEqual({ allow: [], deny: [], ask: [] });
+        });
+
+        it('should strip claudian-only fields during migration', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: [] },
+                userName: 'Test',
+                model: 'haiku',
+            }));
+
+            await storage.save({
+                permissions: { allow: [], deny: [], ask: [] }
+            }, true);
+
+            const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+            const writtenContent = JSON.parse(writeCall[1]);
+            expect(writtenContent.userName).toBeUndefined();
+            expect(writtenContent.model).toBeUndefined();
+        });
+
+        it('should preserve enabledPlugins from settings argument', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+
+            await storage.save({
+                permissions: { allow: [], deny: [], ask: [] },
+                enabledPlugins: { 'my-plugin': true },
+            });
+
+            const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+            const writtenContent = JSON.parse(writeCall[1]);
+            expect(writtenContent.enabledPlugins).toEqual({ 'my-plugin': true });
+        });
+    });
+
+    describe('load edge cases', () => {
+        it('should handle legacy permissions format during load', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: [
+                    { toolName: 'Bash', pattern: 'git *', approvedAt: 1000, scope: 'always' },
+                ],
+            }));
+
+            const result = await storage.load();
+            expect(result.permissions?.allow).toBeDefined();
+            expect(result.permissions?.allow?.length).toBeGreaterThan(0);
+        });
+
+        it('should normalize invalid permissions to defaults', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: 'not-an-object',
+            }));
+
+            const result = await storage.load();
+            expect(result.permissions?.allow).toEqual([]);
+            expect(result.permissions?.deny).toEqual([]);
+            expect(result.permissions?.ask).toEqual([]);
+        });
+
+        it('should filter non-string values from permission arrays', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: {
+                    allow: ['valid', 123, null, 'also-valid'],
+                    deny: [true, 'deny-rule'],
+                    ask: [],
+                },
+            }));
+
+            const result = await storage.load();
+            expect(result.permissions?.allow).toEqual(['valid', 'also-valid']);
+            expect(result.permissions?.deny).toEqual(['deny-rule']);
+        });
+
+        it('should preserve additionalDirectories and defaultMode', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: {
+                    allow: [],
+                    deny: [],
+                    ask: [],
+                    defaultMode: 'bypassPermissions',
+                    additionalDirectories: ['/extra/dir'],
+                },
+            }));
+
+            const result = await storage.load();
+            expect(result.permissions?.defaultMode).toBe('bypassPermissions');
+            expect(result.permissions?.additionalDirectories).toEqual(['/extra/dir']);
+        });
+    });
+
     describe('enabledPlugins', () => {
         it('should return empty object if enabledPlugins not set', async () => {
             (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
@@ -161,6 +320,40 @@ describe('CCSettingsStorage', () => {
             const writtenContent = JSON.parse(writeCall[1]);
             // enabledPlugins should be preserved from existing file
             expect(writtenContent.enabledPlugins).toEqual({ 'plugin-a': false });
+        });
+
+        it('should return explicitly enabled plugin IDs', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: [] },
+                enabledPlugins: { 'plugin-a': true, 'plugin-b': false, 'plugin-c': true }
+            }));
+
+            const ids = await storage.getExplicitlyEnabledPluginIds();
+            expect(ids).toEqual(['plugin-a', 'plugin-c']);
+        });
+
+        it('should return empty array when no plugins explicitly enabled', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: [] },
+                enabledPlugins: { 'plugin-a': false }
+            }));
+
+            const ids = await storage.getExplicitlyEnabledPluginIds();
+            expect(ids).toEqual([]);
+        });
+
+        it('should check if a plugin is explicitly disabled', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: { allow: [], deny: [], ask: [] },
+                enabledPlugins: { 'plugin-a': false, 'plugin-b': true }
+            }));
+
+            expect(await storage.isPluginDisabled('plugin-a')).toBe(true);
+            expect(await storage.isPluginDisabled('plugin-b')).toBe(false);
+            expect(await storage.isPluginDisabled('plugin-c')).toBe(false);
         });
     });
 });

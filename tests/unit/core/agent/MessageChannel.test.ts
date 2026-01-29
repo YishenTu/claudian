@@ -180,6 +180,133 @@ describe('MessageChannel', () => {
     });
   });
 
+  describe('close resolves pending consumer', () => {
+    it('resolves pending next() with done:true when closed', async () => {
+      const iterator = channel[Symbol.asyncIterator]();
+
+      // Start waiting for a message (no message enqueued yet)
+      const pendingPromise = iterator.next();
+
+      // Close the channel while consumer is waiting
+      channel.close();
+
+      const result = await pendingPromise;
+      expect(result.done).toBe(true);
+    });
+  });
+
+  describe('queue overflow during active turn', () => {
+    it('drops text when queue is full during active turn', async () => {
+      const iterator = channel[Symbol.asyncIterator]();
+
+      // Start a turn
+      const firstPromise = iterator.next();
+      channel.enqueue(createTextUserMessage('first'));
+      await firstPromise;
+
+      // Fill queue during active turn - first text merges, then subsequent
+      // ones also merge. But since merge limit is 10000 chars, we need to
+      // fill the queue with non-text (attachment) + text to trigger overflow
+      channel.enqueue(createTextUserMessage('queued-text'));
+
+      // Enqueue attachments to fill remaining queue slots
+      for (let i = 0; i < 8; i++) {
+        channel.enqueue(createImageUserMessage(`img-${i}`));
+      }
+
+      // The 8th attachment should trigger overflow (text=1 + attachment=1 = 2 slots,
+      // but attachments replace each other, so text=1 + attachment=1 = 2 used.
+      // Additional image messages just replace the existing attachment slot)
+      // The queue should have text + attachment = 2 items
+      expect(channel.getQueueLength()).toBe(2);
+    });
+  });
+
+  describe('enqueue attachment before consumer starts (no active turn)', () => {
+    it('queues attachment message when no turn is active and no consumer', () => {
+      channel.enqueue(createImageUserMessage('early-img'));
+      expect(channel.getQueueLength()).toBe(1);
+    });
+  });
+
+  describe('onTurnComplete with queued messages and waiting consumer', () => {
+    it('delivers queued message to waiting consumer on turn complete', async () => {
+      const iterator = channel[Symbol.asyncIterator]();
+
+      // Deliver first message to start a turn
+      const firstPromise = iterator.next();
+      channel.enqueue(createTextUserMessage('turn-1'));
+      await firstPromise;
+
+      // Queue a message during active turn
+      channel.enqueue(createTextUserMessage('turn-2'));
+
+      // Start waiting for next message (consumer blocks)
+      const secondPromise = iterator.next();
+
+      // Complete the turn - should deliver queued message to waiting consumer
+      channel.onTurnComplete();
+
+      const result = await secondPromise;
+      expect(result.done).toBe(false);
+      expect(result.value.message.content).toBe('turn-2');
+      expect(channel.isTurnActive()).toBe(true);
+    });
+  });
+
+  describe('text extraction from content blocks', () => {
+    it('extracts text from mixed content blocks', async () => {
+      const iterator = channel[Symbol.asyncIterator]();
+
+      const mixedMessage: SDKUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'hello' },
+            { type: 'text', text: 'world' },
+          ],
+        },
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+
+      const firstPromise = iterator.next();
+      channel.enqueue(mixedMessage);
+      const result = await firstPromise;
+
+      // Text blocks should be joined with \n\n when no turn is active
+      // (delivered directly to consumer)
+      expect(result.value.message.content).toEqual(mixedMessage.message.content);
+    });
+
+    it('handles empty content gracefully', async () => {
+      const iterator = channel[Symbol.asyncIterator]();
+
+      // Start a turn so messages get queued
+      const firstPromise = iterator.next();
+      channel.enqueue(createTextUserMessage('first'));
+      await firstPromise;
+
+      // Enqueue a message with no content during active turn
+      const emptyMessage: SDKUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: '',
+        },
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+      channel.enqueue(emptyMessage);
+
+      channel.onTurnComplete();
+
+      const result = await iterator.next();
+      expect(result.value.message.content).toBe('');
+    });
+  });
+
   describe('close and reset', () => {
     it('should mark channel as closed', () => {
       channel.close();

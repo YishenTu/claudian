@@ -29,6 +29,22 @@ describe('getActionPattern', () => {
     expect(getActionPattern('Read', {})).toBe('*');
   });
 
+  it('extracts notebook_path for NotebookEdit tool', () => {
+    expect(getActionPattern('NotebookEdit', { notebook_path: '/test/notebook.ipynb' })).toBe('/test/notebook.ipynb');
+  });
+
+  it('falls back to file_path for NotebookEdit when notebook_path is missing', () => {
+    expect(getActionPattern('NotebookEdit', { file_path: '/test/notebook.ipynb' })).toBe('/test/notebook.ipynb');
+  });
+
+  it('returns * for NotebookEdit when both paths are missing', () => {
+    expect(getActionPattern('NotebookEdit', {})).toBe('*');
+  });
+
+  it('returns * when file_path is empty string', () => {
+    expect(getActionPattern('Read', { file_path: '' })).toBe('*');
+  });
+
   it('extracts pattern for Glob/Grep tools', () => {
     expect(getActionPattern('Glob', { pattern: '**/*.md' })).toBe('**/*.md');
     expect(getActionPattern('Grep', { pattern: 'TODO' })).toBe('TODO');

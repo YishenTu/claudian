@@ -459,6 +459,214 @@ describe('PluginManager', () => {
     });
   });
 
+  describe('enablePlugin', () => {
+    it('enables a disabled plugin', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+      const globalSettings = {
+        enabledPlugins: { 'test-plugin@marketplace': false },
+      };
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
+        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
+        return '{}';
+      });
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+      expect(manager.getPlugins()[0].enabled).toBe(false);
+
+      await manager.enablePlugin('test-plugin@marketplace');
+
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', true);
+    });
+
+    it('does nothing when plugin is already enabled', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+      await manager.enablePlugin('test-plugin@marketplace');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for nonexistent plugin', async () => {
+      mockFs.existsSync.mockReturnValue(false);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+      await manager.enablePlugin('nonexistent');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('disablePlugin', () => {
+    it('disables an enabled plugin', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+
+      await manager.disablePlugin('test-plugin@marketplace');
+
+      expect(manager.getPlugins()[0].enabled).toBe(false);
+      expect(ccSettings.setPluginEnabled).toHaveBeenCalledWith('test-plugin@marketplace', false);
+    });
+
+    it('does nothing when plugin is already disabled', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+      const globalSettings = {
+        enabledPlugins: { 'test-plugin@marketplace': false },
+      };
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
+        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
+        return '{}';
+      });
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+      await manager.disablePlugin('test-plugin@marketplace');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for nonexistent plugin', async () => {
+      mockFs.existsSync.mockReturnValue(false);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+      await manager.disablePlugin('nonexistent');
+
+      expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getEnabledCount', () => {
+    it('returns count of enabled plugins', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'plugin-a@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/a',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+          'plugin-b@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/b',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+      const globalSettings = {
+        enabledPlugins: {
+          'plugin-a@marketplace': true,
+          'plugin-b@marketplace': false,
+        },
+      };
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        if (String(p) === installedPluginsPath) return JSON.stringify(installedPlugins);
+        if (String(p) === globalSettingsPath) return JSON.stringify(globalSettings);
+        return '{}';
+      });
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      expect(manager.getEnabledCount()).toBe(1);
+    });
+
+    it('returns 0 when no plugins loaded', async () => {
+      mockFs.existsSync.mockReturnValue(false);
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      expect(manager.getEnabledCount()).toBe(0);
+    });
+  });
+
   describe('hasPlugins', () => {
     it('returns true when plugins exist', async () => {
       const installedPlugins = {

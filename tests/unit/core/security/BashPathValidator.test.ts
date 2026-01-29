@@ -552,6 +552,91 @@ describe('BashPathValidator', () => {
       const result = findBashPathViolationInSegment(['cat', '/vault/file.txt'], context);
       expect(result).toBeNull();
     });
+
+    it('detects violation in embedded input redirect', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['cat', '</etc/passwd'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
+    });
+
+    it('allows embedded input redirect to vault path', () => {
+      const context = createMockContext({ '/vault/data.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['cat', '</vault/data.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('detects violation in --out= long option', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['tool', '--out=/etc/output'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/output' });
+    });
+
+    it('detects violation in --outfile= long option', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['tool', '--outfile=/etc/output'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/output' });
+    });
+
+    it('detects violation in --output-file= long option', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['tool', '--output-file=/etc/output'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/output' });
+    });
+
+    it('detects violation in KEY=VALUE with path-like value from flag', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['tool', '--config=/etc/passwd'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
+    });
+
+    it('detects path-like KEY=VALUE tokens as positional args', () => {
+      const context = createMockContext({});
+      // HOME=/home/user contains '/' so it's path-like and treated as a positional arg read
+      const result = findBashPathViolationInSegment(['env', 'HOME=/home/user', 'ls'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: 'HOME=/home/user' });
+    });
+
+    it('detects violation in 2>> append redirect', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['cmd', '2>>/etc/error.log'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/error.log' });
+    });
+
+    it('detects violation in &> combined redirect', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['cmd', '&>/etc/all.log'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/all.log' });
+    });
+
+    it('detects violation in >| clobber redirect', () => {
+      const context = createMockContext({});
+      const result = findBashPathViolationInSegment(['cmd', '>|/etc/out.log'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/out.log' });
+    });
+
+    it('skips cp --flag options before destination', () => {
+      const context = createMockContext({ '/vault/src.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['cp', '-r', '/vault/src.txt', '/etc/dest'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/dest' });
+    });
+
+    it('handles rsync as a destination command', () => {
+      const context = createMockContext({ '/vault/src/': 'vault' });
+      const result = findBashPathViolationInSegment(['rsync', '-av', '/vault/src/', '/etc/dest/'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/dest/' });
+    });
+
+    it('handles -- separator for cp command', () => {
+      const context = createMockContext({ '/vault/src.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['cp', '--', '/vault/src.txt', '/etc/dest'], context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/dest' });
+    });
+
+    it('resets expectWriteNext for non-path tokens', () => {
+      const context = createMockContext({ '/vault/file.txt': 'vault' });
+      const result = findBashPathViolationInSegment(['echo', '>', 'non-path-word', '/vault/file.txt'], context);
+      expect(result).toBeNull();
+    });
   });
 
   describe('findBashCommandPathViolation', () => {
