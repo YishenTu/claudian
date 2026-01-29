@@ -489,6 +489,129 @@ describe('StatusPanel', () => {
     });
   });
 
+  describe('remount', () => {
+    it('should re-create panel structure after remount', () => {
+      panel.mount(containerEl as unknown as HTMLElement);
+
+      panel.updateTodos([
+        { content: 'Task 1', status: 'completed', activeForm: 'Doing Task 1' },
+        { content: 'Task 2', status: 'in_progress', activeForm: 'Doing Task 2' },
+      ]);
+
+      panel.remount();
+
+      expect(containerEl.querySelector('.claudian-status-panel')).not.toBeNull();
+      const label = containerEl.querySelector('.claudian-status-panel-label');
+      expect(label?.textContent).toBe('Tasks (1/2)');
+    });
+
+    it('should re-render subagents after remount', () => {
+      panel.mount(containerEl as unknown as HTMLElement);
+
+      panel.updateSubagent({ id: 'task-1', description: 'Running task', status: 'running' });
+
+      panel.remount();
+
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('block');
+    });
+
+    it('should not throw when called without mount', () => {
+      const unmountedPanel = new StatusPanel();
+      expect(() => unmountedPanel.remount()).not.toThrow();
+    });
+
+    it('should clean up event listeners before remounting', () => {
+      panel.mount(containerEl as unknown as HTMLElement);
+      panel.updateTodos([
+        { content: 'Task 1', status: 'in_progress', activeForm: 'Doing Task 1' },
+      ]);
+
+      const header = containerEl.querySelector('.claudian-status-panel-header');
+      header!.click();
+
+      panel.remount();
+
+      const content = containerEl.querySelector('.claudian-status-panel-content');
+      expect(content!.style.display).toBe('none');
+    });
+  });
+
+  describe('removeSubagent', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should remove a subagent by id', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
+      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'running' });
+
+      panel.removeSubagent('task-1');
+
+      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
+      expect(runningText?.textContent).toBe('1 background task');
+    });
+
+    it('should hide container when last subagent is removed', () => {
+      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
+
+      panel.removeSubagent('task-1');
+
+      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
+      expect((subagentsEl as any)?.style?.display).toBe('none');
+    });
+  });
+
+  describe('completion status icon', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should show check icon when all todos are completed', () => {
+      panel.updateTodos([
+        { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
+        { content: 'Task 2', status: 'completed', activeForm: 'Task 2' },
+      ]);
+
+      const status = containerEl.querySelector('.status-completed');
+      expect(status).not.toBeNull();
+      expect(status?.getAttribute('data-icon')).toBe('check');
+    });
+
+    it('should not show check icon when some todos are incomplete', () => {
+      panel.updateTodos([
+        { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
+        { content: 'Task 2', status: 'pending', activeForm: 'Task 2' },
+      ]);
+
+      const status = containerEl.querySelector('.status-completed');
+      expect(status).toBeNull();
+    });
+  });
+
+  describe('truncateDescription', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should truncate long subagent descriptions', () => {
+      const longDescription = 'A'.repeat(60);
+      panel.updateSubagent({ id: 'task-1', description: longDescription, status: 'completed' });
+
+      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
+      expect(doneText?.textContent).toContain('...');
+      expect(doneText!.textContent!.length).toBeLessThan(longDescription.length);
+    });
+
+    it('should not truncate short descriptions', () => {
+      const shortDescription = 'Short task';
+      panel.updateSubagent({ id: 'task-1', description: shortDescription, status: 'completed' });
+
+      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
+      expect(doneText?.textContent).toBe(shortDescription);
+    });
+  });
+
   describe('destroy', () => {
     it('should remove panel from DOM', () => {
       panel.mount(containerEl as unknown as HTMLElement);

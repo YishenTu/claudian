@@ -534,6 +534,90 @@ describe('ContextUsageMeter', () => {
   });
 });
 
+describe('McpServerSelector - toggle and badges', () => {
+  let parentEl: any;
+  let selector: McpServerSelector;
+
+  function createMockMcpManager(servers: { name: string; enabled: boolean; contextSaving?: boolean }[] = []) {
+    return {
+      getServers: jest.fn().mockReturnValue(
+        servers.map(s => ({
+          name: s.name,
+          enabled: s.enabled,
+          contextSaving: s.contextSaving ?? false,
+        }))
+      ),
+    } as any;
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parentEl = createMockEl();
+    selector = new McpServerSelector(parentEl);
+  });
+
+  it('should render context-saving badge for servers with contextSaving', () => {
+    selector.setMcpManager(createMockMcpManager([
+      { name: 'server1', enabled: true, contextSaving: true },
+    ]));
+
+    const csBadge = parentEl.querySelector('.claudian-mcp-selector-cs-badge');
+    expect(csBadge).not.toBeNull();
+    expect(csBadge?.textContent).toBe('@');
+  });
+
+  it('should not render context-saving badge for servers without contextSaving', () => {
+    selector.setMcpManager(createMockMcpManager([
+      { name: 'server1', enabled: true, contextSaving: false },
+    ]));
+
+    const csBadge = parentEl.querySelector('.claudian-mcp-selector-cs-badge');
+    expect(csBadge).toBeNull();
+  });
+
+  it('should toggle server on mousedown and update display', () => {
+    const onChange = jest.fn();
+    selector.setOnChange(onChange);
+
+    selector.setMcpManager(createMockMcpManager([
+      { name: 'server1', enabled: true },
+    ]));
+
+    // Find the server item and trigger mousedown
+    const item = parentEl.querySelector('.claudian-mcp-selector-item');
+    expect(item).not.toBeNull();
+
+    // Simulate mousedown to enable
+    const mousedownHandlers = item._eventListeners?.get('mousedown');
+    expect(mousedownHandlers).toBeDefined();
+    mousedownHandlers![0]({ preventDefault: jest.fn(), stopPropagation: jest.fn() });
+
+    expect(selector.getEnabledServers().has('server1')).toBe(true);
+    expect(onChange).toHaveBeenCalled();
+
+    // Toggle again to disable
+    onChange.mockClear();
+    mousedownHandlers![0]({ preventDefault: jest.fn(), stopPropagation: jest.fn() });
+
+    expect(selector.getEnabledServers().has('server1')).toBe(false);
+    expect(onChange).toHaveBeenCalled();
+  });
+
+  it('should re-render dropdown on mouseenter', () => {
+    selector.setMcpManager(createMockMcpManager([
+      { name: 'server1', enabled: true },
+    ]));
+
+    // Get container and trigger mouseenter
+    const container = parentEl.querySelector('.claudian-mcp-selector');
+    const mouseenterHandlers = container?._eventListeners?.get('mouseenter');
+    expect(mouseenterHandlers).toBeDefined();
+
+    // Should not throw
+    expect(() => mouseenterHandlers![0]()).not.toThrow();
+  });
+});
+
 describe('createInputToolbar', () => {
   it('should return all toolbar components', () => {
     const parentEl = createMockEl();

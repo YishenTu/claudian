@@ -182,9 +182,7 @@ describe('ImageContextManager', () => {
       const cb = createMockCallbacks();
 
       const mgr = new ImageContextManager(c, input, cb, previewContainer);
-      // Should not throw and should create image preview in previewContainer
       expect(mgr).toBeDefined();
-      // previewContainer should have a child with 'claudian-image-preview' class
       const previewEl = previewContainer.querySelector('.claudian-image-preview');
       expect(previewEl).not.toBeNull();
     });
@@ -200,7 +198,6 @@ describe('ImageContextManager', () => {
       const cb = createMockCallbacks();
 
       new ImageContextManager(c, input, cb, previewContainer);
-      // The image preview should have been inserted before the file indicator
       const children = previewContainer.children;
       const fileIndicatorIdx = children.indexOf(fileIndicator);
       const previewIdx = children.findIndex((el: any) => el.hasClass?.('claudian-image-preview'));
@@ -468,6 +465,295 @@ describe('ImageContextManager - Private Helpers', () => {
 
       const images = mgr.getAttachedImages();
       expect(images[0].mediaType).toBe('image/svg+xml');
+    });
+  });
+
+  describe('Drag and Drop handlers', () => {
+    it('handleDragEnter should show overlay when dragging files', () => {
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: { types: ['Files'] },
+      };
+
+      manager['handleDragEnter'](event as any);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+      expect(manager['dropOverlay']?.hasClass('visible')).toBe(true);
+    });
+
+    it('handleDragEnter should not show overlay when not dragging files', () => {
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: { types: ['text/plain'] },
+      };
+
+      manager['handleDragEnter'](event as any);
+
+      expect(manager['dropOverlay']?.hasClass('visible')).toBeFalsy();
+    });
+
+    it('handleDragOver should prevent default', () => {
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+      };
+
+      manager['handleDragOver'](event as any);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+    });
+
+    it('handleDragLeave should hide overlay when cursor leaves input wrapper', () => {
+      // Show overlay first
+      manager['dropOverlay']?.addClass('visible');
+
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        clientX: -1, // Outside bounds
+        clientY: -1,
+      };
+
+      manager['handleDragLeave'](event as any);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(manager['dropOverlay']?.hasClass('visible')).toBe(false);
+    });
+
+    it('handleDrop should hide overlay and process image files', async () => {
+      manager['dropOverlay']?.addClass('visible');
+      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+
+      const mockFile = { type: 'image/png', name: 'test.png', size: 1024 };
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: { files: { length: 1, 0: mockFile, [Symbol.iterator]: function* () { yield mockFile; } } },
+      };
+
+      await manager['handleDrop'](event as any);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(manager['dropOverlay']?.hasClass('visible')).toBe(false);
+      expect(addImageSpy).toHaveBeenCalledWith(mockFile, 'drop');
+
+      addImageSpy.mockRestore();
+    });
+
+    it('handleDrop should skip non-image files', async () => {
+      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      jest.spyOn(manager as any, 'isImageFile').mockReturnValue(false);
+
+      const mockFile = { type: 'application/pdf', name: 'doc.pdf', size: 1024 };
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: { files: { length: 1, 0: mockFile } },
+      };
+
+      await manager['handleDrop'](event as any);
+
+      expect(addImageSpy).not.toHaveBeenCalled();
+      addImageSpy.mockRestore();
+    });
+
+    it('handleDrop should handle no files gracefully', async () => {
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: { files: undefined },
+      };
+
+      await manager['handleDrop'](event as any);
+      // Should not throw and still call preventDefault
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+  });
+
+  describe('Paste handler', () => {
+    it('setupPasteHandler should register paste event on inputEl', () => {
+      const input = manager['inputEl'];
+      expect(input.getEventListenerCount('paste')).toBe(1);
+    });
+
+    it('paste handler should process image items', async () => {
+      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const mockFile = { name: 'pasted.png', type: 'image/png', size: 1024 };
+      const pasteEvent = {
+        type: 'paste',
+        preventDefault: jest.fn(),
+        clipboardData: {
+          items: {
+            length: 1,
+            0: {
+              type: 'image/png',
+              getAsFile: () => mockFile,
+            },
+          },
+        },
+      };
+
+      manager['inputEl'].dispatchEvent(pasteEvent);
+      // Wait for async paste handler
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(pasteEvent.preventDefault).toHaveBeenCalled();
+      expect(addImageSpy).toHaveBeenCalledWith(mockFile, 'paste');
+      addImageSpy.mockRestore();
+    });
+
+    it('paste handler should ignore non-image items', async () => {
+      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const pasteEvent = {
+        type: 'paste',
+        preventDefault: jest.fn(),
+        clipboardData: {
+          items: {
+            length: 1,
+            0: {
+              type: 'text/plain',
+              getAsFile: () => null,
+            },
+          },
+        },
+      };
+
+      manager['inputEl'].dispatchEvent(pasteEvent);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(pasteEvent.preventDefault).not.toHaveBeenCalled();
+      expect(addImageSpy).not.toHaveBeenCalled();
+      addImageSpy.mockRestore();
+    });
+
+    it('paste handler should handle null clipboardData', async () => {
+      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const pasteEvent = {
+        type: 'paste',
+        preventDefault: jest.fn(),
+        clipboardData: null,
+      };
+
+      manager['inputEl'].dispatchEvent(pasteEvent);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(addImageSpy).not.toHaveBeenCalled();
+      addImageSpy.mockRestore();
+    });
+  });
+
+  describe('Image preview rendering', () => {
+    it('updateImagePreview should hide preview when no images', () => {
+      manager['updateImagePreview']();
+      expect(manager['imagePreviewEl'].style.display).toBe('none');
+    });
+
+    it('updateImagePreview should show preview when images exist', () => {
+      manager.setImages([createImageAttachment()]);
+      expect(manager['imagePreviewEl'].style.display).toBe('flex');
+    });
+
+    it('renderImagePreview should create chip with thumbnail, info, and remove button', () => {
+      manager.setImages([createImageAttachment({ id: 'img-1', name: 'photo.png', size: 2048 })]);
+
+      const previewEl = manager['imagePreviewEl'];
+      expect(previewEl.children.length).toBe(1);
+
+      const chipEl = previewEl.children[0];
+      expect(chipEl.hasClass('claudian-image-chip')).toBe(true);
+
+      const thumbEl = chipEl.querySelector('.claudian-image-thumb');
+      expect(thumbEl).not.toBeNull();
+
+      const infoEl = chipEl.querySelector('.claudian-image-info');
+      expect(infoEl).not.toBeNull();
+
+      const removeEl = chipEl.querySelector('.claudian-image-remove');
+      expect(removeEl).not.toBeNull();
+    });
+
+    it('remove button should delete the image and update preview', () => {
+      const cb = createMockCallbacks();
+      const { container } = createContainerWithInputWrapper();
+      const input = createMockTextArea();
+      const mgr: any = new ImageContextManager(container, input, cb);
+
+      mgr.setImages([
+        createImageAttachment({ id: 'img-1', name: 'a.png' }),
+        createImageAttachment({ id: 'img-2', name: 'b.png' }),
+      ]);
+      expect(mgr.getAttachedImages()).toHaveLength(2);
+
+      cb.onImagesChanged.mockClear();
+
+      const firstChip = mgr['imagePreviewEl'].children[0];
+      const removeEl = firstChip.querySelector('.claudian-image-remove');
+      removeEl.dispatchEvent({ type: 'click', stopPropagation: jest.fn() });
+
+      expect(mgr.getAttachedImages()).toHaveLength(1);
+      expect(mgr.getAttachedImages()[0].id).toBe('img-2');
+      expect(cb.onImagesChanged).toHaveBeenCalled();
+    });
+  });
+
+  describe('showFullImage', () => {
+    let origDocument: typeof globalThis.document;
+    let overlayEl: any;
+    let mockBody: any;
+    let addEventSpy: jest.Mock;
+    let removeEventSpy: jest.Mock;
+
+    beforeEach(() => {
+      overlayEl = createMockEl();
+      addEventSpy = jest.fn();
+      removeEventSpy = jest.fn();
+      mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
+      origDocument = globalThis.document;
+      (globalThis as any).document = {
+        body: mockBody,
+        addEventListener: addEventSpy,
+        removeEventListener: removeEventSpy,
+        createElementNS: jest.fn(() => mockSvgElement()),
+      };
+    });
+
+    afterEach(() => {
+      (globalThis as any).document = origDocument;
+    });
+
+    it('should create modal overlay with image', () => {
+      const image = createImageAttachment({ name: 'test.png', mediaType: 'image/png', data: 'abc123' });
+      manager['showFullImage'](image);
+
+      expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
+    });
+
+    it('should register Escape key handler and close button', () => {
+      const image = createImageAttachment();
+      manager['showFullImage'](image);
+
+      expect(addEventSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+
+      const escHandler = addEventSpy.mock.calls[0][1];
+      escHandler({ key: 'Escape' });
+
+      expect(removeEventSpy).toHaveBeenCalledWith('keydown', escHandler);
+    });
+
+    it('should close modal when clicking on overlay background', () => {
+      const image = createImageAttachment();
+      manager['showFullImage'](image);
+
+      const clickHandler = overlayEl._eventListeners.get('click')?.[0];
+      expect(clickHandler).toBeDefined();
+
+      clickHandler({ target: overlayEl });
+
+      expect(removeEventSpy).toHaveBeenCalled();
     });
   });
 

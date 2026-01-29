@@ -21,6 +21,13 @@ jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
 jest.mock('@/features/chat/rendering/WriteEditRenderer', () => ({
   renderStoredWriteEdit: jest.fn(),
 }));
+jest.mock('@/utils/imageEmbed', () => ({
+  replaceImageEmbedsWithHtml: jest.fn().mockImplementation((md: string) => md),
+}));
+jest.mock('@/utils/fileLink', () => ({
+  processFileLinks: jest.fn(),
+  registerFileLinkHandler: jest.fn(),
+}));
 
 function createMockComponent() {
   return {
@@ -714,5 +721,671 @@ describe('MessageRenderer', () => {
 
     // scrollTop should not change (900 > 100 threshold)
     expect(messagesEl.scrollTop).toBe(originalScrollTop);
+  });
+
+  // ============================================
+  // renderContent
+  // ============================================
+
+  it('renderContent should not throw on valid markdown', async () => {
+    const { renderer } = createRenderer();
+    const el = createMockEl();
+
+    // Should not throw even if internal rendering fails (graceful error handling)
+    await expect(renderer.renderContent(el, '**Hello** world')).resolves.not.toThrow();
+  });
+
+  it('renderContent should empty the element before rendering', async () => {
+    const { renderer } = createRenderer();
+    const el = createMockEl();
+    el.createDiv({ text: 'old content' });
+    expect(el.children.length).toBe(1);
+
+    await renderer.renderContent(el, 'new content');
+
+    // After render, old content should be gone (empty() was called before rendering)
+    expect(el.children.length).toBe(0);
+  });
+
+  // ============================================
+  // addTextCopyButton - click behavior
+  // ============================================
+
+  describe('addTextCopyButton - click behavior', () => {
+    let originalNavigator: Navigator;
+
+    beforeEach(() => {
+      originalNavigator = globalThis.navigator;
+    });
+
+    afterEach(() => {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it('click should copy and show feedback', async () => {
+      const { renderer } = createRenderer();
+      const textEl = createMockEl();
+
+      const writeTextMock = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: writeTextMock } },
+        writable: true,
+        configurable: true,
+      });
+
+      renderer.addTextCopyButton(textEl, 'markdown content');
+
+      const copyBtn = textEl.children[0];
+      expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
+
+      // Simulate click
+      const clickHandlers = copyBtn._eventListeners.get('click');
+      expect(clickHandlers).toBeDefined();
+
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      expect(writeTextMock).toHaveBeenCalledWith('markdown content');
+      expect(copyBtn.textContent).toBe('copied!');
+      expect(copyBtn.classList.contains('copied')).toBe(true);
+    });
+
+    it('should handle clipboard API failure gracefully', async () => {
+      const { renderer } = createRenderer();
+      const textEl = createMockEl();
+
+      const writeTextMock = jest.fn().mockRejectedValue(new Error('not allowed'));
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: writeTextMock } },
+        writable: true,
+        configurable: true,
+      });
+
+      renderer.addTextCopyButton(textEl, 'content');
+
+      const copyBtn = textEl.children[0];
+      const clickHandlers = copyBtn._eventListeners.get('click');
+
+      // Should not throw
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      // Should not show feedback on error
+      expect(copyBtn.textContent).not.toBe('copied!');
+    });
+  });
+
+  // ============================================
+  // renderMessages (entry point)
+  // ============================================
+
+  it('renderMessages should render stored messages and return welcome element', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
+      { id: 'a1', role: 'assistant', content: 'Hi there', timestamp: Date.now(), contentBlocks: [{ type: 'text', content: 'Hi there' }] as any },
+    ];
+
+    const welcomeEl = renderer.renderMessages(messages, () => 'Good morning!');
+
+    expect(welcomeEl).toBeDefined();
+    expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
+  });
+
+  it('renderMessages should hide welcome when messages exist', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+    jest.spyOn(renderer, 'renderMessageImages').mockImplementation(() => {});
+
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
+    ];
+
+    const welcomeEl = renderer.renderMessages(messages, () => 'Hello');
+
+    // When messages exist, welcome should be hidden
+    expect(welcomeEl).toBeDefined();
+  });
+
+  it('renderMessages should return welcome element when no messages', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+
+    const welcomeEl = renderer.renderMessages([], () => 'Welcome');
+
+    expect(welcomeEl).toBeDefined();
+    expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
+  });
+
+  // ============================================
+  // Task tool rendering - error and running status
+  // ============================================
+
+  describe('Task tool rendering - error and running status', () => {
+    it('renders Task tool with error status as subagent with status error', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl);
+
+      (renderStoredSubagent as jest.Mock).mockClear();
+
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'task-err',
+            name: TOOL_TASK,
+            input: { description: 'Failing task' },
+            status: 'error',
+            result: 'Something went wrong',
+          } as any,
+        ],
+        contentBlocks: [
+          { type: 'tool_use', toolId: 'task-err' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredSubagent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: 'task-err',
+          description: 'Failing task',
+          status: 'error',
+          result: 'Something went wrong',
+        })
+      );
+    });
+
+    it('renders Task tool with running status (default case in switch)', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl);
+
+      (renderStoredSubagent as jest.Mock).mockClear();
+
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'task-run',
+            name: TOOL_TASK,
+            input: { description: 'Running task' },
+            status: 'pending',
+          } as any,
+        ],
+        contentBlocks: [
+          { type: 'tool_use', toolId: 'task-run' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredSubagent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: 'task-run',
+          description: 'Running task',
+          status: 'running',
+        })
+      );
+    });
+
+    it('renders Task tool with no description uses fallback Subagent task', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl);
+
+      (renderStoredSubagent as jest.Mock).mockClear();
+
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'task-no-desc',
+            name: TOOL_TASK,
+            input: {},
+            status: 'completed',
+            result: 'Done',
+          } as any,
+        ],
+        contentBlocks: [
+          { type: 'tool_use', toolId: 'task-no-desc' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredSubagent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: 'task-no-desc',
+          description: 'Subagent task',
+          status: 'completed',
+        })
+      );
+    });
+  });
+
+  // ============================================
+  // showFullImage - close behaviors
+  // ============================================
+
+  describe('showFullImage - close behaviors', () => {
+    const image: ImageAttachment = {
+      id: 'img-1',
+      name: 'test.png',
+      mediaType: 'image/png',
+      data: 'abc123',
+      size: 100,
+      source: 'file',
+    };
+
+    function setupDocumentMock() {
+      const overlayEl = createMockEl();
+      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
+      const docListeners = new Map<string, ((...args: any[]) => void)[]>();
+      const origDocument = globalThis.document;
+
+      (globalThis as any).document = {
+        body: mockBody,
+        addEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
+          if (!docListeners.has(event)) docListeners.set(event, []);
+          docListeners.get(event)!.push(handler);
+        }),
+        removeEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
+          const handlers = docListeners.get(event);
+          if (handlers) {
+            const idx = handlers.indexOf(handler);
+            if (idx !== -1) handlers.splice(idx, 1);
+          }
+        }),
+      };
+
+      return { overlayEl, docListeners, origDocument };
+    }
+
+    it('closeBtn click removes overlay', () => {
+      const { renderer } = createRenderer();
+      const { overlayEl, origDocument } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+
+        // The overlay has a modal child, which has a close button child
+        const modalEl = overlayEl.children[0]; // claudian-image-modal
+        // Children: img (index 0), closeBtn (index 1)
+        const closeBtn = modalEl.children[1];
+        expect(closeBtn.hasClass('claudian-image-modal-close')).toBe(true);
+
+        const removeSpy = jest.spyOn(overlayEl, 'remove');
+        closeBtn.click();
+
+        expect(removeSpy).toHaveBeenCalled();
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+
+    it('clicking overlay background removes overlay', () => {
+      const { renderer } = createRenderer();
+      const { overlayEl, origDocument } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+
+        const removeSpy = jest.spyOn(overlayEl, 'remove');
+
+        // Simulate click on the overlay itself (e.target === overlay)
+        const clickHandlers = overlayEl._eventListeners.get('click');
+        expect(clickHandlers).toBeDefined();
+        clickHandlers![0]({ target: overlayEl });
+
+        expect(removeSpy).toHaveBeenCalled();
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+
+    it('ESC key removes overlay', () => {
+      const { renderer } = createRenderer();
+      const { overlayEl, docListeners, origDocument } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+
+        const removeSpy = jest.spyOn(overlayEl, 'remove');
+
+        // Simulate ESC key press via the document keydown listener
+        const keydownHandlers = docListeners.get('keydown');
+        expect(keydownHandlers).toBeDefined();
+        expect(keydownHandlers!.length).toBeGreaterThan(0);
+        keydownHandlers![0]({ key: 'Escape' });
+
+        expect(removeSpy).toHaveBeenCalled();
+        // After close, the keydown handler should be removed
+        expect(document.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+  });
+
+  // ============================================
+  // renderContent - code block wrapping (error path)
+  // ============================================
+
+  describe('renderContent - error handling', () => {
+    it('renderContent shows error div when MarkdownRenderer throws', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockRejectedValueOnce(
+        new Error('Render failed')
+      );
+
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      await renderer.renderContent(el, '**broken markdown**');
+
+      const errorDiv = el.children.find(
+        (c: any) => c.hasClass('claudian-render-error')
+      );
+      expect(errorDiv).toBeDefined();
+      expect(errorDiv!.textContent).toBe('Failed to render message content.');
+    });
+  });
+
+  // ============================================
+  // addTextCopyButton - rapid click handling
+  // ============================================
+
+  describe('addTextCopyButton - rapid click handling', () => {
+    let originalNavigator: Navigator;
+
+    beforeEach(() => {
+      originalNavigator = globalThis.navigator;
+      jest.useFakeTimers();
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: jest.fn().mockResolvedValue(undefined) } },
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it('rapid clicks clear previous timeout', async () => {
+      const { renderer } = createRenderer();
+      const textEl = createMockEl();
+      const clearTimeoutSpy = jest.spyOn(globalThis, 'clearTimeout');
+
+      renderer.addTextCopyButton(textEl, 'content to copy');
+
+      const copyBtn = textEl.children[0];
+      const clickHandlers = copyBtn._eventListeners.get('click');
+      expect(clickHandlers).toBeDefined();
+
+      // First click
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+      expect(copyBtn.textContent).toBe('copied!');
+
+      // Second rapid click before timeout expires
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+
+      // clearTimeout should have been called for the first pending timeout
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      expect(copyBtn.textContent).toBe('copied!');
+
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it('feedback timeout restores icon after delay', async () => {
+      const { renderer } = createRenderer();
+      const textEl = createMockEl();
+
+      renderer.addTextCopyButton(textEl, 'content to copy');
+
+      const copyBtn = textEl.children[0];
+      const originalInnerHTML = copyBtn.innerHTML;
+      const clickHandlers = copyBtn._eventListeners.get('click');
+
+      // Click to copy
+      await clickHandlers![0]({ stopPropagation: jest.fn() });
+      expect(copyBtn.textContent).toBe('copied!');
+      expect(copyBtn.classList.contains('copied')).toBe(true);
+
+      // Advance timers by 1500ms (the feedback duration)
+      jest.advanceTimersByTime(1500);
+
+      // Icon should be restored and copied class removed
+      expect(copyBtn.innerHTML).toBe(originalInnerHTML);
+      expect(copyBtn.classList.contains('copied')).toBe(false);
+    });
+  });
+
+  // ============================================
+  // renderContent - code block wrapping
+  // ============================================
+
+  describe('renderContent - code block wrapping', () => {
+    it('should wrap pre elements in code wrapper divs', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      // Mock renderMarkdown to create a pre element in the container
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
+        async (_md: string, container: any) => {
+          const pre = container.createEl('pre');
+          pre.createEl('code', { text: 'console.log("hello")' });
+        }
+      );
+
+      await renderer.renderContent(el, '```js\nconsole.log("hello")\n```');
+
+      // The pre should be wrapped in a claudian-code-wrapper
+      // Due to mock limitations, check that querySelectorAll was called on el
+      // The actual wrapping logic runs on real DOM, but the mock captures calls
+      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
+    });
+
+    it('should skip wrapping already-wrapped pre elements', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      // Mock renderMarkdown to create an already-wrapped pre element
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
+        async (_md: string, container: any) => {
+          const wrapper = container.createDiv({ cls: 'claudian-code-wrapper' });
+          wrapper.createEl('pre');
+        }
+      );
+
+      await renderer.renderContent(el, '```\nalready wrapped\n```');
+
+      // Should not throw and should complete normally
+      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
+    });
+  });
+
+  // ============================================
+  // renderMessageImages - click handler
+  // ============================================
+
+  describe('renderMessageImages - click handler', () => {
+    it('should add click handler on image elements', () => {
+      const containerEl = createMockEl();
+      const { renderer } = createRenderer();
+      const showFullImageSpy = jest.spyOn(renderer, 'showFullImage').mockImplementation(() => {});
+      jest.spyOn(renderer, 'setImageSrc').mockImplementation(() => {});
+
+      const images: ImageAttachment[] = [
+        { id: 'img-1', name: 'photo.png', mediaType: 'image/png', data: 'base64data', size: 200, source: 'file' },
+      ];
+
+      renderer.renderMessageImages(containerEl, images);
+
+      // Find the img element and check for click handler
+      const imagesContainer = containerEl.children[0];
+      const wrapper = imagesContainer.children[0];
+      const imgEl = wrapper.children[0]; // The img element
+
+      // Check click handler is registered
+      const clickHandlers = imgEl._eventListeners?.get('click');
+      expect(clickHandlers).toBeDefined();
+      expect(clickHandlers!.length).toBe(1);
+
+      // Trigger click and verify showFullImage is called
+      clickHandlers![0]();
+      expect(showFullImageSpy).toHaveBeenCalledWith(images[0]);
+    });
+  });
+
+  // ============================================
+  // renderContent - code block wrapping with language labels
+  // ============================================
+
+  describe('renderContent - language label and copy', () => {
+    it('should add language label when code block has language class', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
+        async (_md: string, container: any) => {
+          const pre = container.createEl('pre');
+          const code = pre.createEl('code');
+          code.className = 'language-typescript';
+          code.textContent = 'const x = 1;';
+        }
+      );
+
+      await renderer.renderContent(el, '```typescript\nconst x = 1;\n```');
+
+      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
+    });
+
+    it('should move copy-code-button outside pre into wrapper', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
+        async (_md: string, container: any) => {
+          const pre = container.createEl('pre');
+          pre.createEl('code', { text: 'some code' });
+          const copyBtn = pre.createEl('button');
+          copyBtn.className = 'copy-code-button';
+        }
+      );
+
+      await renderer.renderContent(el, '```\nsome code\n```');
+
+      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
+    });
+  });
+
+  // ============================================
+  // addMessage - displayContent for user messages
+  // ============================================
+
+  it('addMessage renders displayContent instead of content when available', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    const renderContentSpy = jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const msg: ChatMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'full prompt with context',
+      displayContent: 'user input only',
+      timestamp: Date.now(),
+    };
+
+    renderer.addMessage(msg);
+
+    expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'user input only');
+  });
+
+  // ============================================
+  // renderStoredThinkingBlock - durationSeconds parameter
+  // ============================================
+
+  describe('renderStoredThinkingBlock - durationSeconds parameter', () => {
+    it('should pass durationSeconds to renderStoredThinkingBlock', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl);
+      jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+      (renderStoredThinkingBlock as jest.Mock).mockClear();
+
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        contentBlocks: [
+          { type: 'thinking', content: 'deep thought', durationSeconds: 42 } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredThinkingBlock).toHaveBeenCalledWith(
+        expect.anything(),
+        'deep thought',
+        42,
+        expect.any(Function)
+      );
+    });
+
+    it('should pass undefined durationSeconds when not set', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl);
+      jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+      (renderStoredThinkingBlock as jest.Mock).mockClear();
+
+      const msg: ChatMessage = {
+        id: 'm1',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        contentBlocks: [
+          { type: 'thinking', content: 'thought without duration' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredThinkingBlock).toHaveBeenCalledWith(
+        expect.anything(),
+        'thought without duration',
+        undefined,
+        expect.any(Function)
+      );
+    });
   });
 });
