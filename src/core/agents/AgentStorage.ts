@@ -1,5 +1,5 @@
 import { extractStringArray, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
-import type { AgentDefinition, AgentFrontmatter } from '../types';
+import type { AgentDefinition, AgentFrontmatter, AgentPermissionMode } from '../types';
 
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
   const parsed = parseFrontmatter(content);
@@ -47,15 +47,13 @@ export function parseToolsList(tools?: string | string[]): string[] | undefined 
   return normalizeStringArray(tools);
 }
 
-const VALID_PERMISSION_MODES = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan'] as const;
+const VALID_PERMISSION_MODES: readonly AgentPermissionMode[] = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
 
-type PermissionMode = typeof VALID_PERMISSION_MODES[number];
-
-export function parsePermissionMode(mode?: string): PermissionMode | undefined {
+export function parsePermissionMode(mode?: string): AgentPermissionMode | undefined {
   if (!mode) return undefined;
   const trimmed = mode.trim();
-  if (VALID_PERMISSION_MODES.includes(trimmed as PermissionMode)) {
-    return trimmed as PermissionMode;
+  if (VALID_PERMISSION_MODES.includes(trimmed as AgentPermissionMode)) {
+    return trimmed as AgentPermissionMode;
   }
   return undefined;
 }

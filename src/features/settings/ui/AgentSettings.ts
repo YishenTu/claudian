@@ -187,8 +187,9 @@ class AgentModal extends Modal {
 
       try {
         await this.onSave(agent);
-      } catch {
-        new Notice('Failed to save subagent');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        new Notice(`Failed to save subagent: ${message}`);
         return;
       }
       this.close();
@@ -273,8 +274,9 @@ export class AgentSettings {
     deleteBtn.addEventListener('click', async () => {
       try {
         await this.deleteAgent(agent);
-      } catch {
-        new Notice('Failed to delete subagent');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        new Notice(`Failed to delete subagent: ${message}`);
       }
     });
   }

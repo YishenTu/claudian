@@ -117,4 +117,5 @@ export {
 export {
   type AgentDefinition,
   type AgentFrontmatter,
+  type AgentPermissionMode,
 } from './agent';

@@ -1,3 +1,5 @@
+export type AgentPermissionMode = 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate';
+
 /**
  * Agent definition loaded from markdown files with YAML frontmatter.
  * Matches Claude Code's agent format for compatibility.
@@ -34,9 +36,9 @@ export interface AgentDefinition {
   /** Skills available to this agent (pass-through to SDK) */
   skills?: string[];
 
-  permissionMode?: 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan';
+  permissionMode?: AgentPermissionMode;
 
-  /** Pass-through to SDK */
+  /** Parsed from frontmatter; stored for round-trip but not forwarded to SDK agents */
   hooks?: Record<string, unknown>;
 }
 

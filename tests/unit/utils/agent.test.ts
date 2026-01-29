@@ -146,6 +146,20 @@ describe('serializeAgent', () => {
     expect(result).toMatch(/---\nMulti\nline\nprompt$/);
   });
 
+  it('serializes hooks as JSON', () => {
+    const agent: AgentDefinition = {
+      ...baseAgent,
+      hooks: { preToolUse: { command: 'echo test' } },
+    };
+    const result = serializeAgent(agent);
+    expect(result).toContain('hooks: {"preToolUse":{"command":"echo test"}}');
+  });
+
+  it('omits hooks when undefined', () => {
+    const result = serializeAgent(baseAgent);
+    expect(result).not.toContain('hooks');
+  });
+
   it('serializes all fields together', () => {
     const agent: AgentDefinition = {
       ...baseAgent,
