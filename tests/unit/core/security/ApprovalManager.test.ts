@@ -120,6 +120,30 @@ describe('matchesRulePattern', () => {
     expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/notes')).toBe(true);
     expect(matchesRulePattern('Read', '/test/vault/notes2/file.md', '/test/vault/notes')).toBe(false);
   });
+
+  it('matches exact file path (same length, no trailing slash)', () => {
+    expect(matchesRulePattern('Read', '/test/vault/file.md', '/test/vault/file.md')).toBe(true);
+  });
+
+  it('matches file path with backslash normalization for same-length paths', () => {
+    // Both normalize to the same path via backslash→forward slash replacement,
+    // caught by the early exact match check (line 77) before isPathPrefixMatch.
+    expect(matchesRulePattern('Write', '/test/vault\\file.md', '/test/vault/file.md')).toBe(true);
+  });
+
+  it('allows simple prefix matching for non-file, non-bash tools', () => {
+    expect(matchesRulePattern('Glob', '**/*.md', '**/*')).toBe(true);
+    expect(matchesRulePattern('Grep', 'TODO in file', 'TODO')).toBe(true);
+  });
+
+  it('returns false for non-file, non-bash tools when prefix does not match', () => {
+    expect(matchesRulePattern('Glob', 'src/**', 'tests/**')).toBe(false);
+  });
+
+  it('matches exact Bash prefix without trailing space/wildcard via CC format', () => {
+    // matchesBashPrefix exact match: action === prefix
+    expect(matchesRulePattern('Bash', 'npm', 'npm:*')).toBe(true);
+  });
 });
 
 describe('buildPermissionUpdates', () => {

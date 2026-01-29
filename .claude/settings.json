@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "agent-sdk-dev@claude-plugins-official": true,
+    "coderabbit@claude-plugins-official": true
+  }
+}

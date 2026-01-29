@@ -95,4 +95,70 @@ describe('createCustomSpawnFunction', () => {
     expect(spawnOptions.stdio).toEqual(['pipe', 'pipe', 'ignore']);
     expect(mockProcess.stderr?.on).not.toHaveBeenCalled();
   });
+
+  it('throws when process streams are missing', () => {
+    const mockProcess = {
+      stdin: null,
+      stdout: null,
+      stderr: null,
+      killed: false,
+      exitCode: null,
+      kill: jest.fn(),
+      on: jest.fn(),
+      once: jest.fn(),
+      off: jest.fn(),
+    };
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    const signal = new AbortController().signal;
+
+    expect(() => spawnFn({
+      command: 'node',
+      args: ['cli.js'],
+      cwd: '/tmp',
+      env: {},
+      signal,
+    })).toThrow('Failed to create process streams');
+  });
+
+  it('falls back to original command when findNodeExecutable returns null', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    const signal = new AbortController().signal;
+    spawnFn({
+      command: 'node',
+      args: ['cli.js'],
+      cwd: '/tmp',
+      env: {},
+      signal,
+    });
+
+    // Should use 'node' as-is since findNodeExecutable returned null
+    expect(spawnMock).toHaveBeenCalledWith('node', ['cli.js'], expect.any(Object));
+  });
+
+  it('does not resolve non-node commands', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const findNodeExecutable = jest.spyOn(env, 'findNodeExecutable');
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    const signal = new AbortController().signal;
+    spawnFn({
+      command: 'python',
+      args: ['script.py'],
+      cwd: '/tmp',
+      env: {},
+      signal,
+    });
+
+    expect(findNodeExecutable).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledWith('python', ['script.py'], expect.any(Object));
+  });
 });

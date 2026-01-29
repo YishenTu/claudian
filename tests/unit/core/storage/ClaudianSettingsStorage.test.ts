@@ -214,6 +214,41 @@ describe('ClaudianSettingsStorage', () => {
     });
   });
 
+  describe('getLegacyActiveConversationId - file missing', () => {
+    it('should return null when file does not exist', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+
+      const result = await storage.getLegacyActiveConversationId();
+
+      expect(result).toBeNull();
+      expect(mockAdapter.read).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearLegacyActiveConversationId - file missing', () => {
+    it('should return early when file does not exist', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+
+      await storage.clearLegacyActiveConversationId();
+
+      expect(mockAdapter.read).not.toHaveBeenCalled();
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearLegacyActiveConversationId - no key present', () => {
+    it('should not write when activeConversationId key is absent', async () => {
+      (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+      (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+        model: 'claude-haiku-4-5',
+      }));
+
+      await storage.clearLegacyActiveConversationId();
+
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
+  });
+
   describe('setLastModel', () => {
     it('should update lastClaudeModel for non-custom models', async () => {
       (mockAdapter.exists as jest.Mock).mockResolvedValue(true);

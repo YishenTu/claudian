@@ -253,6 +253,87 @@ describe('CCSettingsStorage', () => {
         });
     });
 
+    describe('isLegacyPermissionsFormat edge cases', () => {
+        it('should return false for null data', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: null,
+            }));
+
+            const result = await storage.load();
+            // null permissions normalized to defaults
+            expect(result.permissions?.allow).toEqual([]);
+        });
+
+        it('should return false for non-object permissions', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: 42,
+            }));
+
+            const result = await storage.load();
+            expect(result.permissions?.allow).toEqual([]);
+            expect(result.permissions?.deny).toEqual([]);
+        });
+
+        it('should return false for empty array permissions', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: [],
+            }));
+
+            const result = await storage.load();
+            // Empty array is legacy format but length === 0, so falls through
+            expect(result.permissions?.allow).toEqual([]);
+        });
+    });
+
+    describe('normalizePermissions edge cases', () => {
+        it('should handle non-array allow/deny/ask values', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({
+                permissions: {
+                    allow: 'not-an-array',
+                    deny: 123,
+                    ask: null,
+                },
+            }));
+
+            const result = await storage.load();
+            expect(result.permissions?.allow).toEqual([]);
+            expect(result.permissions?.deny).toEqual([]);
+            expect(result.permissions?.ask).toEqual([]);
+        });
+    });
+
+    describe('save edge cases', () => {
+        it('should use default permissions when settings.permissions is undefined', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(false);
+
+            await storage.save({} as any);
+
+            const writeCall = (mockAdapter.write as jest.Mock).mock.calls[0];
+            const writtenContent = JSON.parse(writeCall[1]);
+            expect(writtenContent.permissions).toEqual({
+                allow: [],
+                deny: [],
+                ask: [],
+            });
+        });
+    });
+
+    describe('getPermissions edge cases', () => {
+        it('should return default permissions when settings has no permissions field', async () => {
+            (mockAdapter.exists as jest.Mock).mockResolvedValue(true);
+            (mockAdapter.read as jest.Mock).mockResolvedValue(JSON.stringify({}));
+
+            const result = await storage.getPermissions();
+            expect(result.allow).toEqual([]);
+            expect(result.deny).toEqual([]);
+            expect(result.ask).toEqual([]);
+        });
+    });
+
     describe('enabledPlugins', () => {
         it('should return empty object if enabledPlugins not set', async () => {
             (mockAdapter.exists as jest.Mock).mockResolvedValue(true);

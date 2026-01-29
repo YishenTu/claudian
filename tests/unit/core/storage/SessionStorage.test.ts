@@ -904,6 +904,118 @@ describe('SessionStorage', () => {
     });
   });
 
+  describe('loadAllConversations - failedCount for unparseable JSONL', () => {
+    it('increments failedCount when parseJSONL returns null', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/good.jsonl',
+        '.claude/sessions/empty.jsonl',
+      ]);
+
+      mockAdapter.read.mockImplementation((path: string) => {
+        if (path.includes('good')) {
+          return Promise.resolve([
+            '{"type":"meta","id":"good","title":"Good","createdAt":1700000000,"updatedAt":1700001000,"sessionId":null}',
+            '{"type":"message","message":{"id":"msg-1","role":"user","content":"Hello","timestamp":1700000100}}',
+          ].join('\n'));
+        }
+        // Empty content → parseJSONL returns null
+        return Promise.resolve('');
+      });
+
+      const { conversations, failedCount } = await storage.loadAllConversations();
+
+      expect(conversations).toHaveLength(1);
+      expect(failedCount).toBe(1);
+    });
+  });
+
+  describe('listConversations - loadMetaOnly edge cases', () => {
+    it('handles corrupted message lines in loadMetaOnly', async () => {
+      mockAdapter.listFiles.mockResolvedValue(['.claude/sessions/corrupted.jsonl']);
+
+      mockAdapter.read.mockResolvedValue([
+        '{"type":"meta","id":"corrupted","title":"Corrupted","createdAt":1700000000,"updatedAt":1700001000,"sessionId":null}',
+        'not valid json at all{{{',
+        '{"type":"message","message":{"id":"msg-1","role":"user","content":"Hello","timestamp":1700000100}}',
+      ].join('\n'));
+
+      const metas = await storage.listConversations();
+
+      expect(metas).toHaveLength(1);
+      expect(metas[0].id).toBe('corrupted');
+      // Should find the user message after skipping corrupted line
+      expect(metas[0].preview).toBe('Hello');
+    });
+
+    it('returns empty when first line (meta) parse fails', async () => {
+      mockAdapter.listFiles.mockResolvedValue(['.claude/sessions/bad-meta.jsonl']);
+
+      mockAdapter.read.mockResolvedValue('not valid json at all');
+
+      const metas = await storage.listConversations();
+
+      expect(metas).toEqual([]);
+    });
+  });
+
+  describe('toSessionMetadata - extractSubagentData', () => {
+    it('extracts subagent data from assistant messages', () => {
+      const conversation: Conversation = {
+        id: 'conv-subagent',
+        title: 'Subagent Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: 'sdk-session',
+        messages: [
+          { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
+          {
+            id: 'msg-2',
+            role: 'assistant',
+            content: 'Working...',
+            timestamp: 1700000200,
+            subagents: [
+              {
+                id: 'sa-1',
+                description: 'Test subagent',
+                isExpanded: false,
+                status: 'completed' as const,
+                toolCalls: [],
+                result: 'Done',
+              },
+            ],
+          },
+        ],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.subagentData).toBeDefined();
+      expect(metadata.subagentData!['sa-1']).toEqual(expect.objectContaining({
+        id: 'sa-1',
+        description: 'Test subagent',
+        status: 'completed',
+      }));
+    });
+
+    it('returns undefined subagentData when no subagents present', () => {
+      const conversation: Conversation = {
+        id: 'conv-no-subagent',
+        title: 'No Subagent',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: null,
+        messages: [
+          { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
+          { id: 'msg-2', role: 'assistant', content: 'Hi!', timestamp: 1700000200 },
+        ],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.subagentData).toBeUndefined();
+    });
+  });
+
   describe('toSessionMetadata', () => {
     it('converts Conversation to SessionMetadata', () => {
       const usage: UsageInfo = {

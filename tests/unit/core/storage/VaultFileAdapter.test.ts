@@ -189,6 +189,34 @@ describe('VaultFileAdapter', () => {
     });
   });
 
+  describe('deleteFolder', () => {
+    it('deletes folder when it exists', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.rmdir = jest.fn().mockResolvedValue(undefined);
+
+      await vaultAdapter.deleteFolder('empty-folder');
+
+      expect(mockAdapter.exists).toHaveBeenCalledWith('empty-folder');
+      expect(mockAdapter.rmdir).toHaveBeenCalledWith('empty-folder', false);
+    });
+
+    it('does nothing when folder does not exist', async () => {
+      mockAdapter.exists.mockResolvedValue(false);
+      mockAdapter.rmdir = jest.fn();
+
+      await vaultAdapter.deleteFolder('nonexistent-folder');
+
+      expect(mockAdapter.rmdir).not.toHaveBeenCalled();
+    });
+
+    it('silently handles rmdir error (non-empty folder)', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.rmdir = jest.fn().mockRejectedValue(new Error('Directory not empty'));
+
+      await expect(vaultAdapter.deleteFolder('non-empty-folder')).resolves.toBeUndefined();
+    });
+  });
+
   describe('listFiles', () => {
     it('lists files in existing folder', async () => {
       mockAdapter.exists.mockResolvedValue(true);
