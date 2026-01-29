@@ -41,6 +41,9 @@ export interface AgentDefinition {
 
   /** Parsed from frontmatter; round-tripped on save so the SDK reads hooks from the agent file */
   hooks?: Record<string, unknown>;
+
+  /** Frontmatter keys not recognized by Claudian, preserved on round-trip */
+  extraFrontmatter?: Record<string, unknown>;
 }
 
 export interface AgentFrontmatter {
@@ -55,4 +58,5 @@ export interface AgentFrontmatter {
   skills?: string[];
   permissionMode?: string;
   hooks?: Record<string, unknown>;
+  extraFrontmatter?: Record<string, unknown>;
 }

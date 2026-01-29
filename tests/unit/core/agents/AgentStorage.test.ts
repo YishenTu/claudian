@@ -185,6 +185,35 @@ Body.`;
     expect(parsed?.frontmatter.hooks).toBeUndefined();
   });
 
+  it('collects unknown frontmatter keys into extraFrontmatter', () => {
+    const content = `---
+name: TestAgent
+description: Test agent
+maxTurns: 10
+customKey: hello
+---
+Body.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.frontmatter.extraFrontmatter).toEqual({
+      maxTurns: 10,
+      customKey: 'hello',
+    });
+  });
+
+  it('sets extraFrontmatter to undefined when no unknown keys', () => {
+    const content = `---
+name: TestAgent
+description: Test agent
+---
+Body.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.frontmatter.extraFrontmatter).toBeUndefined();
+  });
+
   it('ignores non-object hooks values', () => {
     const content = `---
 name: TestAgent

@@ -188,6 +188,49 @@ describe('serializeAgent', () => {
     expect(result).toContain('permissionMode: acceptEdits');
     expect(result).toContain('skills:\n  - review');
   });
+
+  it('quotes list items containing colons', () => {
+    const agent: AgentDefinition = {
+      ...baseAgent,
+      tools: ['mcp__server:tool', 'Read'],
+    };
+    const result = serializeAgent(agent);
+    expect(result).toContain('  - "mcp__server:tool"');
+    expect(result).toContain('  - Read');
+  });
+
+  it('quotes list items containing hash', () => {
+    const agent: AgentDefinition = {
+      ...baseAgent,
+      skills: ['skill#1'],
+    };
+    const result = serializeAgent(agent);
+    expect(result).toContain('  - "skill#1"');
+  });
+
+  it('quotes list items with leading spaces', () => {
+    const agent: AgentDefinition = {
+      ...baseAgent,
+      tools: [' leading-space'],
+    };
+    const result = serializeAgent(agent);
+    expect(result).toContain('  - " leading-space"');
+  });
+
+  it('serializes extraFrontmatter keys', () => {
+    const agent: AgentDefinition = {
+      ...baseAgent,
+      extraFrontmatter: { maxTurns: 5, customFlag: true },
+    };
+    const result = serializeAgent(agent);
+    expect(result).toContain('maxTurns: 5');
+    expect(result).toContain('customFlag: true');
+  });
+
+  it('omits extraFrontmatter when undefined', () => {
+    const result = serializeAgent(baseAgent);
+    expect(result).not.toContain('extraFrontmatter');
+  });
 });
 
 describe('serializeAgent / parseAgentFile round-trip', () => {
@@ -247,6 +290,86 @@ describe('serializeAgent / parseAgentFile round-trip', () => {
     expect(rebuilt.permissionMode).toBe(agent.permissionMode);
     expect(rebuilt.skills).toEqual(agent.skills);
     expect(rebuilt.hooks).toEqual(agent.hooks);
+  });
+
+  it('round-trips tools with special YAML characters', () => {
+    const agent: AgentDefinition = {
+      id: 'special-tools',
+      name: 'special-tools',
+      description: 'Agent with special tool names',
+      prompt: 'Use special tools.',
+      tools: ['mcp__server:tool', 'Read'],
+      source: 'vault',
+    };
+
+    const serialized = serializeAgent(agent);
+    const parsed = parseAgentFile(serialized);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildAgentFromFrontmatter(parsed!.frontmatter, parsed!.body, {
+      id: parsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt.tools).toEqual(['mcp__server:tool', 'Read']);
+  });
+
+  it('round-trips unknown frontmatter keys', () => {
+    const content = `---
+name: custom-agent
+description: An agent with extra keys
+maxTurns: 5
+mcpServers: ["server1"]
+---
+Do stuff.`;
+
+    const parsed = parseAgentFile(content);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildAgentFromFrontmatter(parsed!.frontmatter, parsed!.body, {
+      id: parsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt.extraFrontmatter).toEqual({
+      maxTurns: 5,
+      mcpServers: ['server1'],
+    });
+
+    const reserialized = serializeAgent(rebuilt);
+    expect(reserialized).toContain('maxTurns: 5');
+    expect(reserialized).toContain('mcpServers:');
+
+    const reparsed = parseAgentFile(reserialized);
+    expect(reparsed).not.toBeNull();
+
+    const rebuilt2 = buildAgentFromFrontmatter(reparsed!.frontmatter, reparsed!.body, {
+      id: reparsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt2.extraFrontmatter?.maxTurns).toBe(5);
+  });
+
+  it('does not set extraFrontmatter when no unknown keys exist', () => {
+    const agent: AgentDefinition = {
+      id: 'no-extra',
+      name: 'no-extra',
+      description: 'Standard agent',
+      prompt: 'Do stuff.',
+      source: 'vault',
+    };
+
+    const serialized = serializeAgent(agent);
+    const parsed = parseAgentFile(serialized);
+    expect(parsed).not.toBeNull();
+
+    const rebuilt = buildAgentFromFrontmatter(parsed!.frontmatter, parsed!.body, {
+      id: parsed!.frontmatter.name,
+      source: 'vault',
+    });
+
+    expect(rebuilt.extraFrontmatter).toBeUndefined();
   });
 
   it('round-trips description with special YAML characters', () => {

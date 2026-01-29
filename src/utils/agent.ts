@@ -10,7 +10,7 @@ function pushYamlList(lines: string[], key: string, items?: string[]): void {
   if (!items || items.length === 0) return;
   lines.push(`${key}:`);
   for (const item of items) {
-    lines.push(`  - ${item}`);
+    lines.push(`  - ${yamlString(item)}`);
   }
 }
 
@@ -35,6 +35,12 @@ export function serializeAgent(agent: AgentDefinition): string {
 
   if (agent.hooks !== undefined) {
     lines.push(`hooks: ${JSON.stringify(agent.hooks)}`);
+  }
+
+  if (agent.extraFrontmatter) {
+    for (const [key, value] of Object.entries(agent.extraFrontmatter)) {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
+    }
   }
 
   lines.push('---');

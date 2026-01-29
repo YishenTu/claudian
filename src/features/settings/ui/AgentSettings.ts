@@ -4,6 +4,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 import type { AgentDefinition } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
+import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import { validateAgentName } from '../../../utils/agent';
 
 const MODEL_OPTIONS = [
@@ -31,7 +32,11 @@ class AgentModal extends Modal {
   }
 
   onOpen() {
-    this.setTitle(this.existingAgent ? 'Edit Subagent' : 'Add Subagent');
+    this.setTitle(
+      this.existingAgent
+        ? t('settings.subagents.modal.titleEdit')
+        : t('settings.subagents.modal.titleAdd')
+    );
     this.modalEl.addClass('claudian-sp-modal');
 
     const { contentEl } = this;
@@ -44,26 +49,26 @@ class AgentModal extends Modal {
     let skillsInput: HTMLInputElement;
 
     new Setting(contentEl)
-      .setName('Name')
-      .setDesc('Lowercase letters, numbers, and hyphens only')
+      .setName(t('settings.subagents.modal.name'))
+      .setDesc(t('settings.subagents.modal.nameDesc'))
       .addText(text => {
         nameInput = text.inputEl;
         text.setValue(this.existingAgent?.name || '')
-          .setPlaceholder('code-reviewer');
+          .setPlaceholder(t('settings.subagents.modal.namePlaceholder'));
       });
 
     new Setting(contentEl)
-      .setName('Description')
-      .setDesc('Brief description of this agent')
+      .setName(t('settings.subagents.modal.description'))
+      .setDesc(t('settings.subagents.modal.descriptionDesc'))
       .addText(text => {
         descInput = text.inputEl;
         text.setValue(this.existingAgent?.description || '')
-          .setPlaceholder('Reviews code for bugs and style');
+          .setPlaceholder(t('settings.subagents.modal.descriptionPlaceholder'));
       });
 
     const details = contentEl.createEl('details', { cls: 'claudian-sp-advanced-section' });
     details.createEl('summary', {
-      text: 'Advanced options',
+      text: t('settings.subagents.modal.advancedOptions'),
       cls: 'claudian-sp-advanced-summary',
     });
     if ((this.existingAgent?.model && this.existingAgent.model !== 'inherit') ||
@@ -74,8 +79,8 @@ class AgentModal extends Modal {
     }
 
     new Setting(details)
-      .setName('Model')
-      .setDesc('Model override for this agent')
+      .setName(t('settings.subagents.modal.model'))
+      .setDesc(t('settings.subagents.modal.modelDesc'))
       .addDropdown(dropdown => {
         for (const opt of MODEL_OPTIONS) {
           dropdown.addOption(opt.value, opt.label);
@@ -86,38 +91,38 @@ class AgentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Tools')
-      .setDesc('Comma-separated list of allowed tools (empty = all)')
+      .setName(t('settings.subagents.modal.tools'))
+      .setDesc(t('settings.subagents.modal.toolsDesc'))
       .addText(text => {
         toolsInput = text.inputEl;
         text.setValue(this.existingAgent?.tools?.join(', ') || '');
       });
 
     new Setting(details)
-      .setName('Disallowed tools')
-      .setDesc('Comma-separated list of tools to disallow')
+      .setName(t('settings.subagents.modal.disallowedTools'))
+      .setDesc(t('settings.subagents.modal.disallowedToolsDesc'))
       .addText(text => {
         disallowedToolsInput = text.inputEl;
         text.setValue(this.existingAgent?.disallowedTools?.join(', ') || '');
       });
 
     new Setting(details)
-      .setName('Skills')
-      .setDesc('Comma-separated list of skills')
+      .setName(t('settings.subagents.modal.skills'))
+      .setDesc(t('settings.subagents.modal.skillsDesc'))
       .addText(text => {
         skillsInput = text.inputEl;
         text.setValue(this.existingAgent?.skills?.join(', ') || '');
       });
 
     new Setting(contentEl)
-      .setName('System prompt')
-      .setDesc('Instructions for the agent');
+      .setName(t('settings.subagents.modal.prompt'))
+      .setDesc(t('settings.subagents.modal.promptDesc'));
 
     const contentArea = contentEl.createEl('textarea', {
       cls: 'claudian-sp-content-area',
       attr: {
         rows: '10',
-        placeholder: 'You are a code reviewer. Analyze the given code for...',
+        placeholder: t('settings.subagents.modal.promptPlaceholder'),
       },
     });
     contentArea.value = this.existingAgent?.prompt || '';
@@ -125,13 +130,13 @@ class AgentModal extends Modal {
     const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
-      text: 'Cancel',
+      text: t('common.cancel'),
       cls: 'claudian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
-      text: 'Save',
+      text: t('common.save'),
       cls: 'claudian-save-btn',
     });
     saveBtn.addEventListener('click', async () => {
@@ -144,13 +149,13 @@ class AgentModal extends Modal {
 
       const description = descInput.value.trim();
       if (!description) {
-        new Notice('Description is required');
+        new Notice(t('settings.subagents.descriptionRequired'));
         return;
       }
 
       const prompt = contentArea.value;
       if (!prompt.trim()) {
-        new Notice('System prompt is required');
+        new Notice(t('settings.subagents.promptRequired'));
         return;
       }
 
@@ -160,7 +165,7 @@ class AgentModal extends Modal {
              a.id !== this.existingAgent?.id
       );
       if (duplicate) {
-        new Notice(`An agent named "${name}" already exists`);
+        new Notice(t('settings.subagents.duplicateName', { name }));
         return;
       }
 
@@ -185,13 +190,14 @@ class AgentModal extends Modal {
         skills: parseList(skillsInput),
         permissionMode: this.existingAgent?.permissionMode,
         hooks: this.existingAgent?.hooks,
+        extraFrontmatter: this.existingAgent?.extraFrontmatter,
       };
 
       try {
         await this.onSave(agent);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        new Notice(`Failed to save subagent: ${message}`);
+        new Notice(t('settings.subagents.saveFailed', { message }));
         return;
       }
       this.close();
@@ -223,7 +229,7 @@ export class AgentSettings {
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Add' },
+      attr: { 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.openAgentModal(null));
@@ -233,7 +239,7 @@ export class AgentSettings {
 
     if (vaultAgents.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
-      emptyEl.setText('No subagents configured. Click + to create one.');
+      emptyEl.setText(t('settings.subagents.noAgents'));
       return;
     }
 
@@ -263,23 +269,27 @@ export class AgentSettings {
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Edit' },
+      attr: { 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => this.openAgentModal(agent));
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-      attr: { 'aria-label': 'Delete' },
+      attr: { 'aria-label': t('common.delete') },
     });
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm(`Delete subagent "${agent.name}"?`)) return;
+      const confirmed = await confirmDelete(
+        this.plugin.app,
+        t('settings.subagents.deleteConfirm', { name: agent.name })
+      );
+      if (!confirmed) return;
       try {
         await this.deleteAgent(agent);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        new Notice(`Failed to delete subagent: ${message}`);
+        new Notice(t('settings.subagents.deleteFailed', { message }));
       }
     });
   }
@@ -310,7 +320,8 @@ export class AgentSettings {
       // Non-critical: agent list will refresh on next settings open
     }
     this.render();
-    new Notice(`Subagent "${agent.name}" ${existing ? 'updated' : 'created'}`);
+    const action = existing ? 'updated' : 'created';
+    new Notice(t('settings.subagents.saved', { name: agent.name, action }));
   }
 
   private async deleteAgent(agent: AgentDefinition): Promise<void> {
@@ -322,7 +333,7 @@ export class AgentSettings {
       // Non-critical: agent list will refresh on next settings open
     }
     this.render();
-    new Notice(`Subagent "${agent.name}" deleted`);
+    new Notice(t('settings.subagents.deleted', { name: agent.name }));
   }
 
 }

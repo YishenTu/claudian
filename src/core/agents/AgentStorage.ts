@@ -1,6 +1,11 @@
 import { extractStringArray, isRecord, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
 import { AGENT_PERMISSION_MODES, type AgentDefinition, type AgentFrontmatter, type AgentPermissionMode } from '../types';
 
+const KNOWN_AGENT_KEYS = new Set([
+  'name', 'description', 'tools', 'disallowedTools', 'model',
+  'skills', 'permissionMode', 'hooks',
+]);
+
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
   const parsed = parseFrontmatter(content);
   if (!parsed) return null;
@@ -21,6 +26,13 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
 
   const model = typeof fm.model === 'string' ? fm.model : undefined;
 
+  const extra: Record<string, unknown> = {};
+  for (const key of Object.keys(fm)) {
+    if (!KNOWN_AGENT_KEYS.has(key)) {
+      extra[key] = fm[key];
+    }
+  }
+
   const frontmatter: AgentFrontmatter = {
     name,
     description,
@@ -30,6 +42,7 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
     skills: extractStringArray(fm, 'skills'),
     permissionMode: typeof fm.permissionMode === 'string' ? fm.permissionMode : undefined,
     hooks: isRecord(fm.hooks) ? fm.hooks : undefined,
+    extraFrontmatter: Object.keys(extra).length > 0 ? extra : undefined,
   };
 
   return { frontmatter, body: body.trim() };
@@ -82,5 +95,6 @@ export function buildAgentFromFrontmatter(
     skills: frontmatter.skills,
     permissionMode: parsePermissionMode(frontmatter.permissionMode),
     hooks: frontmatter.hooks,
+    extraFrontmatter: frontmatter.extraFrontmatter,
   };
 }

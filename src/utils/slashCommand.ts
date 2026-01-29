@@ -112,7 +112,7 @@ export function serializeSlashCommandMarkdown(cmd: Partial<SlashCommand>, body: 
   if (cmd.allowedTools && cmd.allowedTools.length > 0) {
     lines.push('allowed-tools:');
     for (const tool of cmd.allowedTools) {
-      lines.push(`  - ${tool}`);
+      lines.push(`  - ${yamlString(tool)}`);
     }
   }
   if (cmd.model) {
