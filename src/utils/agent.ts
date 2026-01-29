@@ -17,25 +17,22 @@ export function validateAgentName(name: string): string | null {
   return null;
 }
 
+function pushYamlList(lines: string[], key: string, items?: string[]): void {
+  if (!items || items.length === 0) return;
+  lines.push(`${key}:`);
+  for (const item of items) {
+    lines.push(`  - ${item}`);
+  }
+}
+
 export function serializeAgent(agent: AgentDefinition): string {
   const lines: string[] = ['---'];
 
   lines.push(`name: ${agent.name}`);
   lines.push(`description: ${yamlString(agent.description)}`);
 
-  if (agent.tools && agent.tools.length > 0) {
-    lines.push('tools:');
-    for (const tool of agent.tools) {
-      lines.push(`  - ${tool}`);
-    }
-  }
-
-  if (agent.disallowedTools && agent.disallowedTools.length > 0) {
-    lines.push('disallowedTools:');
-    for (const tool of agent.disallowedTools) {
-      lines.push(`  - ${tool}`);
-    }
-  }
+  pushYamlList(lines, 'tools', agent.tools);
+  pushYamlList(lines, 'disallowedTools', agent.disallowedTools);
 
   if (agent.model && agent.model !== 'inherit') {
     lines.push(`model: ${agent.model}`);
@@ -45,12 +42,7 @@ export function serializeAgent(agent: AgentDefinition): string {
     lines.push(`permissionMode: ${agent.permissionMode}`);
   }
 
-  if (agent.skills && agent.skills.length > 0) {
-    lines.push('skills:');
-    for (const skill of agent.skills) {
-      lines.push(`  - ${skill}`);
-    }
-  }
+  pushYamlList(lines, 'skills', agent.skills);
 
   if (agent.hooks !== undefined) {
     lines.push(`hooks: ${JSON.stringify(agent.hooks)}`);

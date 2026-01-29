@@ -66,7 +66,7 @@ class AgentModal extends Modal {
       text: 'Advanced options',
       cls: 'claudian-agent-advanced-summary',
     });
-    if (this.existingAgent?.model && this.existingAgent.model !== 'inherit' ||
+    if ((this.existingAgent?.model && this.existingAgent.model !== 'inherit') ||
         this.existingAgent?.tools?.length ||
         this.existingAgent?.disallowedTools?.length ||
         this.existingAgent?.skills?.length) {
@@ -193,14 +193,6 @@ class AgentModal extends Modal {
       }
       this.close();
     });
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        this.close();
-      }
-    };
-    contentEl.addEventListener('keydown', handleKeyDown);
   }
 
   onClose() {
@@ -288,15 +280,12 @@ export class AgentSettings {
   }
 
   private openAgentModal(existingAgent: AgentDefinition | null): void {
-    const modal = new AgentModal(
+    new AgentModal(
       this.plugin.app,
       this.plugin,
       existingAgent,
-      async (agent) => {
-        await this.saveAgent(agent, existingAgent);
-      }
-    );
-    modal.open();
+      (agent) => this.saveAgent(agent, existingAgent)
+    ).open();
   }
 
   private async saveAgent(agent: AgentDefinition, existing: AgentDefinition | null): Promise<void> {

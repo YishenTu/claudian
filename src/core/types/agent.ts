@@ -34,14 +34,12 @@ export interface AgentDefinition {
   /** Skills available to this agent (pass-through to SDK) */
   skills?: string[];
 
-  /** Permission mode override for this agent */
   permissionMode?: 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan';
 
-  /** Lifecycle hooks scoped to this agent (pass-through to SDK) */
+  /** Pass-through to SDK */
   hooks?: Record<string, unknown>;
 }
 
-/** YAML frontmatter structure for agent definition files */
 export interface AgentFrontmatter {
   name: string;
   description: string;
@@ -51,10 +49,7 @@ export interface AgentFrontmatter {
   disallowedTools?: string | string[];
   /** Model: validated at parse time, invalid values fall back to 'inherit' */
   model?: string;
-  /** Skills available to this agent (pass-through to SDK) */
   skills?: string[];
-  /** Permission mode override */
   permissionMode?: string;
-  /** Lifecycle hooks scoped to this agent (pass-through to SDK) */
   hooks?: Record<string, unknown>;
 }

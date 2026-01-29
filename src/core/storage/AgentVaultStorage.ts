@@ -1,5 +1,5 @@
 import { serializeAgent } from '../../utils/agent';
-import { parseAgentFile, parseModel, parsePermissionMode, parseToolsList } from '../agents/AgentStorage';
+import { buildAgentFromFrontmatter, parseAgentFile } from '../agents/AgentStorage';
 import type { AgentDefinition } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
@@ -24,27 +24,14 @@ export class AgentVaultStorage {
 
           const { frontmatter, body } = parsed;
 
-          agents.push({
+          agents.push(buildAgentFromFrontmatter(frontmatter, body, {
             id: frontmatter.name,
-            name: frontmatter.name,
-            description: frontmatter.description,
-            prompt: body,
-            tools: parseToolsList(frontmatter.tools),
-            disallowedTools: parseToolsList(frontmatter.disallowedTools),
-            model: parseModel(frontmatter.model),
             source: 'vault',
             filePath,
-            skills: frontmatter.skills,
-            permissionMode: parsePermissionMode(frontmatter.permissionMode),
-            hooks: frontmatter.hooks,
-          });
-        } catch {
-          // Skip malformed agent files
-        }
+          }));
+        } catch { /* skip */ }
       }
-    } catch {
-      // Directory may not exist yet
-    }
+    } catch { /* skip */ }
 
     return agents;
   }

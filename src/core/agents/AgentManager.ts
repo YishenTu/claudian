@@ -12,7 +12,7 @@ import * as path from 'path';
 
 import type { PluginManager } from '../plugins';
 import type { AgentDefinition } from '../types';
-import { parseAgentFile, parseModel, parsePermissionMode, parseToolsList } from './AgentStorage';
+import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
 
 const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents');
 const VAULT_AGENTS_DIR = '.claude/agents';
@@ -169,21 +169,12 @@ export class AgentManager {
 
       if (this.agents.find(a => a.id === id)) return null;
 
-      return {
+      return buildAgentFromFrontmatter(frontmatter, body, {
         id,
-        name: frontmatter.name,
-        description: frontmatter.description,
-        prompt: body,
-        tools: parseToolsList(frontmatter.tools),
-        disallowedTools: parseToolsList(frontmatter.disallowedTools),
-        model: parseModel(frontmatter.model),
         source: 'plugin',
         pluginName,
         filePath,
-        skills: frontmatter.skills,
-        permissionMode: parsePermissionMode(frontmatter.permissionMode),
-        hooks: frontmatter.hooks,
-      };
+      });
     } catch {
       return null;
     }
@@ -204,20 +195,11 @@ export class AgentManager {
 
       if (this.agents.find(a => a.id === id)) return null;
 
-      return {
+      return buildAgentFromFrontmatter(frontmatter, body, {
         id,
-        name: frontmatter.name,
-        description: frontmatter.description,
-        prompt: body,
-        tools: parseToolsList(frontmatter.tools),
-        disallowedTools: parseToolsList(frontmatter.disallowedTools),
-        model: parseModel(frontmatter.model),
         source,
         filePath,
-        skills: frontmatter.skills,
-        permissionMode: parsePermissionMode(frontmatter.permissionMode),
-        hooks: frontmatter.hooks,
-      };
+      });
     } catch {
       return null;
     }

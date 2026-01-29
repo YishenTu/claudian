@@ -1,5 +1,5 @@
 import { extractStringArray, normalizeStringArray, parseFrontmatter } from '../../utils/frontmatter';
-import type { AgentFrontmatter } from '../types';
+import type { AgentDefinition, AgentFrontmatter } from '../types';
 
 export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter; body: string } | null {
   const parsed = parseFrontmatter(content);
@@ -43,7 +43,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Returns undefined to inherit all tools. */
 export function parseToolsList(tools?: string | string[]): string[] | undefined {
   return normalizeStringArray(tools);
 }
@@ -52,7 +51,6 @@ const VALID_PERMISSION_MODES = ['default', 'acceptEdits', 'dontAsk', 'bypassPerm
 
 type PermissionMode = typeof VALID_PERMISSION_MODES[number];
 
-/** Returns undefined for unrecognized values. */
 export function parsePermissionMode(mode?: string): PermissionMode | undefined {
   if (!mode) return undefined;
   const trimmed = mode.trim();
@@ -64,7 +62,6 @@ export function parsePermissionMode(mode?: string): PermissionMode | undefined {
 
 const VALID_MODELS = ['sonnet', 'opus', 'haiku', 'inherit'] as const;
 
-/** Falls back to 'inherit' for unrecognized values. */
 export function parseModel(model?: string): 'sonnet' | 'opus' | 'haiku' | 'inherit' {
   if (!model) return 'inherit';
   const normalized = model.toLowerCase().trim();
@@ -72,4 +69,26 @@ export function parseModel(model?: string): 'sonnet' | 'opus' | 'haiku' | 'inher
     return normalized as 'sonnet' | 'opus' | 'haiku' | 'inherit';
   }
   return 'inherit';
+}
+
+export function buildAgentFromFrontmatter(
+  frontmatter: AgentFrontmatter,
+  body: string,
+  meta: { id: string; source: AgentDefinition['source']; filePath?: string; pluginName?: string }
+): AgentDefinition {
+  return {
+    id: meta.id,
+    name: frontmatter.name,
+    description: frontmatter.description,
+    prompt: body,
+    tools: parseToolsList(frontmatter.tools),
+    disallowedTools: parseToolsList(frontmatter.disallowedTools),
+    model: parseModel(frontmatter.model),
+    source: meta.source,
+    filePath: meta.filePath,
+    pluginName: meta.pluginName,
+    skills: frontmatter.skills,
+    permissionMode: parsePermissionMode(frontmatter.permissionMode),
+    hooks: frontmatter.hooks,
+  };
 }
