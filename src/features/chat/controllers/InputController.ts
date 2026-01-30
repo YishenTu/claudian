@@ -5,13 +5,13 @@ import { detectBuiltInCommand } from '../../../core/commands';
 import type { ChatMessage } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { type ApprovalDecision, ApprovalModal } from '../../../shared/modals/ApprovalModal';
-import { AskUserQuestionModal } from '../../../shared/modals/AskUserQuestionModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
+import { InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
 import type { SubagentManager } from '../services/SubagentManager';
@@ -44,6 +44,7 @@ export interface InputControllerDeps {
   getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
+  getInputContainerEl: () => HTMLElement;
   generateId: () => string;
   resetInputHeight: () => void;
   getAgentService?: () => ClaudianService | null;
@@ -55,7 +56,7 @@ export interface InputControllerDeps {
 export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalModal: ApprovalModal | null = null;
-  private pendingAskUserQuestionModal: AskUserQuestionModal | null = null;
+  private pendingAskUserQuestionInline: InlineAskUserQuestion | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -637,18 +638,29 @@ export class InputController {
     input: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Record<string, string> | null> {
+    const { streamController } = this.deps;
+    const inputContainerEl = this.deps.getInputContainerEl();
+    const parentEl = inputContainerEl.parentElement;
+    if (!parentEl) {
+      return null;
+    }
+
+    streamController.hideThinkingIndicator();
+    inputContainerEl.style.display = 'none';
+
     return new Promise((resolve) => {
-      const modal = new AskUserQuestionModal(
-        this.deps.plugin.app,
+      const inline = new InlineAskUserQuestion(
+        parentEl,
         input,
-        (result) => {
-          this.pendingAskUserQuestionModal = null;
+        (result: Record<string, string> | null) => {
+          this.pendingAskUserQuestionInline = null;
+          inputContainerEl.style.display = '';
           resolve(result);
         },
         signal,
       );
-      this.pendingAskUserQuestionModal = modal;
-      modal.open();
+      this.pendingAskUserQuestionInline = inline;
+      inline.render();
     });
   }
 
@@ -657,9 +669,9 @@ export class InputController {
       this.pendingApprovalModal.close();
       this.pendingApprovalModal = null;
     }
-    if (this.pendingAskUserQuestionModal) {
-      this.pendingAskUserQuestionModal.close();
-      this.pendingAskUserQuestionModal = null;
+    if (this.pendingAskUserQuestionInline) {
+      this.pendingAskUserQuestionInline.destroy();
+      this.pendingAskUserQuestionInline = null;
     }
   }
 

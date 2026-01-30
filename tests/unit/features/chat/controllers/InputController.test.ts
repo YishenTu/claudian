@@ -124,6 +124,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       clearTerminalSubagentsFromMessages: jest.fn(),
     } as any,
     getInputEl: () => inputEl,
+    getInputContainerEl: () => createMockEl() as any,
     getWelcomeEl: () => null,
     getMessagesEl: () => createMockEl() as any,
     getFileContextManager: () => ({

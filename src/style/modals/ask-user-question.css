@@ -4,27 +4,35 @@
   font-family: var(--font-monospace);
 }
 
+/* ── Inline variant (rendered in chat panel) ──── */
+
+.claudian-ask-question-inline {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.claudian-ask-question-inline:focus {
+  border-color: var(--interactive-accent);
+}
+
+.claudian-ask-inline-title {
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 6px 10px 0;
+}
+
 /* ── Tab bar ─────────────────────────────────── */
 
 .claudian-ask-tab-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 4px 10px;
   border-bottom: 1px solid var(--background-modifier-border);
-  font-size: 13px;
   line-height: 1.4;
-}
-
-.claudian-ask-nav-arrow {
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-  padding: 2px 4px;
-}
-
-.claudian-ask-nav-arrow:hover {
-  color: var(--text-normal);
 }
 
 .claudian-ask-tab {
@@ -70,14 +78,13 @@
 /* ── Content area ────────────────────────────── */
 
 .claudian-ask-content {
-  padding: 16px;
+  padding: 8px 10px;
 }
 
 .claudian-ask-question-text {
-  font-size: 14px;
   font-weight: 700;
   color: var(--text-normal);
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   line-height: 1.4;
 }
 
@@ -86,17 +93,16 @@
 .claudian-ask-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 16px;
+  gap: 2px;
+  margin-bottom: 8px;
 }
 
 .claudian-ask-item {
   display: flex;
   align-items: flex-start;
-  padding: 6px 4px;
+  padding: 3px 4px;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.4;
   color: var(--text-normal);
   border-radius: 3px;
 }
@@ -130,11 +136,10 @@
 }
 
 .claudian-ask-item-desc {
-  font-size: 12px;
   color: var(--text-muted);
   font-weight: 400;
   line-height: 1.4;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* Selected items: green text */
@@ -172,7 +177,7 @@
   border: none;
   background: transparent;
   font-family: var(--font-monospace);
-  font-size: 14px;
+  font-size: inherit;
   color: var(--text-normal);
   outline: none;
   padding: 0;
@@ -187,10 +192,9 @@
 /* ── Submit review tab ───────────────────────── */
 
 .claudian-ask-review-title {
-  font-size: 15px;
   font-weight: 700;
   color: var(--text-normal);
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .claudian-ask-review {
@@ -235,7 +239,7 @@
 }
 
 .claudian-ask-review-a {
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .claudian-ask-review-a:last-child {
@@ -243,16 +247,14 @@
 }
 
 .claudian-ask-review-prompt {
-  font-size: 14px;
   color: var(--text-muted);
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 /* ── Hints ───────────────────────────────────── */
 
 .claudian-ask-hints {
-  font-size: 12px;
   color: var(--text-faint);
-  padding-top: 8px;
+  padding-top: 6px;
   border-top: 1px solid var(--background-modifier-border);
 }

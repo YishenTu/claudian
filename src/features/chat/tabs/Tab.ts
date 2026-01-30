@@ -628,6 +628,7 @@ export function initializeTabControllers(
     selectionController: tab.controllers.selectionController,
     conversationController: tab.controllers.conversationController,
     getInputEl: () => dom.inputEl,
+    getInputContainerEl: () => dom.inputContainerEl,
     getWelcomeEl: () => dom.welcomeEl,
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,

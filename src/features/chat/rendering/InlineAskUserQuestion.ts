@@ -1,6 +1,3 @@
-import type { App } from 'obsidian';
-import { Modal } from 'obsidian';
-
 interface QuestionOption {
   label: string;
   description: string;
@@ -13,7 +10,8 @@ interface Question {
   multiSelect: boolean;
 }
 
-export class AskUserQuestionModal extends Modal {
+export class InlineAskUserQuestion {
+  private containerEl: HTMLElement;
   private input: Record<string, unknown>;
   private resolveCallback: (result: Record<string, string> | null) => void;
   private resolved = false;
@@ -27,29 +25,32 @@ export class AskUserQuestionModal extends Modal {
   private focusedItemIndex = 0;
   private isInputFocused = false;
 
+  private rootEl!: HTMLElement;
   private tabBar!: HTMLElement;
   private contentArea!: HTMLElement;
   private tabElements: HTMLElement[] = [];
   private currentItems: HTMLElement[] = [];
   private boundKeyDown: (e: KeyboardEvent) => void;
+  private abortHandler: (() => void) | null = null;
 
   constructor(
-    app: App,
+    containerEl: HTMLElement,
     input: Record<string, unknown>,
     resolve: (result: Record<string, string> | null) => void,
     signal?: AbortSignal,
   ) {
-    super(app);
+    this.containerEl = containerEl;
     this.input = input;
     this.resolveCallback = resolve;
     this.signal = signal;
     this.boundKeyDown = this.handleKeyDown.bind(this);
   }
 
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.addClass('claudian-ask-question-modal');
-    this.setTitle('Claude has a question');
+  render(): void {
+    this.rootEl = this.containerEl.createDiv({ cls: 'claudian-ask-question-inline' });
+
+    const titleEl = this.rootEl.createDiv({ cls: 'claudian-ask-inline-title' });
+    titleEl.setText('Claude has a question');
 
     this.questions = this.parseQuestions();
 
@@ -63,20 +64,41 @@ export class AskUserQuestionModal extends Modal {
       this.customInputs.set(i, '');
     }
 
-    this.tabBar = contentEl.createDiv({ cls: 'claudian-ask-tab-bar' });
-    this.contentArea = contentEl.createDiv({ cls: 'claudian-ask-content' });
+    this.tabBar = this.rootEl.createDiv({ cls: 'claudian-ask-tab-bar' });
+    this.contentArea = this.rootEl.createDiv({ cls: 'claudian-ask-content' });
 
     this.renderTabBar();
     this.renderTabContent();
 
-    contentEl.setAttribute('tabindex', '0');
-    contentEl.addEventListener('keydown', this.boundKeyDown);
-    contentEl.focus();
+    this.rootEl.setAttribute('tabindex', '0');
+    this.rootEl.addEventListener('keydown', this.boundKeyDown);
+
+    // Defer focus to after the element is in the DOM and laid out
+    requestAnimationFrame(() => {
+      this.rootEl.focus();
+      this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
 
     if (this.signal) {
-      this.signal.addEventListener('abort', () => this.handleResolve(null), { once: true });
+      this.abortHandler = () => this.handleResolve(null);
+      this.signal.addEventListener('abort', this.abortHandler, { once: true });
     }
   }
+
+  destroy(): void {
+    this.rootEl?.removeEventListener('keydown', this.boundKeyDown);
+    if (this.signal && this.abortHandler) {
+      this.signal.removeEventListener('abort', this.abortHandler);
+      this.abortHandler = null;
+    }
+    if (!this.resolved) {
+      this.resolved = true;
+      this.resolveCallback(null);
+    }
+    this.rootEl?.remove();
+  }
+
+  // ── Parsing ────────────────────────────────────
 
   private parseQuestions(): Question[] {
     const raw = this.input.questions;
@@ -113,17 +135,11 @@ export class AskUserQuestionModal extends Modal {
     return { label: text, description: '' };
   }
 
-  // ── Tab bar ──────────────────────────────────────────
+  // ── Tab bar ──────────────────────────────────────
 
   private renderTabBar(): void {
     this.tabBar.empty();
     this.tabElements = [];
-
-    const leftArrow = this.tabBar.createSpan({
-      text: '\u2190',
-      cls: 'claudian-ask-nav-arrow',
-    });
-    leftArrow.addEventListener('click', () => this.switchTab(this.activeTabIndex - 1));
 
     for (let idx = 0; idx < this.questions.length; idx++) {
       const answered = this.isQuestionAnswered(idx);
@@ -144,12 +160,6 @@ export class AskUserQuestionModal extends Modal {
     if (this.activeTabIndex === this.questions.length) submitTab.addClass('is-active');
     submitTab.addEventListener('click', () => this.switchTab(this.questions.length));
     this.tabElements.push(submitTab);
-
-    const rightArrow = this.tabBar.createSpan({
-      text: '\u2192',
-      cls: 'claudian-ask-nav-arrow',
-    });
-    rightArrow.addEventListener('click', () => this.switchTab(this.activeTabIndex + 1));
   }
 
   private isQuestionAnswered(idx: number): boolean {
@@ -169,10 +179,10 @@ export class AskUserQuestionModal extends Modal {
     this.isInputFocused = false;
     this.renderTabBar();
     this.renderTabContent();
-    this.contentEl.focus();
+    this.rootEl.focus();
   }
 
-  // ── Content rendering ────────────────────────────────
+  // ── Content rendering ────────────────────────────
 
   private renderTabContent(): void {
     this.contentArea.empty();
@@ -345,7 +355,7 @@ export class AskUserQuestionModal extends Modal {
     });
   }
 
-  // ── State helpers ────────────────────────────────────
+  // ── State helpers ────────────────────────────────
 
   private getAnswerText(idx: number): string {
     const selected = this.answers.get(idx);
@@ -380,7 +390,7 @@ export class AskUserQuestionModal extends Modal {
     }
   }
 
-  // ── DOM updates (no re-render) ───────────────────────
+  // ── DOM updates (no re-render) ───────────────────
 
   private updateOptionVisuals(qIdx: number): void {
     const q = this.questions[qIdx];
@@ -444,7 +454,7 @@ export class AskUserQuestionModal extends Modal {
     }
   }
 
-  // ── Keyboard ─────────────────────────────────────────
+  // ── Keyboard ─────────────────────────────────────
 
   private handleKeyDown(e: KeyboardEvent): void {
     if (this.isInputFocused) {
@@ -453,7 +463,7 @@ export class AskUserQuestionModal extends Modal {
         e.stopPropagation();
         this.isInputFocused = false;
         (document.activeElement as HTMLElement)?.blur();
-        this.contentEl.focus();
+        this.rootEl.focus();
         return;
       }
       if (e.key === 'Tab') {
@@ -504,6 +514,7 @@ export class AskUserQuestionModal extends Modal {
           return;
         case 'Escape':
           e.preventDefault();
+          e.stopPropagation();
           this.handleResolve(null);
           return;
       }
@@ -567,12 +578,13 @@ export class AskUserQuestionModal extends Modal {
 
       case 'Escape':
         e.preventDefault();
+        e.stopPropagation();
         this.handleResolve(null);
         break;
     }
   }
 
-  // ── Submit / resolve ─────────────────────────────────
+  // ── Submit / resolve ─────────────────────────────
 
   private handleSubmit(): void {
     const allAnswered = this.questions.every((_, i) => this.isQuestionAnswered(i));
@@ -588,17 +600,13 @@ export class AskUserQuestionModal extends Modal {
   private handleResolve(result: Record<string, string> | null): void {
     if (!this.resolved) {
       this.resolved = true;
+      this.rootEl?.removeEventListener('keydown', this.boundKeyDown);
+      if (this.signal && this.abortHandler) {
+        this.signal.removeEventListener('abort', this.abortHandler);
+        this.abortHandler = null;
+      }
+      this.rootEl?.remove();
       this.resolveCallback(result);
-      this.close();
     }
-  }
-
-  onClose() {
-    this.contentEl.removeEventListener('keydown', this.boundKeyDown);
-    if (!this.resolved) {
-      this.resolved = true;
-      this.resolveCallback(null);
-    }
-    this.contentEl.empty();
   }
 }
