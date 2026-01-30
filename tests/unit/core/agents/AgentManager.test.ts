@@ -181,6 +181,22 @@ describe('AgentManager', () => {
       expect(agents.every(a => a.source === 'builtin')).toBe(true);
     });
 
+    it('continues loading when readdirSync throws filesystem error', async () => {
+      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
+
+      mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
+      (mockFs.readdirSync as jest.Mock).mockImplementation(() => {
+        throw new Error('Permission denied');
+      });
+
+      // Should not throw, just skip the directory
+      await manager.loadAgents();
+      const agents = manager.getAvailableAgents();
+
+      // Should only have built-in agents (vault agents skipped due to error)
+      expect(agents.every(a => a.source === 'builtin')).toBe(true);
+    });
+
     it('skips duplicate agent IDs', async () => {
       const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
 

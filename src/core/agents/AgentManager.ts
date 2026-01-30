@@ -146,8 +146,8 @@ export class AgentManager {
           files.push(path.join(dir, entry.name));
         }
       }
-    } catch {
-      // skip silently
+    } catch (error) {
+      console.warn(`Failed to list agent files in ${dir}:`, error);
     }
 
     return files;
@@ -175,7 +175,8 @@ export class AgentManager {
         pluginName,
         filePath,
       });
-    } catch {
+    } catch (error) {
+      console.warn(`Skipping malformed plugin agent file ${filePath}:`, error);
       return null;
     }
   }
@@ -200,7 +201,8 @@ export class AgentManager {
         source,
         filePath,
       });
-    } catch {
+    } catch (error) {
+      console.warn(`Skipping malformed agent file ${filePath}:`, error);
       return null;
     }
   }

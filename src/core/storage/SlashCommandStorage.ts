@@ -21,12 +21,12 @@ export class SlashCommandStorage {
           if (command) {
             commands.push(command);
           }
-        } catch {
-          // Non-critical: skip malformed command files
+        } catch (error) {
+          console.warn(`Skipping malformed command file ${filePath}:`, error);
         }
       }
-    } catch {
-      // Non-critical: directory may not exist yet
+    } catch (error) {
+      console.warn('Failed to load commands:', error);
     }
 
     return commands;

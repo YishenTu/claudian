@@ -104,6 +104,30 @@ Prompt`,
       expect(skills).toEqual([]);
     });
 
+    it('returns empty array when listFolders throws an error', async () => {
+      const adapter = createMockAdapter({});
+      (adapter.listFolders as jest.Mock).mockRejectedValue(new Error('Permission denied'));
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toEqual([]);
+    });
+
+    it('continues loading when filesystem errors occur', async () => {
+      const adapter = createMockAdapter({
+        '.claude/skills/good/SKILL.md': `---
+description: Valid
+---
+Prompt`,
+      });
+      // Simulate filesystem error during listFolders
+      (adapter.listFolders as jest.Mock).mockRejectedValueOnce(new Error('I/O error'));
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toEqual([]);
+    });
+
     it('parses all skill frontmatter fields', async () => {
       const adapter = createMockAdapter({
         '.claude/skills/full/SKILL.md': `---

@@ -9,26 +9,32 @@ export class SkillStorage {
 
   async loadAll(): Promise<SlashCommand[]> {
     const skills: SlashCommand[] = [];
-    const folders = await this.adapter.listFolders(SKILLS_PATH);
 
-    for (const folder of folders) {
-      const skillName = folder.split('/').pop()!;
-      const skillPath = `${SKILLS_PATH}/${skillName}/SKILL.md`;
+    try {
+      const folders = await this.adapter.listFolders(SKILLS_PATH);
 
-      try {
-        if (!(await this.adapter.exists(skillPath))) continue;
+      for (const folder of folders) {
+        const skillName = folder.split('/').pop()!;
+        const skillPath = `${SKILLS_PATH}/${skillName}/SKILL.md`;
 
-        const content = await this.adapter.read(skillPath);
-        const parsed = parseSlashCommandContent(content);
+        try {
+          if (!(await this.adapter.exists(skillPath))) continue;
 
-        skills.push(parsedToSlashCommand(parsed, {
-          id: `skill-${skillName}`,
-          name: skillName,
-          source: 'user',
-        }));
-      } catch {
-        // Non-critical: skip malformed skill files
+          const content = await this.adapter.read(skillPath);
+          const parsed = parseSlashCommandContent(content);
+
+          skills.push(parsedToSlashCommand(parsed, {
+            id: `skill-${skillName}`,
+            name: skillName,
+            source: 'user',
+          }));
+        } catch (error) {
+          console.warn(`Skipping malformed skill file ${skillPath}:`, error);
+        }
       }
+    } catch (error) {
+      console.warn('Failed to load skills:', error);
+      return [];
     }
 
     return skills;
