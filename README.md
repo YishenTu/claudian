@@ -250,6 +250,8 @@ src/
 - [x] Custom agent (subagent) support
 - [x] Claude in Chrome support
 - [x] `/compact` command
+- [ ] Plan mode
+- [ ] Tool renderers refinement
 - [ ] Hooks and other advanced features
 - [ ] More to come!
 
