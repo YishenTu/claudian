@@ -1,5 +1,7 @@
 import type { AskUserQuestionItem, AskUserQuestionOption } from '../../../core/types/tools';
 
+const HINTS_TEXT = 'Enter to select \u00B7 Tab/Arrow keys to navigate \u00B7 Esc to cancel';
+
 export class InlineAskUserQuestion {
   private containerEl: HTMLElement;
   private input: Record<string, unknown>;
@@ -204,10 +206,7 @@ export class InlineAskUserQuestion {
       row.createSpan({ text: `${optIdx + 1}. `, cls: 'claudian-ask-item-num' });
 
       if (isMulti) {
-        row.createSpan({
-          text: isSelected ? '[\u2713] ' : '[ ] ',
-          cls: `claudian-ask-check${isSelected ? ' is-checked' : ''}`,
-        });
+        this.renderMultiSelectCheckbox(row, isSelected);
       }
 
       const labelBlock = row.createDiv({ cls: 'claudian-ask-item-content' });
@@ -243,10 +242,7 @@ export class InlineAskUserQuestion {
     customRow.createSpan({ text: `${customIdx + 1}. `, cls: 'claudian-ask-item-num' });
 
     if (isMulti) {
-      customRow.createSpan({
-        text: hasCustomText ? '[\u2713] ' : '[ ] ',
-        cls: `claudian-ask-check${hasCustomText ? ' is-checked' : ''}`,
-      });
+      this.renderMultiSelectCheckbox(customRow, hasCustomText);
     }
 
     const inputEl = customRow.createEl('input', {
@@ -274,7 +270,7 @@ export class InlineAskUserQuestion {
     this.currentItems.push(customRow);
 
     this.contentArea.createDiv({
-      text: 'Enter to select \u00B7 Tab/Arrow keys to navigate \u00B7 Esc to cancel',
+      text: HINTS_TEXT,
       cls: 'claudian-ask-hints',
     });
   }
@@ -338,7 +334,7 @@ export class InlineAskUserQuestion {
     this.currentItems.push(cancelRow);
 
     this.contentArea.createDiv({
-      text: 'Enter to select \u00B7 Tab/Arrow keys to navigate \u00B7 Esc to cancel',
+      text: HINTS_TEXT,
       cls: 'claudian-ask-hints',
     });
   }
@@ -375,6 +371,13 @@ export class InlineAskUserQuestion {
     if (!isMulti) {
       this.switchTab(this.activeTabIndex + 1);
     }
+  }
+
+  private renderMultiSelectCheckbox(parent: HTMLElement, checked: boolean): void {
+    parent.createSpan({
+      text: checked ? '[\u2713] ' : '[ ] ',
+      cls: `claudian-ask-check${checked ? ' is-checked' : ''}`,
+    });
   }
 
   private updateOptionVisuals(qIdx: number): void {

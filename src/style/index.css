@@ -36,10 +36,10 @@
 @import "./features/inline-edit.css";
 @import "./features/diff.css";
 @import "./features/slash-commands.css";
+@import "./features/ask-user-question.css";
 
 /* Modals */
 @import "./modals/approval.css";
-@import "./features/ask-user-question.css";
 @import "./modals/instruction.css";
 @import "./modals/mcp-modal.css";
 
