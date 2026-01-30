@@ -14,6 +14,11 @@
   min-width: 28px;
 }
 
+.claudian-permission-label.plan-active {
+  color: rgb(92, 148, 140);
+  font-weight: 600;
+}
+
 .claudian-toggle-switch {
   width: 32px;
   height: 18px;

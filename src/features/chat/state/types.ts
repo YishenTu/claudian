@@ -91,6 +91,9 @@ export interface ChatStateData {
   // Response timer state
   responseStartTime: number | null;
   flavorTimerInterval: ReturnType<typeof setInterval> | null;
+
+  // Pending plan content for approve-new-session (auto-sends in new session after stream ends)
+  pendingNewSessionPlan: string | null;
 }
 
 /** Callbacks for ChatState changes. */

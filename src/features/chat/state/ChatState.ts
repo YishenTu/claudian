@@ -37,6 +37,7 @@ function createInitialState(): ChatStateData {
     autoScrollEnabled: true, // Default; controllers will override based on settings
     responseStartTime: null,
     flavorTimerInterval: null,
+    pendingNewSessionPlan: null,
   };
 }
 
@@ -310,6 +311,14 @@ export class ChatState {
 
   set flavorTimerInterval(value: ReturnType<typeof setInterval> | null) {
     this.state.flavorTimerInterval = value;
+  }
+
+  get pendingNewSessionPlan(): string | null {
+    return this.state.pendingNewSessionPlan;
+  }
+
+  set pendingNewSessionPlan(value: string | null) {
+    this.state.pendingNewSessionPlan = value;
   }
 
   // ============================================

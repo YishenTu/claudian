@@ -432,7 +432,7 @@ export class TabManager implements TabManagerInterface {
     try {
       // initializeTabService() handles session ID resolution from tab.conversationId
       await initializeTabService(activeTab, this.plugin, this.mcpManager);
-      setupServiceCallbacks(activeTab);
+      setupServiceCallbacks(activeTab, this.plugin);
     } catch {
       // Non-fatal - service will be initialized on first query
     }

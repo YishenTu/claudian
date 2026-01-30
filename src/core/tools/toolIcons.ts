@@ -4,6 +4,8 @@ import {
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_EDIT,
+  TOOL_ENTER_PLAN_MODE,
+  TOOL_EXIT_PLAN_MODE,
   TOOL_GLOB,
   TOOL_GREP,
   TOOL_KILL_SHELL,
@@ -42,6 +44,8 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_AGENT_OUTPUT]: 'bot',
   [TOOL_ASK_USER_QUESTION]: 'help-circle',
   [TOOL_SKILL]: 'zap',
+  [TOOL_ENTER_PLAN_MODE]: 'map',
+  [TOOL_EXIT_PLAN_MODE]: 'check-circle',
 };
 
 /** Special marker for MCP tools - signals to use custom SVG. */

@@ -37,6 +37,7 @@
 @import "./features/diff.css";
 @import "./features/slash-commands.css";
 @import "./features/ask-user-question.css";
+@import "./features/plan-mode.css";
 
 /* Modals */
 @import "./modals/instruction.css";

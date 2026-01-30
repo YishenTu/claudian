@@ -43,10 +43,13 @@ import {
   buildPermissionUpdates,
   getActionDescription,
 } from '../security';
-import { TOOL_ASK_USER_QUESTION, TOOL_SKILL } from '../tools/toolNames';
+import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL } from '../tools/toolNames';
 import type {
   ApprovalDecision,
   ChatMessage,
+  EnterPlanModeCallback,
+  ExitPlanModeCallback,
+  ExitPlanModeDecision,
   ImageAttachment,
   SlashCommand,
   StreamChunk,
@@ -119,6 +122,8 @@ export class ClaudianService {
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
   private askUserQuestionCallback: AskUserQuestionCallback | null = null;
+  private enterPlanModeCallback: EnterPlanModeCallback | null = null;
+  private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
   private readyStateListeners = new Set<(ready: boolean) => void>();
@@ -1062,9 +1067,16 @@ export class ClaudianService {
     // Since we always start with allowDangerouslySkipPermissions: true,
     // we can dynamically switch between modes without restarting
     if (this.currentConfig && permissionMode !== this.currentConfig.permissionMode) {
-      const sdkMode = permissionMode === 'yolo' ? 'bypassPermissions' : 'acceptEdits';
+      let sdkMode: string;
+      if (permissionMode === 'yolo') {
+        sdkMode = 'bypassPermissions';
+      } else if (permissionMode === 'plan') {
+        sdkMode = 'plan';
+      } else {
+        sdkMode = 'acceptEdits';
+      }
       try {
-        await this.persistentQuery.setPermissionMode(sdkMode);
+        await this.persistentQuery.setPermissionMode(sdkMode as 'bypassPermissions' | 'acceptEdits' | 'plan');
         this.currentConfig.permissionMode = permissionMode;
       } catch {
         // Silently ignore permission mode update errors
@@ -1388,6 +1400,14 @@ export class ClaudianService {
     this.askUserQuestionCallback = callback;
   }
 
+  setEnterPlanModeCallback(callback: EnterPlanModeCallback | null): void {
+    this.enterPlanModeCallback = callback;
+  }
+
+  setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void {
+    this.exitPlanModeCallback = callback;
+  }
+
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
       if (this.currentAllowedTools !== null) {
@@ -1398,6 +1418,43 @@ export class ClaudianService {
           return {
             behavior: 'deny',
             message: `Tool "${toolName}" is not allowed for this query.${allowedList}`,
+          };
+        }
+      }
+
+      // EnterPlanMode uses a dedicated callback — bypasses normal approval flow
+      if (toolName === TOOL_ENTER_PLAN_MODE && this.enterPlanModeCallback) {
+        try {
+          const accepted = await this.enterPlanModeCallback(input, options.signal);
+          if (!accepted) {
+            return { behavior: 'deny', message: 'User declined plan mode.', interrupt: true };
+          }
+          return { behavior: 'allow', updatedInput: input };
+        } catch (error) {
+          return {
+            behavior: 'deny',
+            message: `Failed to handle plan mode entry: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            interrupt: true,
+          };
+        }
+      }
+
+      // ExitPlanMode uses a dedicated callback — bypasses normal approval flow
+      if (toolName === TOOL_EXIT_PLAN_MODE && this.exitPlanModeCallback) {
+        try {
+          const decision: ExitPlanModeDecision | null = await this.exitPlanModeCallback(input, options.signal);
+          if (decision === null) {
+            return { behavior: 'deny', message: 'User cancelled.', interrupt: true };
+          }
+          if (decision.type === 'feedback') {
+            return { behavior: 'deny', message: decision.text, interrupt: false };
+          }
+          return { behavior: 'allow', updatedInput: input };
+        } catch (error) {
+          return {
+            behavior: 'deny',
+            message: `Failed to handle plan mode exit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            interrupt: true,
           };
         }
       }

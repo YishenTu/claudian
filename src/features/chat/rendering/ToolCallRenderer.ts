@@ -6,6 +6,8 @@ import {
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_EDIT,
+  TOOL_ENTER_PLAN_MODE,
+  TOOL_EXIT_PLAN_MODE,
   TOOL_GLOB,
   TOOL_GREP,
   TOOL_LS,
@@ -68,6 +70,10 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       const skillName = (input.skill as string) || 'skill';
       return `Skill: ${skillName}`;
     }
+    case TOOL_ENTER_PLAN_MODE:
+      return 'Entering plan mode';
+    case TOOL_EXIT_PLAN_MODE:
+      return 'Plan complete';
     default:
       return name;
   }

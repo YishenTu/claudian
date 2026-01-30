@@ -259,6 +259,23 @@ describe('PermissionToggle', () => {
     expect(label?.textContent).toBe('YOLO');
   });
 
+  it('should show PLAN label and hide toggle in plan mode', () => {
+    callbacks.getSettings.mockReturnValue({
+      model: 'sonnet',
+      thinkingBudget: 'low',
+      permissionMode: 'plan',
+    });
+    const parentEl2 = createMockEl();
+    new PermissionToggle(parentEl2, callbacks);
+
+    const label = parentEl2.querySelector('.claudian-permission-label');
+    expect(label?.textContent).toBe('PLAN');
+    expect(label?.hasClass('plan-active')).toBe(true);
+
+    const toggle = parentEl2.querySelector('.claudian-toggle-switch');
+    expect(toggle?.style.display).toBe('none');
+  });
+
   it('should add active class when in yolo mode', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',

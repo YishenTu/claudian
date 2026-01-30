@@ -2,7 +2,7 @@ import type { Component } from 'obsidian';
 
 import { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
-import type { ClaudeModel, Conversation, SlashCommand, ThinkingBudget } from '../../../core/types';
+import type { ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -427,6 +427,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     onPermissionModeChange: async (mode) => {
       plugin.settings.permissionMode = mode;
       await plugin.saveSettings();
+      dom.inputWrapper.toggleClass('claudian-input-plan-mode', mode === 'plan');
     },
   });
 
@@ -459,6 +460,9 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     plugin.settings.persistentExternalContextPaths = paths;
     await plugin.saveSettings();
   });
+
+  // Initialize plan mode border
+  dom.inputWrapper.toggleClass('claudian-input-plan-mode', plugin.settings.permissionMode === 'plan');
 }
 
 export interface InitializeTabUIOptions {
@@ -654,7 +658,7 @@ export function initializeTabControllers(
       }
       try {
         await initializeTabService(tab, plugin, mcpManager);
-        setupServiceCallbacks(tab);
+        setupServiceCallbacks(tab, plugin);
         return true;
       } catch {
         return false;
@@ -688,6 +692,20 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
+    // Shift+Tab: cycle permission mode (normal → plan → yolo → normal)
+    if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      const modes: PermissionMode[] = ['normal', 'plan', 'yolo'];
+      const current = plugin.settings.permissionMode;
+      const idx = modes.indexOf(current);
+      const next = modes[(idx + 1) % modes.length];
+      plugin.settings.permissionMode = next;
+      void plugin.saveSettings();
+      tab.ui.permissionToggle?.updateDisplay();
+      dom.inputWrapper.toggleClass('claudian-input-plan-mode', next === 'plan');
+      return;
+    }
+
     // Check for # trigger first (empty input + # keystroke)
     if (ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
@@ -882,7 +900,7 @@ export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
 }
 
 /** Shared between Tab.ts and TabManager.ts to avoid duplication. */
-export function setupServiceCallbacks(tab: TabData): void {
+export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): void {
   if (tab.service && tab.controllers.inputController) {
     tab.service.setApprovalCallback(
       async (toolName, input, description, options) =>
@@ -897,5 +915,34 @@ export function setupServiceCallbacks(tab: TabData): void {
         await tab.controllers.inputController?.handleAskUserQuestion(input, signal)
         ?? null
     );
+    tab.service.setEnterPlanModeCallback(
+      async (input, signal) => {
+        const accepted = await tab.controllers.inputController?.handleEnterPlanMode(input, signal) ?? false;
+        if (accepted) {
+          updatePlanModeUI(tab, plugin, 'plan');
+        }
+        return accepted;
+      }
+    );
+    tab.service.setExitPlanModeCallback(
+      async (input, signal) => {
+        const decision = await tab.controllers.inputController?.handleExitPlanMode(input, signal) ?? null;
+        // Revert only on approve; feedback and cancel keep plan mode active
+        if (decision !== null && decision.type !== 'feedback') {
+          updatePlanModeUI(tab, plugin, 'normal');
+          if (decision.type === 'approve-new-session') {
+            tab.state.pendingNewSessionPlan = decision.planContent;
+          }
+        }
+        return decision;
+      }
+    );
   }
+}
+
+function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: PermissionMode): void {
+  plugin.settings.permissionMode = mode;
+  void plugin.saveSettings();
+  tab.ui.permissionToggle?.updateDisplay();
+  tab.dom.inputWrapper.toggleClass('claudian-input-plan-mode', mode === 'plan');
 }

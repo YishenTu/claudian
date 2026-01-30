@@ -213,15 +213,23 @@ export class PermissionToggle {
   updateDisplay() {
     if (!this.toggleEl || !this.labelEl) return;
 
-    const isYolo = this.callbacks.getSettings().permissionMode === 'yolo';
+    const mode = this.callbacks.getSettings().permissionMode;
 
-    if (isYolo) {
-      this.toggleEl.addClass('active');
+    if (mode === 'plan') {
+      this.toggleEl.style.display = 'none';
+      this.labelEl.setText('PLAN');
+      this.labelEl.addClass('plan-active');
     } else {
-      this.toggleEl.removeClass('active');
+      this.toggleEl.style.display = '';
+      this.labelEl.removeClass('plan-active');
+      if (mode === 'yolo') {
+        this.toggleEl.addClass('active');
+        this.labelEl.setText('YOLO');
+      } else {
+        this.toggleEl.removeClass('active');
+        this.labelEl.setText('Safe');
+      }
     }
-
-    this.labelEl.setText(isYolo ? 'YOLO' : 'Safe');
   }
 
   private async toggle() {

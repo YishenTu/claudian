@@ -2,7 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
-import type { ApprovalDecision, ChatMessage } from '../../../core/types';
+import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
@@ -11,6 +11,8 @@ import { appendEditorContext, type EditorSelectionContext } from '../../../utils
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
+import { InlineEnterPlanMode } from '../rendering/InlineEnterPlanMode';
+import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { setToolIcon } from '../rendering/ToolCallRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
@@ -63,6 +65,8 @@ export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
   private pendingAskInline: InlineAskUserQuestion | null = null;
+  private pendingEnterPlanModeInline: InlineEnterPlanMode | null = null;
+  private pendingExitPlanModeInline: InlineExitPlanMode | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -360,6 +364,15 @@ export class InputController {
 
         this.processQueuedMessage();
       }
+    }
+
+    // approve-new-session: create fresh conversation and send plan content
+    const planContent = state.pendingNewSessionPlan;
+    if (planContent) {
+      state.pendingNewSessionPlan = null;
+      await conversationController.createNew();
+      this.deps.getInputEl().value = planContent;
+      void this.sendMessage();
     }
   }
 
@@ -734,6 +747,78 @@ export class InputController {
     });
   }
 
+  async handleEnterPlanMode(
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const { streamController } = this.deps;
+    const inputContainerEl = this.deps.getInputContainerEl();
+    const parentEl = inputContainerEl.parentElement;
+    if (!parentEl) {
+      throw new Error('Input container is detached from DOM');
+    }
+
+    streamController.hideThinkingIndicator();
+    inputContainerEl.style.display = 'none';
+
+    return new Promise<boolean>((resolve, reject) => {
+      const inline = new InlineEnterPlanMode(
+        parentEl,
+        input,
+        (accepted: boolean) => {
+          this.pendingEnterPlanModeInline = null;
+          inputContainerEl.style.display = '';
+          resolve(accepted);
+        },
+        signal,
+      );
+      this.pendingEnterPlanModeInline = inline;
+      try {
+        inline.render();
+      } catch (err) {
+        this.pendingEnterPlanModeInline = null;
+        inputContainerEl.style.display = '';
+        reject(err);
+      }
+    });
+  }
+
+  async handleExitPlanMode(
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ExitPlanModeDecision | null> {
+    const { streamController } = this.deps;
+    const inputContainerEl = this.deps.getInputContainerEl();
+    const parentEl = inputContainerEl.parentElement;
+    if (!parentEl) {
+      throw new Error('Input container is detached from DOM');
+    }
+
+    streamController.hideThinkingIndicator();
+    inputContainerEl.style.display = 'none';
+
+    return new Promise<ExitPlanModeDecision | null>((resolve, reject) => {
+      const inline = new InlineExitPlanMode(
+        parentEl,
+        input,
+        (decision: ExitPlanModeDecision | null) => {
+          this.pendingExitPlanModeInline = null;
+          inputContainerEl.style.display = '';
+          resolve(decision);
+        },
+        signal,
+      );
+      this.pendingExitPlanModeInline = inline;
+      try {
+        inline.render();
+      } catch (err) {
+        this.pendingExitPlanModeInline = null;
+        inputContainerEl.style.display = '';
+        reject(err);
+      }
+    });
+  }
+
   dismissPendingApproval(): void {
     if (this.pendingApprovalInline) {
       this.pendingApprovalInline.destroy();
@@ -742,6 +827,14 @@ export class InputController {
     if (this.pendingAskInline) {
       this.pendingAskInline.destroy();
       this.pendingAskInline = null;
+    }
+    if (this.pendingEnterPlanModeInline) {
+      this.pendingEnterPlanModeInline.destroy();
+      this.pendingEnterPlanModeInline = null;
+    }
+    if (this.pendingExitPlanModeInline) {
+      this.pendingExitPlanModeInline.destroy();
+      this.pendingExitPlanModeInline = null;
     }
   }
 

@@ -323,6 +323,8 @@ export class QueryOptionsBuilder {
 
     if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
+    } else if (permissionMode === 'plan') {
+      options.permissionMode = 'plan';
     } else {
       options.permissionMode = 'acceptEdits';
     }
