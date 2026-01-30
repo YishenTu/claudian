@@ -1,10 +1,4 @@
-/* AskUserQuestion Modal - Terminal Style */
-.claudian-ask-question-modal {
-  padding: 0;
-  font-family: var(--font-monospace);
-}
-
-/* ── Inline variant (rendered in chat panel) ──── */
+/* AskUserQuestion - inline widget rendered in chat panel */
 
 .claudian-ask-question-inline {
   font-family: var(--font-monospace);

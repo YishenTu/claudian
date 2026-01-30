@@ -76,14 +76,8 @@
   border-left: 2px solid var(--background-modifier-border);
 }
 
-/* TodoWrite content - no border (renders todo panel directly) */
-.claudian-tool-content-todo {
-  border-left: none;
-  margin-left: 0;
-  padding-left: 0;
-}
-
-/* AskUserQuestion content - no border (renders inline widget) */
+/* Tool content variants that render inline widgets instead of bordered results */
+.claudian-tool-content-todo,
 .claudian-tool-content-ask {
   border-left: none;
   margin-left: 0;

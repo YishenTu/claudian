@@ -1,9 +1,3 @@
-/**
- * Tool icon helpers.
- *
- * Centralizes the mapping between tool names and Lucide icon IDs.
- */
-
 import {
   TOOL_AGENT_OUTPUT,
   TOOL_ASK_USER_QUESTION,
