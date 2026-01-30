@@ -11,6 +11,23 @@ export interface ToolDiffData {
   stats: DiffStats;
 }
 
+/** Parsed option for AskUserQuestion tool. */
+export interface AskUserQuestionOption {
+  label: string;
+  description: string;
+}
+
+/** Parsed question for AskUserQuestion tool. */
+export interface AskUserQuestionItem {
+  question: string;
+  header: string;
+  options: AskUserQuestionOption[];
+  multiSelect: boolean;
+}
+
+/** User-provided answers keyed by question text. */
+export type AskUserAnswers = Record<string, string>;
+
 /** Tool call tracking with status and result. */
 export interface ToolCallInfo {
   id: string;
@@ -20,6 +37,7 @@ export interface ToolCallInfo {
   result?: string;
   isExpanded?: boolean;
   diffData?: ToolDiffData;
+  resolvedAnswers?: AskUserAnswers;
 }
 
 /** Subagent execution mode: sync (nested tools) or async (background). */

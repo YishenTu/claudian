@@ -39,7 +39,7 @@
 
 /* Modals */
 @import "./modals/approval.css";
-@import "./modals/ask-user-question.css";
+@import "./features/ask-user-question.css";
 @import "./modals/instruction.css";
 @import "./modals/mcp-modal.css";
 

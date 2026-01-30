@@ -642,7 +642,7 @@ export class InputController {
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
-      return null;
+      throw new Error('Input container is detached from DOM');
     }
 
     streamController.hideThinkingIndicator();

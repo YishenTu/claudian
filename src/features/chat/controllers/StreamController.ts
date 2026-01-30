@@ -319,7 +319,7 @@ export class StreamController {
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION && chunk.toolUseResult) {
         const r = chunk.toolUseResult as Record<string, unknown>;
-        if (r.answers) existingToolCall.input = { ...existingToolCall.input, answers: r.answers };
+        if (r.answers) existingToolCall.resolvedAnswers = r.answers as Record<string, string>;
       }
 
       const writeEditState = state.writeEditStates.get(chunk.id);

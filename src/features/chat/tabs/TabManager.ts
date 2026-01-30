@@ -11,7 +11,7 @@ import {
   initializeTabControllers,
   initializeTabService,
   initializeTabUI,
-  setupApprovalCallback,
+  setupServiceCallbacks,
   wireTabInputEvents,
 } from './Tab';
 import {
@@ -432,7 +432,7 @@ export class TabManager implements TabManagerInterface {
     try {
       // initializeTabService() handles session ID resolution from tab.conversationId
       await initializeTabService(activeTab, this.plugin, this.mcpManager);
-      setupApprovalCallback(activeTab);
+      setupServiceCallbacks(activeTab);
     } catch {
       // Non-fatal - service will be initialized on first query
     }

@@ -68,8 +68,6 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       const skillName = (input.skill as string) || 'skill';
       return `Skill: ${skillName}`;
     }
-    case TOOL_ASK_USER_QUESTION:
-      return 'AskUserQuestion';
     default:
       return name;
   }
@@ -347,10 +345,10 @@ function formatAnswer(raw: unknown): string {
   return '';
 }
 
-function renderAskUserQuestionResult(container: HTMLElement, input: Record<string, unknown>): void {
+function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallInfo): void {
   container.empty();
-  const questions = input.questions as Array<{ question: string }> | undefined;
-  const answers = input.answers as Record<string, unknown> | undefined;
+  const questions = toolCall.input.questions as Array<{ question: string }> | undefined;
+  const answers = toolCall.resolvedAnswers as Record<string, unknown> | undefined;
   if (!questions || !Array.isArray(questions) || !answers) return;
 
   const reviewEl = container.createDiv({ cls: 'claudian-ask-review' });
@@ -377,12 +375,12 @@ function renderToolContent(
     renderTodoWriteResult(content, toolCall.input);
   } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
     content.addClass('claudian-tool-content-ask');
-    if (initialText || !toolCall.input.answers) {
+    if (initialText || !toolCall.resolvedAnswers) {
       const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
       const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
       resultText.setText('Waiting for answer...');
     } else {
-      renderAskUserQuestionResult(content, toolCall.input);
+      renderAskUserQuestionResult(content, toolCall);
     }
   } else {
     const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
@@ -464,7 +462,7 @@ export function updateToolCallResult(
     const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
     if (content) {
       content.addClass('claudian-tool-content-ask');
-      renderAskUserQuestionResult(content, toolCall.input);
+      renderAskUserQuestionResult(content, toolCall);
     }
     return;
   }

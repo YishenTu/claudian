@@ -258,6 +258,20 @@ describe('QueryOptionsBuilder', () => {
       expect(options.allowDangerouslySkipPermissions).toBe(true);
     });
 
+    it('includes canUseTool in yolo mode when provided', () => {
+      const canUseTool = jest.fn();
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        canUseTool,
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.permissionMode).toBe('bypassPermissions');
+      expect(options.canUseTool).toBe(canUseTool);
+    });
+
     it('sets normal mode options correctly', () => {
       const canUseTool = jest.fn();
       const ctx = {

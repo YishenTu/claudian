@@ -569,7 +569,7 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
         }
         if (toolCall.name === TOOL_ASK_USER_QUESTION) {
           const r = toolUseResult as Record<string, unknown>;
-          if (r.answers) toolCall.input = { ...toolCall.input, answers: r.answers };
+          if (r.answers) toolCall.resolvedAnswers = r.answers as Record<string, string>;
         }
       }
     }

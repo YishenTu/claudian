@@ -82,6 +82,9 @@ export {
 
 // Tool types
 export {
+  type AskUserAnswers,
+  type AskUserQuestionItem,
+  type AskUserQuestionOption,
   type AsyncSubagentStatus,
   type SubagentInfo,
   type SubagentMode,

@@ -1410,8 +1410,12 @@ export class ClaudianService {
             return { behavior: 'deny', message: 'User declined to answer.', interrupt: true };
           }
           return { behavior: 'allow', updatedInput: { ...input, answers } };
-        } catch {
-          return { behavior: 'deny', message: 'Failed to get user answers.', interrupt: false };
+        } catch (error) {
+          return {
+            behavior: 'deny',
+            message: `Failed to get user answers: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            interrupt: false,
+          };
         }
       }
 
