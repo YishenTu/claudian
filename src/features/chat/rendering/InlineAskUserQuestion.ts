@@ -393,7 +393,6 @@ export class InlineAskUserQuestion {
     this.updateOptionVisuals(qIdx);
 
     if (this.config.immediateSelect) {
-      // Resolve immediately with the selected option
       const result: Record<string, string> = {};
       result[q.question] = label;
       this.handleResolve(result);
@@ -557,31 +556,13 @@ export class InlineAskUserQuestion {
 
     if (this.config.immediateSelect) {
       const maxIdx = this.questions[0].options.length - 1;
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          e.stopPropagation();
-          this.focusedItemIndex = Math.min(this.focusedItemIndex + 1, maxIdx);
-          this.updateFocusIndicator();
-          return;
-        case 'ArrowUp':
-          e.preventDefault();
-          e.stopPropagation();
-          this.focusedItemIndex = Math.max(this.focusedItemIndex - 1, 0);
-          this.updateFocusIndicator();
-          return;
-        case 'Enter':
-          e.preventDefault();
-          e.stopPropagation();
-          if (this.focusedItemIndex <= maxIdx) {
-            this.selectOption(0, this.questions[0].options[this.focusedItemIndex].label);
-          }
-          return;
-        case 'Escape':
-          e.preventDefault();
-          e.stopPropagation();
-          this.handleResolve(null);
-          return;
+      if (this.handleNavigationKey(e, maxIdx)) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.focusedItemIndex <= maxIdx) {
+          this.selectOption(0, this.questions[0].options[this.focusedItemIndex].label);
+        }
       }
       return;
     }

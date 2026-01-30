@@ -1293,7 +1293,6 @@ describe('InputController - Message Queue', () => {
 
       controller = new InputController(deps);
 
-      // Start approval request — it will await the inline resolve
       const approvalPromise = controller.handleApprovalRequest(
         'bash',
         { command: 'ls -la' },
@@ -1302,7 +1301,6 @@ describe('InputController - Message Queue', () => {
 
       expect((controller as any).pendingApprovalInline).not.toBeNull();
 
-      // Simulate clicking "Allow once" by dismissing and checking cancel fallback
       controller.dismissPendingApproval();
       expect((controller as any).pendingApprovalInline).toBeNull();
 
@@ -1338,7 +1336,6 @@ describe('InputController - Message Queue', () => {
         'Run shell command',
       );
 
-      // Find the rendered option item matching the label and click it
       const items = parentEl.querySelectorAll('claudian-ask-item');
       const target = items.find((item: any) => {
         const label = item.querySelector('claudian-ask-item-label');

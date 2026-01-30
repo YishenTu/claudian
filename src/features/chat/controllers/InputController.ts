@@ -10,7 +10,7 @@ import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
-import { InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
+import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { setToolIcon } from '../rendering/ToolCallRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
@@ -22,6 +22,12 @@ import type { AddExternalContextResult, FileContextManager, ImageContextManager,
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
+
+const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
+  'Deny': 'deny',
+  'Allow once': 'allow',
+  'Always allow': 'allow-always',
+};
 
 export interface InputControllerDeps {
   plugin: ClaudianPlugin;
@@ -623,15 +629,13 @@ export class InputController {
     description: string,
     approvalOptions?: ApprovalCallbackOptions,
   ): Promise<ApprovalDecision> {
-    const { streamController } = this.deps;
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
       return 'cancel';
     }
 
-    // Build header element with tool info
-    // Use parentEl to create the header (Obsidian DOM APIs), then detach it
+    // Build header element, then detach — InlineAskUserQuestion will re-attach it
     const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
     headerEl.remove();
 
@@ -653,61 +657,52 @@ export class InputController {
 
     headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
 
-    // Build options (always include "Always allow" — SDK callback has no toggle)
-    const questionOptions = ['Deny', 'Allow once', 'Always allow'];
+    // Always include "Always allow" — SDK callback has no toggle
+    const questionOptions = Object.keys(APPROVAL_OPTION_MAP);
     const input = { questions: [{ question: 'Allow this action?', options: questionOptions }] };
 
-    streamController.hideThinkingIndicator();
-    inputContainerEl.style.display = 'none';
+    const result = await this.showInlineQuestion(
+      parentEl,
+      inputContainerEl,
+      input,
+      (inline) => { this.pendingApprovalInline = inline; },
+      undefined,
+      { title: 'Permission required', headerEl, showCustomInput: false, immediateSelect: true },
+    );
 
-    const result = await new Promise<Record<string, string> | null>((resolve, reject) => {
-      const inline = new InlineAskUserQuestion(
-        parentEl,
-        input,
-        (res: Record<string, string> | null) => {
-          this.pendingApprovalInline = null;
-          inputContainerEl.style.display = '';
-          resolve(res);
-        },
-        undefined,
-        {
-          title: 'Permission required',
-          headerEl,
-          showCustomInput: false,
-          immediateSelect: true,
-        },
-      );
-      this.pendingApprovalInline = inline;
-      try {
-        inline.render();
-      } catch (err) {
-        this.pendingApprovalInline = null;
-        inputContainerEl.style.display = '';
-        reject(err);
-      }
-    });
-
-    // Map result to ApprovalDecision
     if (!result) return 'cancel';
     const selected = Object.values(result)[0];
-    if (selected === 'Deny') return 'deny';
-    if (selected === 'Allow once') return 'allow';
-    if (selected === 'Always allow') return 'allow-always';
-    return 'cancel';
+    return APPROVAL_OPTION_MAP[selected] ?? 'cancel';
   }
 
   async handleAskUserQuestion(
     input: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Record<string, string> | null> {
-    const { streamController } = this.deps;
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
       throw new Error('Input container is detached from DOM');
     }
 
-    streamController.hideThinkingIndicator();
+    return this.showInlineQuestion(
+      parentEl,
+      inputContainerEl,
+      input,
+      (inline) => { this.pendingAskUserQuestionInline = inline; },
+      signal,
+    );
+  }
+
+  private showInlineQuestion(
+    parentEl: HTMLElement,
+    inputContainerEl: HTMLElement,
+    input: Record<string, unknown>,
+    setPending: (inline: InlineAskUserQuestion | null) => void,
+    signal?: AbortSignal,
+    config?: InlineAskQuestionConfig,
+  ): Promise<Record<string, string> | null> {
+    this.deps.streamController.hideThinkingIndicator();
     inputContainerEl.style.display = 'none';
 
     return new Promise<Record<string, string> | null>((resolve, reject) => {
@@ -715,17 +710,18 @@ export class InputController {
         parentEl,
         input,
         (result: Record<string, string> | null) => {
-          this.pendingAskUserQuestionInline = null;
+          setPending(null);
           inputContainerEl.style.display = '';
           resolve(result);
         },
         signal,
+        config,
       );
-      this.pendingAskUserQuestionInline = inline;
+      setPending(inline);
       try {
         inline.render();
       } catch (err) {
-        this.pendingAskUserQuestionInline = null;
+        setPending(null);
         inputContainerEl.style.display = '';
         reject(err);
       }

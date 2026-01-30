@@ -1,6 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
-import { type InlineAskQuestionConfig,InlineAskUserQuestion } from '@/features/chat/rendering/InlineAskUserQuestion';
+import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '@/features/chat/rendering/InlineAskUserQuestion';
 
 beforeAll(() => {
   globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -576,7 +576,6 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       const input = makeInput([{ question: 'Pick', options: ['A'] }]);
       const { container } = renderImmediateWidget(input, { headerEl: headerEl as any });
       const root = findRoot(container);
-      // headerEl should be a child of the root
       expect(root.children.some((c: any) => c.hasClass('claudian-ask-approval-info'))).toBe(true);
     });
   });
@@ -649,7 +648,6 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       const root = findRoot(container);
 
       fireKeyDown(root, 'Tab');
-      // Should not resolve and items should still be visible
       expect(resolve).not.toHaveBeenCalled();
       const items = findItems(container);
       expect(items.length).toBeGreaterThan(0);
@@ -665,7 +663,6 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       fireKeyDown(root, 'ArrowDown');
 
       const items = findItems(container);
-      // Last option (index 1) should be focused
       expect(items[1]?.hasClass('is-focused')).toBe(true);
     });
   });
