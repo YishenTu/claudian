@@ -139,7 +139,7 @@ let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
 let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
 let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
 let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
-let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setAsyncSubagentClickCallback: jest.Mock };
+let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setAsyncSubagentClickCallback: jest.Mock; setCallbacks: jest.Mock };
 let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockStreamController: { onAsyncSubagentStateChange: jest.Mock };
 let mockConversationController: { save: jest.Mock };
@@ -208,6 +208,7 @@ jest.mock('@/features/chat/rendering', () => ({
     mockMessageRenderer = {
       scrollToBottomIfNeeded: jest.fn(),
       setAsyncSubagentClickCallback: jest.fn(),
+      setCallbacks: jest.fn(),
     };
     return mockMessageRenderer;
   }),
