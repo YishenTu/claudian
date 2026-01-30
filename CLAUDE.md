@@ -56,6 +56,7 @@ Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`.
 ## Development Notes
 
 - **SDK-first**: Proactively use native Claude SDK features over custom implementations. If the SDK provides a capability, use it — do not reinvent it. This ensures compatibility with Claude Code.
+- **SDK exploration**: When developing SDK-related features, write a throwaway test script (e.g., in `dev/`) that calls the real SDK to observe actual response shapes, event sequences, and edge cases. Real output lands in `~/.claude/` or `{vault}/.claude/` — inspect those files to understand patterns and formats. Run this before writing implementation or tests — real output beats guessing at types and formats. This is the default first step for any SDK integration work.
 - **Comments**: Only comment WHY, not WHAT. No JSDoc that restates the function name (`/** Get servers. */` on `getServers()`), no narrating inline comments (`// Create the channel` before `new Channel()`), no module-level docs on barrel `index.ts` files. Keep JSDoc only when it adds non-obvious context (edge cases, constraints, surprising behavior).
 - **TDD workflow**: For new functions/modules and bug fixes, follow red-green-refactor:
   1. Write a failing test first in the mirrored path under `tests/unit/` (or `tests/integration/`)
@@ -66,5 +67,7 @@ Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`.
   - Test behavior and public API, not internal implementation details
   - Skip TDD for trivial changes (renaming, moving files, config tweaks) — but still verify existing tests pass
 - Run `npm run typecheck && npm run lint && npm run test && npm run build` after editing
-- No `console.*` in production code - use Obsidian's notification system
-- Generated docs go in `dev/`.
+- No `console.*` in production code 
+  - use Obsidian's notification system if user should be notified
+  - use `console.log` for debugging, but remove it before committing
+- Generated docs/test scripts go in `dev/`.
