@@ -13,6 +13,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+import { extractResolvedAnswers } from '../core/tools';
 import { TOOL_ASK_USER_QUESTION } from '../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, ToolCallInfo } from '../core/types';
 import { extractContentBeforeXmlContext } from './context';
@@ -568,8 +569,8 @@ export async function loadSDKSessionMessages(vaultPath: string, sessionId: strin
           toolCall.diffData = extractDiffData(toolUseResult, toolCall);
         }
         if (toolCall.name === TOOL_ASK_USER_QUESTION) {
-          const r = toolUseResult as Record<string, unknown>;
-          if (r.answers) toolCall.resolvedAnswers = r.answers as Record<string, string>;
+          const answers = extractResolvedAnswers(toolUseResult);
+          if (answers) toolCall.resolvedAnswers = answers;
         }
       }
     }

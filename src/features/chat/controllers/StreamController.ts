@@ -1,5 +1,5 @@
 import type { ClaudianService } from '../../../core/agent';
-import { parseTodoInput } from '../../../core/tools';
+import { extractResolvedAnswers, parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
@@ -318,8 +318,8 @@ export class StreamController {
       existingToolCall.result = chunk.content;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION && chunk.toolUseResult) {
-        const r = chunk.toolUseResult as Record<string, unknown>;
-        if (r.answers) existingToolCall.resolvedAnswers = r.answers as Record<string, string>;
+        const answers = extractResolvedAnswers(chunk.toolUseResult);
+        if (answers) existingToolCall.resolvedAnswers = answers;
       }
 
       const writeEditState = state.writeEditStates.get(chunk.id);

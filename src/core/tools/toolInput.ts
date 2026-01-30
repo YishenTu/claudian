@@ -4,6 +4,7 @@
  * Keeps parsing of common tool inputs consistent across services.
  */
 
+import type { AskUserAnswers } from '../types/tools';
 import {
   TOOL_EDIT,
   TOOL_GLOB,
@@ -13,6 +14,13 @@ import {
   TOOL_READ,
   TOOL_WRITE,
 } from './toolNames';
+
+export function extractResolvedAnswers(toolUseResult: unknown): AskUserAnswers | undefined {
+  if (typeof toolUseResult !== 'object' || toolUseResult === null) return undefined;
+  const r = toolUseResult as Record<string, unknown>;
+  if (!r.answers || typeof r.answers !== 'object') return undefined;
+  return r.answers as AskUserAnswers;
+}
 
 export function getPathFromToolInput(
   toolName: string,

@@ -1414,7 +1414,7 @@ export class ClaudianService {
           return {
             behavior: 'deny',
             message: `Failed to get user answers: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            interrupt: false,
+            interrupt: true,
           };
         }
       }

@@ -648,7 +648,7 @@ export class InputController {
     streamController.hideThinkingIndicator();
     inputContainerEl.style.display = 'none';
 
-    return new Promise((resolve) => {
+    return new Promise<Record<string, string> | null>((resolve, reject) => {
       const inline = new InlineAskUserQuestion(
         parentEl,
         input,
@@ -660,7 +660,13 @@ export class InputController {
         signal,
       );
       this.pendingAskUserQuestionInline = inline;
-      inline.render();
+      try {
+        inline.render();
+      } catch (err) {
+        this.pendingAskUserQuestionInline = null;
+        inputContainerEl.style.display = '';
+        reject(err);
+      }
     });
   }
 
