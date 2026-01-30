@@ -433,9 +433,26 @@ export class InlineAskUserQuestion {
         item.addClass('is-focused');
         if (cursor) cursor.textContent = '\u203A';
         item.scrollIntoView({ block: 'nearest' });
+
+        // Auto-focus/blur the custom text input when navigating to/from it
+        if (item.hasClass('claudian-ask-custom-item')) {
+          const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
+          if (input) {
+            input.focus();
+            this.isInputFocused = true;
+          }
+        }
       } else {
         item.removeClass('is-focused');
         if (cursor) cursor.textContent = '\u00A0';
+
+        if (item.hasClass('claudian-ask-custom-item')) {
+          const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
+          if (input && document.activeElement === input) {
+            input.blur();
+            this.isInputFocused = false;
+          }
+        }
       }
     }
   }

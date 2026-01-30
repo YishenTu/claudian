@@ -376,6 +376,7 @@ function renderToolContent(
     content.addClass('claudian-tool-content-todo');
     renderTodoWriteResult(content, toolCall.input);
   } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
+    content.addClass('claudian-tool-content-ask');
     if (initialText || !toolCall.input.answers) {
       const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
       const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
@@ -462,6 +463,7 @@ export function updateToolCallResult(
   if (toolCall.name === TOOL_ASK_USER_QUESTION) {
     const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
     if (content) {
+      content.addClass('claudian-tool-content-ask');
       renderAskUserQuestionResult(content, toolCall.input);
     }
     return;

@@ -83,6 +83,13 @@
   padding-left: 0;
 }
 
+/* AskUserQuestion content - no border (renders inline widget) */
+.claudian-tool-content-ask {
+  border-left: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
 .claudian-tool-result-row {
   display: flex;
   align-items: flex-start;

@@ -9,13 +9,7 @@
 .claudian-ask-question-inline {
   font-family: var(--font-monospace);
   font-size: 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   outline: none;
-}
-
-.claudian-ask-question-inline:focus {
-  border-color: var(--interactive-accent);
 }
 
 .claudian-ask-inline-title {
@@ -173,15 +167,23 @@
 
 /* ── Custom input ────────────────────────────── */
 
-.claudian-ask-custom-text {
+.claudian-ask-item input.claudian-ask-custom-text,
+.claudian-ask-item input.claudian-ask-custom-text:hover,
+.claudian-ask-item input.claudian-ask-custom-text:focus {
   border: none;
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
   font-family: var(--font-monospace);
   font-size: inherit;
   color: var(--text-normal);
   outline: none;
   padding: 0;
-  flex: 1;
+  width: 0;
+  height: auto;
+  min-height: 0;
+  line-height: 1.4;
+  flex: 1 1 0;
   min-width: 0;
 }
 
