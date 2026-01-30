@@ -317,13 +317,14 @@ export class QueryOptionsBuilder {
   ): void {
     options.allowDangerouslySkipPermissions = true;
 
+    if (canUseTool) {
+      options.canUseTool = canUseTool;
+    }
+
     if (permissionMode === 'yolo') {
       options.permissionMode = 'bypassPermissions';
     } else {
       options.permissionMode = 'acceptEdits';
-      if (canUseTool) {
-        options.canUseTool = canUseTool;
-      }
     }
   }
 

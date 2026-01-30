@@ -890,5 +890,9 @@ export function setupApprovalCallback(tab: TabData): void {
     tab.service.setApprovalDismisser(
       () => tab.controllers.inputController?.dismissPendingApproval()
     );
+    tab.service.setAskUserQuestionCallback(
+      (input, signal) =>
+        tab.controllers.inputController!.handleAskUserQuestion(input, signal)
+    );
   }
 }

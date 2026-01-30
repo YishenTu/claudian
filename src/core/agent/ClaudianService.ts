@@ -43,7 +43,7 @@ import {
   buildPermissionUpdates,
   getActionDescription,
 } from '../security';
-import { TOOL_SKILL } from '../tools/toolNames';
+import { TOOL_ASK_USER_QUESTION, TOOL_SKILL } from '../tools/toolNames';
 import type {
   ApprovalDecision,
   ChatMessage,
@@ -84,6 +84,11 @@ export type ApprovalCallback = (
   options?: ApprovalCallbackOptions,
 ) => Promise<ApprovalDecision>;
 
+export type AskUserQuestionCallback = (
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+) => Promise<Record<string, string> | null>;
+
 export interface QueryOptions {
   allowedTools?: string[];
   model?: string;
@@ -113,6 +118,7 @@ export class ClaudianService {
   private abortController: AbortController | null = null;
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
+  private askUserQuestionCallback: AskUserQuestionCallback | null = null;
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
   private readyStateListeners = new Set<(ready: boolean) => void>();
@@ -420,13 +426,12 @@ export class ClaudianService {
   ): Options {
     const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
     const hooks = this.buildHooks();
-    const permissionMode = this.plugin.settings.permissionMode;
 
     const ctx: PersistentQueryContext = {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
       resumeSessionId,
-      canUseTool: permissionMode !== 'yolo' ? this.createApprovalCallback() : undefined,
+      canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
     };
@@ -1176,7 +1181,6 @@ export class ClaudianService {
     queryOptions?: QueryOptions
   ): AsyncGenerator<StreamChunk> {
     const selectedModel = queryOptions?.model || this.plugin.settings.model;
-    const permissionMode = this.plugin.settings.permissionMode;
 
     this.sessionManager.setPendingModel(selectedModel);
     this.vaultPath = cwd;
@@ -1198,7 +1202,7 @@ export class ClaudianService {
       abortController: this.abortController ?? undefined,
       sessionId: this.sessionManager.getSessionId() ?? undefined,
       modelOverride: queryOptions?.model,
-      canUseTool: permissionMode !== 'yolo' ? this.createApprovalCallback() : undefined,
+      canUseTool: this.createApprovalCallback(),
       hooks,
       mcpMentions: queryOptions?.mcpMentions,
       enabledMcpServers: queryOptions?.enabledMcpServers,
@@ -1380,6 +1384,10 @@ export class ClaudianService {
     this.approvalDismisser = dismisser;
   }
 
+  setAskUserQuestionCallback(callback: AskUserQuestionCallback | null) {
+    this.askUserQuestionCallback = callback;
+  }
+
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
       if (this.currentAllowedTools !== null) {
@@ -1391,6 +1399,19 @@ export class ClaudianService {
             behavior: 'deny',
             message: `Tool "${toolName}" is not allowed for this query.${allowedList}`,
           };
+        }
+      }
+
+      // AskUserQuestion uses a dedicated callback — bypasses normal approval flow
+      if (toolName === TOOL_ASK_USER_QUESTION && this.askUserQuestionCallback) {
+        try {
+          const answers = await this.askUserQuestionCallback(input, options.signal);
+          if (answers === null) {
+            return { behavior: 'deny', message: 'User declined to answer.', interrupt: true };
+          }
+          return { behavior: 'allow', updatedInput: { ...input, answers } };
+        } catch {
+          return { behavior: 'deny', message: 'Failed to get user answers.', interrupt: false };
         }
       }
 

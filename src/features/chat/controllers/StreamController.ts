@@ -1,6 +1,6 @@
 import type { ClaudianService } from '../../../core/agent';
 import { parseTodoInput } from '../../../core/tools';
-import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
@@ -316,6 +316,11 @@ export class StreamController {
     if (existingToolCall) {
       existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
       existingToolCall.result = chunk.content;
+
+      if (existingToolCall.name === TOOL_ASK_USER_QUESTION && chunk.toolUseResult) {
+        const r = chunk.toolUseResult as Record<string, unknown>;
+        if (r.answers) existingToolCall.input = { ...existingToolCall.input, answers: r.answers };
+      }
 
       const writeEditState = state.writeEditStates.get(chunk.id);
       if (writeEditState && isWriteEditTool(existingToolCall.name)) {

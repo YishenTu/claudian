@@ -127,7 +127,6 @@ export interface SessionState {
 
 /** SDK tools that require canUseTool interception (not supported in bypassPermissions mode). */
 export const UNSUPPORTED_SDK_TOOLS = [
-  'AskUserQuestion',
   'EnterPlanMode',
   'ExitPlanMode',
 ] as const;

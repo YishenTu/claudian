@@ -1,0 +1,258 @@
+/* AskUserQuestion Modal - Terminal Style */
+.claudian-ask-question-modal {
+  padding: 0;
+  font-family: var(--font-monospace);
+}
+
+/* ── Tab bar ─────────────────────────────────── */
+
+.claudian-ask-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.claudian-ask-nav-arrow {
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 4px;
+}
+
+.claudian-ask-nav-arrow:hover {
+  color: var(--text-normal);
+}
+
+.claudian-ask-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.claudian-ask-tab:hover {
+  color: var(--text-normal);
+}
+
+.claudian-ask-tab.is-active {
+  background: hsla(55, 30%, 50%, 0.18);
+  color: var(--text-normal);
+}
+
+.claudian-ask-tab-label {
+  font-weight: 600;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-ask-tab-tick {
+  color: var(--color-green);
+  font-weight: 700;
+}
+
+.claudian-ask-tab-submit-check {
+  color: var(--color-green);
+  white-space: pre;
+}
+
+/* ── Content area ────────────────────────────── */
+
+.claudian-ask-content {
+  padding: 16px;
+}
+
+.claudian-ask-question-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+/* ── Item list ───────────────────────────────── */
+
+.claudian-ask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.claudian-ask-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-normal);
+  border-radius: 3px;
+}
+
+.claudian-ask-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-ask-cursor {
+  display: inline-block;
+  width: 2ch;
+  flex-shrink: 0;
+  color: var(--text-accent);
+  font-weight: 700;
+}
+
+.claudian-ask-item-num {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-ask-item-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-ask-item-label {
+  font-weight: 600;
+}
+
+.claudian-ask-item-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Selected items: green text */
+.claudian-ask-item.is-selected .claudian-ask-item-label {
+  color: var(--color-green);
+}
+
+/* Disabled items: muted text */
+.claudian-ask-item.is-disabled .claudian-ask-item-label {
+  color: var(--text-faint);
+}
+
+/* ── Multi-select brackets ───────────────────── */
+
+.claudian-ask-check {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  white-space: pre;
+}
+
+.claudian-ask-check.is-checked {
+  color: var(--color-green);
+}
+
+/* ── Single-select check mark ────────────────── */
+
+.claudian-ask-check-mark {
+  color: var(--color-green);
+  font-weight: 700;
+}
+
+/* ── Custom input ────────────────────────────── */
+
+.claudian-ask-custom-text {
+  border: none;
+  background: transparent;
+  font-family: var(--font-monospace);
+  font-size: 14px;
+  color: var(--text-normal);
+  outline: none;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-ask-custom-text::placeholder {
+  color: var(--text-faint);
+}
+
+/* ── Submit review tab ───────────────────────── */
+
+.claudian-ask-review-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin-bottom: 12px;
+}
+
+.claudian-ask-review {
+  font-family: var(--font-monospace);
+  margin-bottom: 16px;
+}
+
+.claudian-tool-content .claudian-ask-review {
+  font-size: 12px;
+}
+
+.claudian-ask-review:last-child {
+  margin-bottom: 0;
+}
+
+.claudian-ask-review-q,
+.claudian-ask-review-a {
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.claudian-ask-review-bullet {
+  color: var(--text-normal);
+}
+
+.claudian-ask-review-q-text {
+  color: var(--text-muted);
+}
+
+.claudian-ask-review-arrow {
+  color: var(--text-muted);
+  white-space: pre;
+}
+
+.claudian-ask-review-a-text {
+  color: var(--text-normal);
+}
+
+.claudian-ask-review-empty {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.claudian-ask-review-a {
+  margin-bottom: 6px;
+}
+
+.claudian-ask-review-a:last-child {
+  margin-bottom: 0;
+}
+
+.claudian-ask-review-prompt {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* ── Hints ───────────────────────────────────── */
+
+.claudian-ask-hints {
+  font-size: 12px;
+  color: var(--text-faint);
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}

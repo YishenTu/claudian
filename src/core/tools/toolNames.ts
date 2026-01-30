@@ -22,6 +22,7 @@ export const TOOL_TASK = 'Task' as const;
 export const TOOL_TODO_WRITE = 'TodoWrite' as const;
 export const TOOL_WEB_FETCH = 'WebFetch' as const;
 export const TOOL_WEB_SEARCH = 'WebSearch' as const;
+export const TOOL_ASK_USER_QUESTION = 'AskUserQuestion' as const;
 export const TOOL_WRITE = 'Write' as const;
 
 export const EDIT_TOOLS = [TOOL_WRITE, TOOL_EDIT, TOOL_NOTEBOOK_EDIT] as const;

@@ -5,6 +5,7 @@ import { detectBuiltInCommand } from '../../../core/commands';
 import type { ChatMessage } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { type ApprovalDecision, ApprovalModal } from '../../../shared/modals/ApprovalModal';
+import { AskUserQuestionModal } from '../../../shared/modals/AskUserQuestionModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
@@ -54,6 +55,7 @@ export interface InputControllerDeps {
 export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalModal: ApprovalModal | null = null;
+  private pendingAskUserQuestionModal: AskUserQuestionModal | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -631,10 +633,33 @@ export class InputController {
     });
   }
 
+  async handleAskUserQuestion(
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Record<string, string> | null> {
+    return new Promise((resolve) => {
+      const modal = new AskUserQuestionModal(
+        this.deps.plugin.app,
+        input,
+        (result) => {
+          this.pendingAskUserQuestionModal = null;
+          resolve(result);
+        },
+        signal,
+      );
+      this.pendingAskUserQuestionModal = modal;
+      modal.open();
+    });
+  }
+
   dismissPendingApproval(): void {
     if (this.pendingApprovalModal) {
       this.pendingApprovalModal.close();
       this.pendingApprovalModal = null;
+    }
+    if (this.pendingAskUserQuestionModal) {
+      this.pendingAskUserQuestionModal.close();
+      this.pendingAskUserQuestionModal = null;
     }
   }
 
