@@ -119,6 +119,11 @@
   min-width: 0;
 }
 
+.claudian-ask-label-row {
+  display: flex;
+  align-items: baseline;
+}
+
 .claudian-ask-item-label {
   font-weight: 600;
 }

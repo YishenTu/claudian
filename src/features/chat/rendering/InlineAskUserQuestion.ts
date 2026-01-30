@@ -144,8 +144,9 @@ export class InlineAskUserQuestion {
       this.tabElements.push(tab);
     }
 
+    const allAnswered = this.questions.every((_, i) => this.isQuestionAnswered(i));
     const submitTab = this.tabBar.createSpan({ cls: 'claudian-ask-tab' });
-    submitTab.createSpan({ text: '\u2713 ', cls: 'claudian-ask-tab-submit-check' });
+    submitTab.createSpan({ text: allAnswered ? '\u2713 ' : '', cls: 'claudian-ask-tab-submit-check' });
     submitTab.createSpan({ text: 'Submit', cls: 'claudian-ask-tab-label' });
     if (this.activeTabIndex === this.questions.length) submitTab.addClass('is-active');
     submitTab.addEventListener('click', () => this.switchTab(this.questions.length));
@@ -210,10 +211,11 @@ export class InlineAskUserQuestion {
       }
 
       const labelBlock = row.createDiv({ cls: 'claudian-ask-item-content' });
-      labelBlock.createSpan({ text: option.label, cls: 'claudian-ask-item-label' });
+      const labelRow = labelBlock.createDiv({ cls: 'claudian-ask-label-row' });
+      labelRow.createSpan({ text: option.label, cls: 'claudian-ask-item-label' });
 
       if (!isMulti && isSelected) {
-        labelBlock.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });
+        labelRow.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });
       }
 
       if (option.description) {
@@ -256,6 +258,10 @@ export class InlineAskUserQuestion {
 
     inputEl.addEventListener('input', () => {
       this.customInputs.set(idx, inputEl.value);
+      if (!isMulti && inputEl.value.trim()) {
+        selected.clear();
+        this.updateOptionVisuals(idx);
+      }
       this.updateTabIndicators();
     });
     inputEl.addEventListener('focus', () => {
@@ -360,13 +366,14 @@ export class InlineAskUserQuestion {
     } else {
       selected.clear();
       selected.add(label);
+      this.customInputs.set(qIdx, '');
     }
 
     this.updateOptionVisuals(qIdx);
     this.updateTabIndicators();
 
     if (!isMulti) {
-      setTimeout(() => this.switchTab(this.activeTabIndex + 1), 150);
+      this.switchTab(this.activeTabIndex + 1);
     }
   }
 
@@ -388,10 +395,10 @@ export class InlineAskUserQuestion {
           checkSpan.toggleClass('is-checked', isSelected);
         }
       } else {
-        const labelBlock = item.querySelector('.claudian-ask-item-content') as HTMLElement | null;
+        const labelRow = item.querySelector('.claudian-ask-label-row') as HTMLElement | null;
         const existingMark = item.querySelector('.claudian-ask-check-mark');
-        if (isSelected && !existingMark && labelBlock) {
-          labelBlock.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });
+        if (isSelected && !existingMark && labelRow) {
+          labelRow.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });
         } else if (!isSelected && existingMark) {
           existingMark.remove();
         }
@@ -437,6 +444,12 @@ export class InlineAskUserQuestion {
       const answered = this.isQuestionAnswered(idx);
       tab.toggleClass('is-answered', answered);
       if (tick) tick.textContent = answered ? ' \u2713' : '';
+    }
+    const submitTab = this.tabElements[this.questions.length];
+    if (submitTab) {
+      const submitCheck = submitTab.querySelector('.claudian-ask-tab-submit-check');
+      const allAnswered = this.questions.every((_, i) => this.isQuestionAnswered(i));
+      if (submitCheck) submitCheck.textContent = allAnswered ? '\u2713 ' : '';
     }
   }
 
@@ -488,12 +501,12 @@ export class InlineAskUserQuestion {
         this.rootEl.focus();
         return;
       }
-      if (e.key === 'Tab') {
+      if (e.key === 'Tab' || e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
         this.isInputFocused = false;
         (document.activeElement as HTMLElement)?.blur();
-        if (e.shiftKey) {
+        if (e.key === 'Tab' && e.shiftKey) {
           this.switchTab(this.activeTabIndex - 1);
         } else {
           this.switchTab(this.activeTabIndex + 1);
