@@ -1,6 +1,7 @@
 import { getToolIcon, MCP_ICON_MARKER } from '@/core/tools/toolIcons';
 import {
   TOOL_AGENT_OUTPUT,
+  TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_EDIT,
@@ -47,6 +48,7 @@ describe('getToolIcon', () => {
     [TOOL_WEB_SEARCH, 'globe'],
     [TOOL_WEB_FETCH, 'download'],
     [TOOL_AGENT_OUTPUT, 'bot'],
+    [TOOL_ASK_USER_QUESTION, 'help-circle'],
     [TOOL_SKILL, 'zap'],
   ])('should return "%s" icon for %s tool', (tool, expectedIcon) => {
     expect(getToolIcon(tool)).toBe(expectedIcon);

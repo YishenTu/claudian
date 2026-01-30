@@ -6,6 +6,7 @@
 
 import {
   TOOL_AGENT_OUTPUT,
+  TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_EDIT,
@@ -45,6 +46,7 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_WEB_SEARCH]: 'globe',
   [TOOL_WEB_FETCH]: 'download',
   [TOOL_AGENT_OUTPUT]: 'bot',
+  [TOOL_ASK_USER_QUESTION]: 'help-circle',
   [TOOL_SKILL]: 'zap',
 };
 
