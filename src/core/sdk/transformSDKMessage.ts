@@ -57,7 +57,7 @@ export function* transformSDKMessage(
         for (const block of message.message.content) {
           if (block.type === 'thinking' && block.thinking) {
             yield { type: 'thinking', content: block.thinking, parentToolUseId };
-          } else if (block.type === 'text' && block.text) {
+          } else if (block.type === 'text' && block.text && block.text.trim() !== '(no content)') {
             yield { type: 'text', content: block.text, parentToolUseId };
           } else if (block.type === 'tool_use') {
             yield {

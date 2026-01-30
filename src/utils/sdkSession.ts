@@ -344,12 +344,14 @@ export function parseSDKMessageToChat(
     ? new Date(sdkMsg.timestamp).getTime()
     : Date.now();
 
-  // SDK wraps /compact in XML tags — restore clean display
-  const isCompactCommand = sdkMsg.type === 'user' && textContent.includes('<command-name>/compact</command-name>');
+  // SDK wraps slash commands in XML tags — restore clean display (e.g., /compact, /md2docx)
+  const commandNameMatch = sdkMsg.type === 'user'
+    ? textContent.match(/<command-name>(\/[^<]+)<\/command-name>/)
+    : null;
 
   let displayContent: string | undefined;
   if (sdkMsg.type === 'user') {
-    displayContent = isCompactCommand ? '/compact' : extractDisplayContent(textContent);
+    displayContent = commandNameMatch ? commandNameMatch[1] : extractDisplayContent(textContent);
   }
 
   const isInterrupt = sdkMsg.type === 'user' && (
@@ -440,8 +442,8 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   const text = extractTextContent(sdkMsg.message?.content);
   if (!text) return false;
 
-  // Preserve these for UI display
-  if (text.includes('<command-name>/compact</command-name>')) return false;
+  // Preserve user-invoked slash commands (have both <command-name> and <command-message>)
+  if (text.includes('<command-name>') && text.includes('<command-message>')) return false;
   if (text.includes('<local-command-stderr>') && text.includes('Compaction canceled')) return false;
 
   // Filter system-injected messages

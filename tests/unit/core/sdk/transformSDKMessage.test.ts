@@ -234,6 +234,24 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
+    it('skips "(no content)" placeholder text blocks', () => {
+      const message: SDKMessage = {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: '(no content)' },
+            { type: 'tool_use', id: 'tool-1', name: 'Skill', input: { skill: 'md2docx' } },
+          ],
+        },
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        { type: 'tool_use', id: 'tool-1', name: 'Skill', input: { skill: 'md2docx' }, parentToolUseId: null },
+      ]);
+    });
+
     it('skips empty thinking blocks', () => {
       const message: SDKMessage = {
         type: 'assistant',

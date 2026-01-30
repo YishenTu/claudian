@@ -811,6 +811,30 @@ describe('sdkSession', () => {
       expect(interruptMsg!.isInterrupt).toBe(true);
     });
 
+    it('preserves slash command invocations with clean displayContent', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
+        '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","message":{"content":"<command-message>md2docx</command-message>\\n<command-name>/md2docx</command-name>"}}',
+        '{"type":"user","uuid":"u3","timestamp":"2024-01-15T10:02:00Z","isMeta":true,"message":{"content":"Use bash command md2word..."}}',
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:03:00Z","message":{"content":[{"type":"text","text":"(no content)"}]}}',
+        '{"type":"assistant","uuid":"a3","timestamp":"2024-01-15T10:03:01Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"md2docx"}}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-slash-cmd');
+
+      // user "Hello", assistant "Hi!", user "/md2docx", assistant with Skill tool
+      // META (u3) should be skipped; "(no content)" text should be filtered
+      expect(result.messages).toHaveLength(4);
+      expect(result.messages[2].role).toBe('user');
+      expect(result.messages[2].displayContent).toBe('/md2docx');
+      expect(result.messages[3].role).toBe('assistant');
+      expect(result.messages[3].content).toBe('');
+      expect(result.messages[3].toolCalls).toHaveLength(1);
+      expect(result.messages[3].toolCalls![0].name).toBe('Skill');
+    });
+
     it('handles tool_result with error flag', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([
