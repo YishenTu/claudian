@@ -346,27 +346,27 @@ export class ConversationController {
       return;
     }
 
-    let responseAssistant: typeof msgs[number] | undefined;
+    let hasResponse = false;
     for (let i = userIdx + 1; i < msgs.length; i++) {
       if (msgs[i].role === 'user') break;
       if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
-        responseAssistant = msgs[i];
+        hasResponse = true;
         break;
       }
     }
-    if (!responseAssistant) {
+    if (!hasResponse) {
       new Notice(t('chat.rewind.unavailableNoUuid'));
       return;
     }
 
-    let prevAssistant: typeof msgs[number] | undefined;
+    let prevAssistantUuid: string | undefined;
     for (let i = userIdx - 1; i >= 0; i--) {
       if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
-        prevAssistant = msgs[i];
+        prevAssistantUuid = msgs[i].sdkAssistantUuid;
         break;
       }
     }
-    if (!prevAssistant) {
+    if (!prevAssistantUuid) {
       new Notice(t('chat.rewind.unavailableNoUuid'));
       return;
     }
@@ -383,7 +383,7 @@ export class ConversationController {
 
     let result;
     try {
-      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistant.sdkAssistantUuid!);
+      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistantUuid);
     } catch (e) {
       new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
       return;
@@ -400,7 +400,7 @@ export class ConversationController {
     this.updateWelcomeVisibility();
 
     if (!state.currentConversationId) return;
-    await this.save(false, { resumeSessionAt: prevAssistant.sdkAssistantUuid });
+    await this.save(false, { resumeSessionAt: prevAssistantUuid });
 
     const filesChanged = result.filesChanged?.length ?? 0;
     new Notice(t('chat.rewind.notice', { count: String(filesChanged) }));

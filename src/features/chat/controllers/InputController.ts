@@ -76,22 +76,13 @@ export class InputController {
   }
 
   private isResumeSessionAtStillNeeded(resumeUuid: string, previousMessages: ChatMessage[]): boolean {
-    let resumeIdx = -1;
     for (let i = previousMessages.length - 1; i >= 0; i--) {
       if (previousMessages[i].role === 'assistant' && previousMessages[i].sdkAssistantUuid === resumeUuid) {
-        resumeIdx = i;
-        break;
+        // Still needed only if no messages follow the resume point
+        return i === previousMessages.length - 1;
       }
     }
-    if (resumeIdx === -1) return false;
-
-    for (let i = resumeIdx + 1; i < previousMessages.length; i++) {
-      const msg = previousMessages[i];
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        return false;
-      }
-    }
-    return true;
+    return false;
   }
 
   // ============================================
