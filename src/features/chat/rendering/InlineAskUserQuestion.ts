@@ -566,7 +566,7 @@ export class InlineAskUserQuestion {
         e.preventDefault();
         e.stopPropagation();
         if (this.focusedItemIndex <= maxIdx) {
-          this.selectOption(0, q.options[this.focusedItemIndex].label);
+          this.selectOption(this.activeTabIndex, q.options[this.focusedItemIndex].label);
         }
       }
       return;

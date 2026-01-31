@@ -37,7 +37,7 @@ CSS is built into root `styles.css` via `npm run build:css` (also runs in `npm r
 | Thinking | `-thinking-block`, `-thinking-header`, `-thinking-content` |
 | Panels | `-todo-list`, `-todo-item`, `-subagent-list`, `-subagent-header` |
 | Context | `-file-chip`, `-image-chip`, `-mention-dropdown` |
-| Modals | `-approval-modal`, `-instruction-modal`, `-mcp-modal` |
+| Modals | `-instruction-modal`, `-mcp-modal` |
 
 ## Gotchas
 
