@@ -1308,14 +1308,14 @@ describe('InputController - Message Queue', () => {
       expect(result).toBe('cancel');
     });
 
-    it('should return cancel when input container has no parent', async () => {
+    it('should throw when input container has no parent', async () => {
       const inputContainerEl = createMockEl();
       // no parentElement set
       deps.getInputContainerEl = () => inputContainerEl as any;
 
       controller = new InputController(deps);
-      const result = await controller.handleApprovalRequest('bash', {}, 'test');
-      expect(result).toBe('cancel');
+      await expect(controller.handleApprovalRequest('bash', {}, 'test'))
+        .rejects.toThrow('Input container is detached from DOM');
     });
 
     it.each([

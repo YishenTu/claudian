@@ -62,7 +62,6 @@ export interface InputControllerDeps {
 export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
-  private pendingAskUserQuestionInline: InlineAskUserQuestion | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -632,7 +631,7 @@ export class InputController {
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
-      return 'cancel';
+      throw new Error('Input container is detached from DOM');
     }
 
     // Build header element, then detach — InlineAskUserQuestion will re-attach it
@@ -689,7 +688,7 @@ export class InputController {
       parentEl,
       inputContainerEl,
       input,
-      (inline) => { this.pendingAskUserQuestionInline = inline; },
+      () => {},  // No external dismisser needed — AbortSignal handles cleanup
       signal,
     );
   }
@@ -736,12 +735,6 @@ export class InputController {
     }
   }
 
-  dismissPendingAskUserQuestion(): void {
-    if (this.pendingAskUserQuestionInline) {
-      this.pendingAskUserQuestionInline.destroy();
-      this.pendingAskUserQuestionInline = null;
-    }
-  }
 
   // ============================================
   // Built-in Commands
