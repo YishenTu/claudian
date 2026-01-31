@@ -48,7 +48,6 @@ import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL
 import type {
   ApprovalDecision,
   ChatMessage,
-  EnterPlanModeCallback,
   ExitPlanModeCallback,
   ExitPlanModeDecision,
   ImageAttachment,
@@ -123,7 +122,6 @@ export class ClaudianService {
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
   private askUserQuestionCallback: AskUserQuestionCallback | null = null;
-  private enterPlanModeCallback: EnterPlanModeCallback | null = null;
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private vaultPath: string | null = null;
@@ -1418,10 +1416,6 @@ export class ClaudianService {
     this.askUserQuestionCallback = callback;
   }
 
-  setEnterPlanModeCallback(callback: EnterPlanModeCallback | null): void {
-    this.enterPlanModeCallback = callback;
-  }
-
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void {
     this.exitPlanModeCallback = callback;
   }
@@ -1440,33 +1434,6 @@ export class ClaudianService {
           return {
             behavior: 'deny',
             message: `Tool "${toolName}" is not allowed for this query.${allowedList}`,
-          };
-        }
-      }
-
-      // EnterPlanMode uses a dedicated callback — bypasses normal approval flow
-      if (toolName === TOOL_ENTER_PLAN_MODE && this.enterPlanModeCallback) {
-        try {
-          const accepted = await this.enterPlanModeCallback(input, options.signal);
-          if (!accepted) {
-            return { behavior: 'deny', message: 'User declined plan mode.', interrupt: true };
-          }
-          // Sync config so applyDynamicUpdates doesn't re-send
-          if (this.currentConfig) {
-            this.currentConfig.permissionMode = 'plan';
-          }
-          return {
-            behavior: 'allow',
-            updatedInput: input,
-            updatedPermissions: [
-              { type: 'setMode', mode: 'plan', destination: 'session' },
-            ],
-          };
-        } catch (error) {
-          return {
-            behavior: 'deny',
-            message: `Failed to handle plan mode entry: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            interrupt: true,
           };
         }
       }

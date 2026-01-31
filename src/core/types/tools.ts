@@ -46,12 +46,6 @@ export type ExitPlanModeDecision =
   | { type: 'approve-new-session'; planContent: string }
   | { type: 'feedback'; text: string };
 
-/** Callback type for EnterPlanMode tool. Returns true to accept, false to decline. */
-export type EnterPlanModeCallback = (
-  input: Record<string, unknown>,
-  signal?: AbortSignal,
-) => Promise<boolean>;
-
 /** Callback type for ExitPlanMode tool. Returns decision or null if cancelled. */
 export type ExitPlanModeCallback = (
   input: Record<string, unknown>,

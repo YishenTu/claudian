@@ -918,16 +918,6 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         await tab.controllers.inputController?.handleAskUserQuestion(input, signal)
         ?? null
     );
-    tab.service.setEnterPlanModeCallback(
-      async (input, signal) => {
-        const accepted = await tab.controllers.inputController?.handleEnterPlanMode(input, signal) ?? false;
-        if (accepted) {
-          tab.state.prePlanPermissionMode = plugin.settings.permissionMode;
-          updatePlanModeUI(tab, plugin, 'plan');
-        }
-        return accepted;
-      }
-    );
     tab.service.setExitPlanModeCallback(
       async (input, signal) => {
         const decision = await tab.controllers.inputController?.handleExitPlanMode(input, signal) ?? null;
