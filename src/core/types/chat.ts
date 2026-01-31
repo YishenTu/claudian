@@ -174,6 +174,7 @@ export type StreamChunk =
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
   | { type: 'compact_boundary' }
   | { type: 'sdk_user_uuid'; uuid: string }
+  | { type: 'sdk_user_sent'; uuid: string }
   | { type: 'sdk_assistant_uuid'; uuid: string };
 
 /** Context window usage information. */

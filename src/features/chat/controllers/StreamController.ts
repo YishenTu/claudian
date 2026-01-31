@@ -142,6 +142,10 @@ export class StreamController {
         // Handled in InputController — if it reaches here, ignore it.
         break;
 
+      case 'sdk_user_sent':
+        // Handled in InputController — if it reaches here, ignore it.
+        break;
+
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
         const currentSessionId = this.deps.getAgentService?.()?.getSessionId() ?? null;

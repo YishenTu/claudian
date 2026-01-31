@@ -17,7 +17,16 @@
     "advanced": "Advanced",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "platform": "Platform"
+    "platform": "Platform",
+    "rewind": "Rewind"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
+      "confirmButton": "Rewind",
+      "ariaLabel": "Rewind to here",
+      "notice": "Rewound: {count} file(s) reverted"
+    }
   },
   "settings": {
     "title": "Claudian Settings",

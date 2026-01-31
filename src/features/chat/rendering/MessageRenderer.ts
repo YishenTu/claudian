@@ -3,6 +3,7 @@ import { MarkdownRenderer } from 'obsidian';
 
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
@@ -483,7 +484,7 @@ export class MessageRenderer {
   private addRewindButton(msgEl: HTMLElement, messageId: string): void {
     const btn = msgEl.createSpan({ cls: 'claudian-message-rewind-btn' });
     btn.innerHTML = MessageRenderer.REWIND_ICON;
-    btn.setAttribute('aria-label', 'Rewind to here');
+    btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await this.rewindCallback?.(messageId);

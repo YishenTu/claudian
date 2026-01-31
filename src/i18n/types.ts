@@ -28,6 +28,13 @@ export type TranslationKey =
   | 'common.enabled'
   | 'common.disabled'
   | 'common.platform'
+  | 'common.rewind'
+
+  // Chat - Rewind
+  | 'chat.rewind.confirmMessage'
+  | 'chat.rewind.confirmButton'
+  | 'chat.rewind.ariaLabel'
+  | 'chat.rewind.notice'
 
   // Settings - Customization
   | 'settings.title'

@@ -291,11 +291,15 @@ export class InputController {
       return;
     }
 
-    // Restore pendingResumeAt from conversation (survives plugin reload after rewind)
-    if (state.currentConversationId) {
-      const conv = await this.deps.plugin.getConversationById(state.currentConversationId);
+    // Restore pendingResumeAt from conversation (survives plugin reload after rewind).
+    // Cleared after the user message is successfully enqueued to avoid losing state if send fails.
+    const conversationIdForSend = state.currentConversationId;
+    let resumeSessionAtToClear: string | undefined;
+    if (conversationIdForSend) {
+      const conv = plugin.getConversationSync(conversationIdForSend);
       if (conv?.resumeSessionAt) {
         agentService.setPendingResumeAt(conv.resumeSessionAt);
+        resumeSessionAtToClear = conv.resumeSessionAt;
       }
     }
 
@@ -304,6 +308,24 @@ export class InputController {
       // This prevents duplication when rebuilding context for new sessions
       const previousMessages = state.messages.slice(0, -2);
       for await (const chunk of agentService.query(promptToSend, imagesForMessage, previousMessages, queryOptions)) {
+        // Capture user UUID for rewind support (set on the user ChatMessage)
+        if (chunk.type === 'sdk_user_uuid') {
+          userMsg.sdkUserUuid = chunk.uuid;
+          continue;
+        }
+
+        if (chunk.type === 'sdk_user_sent') {
+          if (conversationIdForSend && resumeSessionAtToClear) {
+            try {
+              await plugin.updateConversation(conversationIdForSend, { resumeSessionAt: undefined });
+            } catch {
+              // Best-effort: don't block message send/stream if persistence fails.
+            }
+            resumeSessionAtToClear = undefined;
+          }
+          continue;
+        }
+
         if (state.streamGeneration !== streamGeneration) {
           wasInvalidated = true;
           break;
@@ -311,12 +333,6 @@ export class InputController {
         if (state.cancelRequested) {
           wasInterrupted = true;
           break;
-        }
-
-        // Capture user UUID for rewind support (set on the user ChatMessage)
-        if (chunk.type === 'sdk_user_uuid') {
-          userMsg.sdkUserUuid = chunk.uuid;
-          continue;
         }
 
         await streamController.handleStreamChunk(chunk, assistantMsg);

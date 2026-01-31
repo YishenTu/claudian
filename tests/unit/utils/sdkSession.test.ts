@@ -292,6 +292,49 @@ describe('sdkSession', () => {
       expect(chatMsg!.timestamp).toBe(new Date('2024-01-15T10:30:00Z').getTime());
     });
 
+    it('sets sdkUserUuid on user messages with uuid', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-rewind-123',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: { content: 'Hello' },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.sdkUserUuid).toBe('user-rewind-123');
+      expect(chatMsg!.sdkAssistantUuid).toBeUndefined();
+    });
+
+    it('sets sdkAssistantUuid on assistant messages with uuid', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-rewind-456',
+        timestamp: '2024-01-15T10:31:00Z',
+        message: {
+          content: [{ type: 'text', text: 'Hello back' }],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.sdkAssistantUuid).toBe('asst-rewind-456');
+      expect(chatMsg!.sdkUserUuid).toBeUndefined();
+    });
+
+    it('does not set SDK UUIDs when uuid is absent', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: { content: 'No uuid' },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.sdkUserUuid).toBeUndefined();
+      expect(chatMsg!.sdkAssistantUuid).toBeUndefined();
+    });
+
     it('converts assistant message with text content blocks', () => {
       const sdkMsg: SDKNativeMessage = {
         type: 'assistant',
@@ -1292,6 +1335,44 @@ describe('sdkSession', () => {
     it('returns empty for empty entries', () => {
       const result = filterActiveBranch([]);
       expect(result).toEqual([]);
+    });
+
+    it('does not misdetect branching when duplicate uuid entries exist', () => {
+      // SDK may write the same message twice (e.g., around compaction).
+      // Without dedup, duplicate entries inflate childCount causing false branch detection.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        // Duplicate of u2 — SDK writes this again
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+      ];
+
+      // Without dedup fix, a1 would have childCount=2 (u2 counted twice),
+      // triggering branch detection and excluding u2/a2.
+      const result = filterActiveBranch(entries);
+
+      // Should be a no-op (linear chain, no branching)
+      expect(result).toHaveLength(4);
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('correctly truncates at resumeSessionAt when duplicates exist', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        // Duplicate of u2
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+      ];
+
+      const result = filterActiveBranch(entries, 'a1');
+
+      // Should truncate at a1, including only u1 and a1
+      expect(result).toHaveLength(2);
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
     });
 
     it('preserves entries without uuid (queue-ops etc.)', () => {

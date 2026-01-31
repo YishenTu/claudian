@@ -17,7 +17,16 @@
     "advanced": "고급",
     "enabled": "활성화",
     "disabled": "비활성화",
-    "platform": "플랫폼"
+    "platform": "플랫폼",
+    "rewind": "Rewind"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
+      "confirmButton": "Rewind",
+      "ariaLabel": "Rewind to here",
+      "notice": "Rewound: {count} file(s) reverted"
+    }
   },
   "settings": {
     "title": "Claudian 설정",

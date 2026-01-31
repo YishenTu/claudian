@@ -373,6 +373,9 @@ export function parseSDKMessageToChat(
     toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
     images,
+    // Populate SDK UUIDs so rewind works on reloaded historical messages
+    ...(sdkMsg.type === 'user' && sdkMsg.uuid && { sdkUserUuid: sdkMsg.uuid }),
+    ...(sdkMsg.type === 'assistant' && sdkMsg.uuid && { sdkAssistantUuid: sdkMsg.uuid }),
     ...(isInterrupt && { isInterrupt: true }),
     ...(isRebuiltContext && { isRebuiltContext: true }),
   };
@@ -469,29 +472,58 @@ export function filterActiveBranch(
 ): SDKNativeMessage[] {
   if (entries.length === 0) return [];
 
-  // Build uuid → entry map and count children per parentUuid
-  const byUuid = new Map<string, SDKNativeMessage>();
-  const childCount = new Map<string, number>();
-
+  // Dedup by uuid first — SDK may write the same message twice (e.g., around compaction).
+  // This prevents duplicate entries from inflating child counts and causing false branch detection.
+  const seen = new Set<string>();
+  const deduped: SDKNativeMessage[] = [];
   for (const entry of entries) {
+    if (entry.uuid) {
+      if (seen.has(entry.uuid)) continue;
+      seen.add(entry.uuid);
+    }
+    deduped.push(entry);
+  }
+
+  // Build uuid → entry map and collect unique children per parentUuid
+  const byUuid = new Map<string, SDKNativeMessage>();
+  const childrenOf = new Map<string, Set<string>>();
+
+  for (const entry of deduped) {
     if (entry.uuid) {
       byUuid.set(entry.uuid, entry);
     }
-    if (entry.parentUuid) {
-      childCount.set(entry.parentUuid, (childCount.get(entry.parentUuid) ?? 0) + 1);
+    if (entry.parentUuid && entry.uuid) {
+      let children = childrenOf.get(entry.parentUuid);
+      if (!children) {
+        children = new Set();
+        childrenOf.set(entry.parentUuid, children);
+      }
+      children.add(entry.uuid);
     }
   }
 
-  const hasBranching = [...childCount.values()].some(count => count > 1);
+  const hasBranching = [...childrenOf.values()].some(children => children.size > 1);
 
   // Choose the leaf entry to walk backward from
   let leaf: SDKNativeMessage | undefined;
 
   if (hasBranching) {
-    // Branching detected: last entry with uuid is always on the new branch (append-only)
-    for (let i = entries.length - 1; i >= 0; i--) {
-      if (entries[i].uuid) {
-        leaf = entries[i];
+    // Branching detected: find leaf nodes (UUIDs with no children), then pick the
+    // last-appearing leaf in file order. This is more robust than "last entry with uuid"
+    // which can break if non-dialog nodes or special entries appear at the end.
+    const allUuids = new Set(byUuid.keys());
+    const parents = new Set(childrenOf.keys());
+    const leafUuids = new Set<string>();
+    for (const uuid of allUuids) {
+      if (!parents.has(uuid)) {
+        leafUuids.add(uuid);
+      }
+    }
+
+    // Pick the last-appearing leaf in file order
+    for (let i = deduped.length - 1; i >= 0; i--) {
+      if (deduped[i].uuid && leafUuids.has(deduped[i].uuid!)) {
+        leaf = deduped[i];
         break;
       }
     }
@@ -499,12 +531,12 @@ export function filterActiveBranch(
     // No branching + resumeSessionAt: truncate at that UUID
     leaf = byUuid.get(resumeSessionAt);
   } else {
-    // No branching, no resumeSessionAt: no-op
-    return entries;
+    // No branching, no resumeSessionAt: return deduped entries
+    return deduped;
   }
 
-  // Safety: if chosen leaf not found, return all entries
-  if (!leaf || !leaf.uuid) return entries;
+  // Safety: if chosen leaf not found, return deduped entries
+  if (!leaf || !leaf.uuid) return deduped;
 
   // Walk backward from leaf via parentUuid to collect active UUIDs
   const activeUuids = new Set<string>();
@@ -518,8 +550,8 @@ export function filterActiveBranch(
     }
   }
 
-  // Filter: keep entries whose uuid is in activeUuids, or entries without uuid
-  return entries.filter(entry => !entry.uuid || activeUuids.has(entry.uuid));
+  // Filter deduped: keep entries whose uuid is in activeUuids, or entries without uuid
+  return deduped.filter(entry => !entry.uuid || activeUuids.has(entry.uuid));
 }
 
 export interface SDKSessionLoadResult {

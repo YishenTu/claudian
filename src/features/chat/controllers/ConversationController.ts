@@ -2,6 +2,7 @@ import { Notice, setIcon } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
 import type { Conversation } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { cleanupThinkingBlock } from '../rendering';
@@ -354,8 +355,8 @@ export class ConversationController {
 
     const confirmed = await confirm(
       plugin.app,
-      'Rewind to this point? File changes after this message will be reverted.',
-      'Rewind'
+      t('chat.rewind.confirmMessage'),
+      t('chat.rewind.confirmButton')
     );
     if (!confirmed) return;
 
@@ -388,7 +389,7 @@ export class ConversationController {
     await this.save(false, { resumeSessionAt: prevAssistant.sdkAssistantUuid });
 
     const filesChanged = result.filesChanged?.length ?? 0;
-    new Notice(`Rewound: ${filesChanged} file${filesChanged !== 1 ? 's' : ''} reverted`);
+    new Notice(t('chat.rewind.notice', { count: String(filesChanged) }));
   }
 
   /**

@@ -2205,6 +2205,10 @@ describe('ClaudianService', () => {
       const firstChunk = await gen.next();
       expect(firstChunk.value.type).toBe('sdk_user_uuid');
 
+      // Consume the sdk_user_sent chunk yielded after enqueue succeeds
+      const sentChunk = await gen.next();
+      expect(sentChunk.value.type).toBe('sdk_user_sent');
+
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -2259,6 +2263,10 @@ describe('ClaudianService', () => {
       expect(uuidChunk.value.type).toBe('sdk_user_uuid');
 
       const chunks: any[] = [];
+      // Consume the sdk_user_sent chunk yielded after enqueue succeeds
+      const sentChunk = await gen.next();
+      expect(sentChunk.value.type).toBe('sdk_user_sent');
+
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -2321,6 +2329,10 @@ describe('ClaudianService', () => {
       // Consume the sdk_user_uuid chunk yielded before handler registration
       const uuidChunk = await gen.next();
       expect(uuidChunk.value.type).toBe('sdk_user_uuid');
+
+      // Consume the sdk_user_sent chunk yielded after enqueue succeeds
+      const sentChunk = await gen.next();
+      expect(sentChunk.value.type).toBe('sdk_user_sent');
 
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));

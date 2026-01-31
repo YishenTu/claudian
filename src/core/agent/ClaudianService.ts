@@ -455,10 +455,12 @@ export class ClaudianService {
       externalContextPaths,
     };
 
-    // Clear after use — only applies to the next query start after rewind
+    const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+    // Clear after successful build — only applies to the next query start after rewind
     this.pendingResumeAt = undefined;
 
-    return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+    return options;
   }
 
   /**
@@ -971,6 +973,9 @@ export class ClaudianService {
         }
         throw error;
       }
+
+      // Emit after enqueue succeeds so callers can treat this as "message sent".
+      yield { type: 'sdk_user_sent', uuid: message.uuid! };
 
       // Yield chunks as they arrive
       while (!state.done) {
