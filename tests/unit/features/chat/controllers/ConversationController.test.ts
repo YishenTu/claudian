@@ -1881,6 +1881,19 @@ describe('ConversationController - Rewind', () => {
     expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
   });
 
+  it('should show Notice when message ID not found', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+
+    await controller.rewind('nonexistent');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
   it('should show Notice when streaming', async () => {
     deps.state.isStreaming = true;
     deps.state.messages = [

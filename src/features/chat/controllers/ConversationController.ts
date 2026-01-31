@@ -344,7 +344,10 @@ export class ConversationController {
 
     const msgs = state.messages;
     const userIdx = msgs.findIndex(m => m.id === userMessageId);
-    if (userIdx === -1) return;
+    if (userIdx === -1) {
+      new Notice(t('chat.rewind.failed', { error: 'Message not found' }));
+      return;
+    }
     const userMsg = msgs[userIdx];
     if (!userMsg.sdkUserUuid) {
       new Notice(t('chat.rewind.unavailableNoUuid'));
