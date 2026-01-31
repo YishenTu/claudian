@@ -133,6 +133,15 @@ export class StreamController {
         break;
       }
 
+      case 'sdk_assistant_uuid':
+        // Overwrites each time — final value is the last assistant message UUID of the turn
+        msg.sdkAssistantUuid = chunk.uuid;
+        break;
+
+      case 'sdk_user_uuid':
+        // Handled in InputController — if it reaches here, ignore it.
+        break;
+
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
         const currentSessionId = this.deps.getAgentService?.()?.getSessionId() ?? null;

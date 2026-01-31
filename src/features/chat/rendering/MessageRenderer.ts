@@ -22,16 +22,22 @@ export class MessageRenderer {
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
+  private rewindCallback?: (messageId: string) => Promise<void>;
+
+  /** Counter-clockwise arrow SVG for rewind button. */
+  private static readonly REWIND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
 
   constructor(
     plugin: ClaudianPlugin,
     component: Component,
-    messagesEl: HTMLElement
+    messagesEl: HTMLElement,
+    rewindCallback?: (messageId: string) => Promise<void>,
   ) {
     this.app = plugin.app;
     this.plugin = plugin;
     this.component = component;
     this.messagesEl = messagesEl;
+    this.rewindCallback = rewindCallback;
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
@@ -77,6 +83,11 @@ export class MessageRenderer {
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
+      }
+      // Add rewind button for live messages too — sdkUserUuid is set after render
+      // but the click handler in ConversationController validates it at click time.
+      if (this.rewindCallback) {
+        this.addRewindButton(msgEl, msg.id);
       }
     }
 
@@ -152,6 +163,9 @@ export class MessageRenderer {
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
+      }
+      if (msg.sdkUserUuid && this.rewindCallback) {
+        this.addRewindButton(msgEl, msg.id);
       }
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
@@ -459,6 +473,20 @@ export class MessageRenderer {
         copyBtn.classList.remove('copied');
         feedbackTimeout = null;
       }, 1500);
+    });
+  }
+
+  // ============================================
+  // Rewind Button
+  // ============================================
+
+  private addRewindButton(msgEl: HTMLElement, messageId: string): void {
+    const btn = msgEl.createSpan({ cls: 'claudian-message-rewind-btn' });
+    btn.innerHTML = MessageRenderer.REWIND_ICON;
+    btn.setAttribute('aria-label', 'Rewind to here');
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await this.rewindCallback?.(messageId);
     });
   }
 

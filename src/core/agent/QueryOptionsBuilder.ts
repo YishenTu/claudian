@@ -57,6 +57,8 @@ export interface PersistentQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   resumeSessionId?: string;
+  /** Assistant message UUID for resumeSessionAt (loads history up to this point after rewind). */
+  resumeSessionAt?: string;
   /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
   /** Pre-built hooks array. */
@@ -218,8 +220,14 @@ export class QueryOptionsBuilder {
     QueryOptionsBuilder.applyThinkingBudget(options, ctx.settings.thinkingBudget);
     options.hooks = ctx.hooks;
 
+    options.enableFileCheckpointing = true;
+
     if (ctx.resumeSessionId) {
       options.resume = ctx.resumeSessionId;
+    }
+
+    if (ctx.resumeSessionAt) {
+      options.resumeSessionAt = ctx.resumeSessionAt;
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {

@@ -18,11 +18,13 @@ import type {
   PermissionMode as SDKPermissionMode,
   PermissionResult,
   Query,
+  RewindFilesResult,
   SDKMessage,
   SDKUserMessage,
   SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID } from 'crypto';
 
 import type ClaudianPlugin from '../../main';
 import { stripCurrentNoteContext } from '../../utils/context';
@@ -56,6 +58,7 @@ import type {
   StreamChunk,
 } from '../types';
 import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
+import type { SDKNonResultMessage } from '../types/sdk';
 import { MessageChannel } from './MessageChannel';
 import {
   type ColdStartQueryContext,
@@ -145,6 +148,9 @@ export class ClaudianService {
 
   // Current allowed tools for canUseTool enforcement (null = no restriction)
   private currentAllowedTools: string[] | null = null;
+
+  // Rewind support: assistant UUID for resumeSessionAt on next query restart
+  private pendingResumeAt?: string;
 
   // Last sent message for crash recovery (Phase 1.3)
   private lastSentMessage: SDKUserMessage | null = null;
@@ -439,10 +445,14 @@ export class ClaudianService {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
       resumeSessionId,
+      resumeSessionAt: this.pendingResumeAt,
       canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
     };
+
+    // Clear after use — only applies to the next query start after rewind
+    this.pendingResumeAt = undefined;
 
     return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
   }
@@ -634,6 +644,13 @@ export class ClaudianService {
           }
         }
       }
+    }
+
+    // Emit assistant UUID for rewind support (resumeSessionAt needs this).
+    // Overwrites each turn — the LAST assistant UUID is what resumeSessionAt expects
+    // ("up to and including" that response, so Claude sees its full turn in context).
+    if (message.type === 'assistant' && (message as SDKNonResultMessage).uuid && handler) {
+      handler.onChunk({ type: 'sdk_assistant_uuid', uuid: (message as SDKNonResultMessage).uuid! });
     }
 
     // Check for turn completion
@@ -890,6 +907,9 @@ export class ClaudianService {
 
     const message = this.buildSDKUserMessage(prompt, images);
 
+    // Emit the user UUID so InputController can associate it with the ChatMessage
+    yield { type: 'sdk_user_uuid', uuid: message.uuid! };
+
     // Create a promise-based handler to yield chunks
     // Use a mutable state object to work around TypeScript's control flow analysis
     const state = {
@@ -999,6 +1019,7 @@ export class ClaudianService {
         },
         parent_tool_use_id: null,
         session_id: sessionId,
+        uuid: randomUUID(),
       };
     }
 
@@ -1030,6 +1051,7 @@ export class ClaudianService {
       },
       parent_tool_use_id: null,
       session_id: sessionId,
+      uuid: randomUUID(),
     };
   }
 
@@ -1398,6 +1420,27 @@ export class ClaudianService {
     // Cancel any in-flight cold-start query
     this.cancel();
     this.resetSession();
+  }
+
+  async rewindFiles(sdkUserUuid: string, dryRun?: boolean): Promise<RewindFilesResult> {
+    if (!this.persistentQuery) throw new Error('No active query');
+    if (this.shuttingDown) throw new Error('Service is shutting down');
+    return this.persistentQuery.rewindFiles(sdkUserUuid, { dryRun });
+  }
+
+  /**
+   * Reverts files to their state at the given user message, then closes the
+   * persistent query so the next user message restarts with resumeSessionAt.
+   */
+  async rewind(sdkUserUuid: string, sdkAssistantUuid: string): Promise<RewindFilesResult> {
+    const result = await this.rewindFiles(sdkUserUuid);
+    if (!result.canRewind) return result;
+
+    // resumeSessionAt uses the assistant UUID: loads history "up to and including"
+    // that response, so Claude sees its reverted attempt in context and can learn from it.
+    this.pendingResumeAt = sdkAssistantUuid;
+    this.closePersistentQuery('rewind');
+    return result;
   }
 
   setApprovalCallback(callback: ApprovalCallback | null) {

@@ -766,6 +766,7 @@ describe('ClaudianService', () => {
         message: { role: 'user', content: 'Hello Claude' },
         parent_tool_use_id: null,
         session_id: '',
+        uuid: expect.any(String),
       });
     });
 
@@ -2200,6 +2201,10 @@ describe('ClaudianService', () => {
         'test', undefined, '/mock/vault/path', '/usr/local/bin/claude'
       );
 
+      // Consume the sdk_user_uuid chunk yielded before handler registration
+      const firstChunk = await gen.next();
+      expect(firstChunk.value.type).toBe('sdk_user_uuid');
+
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -2248,6 +2253,10 @@ describe('ClaudianService', () => {
       const gen = (service as any).queryViaPersistent(
         'test', undefined, '/mock/vault/path', '/usr/local/bin/claude'
       );
+
+      // Consume the sdk_user_uuid chunk yielded before handler registration
+      const uuidChunk = await gen.next();
+      expect(uuidChunk.value.type).toBe('sdk_user_uuid');
 
       const chunks: any[] = [];
       const iterPromise = gen.next();
@@ -2308,6 +2317,10 @@ describe('ClaudianService', () => {
       const gen = (service as any).queryViaPersistent(
         'test', undefined, '/mock/vault/path', '/usr/local/bin/claude'
       );
+
+      // Consume the sdk_user_uuid chunk yielded before handler registration
+      const uuidChunk = await gen.next();
+      expect(uuidChunk.value.type).toBe('sdk_user_uuid');
 
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -2871,6 +2884,84 @@ describe('ClaudianService', () => {
       expect(usageChunks.length).toBeGreaterThan(0);
       expect(usageChunks[0].sessionId).toBe('usage-cold-session');
       expect(chunks.some(c => c.type === 'done')).toBe(true);
+    });
+  });
+
+  describe('rewindFiles', () => {
+    it('throws when no persistentQuery', async () => {
+      (service as any).persistentQuery = null;
+      await expect(service.rewindFiles('uuid')).rejects.toThrow('No active query');
+    });
+
+    it('throws when shuttingDown', async () => {
+      (service as any).persistentQuery = { rewindFiles: jest.fn() };
+      (service as any).shuttingDown = true;
+      await expect(service.rewindFiles('uuid')).rejects.toThrow('Service is shutting down');
+      (service as any).shuttingDown = false;
+    });
+
+    it('calls persistentQuery.rewindFiles with correct args', async () => {
+      const mockRewindFiles = jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.txt'] });
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewindFiles('test-uuid', true);
+
+      expect(mockRewindFiles).toHaveBeenCalledWith('test-uuid', { dryRun: true });
+      expect(result).toEqual({ canRewind: true, filesChanged: ['a.txt'] });
+    });
+  });
+
+  describe('rewind', () => {
+    it('calls rewindFiles, sets pendingResumeAt, and closes query', async () => {
+      const mockRewindFiles = jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.txt'] });
+      const mockInterrupt = jest.fn().mockResolvedValue(undefined);
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles, interrupt: mockInterrupt };
+      (service as any).messageChannel = { close: jest.fn() };
+      (service as any).queryAbortController = { abort: jest.fn() };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewind('user-uuid', 'assistant-uuid');
+
+      expect(result.canRewind).toBe(true);
+      expect((service as any).pendingResumeAt).toBe('assistant-uuid');
+      // closePersistentQuery should have been called (persistentQuery set to null)
+      expect((service as any).persistentQuery).toBeNull();
+    });
+
+    it('returns error without closing query when canRewind is false', async () => {
+      const mockRewindFiles = jest.fn().mockResolvedValue({ canRewind: false, error: 'No checkpoint' });
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewind('user-uuid', 'assistant-uuid');
+
+      expect(result.canRewind).toBe(false);
+      expect(result.error).toBe('No checkpoint');
+      // Query should NOT be closed
+      expect((service as any).persistentQuery).not.toBeNull();
+    });
+  });
+
+  describe('buildSDKUserMessage uuid', () => {
+    it('assigns a uuid to text-only messages', () => {
+      const message = (service as any).buildSDKUserMessage('Hello');
+      expect(message.uuid).toBeDefined();
+      expect(typeof message.uuid).toBe('string');
+      expect(message.uuid.length).toBeGreaterThan(0);
+    });
+
+    it('assigns a uuid to image messages', () => {
+      const images = [{ id: 'img1', name: 'test.png', mediaType: 'image/png', data: 'b64', size: 10, source: 'file' }];
+      const message = (service as any).buildSDKUserMessage('Look', images);
+      expect(message.uuid).toBeDefined();
+      expect(typeof message.uuid).toBe('string');
+    });
+
+    it('assigns unique uuids to different messages', () => {
+      const msg1 = (service as any).buildSDKUserMessage('Hello');
+      const msg2 = (service as any).buildSDKUserMessage('World');
+      expect(msg1.uuid).not.toBe(msg2.uuid);
     });
   });
 });

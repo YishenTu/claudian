@@ -1,8 +1,9 @@
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { confirm } from '../../../shared/modals/ConfirmModal';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
@@ -325,6 +326,59 @@ export class ConversationController {
     } finally {
       state.isSwitchingConversation = false;
     }
+  }
+
+  /**
+   * Reverts file changes and truncates UI messages to rewind to a previous point.
+   * After rewind, the persistent query is closed. The next user message restarts
+   * the session with resumeSessionAt so Claude sees history up to the rewind point.
+   */
+  async rewind(userMessageId: string): Promise<void> {
+    const { plugin, state, renderer } = this.deps;
+
+    if (state.isStreaming) return;
+
+    const userMsg = state.messages.find(m => m.id === userMessageId);
+    if (!userMsg || !userMsg.sdkUserUuid) return;
+
+    // Find the next assistant message (the response to this user message)
+    const userIdx = state.messages.indexOf(userMsg);
+    const assistantMsg = state.messages[userIdx + 1];
+    if (!assistantMsg || assistantMsg.role !== 'assistant' || !assistantMsg.sdkAssistantUuid) return;
+
+    const confirmed = await confirm(
+      plugin.app,
+      'Rewind to this point? File changes after this message will be reverted.',
+      'Rewind'
+    );
+    if (!confirmed) return;
+
+    const agentService = this.getAgentService();
+    if (!agentService) return;
+
+    let result;
+    try {
+      result = await agentService.rewind(userMsg.sdkUserUuid, assistantMsg.sdkAssistantUuid);
+    } catch (e) {
+      new Notice(`Rewind failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      return;
+    }
+    if (!result.canRewind) {
+      new Notice(`Cannot rewind: ${result.error ?? 'Unknown error'}`);
+      return;
+    }
+
+    // Truncate UI messages (remove this user message and everything after)
+    state.truncateAt(userMessageId);
+
+    // Re-render
+    const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
+    this.deps.setWelcomeEl(welcomeEl);
+
+    await this.save();
+
+    const filesChanged = result.filesChanged?.length ?? 0;
+    new Notice(`Rewound: ${filesChanged} file${filesChanged !== 1 ? 's' : ''} reverted`);
   }
 
   /**

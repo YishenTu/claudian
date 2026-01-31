@@ -181,6 +181,37 @@
   font-style: italic;
 }
 
+/* Rewind button on user messages */
+.claudian-message-rewind-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+  color: var(--text-muted);
+}
+
+.claudian-message-rewind-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-message-user:hover .claudian-message-rewind-btn {
+  opacity: 0.6;
+}
+
+.claudian-message-rewind-btn:hover {
+  opacity: 1 !important;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 /* Compact boundary indicator */
 .claudian-compact-boundary {
   display: flex;

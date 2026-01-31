@@ -53,6 +53,10 @@ export interface ChatMessage {
   durationSeconds?: number;
   /** Flavor word used for duration display (e.g., "Baked", "Cooked"). */
   durationFlavorWord?: string;
+  /** UUID we assigned to our outgoing SDK user message — used for rewindFiles(). */
+  sdkUserUuid?: string;
+  /** Last assistant message UUID from SDK — used for resumeSessionAt. */
+  sdkAssistantUuid?: string;
 }
 
 /** Persisted conversation with messages and session state. */
@@ -164,7 +168,9 @@ export type StreamChunk =
   | { type: 'blocked'; content: string }
   | { type: 'done' }
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
-  | { type: 'compact_boundary' };
+  | { type: 'compact_boundary' }
+  | { type: 'sdk_user_uuid'; uuid: string }
+  | { type: 'sdk_assistant_uuid'; uuid: string };
 
 /** Context window usage information. */
 export interface UsageInfo {

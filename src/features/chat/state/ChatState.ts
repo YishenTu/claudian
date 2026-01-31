@@ -84,6 +84,19 @@ export class ChatState {
     this._callbacks.onMessagesChanged?.();
   }
 
+  /**
+   * Removes the message with the given id and all messages after it.
+   * Returns the number of messages removed, or 0 if not found.
+   */
+  truncateAt(messageId: string): number {
+    const idx = this.state.messages.findIndex(m => m.id === messageId);
+    if (idx === -1) return 0;
+    const removed = this.state.messages.length - idx;
+    this.state.messages = this.state.messages.slice(0, idx);
+    this._callbacks.onMessagesChanged?.();
+    return removed;
+  }
+
   // ============================================
   // Streaming Control
   // ============================================

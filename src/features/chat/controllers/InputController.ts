@@ -303,6 +303,13 @@ export class InputController {
           wasInterrupted = true;
           break;
         }
+
+        // Capture user UUID for rewind support (set on the user ChatMessage)
+        if (chunk.type === 'sdk_user_uuid') {
+          userMsg.sdkUserUuid = chunk.uuid;
+          continue;
+        }
+
         await streamController.handleStreamChunk(chunk, assistantMsg);
       }
     } catch (error) {

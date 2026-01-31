@@ -485,4 +485,63 @@ describe('ChatState', () => {
       expect(newCallbacks.onMessagesChanged).toHaveBeenCalled();
     });
   });
+
+  describe('truncateAt', () => {
+    it('removes target message and all after, fires callback', () => {
+      const onMessagesChanged = jest.fn();
+      const chatState = new ChatState({ onMessagesChanged });
+      chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
+      chatState.addMessage({ id: 'b', role: 'assistant', content: 'reply1', timestamp: 2 });
+      chatState.addMessage({ id: 'c', role: 'user', content: 'second', timestamp: 3 });
+      chatState.addMessage({ id: 'd', role: 'assistant', content: 'reply2', timestamp: 4 });
+      onMessagesChanged.mockClear();
+
+      const removed = chatState.truncateAt('c');
+
+      expect(removed).toBe(2);
+      expect(chatState.messages.map(m => m.id)).toEqual(['a', 'b']);
+      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 0 and does not fire callback for unknown id', () => {
+      const onMessagesChanged = jest.fn();
+      const chatState = new ChatState({ onMessagesChanged });
+      chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
+      onMessagesChanged.mockClear();
+
+      const removed = chatState.truncateAt('nonexistent');
+
+      expect(removed).toBe(0);
+      expect(chatState.messages.map(m => m.id)).toEqual(['a']);
+      expect(onMessagesChanged).not.toHaveBeenCalled();
+    });
+
+    it('clears all messages when truncating at first message', () => {
+      const onMessagesChanged = jest.fn();
+      const chatState = new ChatState({ onMessagesChanged });
+      chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
+      chatState.addMessage({ id: 'b', role: 'assistant', content: 'reply', timestamp: 2 });
+      onMessagesChanged.mockClear();
+
+      const removed = chatState.truncateAt('a');
+
+      expect(removed).toBe(2);
+      expect(chatState.messages).toEqual([]);
+      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('removes only last message when truncating at last', () => {
+      const onMessagesChanged = jest.fn();
+      const chatState = new ChatState({ onMessagesChanged });
+      chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
+      chatState.addMessage({ id: 'b', role: 'assistant', content: 'reply', timestamp: 2 });
+      onMessagesChanged.mockClear();
+
+      const removed = chatState.truncateAt('b');
+
+      expect(removed).toBe(1);
+      expect(chatState.messages.map(m => m.id)).toEqual(['a']);
+      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
+    });
+  });
 });
