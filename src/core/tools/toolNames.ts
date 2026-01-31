@@ -22,14 +22,16 @@ export const TOOL_WRITE = 'Write' as const;
 export const TOOL_ENTER_PLAN_MODE = 'EnterPlanMode' as const;
 export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
 
-export const PLAN_MODE_TOOLS = [
+// These tools resolve via dedicated callbacks (not content-based), so their
+// tool_result should never be marked "blocked" based on result text.
+export const TOOLS_SKIP_BLOCKED_DETECTION = [
   TOOL_ENTER_PLAN_MODE,
   TOOL_EXIT_PLAN_MODE,
   TOOL_ASK_USER_QUESTION,
 ] as const;
 
-export function isPlanModeTool(name: string): boolean {
-  return (PLAN_MODE_TOOLS as readonly string[]).includes(name);
+export function skipsBlockedDetection(name: string): boolean {
+  return (TOOLS_SKIP_BLOCKED_DETECTION as readonly string[]).includes(name);
 }
 
 export const EDIT_TOOLS = [TOOL_WRITE, TOOL_EDIT, TOOL_NOTEBOOK_EDIT] as const;

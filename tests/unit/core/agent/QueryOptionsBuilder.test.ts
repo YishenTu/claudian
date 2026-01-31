@@ -290,6 +290,23 @@ describe('QueryOptionsBuilder', () => {
       expect(options.canUseTool).toBe(canUseTool);
     });
 
+    it('sets plan mode options correctly', () => {
+      const canUseTool = jest.fn();
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ permissionMode: 'plan' as any }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+        canUseTool,
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.permissionMode).toBe('plan');
+      expect(options.allowDangerouslySkipPermissions).toBe(true);
+      expect(options.canUseTool).toBe(canUseTool);
+    });
+
     it('sets thinking tokens for high budget', () => {
       const ctx = {
         ...createMockContext({

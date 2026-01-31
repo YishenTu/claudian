@@ -12,11 +12,15 @@ import {
   isWriteEditTool,
   MCP_TOOLS,
   READ_ONLY_TOOLS,
+  skipsBlockedDetection,
   // Constants
   TOOL_AGENT_OUTPUT,
+  TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_EDIT,
+  TOOL_ENTER_PLAN_MODE,
+  TOOL_EXIT_PLAN_MODE,
   TOOL_GLOB,
   TOOL_GREP,
   TOOL_KILL_SHELL,
@@ -32,6 +36,7 @@ import {
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
+  TOOLS_SKIP_BLOCKED_DETECTION,
   WRITE_EDIT_TOOLS,
 } from '@/core/tools/toolNames';
 
@@ -356,5 +361,43 @@ describe('isReadOnlyTool', () => {
 
   it('should return false for unknown tool', () => {
     expect(isReadOnlyTool('UnknownTool')).toBe(false);
+  });
+});
+
+describe('TOOLS_SKIP_BLOCKED_DETECTION', () => {
+  it('should contain EnterPlanMode, ExitPlanMode, and AskUserQuestion', () => {
+    expect(TOOLS_SKIP_BLOCKED_DETECTION).toContain(TOOL_ENTER_PLAN_MODE);
+    expect(TOOLS_SKIP_BLOCKED_DETECTION).toContain(TOOL_EXIT_PLAN_MODE);
+    expect(TOOLS_SKIP_BLOCKED_DETECTION).toContain(TOOL_ASK_USER_QUESTION);
+    expect(TOOLS_SKIP_BLOCKED_DETECTION).toHaveLength(3);
+  });
+});
+
+describe('skipsBlockedDetection', () => {
+  it('should return true for EnterPlanMode', () => {
+    expect(skipsBlockedDetection('EnterPlanMode')).toBe(true);
+  });
+
+  it('should return true for ExitPlanMode', () => {
+    expect(skipsBlockedDetection('ExitPlanMode')).toBe(true);
+  });
+
+  it('should return true for AskUserQuestion', () => {
+    expect(skipsBlockedDetection('AskUserQuestion')).toBe(true);
+  });
+
+  it('should return false for regular tools', () => {
+    expect(skipsBlockedDetection('Read')).toBe(false);
+    expect(skipsBlockedDetection('Bash')).toBe(false);
+    expect(skipsBlockedDetection('Write')).toBe(false);
+  });
+
+  it('should return false for empty string', () => {
+    expect(skipsBlockedDetection('')).toBe(false);
+  });
+
+  it('should be case-sensitive', () => {
+    expect(skipsBlockedDetection('enterplanmode')).toBe(false);
+    expect(skipsBlockedDetection('EXITPLANMODE')).toBe(false);
   });
 });

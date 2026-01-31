@@ -1,6 +1,6 @@
 import type { ClaudianService } from '../../../core/agent';
 import { extractResolvedAnswers, parseTodoInput } from '../../../core/tools';
-import { isPlanModeTool, isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE, TOOL_WRITE } from '../../../core/tools/toolNames';
+import { isWriteEditTool, skipsBlockedDetection, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE, TOOL_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
@@ -331,11 +331,11 @@ export class StreamController {
     const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
 
     if (existingToolCall) {
-      // Plan mode tools (EnterPlanMode, ExitPlanMode, AskUserQuestion) don't use
-      // content-based blocked detection — their status is determined solely by isError
+      // Tools that resolve via dedicated callbacks (not content-based) skip
+      // blocked detection — their status is determined solely by isError
       if (chunk.isError) {
         existingToolCall.status = 'error';
-      } else if (!isPlanModeTool(existingToolCall.name) && isBlocked) {
+      } else if (!skipsBlockedDetection(existingToolCall.name) && isBlocked) {
         existingToolCall.status = 'blocked';
       } else {
         existingToolCall.status = 'completed';

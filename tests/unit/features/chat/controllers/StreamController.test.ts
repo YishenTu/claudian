@@ -1417,3 +1417,147 @@ describe('StreamController - Text Content', () => {
     });
   });
 });
+
+describe('StreamController - Plan Mode', () => {
+  let controller: StreamController;
+  let deps: StreamControllerDeps;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    deps = createMockDeps();
+    controller = new StreamController(deps);
+    deps.state.currentContentEl = createMockEl();
+  });
+
+  afterEach(() => {
+    deps.state.resetStreamingState();
+    jest.useRealTimers();
+  });
+
+  describe('capturePlanFilePath', () => {
+    it('should capture plan file path from Write tool_use', async () => {
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: '/home/user/.claude/plans/plan.md' } },
+        msg
+      );
+
+      expect(deps.state.planFilePath).toBe('/home/user/.claude/plans/plan.md');
+    });
+
+    it('should capture plan file path with Windows backslashes', async () => {
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: 'C:\\.claude\\plans\\plan.md' } },
+        msg
+      );
+
+      expect(deps.state.planFilePath).toBe('C:\\.claude\\plans\\plan.md');
+    });
+
+    it('should not capture non-plan Write paths', async () => {
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: '/home/user/notes/todo.md' } },
+        msg
+      );
+
+      expect(deps.state.planFilePath).toBeNull();
+    });
+
+    it('should not capture plan path from non-Write tools', async () => {
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: '/home/user/.claude/plans/plan.md' } },
+        msg
+      );
+
+      expect(deps.state.planFilePath).toBeNull();
+    });
+
+    it('should capture plan file path on subsequent tool_use input update', async () => {
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'write-1',
+        name: 'Write',
+        input: { content: 'plan content' },
+        status: 'running',
+      }];
+
+      // Second tool_use chunk with same ID updates the input (file_path arrives later)
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: '/home/user/.claude/plans/plan.md' } },
+        msg
+      );
+
+      expect(deps.state.planFilePath).toBe('/home/user/.claude/plans/plan.md');
+    });
+  });
+
+  describe('blocked detection bypass', () => {
+    it('should not mark AskUserQuestion as blocked even when result looks blocked', async () => {
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
+      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
+
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'ask-1',
+        name: 'AskUserQuestion',
+        input: {},
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'ask-1', content: 'User denied this action.' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].status).toBe('completed');
+    });
+
+    it('should not mark ExitPlanMode as blocked even when result looks blocked', async () => {
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
+      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
+
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'exit-1',
+        name: 'ExitPlanMode',
+        input: {},
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'exit-1', content: 'User denied.' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].status).toBe('completed');
+    });
+
+    it('should mark regular tool as blocked when result is blocked', async () => {
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
+      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
+
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'bash-1',
+        name: 'Bash',
+        input: { command: 'rm -rf /' },
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'bash-1', content: 'Command blocked by security policy' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].status).toBe('blocked');
+    });
+  });
+});

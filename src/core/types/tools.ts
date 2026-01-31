@@ -40,13 +40,11 @@ export interface ToolCallInfo {
   resolvedAnswers?: AskUserAnswers;
 }
 
-/** User decision from the ExitPlanMode approval card. */
 export type ExitPlanModeDecision =
   | { type: 'approve' }
   | { type: 'approve-new-session'; planContent: string }
   | { type: 'feedback'; text: string };
 
-/** Callback type for ExitPlanMode tool. Returns decision or null if cancelled. */
 export type ExitPlanModeCallback = (
   input: Record<string, unknown>,
   signal?: AbortSignal,
