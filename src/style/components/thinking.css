@@ -54,9 +54,8 @@
 
 /* Thinking block content - tree-branch style */
 .claudian-thinking-content {
-  padding-block: 4px;
+  padding: 4px 0;
   padding-inline-start: 24px;
-  padding-inline-end: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-muted);
