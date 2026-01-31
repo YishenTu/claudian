@@ -691,20 +691,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      const current = plugin.settings.permissionMode;
-      if (current === 'plan') {
-        const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
-        tab.state.prePlanPermissionMode = null;
-        updatePlanModeUI(tab, plugin, restoreMode);
-      } else {
-        tab.state.prePlanPermissionMode = current;
-        updatePlanModeUI(tab, plugin, 'plan');
-      }
-      return;
-    }
-
     // Check for # trigger first (empty input + # keystroke)
     if (ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
@@ -950,7 +936,7 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
   }
 }
 
-function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: PermissionMode): void {
+export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: PermissionMode): void {
   plugin.settings.permissionMode = mode;
   void plugin.saveSettings();
   tab.ui.permissionToggle?.updateDisplay();

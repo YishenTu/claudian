@@ -4,7 +4,7 @@ import { ItemView, Notice, setIcon } from 'obsidian';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { LOGO_SVG } from './constants';
-import { TabBar, TabManager } from './tabs';
+import { TabBar, TabManager, updatePlanModeUI } from './tabs';
 import type { TabData, TabId } from './tabs/types';
 
 export class ClaudianView extends ItemView {
@@ -469,6 +469,24 @@ export class ClaudianView extends ItemView {
     // Document-level click to close dropdowns
     this.registerDomEvent(document, 'click', () => {
       this.historyDropdown?.removeClass('visible');
+    });
+
+    // View-level Shift+Tab to toggle plan mode (works from any focused element)
+    this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        const activeTab = this.tabManager?.getActiveTab();
+        if (!activeTab) return;
+        const current = this.plugin.settings.permissionMode;
+        if (current === 'plan') {
+          const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
+          activeTab.state.prePlanPermissionMode = null;
+          updatePlanModeUI(activeTab, this.plugin, restoreMode);
+        } else {
+          activeTab.state.prePlanPermissionMode = current;
+          updatePlanModeUI(activeTab, this.plugin, 'plan');
+        }
+      }
     });
 
     // Document-level escape to cancel streaming
