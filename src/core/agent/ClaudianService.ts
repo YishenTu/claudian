@@ -149,7 +149,6 @@ export class ClaudianService {
   // Current allowed tools for canUseTool enforcement (null = no restriction)
   private currentAllowedTools: string[] | null = null;
 
-  // Rewind support: assistant UUID for resumeSessionAt on next query restart
   private pendingResumeAt?: string;
 
   // Last sent message for crash recovery (Phase 1.3)
@@ -456,10 +455,7 @@ export class ClaudianService {
     };
 
     const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-    // Clear after successful build — only applies to the next query start after rewind
     this.pendingResumeAt = undefined;
-
     return options;
   }
 
@@ -652,9 +648,6 @@ export class ClaudianService {
       }
     }
 
-    // Emit assistant UUID for rewind support (resumeSessionAt needs this).
-    // Overwrites each turn — the LAST assistant UUID is what resumeSessionAt expects
-    // ("up to and including" that response, so Claude sees its full turn in context).
     if (message.type === 'assistant' && (message as SDKNonResultMessage).uuid && handler) {
       handler.onChunk({ type: 'sdk_assistant_uuid', uuid: (message as SDKNonResultMessage).uuid! });
     }
@@ -913,7 +906,6 @@ export class ClaudianService {
 
     const message = this.buildSDKUserMessage(prompt, images);
 
-    // Emit the user UUID so InputController can associate it with the ChatMessage
     yield { type: 'sdk_user_uuid', uuid: message.uuid! };
 
     // Create a promise-based handler to yield chunks
@@ -974,7 +966,6 @@ export class ClaudianService {
         throw error;
       }
 
-      // Emit after enqueue succeeds so callers can treat this as "message sent".
       yield { type: 'sdk_user_sent', uuid: message.uuid! };
 
       // Yield chunks as they arrive
@@ -1437,20 +1428,14 @@ export class ClaudianService {
     return this.persistentQuery.rewindFiles(sdkUserUuid, { dryRun });
   }
 
-  /**
-   * Reverts files to their state at the given user message, then closes the
-   * persistent query so the next user message restarts with resumeSessionAt.
-   */
   async rewind(sdkUserUuid: string, sdkAssistantUuid: string): Promise<RewindFilesResult> {
-    // Dry run first: the SDK only returns filesChanged/insertions/deletions on dry runs
+    // SDK only returns filesChanged/insertions/deletions on dry runs
     const preview = await this.rewindFiles(sdkUserUuid, true);
     if (!preview.canRewind) return preview;
 
     const result = await this.rewindFiles(sdkUserUuid);
     if (!result.canRewind) return result;
 
-    // resumeSessionAt uses the assistant UUID: loads history "up to and including"
-    // that response, so Claude sees its reverted attempt in context and can learn from it.
     this.pendingResumeAt = sdkAssistantUuid;
     this.closePersistentQuery('rewind');
     return { ...result, filesChanged: preview.filesChanged, insertions: preview.insertions, deletions: preview.deletions };

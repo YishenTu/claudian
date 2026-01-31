@@ -53,9 +53,9 @@ export interface ChatMessage {
   durationSeconds?: number;
   /** Flavor word used for duration display (e.g., "Baked", "Cooked"). */
   durationFlavorWord?: string;
-  /** UUID we assigned to our outgoing SDK user message — used for rewindFiles(). */
+  /** SDK user message UUID for rewind. */
   sdkUserUuid?: string;
-  /** Last assistant message UUID from SDK — used for resumeSessionAt. */
+  /** SDK assistant message UUID for resumeSessionAt. */
   sdkAssistantUuid?: string;
 }
 
@@ -101,7 +101,7 @@ export interface Conversation {
    * Loaded from metadata for native sessions to restore tool count and status on reload.
    */
   subagentData?: Record<string, SubagentInfo>;
-  /** Assistant UUID for resumeSessionAt after rewind. Used for JSONL filtering on reload. */
+  /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
 }
 
@@ -158,7 +158,7 @@ export interface SessionMetadata {
    * Stored here because SDK session files don't preserve this Claudian-specific data.
    */
   subagentData?: Record<string, SubagentInfo>;
-  /** Assistant UUID for resumeSessionAt after rewind. Used for JSONL filtering on reload. */
+  /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
 }
 

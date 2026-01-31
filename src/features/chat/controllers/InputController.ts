@@ -75,12 +75,7 @@ export class InputController {
     return this.deps.getAgentService?.() ?? null;
   }
 
-  /**
-   * Checks whether resumeSessionAt is still needed (the rewind point is the last dialog node)
-   * or stale (a follow-up user/assistant already exists after that point).
-   */
   private isResumeSessionAtStillNeeded(resumeUuid: string, previousMessages: ChatMessage[]): boolean {
-    // Find the last message whose sdkAssistantUuid matches the resume point (reverse loop for compatibility)
     let resumeIdx = -1;
     for (let i = previousMessages.length - 1; i >= 0; i--) {
       if (previousMessages[i].role === 'assistant' && previousMessages[i].sdkAssistantUuid === resumeUuid) {
@@ -90,7 +85,6 @@ export class InputController {
     }
     if (resumeIdx === -1) return false;
 
-    // If any user or assistant message exists after the resume point, it's stale
     for (let i = resumeIdx + 1; i < previousMessages.length; i++) {
       const msg = previousMessages[i];
       if (msg.role === 'user' || msg.role === 'assistant') {
@@ -317,9 +311,7 @@ export class InputController {
       return;
     }
 
-    // Restore pendingResumeAt from conversation (survives plugin reload after rewind).
-    // Only apply if the assistant it points to is still the last dialog node (no follow-up yet).
-    // If stale (follow-up already started), clear it best-effort to prevent re-application on next restart.
+    // Restore pendingResumeAt from persisted conversation state (survives plugin reload)
     const conversationIdForSend = state.currentConversationId;
     if (conversationIdForSend) {
       const conv = plugin.getConversationSync(conversationIdForSend);
@@ -327,11 +319,10 @@ export class InputController {
         if (this.isResumeSessionAtStillNeeded(conv.resumeSessionAt, state.messages.slice(0, -2))) {
           agentService.setPendingResumeAt(conv.resumeSessionAt);
         } else {
-          // Stale: follow-up already happened. Clear metadata best-effort.
           try {
             await plugin.updateConversation(conversationIdForSend, { resumeSessionAt: undefined });
           } catch {
-            // Best-effort: don't block send if persistence fails.
+            // Best-effort — don't block send
           }
         }
       }
@@ -342,13 +333,11 @@ export class InputController {
       // This prevents duplication when rebuilding context for new sessions
       const previousMessages = state.messages.slice(0, -2);
       for await (const chunk of agentService.query(promptToSend, imagesForMessage, previousMessages, queryOptions)) {
-        // Capture user UUID for rewind support (set on the user ChatMessage)
         if (chunk.type === 'sdk_user_uuid') {
           userMsg.sdkUserUuid = chunk.uuid;
           continue;
         }
 
-        // Track successful enqueue — safe to clear resumeSessionAt after this
         if (chunk.type === 'sdk_user_sent') {
           didEnqueueToSdk = true;
           continue;
@@ -432,12 +421,10 @@ export class InputController {
           }
         }
 
-        // Clear resumeSessionAt only if the follow-up was actually enqueued to the SDK.
-        // If the send failed before enqueue, the rewind checkpoint must survive for retry.
+        // Only clear resumeSessionAt if enqueue succeeded; preserve checkpoint on failure for retry
         const saveExtras = didEnqueueToSdk ? { resumeSessionAt: undefined } : undefined;
         await conversationController.save(true, saveExtras);
 
-        // Retroactively add rewind button now that the turn is complete and UUIDs are set
         const userMsgIndex = state.messages.indexOf(userMsg);
         renderer.refreshRewindButton(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
 

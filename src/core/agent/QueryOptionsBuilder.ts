@@ -57,7 +57,7 @@ export interface PersistentQueryContext extends QueryOptionsContext {
   abortController?: AbortController;
   /** Session ID for resuming a conversation. */
   resumeSessionId?: string;
-  /** Assistant message UUID for resumeSessionAt (loads history up to this point after rewind). */
+  /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
   /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;

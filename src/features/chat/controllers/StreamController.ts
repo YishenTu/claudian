@@ -134,16 +134,11 @@ export class StreamController {
       }
 
       case 'sdk_assistant_uuid':
-        // Overwrites each time — final value is the last assistant message UUID of the turn
         msg.sdkAssistantUuid = chunk.uuid;
         break;
 
       case 'sdk_user_uuid':
-        // Handled in InputController — if it reaches here, ignore it.
-        break;
-
       case 'sdk_user_sent':
-        // Handled in InputController — if it reaches here, ignore it.
         break;
 
       case 'usage': {

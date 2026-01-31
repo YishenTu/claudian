@@ -329,11 +329,6 @@ export class ConversationController {
     }
   }
 
-  /**
-   * Reverts file changes and truncates UI messages to rewind to a previous point.
-   * After rewind, the persistent query is closed. The next user message restarts
-   * the session with resumeSessionAt so Claude sees history up to the rewind point.
-   */
   async rewind(userMessageId: string): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
@@ -351,10 +346,9 @@ export class ConversationController {
       return;
     }
 
-    // Bounded scan forward: find the response assistant with sdkAssistantUuid
     let responseAssistant: typeof msgs[number] | undefined;
     for (let i = userIdx + 1; i < msgs.length; i++) {
-      if (msgs[i].role === 'user') break; // Hit next user turn, stop
+      if (msgs[i].role === 'user') break;
       if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
         responseAssistant = msgs[i];
         break;
@@ -365,7 +359,6 @@ export class ConversationController {
       return;
     }
 
-    // Bounded scan backward: find the previous assistant with sdkAssistantUuid
     let prevAssistant: typeof msgs[number] | undefined;
     for (let i = userIdx - 1; i >= 0; i--) {
       if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
@@ -400,17 +393,13 @@ export class ConversationController {
       return;
     }
 
-    // Truncate UI messages (remove this user message and everything after)
     state.truncateAt(userMessageId);
 
-    // Re-render
     const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
     this.deps.setWelcomeEl(welcomeEl);
     this.updateWelcomeVisibility();
 
     if (!state.currentConversationId) return;
-
-    // Persist messages + resumeSessionAt in one write
     await this.save(false, { resumeSessionAt: prevAssistant.sdkAssistantUuid });
 
     const filesChanged = result.filesChanged?.length ?? 0;

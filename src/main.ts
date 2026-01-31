@@ -590,7 +590,6 @@ export default class ClaudianPlugin extends Plugin {
     let errorCount = 0;
     let successCount = 0;
 
-    // Only pass resumeSessionAt for the current (latest) session
     const currentSessionId = conversation.sdkSessionId ?? conversation.sessionId;
 
     for (const sessionId of allSessionIds) {

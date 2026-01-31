@@ -373,7 +373,6 @@ export function parseSDKMessageToChat(
     toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
     images,
-    // Populate SDK UUIDs so rewind works on reloaded historical messages
     ...(sdkMsg.type === 'user' && sdkMsg.uuid && { sdkUserUuid: sdkMsg.uuid }),
     ...(sdkMsg.type === 'assistant' && sdkMsg.uuid && { sdkAssistantUuid: sdkMsg.uuid }),
     ...(isInterrupt && { isInterrupt: true }),
@@ -460,11 +459,9 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
 }
 
 /**
- * Filters JSONL entries to only the active branch after rewind.
- *
- * After rewind + follow-up, the JSONL forms a tree via parentUuid. This walks
- * backward from the leaf of the newest branch to collect only active entries.
- * For "rewind, no follow-up yet", resumeSessionAt truncates a linear chain.
+ * After rewind + follow-up, the JSONL forms a tree via parentUuid. Walks backward
+ * from the newest branch leaf to collect only active entries. Without branching,
+ * resumeSessionAt truncates the linear chain at that UUID.
  */
 export function filterActiveBranch(
   entries: SDKNativeMessage[],
@@ -472,8 +469,7 @@ export function filterActiveBranch(
 ): SDKNativeMessage[] {
   if (entries.length === 0) return [];
 
-  // Dedup by uuid first — SDK may write the same message twice (e.g., around compaction).
-  // This prevents duplicate entries from inflating child counts and causing false branch detection.
+  // SDK may write duplicates around compaction, which inflates child counts
   const seen = new Set<string>();
   const deduped: SDKNativeMessage[] = [];
   for (const entry of entries) {
@@ -484,7 +480,6 @@ export function filterActiveBranch(
     deduped.push(entry);
   }
 
-  // Build uuid → entry map and collect unique children per parentUuid
   const byUuid = new Map<string, SDKNativeMessage>();
   const childrenOf = new Map<string, Set<string>>();
 
@@ -504,13 +499,11 @@ export function filterActiveBranch(
 
   const hasBranching = [...childrenOf.values()].some(children => children.size > 1);
 
-  // Choose the leaf entry to walk backward from
   let leaf: SDKNativeMessage | undefined;
 
   if (hasBranching) {
-    // Branching detected: find leaf nodes (UUIDs with no children), then pick the
-    // last-appearing leaf in file order. This is more robust than "last entry with uuid"
-    // which can break if non-dialog nodes or special entries appear at the end.
+    // Pick last-appearing leaf (no children) in file order — more robust than
+    // "last entry with uuid" which breaks on trailing non-dialog nodes
     const allUuids = new Set(byUuid.keys());
     const parents = new Set(childrenOf.keys());
     const leafUuids = new Set<string>();
@@ -520,7 +513,6 @@ export function filterActiveBranch(
       }
     }
 
-    // Pick the last-appearing leaf in file order
     for (let i = deduped.length - 1; i >= 0; i--) {
       if (deduped[i].uuid && leafUuids.has(deduped[i].uuid!)) {
         leaf = deduped[i];
@@ -528,17 +520,13 @@ export function filterActiveBranch(
       }
     }
   } else if (resumeSessionAt) {
-    // No branching + resumeSessionAt: truncate at that UUID
     leaf = byUuid.get(resumeSessionAt);
   } else {
-    // No branching, no resumeSessionAt: return deduped entries
     return deduped;
   }
 
-  // Safety: if chosen leaf not found, return deduped entries
   if (!leaf || !leaf.uuid) return deduped;
 
-  // Walk backward from leaf via parentUuid to collect active UUIDs
   const activeUuids = new Set<string>();
   let current: SDKNativeMessage | undefined = leaf;
   while (current?.uuid) {
@@ -550,9 +538,7 @@ export function filterActiveBranch(
     }
   }
 
-  // Precompute nearest preceding/following active status for no-uuid entries in O(n).
-  // prevIsActive[i] = whether the nearest preceding uuid entry is in activeUuids.
-  // nextIsActive[i] = whether the nearest following uuid entry is in activeUuids.
+  // O(n) sweep: include no-uuid entries only if both nearest uuid neighbors are active
   const n = deduped.length;
   const prevIsActive = new Array<boolean>(n);
   const nextIsActive = new Array<boolean>(n);
@@ -609,7 +595,6 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
     target.contentBlocks = [...(target.contentBlocks || []), ...source.contentBlocks];
   }
 
-  // Keep the last assistant UUID so rewind targets the end of the merged turn
   if (source.sdkAssistantUuid) {
     target.sdkAssistantUuid = source.sdkAssistantUuid;
   }
@@ -641,7 +626,6 @@ export async function loadSDKSessionMessages(
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
   }
 
-  // Filter to active branch before processing (handles rewind persistence)
   const filteredEntries = filterActiveBranch(result.messages, resumeSessionAt);
 
   const toolResults = collectToolResults(filteredEntries);
