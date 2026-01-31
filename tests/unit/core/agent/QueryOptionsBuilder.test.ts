@@ -412,6 +412,40 @@ describe('QueryOptionsBuilder', () => {
       expect(options.additionalDirectories).toBeUndefined();
     });
 
+    it('always enables file checkpointing', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.enableFileCheckpointing).toBe(true);
+    });
+
+    it('sets resumeSessionAt when provided', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        resumeSessionAt: 'asst-uuid-456',
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.resumeSessionAt).toBe('asst-uuid-456');
+    });
+
+    it('does not set resumeSessionAt when not provided', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.resumeSessionAt).toBeUndefined();
+    });
+
     it('does not pass plugins or agents via SDK options (SDK auto-discovers from settings)', () => {
       const ctx = createMockContext();
       const options = QueryOptionsBuilder.buildPersistentQueryOptions({

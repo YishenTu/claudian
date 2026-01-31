@@ -1962,4 +1962,34 @@ describe('ConversationController - Rewind', () => {
     const msg = mockNotice.mock.calls[0][0] as string;
     expect(msg).toContain('No checkpoints');
   });
+
+  it('should truncateAt, save with resumeSessionAt, and renderMessages on success', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    const truncateSpy = jest.spyOn(deps.state, 'truncateAt');
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
+    expect(truncateSpy).toHaveBeenCalledWith('m2');
+    expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Function)
+    );
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+      'conv-1',
+      expect.objectContaining({ resumeSessionAt: 'prev-a' })
+    );
+
+    // Should show success notice with file count
+    const noticeMsg = mockNotice.mock.calls[0][0] as string;
+    expect(noticeMsg).toContain('1');
+
+    truncateSpy.mockRestore();
+  });
 });

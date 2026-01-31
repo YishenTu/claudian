@@ -246,6 +246,31 @@ describe('StreamController - Text Content', () => {
     });
   });
 
+  describe('sdk_assistant_uuid handling', () => {
+    it('should set sdkAssistantUuid on message', async () => {
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'sdk_assistant_uuid', uuid: 'asst-uuid-123' } as any,
+        msg
+      );
+
+      expect(msg.sdkAssistantUuid).toBe('asst-uuid-123');
+    });
+
+    it('should overwrite previous sdkAssistantUuid', async () => {
+      const msg = createTestMessage();
+      msg.sdkAssistantUuid = 'old-uuid';
+
+      await controller.handleStreamChunk(
+        { type: 'sdk_assistant_uuid', uuid: 'new-uuid' } as any,
+        msg
+      );
+
+      expect(msg.sdkAssistantUuid).toBe('new-uuid');
+    });
+  });
+
   describe('Done chunk handling', () => {
     it('should handle done chunk without error', async () => {
       const msg = createTestMessage();
