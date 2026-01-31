@@ -11,6 +11,7 @@ export class InlineExitPlanMode {
   private signal?: AbortSignal;
   private renderContent?: RenderContentFn;
   private planContent: string | null = null;
+  private planReadFailed = false;
 
   private rootEl!: HTMLElement;
   private focusedIndex = 0;
@@ -49,6 +50,11 @@ export class InlineExitPlanMode {
       } else {
         contentEl.createDiv({ cls: 'claudian-plan-content-text', text: this.planContent });
       }
+    } else if (this.planReadFailed) {
+      this.rootEl.createDiv({
+        cls: 'claudian-plan-content-preview claudian-plan-read-error',
+        text: 'Could not read plan file. "Approve (new session)" will not include plan details.',
+      });
     }
 
     const allowedPrompts = this.input.allowedPrompts as Array<{ tool: string; prompt: string }> | undefined;
@@ -134,6 +140,7 @@ export class InlineExitPlanMode {
       const content = fs.readFileSync(planFilePath, 'utf-8') as string;
       return content.trim() || null;
     } catch {
+      this.planReadFailed = true;
       return null;
     }
   }

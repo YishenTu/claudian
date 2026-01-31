@@ -917,11 +917,14 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
     tab.service.setExitPlanModeCallback(
       async (input, signal) => {
         const decision = await tab.controllers.inputController?.handleExitPlanMode(input, signal) ?? null;
-        // Revert only on approve; feedback and cancel keep plan mode active
+        // Revert only on approve; feedback and cancel keep plan mode active.
         if (decision !== null && decision.type !== 'feedback') {
-          const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
-          tab.state.prePlanPermissionMode = null;
-          updatePlanModeUI(tab, plugin, restoreMode);
+          // Only restore permission mode if still in plan mode — user may have toggled out via Shift+Tab
+          if (plugin.settings.permissionMode === 'plan') {
+            const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+            tab.state.prePlanPermissionMode = null;
+            updatePlanModeUI(tab, plugin, restoreMode);
+          }
           if (decision.type === 'approve-new-session') {
             tab.state.pendingNewSessionPlan = decision.planContent;
             tab.state.cancelRequested = true;

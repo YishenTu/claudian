@@ -51,6 +51,7 @@ import type {
   ExitPlanModeCallback,
   ExitPlanModeDecision,
   ImageAttachment,
+  PermissionMode,
   SlashCommand,
   StreamChunk,
 } from '../types';
@@ -1519,7 +1520,7 @@ export class ClaudianService {
     };
   }
 
-  private mapToSDKPermissionMode(mode: string): SDKPermissionMode {
+  private mapToSDKPermissionMode(mode: PermissionMode): SDKPermissionMode {
     if (mode === 'yolo') return 'bypassPermissions';
     if (mode === 'plan') return 'plan';
     return 'acceptEdits';

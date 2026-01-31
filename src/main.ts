@@ -231,6 +231,12 @@ export default class ClaudianPlugin extends Plugin {
       slashCommands,
     };
 
+    // Plan mode is ephemeral — normalize back to normal on load so the app
+    // doesn't start stuck in plan mode after a restart (prePlanPermissionMode is lost)
+    if (this.settings.permissionMode === 'plan') {
+      this.settings.permissionMode = 'normal';
+    }
+
     // Initialize and migrate legacy CLI paths to hostname-based paths
     this.settings.claudeCliPathsByHost ??= {};
     const hostname = getHostnameKey();
