@@ -692,17 +692,20 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
-    // Shift+Tab: cycle permission mode (normal → plan → yolo → normal)
+    // Shift+Tab: toggle plan mode on/off (remembers pre-plan mode)
     if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
       e.preventDefault();
-      const modes: PermissionMode[] = ['normal', 'plan', 'yolo'];
       const current = plugin.settings.permissionMode;
-      const idx = modes.indexOf(current);
-      const next = modes[(idx + 1) % modes.length];
-      plugin.settings.permissionMode = next;
-      void plugin.saveSettings();
-      tab.ui.permissionToggle?.updateDisplay();
-      dom.inputWrapper.toggleClass('claudian-input-plan-mode', next === 'plan');
+      if (current === 'plan') {
+        // Exit plan: restore saved mode
+        const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+        tab.state.prePlanPermissionMode = null;
+        updatePlanModeUI(tab, plugin, restoreMode);
+      } else {
+        // Enter plan: save current mode
+        tab.state.prePlanPermissionMode = current;
+        updatePlanModeUI(tab, plugin, 'plan');
+      }
       return;
     }
 
@@ -919,6 +922,7 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
       async (input, signal) => {
         const accepted = await tab.controllers.inputController?.handleEnterPlanMode(input, signal) ?? false;
         if (accepted) {
+          tab.state.prePlanPermissionMode = plugin.settings.permissionMode;
           updatePlanModeUI(tab, plugin, 'plan');
         }
         return accepted;
@@ -929,14 +933,31 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         const decision = await tab.controllers.inputController?.handleExitPlanMode(input, signal) ?? null;
         // Revert only on approve; feedback and cancel keep plan mode active
         if (decision !== null && decision.type !== 'feedback') {
-          updatePlanModeUI(tab, plugin, 'normal');
+          const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+          tab.state.prePlanPermissionMode = null;
+          updatePlanModeUI(tab, plugin, restoreMode);
           if (decision.type === 'approve-new-session') {
             tab.state.pendingNewSessionPlan = decision.planContent;
+            tab.state.cancelRequested = true;
           }
         }
         return decision;
       }
     );
+    tab.service.setPermissionModeSyncCallback((sdkMode) => {
+      let mode: PermissionMode;
+      if (sdkMode === 'bypassPermissions') mode = 'yolo';
+      else if (sdkMode === 'plan') mode = 'plan';
+      else mode = 'normal';
+
+      if (plugin.settings.permissionMode !== mode) {
+        // Save pre-plan mode when entering plan (for Shift+Tab toggle restore)
+        if (mode === 'plan' && tab.state.prePlanPermissionMode === null) {
+          tab.state.prePlanPermissionMode = plugin.settings.permissionMode;
+        }
+        updatePlanModeUI(tab, plugin, mode);
+      }
+    });
   }
 }
 

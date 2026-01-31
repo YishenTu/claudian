@@ -315,7 +315,7 @@ export class InputController {
 
       // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)
       if (!wasInvalidated && state.streamGeneration === streamGeneration) {
-        if (wasInterrupted) {
+        if (wasInterrupted && !state.pendingNewSessionPlan) {
           await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
         }
         streamController.hideThinkingIndicator();
@@ -787,7 +787,7 @@ export class InputController {
     input: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<ExitPlanModeDecision | null> {
-    const { streamController } = this.deps;
+    const { state, streamController } = this.deps;
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
@@ -797,10 +797,15 @@ export class InputController {
     streamController.hideThinkingIndicator();
     inputContainerEl.style.display = 'none';
 
+    // Inject plan file path captured from Write tool calls during plan mode
+    const enrichedInput = state.planFilePath
+      ? { ...input, planFilePath: state.planFilePath }
+      : input;
+
     return new Promise<ExitPlanModeDecision | null>((resolve, reject) => {
       const inline = new InlineExitPlanMode(
         parentEl,
-        input,
+        enrichedInput,
         (decision: ExitPlanModeDecision | null) => {
           this.pendingExitPlanModeInline = null;
           inputContainerEl.style.display = '';

@@ -4,6 +4,7 @@ import type {
   ChatStateCallbacks,
   ChatStateData,
   PendingToolCall,
+  PermissionMode,
   QueuedMessage,
   ThinkingBlockState,
   TodoItem,
@@ -38,6 +39,8 @@ function createInitialState(): ChatStateData {
     responseStartTime: null,
     flavorTimerInterval: null,
     pendingNewSessionPlan: null,
+    planFilePath: null,
+    prePlanPermissionMode: null,
   };
 }
 
@@ -319,6 +322,26 @@ export class ChatState {
 
   set pendingNewSessionPlan(value: string | null) {
     this.state.pendingNewSessionPlan = value;
+  }
+
+  get planFilePath(): string | null {
+    return this.state.planFilePath;
+  }
+
+  set planFilePath(value: string | null) {
+    this.state.planFilePath = value;
+  }
+
+  // ============================================
+  // Pre-Plan Permission Mode
+  // ============================================
+
+  get prePlanPermissionMode(): PermissionMode | null {
+    return this.state.prePlanPermissionMode;
+  }
+
+  set prePlanPermissionMode(value: PermissionMode | null) {
+    this.state.prePlanPermissionMode = value;
   }
 
   // ============================================

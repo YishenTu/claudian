@@ -4,6 +4,7 @@ import type { TodoItem } from '../../../core/tools';
 import type {
   ChatMessage,
   ImageAttachment,
+  PermissionMode,
   SubagentInfo,
   ToolCallInfo,
   UsageInfo,
@@ -94,6 +95,12 @@ export interface ChatStateData {
 
   // Pending plan content for approve-new-session (auto-sends in new session after stream ends)
   pendingNewSessionPlan: string | null;
+
+  // Plan file path captured from Write tool calls to ~/.claude/plans/ during plan mode
+  planFilePath: string | null;
+
+  // Saved permission mode before entering plan mode (for Shift+Tab toggle restore)
+  prePlanPermissionMode: PermissionMode | null;
 }
 
 /** Callbacks for ChatState changes. */
@@ -122,6 +129,7 @@ export type {
   ChatMessage,
   EditorSelectionContext,
   ImageAttachment,
+  PermissionMode,
   SubagentInfo,
   ThinkingBlockState,
   TodoItem,

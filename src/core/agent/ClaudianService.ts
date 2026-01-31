@@ -15,6 +15,7 @@ import type {
   CanUseTool,
   McpServerConfig,
   Options,
+  PermissionMode as SDKPermissionMode,
   PermissionResult,
   Query,
   SDKMessage,
@@ -124,6 +125,7 @@ export class ClaudianService {
   private askUserQuestionCallback: AskUserQuestionCallback | null = null;
   private enterPlanModeCallback: EnterPlanModeCallback | null = null;
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
+  private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
   private readyStateListeners = new Set<(ready: boolean) => void>();
@@ -602,10 +604,26 @@ export class ClaudianService {
         if (event.agents) {
           try { this.plugin.agentManager.setBuiltinAgentNames(event.agents); } catch { /* non-critical */ }
         }
+        if (event.permissionMode && this.permissionModeSyncCallback) {
+          try { this.permissionModeSyncCallback(event.permissionMode); } catch { /* non-critical */ }
+        }
       } else if (isStreamChunk(event)) {
         if (message.type === 'assistant' && handler?.sawStreamText && event.type === 'text') {
           continue;
         }
+
+        // SDK auto-approves EnterPlanMode (checkPermissions → allow),
+        // so canUseTool is never called. Detect the tool_use in the stream
+        // and fire the sync callback to update the UI.
+        if (event.type === 'tool_use' && event.name === TOOL_ENTER_PLAN_MODE) {
+          if (this.currentConfig) {
+            this.currentConfig.permissionMode = 'plan';
+          }
+          if (this.permissionModeSyncCallback) {
+            try { this.permissionModeSyncCallback('plan'); } catch { /* non-critical */ }
+          }
+        }
+
         if (handler) {
           // Add sessionId to usage chunks (consistent with cold-start path)
           if (event.type === 'usage') {
@@ -1408,6 +1426,10 @@ export class ClaudianService {
     this.exitPlanModeCallback = callback;
   }
 
+  setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void {
+    this.permissionModeSyncCallback = callback;
+  }
+
   private createApprovalCallback(): CanUseTool {
     return async (toolName, input, options): Promise<PermissionResult> => {
       if (this.currentAllowedTools !== null) {
@@ -1429,7 +1451,17 @@ export class ClaudianService {
           if (!accepted) {
             return { behavior: 'deny', message: 'User declined plan mode.', interrupt: true };
           }
-          return { behavior: 'allow', updatedInput: input };
+          // Sync config so applyDynamicUpdates doesn't re-send
+          if (this.currentConfig) {
+            this.currentConfig.permissionMode = 'plan';
+          }
+          return {
+            behavior: 'allow',
+            updatedInput: input,
+            updatedPermissions: [
+              { type: 'setMode', mode: 'plan', destination: 'session' },
+            ],
+          };
         } catch (error) {
           return {
             behavior: 'deny',
@@ -1449,7 +1481,19 @@ export class ClaudianService {
           if (decision.type === 'feedback') {
             return { behavior: 'deny', message: decision.text, interrupt: false };
           }
-          return { behavior: 'allow', updatedInput: input };
+          // Callback already restored plugin.settings.permissionMode
+          const sdkMode = this.mapToSDKPermissionMode(this.plugin.settings.permissionMode);
+          // Sync config so applyDynamicUpdates doesn't re-send
+          if (this.currentConfig) {
+            this.currentConfig.permissionMode = this.plugin.settings.permissionMode;
+          }
+          return {
+            behavior: 'allow',
+            updatedInput: input,
+            updatedPermissions: [
+              { type: 'setMode', mode: sdkMode, destination: 'session' },
+            ],
+          };
         } catch (error) {
           return {
             behavior: 'deny',
@@ -1511,5 +1555,11 @@ export class ClaudianService {
         };
       }
     };
+  }
+
+  private mapToSDKPermissionMode(mode: string): SDKPermissionMode {
+    if (mode === 'yolo') return 'bypassPermissions';
+    if (mode === 'plan') return 'plan';
+    return 'acceptEdits';
   }
 }
