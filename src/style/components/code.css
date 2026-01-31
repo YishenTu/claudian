@@ -35,7 +35,7 @@
 .claudian-code-wrapper .claudian-code-lang-label {
   position: absolute;
   top: 6px;
-  right: 6px;
+  inset-inline-end: 6px;
   padding: 2px 8px;
   font-size: 12px;
   font-family: var(--font-monospace);
@@ -61,7 +61,7 @@
 .claudian-code-wrapper .copy-code-button {
   position: absolute;
   top: 6px;
-  right: 6px;
+  inset-inline-end: 6px;
   padding: 4px 8px;
   font-size: 11px;
   background: var(--background-primary);

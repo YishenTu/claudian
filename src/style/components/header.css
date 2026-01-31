@@ -33,17 +33,17 @@
   align-items: center;
 }
 
-/* Header actions (right side - always stays right via margin-left: auto) */
+/* Header actions (end side - always stays at end via margin-inline-start: auto) */
 .claudian-header-actions {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .claudian-header-actions-slot {
-  /* No margin-left: auto here; it's set by the base .claudian-header-actions */
+  /* No margin-inline-start: auto here; it's set by the base .claudian-header-actions */
 }
 
 .claudian-header .claudian-tab-bar-container {

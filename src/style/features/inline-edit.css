@@ -35,7 +35,8 @@
 /* Input - fully transparent */
 .claudian-inline-input {
   width: 100%;
-  padding: 4px 30px 4px 8px;
+  padding: 4px 8px;
+  padding-inline-end: 30px;
   border-width: 1px !important;
   border-style: solid !important;
   border-color: var(--background-modifier-border) !important;
@@ -60,10 +61,10 @@
   opacity: 0.6;
 }
 
-/* Spinner - inside input box on right */
+/* Spinner - inside input box on end side */
 .claudian-inline-spinner {
   position: absolute;
-  right: 8px;
+  inset-inline-end: 8px;
   top: 50%;
   width: 14px;
   height: 14px;
@@ -117,7 +118,7 @@
 .claudian-inline-diff-buttons {
   display: inline-flex;
   gap: 8px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   background: none !important;
 }
 

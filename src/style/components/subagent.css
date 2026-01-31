@@ -76,11 +76,12 @@
   color: var(--color-red);
 }
 
-/* Subagent content - border-left style (like thinking block) */
+/* Subagent content - border style (like thinking block) */
 .claudian-subagent-content {
-  padding: 4px 0 4px 16px;
-  margin-left: 7px;
-  border-left: 2px solid var(--background-modifier-border);
+  padding: 4px 0;
+  padding-inline-start: 16px;
+  margin-inline-start: 7px;
+  border-inline-start: 2px solid var(--background-modifier-border);
 }
 
 .claudian-subagent-bullet {
@@ -88,7 +89,7 @@
   flex-shrink: 0;
   font-size: 12px;
   line-height: 1.4;
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 
 .claudian-subagent-tool-item {
@@ -113,7 +114,8 @@
 .claudian-subagent-tool-result {
   display: flex;
   align-items: baseline;
-  padding: 2px 0 0 8px;
+  padding: 2px 0 0;
+  padding-inline-start: 8px;
 }
 
 .claudian-subagent-result-text {
@@ -144,8 +146,8 @@
   font-size: 11px;
   font-family: var(--font-monospace);
   color: var(--text-muted);
-  margin-left: auto;
-  padding-left: 8px;
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
 }
 
 .claudian-subagent-list.async .claudian-subagent-icon {

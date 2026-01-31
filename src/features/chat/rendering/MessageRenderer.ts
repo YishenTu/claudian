@@ -70,7 +70,7 @@ export class MessageRenderer {
       cls: `claudian-message claudian-message-${msg.role}`,
     });
 
-    const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
+    const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
 
     if (msg.role === 'user') {
       const textToShow = msg.displayContent ?? msg.content;
@@ -145,7 +145,7 @@ export class MessageRenderer {
       cls: `claudian-message claudian-message-${msg.role}`,
     });
 
-    const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
+    const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
 
     if (msg.role === 'user') {
       const textToShow = msg.displayContent ?? msg.content;
@@ -164,7 +164,7 @@ export class MessageRenderer {
    */
   private renderInterruptMessage(): void {
     const msgEl = this.messagesEl.createDiv({ cls: 'claudian-message claudian-message-assistant' });
-    const contentEl = msgEl.createDiv({ cls: 'claudian-message-content' });
+    const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
     const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
     textEl.innerHTML = '<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>';
   }

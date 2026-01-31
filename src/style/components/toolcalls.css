@@ -69,19 +69,20 @@
 .claudian-tool-status.status-blocked {
   color: var(--color-orange);
 }
-/* Tool call content - border-left style (like thinking block) */
+/* Tool call content - border style (like thinking block) */
 .claudian-tool-content {
-  padding: 4px 0 4px 16px;
-  margin-left: 7px;
-  border-left: 2px solid var(--background-modifier-border);
+  padding: 4px 0;
+  padding-inline-start: 16px;
+  margin-inline-start: 7px;
+  border-inline-start: 2px solid var(--background-modifier-border);
 }
 
 /* Tool content variants that render inline widgets instead of bordered results */
 .claudian-tool-content-todo,
 .claudian-tool-content-ask {
-  border-left: none;
-  margin-left: 0;
-  padding-left: 0;
+  border-inline-start: none;
+  margin-inline-start: 0;
+  padding-inline-start: 0;
 }
 
 .claudian-tool-result-row {
@@ -111,7 +112,7 @@
 /* Bulleted items (WebSearch) - hanging indent for wrapped lines */
 .claudian-tool-result-bullet {
   display: block;
-  padding-left: 0.8em;
+  padding-inline-start: 0.8em;
   text-indent: -0.8em;
   margin-bottom: 2px;
 }

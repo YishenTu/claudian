@@ -16,7 +16,7 @@
   background: var(--background-primary);
 }
 
-/* Context row (file chip left, selection indicator right) - inside input wrapper at top */
+/* Context row (file chip start, selection indicator end) - inside input wrapper at top */
 /* Collapsed by default; expanded via .has-content class; textarea fills remaining space */
 .claudian-context-row {
   display: none;
@@ -32,7 +32,7 @@
   display: flex;
 }
 
-/* Nav row (tab badges left, header icons right) - above input wrapper */
+/* Nav row (tab badges start, header icons end) - above input wrapper */
 .claudian-input-nav-row {
   display: flex;
   align-items: center;
@@ -59,7 +59,7 @@
   padding: 5px 6px;
   border: 1px solid transparent;
   border-radius: 4px;
-  margin-left: auto;
+  margin-inline-start: auto;
   flex-shrink: 0;
 }
 
@@ -79,6 +79,7 @@
   line-height: 1.4;
   box-shadow: none !important;
   overflow-y: auto;
+  unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
 }
 
 .claudian-input:hover,

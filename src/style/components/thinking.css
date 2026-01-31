@@ -2,7 +2,7 @@
   color: var(--claudian-brand);
   font-style: italic;
   padding: 4px 0;
-  text-align: left;
+  text-align: start;
   animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
@@ -54,14 +54,16 @@
 
 /* Thinking block content - tree-branch style */
 .claudian-thinking-content {
-  padding: 4px 0 4px 24px;
+  padding-block: 4px;
+  padding-inline-start: 24px;
+  padding-inline-end: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-muted);
   max-height: 400px;
   overflow-y: auto;
-  border-left: 2px solid var(--background-modifier-border);
-  margin-left: 7px;
+  border-inline-start: 2px solid var(--background-modifier-border);
+  margin-inline-start: 7px;
 }
 
 .claudian-thinking-content p {

@@ -7,7 +7,7 @@
   display: none;
   position: absolute;
   bottom: 100%;
-  right: 0;
+  inset-inline-end: 0;
   margin-bottom: 4px;
   background: var(--background-secondary);
   backdrop-filter: blur(20px);
@@ -87,8 +87,8 @@
 
 .claudian-history-item.active {
   background: var(--background-secondary);
-  border-left: 2px solid var(--interactive-accent);
-  padding-left: 10px;
+  border-inline-start: 2px solid var(--interactive-accent);
+  padding-inline-start: 10px;
 }
 
 .claudian-history-item.active .claudian-history-item-icon {
@@ -127,7 +127,7 @@
 .claudian-history-item-actions {
   display: flex;
   gap: 4px;
-  margin-left: 8px;
+  margin-inline-start: 8px;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
