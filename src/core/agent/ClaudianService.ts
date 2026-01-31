@@ -190,6 +190,10 @@ export class ClaudianService {
     }
   }
 
+  setPendingResumeAt(uuid: string | undefined): void {
+    this.pendingResumeAt = uuid;
+  }
+
   async reloadMcpServers(): Promise<void> {
     await this.mcpManager.loadServers();
   }

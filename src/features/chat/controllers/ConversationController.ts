@@ -338,13 +338,19 @@ export class ConversationController {
 
     if (state.isStreaming) return;
 
-    const userMsg = state.messages.find(m => m.id === userMessageId);
-    if (!userMsg || !userMsg.sdkUserUuid) return;
+    const msgs = state.messages;
+    const userIdx = msgs.findIndex(m => m.id === userMessageId);
+    if (userIdx === -1) return;
+    const userMsg = msgs[userIdx];
+    if (!userMsg.sdkUserUuid) return;
 
-    // Find the next assistant message (the response to this user message)
-    const userIdx = state.messages.indexOf(userMsg);
-    const assistantMsg = state.messages[userIdx + 1];
-    if (!assistantMsg || assistantMsg.role !== 'assistant' || !assistantMsg.sdkAssistantUuid) return;
+    // Need the response to verify rewind is possible
+    const responseMsg = msgs[userIdx + 1];
+    if (!responseMsg || responseMsg.role !== 'assistant' || !responseMsg.sdkAssistantUuid) return;
+
+    // The previous assistant is the rewind target — where the conversation resumes from
+    const prevAssistant = msgs[userIdx - 1];
+    if (!prevAssistant || prevAssistant.role !== 'assistant' || !prevAssistant.sdkAssistantUuid) return;
 
     const confirmed = await confirm(
       plugin.app,
@@ -358,7 +364,7 @@ export class ConversationController {
 
     let result;
     try {
-      result = await agentService.rewind(userMsg.sdkUserUuid, assistantMsg.sdkAssistantUuid);
+      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistant.sdkAssistantUuid);
     } catch (e) {
       new Notice(`Rewind failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
       return;
@@ -376,7 +382,10 @@ export class ConversationController {
     this.deps.setWelcomeEl(welcomeEl);
     this.updateWelcomeVisibility();
 
-    await this.save();
+    if (!state.currentConversationId) return;
+
+    // Persist messages + resumeSessionAt in one write
+    await this.save(false, { resumeSessionAt: prevAssistant.sdkAssistantUuid });
 
     const filesChanged = result.filesChanged?.length ?? 0;
     new Notice(`Rewound: ${filesChanged} file${filesChanged !== 1 ? 's' : ''} reverted`);
@@ -391,7 +400,7 @@ export class ConversationController {
    * For native sessions (new conversations with sessionId from SDK),
    * only metadata is saved - the SDK handles message persistence.
    */
-  async save(updateLastResponse = false): Promise<void> {
+  async save(updateLastResponse = false, extraUpdates?: Partial<Conversation>): Promise<void> {
     const { plugin, state } = this.deps;
 
     // Entry point with no messages - nothing to save
@@ -455,6 +464,12 @@ export class ConversationController {
 
     if (updateLastResponse) {
       updates.lastResponseAt = Date.now();
+      // Clear resumeSessionAt after a successful follow-up (the JSONL branch now self-identifies)
+      updates.resumeSessionAt = undefined;
+    }
+
+    if (extraUpdates) {
+      Object.assign(updates, extraUpdates);
     }
 
     // At this point, currentConversationId is guaranteed to be set

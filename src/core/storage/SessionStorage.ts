@@ -398,6 +398,7 @@ export class SessionStorage {
       usage: conversation.usage,
       legacyCutoffAt: conversation.legacyCutoffAt,
       subagentData: Object.keys(subagentData).length > 0 ? subagentData : undefined,
+      resumeSessionAt: conversation.resumeSessionAt,
     };
   }
 

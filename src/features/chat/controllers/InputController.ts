@@ -290,6 +290,15 @@ export class InputController {
       new Notice('Agent service not available. Please reload the plugin.');
       return;
     }
+
+    // Restore pendingResumeAt from conversation (survives plugin reload after rewind)
+    if (state.currentConversationId) {
+      const conv = await this.deps.plugin.getConversationById(state.currentConversationId);
+      if (conv?.resumeSessionAt) {
+        agentService.setPendingResumeAt(conv.resumeSessionAt);
+      }
+    }
+
     try {
       // Pass history WITHOUT current turn (userMsg + assistantMsg we just added)
       // This prevents duplication when rebuilding context for new sessions

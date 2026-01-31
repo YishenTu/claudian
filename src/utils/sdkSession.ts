@@ -456,6 +456,72 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   return false;
 }
 
+/**
+ * Filters JSONL entries to only the active branch after rewind.
+ *
+ * After rewind + follow-up, the JSONL forms a tree via parentUuid. This walks
+ * backward from the leaf of the newest branch to collect only active entries.
+ * For "rewind, no follow-up yet", resumeSessionAt truncates a linear chain.
+ */
+export function filterActiveBranch(
+  entries: SDKNativeMessage[],
+  resumeSessionAt?: string
+): SDKNativeMessage[] {
+  if (entries.length === 0) return [];
+
+  // Build uuid → entry map and count children per parentUuid
+  const byUuid = new Map<string, SDKNativeMessage>();
+  const childCount = new Map<string, number>();
+
+  for (const entry of entries) {
+    if (entry.uuid) {
+      byUuid.set(entry.uuid, entry);
+    }
+    if (entry.parentUuid) {
+      childCount.set(entry.parentUuid, (childCount.get(entry.parentUuid) ?? 0) + 1);
+    }
+  }
+
+  const hasBranching = [...childCount.values()].some(count => count > 1);
+
+  // Choose the leaf entry to walk backward from
+  let leaf: SDKNativeMessage | undefined;
+
+  if (hasBranching) {
+    // Branching detected: last entry with uuid is always on the new branch (append-only)
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].uuid) {
+        leaf = entries[i];
+        break;
+      }
+    }
+  } else if (resumeSessionAt) {
+    // No branching + resumeSessionAt: truncate at that UUID
+    leaf = byUuid.get(resumeSessionAt);
+  } else {
+    // No branching, no resumeSessionAt: no-op
+    return entries;
+  }
+
+  // Safety: if chosen leaf not found, return all entries
+  if (!leaf || !leaf.uuid) return entries;
+
+  // Walk backward from leaf via parentUuid to collect active UUIDs
+  const activeUuids = new Set<string>();
+  let current: SDKNativeMessage | undefined = leaf;
+  while (current?.uuid) {
+    activeUuids.add(current.uuid);
+    if (current.parentUuid) {
+      current = byUuid.get(current.parentUuid);
+    } else {
+      break;
+    }
+  }
+
+  // Filter: keep entries whose uuid is in activeUuids, or entries without uuid
+  return entries.filter(entry => !entry.uuid || activeUuids.has(entry.uuid));
+}
+
 export interface SDKSessionLoadResult {
   messages: ChatMessage[];
   skippedLines: number;
@@ -502,22 +568,29 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
  * @param sessionId - The session ID
  * @returns Result object with messages, skipped line count, and any error
  */
-export async function loadSDKSessionMessages(vaultPath: string, sessionId: string): Promise<SDKSessionLoadResult> {
+export async function loadSDKSessionMessages(
+  vaultPath: string,
+  sessionId: string,
+  resumeSessionAt?: string
+): Promise<SDKSessionLoadResult> {
   const result = await readSDKSession(vaultPath, sessionId);
 
   if (result.error) {
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
   }
 
-  const toolResults = collectToolResults(result.messages);
-  const toolUseResults = collectStructuredPatchResults(result.messages);
+  // Filter to active branch before processing (handles rewind persistence)
+  const filteredEntries = filterActiveBranch(result.messages, resumeSessionAt);
+
+  const toolResults = collectToolResults(filteredEntries);
+  const toolUseResults = collectStructuredPatchResults(filteredEntries);
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
   const seenUuids = new Set<string>();
 
   // Merge consecutive assistant messages until an actual user message appears
-  for (const sdkMsg of result.messages) {
+  for (const sdkMsg of filteredEntries) {
     // Dedup: SDK may write the same message twice (e.g., around compaction)
     if (sdkMsg.uuid) {
       if (seenUuids.has(sdkMsg.uuid)) continue;

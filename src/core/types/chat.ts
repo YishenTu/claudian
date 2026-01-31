@@ -101,6 +101,8 @@ export interface Conversation {
    * Loaded from metadata for native sessions to restore tool count and status on reload.
    */
   subagentData?: Record<string, SubagentInfo>;
+  /** Assistant UUID for resumeSessionAt after rewind. Used for JSONL filtering on reload. */
+  resumeSessionAt?: string;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -156,6 +158,8 @@ export interface SessionMetadata {
    * Stored here because SDK session files don't preserve this Claudian-specific data.
    */
   subagentData?: Record<string, SubagentInfo>;
+  /** Assistant UUID for resumeSessionAt after rewind. Used for JSONL filtering on reload. */
+  resumeSessionAt?: string;
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */

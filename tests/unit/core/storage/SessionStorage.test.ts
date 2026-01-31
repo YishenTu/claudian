@@ -1016,6 +1016,39 @@ describe('SessionStorage', () => {
     });
   });
 
+  describe('toSessionMetadata - resumeSessionAt', () => {
+    it('includes resumeSessionAt when set', () => {
+      const conversation: Conversation = {
+        id: 'conv-rewind',
+        title: 'Rewind Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: 'sdk-session',
+        messages: [],
+        resumeSessionAt: 'assistant-uuid-123',
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.resumeSessionAt).toBe('assistant-uuid-123');
+    });
+
+    it('omits resumeSessionAt when not set', () => {
+      const conversation: Conversation = {
+        id: 'conv-no-rewind',
+        title: 'No Rewind',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: null,
+        messages: [],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.resumeSessionAt).toBeUndefined();
+    });
+  });
+
   describe('toSessionMetadata', () => {
     it('converts Conversation to SessionMetadata', () => {
       const usage: UsageInfo = {

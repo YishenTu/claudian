@@ -407,6 +407,28 @@ describe('ConversationController', () => {
       expect(updates.lastResponseAt).toBeGreaterThanOrEqual(beforeCall);
       expect(updates.lastResponseAt).toBeLessThanOrEqual(Date.now());
     });
+
+    it('should clear resumeSessionAt when updateLastResponse is true', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      await controller.save(true);
+
+      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const updates = call[1];
+      expect(updates.resumeSessionAt).toBeUndefined();
+    });
+
+    it('should not clear resumeSessionAt when updateLastResponse is false', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      await controller.save(false);
+
+      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const updates = call[1];
+      expect(updates).not.toHaveProperty('resumeSessionAt');
+    });
   });
 
   describe('loadActive with existing conversation', () => {

@@ -206,8 +206,8 @@
   opacity: 0.6;
 }
 
-.claudian-message-rewind-btn:hover {
-  opacity: 1 !important;
+.claudian-message-user .claudian-message-rewind-btn:hover {
+  opacity: 1;
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
