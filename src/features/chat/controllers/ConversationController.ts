@@ -7,6 +7,7 @@ import type ClaudianPlugin from '../../../main';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
@@ -346,30 +347,12 @@ export class ConversationController {
       return;
     }
 
-    let hasResponse = false;
-    for (let i = userIdx + 1; i < msgs.length; i++) {
-      if (msgs[i].role === 'user') break;
-      if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
-        hasResponse = true;
-        break;
-      }
-    }
-    if (!hasResponse) {
+    const rewindCtx = findRewindContext(msgs, userIdx);
+    if (!rewindCtx.hasResponse || !rewindCtx.prevAssistantUuid) {
       new Notice(t('chat.rewind.unavailableNoUuid'));
       return;
     }
-
-    let prevAssistantUuid: string | undefined;
-    for (let i = userIdx - 1; i >= 0; i--) {
-      if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
-        prevAssistantUuid = msgs[i].sdkAssistantUuid;
-        break;
-      }
-    }
-    if (!prevAssistantUuid) {
-      new Notice(t('chat.rewind.unavailableNoUuid'));
-      return;
-    }
+    const prevAssistantUuid = rewindCtx.prevAssistantUuid;
 
     const confirmed = await confirm(
       plugin.app,
@@ -379,7 +362,10 @@ export class ConversationController {
     if (!confirmed) return;
 
     const agentService = this.getAgentService();
-    if (!agentService) return;
+    if (!agentService) {
+      new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
+      return;
+    }
 
     let result;
     try {
@@ -400,7 +386,12 @@ export class ConversationController {
     this.updateWelcomeVisibility();
 
     if (!state.currentConversationId) return;
-    await this.save(false, { resumeSessionAt: prevAssistantUuid });
+    try {
+      await this.save(false, { resumeSessionAt: prevAssistantUuid });
+    } catch (e) {
+      new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Failed to save' }));
+      return;
+    }
 
     const filesChanged = result.filesChanged?.length ?? 0;
     new Notice(t('chat.rewind.notice', { count: String(filesChanged) }));

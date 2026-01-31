@@ -504,17 +504,9 @@ export function filterActiveBranch(
   if (hasBranching) {
     // Pick last-appearing leaf (no children) in file order — more robust than
     // "last entry with uuid" which breaks on trailing non-dialog nodes
-    const allUuids = new Set(byUuid.keys());
-    const parents = new Set(childrenOf.keys());
-    const leafUuids = new Set<string>();
-    for (const uuid of allUuids) {
-      if (!parents.has(uuid)) {
-        leafUuids.add(uuid);
-      }
-    }
-
     for (let i = deduped.length - 1; i >= 0; i--) {
-      if (deduped[i].uuid && leafUuids.has(deduped[i].uuid!)) {
+      const uuid = deduped[i].uuid;
+      if (uuid && !childrenOf.has(uuid)) {
         leaf = deduped[i];
         break;
       }

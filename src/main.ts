@@ -286,7 +286,7 @@ export default class ClaudianPlugin extends Plugin {
       }
       conversation.previousSdkSessionIds = meta.previousSdkSessionIds ?? conversation.previousSdkSessionIds;
       conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
-      conversation.resumeSessionAt = meta.resumeSessionAt;
+      conversation.resumeSessionAt = meta.resumeSessionAt ?? conversation.resumeSessionAt;
     }
 
     // Also load native session metadata (no legacy JSONL)

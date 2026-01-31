@@ -1,5 +1,5 @@
 import type { App, Component } from 'obsidian';
-import { MarkdownRenderer } from 'obsidian';
+import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
@@ -8,6 +8,7 @@ import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { findRewindContext } from '../rewind';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -171,23 +172,8 @@ export class MessageRenderer {
 
   private isRewindEligible(allMessages?: ChatMessage[], index?: number): boolean {
     if (!allMessages || index === undefined) return true;
-
-    let hasPrev = false;
-    for (let i = index - 1; i >= 0; i--) {
-      if (allMessages[i].role === 'assistant' && allMessages[i].sdkAssistantUuid) {
-        hasPrev = true;
-        break;
-      }
-    }
-    if (!hasPrev) return false;
-
-    for (let i = index + 1; i < allMessages.length; i++) {
-      if (allMessages[i].role === 'user') break;
-      if (allMessages[i].role === 'assistant' && allMessages[i].sdkAssistantUuid) {
-        return true;
-      }
-    }
-    return false;
+    const ctx = findRewindContext(allMessages, index);
+    return !!ctx.prevAssistantUuid && ctx.hasResponse;
   }
 
   /**
@@ -510,7 +496,11 @@ export class MessageRenderer {
     btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await this.rewindCallback?.(messageId);
+      try {
+        await this.rewindCallback?.(messageId);
+      } catch (err) {
+        new Notice(t('chat.rewind.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
+      }
     });
   }
 
