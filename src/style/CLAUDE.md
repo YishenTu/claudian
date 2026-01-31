@@ -8,7 +8,7 @@ src/style/
 ├── components/     # header, history, messages, code, thinking, toolcalls, status-panel, subagent, input, context-footer, tabs, scroll-to-bottom
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands, file-link, image-embed
-├── modals/         # approval, instruction, mcp-modal
+├── modals/         # instruction, mcp-modal
 ├── settings/       # base (shared .claudian-sp-* panel layout), env-snippets, slash-settings, mcp-settings, plugin-settings, agent-settings
 ├── accessibility.css
 └── index.css       # Build order (@import list)

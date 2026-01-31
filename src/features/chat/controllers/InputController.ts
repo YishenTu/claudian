@@ -62,6 +62,7 @@ export interface InputControllerDeps {
 export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
+  private pendingAskInline: InlineAskUserQuestion | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -671,7 +672,12 @@ export class InputController {
 
     if (!result) return 'cancel';
     const selected = Object.values(result)[0];
-    return APPROVAL_OPTION_MAP[selected] ?? 'cancel';
+    const decision = APPROVAL_OPTION_MAP[selected];
+    if (!decision) {
+      new Notice(`Unexpected approval selection: "${selected}"`);
+      return 'cancel';
+    }
+    return decision;
   }
 
   async handleAskUserQuestion(
@@ -688,7 +694,7 @@ export class InputController {
       parentEl,
       inputContainerEl,
       input,
-      () => {},  // No external dismisser needed — AbortSignal handles cleanup
+      (inline) => { this.pendingAskInline = inline; },
       signal,
     );
   }
@@ -733,8 +739,11 @@ export class InputController {
       this.pendingApprovalInline.destroy();
       this.pendingApprovalInline = null;
     }
+    if (this.pendingAskInline) {
+      this.pendingAskInline.destroy();
+      this.pendingAskInline = null;
+    }
   }
-
 
   // ============================================
   // Built-in Commands

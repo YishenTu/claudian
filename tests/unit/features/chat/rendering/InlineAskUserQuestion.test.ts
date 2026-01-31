@@ -563,6 +563,29 @@ function renderImmediateWidget(
 }
 
 describe('InlineAskUserQuestion - immediateSelect mode', () => {
+  describe('multi-question fallback', () => {
+    it('falls back to tab-bar rendering when questions.length !== 1', () => {
+      const input = makeInput([
+        { question: 'Q1', options: ['A'] },
+        { question: 'Q2', options: ['B'] },
+      ]);
+      const { container, resolve } = renderImmediateWidget(input);
+
+      // Should render tab bar (immediateSelect disabled due to multi-question)
+      const tabBar = container.querySelector('claudian-ask-tab-bar');
+      expect(tabBar).not.toBeNull();
+      const tabs = container.querySelectorAll('claudian-ask-tab');
+      expect(tabs.length).toBeGreaterThan(0);
+
+      // Should NOT resolve immediately on click (normal multi-tab flow)
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+      expect(resolve).not.toHaveBeenCalled();
+    });
+  });
+
   describe('rendering', () => {
     it('does not render tab bar', () => {
       const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);

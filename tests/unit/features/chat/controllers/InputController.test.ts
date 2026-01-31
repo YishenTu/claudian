@@ -822,6 +822,32 @@ describe('InputController - Message Queue', () => {
       expect((controller as any).pendingApprovalInline).toBeNull();
     });
 
+    it('should dismiss pending ask inline and clear reference', () => {
+      controller = new InputController(deps);
+      const mockAskInline = { destroy: jest.fn() };
+      (controller as any).pendingAskInline = mockAskInline;
+
+      controller.dismissPendingApproval();
+
+      expect(mockAskInline.destroy).toHaveBeenCalled();
+      expect((controller as any).pendingAskInline).toBeNull();
+    });
+
+    it('should dismiss both approval and ask inlines', () => {
+      controller = new InputController(deps);
+      const mockApproval = { destroy: jest.fn() };
+      const mockAsk = { destroy: jest.fn() };
+      (controller as any).pendingApprovalInline = mockApproval;
+      (controller as any).pendingAskInline = mockAsk;
+
+      controller.dismissPendingApproval();
+
+      expect(mockApproval.destroy).toHaveBeenCalled();
+      expect(mockAsk.destroy).toHaveBeenCalled();
+      expect((controller as any).pendingApprovalInline).toBeNull();
+      expect((controller as any).pendingAskInline).toBeNull();
+    });
+
     it('should be a no-op when no inline is pending', () => {
       controller = new InputController(deps);
       expect((controller as any).pendingApprovalInline).toBeNull();
@@ -1346,6 +1372,38 @@ describe('InputController - Message Queue', () => {
 
       const result = await approvalPromise;
       expect(result).toBe(expected);
+    });
+
+    it('should render header metadata when approvalOptions provided', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'bash',
+        { command: 'rm -rf /' },
+        'Run dangerous command',
+        {
+          decisionReason: 'Command is destructive',
+          blockedPath: '/usr/bin/rm',
+          agentID: 'agent-42',
+        },
+      );
+
+      const reasonEl = parentEl.querySelector('claudian-ask-approval-reason');
+      expect(reasonEl?.textContent).toBe('Command is destructive');
+
+      const pathEl = parentEl.querySelector('claudian-ask-approval-blocked-path');
+      expect(pathEl?.textContent).toBe('/usr/bin/rm');
+
+      const agentEl = parentEl.querySelector('claudian-ask-approval-agent');
+      expect(agentEl?.textContent).toBe('Agent: agent-42');
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
     });
   });
 
