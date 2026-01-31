@@ -246,7 +246,7 @@ export class StreamController {
 
   private capturePlanFilePath(input: Record<string, unknown>): void {
     const filePath = input.file_path as string | undefined;
-    if (filePath && filePath.includes('/.claude/plans/')) {
+    if (filePath && filePath.replace(/\\/g, '/').includes('/.claude/plans/')) {
       this.deps.state.planFilePath = filePath;
     }
   }

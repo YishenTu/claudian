@@ -13,7 +13,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'session_init', sessionId: 'test-session-123' },
+        { type: 'session_init', sessionId: 'test-session-123', permissionMode: undefined },
       ]);
     });
 
@@ -70,6 +70,25 @@ describe('transformSDKMessage', () => {
         type: 'session_init',
         sessionId: 'test-session-456',
         agents: ['Explore', 'Plan', 'custom-agent'],
+        permissionMode: undefined,
+      });
+    });
+
+    it('captures permissionMode from init message', () => {
+      const message: SDKMessage = {
+        type: 'system',
+        subtype: 'init',
+        session_id: 'test-session-789',
+        permissionMode: 'plan',
+      };
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toEqual({
+        type: 'session_init',
+        sessionId: 'test-session-789',
+        permissionMode: 'plan',
       });
     });
   });

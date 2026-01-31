@@ -374,17 +374,19 @@ export class InputController {
 
         await conversationController.save(true);
 
-        this.processQueuedMessage();
+        // approve-new-session: create fresh conversation and send plan content
+        // Must be inside the invalidation guard — if the tab was closed or
+        // conversation switched, we must not create a new session on stale state.
+        const planContent = state.pendingNewSessionPlan;
+        if (planContent) {
+          state.pendingNewSessionPlan = null;
+          await conversationController.createNew();
+          this.deps.getInputEl().value = planContent;
+          void this.sendMessage();
+        } else {
+          this.processQueuedMessage();
+        }
       }
-    }
-
-    // approve-new-session: create fresh conversation and send plan content
-    const planContent = state.pendingNewSessionPlan;
-    if (planContent) {
-      state.pendingNewSessionPlan = null;
-      await conversationController.createNew();
-      this.deps.getInputEl().value = planContent;
-      void this.sendMessage();
     }
   }
 

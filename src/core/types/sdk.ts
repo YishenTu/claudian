@@ -64,6 +64,8 @@ export interface SDKNonResultMessage {
   skills?: string[];
   /** Slash command names from init message. */
   slash_commands?: string[];
+  /** Permission mode from init message (e.g., 'default', 'plan', 'bypassPermissions'). */
+  permissionMode?: string;
 }
 
 /** SDK result message structure (does not include parent_tool_use_id). */
