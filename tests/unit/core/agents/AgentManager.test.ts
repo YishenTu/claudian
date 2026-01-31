@@ -181,20 +181,33 @@ describe('AgentManager', () => {
       expect(agents.every(a => a.source === 'builtin')).toBe(true);
     });
 
-    it('continues loading when readdirSync throws filesystem error', async () => {
-      const manager = new AgentManager(VAULT_PATH, createMockPluginManager());
+    it('isolates errors per category so one failure does not block others', async () => {
+      const pluginManager = createMockPluginManager([
+        { name: 'Broken', enabled: true, installPath: '/plugins/broken' },
+      ]);
+      const manager = new AgentManager(VAULT_PATH, pluginManager);
 
-      mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
-      (mockFs.readdirSync as jest.Mock).mockImplementation(() => {
-        throw new Error('Permission denied');
+      // Plugin agents dir exists but getPlugins throws internally on iteration
+      // Vault agents load normally, global dir doesn't exist
+      mockFs.existsSync.mockImplementation((p) =>
+        p === path.join('/plugins/broken', 'agents') || p === VAULT_AGENTS_DIR
+      );
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir === path.join('/plugins/broken', 'agents')) {
+          throw new Error('Corrupt plugin directory');
+        }
+        if (dir === VAULT_AGENTS_DIR) {
+          return [createMockDirent('vault-agent.md', true)];
+        }
+        return [];
       });
+      mockFs.readFileSync.mockReturnValue(MINIMAL_AGENT_FILE);
 
-      // Should not throw, just skip the directory
       await manager.loadAgents();
       const agents = manager.getAvailableAgents();
 
-      // Should only have built-in agents (vault agents skipped due to error)
-      expect(agents.every(a => a.source === 'builtin')).toBe(true);
+      // Vault agent should still be loaded despite plugin error
+      expect(agents.some(a => a.source === 'vault')).toBe(true);
     });
 
     it('skips duplicate agent IDs', async () => {

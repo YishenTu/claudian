@@ -73,14 +73,10 @@ export class AgentManager {
     // 0. Add built-in agents first (from init message or fallback)
     this.agents.push(...this.builtinAgentNames.map(makeBuiltinAgent));
 
-    // 1. Load plugin agents (namespaced)
-    await this.loadPluginAgents();
-
-    // 2. Load vault agents
-    await this.loadVaultAgents();
-
-    // 3. Load global agents
-    await this.loadGlobalAgents();
+    // Each category is independently try-caught so one failure doesn't block others
+    try { await this.loadPluginAgents(); } catch { /* non-critical */ }
+    try { await this.loadVaultAgents(); } catch { /* non-critical */ }
+    try { await this.loadGlobalAgents(); } catch { /* non-critical */ }
   }
 
   getAvailableAgents(): AgentDefinition[] {
@@ -146,8 +142,8 @@ export class AgentManager {
           files.push(path.join(dir, entry.name));
         }
       }
-    } catch (error) {
-      console.warn(`Failed to list agent files in ${dir}:`, error);
+    } catch {
+      // Non-critical: directory may be unreadable
     }
 
     return files;
@@ -175,8 +171,7 @@ export class AgentManager {
         pluginName,
         filePath,
       });
-    } catch (error) {
-      console.warn(`Skipping malformed plugin agent file ${filePath}:`, error);
+    } catch {
       return null;
     }
   }
@@ -201,8 +196,7 @@ export class AgentManager {
         source,
         filePath,
       });
-    } catch (error) {
-      console.warn(`Skipping malformed agent file ${filePath}:`, error);
+    } catch {
       return null;
     }
   }

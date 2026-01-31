@@ -113,19 +113,25 @@ Prompt`,
       expect(skills).toEqual([]);
     });
 
-    it('continues loading when filesystem errors occur', async () => {
+    it('skips malformed skill and continues loading valid ones', async () => {
       const adapter = createMockAdapter({
         '.claude/skills/good/SKILL.md': `---
 description: Valid
 ---
 Prompt`,
+        '.claude/skills/bad/SKILL.md': 'content',
       });
-      // Simulate filesystem error during listFolders
-      (adapter.listFolders as jest.Mock).mockRejectedValueOnce(new Error('I/O error'));
+      const originalRead = adapter.read as jest.Mock;
+      const originalImpl = originalRead.getMockImplementation()!;
+      originalRead.mockImplementation(async (p: string) => {
+        if (p.includes('bad')) throw new Error('Corrupt file');
+        return originalImpl(p);
+      });
       const storage = new SkillStorage(adapter);
       const skills = await storage.loadAll();
 
-      expect(skills).toEqual([]);
+      expect(skills).toHaveLength(1);
+      expect(skills[0].name).toBe('good');
     });
 
     it('parses all skill frontmatter fields', async () => {

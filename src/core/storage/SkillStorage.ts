@@ -28,12 +28,11 @@ export class SkillStorage {
             name: skillName,
             source: 'user',
           }));
-        } catch (error) {
-          console.warn(`Skipping malformed skill file ${skillPath}:`, error);
+        } catch {
+          // Non-critical: skip malformed skill files
         }
       }
-    } catch (error) {
-      console.warn('Failed to load skills:', error);
+    } catch {
       return [];
     }
 

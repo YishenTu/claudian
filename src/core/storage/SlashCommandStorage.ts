@@ -21,24 +21,20 @@ export class SlashCommandStorage {
           if (command) {
             commands.push(command);
           }
-        } catch (error) {
-          console.warn(`Skipping malformed command file ${filePath}:`, error);
+        } catch {
+          // Non-critical: skip malformed command files
         }
       }
-    } catch (error) {
-      console.warn('Failed to load commands:', error);
+    } catch {
+      // Non-critical: directory may not exist yet
     }
 
     return commands;
   }
 
   private async loadFromFile(filePath: string): Promise<SlashCommand | null> {
-    try {
-      const content = await this.adapter.read(filePath);
-      return this.parseFile(content, filePath);
-    } catch {
-      return null;
-    }
+    const content = await this.adapter.read(filePath);
+    return this.parseFile(content, filePath);
   }
 
   async save(command: SlashCommand): Promise<void> {
