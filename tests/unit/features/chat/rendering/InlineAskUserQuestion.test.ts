@@ -1,6 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
-import { InlineAskUserQuestion } from '@/features/chat/rendering/InlineAskUserQuestion';
+import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '@/features/chat/rendering/InlineAskUserQuestion';
 
 beforeAll(() => {
   globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -408,6 +408,23 @@ describe('InlineAskUserQuestion', () => {
       expect(items[items.length - 1]?.hasClass('is-focused')).toBe(true);
     });
 
+    it('ArrowDown clamps at last option when custom input is hidden', () => {
+      const input = makeInput([{ question: 'Q', options: ['A', 'B'] }]);
+      const container = createMockEl();
+      const resolve = jest.fn();
+      const widget = new InlineAskUserQuestion(container, input, resolve, undefined, { showCustomInput: false });
+      widget.render();
+      const root = findRoot(container);
+
+      fireKeyDown(root, 'ArrowDown');
+      fireKeyDown(root, 'ArrowDown');
+      fireKeyDown(root, 'ArrowDown');
+
+      const items = findItems(container);
+      expect(items).toHaveLength(2);
+      expect(items[1]?.hasClass('is-focused')).toBe(true);
+    });
+
     it('ArrowUp moves focus up and clamps at 0', () => {
       const input = makeInput([{ question: 'Q', options: ['A', 'B'] }]);
       const { container } = renderWidget(input);
@@ -524,6 +541,169 @@ describe('InlineAskUserQuestion', () => {
       expect(submitTab?.hasClass('is-active')).toBe(true);
 
       jest.useRealTimers();
+    });
+  });
+});
+
+function renderImmediateWidget(
+  input: Record<string, unknown>,
+  config?: InlineAskQuestionConfig,
+): { container: any; resolve: jest.Mock; widget: InlineAskUserQuestion } {
+  const container = createMockEl();
+  const resolve = jest.fn();
+  const widget = new InlineAskUserQuestion(
+    container,
+    input,
+    resolve,
+    undefined,
+    { immediateSelect: true, showCustomInput: false, ...config },
+  );
+  widget.render();
+  return { container, resolve, widget };
+}
+
+describe('InlineAskUserQuestion - immediateSelect mode', () => {
+  describe('multi-question fallback', () => {
+    it('falls back to tab-bar rendering when questions.length !== 1', () => {
+      const input = makeInput([
+        { question: 'Q1', options: ['A'] },
+        { question: 'Q2', options: ['B'] },
+      ]);
+      const { container, resolve } = renderImmediateWidget(input);
+
+      // Should render tab bar (immediateSelect disabled due to multi-question)
+      const tabBar = container.querySelector('claudian-ask-tab-bar');
+      expect(tabBar).not.toBeNull();
+      const tabs = container.querySelectorAll('claudian-ask-tab');
+      expect(tabs.length).toBeGreaterThan(0);
+
+      // Should NOT resolve immediately on click (normal multi-tab flow)
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+      expect(resolve).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rendering', () => {
+    it('does not render tab bar', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container } = renderImmediateWidget(input);
+      const tabBar = container.querySelector('claudian-ask-tab-bar');
+      expect(tabBar).toBeNull();
+      const tabs = container.querySelectorAll('claudian-ask-tab');
+      expect(tabs).toHaveLength(0);
+    });
+
+    it('does not render custom input row', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container } = renderImmediateWidget(input);
+      const customItems = container.querySelectorAll('claudian-ask-custom-item');
+      expect(customItems).toHaveLength(0);
+    });
+
+    it('uses custom title when provided', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A'] }]);
+      const { container } = renderImmediateWidget(input, { title: 'Permission required' });
+      const title = container.querySelector('claudian-ask-inline-title');
+      expect(title?.textContent).toBe('Permission required');
+    });
+
+    it('renders headerEl between title and content', () => {
+      const headerEl = createMockEl('div');
+      headerEl.addClass('claudian-ask-approval-info');
+      const input = makeInput([{ question: 'Pick', options: ['A'] }]);
+      const { container } = renderImmediateWidget(input, { headerEl: headerEl as any });
+      const root = findRoot(container);
+      expect(root.children.some((c: any) => c.hasClass('claudian-ask-approval-info'))).toBe(true);
+    });
+  });
+
+  describe('selection', () => {
+    it('resolves immediately on click', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container, resolve } = renderImmediateWidget(input);
+
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+
+      expect(resolve).toHaveBeenCalledWith({ Pick: 'A' });
+    });
+
+    it('resolves with second option on click', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container, resolve } = renderImmediateWidget(input);
+
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[1]?.click();
+
+      expect(resolve).toHaveBeenCalledWith({ Pick: 'B' });
+    });
+  });
+
+  describe('keyboard navigation', () => {
+    it('ArrowDown/Up navigates focus', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B', 'C'] }]);
+      const { container } = renderImmediateWidget(input);
+      const root = findRoot(container);
+
+      fireKeyDown(root, 'ArrowDown');
+      const items = findItems(container);
+      expect(items[1]?.hasClass('is-focused')).toBe(true);
+
+      fireKeyDown(root, 'ArrowUp');
+      const items2 = findItems(container);
+      expect(items2[0]?.hasClass('is-focused')).toBe(true);
+    });
+
+    it('Enter selects and resolves immediately', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container, resolve } = renderImmediateWidget(input);
+      const root = findRoot(container);
+
+      // Move to second option and press Enter
+      fireKeyDown(root, 'ArrowDown');
+      fireKeyDown(root, 'Enter');
+
+      expect(resolve).toHaveBeenCalledWith({ Pick: 'B' });
+    });
+
+    it('Escape cancels', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container, resolve } = renderImmediateWidget(input);
+      const root = findRoot(container);
+
+      fireKeyDown(root, 'Escape');
+      expect(resolve).toHaveBeenCalledWith(null);
+    });
+
+    it('Tab does not switch tabs (no-op in immediateSelect)', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container, resolve } = renderImmediateWidget(input);
+      const root = findRoot(container);
+
+      fireKeyDown(root, 'Tab');
+      expect(resolve).not.toHaveBeenCalled();
+      const items = findItems(container);
+      expect(items.length).toBeGreaterThan(0);
+    });
+
+    it('ArrowDown clamps at last option', () => {
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const { container } = renderImmediateWidget(input);
+      const root = findRoot(container);
+
+      fireKeyDown(root, 'ArrowDown');
+      fireKeyDown(root, 'ArrowDown');
+      fireKeyDown(root, 'ArrowDown');
+
+      const items = findItems(container);
+      expect(items[1]?.hasClass('is-focused')).toBe(true);
     });
   });
 });

@@ -4,6 +4,13 @@ import { Notice } from 'obsidian';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
+beforeAll(() => {
+  globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    cb(0);
+    return 0;
+  };
+});
+
 const mockNotice = Notice as jest.Mock;
 
 function createMockInputEl() {
@@ -803,21 +810,47 @@ describe('InputController - Message Queue', () => {
     });
   });
 
-  describe('Approval modal tracking', () => {
-    it('should dismiss pending modal and clear reference', () => {
+  describe('Approval inline tracking', () => {
+    it('should dismiss pending inline and clear reference', () => {
       controller = new InputController(deps);
-      const mockModal = { close: jest.fn() };
-      (controller as any).pendingApprovalModal = mockModal;
+      const mockInline = { destroy: jest.fn() };
+      (controller as any).pendingApprovalInline = mockInline;
 
       controller.dismissPendingApproval();
 
-      expect(mockModal.close).toHaveBeenCalled();
-      expect((controller as any).pendingApprovalModal).toBeNull();
+      expect(mockInline.destroy).toHaveBeenCalled();
+      expect((controller as any).pendingApprovalInline).toBeNull();
     });
 
-    it('should be a no-op when no modal is pending', () => {
+    it('should dismiss pending ask inline and clear reference', () => {
       controller = new InputController(deps);
-      expect((controller as any).pendingApprovalModal).toBeNull();
+      const mockAskInline = { destroy: jest.fn() };
+      (controller as any).pendingAskInline = mockAskInline;
+
+      controller.dismissPendingApproval();
+
+      expect(mockAskInline.destroy).toHaveBeenCalled();
+      expect((controller as any).pendingAskInline).toBeNull();
+    });
+
+    it('should dismiss both approval and ask inlines', () => {
+      controller = new InputController(deps);
+      const mockApproval = { destroy: jest.fn() };
+      const mockAsk = { destroy: jest.fn() };
+      (controller as any).pendingApprovalInline = mockApproval;
+      (controller as any).pendingAskInline = mockAsk;
+
+      controller.dismissPendingApproval();
+
+      expect(mockApproval.destroy).toHaveBeenCalled();
+      expect(mockAsk.destroy).toHaveBeenCalled();
+      expect((controller as any).pendingApprovalInline).toBeNull();
+      expect((controller as any).pendingAskInline).toBeNull();
+    });
+
+    it('should be a no-op when no inline is pending', () => {
+      controller = new InputController(deps);
+      expect((controller as any).pendingApprovalInline).toBeNull();
       expect(() => controller.dismissPendingApproval()).not.toThrow();
     });
   });
@@ -1278,21 +1311,99 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('handleApprovalRequest', () => {
-    it('should create and store approval modal as pending', async () => {
+    it('should create inline approval and store as pending', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
       controller = new InputController(deps);
 
-      // void: promise won't resolve until the approval callback fires
-      void controller.handleApprovalRequest(
+      const approvalPromise = controller.handleApprovalRequest(
         'bash',
         { command: 'ls -la' },
         'Run shell command'
       );
 
-      expect((controller as any).pendingApprovalModal).not.toBeNull();
-      expect((controller as any).pendingApprovalModal.open).toHaveBeenCalled();
+      expect((controller as any).pendingApprovalInline).not.toBeNull();
 
       controller.dismissPendingApproval();
-      expect((controller as any).pendingApprovalModal).toBeNull();
+      expect((controller as any).pendingApprovalInline).toBeNull();
+
+      const result = await approvalPromise;
+      expect(result).toBe('cancel');
+    });
+
+    it('should throw when input container has no parent', async () => {
+      const inputContainerEl = createMockEl();
+      // no parentElement set
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+      await expect(controller.handleApprovalRequest('bash', {}, 'test'))
+        .rejects.toThrow('Input container is detached from DOM');
+    });
+
+    it.each([
+      ['Deny', 'deny'],
+      ['Allow once', 'allow'],
+      ['Always allow', 'allow-always'],
+    ] as const)('should return "%s" → "%s"', async (optionLabel, expected) => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'bash',
+        { command: 'ls -la' },
+        'Run shell command',
+      );
+
+      const items = parentEl.querySelectorAll('claudian-ask-item');
+      const target = items.find((item: any) => {
+        const label = item.querySelector('claudian-ask-item-label');
+        return label?.textContent === optionLabel;
+      });
+      expect(target).toBeDefined();
+      target!.click();
+
+      const result = await approvalPromise;
+      expect(result).toBe(expected);
+    });
+
+    it('should render header metadata when approvalOptions provided', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'bash',
+        { command: 'rm -rf /' },
+        'Run dangerous command',
+        {
+          decisionReason: 'Command is destructive',
+          blockedPath: '/usr/bin/rm',
+          agentID: 'agent-42',
+        },
+      );
+
+      const reasonEl = parentEl.querySelector('claudian-ask-approval-reason');
+      expect(reasonEl?.textContent).toBe('Command is destructive');
+
+      const pathEl = parentEl.querySelector('claudian-ask-approval-blocked-path');
+      expect(pathEl?.textContent).toBe('/usr/bin/rm');
+
+      const agentEl = parentEl.querySelector('claudian-ask-approval-agent');
+      expect(agentEl?.textContent).toBe('Agent: agent-42');
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
     });
   });
 

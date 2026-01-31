@@ -2,17 +2,17 @@ import { Notice } from 'obsidian';
 
 import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
-import type { ChatMessage } from '../../../core/types';
+import type { ApprovalDecision, ChatMessage } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import { type ApprovalDecision, ApprovalModal } from '../../../shared/modals/ApprovalModal';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
-import { InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
+import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import { setToolIcon } from '../rendering/ToolCallRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -22,6 +22,12 @@ import type { AddExternalContextResult, FileContextManager, ImageContextManager,
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
+
+const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
+  'Deny': 'deny',
+  'Allow once': 'allow',
+  'Always allow': 'allow-always',
+};
 
 export interface InputControllerDeps {
   plugin: ClaudianPlugin;
@@ -55,8 +61,8 @@ export interface InputControllerDeps {
 
 export class InputController {
   private deps: InputControllerDeps;
-  private pendingApprovalModal: ApprovalModal | null = null;
-  private pendingAskUserQuestionInline: InlineAskUserQuestion | null = null;
+  private pendingApprovalInline: InlineAskUserQuestion | null = null;
+  private pendingAskInline: InlineAskUserQuestion | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -619,33 +625,90 @@ export class InputController {
 
   async handleApprovalRequest(
     toolName: string,
-    input: Record<string, unknown>,
+    _input: Record<string, unknown>,
     description: string,
-    options?: ApprovalCallbackOptions,
+    approvalOptions?: ApprovalCallbackOptions,
   ): Promise<ApprovalDecision> {
-    const { plugin } = this.deps;
-    return new Promise((resolve) => {
-      const modal = new ApprovalModal(plugin.app, toolName, input, description, (decision) => {
-        this.pendingApprovalModal = null;
-        resolve(decision);
-      }, options);
-      this.pendingApprovalModal = modal;
-      modal.open();
-    });
-  }
-
-  async handleAskUserQuestion(
-    input: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<Record<string, string> | null> {
-    const { streamController } = this.deps;
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
       throw new Error('Input container is detached from DOM');
     }
 
-    streamController.hideThinkingIndicator();
+    // Build header element, then detach — InlineAskUserQuestion will re-attach it
+    const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
+    headerEl.remove();
+
+    const toolEl = headerEl.createDiv({ cls: 'claudian-ask-approval-tool' });
+    const iconEl = toolEl.createSpan({ cls: 'claudian-ask-approval-icon' });
+    iconEl.setAttribute('aria-hidden', 'true');
+    setToolIcon(iconEl, toolName);
+    toolEl.createSpan({ text: toolName, cls: 'claudian-ask-approval-tool-name' });
+
+    if (approvalOptions?.decisionReason) {
+      headerEl.createDiv({ text: approvalOptions.decisionReason, cls: 'claudian-ask-approval-reason' });
+    }
+    if (approvalOptions?.blockedPath) {
+      headerEl.createDiv({ text: approvalOptions.blockedPath, cls: 'claudian-ask-approval-blocked-path' });
+    }
+    if (approvalOptions?.agentID) {
+      headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
+    }
+
+    headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
+
+    // Always include "Always allow" — SDK callback has no toggle
+    const questionOptions = Object.keys(APPROVAL_OPTION_MAP);
+    const input = { questions: [{ question: 'Allow this action?', options: questionOptions }] };
+
+    const result = await this.showInlineQuestion(
+      parentEl,
+      inputContainerEl,
+      input,
+      (inline) => { this.pendingApprovalInline = inline; },
+      undefined,
+      { title: 'Permission required', headerEl, showCustomInput: false, immediateSelect: true },
+    );
+
+    if (!result) return 'cancel';
+    const selected = Object.values(result)[0];
+    const decision = APPROVAL_OPTION_MAP[selected];
+    if (!decision) {
+      new Notice(`Unexpected approval selection: "${selected}"`);
+      return 'cancel';
+    }
+    return decision;
+  }
+
+  async handleAskUserQuestion(
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Record<string, string> | null> {
+    const inputContainerEl = this.deps.getInputContainerEl();
+    const parentEl = inputContainerEl.parentElement;
+    if (!parentEl) {
+      throw new Error('Input container is detached from DOM');
+    }
+
+    return this.showInlineQuestion(
+      parentEl,
+      inputContainerEl,
+      input,
+      (inline) => { this.pendingAskInline = inline; },
+      signal,
+    );
+  }
+
+  private showInlineQuestion(
+    parentEl: HTMLElement,
+    inputContainerEl: HTMLElement,
+    input: Record<string, unknown>,
+    setPending: (inline: InlineAskUserQuestion | null) => void,
+    signal?: AbortSignal,
+    config?: InlineAskQuestionConfig,
+  ): Promise<Record<string, string> | null> {
+    this.deps.streamController.hideThinkingIndicator();
+    const previousDisplay = inputContainerEl.style.display;
     inputContainerEl.style.display = 'none';
 
     return new Promise<Record<string, string> | null>((resolve, reject) => {
@@ -653,31 +716,32 @@ export class InputController {
         parentEl,
         input,
         (result: Record<string, string> | null) => {
-          this.pendingAskUserQuestionInline = null;
-          inputContainerEl.style.display = '';
+          setPending(null);
+          inputContainerEl.style.display = previousDisplay;
           resolve(result);
         },
         signal,
+        config,
       );
-      this.pendingAskUserQuestionInline = inline;
+      setPending(inline);
       try {
         inline.render();
       } catch (err) {
-        this.pendingAskUserQuestionInline = null;
-        inputContainerEl.style.display = '';
+        setPending(null);
+        inputContainerEl.style.display = previousDisplay;
         reject(err);
       }
     });
   }
 
   dismissPendingApproval(): void {
-    if (this.pendingApprovalModal) {
-      this.pendingApprovalModal.close();
-      this.pendingApprovalModal = null;
+    if (this.pendingApprovalInline) {
+      this.pendingApprovalInline.destroy();
+      this.pendingApprovalInline = null;
     }
-    if (this.pendingAskUserQuestionInline) {
-      this.pendingAskUserQuestionInline.destroy();
-      this.pendingAskUserQuestionInline = null;
+    if (this.pendingAskInline) {
+      this.pendingAskInline.destroy();
+      this.pendingAskInline = null;
     }
   }
 

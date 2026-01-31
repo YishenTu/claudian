@@ -21,11 +21,6 @@ export {
   type MentionDropdownOptions,
 } from './mention/MentionDropdownController';
 export {
-  type ApprovalDecision,
-  ApprovalModal,
-  type ApprovalModalOptions,
-} from './modals/ApprovalModal';
-export {
   type InstructionDecision,
   InstructionModal,
   type InstructionModalCallbacks,
