@@ -16,7 +16,7 @@
   background: var(--background-primary);
 }
 
-/* Context row (file chip left, selection indicator right) - inside input wrapper at top */
+/* Context row (file chip start, selection indicator end) - inside input wrapper at top */
 /* Collapsed by default; expanded via .has-content class; textarea fills remaining space */
 .claudian-context-row {
   display: none;
@@ -32,7 +32,7 @@
   display: flex;
 }
 
-/* Nav row (tab badges left, header icons right) - above input wrapper */
+/* Nav row (tab badges start, header icons end) - above input wrapper */
 .claudian-input-nav-row {
   display: flex;
   align-items: center;

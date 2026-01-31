@@ -197,7 +197,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     attr: {
       placeholder: 'How can I help you today?',
       rows: '3',
-      dir: 'auto', // Support RTL/LTR auto-detection
+      dir: 'auto',
     },
   });
 

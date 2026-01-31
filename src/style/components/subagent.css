@@ -114,7 +114,8 @@
 .claudian-subagent-tool-result {
   display: flex;
   align-items: baseline;
-  padding: 2px 0 0 8px;
+  padding: 2px 0 0;
+  padding-inline-start: 8px;
 }
 
 .claudian-subagent-result-text {

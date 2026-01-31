@@ -43,7 +43,7 @@
 }
 
 .claudian-header-actions-slot {
-  /* No margin-left: auto here; it's set by the base .claudian-header-actions */
+  /* No margin-inline-start: auto here; it's set by the base .claudian-header-actions */
 }
 
 .claudian-header .claudian-tab-bar-container {

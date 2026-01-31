@@ -35,7 +35,8 @@
 /* Input - fully transparent */
 .claudian-inline-input {
   width: 100%;
-  padding: 4px 30px 4px 8px;
+  padding: 4px 8px;
+  padding-inline-end: 30px;
   border-width: 1px !important;
   border-style: solid !important;
   border-color: var(--background-modifier-border) !important;
