@@ -1,6 +1,6 @@
 import type { ClaudianService } from '../../../core/agent';
 import { extractResolvedAnswers, parseTodoInput } from '../../../core/tools';
-import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE, TOOL_WRITE } from '../../../core/tools/toolNames';
+import { isPlanModeTool, isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE, TOOL_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
@@ -331,7 +331,11 @@ export class StreamController {
     const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
 
     if (existingToolCall) {
-      existingToolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
+      // Plan mode tools (EnterPlanMode, ExitPlanMode, AskUserQuestion) don't use
+      // content-based blocked detection — their status is determined solely by isError
+      existingToolCall.status = isPlanModeTool(existingToolCall.name)
+        ? (chunk.isError ? 'error' : 'completed')
+        : (isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed'));
       existingToolCall.result = chunk.content;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION && chunk.toolUseResult) {

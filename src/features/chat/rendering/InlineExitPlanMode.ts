@@ -1,4 +1,5 @@
 import type { ExitPlanModeDecision } from '../../../core/types/tools';
+import type { RenderContentFn } from './MessageRenderer';
 
 const HINTS_TEXT = 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Tab for feedback \u00B7 Esc to cancel';
 
@@ -8,6 +9,8 @@ export class InlineExitPlanMode {
   private resolveCallback: (decision: ExitPlanModeDecision | null) => void;
   private resolved = false;
   private signal?: AbortSignal;
+  private renderContent?: RenderContentFn;
+  private planContent: string | null = null;
 
   private rootEl!: HTMLElement;
   private focusedIndex = 0;
@@ -22,11 +25,13 @@ export class InlineExitPlanMode {
     input: Record<string, unknown>,
     resolve: (decision: ExitPlanModeDecision | null) => void,
     signal?: AbortSignal,
+    renderContent?: RenderContentFn,
   ) {
     this.containerEl = containerEl;
     this.input = input;
     this.resolveCallback = resolve;
     this.signal = signal;
+    this.renderContent = renderContent;
     this.boundKeyDown = this.handleKeyDown.bind(this);
   }
 
@@ -35,6 +40,17 @@ export class InlineExitPlanMode {
 
     const titleEl = this.rootEl.createDiv({ cls: 'claudian-plan-inline-title' });
     titleEl.setText('Plan complete');
+
+    // Display plan file content above approval buttons
+    this.planContent = this.readPlanContent();
+    if (this.planContent) {
+      const contentEl = this.rootEl.createDiv({ cls: 'claudian-plan-content-preview' });
+      if (this.renderContent) {
+        void this.renderContent(contentEl, this.planContent);
+      } else {
+        contentEl.createDiv({ cls: 'claudian-plan-content-text', text: this.planContent });
+      }
+    }
 
     // Show requested permissions if available
     const allowedPrompts = this.input.allowedPrompts as Array<{ tool: string; prompt: string }> | undefined;
@@ -128,19 +144,22 @@ export class InlineExitPlanMode {
     this.handleResolve(null);
   }
 
-  private extractPlanContent(): string {
+  private readPlanContent(): string | null {
     const planFilePath = this.input.planFilePath as string | undefined;
-    if (planFilePath) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const fs = require('fs');
-        const content = fs.readFileSync(planFilePath, 'utf-8') as string;
-        if (content.trim()) {
-          return `Implement this plan:\n\n${content}`;
-        }
-      } catch {
-        // Fall through if file can't be read
-      }
+    if (!planFilePath) return null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs');
+      const content = fs.readFileSync(planFilePath, 'utf-8') as string;
+      return content.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractPlanContent(): string {
+    if (this.planContent) {
+      return `Implement this plan:\n\n${this.planContent}`;
     }
     return 'Implement the approved plan.';
   }

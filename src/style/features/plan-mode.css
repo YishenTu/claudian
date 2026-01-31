@@ -19,6 +19,66 @@
   line-height: 1.4;
 }
 
+/* ── Plan content preview ────────────────────────── */
+
+.claudian-plan-content-preview {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 6px 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-normal);
+}
+
+.claudian-plan-content-preview::-webkit-scrollbar {
+  width: 4px;
+}
+
+.claudian-plan-content-preview::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+}
+
+.claudian-plan-content-preview p {
+  margin: 0 0 6px;
+}
+
+.claudian-plan-content-preview p:last-child {
+  margin-bottom: 0;
+}
+
+.claudian-plan-content-preview h1,
+.claudian-plan-content-preview h2,
+.claudian-plan-content-preview h3,
+.claudian-plan-content-preview h4 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+.claudian-plan-content-preview ul,
+.claudian-plan-content-preview ol {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+}
+
+.claudian-plan-content-preview li {
+  margin: 0;
+}
+
+.claudian-plan-content-preview code {
+  font-size: 11px;
+}
+
+.claudian-plan-content-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-monospace);
+}
+
 /* ── Permissions list ──────────────────────────── */
 
 .claudian-plan-permissions {
