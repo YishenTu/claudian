@@ -26,6 +26,7 @@
       "confirmButton": "되감기",
       "ariaLabel": "여기로 되감기",
       "notice": "되감기 완료: {count}개 파일 복원됨",
+      "noticeSaveFailed": "되감기 완료: {count}개 파일 복원됨, 하지만 상태를 저장하지 못했습니다: {error}",
       "failed": "되감기 실패: {error}",
       "cannot": "되감기 불가: {error}",
       "unavailableStreaming": "스트리밍 중에는 되감기할 수 없습니다",

@@ -26,6 +26,7 @@
       "confirmButton": "回退",
       "ariaLabel": "回退到此處",
       "notice": "已回退：還原了 {count} 個檔案",
+      "noticeSaveFailed": "已回退：還原了 {count} 個檔案，但無法儲存狀態：{error}",
       "failed": "回退失敗：{error}",
       "cannot": "無法回退：{error}",
       "unavailableStreaming": "串流回應中無法回退",

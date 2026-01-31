@@ -39,6 +39,10 @@ export interface ConversationControllerDeps {
   getAgentService?: () => ClaudianService | null;
 }
 
+type SaveOptions = {
+  resumeSessionAt?: string;
+};
+
 export class ConversationController {
   private deps: ConversationControllerDeps;
   private callbacks: ConversationCallbacks;
@@ -361,6 +365,11 @@ export class ConversationController {
     );
     if (!confirmed) return;
 
+    if (state.isStreaming) {
+      new Notice(t('chat.rewind.unavailableStreaming'));
+      return;
+    }
+
     const agentService = this.getAgentService();
     if (!agentService) {
       new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
@@ -385,15 +394,19 @@ export class ConversationController {
     this.deps.setWelcomeEl(welcomeEl);
     this.updateWelcomeVisibility();
 
-    if (!state.currentConversationId) return;
+    const filesChanged = result.filesChanged?.length ?? 0;
+    let saveError: string | null = null;
     try {
       await this.save(false, { resumeSessionAt: prevAssistantUuid });
     } catch (e) {
-      new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Failed to save' }));
+      saveError = e instanceof Error ? e.message : 'Failed to save';
+    }
+
+    if (saveError) {
+      new Notice(t('chat.rewind.noticeSaveFailed', { count: String(filesChanged), error: saveError }));
       return;
     }
 
-    const filesChanged = result.filesChanged?.length ?? 0;
     new Notice(t('chat.rewind.notice', { count: String(filesChanged) }));
   }
 
@@ -406,7 +419,7 @@ export class ConversationController {
    * For native sessions (new conversations with sessionId from SDK),
    * only metadata is saved - the SDK handles message persistence.
    */
-  async save(updateLastResponse = false, extraUpdates?: Partial<Conversation>): Promise<void> {
+  async save(updateLastResponse = false, options?: SaveOptions): Promise<void> {
     const { plugin, state } = this.deps;
 
     // Entry point with no messages - nothing to save
@@ -472,8 +485,8 @@ export class ConversationController {
       updates.lastResponseAt = Date.now();
     }
 
-    if (extraUpdates) {
-      Object.assign(updates, extraUpdates);
+    if (options && Object.prototype.hasOwnProperty.call(options, 'resumeSessionAt')) {
+      updates.resumeSessionAt = options.resumeSessionAt;
     }
 
     // At this point, currentConversationId is guaranteed to be set

@@ -26,6 +26,7 @@
       "confirmButton": "Rebobinar",
       "ariaLabel": "Rebobinar hasta aquí",
       "notice": "Rebobinado: {count} archivo(s) revertido(s)",
+      "noticeSaveFailed": "Rebobinado: {count} archivo(s) revertido(s), pero no se pudo guardar el estado: {error}",
       "failed": "Error al rebobinar: {error}",
       "cannot": "No se puede rebobinar: {error}",
       "unavailableStreaming": "No se puede rebobinar durante la transmisión",

@@ -25,6 +25,9 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 import type ClaudianPlugin from '../../main';
 import { stripCurrentNoteContext } from '../../utils/context';
@@ -298,10 +301,12 @@ export class ClaudianService {
 
     // await is intentional: yields to microtask queue so fire-and-forget callers
     // (e.g. setSessionId → ensureReady) don't synchronously set persistentQuery
+    const resumeSessionAt = this.pendingResumeAt;
     const options = await this.buildPersistentQueryOptions(
       vaultPath,
       cliPath,
       resumeSessionId,
+      resumeSessionAt,
       externalContextPaths
     );
 
@@ -309,6 +314,10 @@ export class ClaudianService {
       prompt: this.messageChannel,
       options,
     });
+
+    if (this.pendingResumeAt === resumeSessionAt) {
+      this.pendingResumeAt = undefined;
+    }
     this.attachPersistentQueryStdinErrorHandler(this.persistentQuery);
 
     this.startResponseConsumer();
@@ -439,6 +448,7 @@ export class ClaudianService {
     vaultPath: string,
     cliPath: string,
     resumeSessionId?: string,
+    resumeSessionAt?: string,
     externalContextPaths?: string[]
   ): Options {
     const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
@@ -448,14 +458,13 @@ export class ClaudianService {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
       resumeSessionId,
-      resumeSessionAt: this.pendingResumeAt,
+      resumeSessionAt,
       canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
     };
 
     const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-    this.pendingResumeAt = undefined;
     return options;
   }
 
@@ -1428,17 +1437,178 @@ export class ClaudianService {
     return this.persistentQuery.rewindFiles(sdkUserUuid, { dryRun });
   }
 
+  private resolveRewindFilePath(filePath: string): string {
+    if (path.isAbsolute(filePath)) {
+      return filePath;
+    }
+    if (this.vaultPath) {
+      return path.join(this.vaultPath, filePath);
+    }
+    return filePath;
+  }
+
+  private async createRewindBackup(filesChanged: string[] | undefined): Promise<{
+    restore: () => Promise<void>;
+    cleanup: () => Promise<void>;
+  } | null> {
+    if (!filesChanged || filesChanged.length === 0) {
+      return null;
+    }
+
+    const backupRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'claudian-rewind-'));
+
+    type BackupEntry =
+      | { originalPath: string; existedBefore: false }
+      | { originalPath: string; existedBefore: true; kind: 'file' | 'dir'; backupPath: string }
+      | { originalPath: string; existedBefore: true; kind: 'symlink'; symlinkTarget: string };
+
+    const entries: BackupEntry[] = [];
+
+    const copyDir = async (from: string, to: string): Promise<void> => {
+      await fs.promises.mkdir(to, { recursive: true });
+      const dirents = await fs.promises.readdir(from, { withFileTypes: true });
+      for (const dirent of dirents) {
+        const srcPath = path.join(from, dirent.name);
+        const destPath = path.join(to, dirent.name);
+
+        if (dirent.isDirectory()) {
+          await copyDir(srcPath, destPath);
+          continue;
+        }
+
+        if (dirent.isSymbolicLink()) {
+          const target = await fs.promises.readlink(srcPath);
+          await fs.promises.symlink(target, destPath);
+          continue;
+        }
+
+        if (dirent.isFile()) {
+          await fs.promises.copyFile(srcPath, destPath);
+        }
+      }
+    };
+
+    const backupPathForIndex = (i: number) => path.join(backupRoot, String(i));
+
+    for (let i = 0; i < filesChanged.length; i++) {
+      const originalPath = this.resolveRewindFilePath(filesChanged[i]);
+
+      try {
+        const stats = await fs.promises.lstat(originalPath);
+
+        if (stats.isSymbolicLink()) {
+          const target = await fs.promises.readlink(originalPath);
+          entries.push({ originalPath, existedBefore: true, kind: 'symlink', symlinkTarget: target });
+          continue;
+        }
+
+        const backupPath = backupPathForIndex(i);
+
+        if (stats.isDirectory()) {
+          await copyDir(originalPath, backupPath);
+          entries.push({ originalPath, existedBefore: true, kind: 'dir', backupPath });
+          continue;
+        }
+
+        if (stats.isFile()) {
+          await fs.promises.copyFile(originalPath, backupPath);
+          entries.push({ originalPath, existedBefore: true, kind: 'file', backupPath });
+          continue;
+        }
+
+        // Unsupported file type; treat as non-existent for rollback purposes.
+        entries.push({ originalPath, existedBefore: false });
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        if (err && err.code === 'ENOENT') {
+          entries.push({ originalPath, existedBefore: false });
+          continue;
+        }
+
+        await fs.promises.rm(backupRoot, { recursive: true, force: true });
+        throw error;
+      }
+    }
+
+    const restore = async () => {
+      const errors: unknown[] = [];
+
+      for (const entry of entries) {
+        try {
+          if (!entry.existedBefore) {
+            await fs.promises.rm(entry.originalPath, { recursive: true, force: true });
+            continue;
+          }
+
+          await fs.promises.rm(entry.originalPath, { recursive: true, force: true });
+          await fs.promises.mkdir(path.dirname(entry.originalPath), { recursive: true });
+
+          if (entry.kind === 'symlink') {
+            await fs.promises.symlink(entry.symlinkTarget, entry.originalPath);
+            continue;
+          }
+
+          if (entry.kind === 'dir') {
+            await copyDir(entry.backupPath, entry.originalPath);
+            continue;
+          }
+
+          await fs.promises.copyFile(entry.backupPath, entry.originalPath);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+
+      if (errors.length > 0) {
+        throw new Error(`Failed to restore ${errors.length} file(s) after rewind failure.`);
+      }
+    };
+
+    const cleanup = async () => {
+      await fs.promises.rm(backupRoot, { recursive: true, force: true });
+    };
+
+    return { restore, cleanup };
+  }
+
   async rewind(sdkUserUuid: string, sdkAssistantUuid: string): Promise<RewindFilesResult> {
     // SDK only returns filesChanged/insertions/deletions on dry runs
     const preview = await this.rewindFiles(sdkUserUuid, true);
     if (!preview.canRewind) return preview;
 
-    const result = await this.rewindFiles(sdkUserUuid);
-    if (!result.canRewind) return result;
+    const backup = await this.createRewindBackup(preview.filesChanged);
 
-    this.pendingResumeAt = sdkAssistantUuid;
-    this.closePersistentQuery('rewind');
-    return { ...result, filesChanged: preview.filesChanged, insertions: preview.insertions, deletions: preview.deletions };
+    try {
+      const result = await this.rewindFiles(sdkUserUuid);
+      if (!result.canRewind) {
+        await backup?.restore();
+        this.closePersistentQuery('rewind failed');
+        return result;
+      }
+
+      this.pendingResumeAt = sdkAssistantUuid;
+      this.closePersistentQuery('rewind');
+      return {
+        ...result,
+        filesChanged: preview.filesChanged,
+        insertions: preview.insertions,
+        deletions: preview.deletions,
+      };
+    } catch (error) {
+      try {
+        await backup?.restore();
+      } catch (rollbackError) {
+        this.closePersistentQuery('rewind failed');
+        throw new Error(
+          `Rewind failed and files could not be fully restored: ${rollbackError instanceof Error ? rollbackError.message : 'Unknown error'}`
+        );
+      }
+
+      this.closePersistentQuery('rewind failed');
+      throw new Error(`Rewind failed but files were restored: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      await backup?.cleanup();
+    }
   }
 
   setApprovalCallback(callback: ApprovalCallback | null) {

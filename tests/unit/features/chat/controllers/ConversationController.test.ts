@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { confirm } from '@/shared/modals/ConfirmModal';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: jest.fn().mockResolvedValue(true),
@@ -1991,5 +1992,55 @@ describe('ConversationController - Rewind', () => {
     expect(noticeMsg).toContain('1');
 
     truncateSpy.mockRestore();
+  });
+
+  it('should abort when confirmation is declined', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    (confirm as jest.Mock).mockResolvedValueOnce(false);
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockNotice).not.toHaveBeenCalled();
+  });
+
+  it('should re-check streaming state after confirmation dialog', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    (confirm as jest.Mock).mockImplementationOnce(async () => {
+      deps.state.isStreaming = true;
+      return true;
+    });
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should show a warning notice when rewind succeeded but save failed', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    (deps.plugin.updateConversation as jest.Mock).mockRejectedValueOnce(new Error('Save failed'));
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
+    const msg = mockNotice.mock.calls[0][0] as string;
+    expect(msg).toContain('Save failed');
   });
 });

@@ -26,6 +26,7 @@
       "confirmButton": "Retroceder",
       "ariaLabel": "Retroceder até aqui",
       "notice": "Retrocedido: {count} arquivo(s) revertido(s)",
+      "noticeSaveFailed": "Retrocedido: {count} arquivo(s) revertido(s), mas não foi possível salvar o estado: {error}",
       "failed": "Falha ao retroceder: {error}",
       "cannot": "Não é possível retroceder: {error}",
       "unavailableStreaming": "Não é possível retroceder durante a transmissão",

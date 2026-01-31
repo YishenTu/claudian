@@ -2963,6 +2963,24 @@ describe('ClaudianService', () => {
       // Query should NOT be closed
       expect((service as any).persistentQuery).not.toBeNull();
     });
+
+    it('closes the query when actual rewind canRewind is false', async () => {
+      const mockRewindFiles = jest.fn()
+        .mockResolvedValueOnce({ canRewind: true, filesChanged: ['a.txt'] })
+        .mockResolvedValueOnce({ canRewind: false, error: 'Unexpected error' });
+      const mockInterrupt = jest.fn().mockResolvedValue(undefined);
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles, interrupt: mockInterrupt };
+      (service as any).messageChannel = { close: jest.fn() };
+      (service as any).queryAbortController = { abort: jest.fn() };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewind('user-uuid', 'assistant-uuid');
+
+      expect(result.canRewind).toBe(false);
+      expect(result.error).toBe('Unexpected error');
+      expect((service as any).pendingResumeAt).toBeUndefined();
+      expect((service as any).persistentQuery).toBeNull();
+    });
   });
 
   describe('buildSDKUserMessage uuid', () => {

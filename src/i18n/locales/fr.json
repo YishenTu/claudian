@@ -26,6 +26,7 @@
       "confirmButton": "Rembobiner",
       "ariaLabel": "Rembobiner jusqu'ici",
       "notice": "Rembobiné : {count} fichier(s) restauré(s)",
+      "noticeSaveFailed": "Rembobiné : {count} fichier(s) restauré(s), mais impossible d'enregistrer l'état : {error}",
       "failed": "Échec du rembobinage : {error}",
       "cannot": "Impossible de rembobiner : {error}",
       "unavailableStreaming": "Impossible de rembobiner pendant le streaming",

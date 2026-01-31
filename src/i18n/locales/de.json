@@ -26,6 +26,7 @@
       "confirmButton": "Zurückspulen",
       "ariaLabel": "Hierher zurückspulen",
       "notice": "Zurückgespult: {count} Datei(en) wiederhergestellt",
+      "noticeSaveFailed": "Zurückgespult: {count} Datei(en) wiederhergestellt, aber Status konnte nicht gespeichert werden: {error}",
       "failed": "Zurückspulen fehlgeschlagen: {error}",
       "cannot": "Zurückspulen nicht möglich: {error}",
       "unavailableStreaming": "Zurückspulen während des Streamings nicht möglich",

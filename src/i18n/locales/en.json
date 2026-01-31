@@ -26,6 +26,7 @@
       "confirmButton": "Rewind",
       "ariaLabel": "Rewind to here",
       "notice": "Rewound: {count} file(s) reverted",
+      "noticeSaveFailed": "Rewound: {count} file(s) reverted, but failed to save state: {error}",
       "failed": "Rewind failed: {error}",
       "cannot": "Cannot rewind: {error}",
       "unavailableStreaming": "Cannot rewind while streaming",

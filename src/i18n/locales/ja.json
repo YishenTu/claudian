@@ -26,6 +26,7 @@
       "confirmButton": "巻き戻す",
       "ariaLabel": "ここに巻き戻す",
       "notice": "巻き戻し完了：{count} 個のファイルを復元",
+      "noticeSaveFailed": "巻き戻し完了：{count} 個のファイルを復元しましたが、状態を保存できませんでした：{error}",
       "failed": "巻き戻しに失敗：{error}",
       "cannot": "巻き戻しできません：{error}",
       "unavailableStreaming": "ストリーミング中は巻き戻しできません",

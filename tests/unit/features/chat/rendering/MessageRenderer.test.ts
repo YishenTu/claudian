@@ -218,6 +218,72 @@ describe('MessageRenderer', () => {
     expect(renderImagesSpy).toHaveBeenCalledWith(messagesEl, images);
   });
 
+  it('adds a rewind button for eligible stored user messages', () => {
+    const messagesEl = createMockEl();
+    const rewindCallback = jest.fn().mockResolvedValue(undefined);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const allMessages: ChatMessage[] = [
+      { id: 'a1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a2', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    renderer.renderStoredMessage(allMessages[1], allMessages, 1);
+
+    expect(messagesEl.querySelector('.claudian-message-rewind-btn')).not.toBeNull();
+  });
+
+  it('does not add a rewind button when stored render is called without context', () => {
+    const messagesEl = createMockEl();
+    const rewindCallback = jest.fn().mockResolvedValue(undefined);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const msg: ChatMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'hello',
+      timestamp: 1,
+      sdkUserUuid: 'user-u',
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(messagesEl.querySelector('.claudian-message-rewind-btn')).toBeNull();
+  });
+
+  it('adds a rewind button for eligible streamed user messages via refreshRewindButton', () => {
+    const messagesEl = createMockEl();
+    const rewindCallback = jest.fn().mockResolvedValue(undefined);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const userMsg: ChatMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'hello',
+      timestamp: 2,
+      sdkUserUuid: 'user-u',
+    };
+    renderer.addMessage(userMsg);
+
+    const allMessages: ChatMessage[] = [
+      { id: 'a1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      userMsg,
+      { id: 'a2', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    renderer.refreshRewindButton(userMsg, allMessages, 1);
+
+    const btn = messagesEl.querySelector('.claudian-message-rewind-btn');
+    expect(btn).not.toBeNull();
+
+    btn!.click();
+    expect(rewindCallback).toHaveBeenCalledWith('u1');
+  });
+
   // ============================================
   // renderAssistantContent
   // ============================================
