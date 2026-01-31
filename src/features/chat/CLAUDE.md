@@ -25,6 +25,8 @@ ClaudianView (lifecycle + assembly)
 │   ├── DiffRenderer            # Inline diff display
 │   ├── TodoListRenderer        # Todo panel
 │   ├── SubagentRenderer        # Subagent status panel
+│   ├── InlineExitPlanMode      # Plan mode approval card
+│   ├── InlineAskUserQuestion   # AskUserQuestion inline card
 │   └── collapsible             # Collapsible block utility
 ├── Tabs
 │   ├── TabManager              # Multi-tab orchestration
@@ -69,6 +71,8 @@ User Input → InputController → ClaudianService.query()
 | `ThinkingBlockRenderer` | Extended thinking with collapse/expand |
 | `WriteEditRenderer` | File operations with before/after diff |
 | `DiffRenderer` | Hunked inline diffs (del/ins highlighting) |
+| `InlineExitPlanMode` | Plan mode approval card (approve/feedback/new session) |
+| `InlineAskUserQuestion` | AskUserQuestion inline card |
 | `TodoListRenderer` | Todo items with status icons |
 | `SubagentRenderer` | Background agent progress |
 
@@ -102,3 +106,4 @@ for await (const message of response) {
 - Title generation runs concurrently per-conversation (separate AbortControllers)
 - `FileContext` has nested state in `ui/file-context/state/`
 - `/compact` has a special code path: `InputController` skips context XML appending so the SDK recognizes the built-in command; `StreamController` handles the `compact_boundary` chunk as a standalone separator; `sdkSession.ts` prevents merge with adjacent assistant messages; ESC during compact produces an SDK stderr (`Compaction canceled`) that `sdkSession.ts` maps to `isInterrupt` for persistent rendering
+- Plan mode: `EnterPlanMode` is auto-approved by the SDK (detected in stream to sync UI); `ExitPlanMode` uses a dedicated callback in `canUseTool` that bypasses normal approval flow. Shift+Tab toggles plan mode and saves/restores the previous permission mode. "Approve (new session)" stops the current session and auto-sends plan content as the first message in a fresh session.

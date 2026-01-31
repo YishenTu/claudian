@@ -286,6 +286,8 @@ export class ClaudianService {
     const config = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
     this.currentConfig = config;
 
+    // await is intentional: yields to microtask queue so fire-and-forget callers
+    // (e.g. setSessionId → ensureReady) don't synchronously set persistentQuery
     const options = await this.buildPersistentQueryOptions(
       vaultPath,
       cliPath,
@@ -1083,16 +1085,9 @@ export class ClaudianService {
     // Since we always start with allowDangerouslySkipPermissions: true,
     // we can dynamically switch between modes without restarting
     if (this.currentConfig && permissionMode !== this.currentConfig.permissionMode) {
-      let sdkMode: string;
-      if (permissionMode === 'yolo') {
-        sdkMode = 'bypassPermissions';
-      } else if (permissionMode === 'plan') {
-        sdkMode = 'plan';
-      } else {
-        sdkMode = 'acceptEdits';
-      }
+      const sdkMode = this.mapToSDKPermissionMode(permissionMode);
       try {
-        await this.persistentQuery.setPermissionMode(sdkMode as 'bypassPermissions' | 'acceptEdits' | 'plan');
+        await this.persistentQuery.setPermissionMode(sdkMode);
         this.currentConfig.permissionMode = permissionMode;
       } catch {
         // Silently ignore permission mode update errors

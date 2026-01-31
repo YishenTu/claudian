@@ -64,7 +64,7 @@ export class StreamController {
         if (state.currentTextEl) {
           this.finalizeCurrentTextBlock(msg);
         }
-        await this.appendThinking(chunk.content, msg);
+        await this.appendThinking(chunk.content);
         break;
 
       case 'text':
@@ -333,9 +333,13 @@ export class StreamController {
     if (existingToolCall) {
       // Plan mode tools (EnterPlanMode, ExitPlanMode, AskUserQuestion) don't use
       // content-based blocked detection — their status is determined solely by isError
-      existingToolCall.status = isPlanModeTool(existingToolCall.name)
-        ? (chunk.isError ? 'error' : 'completed')
-        : (isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed'));
+      if (chunk.isError) {
+        existingToolCall.status = 'error';
+      } else if (!isPlanModeTool(existingToolCall.name) && isBlocked) {
+        existingToolCall.status = 'blocked';
+      } else {
+        existingToolCall.status = 'completed';
+      }
       existingToolCall.result = chunk.content;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION && chunk.toolUseResult) {
@@ -398,7 +402,7 @@ export class StreamController {
   // Thinking Block Management
   // ============================================
 
-  async appendThinking(content: string, msg: ChatMessage): Promise<void> {
+  async appendThinking(content: string): Promise<void> {
     const { state, renderer } = this.deps;
     if (!state.currentContentEl) return;
 

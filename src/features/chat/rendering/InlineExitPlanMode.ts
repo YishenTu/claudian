@@ -1,7 +1,7 @@
 import type { ExitPlanModeDecision } from '../../../core/types/tools';
 import type { RenderContentFn } from './MessageRenderer';
 
-const HINTS_TEXT = 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Tab for feedback \u00B7 Esc to cancel';
+const HINTS_TEXT = 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Esc to cancel';
 
 export class InlineExitPlanMode {
   private containerEl: HTMLElement;
@@ -41,7 +41,6 @@ export class InlineExitPlanMode {
     const titleEl = this.rootEl.createDiv({ cls: 'claudian-plan-inline-title' });
     titleEl.setText('Plan complete');
 
-    // Display plan file content above approval buttons
     this.planContent = this.readPlanContent();
     if (this.planContent) {
       const contentEl = this.rootEl.createDiv({ cls: 'claudian-plan-content-preview' });
@@ -52,7 +51,6 @@ export class InlineExitPlanMode {
       }
     }
 
-    // Show requested permissions if available
     const allowedPrompts = this.input.allowedPrompts as Array<{ tool: string; prompt: string }> | undefined;
     if (allowedPrompts && Array.isArray(allowedPrompts) && allowedPrompts.length > 0) {
       const permEl = this.rootEl.createDiv({ cls: 'claudian-plan-permissions' });
@@ -65,7 +63,6 @@ export class InlineExitPlanMode {
 
     const actionsEl = this.rootEl.createDiv({ cls: 'claudian-ask-list' });
 
-    // Approve (New Session) button — first option
     const newSessionRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
     newSessionRow.addClass('is-focused');
     newSessionRow.createSpan({ text: '\u203A', cls: 'claudian-ask-cursor' });
@@ -81,7 +78,6 @@ export class InlineExitPlanMode {
     });
     this.items.push(newSessionRow);
 
-    // Approve (Current Session) button — second option
     const approveRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
     approveRow.createSpan({ text: '\u00A0', cls: 'claudian-ask-cursor' });
     approveRow.createSpan({ text: '2. ', cls: 'claudian-ask-item-num' });
@@ -93,36 +89,21 @@ export class InlineExitPlanMode {
     });
     this.items.push(approveRow);
 
-    // Feedback input row
-    const feedbackRow = this.rootEl.createDiv({ cls: 'claudian-plan-feedback-row' });
+    const feedbackRow = actionsEl.createDiv({ cls: 'claudian-ask-item claudian-ask-custom-item' });
+    feedbackRow.createSpan({ text: '\u00A0', cls: 'claudian-ask-cursor' });
+    feedbackRow.createSpan({ text: '3. ', cls: 'claudian-ask-item-num' });
     this.feedbackInput = feedbackRow.createEl('input', {
       type: 'text',
-      cls: 'claudian-plan-feedback-input',
+      cls: 'claudian-ask-custom-text',
       placeholder: 'Enter feedback to continue planning...',
     });
     this.feedbackInput.addEventListener('focus', () => { this.isInputFocused = true; });
     this.feedbackInput.addEventListener('blur', () => { this.isInputFocused = false; });
-    this.feedbackInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && this.feedbackInput.value.trim()) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.handleResolve({ type: 'feedback', text: this.feedbackInput.value.trim() });
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.isInputFocused = false;
-        this.feedbackInput.blur();
-        this.rootEl.focus();
-      }
+    feedbackRow.addEventListener('click', () => {
+      this.focusedIndex = 2;
+      this.updateFocus();
     });
-
-    const sendBtn = feedbackRow.createDiv({ cls: 'claudian-plan-feedback-send', text: 'Send' });
-    sendBtn.addEventListener('click', () => {
-      if (this.feedbackInput.value.trim()) {
-        this.handleResolve({ type: 'feedback', text: this.feedbackInput.value.trim() });
-      }
-    });
+    this.items.push(feedbackRow);
 
     this.rootEl.createDiv({ text: HINTS_TEXT, cls: 'claudian-ask-hints' });
 
@@ -166,7 +147,20 @@ export class InlineExitPlanMode {
 
   private handleKeyDown(e: KeyboardEvent): void {
     if (this.isInputFocused) {
-      // Only handle escape when input is focused (Enter handled in input listener)
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.isInputFocused = false;
+        this.feedbackInput.blur();
+        this.rootEl.focus();
+        return;
+      }
+      if (e.key === 'Enter' && this.feedbackInput.value.trim()) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleResolve({ type: 'feedback', text: this.feedbackInput.value.trim() });
+        return;
+      }
       return;
     }
 
@@ -174,7 +168,7 @@ export class InlineExitPlanMode {
       case 'ArrowDown':
         e.preventDefault();
         e.stopPropagation();
-        this.focusedIndex = Math.min(this.focusedIndex + 1, 1);
+        this.focusedIndex = Math.min(this.focusedIndex + 1, this.items.length - 1);
         this.updateFocus();
         break;
       case 'ArrowUp':
@@ -182,11 +176,6 @@ export class InlineExitPlanMode {
         e.stopPropagation();
         this.focusedIndex = Math.max(this.focusedIndex - 1, 0);
         this.updateFocus();
-        break;
-      case 'Tab':
-        e.preventDefault();
-        e.stopPropagation();
-        this.feedbackInput.focus();
         break;
       case 'Enter':
         e.preventDefault();
@@ -196,8 +185,10 @@ export class InlineExitPlanMode {
             type: 'approve-new-session',
             planContent: this.extractPlanContent(),
           });
-        } else {
+        } else if (this.focusedIndex === 1) {
           this.handleResolve({ type: 'approve' });
+        } else if (this.focusedIndex === 2) {
+          this.feedbackInput.focus();
         }
         break;
       case 'Escape':
@@ -215,9 +206,26 @@ export class InlineExitPlanMode {
       if (i === this.focusedIndex) {
         item.addClass('is-focused');
         if (cursor) cursor.textContent = '\u203A';
+        item.scrollIntoView({ block: 'nearest' });
+
+        if (item.hasClass('claudian-ask-custom-item')) {
+          const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
+          if (input) {
+            input.focus();
+            this.isInputFocused = true;
+          }
+        }
       } else {
         item.removeClass('is-focused');
         if (cursor) cursor.textContent = '\u00A0';
+
+        if (item.hasClass('claudian-ask-custom-item')) {
+          const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
+          if (input && document.activeElement === input) {
+            input.blur();
+            this.isInputFocused = false;
+          }
+        }
       }
     }
   }

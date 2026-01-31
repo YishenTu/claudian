@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
+import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
@@ -13,7 +14,7 @@ import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
-import { setToolIcon } from '../rendering/ToolCallRenderer';
+import { setToolIcon, updateToolCallResult } from '../rendering/ToolCallRenderer';
 import type { InstructionRefineService } from '../services/InstructionRefineService';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
@@ -356,6 +357,19 @@ export class InputController {
         const statusPanel = this.deps.getStatusPanel();
         if (statusPanel?.areAllSubagentsCompleted()) {
           statusPanel.clearTerminalSubagents();
+        }
+
+        // approve-new-session: the tool_result chunk is dropped because cancelRequested
+        // was set before the stream loop could process it — manually set the result so
+        // the saved conversation renders correctly when revisited
+        if (state.pendingNewSessionPlan && assistantMsg.toolCalls) {
+          for (const tc of assistantMsg.toolCalls) {
+            if (tc.name === TOOL_EXIT_PLAN_MODE && !tc.result) {
+              tc.status = 'completed';
+              tc.result = 'User approved the plan and started a new session.';
+              updateToolCallResult(tc.id, tc, state.toolCallElements);
+            }
+          }
         }
 
         await conversationController.save(true);
@@ -759,7 +773,6 @@ export class InputController {
     streamController.hideThinkingIndicator();
     inputContainerEl.style.display = 'none';
 
-    // Inject plan file path captured from Write tool calls during plan mode
     const enrichedInput = state.planFilePath
       ? { ...input, planFilePath: state.planFilePath }
       : input;

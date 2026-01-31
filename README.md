@@ -21,10 +21,9 @@ An Obsidian plugin that embeds Claude Code as an AI collaborator in your vault. 
 - **Claude Code Plugins**: Enable Claude Code plugins installed via the CLI, with automatic discovery from `~/.claude/plugins` and per-vault configuration. Plugin skills, agents, and slash commands integrate seamlessly.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
 - **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, fine-tune thinking budget, and enable Sonnet with 1M context window (requires Max subscription).
-- **Security**: Permission modes (YOLO/Safe), safety blocklist, and vault confinement with symlink-safe checks.
+- **Plan Mode**: Toggle plan mode via Shift+Tab in the chat input. Claude explores and designs before implementing, presenting a plan for approval with options to approve in a new session, continue in the current session, or provide feedback.
+- **Security**: Permission modes (YOLO/Safe/Plan), safety blocklist, and vault confinement with symlink-safe checks.
 - **Claude in Chrome**: Allow Claude to interact with Chrome through the `claude-in-chrome` extension.
-
-> **Note**: `Plan Mode` has been temporarily removed. The SDK does not natively support `permissionMode: plan`, and the previous implementation had significant limitations. It will be re-added when there's a better approach.
 
 ## Requirements
 
@@ -169,7 +168,8 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 | **External contexts** | Full read/write (session-only, added via folder icon) |
 
 - **YOLO mode**: No approval prompts; all tool calls execute automatically (default)
-- **Safe mode**: Approval modal per tool call; Bash requires exact match, file tools allow prefix match
+- **Safe mode**: Approval prompt per tool call; Bash requires exact match, file tools allow prefix match
+- **Plan mode**: Claude explores and designs a plan before implementing. Toggle via Shift+Tab in the chat input
 
 ## Privacy & Data Use
 
@@ -237,7 +237,7 @@ src/
 ├── shared/                      # Shared UI components and modals
 │   ├── components/              # Input toolbar bits, dropdowns, selection highlight
 │   ├── mention/                 # @-mention dropdown controller
-│   ├── modals/                  # Approval + instruction modals
+│   ├── modals/                  # Instruction modal
 │   └── icons.ts                 # Shared SVG icons
 ├── i18n/                        # Internationalization (10 locales)
 ├── utils/                       # Modular utility functions
@@ -250,7 +250,7 @@ src/
 - [x] Custom agent (subagent) support
 - [x] Claude in Chrome support
 - [x] `/compact` command
-- [ ] Plan mode
+- [x] Plan mode
 - [ ] Tool renderers refinement
 - [ ] Hooks and other advanced features
 - [ ] More to come!

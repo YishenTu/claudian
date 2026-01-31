@@ -461,7 +461,6 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     await plugin.saveSettings();
   });
 
-  // Initialize plan mode border
   dom.inputWrapper.toggleClass('claudian-input-plan-mode', plugin.settings.permissionMode === 'plan');
 }
 
@@ -692,17 +691,14 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
-    // Shift+Tab: toggle plan mode on/off (remembers pre-plan mode)
     if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
       e.preventDefault();
       const current = plugin.settings.permissionMode;
       if (current === 'plan') {
-        // Exit plan: restore saved mode
         const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
         tab.state.prePlanPermissionMode = null;
         updatePlanModeUI(tab, plugin, restoreMode);
       } else {
-        // Enter plan: save current mode
         tab.state.prePlanPermissionMode = current;
         updatePlanModeUI(tab, plugin, 'plan');
       }

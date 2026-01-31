@@ -1,6 +1,5 @@
 /* Plan Mode - inline cards for EnterPlanMode / ExitPlanMode */
 
-.claudian-plan-mode-inline,
 .claudian-plan-approval-inline {
   font-family: var(--font-monospace);
   font-size: 12px;
@@ -11,12 +10,6 @@
   font-weight: 700;
   color: var(--text-muted);
   padding: 6px 10px 0;
-}
-
-.claudian-plan-inline-desc {
-  color: var(--text-faint);
-  padding: 2px 10px 8px;
-  line-height: 1.4;
 }
 
 /* ── Plan content preview ────────────────────────── */
@@ -100,73 +93,6 @@
 
 .claudian-plan-permissions-list li {
   margin: 0;
-}
-
-/* ── Feedback row ──────────────────────────────── */
-
-.claudian-plan-feedback-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-}
-
-.claudian-plan-feedback-input,
-.claudian-plan-feedback-input:hover,
-.claudian-plan-feedback-input:focus {
-  flex: 1;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  background: var(--background-primary);
-  font-family: var(--font-monospace);
-  font-size: 12px;
-  color: var(--text-normal);
-  padding: 4px 8px;
-  outline: none;
-  min-height: 0;
-  height: auto;
-  box-shadow: none;
-}
-
-.claudian-plan-feedback-input:focus {
-  border-color: var(--claudian-brand);
-}
-
-.claudian-plan-feedback-input::placeholder {
-  color: var(--text-faint);
-}
-
-.claudian-plan-feedback-send {
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 8px;
-  border-radius: 4px;
-  user-select: none;
-}
-
-.claudian-plan-feedback-send:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-/* ── Plan mode banner ──────────────────────────── */
-
-.claudian-plan-banner {
-  display: none;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: rgba(var(--claudian-brand-rgb), 0.08);
-  border-bottom: 1px solid rgba(var(--claudian-brand-rgb), 0.2);
-  font-size: 12px;
-  color: var(--claudian-brand);
-  font-weight: 600;
-}
-
-.claudian-plan-banner.active {
-  display: flex;
 }
 
 /* ── Plan mode input border ──────────────────────── */

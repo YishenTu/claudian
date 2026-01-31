@@ -17,7 +17,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `sdk/` | SDK message transform | `transformSDKMessage`, `typeGuards`, `types` |
 | `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
 | `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SkillStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
-| `tools/` | Tool utilities | `toolNames`, `toolIcons`, `toolInput`, `todo` |
+| `tools/` | Tool utilities | `toolNames` (incl. plan mode tools), `toolIcons`, `toolInput`, `todo` |
 | `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat`, `tools`, `models`, `sdk`, `plugins`, `diff` |
 
 ## Dependency Rules
@@ -69,3 +69,4 @@ await SessionStorage.loadSession(vaultPath, sessionId);
 - `SessionManager` handles SDK session resume via `sessionId`
 - Storage paths are encoded: non-alphanumeric → `-`
 - `customSpawn` handles cross-platform process spawning
+- Plan mode uses dedicated callbacks (`exitPlanModeCallback`, `permissionModeSyncCallback`) that bypass normal approval flow in `canUseTool`. `EnterPlanMode` is auto-approved by the SDK; the stream event is detected to sync UI state.

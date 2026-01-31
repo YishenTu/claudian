@@ -332,10 +332,6 @@ export class ChatState {
     this.state.planFilePath = value;
   }
 
-  // ============================================
-  // Pre-Plan Permission Mode
-  // ============================================
-
   get prePlanPermissionMode(): PermissionMode | null {
     return this.state.prePlanPermissionMode;
   }
