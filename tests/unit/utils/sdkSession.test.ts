@@ -918,6 +918,24 @@ describe('sdkSession', () => {
       expect(result.messages[0].toolCalls![0].name).toBe('Read');
       expect(result.messages[0].toolCalls![1].name).toBe('Write');
     });
+
+    it('updates sdkAssistantUuid to last entry when merging assistant messages', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"hello"}}',
+        '{"type":"assistant","uuid":"a1-first","parentUuid":"u1","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"text","text":"thinking..."}]}}',
+        '{"type":"assistant","uuid":"a1-mid","parentUuid":"a1-first","timestamp":"2024-01-15T10:00:02Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"path":"a.ts"}}]}}',
+        '{"type":"assistant","uuid":"a1-last","parentUuid":"a1-mid","timestamp":"2024-01-15T10:00:03Z","message":{"content":[{"type":"text","text":"Done!"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-merge-uuid');
+
+      expect(result.messages).toHaveLength(2);
+      const assistant = result.messages[1];
+      expect(assistant.role).toBe('assistant');
+      // Must be the last UUID so rewind targets the end of the turn
+      expect(assistant.sdkAssistantUuid).toBe('a1-last');
+    });
   });
 
   describe('parseSDKMessageToChat - image extraction', () => {

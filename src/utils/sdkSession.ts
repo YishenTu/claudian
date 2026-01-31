@@ -583,6 +583,11 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
   if (source.contentBlocks) {
     target.contentBlocks = [...(target.contentBlocks || []), ...source.contentBlocks];
   }
+
+  // Keep the last assistant UUID so rewind targets the end of the merged turn
+  if (source.sdkAssistantUuid) {
+    target.sdkAssistantUuid = source.sdkAssistantUuid;
+  }
 }
 
 /**
