@@ -18,14 +18,18 @@
     "enabled": "已啟用",
     "disabled": "已禁用",
     "platform": "平台",
-    "rewind": "Rewind"
+    "rewind": "回退"
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
-      "confirmButton": "Rewind",
-      "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "confirmMessage": "回退到此處？此訊息之後的檔案變更將被還原。",
+      "confirmButton": "回退",
+      "ariaLabel": "回退到此處",
+      "notice": "已回退：還原了 {count} 個檔案",
+      "failed": "回退失敗：{error}",
+      "cannot": "無法回退：{error}",
+      "unavailableStreaming": "串流回應中無法回退",
+      "unavailableNoUuid": "無法回退：缺少訊息識別碼"
     }
   },
   "settings": {

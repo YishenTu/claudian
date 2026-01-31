@@ -18,14 +18,18 @@
     "enabled": "Включено",
     "disabled": "Отключено",
     "platform": "Платформа",
-    "rewind": "Rewind"
+    "rewind": "Откатить"
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
-      "confirmButton": "Rewind",
-      "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения будут отменены.",
+      "confirmButton": "Откатить",
+      "ariaLabel": "Откатить сюда",
+      "notice": "Откачено: восстановлено файлов — {count}",
+      "failed": "Ошибка отката: {error}",
+      "cannot": "Невозможно откатить: {error}",
+      "unavailableStreaming": "Невозможно откатить во время потоковой передачи",
+      "unavailableNoUuid": "Невозможно откатить: отсутствуют идентификаторы сообщений"
     }
   },
   "settings": {

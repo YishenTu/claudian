@@ -24,6 +24,8 @@ export class MessageRenderer {
   private component: Component;
   private messagesEl: HTMLElement;
   private rewindCallback?: (messageId: string) => Promise<void>;
+  /** Maps message ID → DOM element for retroactive rewind button insertion. */
+  private liveMessageEls = new Map<string, HTMLElement>();
 
   /** Counter-clockwise arrow SVG for rewind button. */
   private static readonly REWIND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
@@ -85,10 +87,9 @@ export class MessageRenderer {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
       }
-      // Add rewind button for live messages too — sdkUserUuid is set after render
-      // but the click handler in ConversationController validates it at click time.
+      // Store reference for retroactive rewind button insertion after turn completes
       if (this.rewindCallback) {
-        this.addRewindButton(msgEl, msg.id);
+        this.liveMessageEls.set(msg.id, msgEl);
       }
     }
 
@@ -111,13 +112,14 @@ export class MessageRenderer {
     getGreeting: () => string
   ): HTMLElement {
     this.messagesEl.empty();
+    this.liveMessageEls.clear();
 
     // Recreate welcome element after clearing
     const newWelcomeEl = this.messagesEl.createDiv({ cls: 'claudian-welcome' });
     newWelcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: getGreeting() });
 
-    for (const msg of messages) {
-      this.renderStoredMessage(msg);
+    for (let i = 0; i < messages.length; i++) {
+      this.renderStoredMessage(messages[i], messages, i);
     }
 
     this.scrollToBottom();
@@ -126,8 +128,9 @@ export class MessageRenderer {
 
   /**
    * Renders a persisted message from history.
+   * When allMessages and index are provided, eligibility checks use surrounding context.
    */
-  renderStoredMessage(msg: ChatMessage): void {
+  renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
     // Render interrupt messages with special styling (not as user bubbles)
     if (msg.isInterrupt) {
       this.renderInterruptMessage();
@@ -165,12 +168,40 @@ export class MessageRenderer {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
       }
-      if (msg.sdkUserUuid && this.rewindCallback) {
+      if (msg.sdkUserUuid && this.rewindCallback && this.isRewindEligible(allMessages, index)) {
         this.addRewindButton(msgEl, msg.id);
       }
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
     }
+  }
+
+  /**
+   * Checks if a user message at the given index is eligible for rewind.
+   * Requires both a previous assistant with sdkAssistantUuid and a following
+   * assistant with sdkAssistantUuid within the same turn.
+   */
+  private isRewindEligible(allMessages?: ChatMessage[], index?: number): boolean {
+    if (!allMessages || index === undefined) return true; // Fallback: allow (live messages)
+
+    // Scan backward for previous assistant with uuid
+    let hasPrev = false;
+    for (let i = index - 1; i >= 0; i--) {
+      if (allMessages[i].role === 'assistant' && allMessages[i].sdkAssistantUuid) {
+        hasPrev = true;
+        break;
+      }
+    }
+    if (!hasPrev) return false;
+
+    // Scan forward for response assistant with uuid (stop at next user)
+    for (let i = index + 1; i < allMessages.length; i++) {
+      if (allMessages[i].role === 'user') break;
+      if (allMessages[i].role === 'assistant' && allMessages[i].sdkAssistantUuid) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -480,6 +511,21 @@ export class MessageRenderer {
   // ============================================
   // Rewind Button
   // ============================================
+
+  /**
+   * Retroactively adds a rewind button to a live-rendered user message
+   * after the turn completes and sdkUserUuid is available.
+   */
+  refreshRewindButton(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
+    if (!this.rewindCallback || !msg.sdkUserUuid) return;
+    if (!this.isRewindEligible(allMessages, index)) return;
+    const msgEl = this.liveMessageEls.get(msg.id);
+    if (!msgEl) return;
+    // Don't add if already present
+    if (msgEl.querySelector('.claudian-message-rewind-btn')) return;
+    this.addRewindButton(msgEl, msg.id);
+    this.liveMessageEls.delete(msg.id);
+  }
 
   private addRewindButton(msgEl: HTMLElement, messageId: string): void {
     const btn = msgEl.createSpan({ cls: 'claudian-message-rewind-btn' });

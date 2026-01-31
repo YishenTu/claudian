@@ -1,7 +1,14 @@
 import { createMockEl } from '@test/helpers/mockElement';
+import { Notice } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
+
+jest.mock('@/shared/modals/ConfirmModal', () => ({
+  confirm: jest.fn().mockResolvedValue(true),
+}));
+
+const mockNotice = Notice as jest.Mock;
 
 function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): ConversationControllerDeps {
   const state = new ChatState();
@@ -408,7 +415,7 @@ describe('ConversationController', () => {
       expect(updates.lastResponseAt).toBeLessThanOrEqual(Date.now());
     });
 
-    it('should clear resumeSessionAt when updateLastResponse is true', async () => {
+    it('should NOT clear resumeSessionAt when updateLastResponse is true (caller must pass extraUpdates)', async () => {
       deps.state.currentConversationId = 'conv-1';
       deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
 
@@ -416,7 +423,20 @@ describe('ConversationController', () => {
 
       const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
       const updates = call[1];
+      expect(updates).not.toHaveProperty('resumeSessionAt');
+    });
+
+    it('should clear resumeSessionAt when passed via extraUpdates', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      await controller.save(true, { resumeSessionAt: undefined });
+
+      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const updates = call[1];
       expect(updates.resumeSessionAt).toBeUndefined();
+      // Verify it's explicitly set (not just missing)
+      expect('resumeSessionAt' in updates).toBe(true);
     });
 
     it('should not clear resumeSessionAt when updateLastResponse is false', async () => {
@@ -1823,5 +1843,123 @@ describe('ConversationController - regenerateTitle callback branches', () => {
     await controller.regenerateTitle('conv-1');
 
     expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController - Rewind', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockAgentService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAgentService = {
+      getSessionId: jest.fn().mockReturnValue(null),
+      setSessionId: jest.fn(),
+      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
+      rewind: jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.ts'] }),
+    };
+    deps = createMockDeps({
+      getAgentService: () => mockAgentService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  it('should find prev/response assistants with bounded scan (skipping non-uuid messages)', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'm2', role: 'assistant', content: 'boundary', timestamp: 2 }, // No uuid
+      { id: 'm3', role: 'user', content: 'test', timestamp: 3, sdkUserUuid: 'user-uuid' },
+      { id: 'm4', role: 'assistant', content: 'boundary2', timestamp: 4 }, // No uuid
+      { id: 'm5', role: 'assistant', content: 'resp', timestamp: 5, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    await controller.rewind('m3');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
+  });
+
+  it('should show Notice when streaming', async () => {
+    deps.state.isStreaming = true;
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when user message has no sdkUserUuid', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2 }, // No sdkUserUuid
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when no previous assistant with uuid exists', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'user', content: 'test', timestamp: 1, sdkUserUuid: 'u1' },
+      { id: 'm2', role: 'assistant', content: '', timestamp: 2, sdkAssistantUuid: 'a1' },
+    ];
+
+    await controller.rewind('m1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when no response assistant with uuid exists', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show i18n Notice on SDK rewind exception', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    mockAgentService.rewind.mockRejectedValue(new Error('SDK error'));
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    const msg = mockNotice.mock.calls[0][0] as string;
+    expect(msg).toContain('SDK error');
+  });
+
+  it('should show i18n Notice when canRewind is false', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    mockAgentService.rewind.mockResolvedValue({ canRewind: false, error: 'No checkpoints' });
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    const msg = mockNotice.mock.calls[0][0] as string;
+    expect(msg).toContain('No checkpoints');
   });
 });

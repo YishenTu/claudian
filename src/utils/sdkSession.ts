@@ -550,8 +550,33 @@ export function filterActiveBranch(
     }
   }
 
-  // Filter deduped: keep entries whose uuid is in activeUuids, or entries without uuid
-  return deduped.filter(entry => !entry.uuid || activeUuids.has(entry.uuid));
+  // Precompute nearest preceding/following active status for no-uuid entries in O(n).
+  // prevIsActive[i] = whether the nearest preceding uuid entry is in activeUuids.
+  // nextIsActive[i] = whether the nearest following uuid entry is in activeUuids.
+  const n = deduped.length;
+  const prevIsActive = new Array<boolean>(n);
+  const nextIsActive = new Array<boolean>(n);
+
+  let lastPrevActive = false;
+  for (let i = 0; i < n; i++) {
+    if (deduped[i].uuid) {
+      lastPrevActive = activeUuids.has(deduped[i].uuid!);
+    }
+    prevIsActive[i] = lastPrevActive;
+  }
+
+  let lastNextActive = false;
+  for (let i = n - 1; i >= 0; i--) {
+    if (deduped[i].uuid) {
+      lastNextActive = activeUuids.has(deduped[i].uuid!);
+    }
+    nextIsActive[i] = lastNextActive;
+  }
+
+  return deduped.filter((entry, idx) => {
+    if (entry.uuid) return activeUuids.has(entry.uuid);
+    return prevIsActive[idx] && nextIsActive[idx];
+  });
 }
 
 export interface SDKSessionLoadResult {

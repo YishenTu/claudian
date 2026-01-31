@@ -1393,23 +1393,42 @@ describe('sdkSession', () => {
       expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
     });
 
-    it('preserves entries without uuid (queue-ops etc.)', () => {
+    it('preserves no-uuid entries within active branch region', () => {
       const entries: SDKNativeMessage[] = [
         { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'queue-operation' },  // No uuid — between u1 (active) and a1 (active)
         { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
         { type: 'user', uuid: 'u2', parentUuid: 'a1' },
         { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
-        { type: 'queue-operation' },  // No uuid
         { type: 'user', uuid: 'u3', parentUuid: 'a1' },    // Branch
         { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
       ];
 
       const result = filterActiveBranch(entries);
 
-      // Should include new branch (u1, a1, u3, a3) AND the queue-operation (no uuid)
       const uuids = result.filter(e => e.uuid).map(e => e.uuid);
       expect(uuids).toEqual(['u1', 'a1', 'u3', 'a3']);
+      // queue-operation is between u1 (active) and a1 (active), so preserved
       expect(result.some(e => e.type === 'queue-operation')).toBe(true);
+    });
+
+    it('drops no-uuid entries in old branch region', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'queue-operation' },  // No uuid — between a2 (old) and u3 (active)
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },    // Branch
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+      ];
+
+      const result = filterActiveBranch(entries);
+
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+      expect(uuids).toEqual(['u1', 'a1', 'u3', 'a3']);
+      // queue-operation between a2 (not active) and u3 (active) — should be dropped
+      expect(result.some(e => e.type === 'queue-operation')).toBe(false);
     });
   });
 

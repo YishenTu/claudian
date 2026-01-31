@@ -25,7 +25,11 @@
       "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
       "confirmButton": "Rewind",
       "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "notice": "Rewound: {count} file(s) reverted",
+      "failed": "Rewind failed: {error}",
+      "cannot": "Cannot rewind: {error}",
+      "unavailableStreaming": "Cannot rewind while streaming",
+      "unavailableNoUuid": "Cannot rewind: missing message identifiers"
     }
   },
   "settings": {

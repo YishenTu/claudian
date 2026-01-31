@@ -18,14 +18,18 @@
     "enabled": "Ativado",
     "disabled": "Desativado",
     "platform": "Plataforma",
-    "rewind": "Rewind"
+    "rewind": "Retroceder"
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
-      "confirmButton": "Rewind",
-      "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem serão revertidas.",
+      "confirmButton": "Retroceder",
+      "ariaLabel": "Retroceder até aqui",
+      "notice": "Retrocedido: {count} arquivo(s) revertido(s)",
+      "failed": "Falha ao retroceder: {error}",
+      "cannot": "Não é possível retroceder: {error}",
+      "unavailableStreaming": "Não é possível retroceder durante a transmissão",
+      "unavailableNoUuid": "Não é possível retroceder: identificadores de mensagem ausentes"
     }
   },
   "settings": {

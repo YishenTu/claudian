@@ -1442,6 +1442,10 @@ export class ClaudianService {
    * persistent query so the next user message restarts with resumeSessionAt.
    */
   async rewind(sdkUserUuid: string, sdkAssistantUuid: string): Promise<RewindFilesResult> {
+    // Dry run first: the SDK only returns filesChanged/insertions/deletions on dry runs
+    const preview = await this.rewindFiles(sdkUserUuid, true);
+    if (!preview.canRewind) return preview;
+
     const result = await this.rewindFiles(sdkUserUuid);
     if (!result.canRewind) return result;
 
@@ -1449,7 +1453,7 @@ export class ClaudianService {
     // that response, so Claude sees its reverted attempt in context and can learn from it.
     this.pendingResumeAt = sdkAssistantUuid;
     this.closePersistentQuery('rewind');
-    return result;
+    return { ...result, filesChanged: preview.filesChanged, insertions: preview.insertions, deletions: preview.deletions };
   }
 
   setApprovalCallback(callback: ApprovalCallback | null) {

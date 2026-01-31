@@ -2925,8 +2925,11 @@ describe('ClaudianService', () => {
   });
 
   describe('rewind', () => {
-    it('calls rewindFiles, sets pendingResumeAt, and closes query', async () => {
-      const mockRewindFiles = jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.txt'] });
+    it('dry-runs first to capture filesChanged, then performs actual rewind', async () => {
+      // SDK only returns filesChanged on dry run, not on actual rewind
+      const mockRewindFiles = jest.fn()
+        .mockResolvedValueOnce({ canRewind: true, filesChanged: ['a.txt'], insertions: 5, deletions: 3 })
+        .mockResolvedValueOnce({ canRewind: true });
       const mockInterrupt = jest.fn().mockResolvedValue(undefined);
       (service as any).persistentQuery = { rewindFiles: mockRewindFiles, interrupt: mockInterrupt };
       (service as any).messageChannel = { close: jest.fn() };
@@ -2935,13 +2938,18 @@ describe('ClaudianService', () => {
 
       const result = await service.rewind('user-uuid', 'assistant-uuid');
 
+      expect(mockRewindFiles).toHaveBeenCalledTimes(2);
+      expect(mockRewindFiles).toHaveBeenNthCalledWith(1, 'user-uuid', { dryRun: true });
+      expect(mockRewindFiles).toHaveBeenNthCalledWith(2, 'user-uuid', { dryRun: undefined });
       expect(result.canRewind).toBe(true);
+      expect(result.filesChanged).toEqual(['a.txt']);
+      expect(result.insertions).toBe(5);
+      expect(result.deletions).toBe(3);
       expect((service as any).pendingResumeAt).toBe('assistant-uuid');
-      // closePersistentQuery should have been called (persistentQuery set to null)
       expect((service as any).persistentQuery).toBeNull();
     });
 
-    it('returns error without closing query when canRewind is false', async () => {
+    it('returns error without closing query when dry-run canRewind is false', async () => {
       const mockRewindFiles = jest.fn().mockResolvedValue({ canRewind: false, error: 'No checkpoint' });
       (service as any).persistentQuery = { rewindFiles: mockRewindFiles };
       (service as any).shuttingDown = false;
@@ -2950,6 +2958,8 @@ describe('ClaudianService', () => {
 
       expect(result.canRewind).toBe(false);
       expect(result.error).toBe('No checkpoint');
+      // Only dry run should have been called
+      expect(mockRewindFiles).toHaveBeenCalledTimes(1);
       // Query should NOT be closed
       expect((service as any).persistentQuery).not.toBeNull();
     });

@@ -18,14 +18,18 @@
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
     "platform": "Plattform",
-    "rewind": "Rewind"
+    "rewind": "Zurückspulen"
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
-      "confirmButton": "Rewind",
-      "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht werden rückgängig gemacht.",
+      "confirmButton": "Zurückspulen",
+      "ariaLabel": "Hierher zurückspulen",
+      "notice": "Zurückgespult: {count} Datei(en) wiederhergestellt",
+      "failed": "Zurückspulen fehlgeschlagen: {error}",
+      "cannot": "Zurückspulen nicht möglich: {error}",
+      "unavailableStreaming": "Zurückspulen während des Streamings nicht möglich",
+      "unavailableNoUuid": "Zurückspulen nicht möglich: Nachrichtenkennungen fehlen"
     }
   },
   "settings": {

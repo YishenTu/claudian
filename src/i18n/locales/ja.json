@@ -18,14 +18,18 @@
     "enabled": "有効",
     "disabled": "無効",
     "platform": "プラットフォーム",
-    "rewind": "Rewind"
+    "rewind": "巻き戻し"
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
-      "confirmButton": "Rewind",
-      "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更が元に戻されます。",
+      "confirmButton": "巻き戻す",
+      "ariaLabel": "ここに巻き戻す",
+      "notice": "巻き戻し完了：{count} 個のファイルを復元",
+      "failed": "巻き戻しに失敗：{error}",
+      "cannot": "巻き戻しできません：{error}",
+      "unavailableStreaming": "ストリーミング中は巻き戻しできません",
+      "unavailableNoUuid": "巻き戻しできません：メッセージ識別子がありません"
     }
   },
   "settings": {

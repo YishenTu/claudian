@@ -18,14 +18,18 @@
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
     "platform": "Plataforma",
-    "rewind": "Rewind"
+    "rewind": "Rebobinar"
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
-      "confirmButton": "Rewind",
-      "ariaLabel": "Rewind to here",
-      "notice": "Rewound: {count} file(s) reverted"
+      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos.",
+      "confirmButton": "Rebobinar",
+      "ariaLabel": "Rebobinar hasta aquí",
+      "notice": "Rebobinado: {count} archivo(s) revertido(s)",
+      "failed": "Error al rebobinar: {error}",
+      "cannot": "No se puede rebobinar: {error}",
+      "unavailableStreaming": "No se puede rebobinar durante la transmisión",
+      "unavailableNoUuid": "No se puede rebobinar: faltan identificadores de mensaje"
     }
   },
   "settings": {

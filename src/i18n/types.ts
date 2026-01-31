@@ -35,6 +35,10 @@ export type TranslationKey =
   | 'chat.rewind.confirmButton'
   | 'chat.rewind.ariaLabel'
   | 'chat.rewind.notice'
+  | 'chat.rewind.failed'
+  | 'chat.rewind.cannot'
+  | 'chat.rewind.unavailableStreaming'
+  | 'chat.rewind.unavailableNoUuid'
 
   // Settings - Customization
   | 'settings.title'

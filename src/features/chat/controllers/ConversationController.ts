@@ -337,21 +337,46 @@ export class ConversationController {
   async rewind(userMessageId: string): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
-    if (state.isStreaming) return;
+    if (state.isStreaming) {
+      new Notice(t('chat.rewind.unavailableStreaming'));
+      return;
+    }
 
     const msgs = state.messages;
     const userIdx = msgs.findIndex(m => m.id === userMessageId);
     if (userIdx === -1) return;
     const userMsg = msgs[userIdx];
-    if (!userMsg.sdkUserUuid) return;
+    if (!userMsg.sdkUserUuid) {
+      new Notice(t('chat.rewind.unavailableNoUuid'));
+      return;
+    }
 
-    // Need the response to verify rewind is possible
-    const responseMsg = msgs[userIdx + 1];
-    if (!responseMsg || responseMsg.role !== 'assistant' || !responseMsg.sdkAssistantUuid) return;
+    // Bounded scan forward: find the response assistant with sdkAssistantUuid
+    let responseAssistant: typeof msgs[number] | undefined;
+    for (let i = userIdx + 1; i < msgs.length; i++) {
+      if (msgs[i].role === 'user') break; // Hit next user turn, stop
+      if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
+        responseAssistant = msgs[i];
+        break;
+      }
+    }
+    if (!responseAssistant) {
+      new Notice(t('chat.rewind.unavailableNoUuid'));
+      return;
+    }
 
-    // The previous assistant is the rewind target — where the conversation resumes from
-    const prevAssistant = msgs[userIdx - 1];
-    if (!prevAssistant || prevAssistant.role !== 'assistant' || !prevAssistant.sdkAssistantUuid) return;
+    // Bounded scan backward: find the previous assistant with sdkAssistantUuid
+    let prevAssistant: typeof msgs[number] | undefined;
+    for (let i = userIdx - 1; i >= 0; i--) {
+      if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
+        prevAssistant = msgs[i];
+        break;
+      }
+    }
+    if (!prevAssistant) {
+      new Notice(t('chat.rewind.unavailableNoUuid'));
+      return;
+    }
 
     const confirmed = await confirm(
       plugin.app,
@@ -365,13 +390,13 @@ export class ConversationController {
 
     let result;
     try {
-      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistant.sdkAssistantUuid);
+      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistant.sdkAssistantUuid!);
     } catch (e) {
-      new Notice(`Rewind failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
       return;
     }
     if (!result.canRewind) {
-      new Notice(`Cannot rewind: ${result.error ?? 'Unknown error'}`);
+      new Notice(t('chat.rewind.cannot', { error: result.error ?? 'Unknown error' }));
       return;
     }
 
@@ -465,8 +490,6 @@ export class ConversationController {
 
     if (updateLastResponse) {
       updates.lastResponseAt = Date.now();
-      // Clear resumeSessionAt after a successful follow-up (the JSONL branch now self-identifies)
-      updates.resumeSessionAt = undefined;
     }
 
     if (extraUpdates) {

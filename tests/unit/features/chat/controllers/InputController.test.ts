@@ -104,6 +104,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       },
       renameConversation: jest.fn(),
       updateConversation: jest.fn(),
+      getConversationSync: jest.fn().mockReturnValue(null),
       getConversationById: jest.fn().mockResolvedValue(null),
       createConversation: jest.fn().mockResolvedValue({ id: 'conv-1' }),
     } as any,
@@ -112,6 +113,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       addMessage: jest.fn().mockReturnValue({
         querySelector: jest.fn().mockReturnValue(createMockEl()),
       }),
+      refreshRewindButton: jest.fn(),
     } as any,
     streamController: {
       showThinkingIndicator: jest.fn(),
@@ -404,7 +406,8 @@ describe('InputController - Message Queue', () => {
       expect(deps.state.messages[0].images).toBeUndefined();
       expect(imageContextManager.clearImages).toHaveBeenCalled();
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
-      expect(deps.conversationController.save).toHaveBeenCalledWith(true);
+      // No sdk_user_sent in stream → save without clearing resumeSessionAt
+      expect(deps.conversationController.save).toHaveBeenCalledWith(true, undefined);
       expect((deps as any).mockAgentService.query).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
     });
@@ -1632,6 +1635,163 @@ describe('InputController - Message Queue', () => {
 
       expect(mockNotice).toHaveBeenCalledWith('Error: Unexpected error');
       expect(mockInstructionModeManager.clear).toHaveBeenCalled();
+    });
+  });
+
+  describe('resumeSessionAt lifecycle', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should call setPendingResumeAt when resumeSessionAt points to last assistant (still-needed)', async () => {
+      deps = createSendableDeps();
+      const { mockAgentService } = deps as any;
+      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.query = jest.fn().mockReturnValue(createMockStream([{ type: 'done' }]));
+
+      // Pre-populate messages: user → assistant (with sdkAssistantUuid matching resumeSessionAt)
+      deps.state.messages = [
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+      ];
+
+      // Set conversation with resumeSessionAt
+      (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        resumeSessionAt: 'a1',
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'follow up';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockAgentService.setPendingResumeAt).toHaveBeenCalledWith('a1');
+      // Should NOT clear metadata eagerly (clearing is done by save(true))
+      expect(deps.plugin.updateConversation).not.toHaveBeenCalledWith('conv-1', { resumeSessionAt: undefined });
+    });
+
+    it('should NOT call setPendingResumeAt when follow-up already exists (stale)', async () => {
+      deps = createSendableDeps();
+      const { mockAgentService } = deps as any;
+      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.query = jest.fn().mockReturnValue(createMockStream([{ type: 'done' }]));
+
+      // Messages: user → assistant(a1) → user(follow-up) → assistant
+      // resumeSessionAt=a1 is stale because there's a follow-up after a1
+      deps.state.messages = [
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+        { id: 'msg-u2', role: 'user', content: 'follow up', timestamp: 3, sdkUserUuid: 'u2' },
+        { id: 'msg-a2', role: 'assistant', content: 'response', timestamp: 4, sdkAssistantUuid: 'a2' },
+      ];
+
+      (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        resumeSessionAt: 'a1',
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'another message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockAgentService.setPendingResumeAt).not.toHaveBeenCalled();
+      // Should clear stale metadata
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { resumeSessionAt: undefined });
+    });
+
+    it('should clear resumeSessionAt on save when sdk_user_sent is received', async () => {
+      deps = createSendableDeps();
+      const { mockAgentService } = deps as any;
+      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.query = jest.fn().mockReturnValue(
+        createMockStream([
+          { type: 'sdk_user_uuid', uuid: 'u-new' },
+          { type: 'sdk_user_sent', uuid: 'u-new' },
+          { type: 'text', content: 'hi' },
+          { type: 'done' },
+        ])
+      );
+
+      deps.state.messages = [
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+      ];
+
+      (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        resumeSessionAt: 'a1',
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'follow up';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // save(true) should include { resumeSessionAt: undefined } because sdk_user_sent was received
+      expect(deps.conversationController.save).toHaveBeenCalledWith(true, { resumeSessionAt: undefined });
+    });
+
+    it('should NOT clear resumeSessionAt on save when query fails before enqueue', async () => {
+      deps = createSendableDeps();
+      const { mockAgentService } = deps as any;
+      mockAgentService.setPendingResumeAt = jest.fn();
+      // Stream throws before yielding sdk_user_sent
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        throw new Error('Connection failed');
+      });
+
+      deps.state.messages = [
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+      ];
+
+      (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        resumeSessionAt: 'a1',
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'follow up';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      // save(true) should NOT clear resumeSessionAt because sdk_user_sent was never received
+      expect(deps.conversationController.save).toHaveBeenCalledWith(true, undefined);
+    });
+
+    it('should not block send when stale metadata clear fails', async () => {
+      deps = createSendableDeps();
+      const { mockAgentService } = deps as any;
+      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.query = jest.fn().mockReturnValue(createMockStream([{ type: 'done' }]));
+
+      deps.state.messages = [
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+        { id: 'msg-u2', role: 'user', content: 'next', timestamp: 3, sdkUserUuid: 'u2' },
+        { id: 'msg-a2', role: 'assistant', content: 'resp', timestamp: 4, sdkAssistantUuid: 'a2' },
+      ];
+
+      (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
+        id: 'conv-1',
+        resumeSessionAt: 'a1',
+      });
+      // Make updateConversation throw
+      (deps.plugin.updateConversation as jest.Mock).mockRejectedValueOnce(new Error('disk error'));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test';
+      controller = new InputController(deps);
+
+      // Should not throw
+      await expect(controller.sendMessage()).resolves.not.toThrow();
+      expect(mockAgentService.query).toHaveBeenCalled();
     });
   });
 });
