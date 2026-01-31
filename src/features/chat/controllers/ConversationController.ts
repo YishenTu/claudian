@@ -374,6 +374,7 @@ export class ConversationController {
     // Re-render
     const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
     this.deps.setWelcomeEl(welcomeEl);
+    this.updateWelcomeVisibility();
 
     await this.save();
 
