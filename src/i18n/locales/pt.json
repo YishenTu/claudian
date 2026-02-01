@@ -17,7 +17,21 @@
     "advanced": "Avançado",
     "enabled": "Ativado",
     "disabled": "Desativado",
-    "platform": "Plataforma"
+    "platform": "Plataforma",
+    "rewind": "Retroceder"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem serão revertidas.",
+      "confirmButton": "Retroceder",
+      "ariaLabel": "Retroceder até aqui",
+      "notice": "Retrocedido: {count} arquivo(s) revertido(s)",
+      "noticeSaveFailed": "Retrocedido: {count} arquivo(s) revertido(s), mas não foi possível salvar o estado: {error}",
+      "failed": "Falha ao retroceder: {error}",
+      "cannot": "Não é possível retroceder: {error}",
+      "unavailableStreaming": "Não é possível retroceder durante a transmissão",
+      "unavailableNoUuid": "Não é possível retroceder: identificadores de mensagem ausentes"
+    }
   },
   "settings": {
     "title": "Configurações do Claudian",

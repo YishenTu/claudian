@@ -1,7 +1,15 @@
 import { createMockEl } from '@test/helpers/mockElement';
+import { Notice } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { confirm } from '@/shared/modals/ConfirmModal';
+
+jest.mock('@/shared/modals/ConfirmModal', () => ({
+  confirm: jest.fn().mockResolvedValue(true),
+}));
+
+const mockNotice = Notice as jest.Mock;
 
 function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): ConversationControllerDeps {
   const state = new ChatState();
@@ -406,6 +414,41 @@ describe('ConversationController', () => {
       expect(updates.lastResponseAt).toBeDefined();
       expect(updates.lastResponseAt).toBeGreaterThanOrEqual(beforeCall);
       expect(updates.lastResponseAt).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('should NOT clear resumeSessionAt when updateLastResponse is true (caller must pass extraUpdates)', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      await controller.save(true);
+
+      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const updates = call[1];
+      expect(updates).not.toHaveProperty('resumeSessionAt');
+    });
+
+    it('should clear resumeSessionAt when passed via extraUpdates', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      await controller.save(true, { resumeSessionAt: undefined });
+
+      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const updates = call[1];
+      expect(updates.resumeSessionAt).toBeUndefined();
+      // Verify it's explicitly set (not just missing)
+      expect('resumeSessionAt' in updates).toBe(true);
+    });
+
+    it('should not clear resumeSessionAt when updateLastResponse is false', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+
+      await controller.save(false);
+
+      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const updates = call[1];
+      expect(updates).not.toHaveProperty('resumeSessionAt');
     });
   });
 
@@ -1801,5 +1844,216 @@ describe('ConversationController - regenerateTitle callback branches', () => {
     await controller.regenerateTitle('conv-1');
 
     expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController - Rewind', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockAgentService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAgentService = {
+      getSessionId: jest.fn().mockReturnValue(null),
+      setSessionId: jest.fn(),
+      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
+      rewind: jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.ts'] }),
+    };
+    deps = createMockDeps({
+      getAgentService: () => mockAgentService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  it('should find prev/response assistants with bounded scan (skipping non-uuid messages)', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'm2', role: 'assistant', content: 'boundary', timestamp: 2 }, // No uuid
+      { id: 'm3', role: 'user', content: 'test', timestamp: 3, sdkUserUuid: 'user-uuid' },
+      { id: 'm4', role: 'assistant', content: 'boundary2', timestamp: 4 }, // No uuid
+      { id: 'm5', role: 'assistant', content: 'resp', timestamp: 5, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    await controller.rewind('m3');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
+  });
+
+  it('should show Notice when message ID not found', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+
+    await controller.rewind('nonexistent');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when streaming', async () => {
+    deps.state.isStreaming = true;
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when user message has no sdkUserUuid', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2 }, // No sdkUserUuid
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when no previous assistant with uuid exists', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'user', content: 'test', timestamp: 1, sdkUserUuid: 'u1' },
+      { id: 'm2', role: 'assistant', content: '', timestamp: 2, sdkAssistantUuid: 'a1' },
+    ];
+
+    await controller.rewind('m1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show Notice when no response assistant with uuid exists', async () => {
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+  });
+
+  it('should show i18n Notice on SDK rewind exception', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    mockAgentService.rewind.mockRejectedValue(new Error('SDK error'));
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    const msg = mockNotice.mock.calls[0][0] as string;
+    expect(msg).toContain('SDK error');
+  });
+
+  it('should show i18n Notice when canRewind is false', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    mockAgentService.rewind.mockResolvedValue({ canRewind: false, error: 'No checkpoints' });
+
+    await controller.rewind('m2');
+
+    expect(mockNotice).toHaveBeenCalled();
+    const msg = mockNotice.mock.calls[0][0] as string;
+    expect(msg).toContain('No checkpoints');
+  });
+
+  it('should truncateAt, save with resumeSessionAt, and renderMessages on success', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    const truncateSpy = jest.spyOn(deps.state, 'truncateAt');
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
+    expect(truncateSpy).toHaveBeenCalledWith('m2');
+    expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Function)
+    );
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+      'conv-1',
+      expect.objectContaining({ resumeSessionAt: 'prev-a' })
+    );
+
+    // Should show success notice with file count
+    const noticeMsg = mockNotice.mock.calls[0][0] as string;
+    expect(noticeMsg).toContain('1');
+
+    truncateSpy.mockRestore();
+  });
+
+  it('should abort when confirmation is declined', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    (confirm as jest.Mock).mockResolvedValueOnce(false);
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockNotice).not.toHaveBeenCalled();
+  });
+
+  it('should re-check streaming state after confirmation dialog', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'a1' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'u1' },
+      { id: 'm3', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'a2' },
+    ];
+    (confirm as jest.Mock).mockImplementationOnce(async () => {
+      deps.state.isStreaming = true;
+      return true;
+    });
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should show a warning notice when rewind succeeded but save failed', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, sdkUserUuid: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+    ];
+
+    (deps.plugin.updateConversation as jest.Mock).mockRejectedValueOnce(new Error('Save failed'));
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a');
+    const msg = mockNotice.mock.calls[0][0] as string;
+    expect(msg).toContain('Save failed');
   });
 });

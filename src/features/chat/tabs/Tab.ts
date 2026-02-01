@@ -549,7 +549,12 @@ export function initializeTabControllers(
   const { dom, state, services, ui } = tab;
 
   // Create renderer
-  tab.renderer = new MessageRenderer(plugin, component, dom.messagesEl);
+  tab.renderer = new MessageRenderer(
+    plugin,
+    component,
+    dom.messagesEl,
+    (id) => tab.controllers.conversationController!.rewind(id),
+  );
 
   // Selection controller
   tab.controllers.selectionController = new SelectionController(

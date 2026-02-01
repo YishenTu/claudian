@@ -75,6 +75,16 @@ export class InputController {
     return this.deps.getAgentService?.() ?? null;
   }
 
+  private isResumeSessionAtStillNeeded(resumeUuid: string, previousMessages: ChatMessage[]): boolean {
+    for (let i = previousMessages.length - 1; i >= 0; i--) {
+      if (previousMessages[i].role === 'assistant' && previousMessages[i].sdkAssistantUuid === resumeUuid) {
+        // Still needed only if no messages follow the resume point
+        return i === previousMessages.length - 1;
+      }
+    }
+    return false;
+  }
+
   // ============================================
   // Message Sending
   // ============================================
@@ -273,6 +283,7 @@ export class InputController {
 
     let wasInterrupted = false;
     let wasInvalidated = false;
+    let didEnqueueToSdk = false;
 
     // Lazy initialization: ensure service is ready before first query
     if (this.deps.ensureServiceInitialized) {
@@ -290,11 +301,39 @@ export class InputController {
       new Notice('Agent service not available. Please reload the plugin.');
       return;
     }
+
+    // Restore pendingResumeAt from persisted conversation state (survives plugin reload)
+    const conversationIdForSend = state.currentConversationId;
+    if (conversationIdForSend) {
+      const conv = plugin.getConversationSync(conversationIdForSend);
+      if (conv?.resumeSessionAt) {
+        if (this.isResumeSessionAtStillNeeded(conv.resumeSessionAt, state.messages.slice(0, -2))) {
+          agentService.setPendingResumeAt(conv.resumeSessionAt);
+        } else {
+          try {
+            await plugin.updateConversation(conversationIdForSend, { resumeSessionAt: undefined });
+          } catch {
+            // Best-effort — don't block send
+          }
+        }
+      }
+    }
+
     try {
       // Pass history WITHOUT current turn (userMsg + assistantMsg we just added)
       // This prevents duplication when rebuilding context for new sessions
       const previousMessages = state.messages.slice(0, -2);
       for await (const chunk of agentService.query(promptToSend, imagesForMessage, previousMessages, queryOptions)) {
+        if (chunk.type === 'sdk_user_uuid') {
+          userMsg.sdkUserUuid = chunk.uuid;
+          continue;
+        }
+
+        if (chunk.type === 'sdk_user_sent') {
+          didEnqueueToSdk = true;
+          continue;
+        }
+
         if (state.streamGeneration !== streamGeneration) {
           wasInvalidated = true;
           break;
@@ -303,6 +342,7 @@ export class InputController {
           wasInterrupted = true;
           break;
         }
+
         await streamController.handleStreamChunk(chunk, assistantMsg);
       }
     } catch (error) {
@@ -372,7 +412,12 @@ export class InputController {
           }
         }
 
-        await conversationController.save(true);
+        // Only clear resumeSessionAt if enqueue succeeded; preserve checkpoint on failure for retry
+        const saveExtras = didEnqueueToSdk ? { resumeSessionAt: undefined } : undefined;
+        await conversationController.save(true, saveExtras);
+
+        const userMsgIndex = state.messages.indexOf(userMsg);
+        renderer.refreshRewindButton(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
 
         // approve-new-session: create fresh conversation and send plan content
         // Must be inside the invalidation guard — if the tab was closed or

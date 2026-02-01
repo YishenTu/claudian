@@ -1,10 +1,13 @@
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import type { ClaudianService } from '../../../core/agent';
 import type { Conversation } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
+import { confirm } from '../../../shared/modals/ConfirmModal';
 import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
@@ -35,6 +38,10 @@ export interface ConversationControllerDeps {
   getStatusPanel: () => StatusPanel | null;
   getAgentService?: () => ClaudianService | null;
 }
+
+type SaveOptions = {
+  resumeSessionAt?: string;
+};
 
 export class ConversationController {
   private deps: ConversationControllerDeps;
@@ -327,6 +334,85 @@ export class ConversationController {
     }
   }
 
+  async rewind(userMessageId: string): Promise<void> {
+    const { plugin, state, renderer } = this.deps;
+
+    if (state.isStreaming) {
+      new Notice(t('chat.rewind.unavailableStreaming'));
+      return;
+    }
+
+    const msgs = state.messages;
+    const userIdx = msgs.findIndex(m => m.id === userMessageId);
+    if (userIdx === -1) {
+      new Notice(t('chat.rewind.failed', { error: 'Message not found' }));
+      return;
+    }
+    const userMsg = msgs[userIdx];
+    if (!userMsg.sdkUserUuid) {
+      new Notice(t('chat.rewind.unavailableNoUuid'));
+      return;
+    }
+
+    const rewindCtx = findRewindContext(msgs, userIdx);
+    if (!rewindCtx.hasResponse || !rewindCtx.prevAssistantUuid) {
+      new Notice(t('chat.rewind.unavailableNoUuid'));
+      return;
+    }
+    const prevAssistantUuid = rewindCtx.prevAssistantUuid;
+
+    const confirmed = await confirm(
+      plugin.app,
+      t('chat.rewind.confirmMessage'),
+      t('chat.rewind.confirmButton')
+    );
+    if (!confirmed) return;
+
+    if (state.isStreaming) {
+      new Notice(t('chat.rewind.unavailableStreaming'));
+      return;
+    }
+
+    const agentService = this.getAgentService();
+    if (!agentService) {
+      new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
+      return;
+    }
+
+    let result;
+    try {
+      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistantUuid);
+    } catch (e) {
+      new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
+      return;
+    }
+    if (!result.canRewind) {
+      new Notice(t('chat.rewind.cannot', { error: result.error ?? 'Unknown error' }));
+      return;
+    }
+
+    state.truncateAt(userMessageId);
+
+    const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
+    this.deps.setWelcomeEl(welcomeEl);
+    this.updateWelcomeVisibility();
+
+    const filesChanged = result.filesChanged?.length ?? 0;
+    let saveError: string | null = null;
+    try {
+      await this.save(false, { resumeSessionAt: prevAssistantUuid });
+    } catch (e) {
+      saveError = e instanceof Error ? e.message : 'Failed to save';
+    }
+
+    if (saveError) {
+      new Notice(t('chat.rewind.noticeSaveFailed', { count: String(filesChanged), error: saveError }));
+      return;
+    }
+
+    new Notice(t('chat.rewind.notice', { count: String(filesChanged) }));
+  }
+
   /**
    * Saves the current conversation.
    *
@@ -336,7 +422,7 @@ export class ConversationController {
    * For native sessions (new conversations with sessionId from SDK),
    * only metadata is saved - the SDK handles message persistence.
    */
-  async save(updateLastResponse = false): Promise<void> {
+  async save(updateLastResponse = false, options?: SaveOptions): Promise<void> {
     const { plugin, state } = this.deps;
 
     // Entry point with no messages - nothing to save
@@ -400,6 +486,10 @@ export class ConversationController {
 
     if (updateLastResponse) {
       updates.lastResponseAt = Date.now();
+    }
+
+    if (options && Object.prototype.hasOwnProperty.call(options, 'resumeSessionAt')) {
+      updates.resumeSessionAt = options.resumeSessionAt;
     }
 
     // At this point, currentConversationId is guaranteed to be set

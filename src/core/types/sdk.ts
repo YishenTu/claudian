@@ -43,6 +43,7 @@ export interface ModelUsageInfo {
 export interface SDKNonResultMessage {
   type: 'system' | 'assistant' | 'user' | 'stream_event' | 'error' | 'tool_progress' | 'auth_status';
   subtype?: 'init' | 'compact_boundary' | 'status' | 'hook_response' | string;
+  uuid?: string;
   session_id?: string;
   message?: SDKMessageContent;
   tool_use_result?: string | unknown;
