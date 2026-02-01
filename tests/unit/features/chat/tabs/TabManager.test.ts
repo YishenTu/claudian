@@ -1156,8 +1156,7 @@ describe('TabManager - forkInCurrentTab', () => {
     expect(success).toBe(true);
     expect(mockCreateConversation).toHaveBeenCalled();
     expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
-      forkSourceSessionId: 'session-1',
-      forkResumeAt: 'assistant-uuid-1',
+      forkSource: { sessionId: 'session-1', resumeAt: 'assistant-uuid-1' },
       currentNote: 'notes/test.md',
     }));
     expect(mockSwitchTo).toHaveBeenCalledWith('fork-conv-1');
@@ -1243,7 +1242,7 @@ describe('TabManager - switchToTab Session Sync', () => {
       ensureReady: jest.fn().mockResolvedValue(true),
       onReadyStateChange: jest.fn(() => () => {}),
       isReady: jest.fn().mockReturnValue(true),
-      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSourceSessionId ?? null),
+      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
     };
 
     let tabCounter = 0;
@@ -1290,7 +1289,7 @@ describe('TabManager - switchToTab Session Sync', () => {
     const mockSetSessionId = jest.fn();
     const mockService = {
       setSessionId: mockSetSessionId,
-      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSourceSessionId ?? null),
+      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
     };
 
     let tabCounter = 0;
@@ -1369,5 +1368,339 @@ describe('TabManager - switchToTab Session Sync', () => {
     await manager.switchToTab('tab-2');
 
     expect(mockInitializeWelcome).toHaveBeenCalled();
+  });
+});
+
+describe('TabManager - handleForkRequest (modal dispatch)', () => {
+  it('should fork to new tab when user selects "new-tab"', async () => {
+    mockChooseForkTarget.mockResolvedValue('new-tab');
+
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    let capturedForkCallback: any;
+    mockInitializeTabControllers.mockImplementation(
+      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+        capturedForkCallback = forkCb;
+      }
+    );
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    // Invoke the fork callback that was passed to initializeTabControllers
+    await capturedForkCallback({
+      messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: 'Test Chat',
+      forkAtUserMessage: 1,
+    });
+
+    expect(mockChooseForkTarget).toHaveBeenCalled();
+    expect(mockCreateConversation).toHaveBeenCalled();
+    expect(mockUpdateConversation).toHaveBeenCalled();
+  });
+
+  it('should fork in current tab when user selects "current-tab"', async () => {
+    mockChooseForkTarget.mockResolvedValue('current-tab');
+
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+    const mockSwitchTo = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    let capturedForkCallback: any;
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({
+        id: `tab-${tabCounter}`,
+        controllers: {
+          conversationController: {
+            save: jest.fn().mockResolvedValue(undefined),
+            switchTo: mockSwitchTo,
+            initializeWelcome: jest.fn(),
+          },
+          inputController: { handleApprovalRequest: jest.fn() },
+        },
+      });
+    });
+    mockInitializeTabControllers.mockImplementation(
+      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+        capturedForkCallback = forkCb;
+      }
+    );
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+    await manager.createTab();
+
+    await capturedForkCallback({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+    });
+
+    expect(mockChooseForkTarget).toHaveBeenCalled();
+    expect(mockSwitchTo).toHaveBeenCalledWith('fork-conv-2');
+  });
+
+  it('should do nothing when user cancels modal', async () => {
+    mockChooseForkTarget.mockResolvedValue(null);
+
+    const mockCreateConversation = jest.fn();
+    const plugin = createMockPlugin({ createConversation: mockCreateConversation });
+
+    let capturedForkCallback: any;
+    mockInitializeTabControllers.mockImplementation(
+      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+        capturedForkCallback = forkCb;
+      }
+    );
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await capturedForkCallback({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+    });
+
+    expect(mockChooseForkTarget).toHaveBeenCalled();
+    expect(mockCreateConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe('TabManager - forkToNewTab at max tabs', () => {
+  it('should return null when at max tabs', async () => {
+    jest.clearAllMocks();
+
+    const plugin = createMockPlugin();
+    // MIN_TABS is 3, so maxTabs must be >= 3 to avoid clamping
+    plugin.settings.maxTabs = 3;
+    plugin.createConversation = jest.fn().mockResolvedValue({ id: 'fork-conv' });
+    plugin.updateConversation = jest.fn().mockResolvedValue(undefined);
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({ id: `tab-${tabCounter}` });
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    await manager.createTab();
+    await manager.createTab();
+    await manager.createTab();
+    expect(manager.getTabCount()).toBe(3);
+
+    const result = await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid',
+    });
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('TabManager - createForkConversation', () => {
+  it('should set sdkMessagesLoaded to true on fork conversation', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }] as any,
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: 'My Chat',
+    });
+
+    expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
+      sdkMessagesLoaded: true,
+    }));
+  });
+
+  it('should set forkSource with sessionId and resumeAt', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-uuid-xyz',
+    });
+
+    expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
+      forkSource: { sessionId: 'session-abc', resumeAt: 'asst-uuid-xyz' },
+    }));
+  });
+
+  it('should not set title when sourceTitle is undefined', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      // no sourceTitle
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.title).toBeUndefined();
+  });
+});
+
+describe('TabManager - buildForkTitle', () => {
+  function setupTitleTest(existingTitles: string[] = []) {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+      getConversationList: jest.fn().mockReturnValue(
+        existingTitles.map((t, i) => ({ id: `conv-${i}`, title: t }))
+      ),
+    });
+
+    return { plugin, mockUpdateConversation };
+  }
+
+  it('should format title as "Fork: {source} (#{num})"', async () => {
+    const { plugin, mockUpdateConversation } = setupTitleTest();
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: 'My Chat',
+      forkAtUserMessage: 3,
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.title).toBe('Fork: My Chat (#3)');
+  });
+
+  it('should format title without message number when not provided', async () => {
+    const { plugin, mockUpdateConversation } = setupTitleTest();
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: 'My Chat',
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.title).toBe('Fork: My Chat');
+  });
+
+  it('should truncate long source titles', async () => {
+    const { plugin, mockUpdateConversation } = setupTitleTest();
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    const longTitle = 'A'.repeat(100);
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: longTitle,
+      forkAtUserMessage: 1,
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.title.length).toBeLessThanOrEqual(50);
+    expect(updateCall.title).toContain('…');
+    expect(updateCall.title).toContain('Fork: ');
+    expect(updateCall.title).toContain('(#1)');
+  });
+
+  it('should deduplicate title when same fork title exists', async () => {
+    const { plugin, mockUpdateConversation } = setupTitleTest(['Fork: My Chat (#1)']);
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: 'My Chat',
+      forkAtUserMessage: 1,
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.title).toBe('Fork: My Chat (#1) 2');
+  });
+
+  it('should find next available dedup number', async () => {
+    const { plugin, mockUpdateConversation } = setupTitleTest([
+      'Fork: My Chat (#1)',
+      'Fork: My Chat (#1) 2',
+      'Fork: My Chat (#1) 3',
+    ]);
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      sourceSessionId: 'session-1',
+      resumeAt: 'asst-uuid-1',
+      sourceTitle: 'My Chat',
+      forkAtUserMessage: 1,
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.title).toBe('Fork: My Chat (#1) 4');
   });
 });

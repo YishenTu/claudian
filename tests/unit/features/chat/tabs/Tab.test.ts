@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/mockElement';
+import { Notice } from 'obsidian';
 
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
@@ -34,7 +35,7 @@ jest.mock('@/core/agent', () => ({
     ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
     isReady: jest.fn().mockReturnValue(false),
-    applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSourceSessionId ?? null),
+    applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
     onReadyStateChange: jest.fn((listener: (ready: boolean) => void) => {
       listener(false);
       return () => {};
@@ -100,7 +101,7 @@ const createMockClaudianService = (overrides?: {
   ensureReady: overrides?.ensureReady ?? jest.fn().mockResolvedValue(true),
   closePersistentQuery: jest.fn(),
   isReady: jest.fn().mockReturnValue(false),
-  applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSourceSessionId ?? null),
+  applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
   onReadyStateChange: overrides?.onReadyStateChange ?? jest.fn((listener: (ready: boolean) => void) => {
     listener(false);
     return () => {};
@@ -2322,5 +2323,293 @@ describe('Tab - Scroll to Bottom Button', () => {
       // Button should now be visible (autoScrollEnabled is false AND overflow exists)
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
     });
+  });
+});
+
+const mockNotice = Notice as jest.Mock;
+
+describe('Tab - handleForkRequest', () => {
+
+  function setupForkTest(overrides: Record<string, any> = {}) {
+    const options = createMockOptions(overrides);
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+    const forkRequestCallback = jest.fn().mockResolvedValue(undefined);
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager, forkRequestCallback);
+
+    // Extract the fork callback from the MessageRenderer constructor
+    const { MessageRenderer } = jest.requireMock('@/features/chat/rendering') as { MessageRenderer: jest.Mock };
+    const lastCall = MessageRenderer.mock.calls[MessageRenderer.mock.calls.length - 1];
+    const forkCallback = lastCall[4]; // 5th argument is forkCallback
+
+    return { tab, forkCallback, forkRequestCallback, plugin: options.plugin };
+  }
+
+  beforeEach(() => {
+    mockNotice.mockClear();
+  });
+
+  it('should show notice when streaming', async () => {
+    const { tab, forkCallback } = setupForkTest();
+
+    tab.state.isStreaming = true;
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+    ];
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should silently return when message ID not found', async () => {
+    const { forkCallback, forkRequestCallback } = setupForkTest();
+
+    await forkCallback('nonexistent');
+
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+    expect(mockNotice).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when user message has no sdkUserUuid', async () => {
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest();
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1 },
+    ];
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no assistant response follows the user message', async () => {
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest();
+
+    // User message without a following assistant response with UUID
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      // No assistant response after u1
+    ];
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no session ID is available', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue(null),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    // No service and no conversation
+    tab.service = null;
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should call forkRequestCallback with correct ForkContext on success', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'My Conversation',
+        currentNote: 'notes/test.md',
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+      { id: 'u2', role: 'user', content: 'world', timestamp: 4, sdkUserUuid: 'user-u2' },
+      { id: 'a2', role: 'assistant', content: 'resp2', timestamp: 5, sdkAssistantUuid: 'asst-2' },
+    ];
+
+    // Service has a session ID
+    tab.service = {
+      getSessionId: jest.fn().mockReturnValue('session-abc'),
+    } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u2');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-1', // prev assistant UUID before u2
+      sourceTitle: 'My Conversation',
+      currentNote: 'notes/test.md',
+      forkAtUserMessage: 2, // u2 is the 2nd user message
+    }));
+
+    // Messages should be deep-cloned and sliced before the fork point
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages).toHaveLength(3); // a0, u1, a1 (before u2)
+    expect(ctx.messages.map((m: any) => m.id)).toEqual(['a0', 'u1', 'a1']);
+  });
+
+  it('should fall back to conversation session ID when service has none', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        sdkSessionId: 'conv-session-xyz',
+        title: 'Fallback Chat',
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'conv-session-xyz',
+    }));
+  });
+
+  it('should produce deep-cloned messages that do not share references with originals', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'Test' }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    const originalMsg = { id: 'a0', role: 'assistant' as const, content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' };
+    tab.state.messages = [
+      originalMsg,
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    // Deep clone should not share references
+    expect(ctx.messages[0]).not.toBe(originalMsg);
+    expect(ctx.messages[0]).toEqual(originalMsg);
+  });
+
+  it('should fork at first user message with empty messages before fork', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'First Fork' }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    // No assistant message before u1, so findRewindContext returns no prevAssistantUuid
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should fall back to conversation forkSource.sessionId when no sessionId or sdkSessionId', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'Nested Fork',
+        forkSource: { sessionId: 'original-source-session', resumeAt: 'asst-prev' },
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'original-source-session',
+    }));
+  });
+
+  it('should prefer service session ID over conversation metadata', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'Test',
+        sdkSessionId: 'conv-session',
+        sessionId: 'old-session',
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('service-session') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'service-session',
+    }));
+  });
+
+  it('should set forkAtUserMessage to 1 for the first user message', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'Test' }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      forkAtUserMessage: 1,
+    }));
+  });
+
+  it('should not set forkCallback on renderer when no forkRequestCallback provided', () => {
+    const options = createMockOptions();
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+    const { MessageRenderer } = jest.requireMock('@/features/chat/rendering') as { MessageRenderer: jest.Mock };
+    const lastCall = MessageRenderer.mock.calls[MessageRenderer.mock.calls.length - 1];
+    const forkCallback = lastCall[4];
+
+    expect(forkCallback).toBeUndefined();
   });
 });

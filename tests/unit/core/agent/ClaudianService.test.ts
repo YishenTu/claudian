@@ -3004,4 +3004,66 @@ describe('ClaudianService', () => {
       expect(msg1.uuid).not.toBe(msg2.uuid);
     });
   });
+
+  describe('applyForkState', () => {
+    it('sets pendingForkSession and pendingResumeAt when conversation has forkSource but no sessionId', () => {
+      const conv = {
+        sessionId: null as string | null,
+        forkSource: { sessionId: 'source-session', resumeAt: 'asst-uuid-123' },
+      };
+
+      const result = service.applyForkState(conv);
+
+      expect(result).toBe('source-session');
+      expect((service as any).pendingForkSession).toBe(true);
+      expect((service as any).pendingResumeAt).toBe('asst-uuid-123');
+    });
+
+    it('does not set pendingForkSession when conversation has its own sessionId', () => {
+      const conv = {
+        sessionId: 'own-session',
+        forkSource: { sessionId: 'source-session', resumeAt: 'asst-uuid-123' },
+      };
+
+      const result = service.applyForkState(conv);
+
+      expect(result).toBe('own-session');
+      expect((service as any).pendingForkSession).toBe(false);
+      expect((service as any).pendingResumeAt).toBeUndefined();
+    });
+
+    it('returns null when no sessionId and no forkSource', () => {
+      const conv = { sessionId: null as string | null };
+
+      const result = service.applyForkState(conv);
+
+      expect(result).toBeNull();
+      expect((service as any).pendingForkSession).toBe(false);
+    });
+
+    it('returns sessionId when only sessionId is present (no forkSource)', () => {
+      const conv = { sessionId: 'existing-session' };
+
+      const result = service.applyForkState(conv);
+
+      expect(result).toBe('existing-session');
+      expect((service as any).pendingForkSession).toBe(false);
+    });
+
+    it('clears pendingForkSession from previous call', () => {
+      // First call: set fork state
+      service.applyForkState({
+        sessionId: null,
+        forkSource: { sessionId: 'source-1', resumeAt: 'asst-1' },
+      });
+      expect((service as any).pendingForkSession).toBe(true);
+
+      // Second call: conversation has own sessionId, should clear fork state
+      service.applyForkState({
+        sessionId: 'own-session',
+        forkSource: { sessionId: 'source-1', resumeAt: 'asst-1' },
+      });
+      expect((service as any).pendingForkSession).toBe(false);
+    });
+  });
 });
