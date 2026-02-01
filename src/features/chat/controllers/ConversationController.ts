@@ -480,13 +480,20 @@ export class ConversationController {
       ? [...new Set([...(conversation?.previousSdkSessionIds || []), oldSdkSessionId])]
       : conversation?.previousSdkSessionIds;
 
+    // Don't persist the fork source session ID as the conversation's own session.
+    // The agent service holds it for resume purposes only; the conversation gets
+    // its own ID after SDK captureSession() returns a new session.
+    const isForkSourceOnly = !!conversation?.forkSourceSessionId &&
+      !conversation?.sdkSessionId &&
+      sessionId === conversation.forkSourceSessionId;
+
     const updates: Partial<Conversation> = {
       // For native sessions, don't persist messages (SDK handles that)
       // For legacy sessions, persist messages as before
       messages: isNative ? state.messages : state.getPersistedMessages(),
       // Preserve existing sessionId when SDK hasn't captured a new one yet
-      sessionId: sessionInvalidated ? null : (sessionId ?? conversation?.sessionId ?? null),
-      sdkSessionId: isNative && sessionId ? sessionId : conversation?.sdkSessionId,
+      sessionId: sessionInvalidated ? null : (isForkSourceOnly ? (conversation?.sessionId ?? null) : (sessionId ?? conversation?.sessionId ?? null)),
+      sdkSessionId: isNative && sessionId && !isForkSourceOnly ? sessionId : conversation?.sdkSessionId,
       previousSdkSessionIds,
       isNative: isNative || undefined,
       legacyCutoffAt,
