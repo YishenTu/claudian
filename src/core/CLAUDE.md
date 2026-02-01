@@ -6,7 +6,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 
 | Module | Purpose | Key Files |
 |--------|---------|-----------|
-| `agent/` | Claude Agent SDK wrapper | `ClaudianService`, `SessionManager`, `QueryOptionsBuilder`, `MessageChannel`, `customSpawn` |
+| `agent/` | Claude Agent SDK wrapper | `ClaudianService` (incl. fork session tracking), `SessionManager`, `QueryOptionsBuilder` (incl. `resumeSessionAt`), `MessageChannel`, `customSpawn` |
 | `agents/` | Custom agent discovery | `AgentManager`, `AgentStorage` |
 | `commands/` | Built-in command actions | `builtInCommands` |
 | `hooks/` | Security hooks | `SecurityHooks` |
@@ -18,7 +18,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
 | `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SkillStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
 | `tools/` | Tool utilities | `toolNames` (incl. plan mode tools), `toolIcons`, `toolInput`, `todo` |
-| `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat`, `tools`, `models`, `sdk`, `plugins`, `diff` |
+| `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat` (incl. fork metadata: `forkSourceSessionId`, `forkResumeAt`), `tools`, `models`, `sdk`, `plugins`, `diff` |
 
 ## Dependency Rules
 
@@ -67,6 +67,7 @@ await SessionStorage.loadSession(vaultPath, sessionId);
 
 - `ClaudianService` must be disposed on tab close (abort + cleanup)
 - `SessionManager` handles SDK session resume via `sessionId`
+- Fork uses `pendingForkSession` + `pendingResumeAt` on `ClaudianService` to pass `resumeSessionAt` to SDK; these are one-shot flags consumed on the next query
 - Storage paths are encoded: non-alphanumeric → `-`
 - `customSpawn` handles cross-platform process spawning
 - Plan mode uses dedicated callbacks (`exitPlanModeCallback`, `permissionModeSyncCallback`) that bypass normal approval flow in `canUseTool`. `EnterPlanMode` is auto-approved by the SDK; the stream event is detected to sync UI state.
