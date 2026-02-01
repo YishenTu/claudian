@@ -32,6 +32,11 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   setupApprovalCallback: (...args: any[]) => mockSetupApprovalCallback(...args),
 }));
 
+const mockChooseForkTarget = jest.fn();
+jest.mock('@/shared/modals/ForkTargetModal', () => ({
+  chooseForkTarget: (...args: any[]) => mockChooseForkTarget(...args),
+}));
+
 function createMockPlugin(overrides: Record<string, any> = {}): any {
   return {
     app: {
@@ -44,6 +49,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       ...(overrides.settings || {}),
     },
     getConversationById: jest.fn().mockResolvedValue(null),
+    getConversationList: jest.fn().mockReturnValue([]),
     findConversationAcrossViews: jest.fn().mockReturnValue(null),
     ...overrides,
   };
@@ -1100,6 +1106,129 @@ describe('TabManager - forkToNewTab', () => {
 
     const updateCall = mockUpdateConversation.mock.calls[0][1];
     expect(updateCall.currentNote).toBeUndefined();
+  });
+});
+
+describe('TabManager - forkInCurrentTab', () => {
+  it('should create fork conversation and switch active tab to it', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+    const mockSwitchTo = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({
+        id: `tab-${tabCounter}`,
+        controllers: {
+          conversationController: {
+            save: jest.fn().mockResolvedValue(undefined),
+            switchTo: mockSwitchTo,
+            initializeWelcome: jest.fn(),
+          },
+          inputController: { handleApprovalRequest: jest.fn() },
+        },
+      });
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+    await manager.createTab();
+
+    const success = await manager.forkInCurrentTab({
+      messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }] as any,
+      sourceSessionId: 'session-1',
+      resumeAt: 'assistant-uuid-1',
+      currentNote: 'notes/test.md',
+      sourceTitle: 'My Chat',
+      forkAtUserMessage: 1,
+    });
+
+    expect(success).toBe(true);
+    expect(mockCreateConversation).toHaveBeenCalled();
+    expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
+      forkSourceSessionId: 'session-1',
+      forkResumeAt: 'assistant-uuid-1',
+      currentNote: 'notes/test.md',
+    }));
+    expect(mockSwitchTo).toHaveBeenCalledWith('fork-conv-1');
+  });
+
+  it('should return false when no active tab exists', async () => {
+    const plugin = createMockPlugin({
+      createConversation: jest.fn().mockResolvedValue({ id: 'fork-conv-2' }),
+      updateConversation: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const manager = createManager({ plugin });
+    // Don't create any tabs
+
+    const success = await manager.forkInCurrentTab({
+      messages: [] as any,
+      sourceSessionId: 'session-1',
+      resumeAt: 'assistant-uuid-1',
+    });
+
+    expect(success).toBe(false);
+  });
+
+  it('should not check tab count limit', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-3' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+    const mockSwitchTo = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+      settings: { maxTabs: 3 },
+    });
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+      return createMockTabData({
+        id: `tab-${tabCounter}`,
+        controllers: {
+          conversationController: {
+            save: jest.fn().mockResolvedValue(undefined),
+            switchTo: mockSwitchTo,
+            initializeWelcome: jest.fn(),
+          },
+          inputController: { handleApprovalRequest: jest.fn() },
+        },
+      });
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    // Fill all tabs to max
+    await manager.createTab();
+    await manager.createTab();
+    await manager.createTab();
+
+    // forkInCurrentTab should still work even at max tabs
+    const success = await manager.forkInCurrentTab({
+      messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }] as any,
+      sourceSessionId: 'session-1',
+      resumeAt: 'assistant-uuid-1',
+    });
+
+    expect(success).toBe(true);
+    expect(mockSwitchTo).toHaveBeenCalled();
   });
 });
 

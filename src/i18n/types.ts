@@ -43,8 +43,12 @@ export type TranslationKey =
 
   // Chat - Fork
   | 'chat.fork.ariaLabel'
+  | 'chat.fork.chooseTarget'
+  | 'chat.fork.targetNewTab'
+  | 'chat.fork.targetCurrentTab'
   | 'chat.fork.maxTabsReached'
   | 'chat.fork.notice'
+  | 'chat.fork.noticeCurrentTab'
   | 'chat.fork.failed'
   | 'chat.fork.unavailableStreaming'
   | 'chat.fork.unavailableNoUuid'

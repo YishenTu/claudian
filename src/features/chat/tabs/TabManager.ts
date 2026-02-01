@@ -5,6 +5,7 @@ import type { McpServerManager } from '../../../core/mcp';
 import type { SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
+import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
 import {
   activateTab,
   createTab,
@@ -387,13 +388,25 @@ export class TabManager implements TabManagerInterface {
   // ============================================
 
   private async handleForkRequest(context: ForkContext): Promise<void> {
-    const tab = await this.forkToNewTab(context);
-    if (!tab) {
-      const maxTabs = this.getMaxTabs();
-      new Notice(t('chat.fork.maxTabsReached', { count: String(maxTabs) }));
-      return;
+    const target = await chooseForkTarget(this.plugin.app);
+    if (!target) return;
+
+    if (target === 'new-tab') {
+      const tab = await this.forkToNewTab(context);
+      if (!tab) {
+        const maxTabs = this.getMaxTabs();
+        new Notice(t('chat.fork.maxTabsReached', { count: String(maxTabs) }));
+        return;
+      }
+      new Notice(t('chat.fork.notice'));
+    } else {
+      const success = await this.forkInCurrentTab(context);
+      if (!success) {
+        new Notice(t('chat.fork.failed', { error: 'No active tab' }));
+        return;
+      }
+      new Notice(t('chat.fork.noticeCurrentTab'));
     }
-    new Notice(t('chat.fork.notice'));
   }
 
   async forkToNewTab(context: ForkContext): Promise<TabData | null> {
@@ -402,7 +415,21 @@ export class TabManager implements TabManagerInterface {
       return null;
     }
 
-    // Create conversation with fork metadata
+    const conversationId = await this.createForkConversation(context);
+    return this.createTab(conversationId);
+  }
+
+  async forkInCurrentTab(context: ForkContext): Promise<boolean> {
+    const activeTab = this.getActiveTab();
+    if (!activeTab) return false;
+
+    const conversationId = await this.createForkConversation(context);
+    // switchTo handles fork metadata; callback chain syncs tab.conversationId
+    await activeTab.controllers.conversationController?.switchTo(conversationId);
+    return true;
+  }
+
+  private async createForkConversation(context: ForkContext): Promise<string> {
     const conversation = await this.plugin.createConversation();
 
     const title = context.sourceTitle
@@ -420,7 +447,7 @@ export class TabManager implements TabManagerInterface {
       ...(context.currentNote && { currentNote: context.currentNote }),
     });
 
-    return this.createTab(conversation.id);
+    return conversation.id;
   }
 
   private buildForkTitle(sourceTitle: string, forkAtUserMessage?: number): string {

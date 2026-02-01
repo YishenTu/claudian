@@ -33,9 +33,13 @@
       "unavailableNoUuid": "無法回退：缺少訊息識別碼"
     },
     "fork": {
-      "ariaLabel": "分叉到新分頁",
+      "ariaLabel": "分叉對話",
+      "chooseTarget": "分叉對話",
+      "targetNewTab": "新分頁",
+      "targetCurrentTab": "目前分頁",
       "maxTabsReached": "無法分叉：已達到最大 {count} 個分頁",
       "notice": "已分叉到新分頁",
+      "noticeCurrentTab": "已在目前分頁分叉",
       "failed": "分叉失敗：{error}",
       "unavailableStreaming": "串流回應中無法分叉",
       "unavailableNoUuid": "無法分叉：缺少訊息識別碼"

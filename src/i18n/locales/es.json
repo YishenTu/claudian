@@ -33,9 +33,13 @@
       "unavailableNoUuid": "No se puede rebobinar: faltan identificadores de mensaje"
     },
     "fork": {
-      "ariaLabel": "Fork to new tab",
+      "ariaLabel": "Fork conversation",
+      "chooseTarget": "Fork conversation",
+      "targetNewTab": "New tab",
+      "targetCurrentTab": "Current tab",
       "maxTabsReached": "Cannot fork: maximum {count} tabs reached",
       "notice": "Forked to new tab",
+      "noticeCurrentTab": "Forked in current tab",
       "failed": "Fork failed: {error}",
       "unavailableStreaming": "Cannot fork while streaming",
       "unavailableNoUuid": "Cannot fork: missing message identifiers"
