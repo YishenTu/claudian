@@ -40,6 +40,7 @@ export type TranslationKey =
   | 'chat.rewind.cannot'
   | 'chat.rewind.unavailableStreaming'
   | 'chat.rewind.unavailableNoUuid'
+  | 'chat.bangBash.placeholder'
 
   // Chat - Fork
   | 'chat.fork.ariaLabel'
@@ -197,6 +198,10 @@ export type TranslationKey =
   | 'settings.show1MModel.desc'
   | 'settings.enableChrome.name'
   | 'settings.enableChrome.desc'
+  | 'settings.enableBangBash.name'
+  | 'settings.enableBangBash.desc'
+  | 'settings.enableBangBash.validation.noNode'
+  | 'bangBash.placeholder'
   | 'settings.maxTabs.name'
   | 'settings.maxTabs.desc'
   | 'settings.maxTabs.warning'

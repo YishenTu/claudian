@@ -8,6 +8,8 @@ import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } 
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import { getEnhancedPath } from '../../../utils/env';
+import { getVaultPath } from '../../../utils/path';
 import {
   ConversationController,
   InputController,
@@ -17,11 +19,13 @@ import {
 } from '../controllers';
 import { cleanupThinkingBlock, MessageRenderer } from '../rendering';
 import { findRewindContext } from '../rewind';
+import { BangBashService } from '../services/BangBashService';
 import { InstructionRefineService } from '../services/InstructionRefineService';
 import { SubagentManager } from '../services/SubagentManager';
 import { TitleGenerationService } from '../services/TitleGenerationService';
 import { ChatState } from '../state';
 import {
+  BangBashModeManager as BangBashModeManagerClass,
   createInputToolbar,
   FileContextManager,
   ImageContextManager,
@@ -114,6 +118,7 @@ export function createTab(options: TabCreateOptions): TabData {
       permissionToggle: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
+      bangBashModeManager: null,
       contextUsageMeter: null,
       statusPanel: null,
     },
@@ -379,6 +384,34 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
       getInputWrapper: () => dom.inputWrapper,
     }
   );
+
+  // Bang bash mode (! command execution)
+  if (plugin.settings.enableBangBash) {
+    const vaultPath = getVaultPath(plugin.app);
+    if (vaultPath) {
+      const enhancedPath = getEnhancedPath();
+      const bashService = new BangBashService(vaultPath, enhancedPath);
+
+      tab.ui.bangBashModeManager = new BangBashModeManagerClass(
+        dom.inputEl,
+        {
+          onSubmit: async (command) => {
+            const statusPanel = tab.ui.statusPanel;
+            if (!statusPanel) return;
+
+            const id = `bash-${Date.now()}`;
+            statusPanel.addBashOutput({ id, command, status: 'running', output: '' });
+
+            const result = await bashService.execute(command);
+            const output = (result.stdout + result.stderr).trim();
+            const status = (result.exitCode === 0 && !result.error) ? 'completed' : 'error';
+            statusPanel.updateBashOutput(id, { status, output, exitCode: result.exitCode });
+          },
+          getInputWrapper: () => dom.inputWrapper,
+        }
+      );
+    }
+  }
 
   tab.ui.statusPanel = new StatusPanel();
   tab.ui.statusPanel.mount(dom.statusPanelContainerEl);
@@ -765,6 +798,7 @@ export function initializeTabControllers(
     isStreaming: () => state.isStreaming,
     shouldSkipEscapeHandling: () => {
       if (ui.instructionModeManager?.isActive()) return true;
+      if (ui.bangBashModeManager?.isActive()) return true;
       if (ui.slashCommandDropdown?.isVisible()) return true;
       if (ui.fileContextManager?.isMentionDropdownVisible()) return true;
       return false;
@@ -781,14 +815,44 @@ export function initializeTabControllers(
 export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   const { dom, ui, state, controllers } = tab;
 
+  let wasBangBashActive = ui.bangBashModeManager?.isActive() ?? false;
+  const syncBangBashSuppression = (): void => {
+    const isActive = ui.bangBashModeManager?.isActive() ?? false;
+    if (isActive === wasBangBashActive) return;
+    wasBangBashActive = isActive;
+
+    ui.slashCommandDropdown?.setEnabled(!isActive);
+    if (isActive) {
+      ui.fileContextManager?.hideMentionDropdown();
+    }
+  };
+
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
+    // Bang-bash mode fully disables other input enhancements.
+    if (ui.bangBashModeManager?.isActive()) {
+      ui.bangBashModeManager.handleKeydown(e);
+      syncBangBashSuppression();
+      return;
+    }
+
     // Check for # trigger first (empty input + # keystroke)
     if (ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
     }
 
+    // Check for ! trigger (empty input + ! keystroke)
+    if (ui.bangBashModeManager?.handleTriggerKey(e)) {
+      syncBangBashSuppression();
+      return;
+    }
+
     if (ui.instructionModeManager?.handleKeydown(e)) {
+      return;
+    }
+
+    if (ui.bangBashModeManager?.handleKeydown(e)) {
+      syncBangBashSuppression();
       return;
     }
 
@@ -818,8 +882,12 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input change handler (includes auto-resize)
   const inputHandler = () => {
-    ui.fileContextManager?.handleInputChange();
+    if (!ui.bangBashModeManager?.isActive()) {
+      ui.fileContextManager?.handleInputChange();
+    }
     ui.instructionModeManager?.handleInputChange();
+    ui.bangBashModeManager?.handleInputChange();
+    syncBangBashSuppression();
     // Auto-resize textarea based on content
     autoResizeTextarea(dom.inputEl);
   };
@@ -935,6 +1003,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.slashCommandDropdown = null;
   tab.ui.instructionModeManager?.destroy();
   tab.ui.instructionModeManager = null;
+  tab.ui.bangBashModeManager?.destroy();
+  tab.ui.bangBashModeManager = null;
   tab.services.instructionRefineService?.cancel();
   tab.services.instructionRefineService = null;
   tab.services.titleGenerationService?.cancel();

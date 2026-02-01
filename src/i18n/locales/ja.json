@@ -47,6 +47,9 @@
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab"
+    },
+    "bangBash": {
+      "placeholder": "> Run a bash command..."
     }
   },
   "settings": {
@@ -226,6 +229,13 @@
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",
       "desc": "claude-in-chrome拡張機能を通じてClaudeがChromeと連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"
+    },
+    "enableBangBash": {
+      "name": "Enable bash mode (!)",
+      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.",
+      "validation": {
+        "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
+      }
     },
     "maxTabs": {
       "name": "最大チャットタブ数",

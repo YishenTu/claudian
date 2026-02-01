@@ -15,6 +15,7 @@ import type { SubagentManager } from '../services/SubagentManager';
 import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state';
 import type {
+  BangBashModeManager,
   ContextUsageMeter,
   ExternalContextSelector,
   FileContextManager,
@@ -127,6 +128,7 @@ export interface TabUIComponents {
   permissionToggle: PermissionToggle | null;
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
+  bangBashModeManager: BangBashModeManager | null;
   contextUsageMeter: ContextUsageMeter | null;
   statusPanel: StatusPanel | null;
 }

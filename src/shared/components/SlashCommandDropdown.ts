@@ -42,6 +42,7 @@ export class SlashCommandDropdown {
   private dropdownEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | HTMLInputElement;
   private callbacks: SlashCommandDropdownCallbacks;
+  private enabled = true;
   private onInput: () => void;
   private slashStartIndex = -1;
   private selectedIndex = 0;
@@ -72,11 +73,25 @@ export class SlashCommandDropdown {
     this.inputEl.addEventListener('input', this.onInput);
   }
 
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.hide();
+    }
+  }
+
   setHiddenCommands(commands: Set<string>): void {
     this.hiddenCommands = commands;
   }
 
   handleInputChange(): void {
+    if (!this.enabled) {
+      if (this.isVisible()) {
+        this.hide();
+      }
+      return;
+    }
+
     const text = this.getInputValue();
     const cursorPos = this.getCursorPosition();
     const textBeforeCursor = text.substring(0, cursorPos);
@@ -102,6 +117,13 @@ export class SlashCommandDropdown {
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
+    if (!this.enabled) {
+      if (this.isVisible()) {
+        this.hide();
+      }
+      return false;
+    }
+
     if (!this.isVisible()) return false;
 
     switch (e.key) {

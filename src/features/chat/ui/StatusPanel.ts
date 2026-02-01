@@ -17,6 +17,15 @@ export interface PanelSubagentInfo {
   result?: string;
 }
 
+/** Bash output display info for the panel. */
+export interface PanelBashOutput {
+  id: string;
+  command: string;
+  status: 'running' | 'completed' | 'error';
+  output: string;
+  exitCode?: number;
+}
+
 /**
  * StatusPanel - persistent bottom panel for async subagent status and todos.
  */
@@ -27,6 +36,10 @@ export class StatusPanel {
   // Async subagent section (above todos)
   private subagentContainerEl: HTMLElement | null = null;
   private currentSubagents: Map<string, PanelSubagentInfo> = new Map();
+
+  // Bash output section (between subagents and todos)
+  private bashOutputContainerEl: HTMLElement | null = null;
+  private currentBashOutputs: Map<string, PanelBashOutput> = new Map();
 
   // Todo section
   private todoContainerEl: HTMLElement | null = null;
@@ -77,6 +90,7 @@ export class StatusPanel {
     // Clear references and recreate
     this.panelEl = null;
     this.subagentContainerEl = null;
+    this.bashOutputContainerEl = null;
     this.todoContainerEl = null;
     this.todoHeaderEl = null;
     this.todoContentEl = null;
@@ -84,6 +98,7 @@ export class StatusPanel {
 
     // Re-render current state
     this.renderSubagentStatus();
+    this.renderBashOutputs();
     if (this.currentTodos && this.currentTodos.length > 0) {
       this.updateTodos(this.currentTodos);
     }
@@ -106,6 +121,12 @@ export class StatusPanel {
     this.subagentContainerEl.className = 'claudian-status-panel-subagents';
     this.subagentContainerEl.style.display = 'none';
     this.panelEl.appendChild(this.subagentContainerEl);
+
+    // Bash output container (between subagents and todos) - hidden by default
+    this.bashOutputContainerEl = document.createElement('div');
+    this.bashOutputContainerEl.className = 'claudian-status-panel-bash';
+    this.bashOutputContainerEl.style.display = 'none';
+    this.panelEl.appendChild(this.bashOutputContainerEl);
 
     // Todo container
     this.todoContainerEl = document.createElement('div');
@@ -447,6 +468,84 @@ export class StatusPanel {
   }
 
   // ============================================
+  // Bash Output Methods
+  // ============================================
+
+  addBashOutput(info: PanelBashOutput): void {
+    this.currentBashOutputs.set(info.id, info);
+    this.renderBashOutputs();
+  }
+
+  updateBashOutput(id: string, updates: Partial<PanelBashOutput>): void {
+    const existing = this.currentBashOutputs.get(id);
+    if (!existing) return;
+    this.currentBashOutputs.set(id, { ...existing, ...updates });
+    this.renderBashOutputs();
+  }
+
+  clearBashOutputs(): void {
+    this.currentBashOutputs.clear();
+    this.renderBashOutputs();
+  }
+
+  private renderBashOutputs(): void {
+    if (!this.bashOutputContainerEl) return;
+
+    if (this.currentBashOutputs.size === 0) {
+      this.bashOutputContainerEl.style.display = 'none';
+      return;
+    }
+
+    this.bashOutputContainerEl.style.display = 'block';
+    this.bashOutputContainerEl.empty();
+
+    for (const info of this.currentBashOutputs.values()) {
+      const entryEl = document.createElement('div');
+      entryEl.className = 'claudian-status-panel-bash-entry';
+
+      // Header row: icon + command + status
+      const headerEl = document.createElement('div');
+      headerEl.className = 'claudian-status-panel-bash-header';
+
+      const iconEl = document.createElement('span');
+      iconEl.className = 'claudian-status-panel-icon';
+      setIcon(iconEl, 'terminal');
+      headerEl.appendChild(iconEl);
+
+      const commandEl = document.createElement('span');
+      commandEl.className = 'claudian-status-panel-bash-command';
+      commandEl.textContent = this.truncateDescription(info.command, 60);
+      headerEl.appendChild(commandEl);
+
+      if (info.status === 'completed') {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'claudian-status-panel-icon claudian-status-panel-done-icon';
+        setIcon(statusEl, 'check');
+        headerEl.appendChild(statusEl);
+      } else if (info.status === 'error') {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'claudian-status-panel-icon claudian-status-panel-error-icon';
+        setIcon(statusEl, 'x');
+        headerEl.appendChild(statusEl);
+      }
+
+      entryEl.appendChild(headerEl);
+
+      // Output block (shown when there's output)
+      if (info.output) {
+        const outputEl = document.createElement('pre');
+        outputEl.className = 'claudian-status-panel-bash-output';
+        outputEl.textContent = info.output;
+        entryEl.appendChild(outputEl);
+      }
+
+      this.bashOutputContainerEl.appendChild(entryEl);
+    }
+
+    this.scrollToBottom();
+  }
+
+  // ============================================
   // Cleanup
   // ============================================
 
@@ -466,14 +565,16 @@ export class StatusPanel {
     this.todoClickHandler = null;
     this.todoKeydownHandler = null;
 
-    // Clear subagent tracking
+    // Clear subagent and bash output tracking
     this.currentSubagents.clear();
+    this.currentBashOutputs.clear();
 
     if (this.panelEl) {
       this.panelEl.remove();
       this.panelEl = null;
     }
     this.subagentContainerEl = null;
+    this.bashOutputContainerEl = null;
     this.todoContainerEl = null;
     this.todoHeaderEl = null;
     this.todoContentEl = null;

@@ -183,3 +183,9 @@
   border-color: #60a5fa !important;
   box-shadow: 0 0 0 1px #60a5fa;
 }
+
+/* Pink border when bash mode is active */
+.claudian-input-bang-bash-mode {
+  border-color: #f472b6 !important;
+  box-shadow: 0 0 0 1px #f472b6;
+}

@@ -1,3 +1,4 @@
+export { type BangBashModeCallbacks, BangBashModeManager, type BangBashModeState } from './BangBashModeManager';
 export { type FileContextCallbacks,FileContextManager } from './FileContext';
 export { type ImageContextCallbacks,ImageContextManager } from './ImageContext';
 export {
@@ -11,6 +12,6 @@ export {
   ThinkingBudgetSelector,
 } from './InputToolbar';
 export { type InstructionModeCallbacks, InstructionModeManager, type InstructionModeState } from './InstructionModeManager';
-export { type PanelSubagentInfo, StatusPanel } from './StatusPanel';
+export { type PanelBashOutput, type PanelSubagentInfo, StatusPanel } from './StatusPanel';
 // Backwards compatibility alias
 export { StatusPanel as TodoPanel } from './StatusPanel';

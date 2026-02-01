@@ -187,3 +187,44 @@
 .claudian-todo-list-container .claudian-todo-completed .claudian-todo-text {
   color: var(--text-muted);
 }
+
+/* Bash Output Section */
+
+.claudian-status-panel-bash {
+  margin-bottom: 4px;
+}
+
+.claudian-status-panel-bash-entry {
+  margin-bottom: 4px;
+}
+
+.claudian-status-panel-bash-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.claudian-status-panel-bash-command {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.claudian-status-panel-bash-output {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--background-modifier-form-field);
+  padding: 8px;
+  border-radius: 4px;
+  margin: 4px 0 0 0;
+}
+
+.claudian-status-panel-error-icon {
+  color: var(--color-red);
+}

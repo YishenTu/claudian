@@ -53,6 +53,7 @@ const createMockFileContextManager = () => ({
   handleInputChange: jest.fn(),
   handleMentionKeydown: jest.fn().mockReturnValue(false),
   isMentionDropdownVisible: jest.fn().mockReturnValue(false),
+  hideMentionDropdown: jest.fn(),
   destroy: jest.fn(),
 });
 
@@ -63,10 +64,20 @@ const createMockImageContextManager = () => ({
 const createMockSlashCommandDropdown = () => ({
   handleKeydown: jest.fn().mockReturnValue(false),
   isVisible: jest.fn().mockReturnValue(false),
+  hide: jest.fn(),
+  setEnabled: jest.fn(),
   destroy: jest.fn(),
 });
 
 const createMockInstructionModeManager = () => ({
+  handleTriggerKey: jest.fn().mockReturnValue(false),
+  handleKeydown: jest.fn().mockReturnValue(false),
+  handleInputChange: jest.fn(),
+  isActive: jest.fn().mockReturnValue(false),
+  destroy: jest.fn(),
+});
+
+const createMockBangBashModeManager = () => ({
   handleTriggerKey: jest.fn().mockReturnValue(false),
   handleKeydown: jest.fn().mockReturnValue(false),
   handleInputChange: jest.fn(),
@@ -135,6 +146,7 @@ let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
 let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
 let mockSlashCommandDropdown: ReturnType<typeof createMockSlashCommandDropdown>;
 let mockInstructionModeManager: ReturnType<typeof createMockInstructionModeManager>;
+let mockBangBashModeManager: ReturnType<typeof createMockBangBashModeManager>;
 let mockStatusPanel: ReturnType<typeof createMockStatusPanel>;
 let mockModelSelector: ReturnType<typeof createMockModelSelector>;
 let mockThinkingBudgetSelector: ReturnType<typeof createMockThinkingBudgetSelector>;
@@ -983,9 +995,88 @@ describe('Tab - Controller Initialization', () => {
 describe('Tab - Event Handler Behavior', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFileContextManager = createMockFileContextManager();
+    mockSlashCommandDropdown = createMockSlashCommandDropdown();
+    mockInstructionModeManager = createMockInstructionModeManager();
+    mockBangBashModeManager = createMockBangBashModeManager();
+    mockInputController = createMockInputController();
+    mockSelectionController = createMockSelectionController();
   });
 
   describe('wireTabInputEvents - keydown handlers', () => {
+    it('should not pass keydown events to other handlers when bang-bash mode is active', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.bangBashModeManager = mockBangBashModeManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockBangBashModeManager.isActive.mockReturnValue(true);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: '#', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockBangBashModeManager.handleKeydown).toHaveBeenCalled();
+      expect(mockInstructionModeManager.handleTriggerKey).not.toHaveBeenCalled();
+      expect(mockSlashCommandDropdown.handleKeydown).not.toHaveBeenCalled();
+      expect(mockFileContextManager.handleMentionKeydown).not.toHaveBeenCalled();
+    });
+
+    it('should suppress slash dropdown and mention handling on bang-bash enter/exit', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      let active = false;
+      tab.ui.bangBashModeManager = {
+        isActive: jest.fn(() => active),
+        handleTriggerKey: jest.fn((e: any) => {
+          active = true;
+          e.preventDefault();
+          return true;
+        }),
+        handleKeydown: jest.fn((e: any) => {
+          if (!active) return false;
+          if (e.key === 'Escape') {
+            active = false;
+            e.preventDefault();
+            return true;
+          }
+          return false;
+        }),
+        handleInputChange: jest.fn(),
+        destroy: jest.fn(),
+      } as any;
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+
+      keydownHandler({ key: '!', preventDefault: jest.fn() });
+      expect(mockSlashCommandDropdown.setEnabled).toHaveBeenCalledWith(false);
+      expect(mockFileContextManager.hideMentionDropdown).toHaveBeenCalled();
+
+      keydownHandler({ key: 'Escape', preventDefault: jest.fn() });
+      expect(mockSlashCommandDropdown.setEnabled).toHaveBeenCalledWith(true);
+    });
+
     it('should handle instruction mode trigger key', () => {
       const options = createMockOptions();
       const tab = createTab(options);
@@ -1253,6 +1344,29 @@ describe('Tab - Event Handler Behavior', () => {
       focusHandler();
 
       expect(mockSelectionController.showHighlight).toHaveBeenCalled();
+    });
+  });
+
+  describe('wireTabInputEvents - input handlers', () => {
+    it('should not call FileContextManager.handleInputChange when bang-bash mode is active', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.bangBashModeManager = mockBangBashModeManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+
+      mockBangBashModeManager.isActive.mockReturnValue(true);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const inputHandler = listeners.get('input')[0];
+      inputHandler();
+
+      expect(mockFileContextManager.handleInputChange).not.toHaveBeenCalled();
+      expect(mockBangBashModeManager.handleInputChange).toHaveBeenCalled();
     });
   });
 });
