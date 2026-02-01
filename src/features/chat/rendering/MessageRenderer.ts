@@ -85,6 +85,7 @@ export class MessageRenderer {
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
+        this.addUserCopyButton(msgEl, textToShow);
       }
       if (this.rewindCallback) {
         this.liveMessageEls.set(msg.id, msgEl);
@@ -161,6 +162,7 @@ export class MessageRenderer {
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
+        this.addUserCopyButton(msgEl, textToShow);
       }
       if (msg.sdkUserUuid && this.rewindCallback && this.isRewindEligible(allMessages, index)) {
         this.addRewindButton(msgEl, msg.id);
@@ -490,8 +492,43 @@ export class MessageRenderer {
     this.liveMessageEls.delete(msg.id);
   }
 
+  private getOrCreateActionsToolbar(msgEl: HTMLElement): HTMLElement {
+    const existing = msgEl.querySelector('.claudian-user-msg-actions') as HTMLElement | null;
+    if (existing) return existing;
+    return msgEl.createDiv({ cls: 'claudian-user-msg-actions' });
+  }
+
+  private addUserCopyButton(msgEl: HTMLElement, content: string): void {
+    const toolbar = this.getOrCreateActionsToolbar(msgEl);
+    const copyBtn = toolbar.createSpan({ cls: 'claudian-user-msg-copy-btn' });
+    copyBtn.innerHTML = MessageRenderer.COPY_ICON;
+    copyBtn.setAttribute('aria-label', 'Copy message');
+
+    let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(content);
+      } catch {
+        return;
+      }
+      if (feedbackTimeout) clearTimeout(feedbackTimeout);
+      copyBtn.innerHTML = '';
+      copyBtn.setText('copied!');
+      copyBtn.classList.add('copied');
+      feedbackTimeout = setTimeout(() => {
+        copyBtn.innerHTML = MessageRenderer.COPY_ICON;
+        copyBtn.classList.remove('copied');
+        feedbackTimeout = null;
+      }, 1500);
+    });
+  }
+
   private addRewindButton(msgEl: HTMLElement, messageId: string): void {
-    const btn = msgEl.createSpan({ cls: 'claudian-message-rewind-btn' });
+    const toolbar = this.getOrCreateActionsToolbar(msgEl);
+    const btn = createSpan({ cls: 'claudian-message-rewind-btn' });
+    toolbar.insertBefore(btn, toolbar.firstChild);
     btn.innerHTML = MessageRenderer.REWIND_ICON;
     btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
     btn.addEventListener('click', async (e) => {

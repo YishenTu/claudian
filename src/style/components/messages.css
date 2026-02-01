@@ -181,35 +181,48 @@
   font-style: italic;
 }
 
-/* Rewind button on user messages */
-.claudian-message-rewind-btn {
+/* Action buttons toolbar below user messages */
+.claudian-user-msg-actions {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  opacity: 0;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 50%;
+  bottom: -24px;
+  right: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 2px;
+  opacity: 0;
   transition: opacity 0.15s;
-  color: var(--text-muted);
+  z-index: 1;
 }
 
-.claudian-message-rewind-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.claudian-message-user:hover .claudian-message-rewind-btn {
+.claudian-message-user:hover .claudian-user-msg-actions {
   opacity: 0.6;
 }
 
-.claudian-message-user .claudian-message-rewind-btn:hover {
-  opacity: 1;
+.claudian-user-msg-actions:hover {
+  opacity: 1 !important;
+}
+
+.claudian-user-msg-actions span {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.claudian-user-msg-actions span svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-user-msg-actions span:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+.claudian-user-msg-actions span.copied {
+  color: var(--text-accent);
 }
 
 /* Compact boundary indicator */
