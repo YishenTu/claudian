@@ -31,6 +31,14 @@
       "cannot": "Zurückspulen nicht möglich: {error}",
       "unavailableStreaming": "Zurückspulen während des Streamings nicht möglich",
       "unavailableNoUuid": "Zurückspulen nicht möglich: Nachrichtenkennungen fehlen"
+    },
+    "fork": {
+      "ariaLabel": "Fork to new tab",
+      "maxTabsReached": "Cannot fork: maximum {count} tabs reached",
+      "notice": "Forked to new tab",
+      "failed": "Fork failed: {error}",
+      "unavailableStreaming": "Cannot fork while streaming",
+      "unavailableNoUuid": "Cannot fork: missing message identifiers"
     }
   },
   "settings": {

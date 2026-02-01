@@ -31,6 +31,14 @@
       "cannot": "巻き戻しできません：{error}",
       "unavailableStreaming": "ストリーミング中は巻き戻しできません",
       "unavailableNoUuid": "巻き戻しできません：メッセージ識別子がありません"
+    },
+    "fork": {
+      "ariaLabel": "Fork to new tab",
+      "maxTabsReached": "Cannot fork: maximum {count} tabs reached",
+      "notice": "Forked to new tab",
+      "failed": "Fork failed: {error}",
+      "unavailableStreaming": "Cannot fork while streaming",
+      "unavailableNoUuid": "Cannot fork: missing message identifiers"
     }
   },
   "settings": {

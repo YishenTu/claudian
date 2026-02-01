@@ -31,6 +31,14 @@
       "cannot": "无法回退：{error}",
       "unavailableStreaming": "流式响应中无法回退",
       "unavailableNoUuid": "无法回退：缺少消息标识符"
+    },
+    "fork": {
+      "ariaLabel": "在新标签页分叉",
+      "maxTabsReached": "无法分叉：已达到最大 {count} 个标签页",
+      "notice": "已分叉到新标签页",
+      "failed": "分叉失败：{error}",
+      "unavailableStreaming": "流式响应中无法分叉",
+      "unavailableNoUuid": "无法分叉：缺少消息标识符"
     }
   },
   "settings": {

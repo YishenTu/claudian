@@ -1,12 +1,16 @@
+import { Notice } from 'obsidian';
+
 import type { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
 import type { SlashCommand } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import {
   activateTab,
   createTab,
   deactivateTab,
   destroyTab,
+  type ForkContext,
   getTabTitle,
   initializeTabControllers,
   initializeTabService,
@@ -115,7 +119,9 @@ export class TabManager implements TabManagerInterface {
     });
 
     // Initialize controllers (pass mcpManager for lazy service initialization)
-    initializeTabControllers(tab, this.plugin, this.view, this.mcpManager);
+    initializeTabControllers(tab, this.plugin, this.view, this.mcpManager, (forkContext) =>
+      this.handleForkRequest(forkContext),
+    );
 
     // Wire input event handlers
     wireTabInputEvents(tab, this.plugin);
@@ -175,7 +181,15 @@ export class TabManager implements TabManagerInterface {
           const externalContextPaths = hasMessages
             ? conversation.externalContextPaths || []
             : (this.plugin.settings.persistentExternalContextPaths || []);
-          tab.service.setSessionId(conversation.sessionId ?? null, externalContextPaths);
+
+          // Pending fork: resume from forkSourceSessionId until SDK captures a new session ID.
+          const resolvedSessionId = conversation.sessionId ?? conversation.forkSourceSessionId ?? null;
+          if (!conversation.sessionId && conversation.forkSourceSessionId) {
+            tab.service.setPendingForkSession(true);
+            tab.service.setPendingResumeAt(conversation.forkResumeAt);
+          }
+
+          tab.service.setSessionId(resolvedSessionId, externalContextPaths);
         }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
@@ -366,6 +380,40 @@ export class TabManager implements TabManagerInterface {
       // Sync tab.conversationId with the newly created conversation
       activeTab.conversationId = activeTab.state.currentConversationId;
     }
+  }
+
+  // ============================================
+  // Fork
+  // ============================================
+
+  private async handleForkRequest(context: ForkContext): Promise<void> {
+    const tab = await this.forkToNewTab(context);
+    if (!tab) {
+      const maxTabs = this.getMaxTabs();
+      new Notice(t('chat.fork.maxTabsReached', { count: String(maxTabs) }));
+      return;
+    }
+    new Notice(t('chat.fork.notice'));
+  }
+
+  async forkToNewTab(context: ForkContext): Promise<TabData | null> {
+    const maxTabs = this.getMaxTabs();
+    if (this.tabs.size >= maxTabs) {
+      return null;
+    }
+
+    // Create conversation with fork metadata
+    const conversation = await this.plugin.createConversation();
+    await this.plugin.updateConversation(conversation.id, {
+      messages: context.messages,
+      forkSourceSessionId: context.sourceSessionId,
+      forkResumeAt: context.resumeAt,
+      // Prevent immediate SDK message load from merging duplicates with the copied messages.
+      // This is in-memory only (not persisted in metadata).
+      sdkMessagesLoaded: true,
+    });
+
+    return this.createTab(conversation.id);
   }
 
   // ============================================

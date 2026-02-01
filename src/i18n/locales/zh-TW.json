@@ -31,6 +31,14 @@
       "cannot": "無法回退：{error}",
       "unavailableStreaming": "串流回應中無法回退",
       "unavailableNoUuid": "無法回退：缺少訊息識別碼"
+    },
+    "fork": {
+      "ariaLabel": "分叉到新分頁",
+      "maxTabsReached": "無法分叉：已達到最大 {count} 個分頁",
+      "notice": "已分叉到新分頁",
+      "failed": "分叉失敗：{error}",
+      "unavailableStreaming": "串流回應中無法分叉",
+      "unavailableNoUuid": "無法分叉：缺少訊息識別碼"
     }
   },
   "settings": {

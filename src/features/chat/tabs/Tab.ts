@@ -1,9 +1,11 @@
 import type { Component } from 'obsidian';
+import { Notice } from 'obsidian';
 
 import { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
-import type { ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
+import type { ChatMessage, ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import {
@@ -14,6 +16,7 @@ import {
   StreamController,
 } from '../controllers';
 import { cleanupThinkingBlock, MessageRenderer } from '../rendering';
+import { findRewindContext } from '../rewind';
 import { InstructionRefineService } from '../services/InstructionRefineService';
 import { SubagentManager } from '../services/SubagentManager';
 import { TitleGenerationService } from '../services/TitleGenerationService';
@@ -256,8 +259,15 @@ export async function initializeTabService(
     let externalContextPaths = plugin.settings.persistentExternalContextPaths || [];
     if (tab.conversationId) {
       const conversation = await plugin.getConversationById(tab.conversationId);
-      sessionId = conversation?.sessionId ?? undefined;
+
       if (conversation) {
+        // Fork: prefer owned sessionId; only fall back to forkSourceSessionId if this is pending fork.
+        sessionId = conversation.sessionId ?? conversation.forkSourceSessionId ?? undefined;
+        if (!conversation.sessionId && conversation.forkSourceSessionId) {
+          service.setPendingForkSession(true);
+          service.setPendingResumeAt(conversation.forkResumeAt);
+        }
+
         const hasMessages = conversation.messages.length > 0;
         externalContextPaths = hasMessages
           ? conversation.externalContextPaths || []
@@ -540,11 +550,80 @@ export function initializeTabUI(
  * @param plugin The plugin instance.
  * @param component The Obsidian Component for registering event handlers (typically ClaudianView).
  */
+export interface ForkContext {
+  messages: ChatMessage[];
+  sourceSessionId: string;
+  resumeAt: string;
+}
+
+function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
+  const sc = (globalThis as unknown as { structuredClone?: <T>(value: T) => T }).structuredClone;
+  if (typeof sc === 'function') {
+    return sc(messages);
+  }
+  return JSON.parse(JSON.stringify(messages)) as ChatMessage[];
+}
+
+async function handleForkRequest(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  userMessageId: string,
+  forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
+): Promise<void> {
+  const { state } = tab;
+
+  if (state.isStreaming) {
+    new Notice(t('chat.fork.unavailableStreaming'));
+    return;
+  }
+
+  const msgs = state.messages;
+  const userIdx = msgs.findIndex(m => m.id === userMessageId);
+  if (userIdx === -1) return;
+
+  const userMsg = msgs[userIdx];
+  if (!userMsg.sdkUserUuid) {
+    new Notice(t('chat.fork.unavailableNoUuid'));
+    return;
+  }
+
+  const rewindCtx = findRewindContext(msgs, userIdx);
+  if (!rewindCtx.hasResponse || !rewindCtx.prevAssistantUuid) {
+    new Notice(t('chat.fork.unavailableNoUuid'));
+    return;
+  }
+
+  // Prefer service sessionId (current SDK state); fall back to conversation metadata if service is lazy/uninitialized.
+  const serviceSessionId = tab.service?.getSessionId() ?? null;
+  let sourceSessionId = serviceSessionId;
+
+  if (!sourceSessionId && tab.conversationId) {
+    const conversation = plugin.getConversationSync(tab.conversationId);
+    sourceSessionId =
+      conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSourceSessionId ?? null;
+  }
+
+  if (!sourceSessionId) {
+    new Notice(t('chat.fork.failed', { error: 'No session ID available' }));
+    return;
+  }
+
+  // Slice messages before the clicked user message
+  const messagesBeforeFork = deepCloneMessages(msgs.slice(0, userIdx));
+
+  await forkRequestCallback({
+    messages: messagesBeforeFork,
+    sourceSessionId,
+    resumeAt: rewindCtx.prevAssistantUuid,
+  });
+}
+
 export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
   component: Component,
-  mcpManager: McpServerManager
+  mcpManager: McpServerManager,
+  forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
 ): void {
   const { dom, state, services, ui } = tab;
 
@@ -554,6 +633,9 @@ export function initializeTabControllers(
     component,
     dom.messagesEl,
     (id) => tab.controllers.conversationController!.rewind(id),
+    forkRequestCallback
+      ? (id) => handleForkRequest(tab, plugin, id, forkRequestCallback)
+      : undefined,
   );
 
   // Selection controller

@@ -65,6 +65,8 @@ export interface PersistentQueryContext extends QueryOptionsContext {
   hooks: Options['hooks'];
   /** External context paths for additionalDirectories SDK option. */
   externalContextPaths?: string[];
+  /** Fork the session (non-destructive branch). */
+  forkSession?: boolean;
 }
 
 /**
@@ -228,6 +230,10 @@ export class QueryOptionsBuilder {
 
     if (ctx.resumeSessionAt) {
       options.resumeSessionAt = ctx.resumeSessionAt;
+    }
+
+    if (ctx.forkSession) {
+      options.forkSession = true;
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {

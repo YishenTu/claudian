@@ -41,6 +41,14 @@ export type TranslationKey =
   | 'chat.rewind.unavailableStreaming'
   | 'chat.rewind.unavailableNoUuid'
 
+  // Chat - Fork
+  | 'chat.fork.ariaLabel'
+  | 'chat.fork.maxTabsReached'
+  | 'chat.fork.notice'
+  | 'chat.fork.failed'
+  | 'chat.fork.unavailableStreaming'
+  | 'chat.fork.unavailableNoUuid'
+
   // Settings - Customization
   | 'settings.title'
   | 'settings.customization'

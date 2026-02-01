@@ -287,6 +287,8 @@ export default class ClaudianPlugin extends Plugin {
       conversation.previousSdkSessionIds = meta.previousSdkSessionIds ?? conversation.previousSdkSessionIds;
       conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
       conversation.resumeSessionAt = meta.resumeSessionAt ?? conversation.resumeSessionAt;
+      conversation.forkSourceSessionId = meta.forkSourceSessionId ?? conversation.forkSourceSessionId;
+      conversation.forkResumeAt = meta.forkResumeAt ?? conversation.forkResumeAt;
     }
 
     // Also load native session metadata (no legacy JSONL)
@@ -318,6 +320,8 @@ export default class ClaudianPlugin extends Plugin {
           isNative: true,
           subagentData: meta.subagentData, // Preserve for applying to loaded messages
           resumeSessionAt: meta.resumeSessionAt,
+          forkSourceSessionId: meta.forkSourceSessionId,
+          forkResumeAt: meta.forkResumeAt,
         };
       });
 
@@ -578,10 +582,16 @@ export default class ClaudianPlugin extends Plugin {
     const vaultPath = getVaultPath(this.app);
     if (!vaultPath) return;
 
-    const allSessionIds: string[] = [
-      ...(conversation.previousSdkSessionIds || []),
-      conversation.sdkSessionId ?? conversation.sessionId,
-    ].filter((id): id is string => !!id);
+    // Pending fork: no owned session yet, load from fork source and truncate
+    const isPendingFork = conversation.forkSourceSessionId &&
+      !conversation.sdkSessionId && !conversation.sessionId;
+
+    const allSessionIds: string[] = isPendingFork
+      ? [conversation.forkSourceSessionId!]
+      : [
+          ...(conversation.previousSdkSessionIds || []),
+          conversation.sdkSessionId ?? conversation.sessionId,
+        ].filter((id): id is string => !!id);
 
     if (allSessionIds.length === 0) return;
 
@@ -590,7 +600,9 @@ export default class ClaudianPlugin extends Plugin {
     let errorCount = 0;
     let successCount = 0;
 
-    const currentSessionId = conversation.sdkSessionId ?? conversation.sessionId;
+    const currentSessionId = isPendingFork
+      ? conversation.forkSourceSessionId
+      : (conversation.sdkSessionId ?? conversation.sessionId);
 
     for (const sessionId of allSessionIds) {
       if (!sdkSessionExists(vaultPath, sessionId)) {
@@ -599,8 +611,12 @@ export default class ClaudianPlugin extends Plugin {
       }
 
       const isCurrentSession = sessionId === currentSessionId;
+      // For pending forks, truncate at forkResumeAt; otherwise use resumeSessionAt
+      const truncateAt = isCurrentSession
+        ? (isPendingFork ? conversation.forkResumeAt : conversation.resumeSessionAt)
+        : undefined;
       const result: SDKSessionLoadResult = await loadSDKSessionMessages(
-        vaultPath, sessionId, isCurrentSession ? conversation.resumeSessionAt : undefined
+        vaultPath, sessionId, truncateAt
       );
 
       if (result.error) {
@@ -819,8 +835,6 @@ export default class ClaudianPlugin extends Plugin {
    *
    * For native sessions, saves metadata only (SDK handles messages including images).
    * For legacy sessions, saves full JSONL.
-   *
-   * Image data is cleared from memory after save (SDK/JSONL has persisted it).
    */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
@@ -836,15 +850,6 @@ export default class ClaudianPlugin extends Plugin {
     } else {
       // Legacy session: save full JSONL
       await this.storage.sessions.saveConversation(conversation);
-    }
-
-    // Clear image data from memory after save (data is persisted by SDK or JSONL)
-    for (const msg of conversation.messages) {
-      if (msg.images) {
-        for (const img of msg.images) {
-          img.data = '';
-        }
-      }
     }
   }
 

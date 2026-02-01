@@ -293,7 +293,16 @@ export class ConversationController {
         : plugin.settings.persistentExternalContextPaths || [];
 
       // Update agent service session ID with correct external contexts
-      this.getAgentService()?.setSessionId(conversation.sessionId ?? null, externalContextPaths);
+      // For pending fork conversations, use forkSourceSessionId for resume
+      const resolvedSessionId = conversation.sessionId ?? conversation.forkSourceSessionId ?? null;
+      const agentService = this.getAgentService();
+      if (agentService) {
+        if (!conversation.sessionId && conversation.forkSourceSessionId) {
+          agentService.setPendingForkSession(true);
+          agentService.setPendingResumeAt(conversation.forkResumeAt);
+        }
+        agentService.setSessionId(resolvedSessionId, externalContextPaths);
+      }
 
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
@@ -494,6 +503,14 @@ export class ConversationController {
 
     if (options) {
       updates.resumeSessionAt = options.resumeSessionAt;
+    }
+
+    // Clear fork metadata after first save with a new session ID (one-time use)
+    if (conversation?.forkSourceSessionId && sessionId && sessionId !== conversation.forkSourceSessionId) {
+      updates.forkSourceSessionId = undefined;
+      updates.forkResumeAt = undefined;
+      // Don't add forkSourceSessionId to previousSdkSessionIds
+      // (the source session belongs to the original conversation)
     }
 
     // At this point, currentConversationId is guaranteed to be set

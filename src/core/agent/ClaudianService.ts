@@ -153,6 +153,7 @@ export class ClaudianService {
   private currentAllowedTools: string[] | null = null;
 
   private pendingResumeAt?: string;
+  private pendingForkSession = false;
 
   // Last sent message for crash recovery (Phase 1.3)
   private lastSentMessage: SDKUserMessage | null = null;
@@ -194,6 +195,10 @@ export class ClaudianService {
 
   setPendingResumeAt(uuid: string | undefined): void {
     this.pendingResumeAt = uuid;
+  }
+
+  setPendingForkSession(value: boolean): void {
+    this.pendingForkSession = value;
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -462,6 +467,7 @@ export class ClaudianService {
       canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
+      forkSession: this.pendingForkSession || undefined,
     };
 
     return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
@@ -620,7 +626,13 @@ export class ClaudianService {
     // Transform SDK message to StreamChunks
     for (const event of transformSDKMessage(message, this.getTransformOptions())) {
       if (isSessionInitEvent(event)) {
+        // Fork: suppress needsHistoryRebuild since SDK returns a different session ID by design
+        const wasFork = this.pendingForkSession;
         this.sessionManager.captureSession(event.sessionId);
+        if (wasFork) {
+          this.sessionManager.clearHistoryRebuild();
+          this.pendingForkSession = false;
+        }
         this.messageChannel?.setSessionId(event.sessionId);
         if (event.agents) {
           try { this.plugin.agentManager.setBuiltinAgentNames(event.agents); } catch { /* non-critical */ }

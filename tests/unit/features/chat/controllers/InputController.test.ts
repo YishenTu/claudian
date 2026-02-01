@@ -114,6 +114,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
         querySelector: jest.fn().mockReturnValue(createMockEl()),
       }),
       refreshRewindButton: jest.fn(),
+      refreshForkButton: jest.fn(),
     } as any,
     streamController: {
       showThinkingIndicator: jest.fn(),
