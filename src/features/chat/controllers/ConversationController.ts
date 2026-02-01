@@ -478,9 +478,9 @@ export class ConversationController {
     // Don't persist the fork source session ID as the conversation's own session.
     // The agent service holds it for resume purposes only; the conversation gets
     // its own ID after SDK captureSession() returns a new session.
-    const isForkSourceOnly = !!conversation?.forkSourceSessionId &&
+    const isForkSourceOnly = !!conversation?.forkSource &&
       !conversation?.sdkSessionId &&
-      sessionId === conversation.forkSourceSessionId;
+      sessionId === conversation.forkSource.sessionId;
 
     let resolvedSessionId: string | null;
     if (sessionInvalidated) {
@@ -514,10 +514,9 @@ export class ConversationController {
     }
 
     // Clear fork metadata after first save with a new session ID (one-time use)
-    if (conversation?.forkSourceSessionId && sessionId && sessionId !== conversation.forkSourceSessionId) {
-      updates.forkSourceSessionId = undefined;
-      updates.forkResumeAt = undefined;
-      // Don't add forkSourceSessionId to previousSdkSessionIds
+    if (conversation?.forkSource && sessionId && sessionId !== conversation.forkSource.sessionId) {
+      updates.forkSource = undefined;
+      // Don't add forkSource.sessionId to previousSdkSessionIds
       // (the source session belongs to the original conversation)
     }
 

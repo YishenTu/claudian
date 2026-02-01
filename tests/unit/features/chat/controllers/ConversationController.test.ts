@@ -1745,15 +1745,14 @@ describe('ConversationController - Fork Session ID Isolation', () => {
     deps.state.currentConversationId = 'fork-conv';
     deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
 
-    // Fork conversation: has forkSourceSessionId but no own sdkSessionId yet
+    // Fork conversation: has forkSource but no own sdkSessionId yet
     (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
       id: 'fork-conv',
       messages: [],
       sessionId: null,
       sdkSessionId: undefined,
       isNative: true,
-      forkSourceSessionId: 'source-session-abc',
-      forkResumeAt: 'assistant-uuid-1',
+      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
     });
 
     // Agent service has the fork source ID set for resume purposes
@@ -1780,8 +1779,7 @@ describe('ConversationController - Fork Session ID Isolation', () => {
       sessionId: null,
       sdkSessionId: undefined,
       isNative: true,
-      forkSourceSessionId: 'source-session-abc',
-      forkResumeAt: 'assistant-uuid-1',
+      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
     });
 
     // SDK captured a new session (different from fork source)
@@ -1794,8 +1792,7 @@ describe('ConversationController - Fork Session ID Isolation', () => {
       expect.objectContaining({
         sessionId: 'new-session-xyz',
         sdkSessionId: 'new-session-xyz',
-        forkSourceSessionId: undefined,
-        forkResumeAt: undefined,
+        forkSource: undefined,
       })
     );
   });
@@ -1811,8 +1808,7 @@ describe('ConversationController - Fork Session ID Isolation', () => {
       sessionId: 'new-session-xyz',
       sdkSessionId: 'new-session-xyz',
       isNative: true,
-      forkSourceSessionId: undefined,
-      forkResumeAt: undefined,
+      forkSource: undefined,
     });
 
     mockAgentService.getSessionId.mockReturnValue('new-session-xyz');

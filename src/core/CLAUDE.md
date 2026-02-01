@@ -18,7 +18,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
 | `storage/` | Persistence layer | `StorageService`, `SessionStorage`, `CCSettingsStorage`, `ClaudianSettingsStorage`, `McpStorage`, `SkillStorage`, `SlashCommandStorage`, `VaultFileAdapter` |
 | `tools/` | Tool utilities | `toolNames` (incl. plan mode tools), `toolIcons`, `toolInput`, `todo` |
-| `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat` (incl. fork metadata: `forkSourceSessionId`, `forkResumeAt`), `tools`, `models`, `sdk`, `plugins`, `diff` |
+| `types/` | Type definitions | `settings`, `agent`, `mcp`, `chat` (incl. `forkSource?: { sessionId, resumeAt }`), `tools`, `models`, `sdk`, `plugins`, `diff` |
 
 ## Dependency Rules
 

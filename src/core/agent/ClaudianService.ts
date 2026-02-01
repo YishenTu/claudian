@@ -53,6 +53,7 @@ import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL
 import type {
   ApprovalDecision,
   ChatMessage,
+  Conversation,
   ExitPlanModeCallback,
   ExitPlanModeDecision,
   ImageAttachment,
@@ -198,15 +199,13 @@ export class ClaudianService {
   }
 
   /** One-shot: consumed on the next query, then cleared by routeMessage on session init. */
-  applyForkState(conv: {
-    sessionId?: string | null;
-    forkSourceSessionId?: string;
-    forkResumeAt?: string;
-  }): string | null {
-    const isPending = !conv.sessionId && !!conv.forkSourceSessionId;
+  applyForkState(conv: Pick<Conversation, 'sessionId' | 'forkSource'>): string | null {
+    const isPending = !conv.sessionId && !!conv.forkSource;
     this.pendingForkSession = isPending;
-    this.pendingResumeAt = isPending ? conv.forkResumeAt : undefined;
-    return conv.sessionId ?? conv.forkSourceSessionId ?? null;
+    if (isPending) {
+      this.pendingResumeAt = conv.forkSource!.resumeAt;
+    }
+    return conv.sessionId ?? conv.forkSource?.sessionId ?? null;
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -470,12 +469,12 @@ export class ClaudianService {
     const ctx: PersistentQueryContext = {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
-      resumeSessionId,
-      resumeSessionAt,
+      resume: resumeSessionId
+        ? { sessionId: resumeSessionId, sessionAt: resumeSessionAt, fork: this.pendingForkSession || undefined }
+        : undefined,
       canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
-      forkSession: this.pendingForkSession || undefined,
     };
 
     return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);

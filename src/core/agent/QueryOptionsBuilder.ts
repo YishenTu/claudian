@@ -55,18 +55,20 @@ export interface QueryOptionsContext {
 export interface PersistentQueryContext extends QueryOptionsContext {
   /** AbortController for the query. */
   abortController?: AbortController;
-  /** Session ID for resuming a conversation. */
-  resumeSessionId?: string;
-  /** Assistant UUID for resumeSessionAt after rewind. */
-  resumeSessionAt?: string;
+  /** Session resume state (sessionId required; sessionAt and fork only meaningful with a session). */
+  resume?: {
+    sessionId: string;
+    /** Assistant UUID for resumeSessionAt after rewind. */
+    sessionAt?: string;
+    /** Fork the session (non-destructive branch). */
+    fork?: boolean;
+  };
   /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
   /** Pre-built hooks array. */
   hooks: Options['hooks'];
   /** External context paths for additionalDirectories SDK option. */
   externalContextPaths?: string[];
-  /** Fork the session (non-destructive branch). */
-  forkSession?: boolean;
 }
 
 /**
@@ -224,16 +226,14 @@ export class QueryOptionsBuilder {
 
     options.enableFileCheckpointing = true;
 
-    if (ctx.resumeSessionId) {
-      options.resume = ctx.resumeSessionId;
-    }
-
-    if (ctx.resumeSessionAt) {
-      options.resumeSessionAt = ctx.resumeSessionAt;
-    }
-
-    if (ctx.forkSession) {
-      options.forkSession = true;
+    if (ctx.resume) {
+      options.resume = ctx.resume.sessionId;
+      if (ctx.resume.sessionAt) {
+        options.resumeSessionAt = ctx.resume.sessionAt;
+      }
+      if (ctx.resume.fork) {
+        options.forkSession = true;
+      }
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {

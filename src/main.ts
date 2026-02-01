@@ -287,8 +287,7 @@ export default class ClaudianPlugin extends Plugin {
       conversation.previousSdkSessionIds = meta.previousSdkSessionIds ?? conversation.previousSdkSessionIds;
       conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
       conversation.resumeSessionAt = meta.resumeSessionAt ?? conversation.resumeSessionAt;
-      conversation.forkSourceSessionId = meta.forkSourceSessionId ?? conversation.forkSourceSessionId;
-      conversation.forkResumeAt = meta.forkResumeAt ?? conversation.forkResumeAt;
+      conversation.forkSource = meta.forkSource ?? conversation.forkSource;
     }
 
     // Also load native session metadata (no legacy JSONL)
@@ -320,8 +319,7 @@ export default class ClaudianPlugin extends Plugin {
           isNative: true,
           subagentData: meta.subagentData, // Preserve for applying to loaded messages
           resumeSessionAt: meta.resumeSessionAt,
-          forkSourceSessionId: meta.forkSourceSessionId,
-          forkResumeAt: meta.forkResumeAt,
+          forkSource: meta.forkSource,
         };
       });
 
@@ -578,7 +576,7 @@ export default class ClaudianPlugin extends Plugin {
 
   /** Fork has no owned session yet; still referencing the source session for resume. */
   private isPendingFork(conversation: Conversation): boolean {
-    return !!conversation.forkSourceSessionId &&
+    return !!conversation.forkSource &&
       !conversation.sdkSessionId &&
       !conversation.sessionId;
   }
@@ -592,7 +590,7 @@ export default class ClaudianPlugin extends Plugin {
     const isPendingFork = this.isPendingFork(conversation);
 
     const allSessionIds: string[] = isPendingFork
-      ? [conversation.forkSourceSessionId!]
+      ? [conversation.forkSource!.sessionId]
       : [
           ...(conversation.previousSdkSessionIds || []),
           conversation.sdkSessionId ?? conversation.sessionId,
@@ -606,7 +604,7 @@ export default class ClaudianPlugin extends Plugin {
     let successCount = 0;
 
     const currentSessionId = isPendingFork
-      ? conversation.forkSourceSessionId
+      ? conversation.forkSource!.sessionId
       : (conversation.sdkSessionId ?? conversation.sessionId);
 
     for (const sessionId of allSessionIds) {
@@ -617,7 +615,7 @@ export default class ClaudianPlugin extends Plugin {
 
       const isCurrentSession = sessionId === currentSessionId;
       const truncateAt = isCurrentSession
-        ? (isPendingFork ? conversation.forkResumeAt : conversation.resumeSessionAt)
+        ? (isPendingFork ? conversation.forkSource!.resumeAt : conversation.resumeSessionAt)
         : undefined;
       const result: SDKSessionLoadResult = await loadSDKSessionMessages(
         vaultPath, sessionId, truncateAt

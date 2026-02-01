@@ -103,10 +103,8 @@ export interface Conversation {
   subagentData?: Record<string, SubagentInfo>;
   /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
-  /** Source session ID for fork (resume + fork from this session). */
-  forkSourceSessionId?: string;
-  /** Assistant UUID to fork at (used with forkSourceSessionId). */
-  forkResumeAt?: string;
+  /** Fork origin: source session to resume + fork from. Cleared after first SDK session init. */
+  forkSource?: { sessionId: string; resumeAt: string };
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -164,10 +162,8 @@ export interface SessionMetadata {
   subagentData?: Record<string, SubagentInfo>;
   /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
-  /** Source session ID for fork (resume + fork from this session). */
-  forkSourceSessionId?: string;
-  /** Assistant UUID to fork at (used with forkSourceSessionId). */
-  forkResumeAt?: string;
+  /** Fork origin: source session to resume + fork from. Cleared after first SDK session init. */
+  forkSource?: { sessionId: string; resumeAt: string };
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */

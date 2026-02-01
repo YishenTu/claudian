@@ -591,7 +591,7 @@ async function handleForkRequest(
   if (!sourceSessionId && tab.conversationId) {
     const conversation = plugin.getConversationSync(tab.conversationId);
     sourceSessionId =
-      conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSourceSessionId ?? null;
+      conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
   }
 
   if (!sourceSessionId) {
