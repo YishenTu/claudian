@@ -17,7 +17,21 @@
     "advanced": "Avanzado",
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
-    "platform": "Plataforma"
+    "platform": "Plataforma",
+    "rewind": "Rebobinar"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos.",
+      "confirmButton": "Rebobinar",
+      "ariaLabel": "Rebobinar hasta aquí",
+      "notice": "Rebobinado: {count} archivo(s) revertido(s)",
+      "noticeSaveFailed": "Rebobinado: {count} archivo(s) revertido(s), pero no se pudo guardar el estado: {error}",
+      "failed": "Error al rebobinar: {error}",
+      "cannot": "No se puede rebobinar: {error}",
+      "unavailableStreaming": "No se puede rebobinar durante la transmisión",
+      "unavailableNoUuid": "No se puede rebobinar: faltan identificadores de mensaje"
+    }
   },
   "settings": {
     "title": "Configuración de Claudian",

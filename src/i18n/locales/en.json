@@ -17,7 +17,21 @@
     "advanced": "Advanced",
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "platform": "Platform"
+    "platform": "Platform",
+    "rewind": "Rewind"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
+      "confirmButton": "Rewind",
+      "ariaLabel": "Rewind to here",
+      "notice": "Rewound: {count} file(s) reverted",
+      "noticeSaveFailed": "Rewound: {count} file(s) reverted, but failed to save state: {error}",
+      "failed": "Rewind failed: {error}",
+      "cannot": "Cannot rewind: {error}",
+      "unavailableStreaming": "Cannot rewind while streaming",
+      "unavailableNoUuid": "Cannot rewind: missing message identifiers"
+    }
   },
   "settings": {
     "title": "Claudian Settings",

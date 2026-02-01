@@ -95,16 +95,11 @@
   position: absolute;
   bottom: 0;
   inset-inline-end: 0;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-family: var(--font-monospace);
-  background: var(--background-primary);
   border: none;
-  color: var(--text-muted);
+  color: var(--text-faint);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
-  border-radius: 3px;
+  transition: opacity 0.15s ease, color 0.15s ease;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -112,8 +107,8 @@
 }
 
 .claudian-text-copy-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .claudian-text-block:hover .claudian-text-copy-btn {
@@ -121,13 +116,13 @@
 }
 
 .claudian-text-copy-btn:hover {
-  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-/* Copied state - only affects color, visibility still controlled by hover */
 .claudian-text-copy-btn.copied {
   color: var(--text-accent);
+  font-size: 11px;
+  font-family: var(--font-monospace);
 }
 
 .claudian-text-block+.claudian-tool-call {
@@ -179,6 +174,46 @@
   font-size: 12px;
   font-weight: 500;
   font-style: italic;
+}
+
+/* Action buttons toolbar below user messages */
+.claudian-user-msg-actions {
+  position: absolute;
+  bottom: -20px;
+  right: 0;
+  display: flex;
+  gap: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+
+.claudian-message-user:hover .claudian-user-msg-actions {
+  opacity: 1;
+}
+
+.claudian-user-msg-actions span {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  transition: color 0.15s;
+}
+
+.claudian-user-msg-actions span svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-user-msg-actions span:hover {
+  color: var(--text-normal);
+}
+
+.claudian-user-msg-actions span.copied {
+  color: var(--text-accent);
+  font-size: 11px;
+  font-family: var(--font-monospace);
 }
 
 /* Compact boundary indicator */

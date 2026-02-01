@@ -373,6 +373,8 @@ export function parseSDKMessageToChat(
     toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
     images,
+    ...(sdkMsg.type === 'user' && sdkMsg.uuid && { sdkUserUuid: sdkMsg.uuid }),
+    ...(sdkMsg.type === 'assistant' && sdkMsg.uuid && { sdkAssistantUuid: sdkMsg.uuid }),
     ...(isInterrupt && { isInterrupt: true }),
     ...(isRebuiltContext && { isRebuiltContext: true }),
   };
@@ -456,6 +458,123 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   return false;
 }
 
+/**
+ * After rewind + follow-up, the JSONL forms a tree via parentUuid. Walks backward
+ * from the newest branch leaf to collect only active entries. Without branching,
+ * resumeSessionAt truncates the linear chain at that UUID.
+ */
+export function filterActiveBranch(
+  entries: SDKNativeMessage[],
+  resumeSessionAt?: string
+): SDKNativeMessage[] {
+  if (entries.length === 0) return [];
+
+  // SDK may write duplicates around compaction, which inflates child counts
+  const seen = new Set<string>();
+  const deduped: SDKNativeMessage[] = [];
+  for (const entry of entries) {
+    if (entry.uuid) {
+      if (seen.has(entry.uuid)) continue;
+      seen.add(entry.uuid);
+    }
+    deduped.push(entry);
+  }
+
+  const byUuid = new Map<string, SDKNativeMessage>();
+  const childrenOf = new Map<string, Set<string>>();
+
+  for (const entry of deduped) {
+    if (entry.uuid) {
+      byUuid.set(entry.uuid, entry);
+    }
+    if (entry.parentUuid && entry.uuid) {
+      let children = childrenOf.get(entry.parentUuid);
+      if (!children) {
+        children = new Set();
+        childrenOf.set(entry.parentUuid, children);
+      }
+      children.add(entry.uuid);
+    }
+  }
+
+  const hasBranching = [...childrenOf.values()].some(children => children.size > 1);
+
+  let leaf: SDKNativeMessage | undefined;
+
+  if (hasBranching) {
+    // Pick last-appearing leaf (no children) in file order — more robust than
+    // "last entry with uuid" which breaks on trailing non-dialog nodes
+    for (let i = deduped.length - 1; i >= 0; i--) {
+      const uuid = deduped[i].uuid;
+      if (uuid && !childrenOf.has(uuid)) {
+        leaf = deduped[i];
+        break;
+      }
+    }
+
+    // When resumeSessionAt is also set (rewind on the latest branch without follow-up),
+    // truncate at that point instead of using the full branch leaf
+    if (resumeSessionAt && leaf?.uuid && byUuid.has(resumeSessionAt)) {
+      // Check if resumeSessionAt is an ancestor of the leaf — if so, truncate there
+      let current: SDKNativeMessage | undefined = leaf;
+      while (current?.uuid) {
+        if (current.uuid === resumeSessionAt) {
+          leaf = current;
+          break;
+        }
+        if (current.parentUuid) {
+          current = byUuid.get(current.parentUuid);
+        } else {
+          break;
+        }
+      }
+    }
+  } else if (resumeSessionAt) {
+    leaf = byUuid.get(resumeSessionAt);
+  } else {
+    return deduped;
+  }
+
+  if (!leaf || !leaf.uuid) return deduped;
+
+  const activeUuids = new Set<string>();
+  let current: SDKNativeMessage | undefined = leaf;
+  while (current?.uuid) {
+    activeUuids.add(current.uuid);
+    if (current.parentUuid) {
+      current = byUuid.get(current.parentUuid);
+    } else {
+      break;
+    }
+  }
+
+  // O(n) sweep: include no-uuid entries only if both nearest uuid neighbors are active
+  const n = deduped.length;
+  const prevIsActive = new Array<boolean>(n);
+  const nextIsActive = new Array<boolean>(n);
+
+  let lastPrevActive = false;
+  for (let i = 0; i < n; i++) {
+    if (deduped[i].uuid) {
+      lastPrevActive = activeUuids.has(deduped[i].uuid!);
+    }
+    prevIsActive[i] = lastPrevActive;
+  }
+
+  let lastNextActive = false;
+  for (let i = n - 1; i >= 0; i--) {
+    if (deduped[i].uuid) {
+      lastNextActive = activeUuids.has(deduped[i].uuid!);
+    }
+    nextIsActive[i] = lastNextActive;
+  }
+
+  return deduped.filter((entry, idx) => {
+    if (entry.uuid) return activeUuids.has(entry.uuid);
+    return prevIsActive[idx] && nextIsActive[idx];
+  });
+}
+
 export interface SDKSessionLoadResult {
   messages: ChatMessage[];
   skippedLines: number;
@@ -485,6 +604,10 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
   if (source.contentBlocks) {
     target.contentBlocks = [...(target.contentBlocks || []), ...source.contentBlocks];
   }
+
+  if (source.sdkAssistantUuid) {
+    target.sdkAssistantUuid = source.sdkAssistantUuid;
+  }
 }
 
 /**
@@ -502,22 +625,28 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
  * @param sessionId - The session ID
  * @returns Result object with messages, skipped line count, and any error
  */
-export async function loadSDKSessionMessages(vaultPath: string, sessionId: string): Promise<SDKSessionLoadResult> {
+export async function loadSDKSessionMessages(
+  vaultPath: string,
+  sessionId: string,
+  resumeSessionAt?: string
+): Promise<SDKSessionLoadResult> {
   const result = await readSDKSession(vaultPath, sessionId);
 
   if (result.error) {
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
   }
 
-  const toolResults = collectToolResults(result.messages);
-  const toolUseResults = collectStructuredPatchResults(result.messages);
+  const filteredEntries = filterActiveBranch(result.messages, resumeSessionAt);
+
+  const toolResults = collectToolResults(filteredEntries);
+  const toolUseResults = collectStructuredPatchResults(filteredEntries);
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
   const seenUuids = new Set<string>();
 
   // Merge consecutive assistant messages until an actual user message appears
-  for (const sdkMsg of result.messages) {
+  for (const sdkMsg of filteredEntries) {
     // Dedup: SDK may write the same message twice (e.g., around compaction)
     if (sdkMsg.uuid) {
       if (seenUuids.has(sdkMsg.uuid)) continue;

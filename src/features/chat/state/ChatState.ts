@@ -84,6 +84,15 @@ export class ChatState {
     this._callbacks.onMessagesChanged?.();
   }
 
+  truncateAt(messageId: string): number {
+    const idx = this.state.messages.findIndex(m => m.id === messageId);
+    if (idx === -1) return 0;
+    const removed = this.state.messages.length - idx;
+    this.state.messages = this.state.messages.slice(0, idx);
+    this._callbacks.onMessagesChanged?.();
+    return removed;
+  }
+
   // ============================================
   // Streaming Control
   // ============================================

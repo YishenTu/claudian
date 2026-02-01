@@ -286,6 +286,7 @@ export default class ClaudianPlugin extends Plugin {
       }
       conversation.previousSdkSessionIds = meta.previousSdkSessionIds ?? conversation.previousSdkSessionIds;
       conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
+      conversation.resumeSessionAt = meta.resumeSessionAt ?? conversation.resumeSessionAt;
     }
 
     // Also load native session metadata (no legacy JSONL)
@@ -316,6 +317,7 @@ export default class ClaudianPlugin extends Plugin {
           legacyCutoffAt: meta.legacyCutoffAt,
           isNative: true,
           subagentData: meta.subagentData, // Preserve for applying to loaded messages
+          resumeSessionAt: meta.resumeSessionAt,
         };
       });
 
@@ -588,13 +590,18 @@ export default class ClaudianPlugin extends Plugin {
     let errorCount = 0;
     let successCount = 0;
 
+    const currentSessionId = conversation.sdkSessionId ?? conversation.sessionId;
+
     for (const sessionId of allSessionIds) {
       if (!sdkSessionExists(vaultPath, sessionId)) {
         missingSessionCount++;
         continue;
       }
 
-      const result: SDKSessionLoadResult = await loadSDKSessionMessages(vaultPath, sessionId);
+      const isCurrentSession = sessionId === currentSessionId;
+      const result: SDKSessionLoadResult = await loadSDKSessionMessages(
+        vaultPath, sessionId, isCurrentSession ? conversation.resumeSessionAt : undefined
+      );
 
       if (result.error) {
         errorCount++;

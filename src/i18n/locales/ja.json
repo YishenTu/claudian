@@ -17,7 +17,21 @@
     "advanced": "詳細",
     "enabled": "有効",
     "disabled": "無効",
-    "platform": "プラットフォーム"
+    "platform": "プラットフォーム",
+    "rewind": "巻き戻し"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更が元に戻されます。",
+      "confirmButton": "巻き戻す",
+      "ariaLabel": "ここに巻き戻す",
+      "notice": "巻き戻し完了：{count} 個のファイルを復元",
+      "noticeSaveFailed": "巻き戻し完了：{count} 個のファイルを復元しましたが、状態を保存できませんでした：{error}",
+      "failed": "巻き戻しに失敗：{error}",
+      "cannot": "巻き戻しできません：{error}",
+      "unavailableStreaming": "ストリーミング中は巻き戻しできません",
+      "unavailableNoUuid": "巻き戻しできません：メッセージ識別子がありません"
+    }
   },
   "settings": {
     "title": "Claudian 設定",

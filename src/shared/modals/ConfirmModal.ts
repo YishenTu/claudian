@@ -8,15 +8,23 @@ export function confirmDelete(app: App, message: string): Promise<boolean> {
   });
 }
 
+export function confirm(app: App, message: string, confirmText: string): Promise<boolean> {
+  return new Promise(resolve => {
+    new ConfirmModal(app, message, resolve, confirmText).open();
+  });
+}
+
 class ConfirmModal extends Modal {
   private message: string;
   private resolve: (confirmed: boolean) => void;
   private resolved = false;
+  private confirmText: string;
 
-  constructor(app: App, message: string, resolve: (confirmed: boolean) => void) {
+  constructor(app: App, message: string, resolve: (confirmed: boolean) => void, confirmText?: string) {
     super(app);
     this.message = message;
     this.resolve = resolve;
+    this.confirmText = confirmText ?? t('common.delete');
   }
 
   onOpen() {
@@ -33,7 +41,7 @@ class ConfirmModal extends Modal {
       )
       .addButton(btn =>
         btn
-          .setButtonText(t('common.delete'))
+          .setButtonText(this.confirmText)
           .setWarning()
           .onClick(() => {
             this.resolved = true;

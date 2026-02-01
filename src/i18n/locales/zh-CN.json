@@ -17,7 +17,21 @@
     "advanced": "高级",
     "enabled": "已启用",
     "disabled": "已禁用",
-    "platform": "平台"
+    "platform": "平台",
+    "rewind": "回退"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "回退到此处？此消息之后的文件更改将被还原。",
+      "confirmButton": "回退",
+      "ariaLabel": "回退到此处",
+      "notice": "已回退：还原了 {count} 个文件",
+      "noticeSaveFailed": "已回退：还原了 {count} 个文件，但无法保存状态：{error}",
+      "failed": "回退失败：{error}",
+      "cannot": "无法回退：{error}",
+      "unavailableStreaming": "流式响应中无法回退",
+      "unavailableNoUuid": "无法回退：缺少消息标识符"
+    }
   },
   "settings": {
     "title": "Claudian 设置",

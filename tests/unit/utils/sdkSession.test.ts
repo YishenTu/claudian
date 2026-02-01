@@ -5,6 +5,7 @@ import * as os from 'os';
 import {
   deleteSDKSession,
   encodeVaultPathForSDK,
+  filterActiveBranch,
   getSDKProjectsPath,
   getSDKSessionPath,
   isValidSessionId,
@@ -289,6 +290,49 @@ describe('sdkSession', () => {
       expect(chatMsg!.role).toBe('user');
       expect(chatMsg!.content).toBe('What is the weather?');
       expect(chatMsg!.timestamp).toBe(new Date('2024-01-15T10:30:00Z').getTime());
+    });
+
+    it('sets sdkUserUuid on user messages with uuid', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        uuid: 'user-rewind-123',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: { content: 'Hello' },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.sdkUserUuid).toBe('user-rewind-123');
+      expect(chatMsg!.sdkAssistantUuid).toBeUndefined();
+    });
+
+    it('sets sdkAssistantUuid on assistant messages with uuid', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-rewind-456',
+        timestamp: '2024-01-15T10:31:00Z',
+        message: {
+          content: [{ type: 'text', text: 'Hello back' }],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.sdkAssistantUuid).toBe('asst-rewind-456');
+      expect(chatMsg!.sdkUserUuid).toBeUndefined();
+    });
+
+    it('does not set SDK UUIDs when uuid is absent', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'user',
+        timestamp: '2024-01-15T10:30:00Z',
+        message: { content: 'No uuid' },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.sdkUserUuid).toBeUndefined();
+      expect(chatMsg!.sdkAssistantUuid).toBeUndefined();
     });
 
     it('converts assistant message with text content blocks', () => {
@@ -874,6 +918,24 @@ describe('sdkSession', () => {
       expect(result.messages[0].toolCalls![0].name).toBe('Read');
       expect(result.messages[0].toolCalls![1].name).toBe('Write');
     });
+
+    it('updates sdkAssistantUuid to last entry when merging assistant messages', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"hello"}}',
+        '{"type":"assistant","uuid":"a1-first","parentUuid":"u1","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"text","text":"thinking..."}]}}',
+        '{"type":"assistant","uuid":"a1-mid","parentUuid":"a1-first","timestamp":"2024-01-15T10:00:02Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"path":"a.ts"}}]}}',
+        '{"type":"assistant","uuid":"a1-last","parentUuid":"a1-mid","timestamp":"2024-01-15T10:00:03Z","message":{"content":[{"type":"text","text":"Done!"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-merge-uuid');
+
+      expect(result.messages).toHaveLength(2);
+      const assistant = result.messages[1];
+      expect(assistant.role).toBe('assistant');
+      // Must be the last UUID so rewind targets the end of the turn
+      expect(assistant.sdkAssistantUuid).toBe('a1-last');
+    });
   });
 
   describe('parseSDKMessageToChat - image extraction', () => {
@@ -1205,6 +1267,278 @@ describe('sdkSession', () => {
       expect(result.messages[0].images![0].mediaType).toBe('image/png');
       expect(result.messages[0].images![1].mediaType).toBe('image/jpeg');
       expect(result.messages[0].images![1].name).toBe('image-2');
+    });
+  });
+
+  describe('filterActiveBranch', () => {
+    it('returns all entries for linear chain without resumeSessionAt', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+      ];
+
+      const result = filterActiveBranch(entries);
+
+      expect(result).toHaveLength(4);
+      expect(result).toEqual(entries);
+    });
+
+    it('truncates linear chain at resumeSessionAt UUID', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+      ];
+
+      const result = filterActiveBranch(entries, 'a1');
+
+      expect(result).toHaveLength(2);
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
+    });
+
+    it('returns only new branch after rewind + follow-up', () => {
+      // Original: u1 → a1 → u2 → a2
+      // Rewind to a1, follow-up: u3 → a3 (u3.parentUuid = a1)
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },    // Branch point: a1 has 2 children
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+      ];
+
+      const result = filterActiveBranch(entries);
+
+      // Should include: u1, a1, u3, a3 (new branch), not u2, a2
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u3', 'a3']);
+    });
+
+    it('returns latest branch after multiple rewinds', () => {
+      // Original: u1 → a1 → u2 → a2
+      // Rewind 1: u3 → a3 (parent a1)
+      // Rewind 2: u4 → a4 (parent a1) — third child of a1
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+        { type: 'user', uuid: 'u4', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a4', parentUuid: 'u4' },
+      ];
+
+      const result = filterActiveBranch(entries);
+
+      // Last entry with uuid is a4, walk back: a4 → u4 → a1 → u1
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u4', 'a4']);
+    });
+
+    it('returns all entries when resumeSessionAt UUID not found (safety)', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+      ];
+
+      const result = filterActiveBranch(entries, 'nonexistent-uuid');
+
+      expect(result).toHaveLength(2);
+      expect(result).toEqual(entries);
+    });
+
+    it('returns empty for empty entries', () => {
+      const result = filterActiveBranch([]);
+      expect(result).toEqual([]);
+    });
+
+    it('does not misdetect branching when duplicate uuid entries exist', () => {
+      // SDK may write the same message twice (e.g., around compaction).
+      // Without dedup, duplicate entries inflate childCount causing false branch detection.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        // Duplicate of u2 — SDK writes this again
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+      ];
+
+      // Without dedup fix, a1 would have childCount=2 (u2 counted twice),
+      // triggering branch detection and excluding u2/a2.
+      const result = filterActiveBranch(entries);
+
+      // Should be a no-op (linear chain, no branching)
+      expect(result).toHaveLength(4);
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('correctly truncates at resumeSessionAt when duplicates exist', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        // Duplicate of u2
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+      ];
+
+      const result = filterActiveBranch(entries, 'a1');
+
+      // Should truncate at a1, including only u1 and a1
+      expect(result).toHaveLength(2);
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
+    });
+
+    it('preserves no-uuid entries within active branch region', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'queue-operation' },  // No uuid — between u1 (active) and a1 (active)
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },    // Branch
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+      ];
+
+      const result = filterActiveBranch(entries);
+
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+      expect(uuids).toEqual(['u1', 'a1', 'u3', 'a3']);
+      // queue-operation is between u1 (active) and a1 (active), so preserved
+      expect(result.some(e => e.type === 'queue-operation')).toBe(true);
+    });
+
+    it('truncates at resumeSessionAt on latest branch when branching exists', () => {
+      // Rewind 1 + follow-up created a branch: u3/a3 branch off a1
+      // Rewind 2 on the new branch (no follow-up): resumeSessionAt = a1
+      // On reload, should truncate at a1, not show u3/a3
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },       // old branch
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },   // old branch
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },        // new branch (from rewind 1)
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },   // new branch
+      ];
+
+      // Rewind 2 on new branch: truncate at a1
+      const result = filterActiveBranch(entries, 'a1');
+
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
+    });
+
+    it('truncates at resumeSessionAt mid-branch when branching exists', () => {
+      // Branch from a1: old (u2→a2) and new (u3→a3→u4→a4)
+      // Rewind on new branch to u4: resumeSessionAt = a3
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+        { type: 'user', uuid: 'u4', parentUuid: 'a3' },
+        { type: 'assistant', uuid: 'a4', parentUuid: 'u4' },
+      ];
+
+      const result = filterActiveBranch(entries, 'a3');
+
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u3', 'a3']);
+    });
+
+    it('ignores resumeSessionAt not on latest branch', () => {
+      // Branch from a1: old (u2→a2) and new (u3→a3)
+      // resumeSessionAt points to a2 (on the OLD branch) — should be ignored
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+      ];
+
+      // a2 is on old branch, not an ancestor of leaf a3
+      const result = filterActiveBranch(entries, 'a2');
+
+      // Should return full latest branch (ignoring stale resumeSessionAt)
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u3', 'a3']);
+    });
+
+    it('drops no-uuid entries in old branch region', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'queue-operation' },  // No uuid — between a2 (old) and u3 (active)
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },    // Branch
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+      ];
+
+      const result = filterActiveBranch(entries);
+
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+      expect(uuids).toEqual(['u1', 'a1', 'u3', 'a3']);
+      // queue-operation between a2 (not active) and u3 (active) — should be dropped
+      expect(result.some(e => e.type === 'queue-operation')).toBe(false);
+    });
+  });
+
+  describe('loadSDKSessionMessages with resumeSessionAt', () => {
+    it('returns identical behavior without resumeSessionAt', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
+        '{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-no-resume');
+
+      expect(result.messages).toHaveLength(2);
+    });
+
+    it('truncates messages at resumeSessionAt on linear JSONL', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
+        '{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
+        '{"type":"user","uuid":"u2","parentUuid":"a1","timestamp":"2024-01-15T10:02:00Z","message":{"content":"More"}}',
+        '{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2024-01-15T10:03:00Z","message":{"content":[{"type":"text","text":"More response"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-truncate', 'a1');
+
+      // Should only have u1 and a1 (truncated at a1)
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].content).toBe('Hello');
+      expect(result.messages[1].content).toBe('Hi!');
+    });
+
+    it('returns correct active branch on branched JSONL', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
+        '{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
+        '{"type":"user","uuid":"u2","parentUuid":"a1","timestamp":"2024-01-15T10:02:00Z","message":{"content":"Old branch"}}',
+        '{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2024-01-15T10:03:00Z","message":{"content":[{"type":"text","text":"Old response"}]}}',
+        '{"type":"user","uuid":"u3","parentUuid":"a1","timestamp":"2024-01-15T10:04:00Z","message":{"content":"New branch"}}',
+        '{"type":"assistant","uuid":"a3","parentUuid":"u3","timestamp":"2024-01-15T10:05:00Z","message":{"content":[{"type":"text","text":"New response"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-branched');
+
+      // Should have: u1 "Hello", a1 "Hi!", u3 "New branch", a3 "New response"
+      // Old branch (u2, a2) should be excluded
+      expect(result.messages).toHaveLength(4);
+      expect(result.messages[0].content).toBe('Hello');
+      expect(result.messages[1].content).toBe('Hi!');
+      expect(result.messages[2].content).toBe('New branch');
+      expect(result.messages[3].content).toBe('New response');
     });
   });
 });

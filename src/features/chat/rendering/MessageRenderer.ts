@@ -1,12 +1,14 @@
 import type { App, Component } from 'obsidian';
-import { MarkdownRenderer } from 'obsidian';
+import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { findRewindContext } from '../rewind';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -22,16 +24,22 @@ export class MessageRenderer {
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
+  private rewindCallback?: (messageId: string) => Promise<void>;
+  private liveMessageEls = new Map<string, HTMLElement>();
+
+  private static readonly REWIND_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
 
   constructor(
     plugin: ClaudianPlugin,
     component: Component,
-    messagesEl: HTMLElement
+    messagesEl: HTMLElement,
+    rewindCallback?: (messageId: string) => Promise<void>,
   ) {
     this.app = plugin.app;
     this.plugin = plugin;
     this.component = component;
     this.messagesEl = messagesEl;
+    this.rewindCallback = rewindCallback;
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
@@ -77,6 +85,10 @@ export class MessageRenderer {
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
+        this.addUserCopyButton(msgEl, textToShow);
+      }
+      if (this.rewindCallback) {
+        this.liveMessageEls.set(msg.id, msgEl);
       }
     }
 
@@ -99,23 +111,21 @@ export class MessageRenderer {
     getGreeting: () => string
   ): HTMLElement {
     this.messagesEl.empty();
+    this.liveMessageEls.clear();
 
     // Recreate welcome element after clearing
     const newWelcomeEl = this.messagesEl.createDiv({ cls: 'claudian-welcome' });
     newWelcomeEl.createDiv({ cls: 'claudian-welcome-greeting', text: getGreeting() });
 
-    for (const msg of messages) {
-      this.renderStoredMessage(msg);
+    for (let i = 0; i < messages.length; i++) {
+      this.renderStoredMessage(messages[i], messages, i);
     }
 
     this.scrollToBottom();
     return newWelcomeEl;
   }
 
-  /**
-   * Renders a persisted message from history.
-   */
-  renderStoredMessage(msg: ChatMessage): void {
+  renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
     // Render interrupt messages with special styling (not as user bubbles)
     if (msg.isInterrupt) {
       this.renderInterruptMessage();
@@ -152,10 +162,20 @@ export class MessageRenderer {
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
+        this.addUserCopyButton(msgEl, textToShow);
+      }
+      if (msg.sdkUserUuid && this.rewindCallback && this.isRewindEligible(allMessages, index)) {
+        this.addRewindButton(msgEl, msg.id);
       }
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
     }
+  }
+
+  private isRewindEligible(allMessages?: ChatMessage[], index?: number): boolean {
+    if (!allMessages || index === undefined) return false;
+    const ctx = findRewindContext(allMessages, index);
+    return !!ctx.prevAssistantUuid && ctx.hasResponse;
   }
 
   /**
@@ -459,6 +479,65 @@ export class MessageRenderer {
         copyBtn.classList.remove('copied');
         feedbackTimeout = null;
       }, 1500);
+    });
+  }
+
+  refreshRewindButton(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
+    if (!this.rewindCallback || !msg.sdkUserUuid) return;
+    if (!this.isRewindEligible(allMessages, index)) return;
+    const msgEl = this.liveMessageEls.get(msg.id);
+    if (!msgEl) return;
+    if (msgEl.querySelector('.claudian-message-rewind-btn')) return;
+    this.addRewindButton(msgEl, msg.id);
+    this.liveMessageEls.delete(msg.id);
+  }
+
+  private getOrCreateActionsToolbar(msgEl: HTMLElement): HTMLElement {
+    const existing = msgEl.querySelector('.claudian-user-msg-actions') as HTMLElement | null;
+    if (existing) return existing;
+    return msgEl.createDiv({ cls: 'claudian-user-msg-actions' });
+  }
+
+  private addUserCopyButton(msgEl: HTMLElement, content: string): void {
+    const toolbar = this.getOrCreateActionsToolbar(msgEl);
+    const copyBtn = toolbar.createSpan({ cls: 'claudian-user-msg-copy-btn' });
+    copyBtn.innerHTML = MessageRenderer.COPY_ICON;
+    copyBtn.setAttribute('aria-label', 'Copy message');
+
+    let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(content);
+      } catch {
+        return;
+      }
+      if (feedbackTimeout) clearTimeout(feedbackTimeout);
+      copyBtn.innerHTML = '';
+      copyBtn.setText('copied!');
+      copyBtn.classList.add('copied');
+      feedbackTimeout = setTimeout(() => {
+        copyBtn.innerHTML = MessageRenderer.COPY_ICON;
+        copyBtn.classList.remove('copied');
+        feedbackTimeout = null;
+      }, 1500);
+    });
+  }
+
+  private addRewindButton(msgEl: HTMLElement, messageId: string): void {
+    const toolbar = this.getOrCreateActionsToolbar(msgEl);
+    const btn = toolbar.createSpan({ cls: 'claudian-message-rewind-btn' });
+    if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
+    btn.innerHTML = MessageRenderer.REWIND_ICON;
+    btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await this.rewindCallback?.(messageId);
+      } catch (err) {
+        new Notice(t('chat.rewind.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
+      }
     });
   }
 

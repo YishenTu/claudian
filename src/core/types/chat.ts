@@ -53,6 +53,10 @@ export interface ChatMessage {
   durationSeconds?: number;
   /** Flavor word used for duration display (e.g., "Baked", "Cooked"). */
   durationFlavorWord?: string;
+  /** SDK user message UUID for rewind. */
+  sdkUserUuid?: string;
+  /** SDK assistant message UUID for resumeSessionAt. */
+  sdkAssistantUuid?: string;
 }
 
 /** Persisted conversation with messages and session state. */
@@ -97,6 +101,8 @@ export interface Conversation {
    * Loaded from metadata for native sessions to restore tool count and status on reload.
    */
   subagentData?: Record<string, SubagentInfo>;
+  /** Assistant UUID for resumeSessionAt after rewind. */
+  resumeSessionAt?: string;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -152,6 +158,8 @@ export interface SessionMetadata {
    * Stored here because SDK session files don't preserve this Claudian-specific data.
    */
   subagentData?: Record<string, SubagentInfo>;
+  /** Assistant UUID for resumeSessionAt after rewind. */
+  resumeSessionAt?: string;
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */
@@ -164,7 +172,10 @@ export type StreamChunk =
   | { type: 'blocked'; content: string }
   | { type: 'done' }
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
-  | { type: 'compact_boundary' };
+  | { type: 'compact_boundary' }
+  | { type: 'sdk_user_uuid'; uuid: string }
+  | { type: 'sdk_user_sent'; uuid: string }
+  | { type: 'sdk_assistant_uuid'; uuid: string };
 
 /** Context window usage information. */
 export interface UsageInfo {

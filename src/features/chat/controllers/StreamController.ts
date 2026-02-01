@@ -133,6 +133,14 @@ export class StreamController {
         break;
       }
 
+      case 'sdk_assistant_uuid':
+        msg.sdkAssistantUuid = chunk.uuid;
+        break;
+
+      case 'sdk_user_uuid':
+      case 'sdk_user_sent':
+        break;
+
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
         const currentSessionId = this.deps.getAgentService?.()?.getSessionId() ?? null;
