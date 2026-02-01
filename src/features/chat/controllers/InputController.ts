@@ -6,7 +6,7 @@ import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
-import { appendCanvasContext, appendCurrentNote } from '../../../utils/context';
+import { appendAttachedFiles, appendCanvasContext, appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
@@ -207,6 +207,16 @@ export class InputController {
         currentNoteForMessage = currentNotePath;
       }
 
+      // Append additional attached files (user-selected via right-click menu or command)
+      if (fileContextManager) {
+        const unsentFiles = fileContextManager.getUnsentFiles();
+        // Filter out current note (already handled above)
+        const additionalFiles = unsentFiles.filter(f => f !== currentNotePath);
+        if (additionalFiles.length > 0) {
+          promptToSend = appendAttachedFiles(promptToSend, additionalFiles);
+        }
+      }
+
       // Append canvas context if available (selected nodes and their ancestors)
       if (fileContextManager?.shouldSendCanvasContext()) {
         const canvasContext = fileContextManager.getCanvasContextForPrompt();
@@ -227,6 +237,7 @@ export class InputController {
     }
 
     fileContextManager?.markCurrentNoteSent();
+    fileContextManager?.markAllFilesSent();
     fileContextManager?.markCanvasContextSent();
 
     const userMsg: ChatMessage = {

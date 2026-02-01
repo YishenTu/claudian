@@ -5,7 +5,7 @@
  */
 
 export type { Canvas, CanvasNode, CanvasEdge, CanvasView } from './canvas-internal';
-export type { CanvasContext, NodeContext, CanvasContextCallbacks } from './CanvasContextManager';
+export type { CanvasContext, NodeContext, CanvasContextCallbacks, PinnedNode } from './CanvasContextManager';
 export type { CanvasChipsViewCallbacks } from './CanvasChipsView';
 
 export { CanvasContextManager } from './CanvasContextManager';

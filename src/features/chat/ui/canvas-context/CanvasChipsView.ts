@@ -6,16 +6,18 @@
  */
 
 import { setIcon } from 'obsidian';
-import type { CanvasContext } from './CanvasContextManager';
+import type { CanvasContext, PinnedNode } from './CanvasContextManager';
 import { getNodeSummary } from './fileUtil';
 
 export interface CanvasChipsViewCallbacks {
   /** Called when user clicks to open the canvas */
-  onOpenCanvas?: (filePath: string) => void;
-  /** Called when user removes the canvas context */
+  onOpenCanvas?: (filePath: string) => void | Promise<void>;
+  /** Called when user removes all canvas context */
   onRemoveContext?: () => void;
   /** Called when user clicks on a specific node */
   onFocusNode?: (nodeId: string) => void;
+  /** Called when user removes a specific node from context */
+  onRemoveNode?: (nodeId: string) => void | Promise<void>;
 }
 
 /**
@@ -91,6 +93,7 @@ export class CanvasChipsView {
 
   /**
    * Render selected node chips.
+   * Each node gets its own chip with a remove button.
    */
   private renderNodeChips(context: CanvasContext): void {
     // Add separator
@@ -99,23 +102,23 @@ export class CanvasChipsView {
     });
     separatorEl.setText('›');
 
-    if (context.selectedNodes.length === 1) {
-      // Single node - show summary
-      const node = context.selectedNodes[0];
-      this.renderSingleNodeChip(node);
-    } else {
-      // Multiple nodes - show count
-      this.renderMultiNodeChip(context.selectedNodes.length);
+    // Render each node as a separate chip with remove button
+    // Use nodeContexts to get accurate ancestor count
+    for (let i = 0; i < context.selectedNodes.length; i++) {
+      const node = context.selectedNodes[i];
+      const nodeContext = context.nodeContexts[i];
+      this.renderSingleNodeChip(node, nodeContext);
     }
   }
 
   /**
-   * Render a single node chip with summary.
+   * Render a single node chip with summary and remove button.
    */
-  private renderSingleNodeChip(node: any): void {
+  private renderSingleNodeChip(node: any, nodeContext?: { messages: Array<{ isCurrentNode: boolean }> }): void {
     const chipEl = this.canvasIndicatorEl.createDiv({
       cls: 'claudian-canvas-chip claudian-canvas-node-chip',
     });
+    chipEl.setAttribute('data-node-id', node.id);
 
     // Node icon based on type
     const iconEl = chipEl.createSpan({ cls: 'claudian-canvas-chip-icon' });
@@ -124,39 +127,37 @@ export class CanvasChipsView {
     setIcon(iconEl, iconName);
 
     // Node summary
-    const summary = getNodeSummary(node, 40);
+    const summary = getNodeSummary(node, 30);
     const nameEl = chipEl.createSpan({ cls: 'claudian-canvas-chip-name' });
     nameEl.setText(summary);
 
-    // Ancestor count indicator
-    const ancestorCount = this.getAncestorCountHint(node);
+    // Ancestor count indicator - get from nodeContext for accuracy
+    const ancestorCount = nodeContext 
+      ? nodeContext.messages.filter(m => !m.isCurrentNode).length
+      : this.getAncestorCountHint(node);
     if (ancestorCount > 0) {
       const countEl = chipEl.createSpan({ cls: 'claudian-canvas-ancestor-count' });
       countEl.setText(`+${ancestorCount}`);
       countEl.setAttribute('title', `Including ${ancestorCount} ancestor node(s) in context`);
     }
 
-    // Click to focus node
-    chipEl.addEventListener('click', () => {
-      this.callbacks.onFocusNode?.(node.id);
-    });
-  }
+    // Remove button
+    const removeEl = chipEl.createSpan({ cls: 'claudian-canvas-chip-remove' });
+    removeEl.setText('\u00D7');
+    removeEl.setAttribute('aria-label', 'Remove from context');
 
-  /**
-   * Render a chip showing multiple selected nodes.
-   */
-  private renderMultiNodeChip(count: number): void {
-    const chipEl = this.canvasIndicatorEl.createDiv({
-      cls: 'claudian-canvas-chip claudian-canvas-multi-chip',
+    // Click chip to focus node (but not if clicking remove)
+    chipEl.addEventListener('click', (e) => {
+      if (!(e.target as HTMLElement).closest('.claudian-canvas-chip-remove')) {
+        this.callbacks.onFocusNode?.(node.id);
+      }
     });
 
-    // Multi-select icon
-    const iconEl = chipEl.createSpan({ cls: 'claudian-canvas-chip-icon' });
-    setIcon(iconEl, 'layers');
-
-    // Count text
-    const nameEl = chipEl.createSpan({ cls: 'claudian-canvas-chip-name' });
-    nameEl.setText(`${count} nodes selected`);
+    // Click remove to unpin node
+    removeEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.callbacks.onRemoveNode?.(node.id);
+    });
   }
 
   /**

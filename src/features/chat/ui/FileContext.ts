@@ -116,6 +116,8 @@ export class FileContextManager {
     // Initialize Canvas context manager
     this.canvasContextManager = new CanvasContextManager(this.app, {
       onContextChange: () => {
+        // Reset the sent flag when context changes, so updated context will be sent
+        this.canvasContextSent = false;
         this.refreshCanvasChips();
         this.callbacks.onCanvasContextChange?.();
       },
@@ -133,6 +135,12 @@ export class FileContextManager {
             new Notice(`Failed to open canvas: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
+      },
+      onRemoveNode: async (nodeId) => {
+        await this.removeCanvasNode(nodeId);
+      },
+      onRemoveContext: () => {
+        this.clearCanvasNodes();
       },
     });
   }
@@ -534,6 +542,37 @@ export class FileContextManager {
   /** Reset canvas context state for new conversation. */
   resetCanvasContextForNewConversation(): void {
     this.canvasContextSent = false;
+    this.canvasContextManager.clearStickyContext();
     this.refreshCanvasChips();
+  }
+
+  // ========================================
+  // Canvas Node Management
+  // ========================================
+
+  /** Remove a specific canvas node from context. */
+  async removeCanvasNode(nodeId: string): Promise<void> {
+    await this.canvasContextManager.unpinNode(nodeId);
+    // Reset the sent flag so the updated context will be sent with the next message
+    this.canvasContextSent = false;
+    this.refreshCanvasChips();
+  }
+
+  /** Clear all canvas nodes from context. */
+  clearCanvasNodes(): void {
+    this.canvasContextManager.clearPinnedNodes();
+    // Reset the sent flag since context has changed
+    this.canvasContextSent = false;
+    this.refreshCanvasChips();
+  }
+
+  /** Check if there are any pinned canvas nodes. */
+  hasCanvasNodes(): boolean {
+    return this.canvasContextManager.hasPinnedNodes();
+  }
+
+  /** Get all pinned canvas nodes. */
+  getPinnedCanvasNodes() {
+    return this.canvasContextManager.getPinnedNodes();
   }
 }
