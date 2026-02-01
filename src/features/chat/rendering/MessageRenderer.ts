@@ -527,8 +527,8 @@ export class MessageRenderer {
 
   private addRewindButton(msgEl: HTMLElement, messageId: string): void {
     const toolbar = this.getOrCreateActionsToolbar(msgEl);
-    const btn = createSpan({ cls: 'claudian-message-rewind-btn' });
-    toolbar.insertBefore(btn, toolbar.firstChild);
+    const btn = toolbar.createSpan({ cls: 'claudian-message-rewind-btn' });
+    if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
     btn.innerHTML = MessageRenderer.REWIND_ICON;
     btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
     btn.addEventListener('click', async (e) => {
