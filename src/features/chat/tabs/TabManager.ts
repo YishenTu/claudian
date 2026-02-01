@@ -405,17 +405,9 @@ export class TabManager implements TabManagerInterface {
     // Create conversation with fork metadata
     const conversation = await this.plugin.createConversation();
 
-    const MAX_TITLE_LENGTH = 50;
-    const forkSuffix = context.forkAtUserMessage ? ` (#${context.forkAtUserMessage})` : '';
-    const forkPrefix = 'Fork: ';
-    let title: string | undefined;
-    if (context.sourceTitle) {
-      const maxSourceLength = MAX_TITLE_LENGTH - forkPrefix.length - forkSuffix.length;
-      const truncatedSource = context.sourceTitle.length > maxSourceLength
-        ? context.sourceTitle.slice(0, maxSourceLength - 1) + '…'
-        : context.sourceTitle;
-      title = forkPrefix + truncatedSource + forkSuffix;
-    }
+    const title = context.sourceTitle
+      ? this.buildForkTitle(context.sourceTitle, context.forkAtUserMessage)
+      : undefined;
 
     await this.plugin.updateConversation(conversation.id, {
       messages: context.messages,
@@ -429,6 +421,27 @@ export class TabManager implements TabManagerInterface {
     });
 
     return this.createTab(conversation.id);
+  }
+
+  private buildForkTitle(sourceTitle: string, forkAtUserMessage?: number): string {
+    const MAX_TITLE_LENGTH = 50;
+    const forkSuffix = forkAtUserMessage ? ` (#${forkAtUserMessage})` : '';
+    const forkPrefix = 'Fork: ';
+    const maxSourceLength = MAX_TITLE_LENGTH - forkPrefix.length - forkSuffix.length;
+    const truncatedSource = sourceTitle.length > maxSourceLength
+      ? sourceTitle.slice(0, maxSourceLength - 1) + '…'
+      : sourceTitle;
+    let title = forkPrefix + truncatedSource + forkSuffix;
+
+    // Deduplicate against existing conversation titles
+    const existingTitles = new Set(this.plugin.getConversationList().map(c => c.title));
+    if (existingTitles.has(title)) {
+      let n = 2;
+      while (existingTitles.has(`${title} ${n}`)) n++;
+      title = `${title} ${n}`;
+    }
+
+    return title;
   }
 
   // ============================================
