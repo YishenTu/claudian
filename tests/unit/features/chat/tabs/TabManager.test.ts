@@ -1050,7 +1050,7 @@ describe('TabManager - closeTab Edge Cases', () => {
 });
 
 describe('TabManager - forkToNewTab', () => {
-  it('should propagate currentNote from first user message to forked conversation', async () => {
+  it('should propagate currentNote from context to forked conversation', async () => {
     const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
@@ -1064,11 +1064,12 @@ describe('TabManager - forkToNewTab', () => {
 
     await manager.forkToNewTab({
       messages: [
-        { id: 'msg-1', role: 'user', content: 'hello\n\n<current_note>\nnotes/test.md\n</current_note>', currentNote: 'notes/test.md', timestamp: 1 },
+        { id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 },
         { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: 2 },
       ] as any,
       sourceSessionId: 'session-1',
       resumeAt: 'assistant-uuid-1',
+      currentNote: 'notes/test.md',
     });
 
     expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
@@ -1076,7 +1077,7 @@ describe('TabManager - forkToNewTab', () => {
     }));
   });
 
-  it('should not set currentNote when no messages have it', async () => {
+  it('should not set currentNote when context has none', async () => {
     const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 

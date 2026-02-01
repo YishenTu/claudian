@@ -417,8 +417,6 @@ export class TabManager implements TabManagerInterface {
       title = forkPrefix + truncatedSource + forkSuffix;
     }
 
-    const currentNote = context.messages.find(m => m.role === 'user' && m.currentNote)?.currentNote;
-
     await this.plugin.updateConversation(conversation.id, {
       messages: context.messages,
       forkSourceSessionId: context.sourceSessionId,
@@ -427,7 +425,7 @@ export class TabManager implements TabManagerInterface {
       // This is in-memory only (not persisted in metadata).
       sdkMessagesLoaded: true,
       ...(title && { title }),
-      ...(currentNote && { currentNote }),
+      ...(context.currentNote && { currentNote: context.currentNote }),
     });
 
     return this.createTab(conversation.id);
