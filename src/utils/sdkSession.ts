@@ -511,6 +511,24 @@ export function filterActiveBranch(
         break;
       }
     }
+
+    // When resumeSessionAt is also set (rewind on the latest branch without follow-up),
+    // truncate at that point instead of using the full branch leaf
+    if (resumeSessionAt && leaf?.uuid && byUuid.has(resumeSessionAt)) {
+      // Check if resumeSessionAt is an ancestor of the leaf — if so, truncate there
+      let current: SDKNativeMessage | undefined = leaf;
+      while (current?.uuid) {
+        if (current.uuid === resumeSessionAt) {
+          leaf = current;
+          break;
+        }
+        if (current.parentUuid) {
+          current = byUuid.get(current.parentUuid);
+        } else {
+          break;
+        }
+      }
+    }
   } else if (resumeSessionAt) {
     leaf = byUuid.get(resumeSessionAt);
   } else {

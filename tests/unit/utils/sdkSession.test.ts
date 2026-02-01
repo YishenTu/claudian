@@ -1412,6 +1412,63 @@ describe('sdkSession', () => {
       expect(result.some(e => e.type === 'queue-operation')).toBe(true);
     });
 
+    it('truncates at resumeSessionAt on latest branch when branching exists', () => {
+      // Rewind 1 + follow-up created a branch: u3/a3 branch off a1
+      // Rewind 2 on the new branch (no follow-up): resumeSessionAt = a1
+      // On reload, should truncate at a1, not show u3/a3
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },       // old branch
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },   // old branch
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },        // new branch (from rewind 1)
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },   // new branch
+      ];
+
+      // Rewind 2 on new branch: truncate at a1
+      const result = filterActiveBranch(entries, 'a1');
+
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
+    });
+
+    it('truncates at resumeSessionAt mid-branch when branching exists', () => {
+      // Branch from a1: old (u2→a2) and new (u3→a3→u4→a4)
+      // Rewind on new branch to u4: resumeSessionAt = a3
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+        { type: 'user', uuid: 'u4', parentUuid: 'a3' },
+        { type: 'assistant', uuid: 'a4', parentUuid: 'u4' },
+      ];
+
+      const result = filterActiveBranch(entries, 'a3');
+
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u3', 'a3']);
+    });
+
+    it('ignores resumeSessionAt not on latest branch', () => {
+      // Branch from a1: old (u2→a2) and new (u3→a3)
+      // resumeSessionAt points to a2 (on the OLD branch) — should be ignored
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+        { type: 'user', uuid: 'u3', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },
+      ];
+
+      // a2 is on old branch, not an ancestor of leaf a3
+      const result = filterActiveBranch(entries, 'a2');
+
+      // Should return full latest branch (ignoring stale resumeSessionAt)
+      expect(result.map(e => e.uuid)).toEqual(['u1', 'a1', 'u3', 'a3']);
+    });
+
     it('drops no-uuid entries in old branch region', () => {
       const entries: SDKNativeMessage[] = [
         { type: 'user', uuid: 'u1', parentUuid: null },
