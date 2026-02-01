@@ -12,9 +12,9 @@ const CURRENT_NOTE_SUFFIX_REGEX = /\n\n<current_note>\n[\s\S]*?<\/current_note>$
 /**
  * Pattern to match XML context tags appended to prompts.
  * These tags are always preceded by \n\n separator.
- * Matches: current_note, editor_selection (with attributes), editor_cursor (with attributes), context_files
+ * Matches: current_note, editor_selection (with attributes), editor_cursor (with attributes), context_files, canvas_context
  */
-export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files)[\s>]/;
+export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files|canvas_context)[\s>]/;
 
 export function formatCurrentNote(notePath: string): string {
   return `<current_note>\n${notePath}\n</current_note>`;
@@ -85,6 +85,7 @@ export function extractUserQuery(prompt: string): string {
     .replace(/<editor_selection[\s\S]*?<\/editor_selection>\s*/g, '')
     .replace(/<editor_cursor[\s\S]*?<\/editor_cursor>\s*/g, '')
     .replace(/<context_files>[\s\S]*?<\/context_files>\s*/g, '')
+    .replace(/<canvas_context>[\s\S]*?<\/canvas_context>\s*/g, '')
     .trim();
 }
 
@@ -94,4 +95,21 @@ function formatContextFilesLine(files: string[]): string {
 
 export function appendContextFiles(prompt: string, files: string[]): string {
   return `${prompt}\n\n${formatContextFilesLine(files)}`;
+}
+
+/**
+ * Format canvas context (selected nodes and their ancestors) for inclusion in prompts.
+ * The context includes the conversation thread from ancestor nodes.
+ */
+export function formatCanvasContext(canvasContext: string): string {
+  return `<canvas_context>\n${canvasContext}\n</canvas_context>`;
+}
+
+/**
+ * Append canvas context to a prompt.
+ * Canvas context includes selected nodes and their ancestor nodes,
+ * representing a conversation thread within a canvas.
+ */
+export function appendCanvasContext(prompt: string, canvasContext: string): string {
+  return `${prompt}\n\n${formatCanvasContext(canvasContext)}`;
 }

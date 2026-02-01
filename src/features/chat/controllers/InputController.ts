@@ -6,7 +6,7 @@ import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
-import { appendCurrentNote } from '../../../utils/context';
+import { appendCanvasContext, appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
@@ -207,6 +207,14 @@ export class InputController {
         currentNoteForMessage = currentNotePath;
       }
 
+      // Append canvas context if available (selected nodes and their ancestors)
+      if (fileContextManager?.shouldSendCanvasContext()) {
+        const canvasContext = fileContextManager.getCanvasContextForPrompt();
+        if (canvasContext) {
+          promptToSend = appendCanvasContext(promptToSend, canvasContext);
+        }
+      }
+
       // Append editor context if available
       if (editorContext) {
         promptToSend = appendEditorContext(promptToSend, editorContext);
@@ -219,6 +227,7 @@ export class InputController {
     }
 
     fileContextManager?.markCurrentNoteSent();
+    fileContextManager?.markCanvasContextSent();
 
     const userMsg: ChatMessage = {
       id: this.deps.generateId(),

@@ -1,6 +1,13 @@
 export { type FileContextCallbacks,FileContextManager } from './FileContext';
 export { type ImageContextCallbacks,ImageContextManager } from './ImageContext';
 export {
+  type CanvasContext,
+  type NodeContext,
+  type CanvasContextCallbacks,
+  CanvasContextManager,
+  CanvasChipsView,
+} from './canvas-context';
+export {
   type AddExternalContextResult,
   ContextUsageMeter,
   createInputToolbar,

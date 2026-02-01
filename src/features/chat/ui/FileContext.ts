@@ -5,6 +5,8 @@ import type { AgentManager } from '../../../core/agents';
 import type { McpServerManager } from '../../../core/mcp';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
+import { CanvasContextManager, type CanvasContext } from './canvas-context/CanvasContextManager';
+import { CanvasChipsView } from './canvas-context/CanvasChipsView';
 import { FileContextState } from './file-context/state/FileContextState';
 import { MarkdownFileCache } from './file-context/state/MarkdownFileCache';
 import { FileChipsView } from './file-context/view/FileChipsView';
@@ -15,6 +17,8 @@ export interface FileContextCallbacks {
   getExternalContexts?: () => string[];
   /** Called when an agent is selected from the @ mention dropdown. */
   onAgentMentionSelect?: (agentId: string) => void;
+  /** Called when canvas context changes. */
+  onCanvasContextChange?: () => void;
 }
 
 export class FileContextManager {
@@ -36,6 +40,11 @@ export class FileContextManager {
   // MCP server support
   private onMcpMentionChange: ((servers: Set<string>) => void) | null = null;
 
+  // Canvas context support
+  private canvasContextManager: CanvasContextManager;
+  private canvasChipsView: CanvasChipsView;
+  private canvasContextSent = false;
+
   constructor(
     app: App,
     chipsContainerEl: HTMLElement,
@@ -55,10 +64,14 @@ export class FileContextManager {
     this.chipsView = new FileChipsView(this.chipsContainerEl, {
       onRemoveAttachment: (filePath) => {
         if (filePath === this.currentNotePath) {
+          // Removing current note
           this.currentNotePath = null;
           this.state.detachFile(filePath);
-          this.refreshCurrentNoteChip();
+        } else if (this.state.isAdditionalFile(filePath)) {
+          // Removing additional file
+          this.state.removeAdditionalFile(filePath);
         }
+        this.refreshAllFileChips();
       },
       onOpenFile: async (filePath) => {
         const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -99,6 +112,29 @@ export class FileContextManager {
     this.renameEventRef = this.app.vault.on('rename', (file, oldPath) => {
       if (file instanceof TFile) this.handleFileRenamed(oldPath, file.path);
     });
+
+    // Initialize Canvas context manager
+    this.canvasContextManager = new CanvasContextManager(this.app, {
+      onContextChange: () => {
+        this.refreshCanvasChips();
+        this.callbacks.onCanvasContextChange?.();
+      },
+    });
+    this.canvasContextManager.startWatching();
+
+    // Initialize Canvas chips view
+    this.canvasChipsView = new CanvasChipsView(this.chipsContainerEl, {
+      onOpenCanvas: async (filePath) => {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (file instanceof TFile) {
+          try {
+            await this.app.workspace.getLeaf().openFile(file);
+          } catch (error) {
+            new Notice(`Failed to open canvas: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      },
+    });
   }
 
   /** Returns the current note path (shown as chip). */
@@ -121,6 +157,81 @@ export class FileContextManager {
     this.state.markCurrentNoteSent();
   }
 
+  /** Marks all attached files as sent. */
+  markAllFilesSent() {
+    this.state.markAllFilesSent();
+  }
+
+  // ========================================
+  // Multi-File Support
+  // ========================================
+
+  /**
+   * Add a file to the conversation context.
+   * Returns true if the file was added, false if it was already attached.
+   */
+  addFile(filePath: string): boolean {
+    const normalizedPath = this.normalizePathForVault(filePath);
+    if (!normalizedPath) return false;
+
+    // Don't add if already attached
+    if (this.state.getAttachedFiles().has(normalizedPath)) {
+      return false;
+    }
+
+    this.state.addAdditionalFile(normalizedPath);
+    this.refreshAllFileChips();
+    return true;
+  }
+
+  /**
+   * Remove a file from the conversation context.
+   */
+  removeFile(filePath: string): void {
+    const normalizedPath = this.normalizePathForVault(filePath);
+    if (!normalizedPath) return;
+
+    if (normalizedPath === this.currentNotePath) {
+      this.currentNotePath = null;
+      this.state.detachFile(normalizedPath);
+    } else {
+      this.state.removeAdditionalFile(normalizedPath);
+    }
+    this.refreshAllFileChips();
+  }
+
+  /**
+   * Get all attached file paths (current note + additional files).
+   */
+  getAllAttachedFiles(): string[] {
+    const files: string[] = [];
+    if (this.currentNotePath) {
+      files.push(this.currentNotePath);
+    }
+    for (const file of this.state.getAdditionalFiles()) {
+      if (file !== this.currentNotePath) {
+        files.push(file);
+      }
+    }
+    return files;
+  }
+
+  /**
+   * Get files that haven't been sent yet in this session.
+   */
+  getUnsentFiles(): string[] {
+    return this.state.getUnsentFiles();
+  }
+
+  /**
+   * Check if a file is attached to the conversation.
+   */
+  isFileAttached(filePath: string): boolean {
+    const normalizedPath = this.normalizePathForVault(filePath);
+    if (!normalizedPath) return false;
+    return this.state.getAttachedFiles().has(normalizedPath);
+  }
+
   isSessionStarted(): boolean {
     return this.state.isSessionStarted();
   }
@@ -134,6 +245,7 @@ export class FileContextManager {
     this.currentNotePath = null;
     this.state.resetForNewConversation();
     this.refreshCurrentNoteChip();
+    this.resetCanvasContextForNewConversation();
   }
 
   /** Resets state for loading an existing conversation. */
@@ -141,6 +253,8 @@ export class FileContextManager {
     this.currentNotePath = null;
     this.state.resetForLoadedConversation(hasMessages);
     this.refreshCurrentNoteChip();
+    this.canvasContextSent = hasMessages;
+    this.refreshCanvasChips();
   }
 
   /** Sets current note (for restoring persisted state). */
@@ -218,6 +332,8 @@ export class FileContextManager {
     if (this.renameEventRef) this.app.vault.offref(this.renameEventRef);
     this.mentionDropdown.destroy();
     this.chipsView.destroy();
+    this.canvasContextManager.destroy();
+    this.canvasChipsView.destroy();
   }
 
   /** Normalizes a file path to be vault-relative with forward slashes. */
@@ -227,7 +343,26 @@ export class FileContextManager {
   }
 
   private refreshCurrentNoteChip(): void {
-    this.chipsView.renderCurrentNote(this.currentNotePath);
+    this.refreshAllFileChips();
+  }
+
+  /** Refresh all file chips (current note + additional files). */
+  private refreshAllFileChips(): void {
+    const files: string[] = [];
+
+    // Add current note first
+    if (this.currentNotePath) {
+      files.push(this.currentNotePath);
+    }
+
+    // Add additional files
+    for (const file of this.state.getAdditionalFiles()) {
+      if (file !== this.currentNotePath) {
+        files.push(file);
+      }
+    }
+
+    this.chipsView.renderFiles(files);
     this.callbacks.onChipsChanged?.();
   }
 
@@ -341,5 +476,64 @@ export class FileContextManager {
     }
 
     return fileTags.some(tag => excludedTags.includes(tag));
+  }
+
+  // ========================================
+  // Canvas Context Support
+  // ========================================
+
+  /** Check if there's an active canvas with selected nodes. */
+  hasCanvasContext(): boolean {
+    const context = this.canvasContextManager.getCurrentContext();
+    return context !== null && context.selectedNodes.length > 0;
+  }
+
+  /** Get the current canvas context. */
+  getCanvasContext(): CanvasContext | null {
+    return this.canvasContextManager.getCurrentContext();
+  }
+
+  /** Refresh canvas context (call when user switches tabs, etc.). */
+  async refreshCanvasContext(): Promise<CanvasContext | null> {
+    return await this.canvasContextManager.refreshContext();
+  }
+
+  /** Get formatted canvas context for injection into prompts. */
+  getCanvasContextForPrompt(): string | null {
+    const context = this.canvasContextManager.getCurrentContext();
+    if (!context || context.selectedNodes.length === 0) return null;
+    return context.formattedContext;
+  }
+
+  /** Check if canvas context should be sent (not yet sent in this session). */
+  shouldSendCanvasContext(): boolean {
+    return this.hasCanvasContext() && !this.canvasContextSent;
+  }
+
+  /** Mark canvas context as sent. */
+  markCanvasContextSent(): void {
+    this.canvasContextSent = true;
+  }
+
+  /** Get a brief description of canvas context for display. */
+  getCanvasContextDescription(): string | null {
+    return this.canvasContextManager.getContextDescription();
+  }
+
+  /** Check if current view is a canvas. */
+  isCanvasActive(): boolean {
+    return this.canvasContextManager.isCanvasActive();
+  }
+
+  private refreshCanvasChips(): void {
+    const context = this.canvasContextManager.getCurrentContext();
+    this.canvasChipsView.render(context);
+    this.callbacks.onChipsChanged?.();
+  }
+
+  /** Reset canvas context state for new conversation. */
+  resetCanvasContextForNewConversation(): void {
+    this.canvasContextSent = false;
+    this.refreshCanvasChips();
   }
 }
