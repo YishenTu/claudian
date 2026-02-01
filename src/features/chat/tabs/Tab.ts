@@ -554,6 +554,9 @@ export interface ForkContext {
   messages: ChatMessage[];
   sourceSessionId: string;
   resumeAt: string;
+  sourceTitle?: string;
+  /** 1-based index of the user message where the fork happens (counting only user messages). */
+  forkAtUserMessage?: number;
 }
 
 function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -611,10 +614,19 @@ async function handleForkRequest(
   // Slice messages before the clicked user message
   const messagesBeforeFork = deepCloneMessages(msgs.slice(0, userIdx));
 
+  const sourceTitle = tab.conversationId
+    ? plugin.getConversationSync(tab.conversationId)?.title
+    : undefined;
+
+  // 1-based user message number (the message being forked at)
+  const forkAtUserMessage = msgs.slice(0, userIdx + 1).filter(m => m.role === 'user').length;
+
   await forkRequestCallback({
     messages: messagesBeforeFork,
     sourceSessionId,
     resumeAt: rewindCtx.prevAssistantUuid,
+    sourceTitle,
+    forkAtUserMessage,
   });
 }
 

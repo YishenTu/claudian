@@ -1049,6 +1049,59 @@ describe('TabManager - closeTab Edge Cases', () => {
   });
 });
 
+describe('TabManager - forkToNewTab', () => {
+  it('should propagate currentNote from first user message to forked conversation', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [
+        { id: 'msg-1', role: 'user', content: 'hello\n\n<current_note>\nnotes/test.md\n</current_note>', currentNote: 'notes/test.md', timestamp: 1 },
+        { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: 2 },
+      ] as any,
+      sourceSessionId: 'session-1',
+      resumeAt: 'assistant-uuid-1',
+    });
+
+    expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
+      currentNote: 'notes/test.md',
+    }));
+  });
+
+  it('should not set currentNote when no messages have it', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [
+        { id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 },
+        { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: 2 },
+      ] as any,
+      sourceSessionId: 'session-1',
+      resumeAt: 'assistant-uuid-1',
+    });
+
+    const updateCall = mockUpdateConversation.mock.calls[0][1];
+    expect(updateCall.currentNote).toBeUndefined();
+  });
+});
+
 describe('TabManager - switchToTab Session Sync', () => {
   it('should sync service session for already-loaded tab with conversation', async () => {
     jest.clearAllMocks();

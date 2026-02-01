@@ -404,6 +404,21 @@ export class TabManager implements TabManagerInterface {
 
     // Create conversation with fork metadata
     const conversation = await this.plugin.createConversation();
+
+    const MAX_TITLE_LENGTH = 50;
+    const forkSuffix = context.forkAtUserMessage ? ` (#${context.forkAtUserMessage})` : '';
+    const forkPrefix = 'Fork: ';
+    let title: string | undefined;
+    if (context.sourceTitle) {
+      const maxSourceLength = MAX_TITLE_LENGTH - forkPrefix.length - forkSuffix.length;
+      const truncatedSource = context.sourceTitle.length > maxSourceLength
+        ? context.sourceTitle.slice(0, maxSourceLength - 1) + '…'
+        : context.sourceTitle;
+      title = forkPrefix + truncatedSource + forkSuffix;
+    }
+
+    const currentNote = context.messages.find(m => m.role === 'user' && m.currentNote)?.currentNote;
+
     await this.plugin.updateConversation(conversation.id, {
       messages: context.messages,
       forkSourceSessionId: context.sourceSessionId,
@@ -411,6 +426,8 @@ export class TabManager implements TabManagerInterface {
       // Prevent immediate SDK message load from merging duplicates with the copied messages.
       // This is in-memory only (not persisted in metadata).
       sdkMessagesLoaded: true,
+      ...(title && { title }),
+      ...(currentNote && { currentNote }),
     });
 
     return this.createTab(conversation.id);
