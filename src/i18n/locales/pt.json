@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem serão revertidas.",
+      "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem serão revertidas. O retrocesso não afeta arquivos editados manualmente ou via bash.",
       "confirmButton": "Retroceder",
       "ariaLabel": "Retroceder até aqui",
       "notice": "Retrocedido: {count} arquivo(s) revertido(s)",

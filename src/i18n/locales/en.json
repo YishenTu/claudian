@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted.",
+      "confirmMessage": "Rewind to this point? File changes after this message will be reverted. Rewinding does not affect files edited manually or via bash.",
       "confirmButton": "Rewind",
       "ariaLabel": "Rewind to here",
       "notice": "Rewound: {count} file(s) reverted",

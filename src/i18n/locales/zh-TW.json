@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "回退到此處？此訊息之後的檔案變更將被還原。",
+      "confirmMessage": "回退到此處？此訊息之後的檔案變更將被還原。回退不會影響手動或透過 bash 編輯的檔案。",
       "confirmButton": "回退",
       "ariaLabel": "回退到此處",
       "notice": "已回退：還原了 {count} 個檔案",

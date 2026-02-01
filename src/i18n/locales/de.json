@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht werden rückgängig gemacht.",
+      "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht werden rückgängig gemacht. Das Zurückspulen betrifft keine manuell oder über Bash bearbeiteten Dateien.",
       "confirmButton": "Zurückspulen",
       "ariaLabel": "Hierher zurückspulen",
       "notice": "Zurückgespult: {count} Datei(en) wiederhergestellt",

@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos.",
+      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos. El rebobinado no afecta archivos editados manualmente o mediante bash.",
       "confirmButton": "Rebobinar",
       "ariaLabel": "Rebobinar hasta aquí",
       "notice": "Rebobinado: {count} archivo(s) revertido(s)",
