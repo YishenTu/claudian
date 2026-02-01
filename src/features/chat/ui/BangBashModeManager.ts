@@ -35,6 +35,16 @@ export class BangBashModeManager {
     if (!this.state.active && this.inputEl.value === '' && e.key === '!') {
       if (this.enterMode()) {
         e.preventDefault();
+        // Some environments may still insert the trigger character despite preventDefault.
+        // Ensure bang-bash mode starts with an empty input.
+        this.inputEl.value = '';
+        this.state.rawCommand = '';
+        queueMicrotask(() => {
+          if (this.state.active && this.inputEl.value === '!') {
+            this.inputEl.value = '';
+            this.state.rawCommand = '';
+          }
+        });
         return true;
       }
     }
@@ -44,12 +54,9 @@ export class BangBashModeManager {
   handleInputChange(): void {
     if (!this.state.active) return;
 
-    const text = this.inputEl.value;
-    if (text === '') {
-      this.exitMode();
-    } else {
-      this.state.rawCommand = text;
-    }
+    // Stay in bang-bash mode even when input is empty.
+    // Exit is explicit via Escape (or after submit).
+    this.state.rawCommand = this.inputEl.value;
   }
 
   private enterMode(): boolean {
@@ -75,12 +82,10 @@ export class BangBashModeManager {
     if (!this.state.active) return false;
 
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      if (!this.state.rawCommand.trim()) {
-        return false;
-      }
-
       e.preventDefault();
-      this.submit();
+      if (this.state.rawCommand.trim()) {
+        this.submit();
+      }
       return true;
     }
 

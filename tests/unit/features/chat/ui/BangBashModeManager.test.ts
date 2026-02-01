@@ -73,7 +73,7 @@ describe('BangBashModeManager', () => {
     expect(handled).toBe(false);
   });
 
-  it('should exit bash mode when input is cleared', () => {
+  it('should stay in bash mode when input is cleared (exit via Escape)', () => {
     const wrapper = createWrapper();
     const inputEl = { value: '', placeholder: 'Ask...' } as any;
     const callbacks = {
@@ -88,9 +88,8 @@ describe('BangBashModeManager', () => {
     inputEl.value = '';
     manager.handleInputChange();
 
-    expect(manager.isActive()).toBe(false);
-    expect(inputEl.placeholder).toBe('Ask...');
-    expect(wrapper.removeClass).toHaveBeenCalledWith('claudian-input-bang-bash-mode');
+    expect(manager.isActive()).toBe(true);
+    expect(wrapper.removeClass).not.toHaveBeenCalled();
   });
 
   it('should submit command on Enter and trim whitespace', async () => {
@@ -118,7 +117,7 @@ describe('BangBashModeManager', () => {
     expect(callbacks.onSubmit).toHaveBeenCalledWith('ls -la');
   });
 
-  it('should not handle Enter when command is empty', () => {
+  it('should handle Enter when command is empty (no submit)', () => {
     const wrapper = createWrapper();
     const inputEl = { value: '', placeholder: 'Ask...' } as any;
     const callbacks = {
@@ -135,8 +134,8 @@ describe('BangBashModeManager', () => {
     const e = createKeyEvent('Enter');
     const handled = manager.handleKeydown(e);
 
-    expect(handled).toBe(false);
-    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(handled).toBe(true);
+    expect(e.preventDefault).toHaveBeenCalled();
     expect(callbacks.onSubmit).not.toHaveBeenCalled();
   });
 
