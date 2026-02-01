@@ -188,6 +188,9 @@ export class TabManager implements TabManagerInterface {
           if (!conversation.sessionId && conversation.forkSourceSessionId) {
             tab.service.setPendingForkSession(true);
             tab.service.setPendingResumeAt(conversation.forkResumeAt);
+          } else {
+            tab.service.setPendingForkSession(false);
+            tab.service.setPendingResumeAt(undefined);
           }
 
           tab.service.setSessionId(resolvedSessionId, externalContextPaths);
@@ -421,11 +424,11 @@ export class TabManager implements TabManagerInterface {
 
   async forkInCurrentTab(context: ForkContext): Promise<boolean> {
     const activeTab = this.getActiveTab();
-    if (!activeTab) return false;
+    if (!activeTab?.controllers.conversationController) return false;
 
     const conversationId = await this.createForkConversation(context);
     // switchTo handles fork metadata; callback chain syncs tab.conversationId
-    await activeTab.controllers.conversationController?.switchTo(conversationId);
+    await activeTab.controllers.conversationController.switchTo(conversationId);
     return true;
   }
 

@@ -42,7 +42,8 @@
       "noticeCurrentTab": "Forked in current tab",
       "failed": "Fork failed: {error}",
       "unavailableStreaming": "Cannot fork while streaming",
-      "unavailableNoUuid": "Cannot fork: missing message identifiers"
+      "unavailableNoUuid": "Cannot fork: missing message identifiers",
+      "unavailableNoResponse": "Cannot fork: no response to fork from"
     }
   },
   "settings": {

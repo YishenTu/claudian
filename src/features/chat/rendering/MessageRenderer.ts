@@ -499,6 +499,7 @@ export class MessageRenderer {
     if (!msgEl) return;
     if (msgEl.querySelector('.claudian-message-rewind-btn')) return;
     this.addRewindButton(msgEl, msg.id);
+    this.cleanupLiveMessageEl(msg.id, msgEl);
   }
 
   refreshForkButton(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
@@ -508,8 +509,16 @@ export class MessageRenderer {
     if (!msgEl) return;
     if (msgEl.querySelector('.claudian-message-fork-btn')) return;
     this.addForkButton(msgEl, msg.id);
-    // Both rewind and fork have been added; remove from tracking
-    this.liveMessageEls.delete(msg.id);
+    this.cleanupLiveMessageEl(msg.id, msgEl);
+  }
+
+  /** Remove from tracking once all enabled action buttons have been added. */
+  private cleanupLiveMessageEl(msgId: string, msgEl: HTMLElement): void {
+    const needsRewind = this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn');
+    const needsFork = this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn');
+    if (!needsRewind && !needsFork) {
+      this.liveMessageEls.delete(msgId);
+    }
   }
 
   private getOrCreateActionsToolbar(msgEl: HTMLElement): HTMLElement {

@@ -266,6 +266,9 @@ export async function initializeTabService(
         if (!conversation.sessionId && conversation.forkSourceSessionId) {
           service.setPendingForkSession(true);
           service.setPendingResumeAt(conversation.forkResumeAt);
+        } else {
+          service.setPendingForkSession(false);
+          service.setPendingResumeAt(undefined);
         }
 
         const hasMessages = conversation.messages.length > 0;
@@ -593,7 +596,7 @@ async function handleForkRequest(
 
   const rewindCtx = findRewindContext(msgs, userIdx);
   if (!rewindCtx.hasResponse || !rewindCtx.prevAssistantUuid) {
-    new Notice(t('chat.fork.unavailableNoUuid'));
+    new Notice(t('chat.fork.unavailableNoResponse'));
     return;
   }
 

@@ -42,7 +42,8 @@
       "noticeCurrentTab": "已在当前标签页分叉",
       "failed": "分叉失败：{error}",
       "unavailableStreaming": "流式响应中无法分叉",
-      "unavailableNoUuid": "无法分叉：缺少消息标识符"
+      "unavailableNoUuid": "无法分叉：缺少消息标识符",
+      "unavailableNoResponse": "无法分叉：没有可分叉的响应"
     }
   },
   "settings": {

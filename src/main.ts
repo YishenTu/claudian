@@ -835,6 +835,9 @@ export default class ClaudianPlugin extends Plugin {
    *
    * For native sessions, saves metadata only (SDK handles messages including images).
    * For legacy sessions, saves full JSONL.
+   *
+   * Image data is cleared from memory after save (SDK/JSONL has persisted it),
+   * except for pending fork conversations whose images aren't yet in SDK storage.
    */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
@@ -850,6 +853,21 @@ export default class ClaudianPlugin extends Plugin {
     } else {
       // Legacy session: save full JSONL
       await this.storage.sessions.saveConversation(conversation);
+    }
+
+    // Clear image data from memory after save (data is persisted by SDK or JSONL).
+    // Skip for pending forks: their deep-cloned images aren't in SDK storage yet.
+    const isPendingFork = !!conversation.forkSourceSessionId &&
+      !conversation.sdkSessionId &&
+      conversation.sessionId === null;
+    if (!isPendingFork) {
+      for (const msg of conversation.messages) {
+        if (msg.images) {
+          for (const img of msg.images) {
+            img.data = '';
+          }
+        }
+      }
     }
   }
 

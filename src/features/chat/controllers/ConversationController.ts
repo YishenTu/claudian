@@ -300,6 +300,9 @@ export class ConversationController {
         if (!conversation.sessionId && conversation.forkSourceSessionId) {
           agentService.setPendingForkSession(true);
           agentService.setPendingResumeAt(conversation.forkResumeAt);
+        } else {
+          agentService.setPendingForkSession(false);
+          agentService.setPendingResumeAt(undefined);
         }
         agentService.setSessionId(resolvedSessionId, externalContextPaths);
       }

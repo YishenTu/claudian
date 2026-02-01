@@ -1243,6 +1243,8 @@ describe('TabManager - switchToTab Session Sync', () => {
       ensureReady: jest.fn().mockResolvedValue(true),
       onReadyStateChange: jest.fn(() => () => {}),
       isReady: jest.fn().mockReturnValue(true),
+      setPendingForkSession: jest.fn(),
+      setPendingResumeAt: jest.fn(),
     };
 
     let tabCounter = 0;
@@ -1289,6 +1291,8 @@ describe('TabManager - switchToTab Session Sync', () => {
     const mockSetSessionId = jest.fn();
     const mockService = {
       setSessionId: mockSetSessionId,
+      setPendingForkSession: jest.fn(),
+      setPendingResumeAt: jest.fn(),
     };
 
     let tabCounter = 0;

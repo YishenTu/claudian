@@ -52,6 +52,7 @@ export type TranslationKey =
   | 'chat.fork.failed'
   | 'chat.fork.unavailableStreaming'
   | 'chat.fork.unavailableNoUuid'
+  | 'chat.fork.unavailableNoResponse'
 
   // Settings - Customization
   | 'settings.title'

@@ -34,6 +34,8 @@ jest.mock('@/core/agent', () => ({
     ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
     isReady: jest.fn().mockReturnValue(false),
+    setPendingForkSession: jest.fn(),
+    setPendingResumeAt: jest.fn(),
     onReadyStateChange: jest.fn((listener: (ready: boolean) => void) => {
       listener(false);
       return () => {};
@@ -99,6 +101,8 @@ const createMockClaudianService = (overrides?: {
   ensureReady: overrides?.ensureReady ?? jest.fn().mockResolvedValue(true),
   closePersistentQuery: jest.fn(),
   isReady: jest.fn().mockReturnValue(false),
+  setPendingForkSession: jest.fn(),
+  setPendingResumeAt: jest.fn(),
   onReadyStateChange: overrides?.onReadyStateChange ?? jest.fn((listener: (ready: boolean) => void) => {
     listener(false);
     return () => {};
