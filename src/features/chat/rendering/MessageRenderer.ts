@@ -492,27 +492,21 @@ export class MessageRenderer {
     });
   }
 
-  refreshRewindButton(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
-    if (!this.rewindCallback || !msg.sdkUserUuid) return;
+  refreshActionButtons(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
+    if (!msg.sdkUserUuid) return;
     if (!this.isRewindEligible(allMessages, index)) return;
     const msgEl = this.liveMessageEls.get(msg.id);
     if (!msgEl) return;
-    if (msgEl.querySelector('.claudian-message-rewind-btn')) return;
-    this.addRewindButton(msgEl, msg.id);
+
+    if (this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn')) {
+      this.addRewindButton(msgEl, msg.id);
+    }
+    if (this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn')) {
+      this.addForkButton(msgEl, msg.id);
+    }
     this.cleanupLiveMessageEl(msg.id, msgEl);
   }
 
-  refreshForkButton(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
-    if (!this.forkCallback || !msg.sdkUserUuid) return;
-    if (!this.isRewindEligible(allMessages, index)) return;
-    const msgEl = this.liveMessageEls.get(msg.id);
-    if (!msgEl) return;
-    if (msgEl.querySelector('.claudian-message-fork-btn')) return;
-    this.addForkButton(msgEl, msg.id);
-    this.cleanupLiveMessageEl(msg.id, msgEl);
-  }
-
-  /** Remove from tracking once all enabled action buttons have been added. */
   private cleanupLiveMessageEl(msgId: string, msgEl: HTMLElement): void {
     const needsRewind = this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn');
     const needsFork = this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn');

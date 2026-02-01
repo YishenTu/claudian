@@ -197,8 +197,16 @@ export class ClaudianService {
     this.pendingResumeAt = uuid;
   }
 
-  setPendingForkSession(value: boolean): void {
-    this.pendingForkSession = value;
+  /** One-shot: consumed on the next query, then cleared by routeMessage on session init. */
+  applyForkState(conv: {
+    sessionId?: string | null;
+    forkSourceSessionId?: string;
+    forkResumeAt?: string;
+  }): string | null {
+    const isPending = !conv.sessionId && !!conv.forkSourceSessionId;
+    this.pendingForkSession = isPending;
+    this.pendingResumeAt = isPending ? conv.forkResumeAt : undefined;
+    return conv.sessionId ?? conv.forkSourceSessionId ?? null;
   }
 
   async reloadMcpServers(): Promise<void> {

@@ -417,8 +417,7 @@ export class InputController {
         await conversationController.save(true, saveExtras);
 
         const userMsgIndex = state.messages.indexOf(userMsg);
-        renderer.refreshRewindButton(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
-        renderer.refreshForkButton(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
+        renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
 
         // approve-new-session: create fresh conversation and send plan content
         // Must be inside the invalidation guard — if the tab was closed or

@@ -576,15 +576,20 @@ export default class ClaudianPlugin extends Plugin {
     return firstUserMsg.content.substring(0, 50) + (firstUserMsg.content.length > 50 ? '...' : '');
   }
 
+  /** Fork has no owned session yet; still referencing the source session for resume. */
+  private isPendingFork(conversation: Conversation): boolean {
+    return !!conversation.forkSourceSessionId &&
+      !conversation.sdkSessionId &&
+      !conversation.sessionId;
+  }
+
   private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
     if (!conversation.isNative || conversation.sdkMessagesLoaded) return;
 
     const vaultPath = getVaultPath(this.app);
     if (!vaultPath) return;
 
-    // Pending fork: no owned session yet, load from fork source and truncate
-    const isPendingFork = conversation.forkSourceSessionId &&
-      !conversation.sdkSessionId && !conversation.sessionId;
+    const isPendingFork = this.isPendingFork(conversation);
 
     const allSessionIds: string[] = isPendingFork
       ? [conversation.forkSourceSessionId!]
@@ -611,7 +616,6 @@ export default class ClaudianPlugin extends Plugin {
       }
 
       const isCurrentSession = sessionId === currentSessionId;
-      // For pending forks, truncate at forkResumeAt; otherwise use resumeSessionAt
       const truncateAt = isCurrentSession
         ? (isPendingFork ? conversation.forkResumeAt : conversation.resumeSessionAt)
         : undefined;
@@ -857,10 +861,7 @@ export default class ClaudianPlugin extends Plugin {
 
     // Clear image data from memory after save (data is persisted by SDK or JSONL).
     // Skip for pending forks: their deep-cloned images aren't in SDK storage yet.
-    const isPendingFork = !!conversation.forkSourceSessionId &&
-      !conversation.sdkSessionId &&
-      conversation.sessionId === null;
-    if (!isPendingFork) {
+    if (!this.isPendingFork(conversation)) {
       for (const msg of conversation.messages) {
         if (msg.images) {
           for (const img of msg.images) {

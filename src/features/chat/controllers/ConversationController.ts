@@ -293,17 +293,9 @@ export class ConversationController {
         : plugin.settings.persistentExternalContextPaths || [];
 
       // Update agent service session ID with correct external contexts
-      // For pending fork conversations, use forkSourceSessionId for resume
-      const resolvedSessionId = conversation.sessionId ?? conversation.forkSourceSessionId ?? null;
       const agentService = this.getAgentService();
       if (agentService) {
-        if (!conversation.sessionId && conversation.forkSourceSessionId) {
-          agentService.setPendingForkSession(true);
-          agentService.setPendingResumeAt(conversation.forkResumeAt);
-        } else {
-          agentService.setPendingForkSession(false);
-          agentService.setPendingResumeAt(undefined);
-        }
+        const resolvedSessionId = agentService.applyForkState(conversation);
         agentService.setSessionId(resolvedSessionId, externalContextPaths);
       }
 
@@ -490,12 +482,18 @@ export class ConversationController {
       !conversation?.sdkSessionId &&
       sessionId === conversation.forkSourceSessionId;
 
+    let resolvedSessionId: string | null;
+    if (sessionInvalidated) {
+      resolvedSessionId = null;
+    } else if (isForkSourceOnly) {
+      resolvedSessionId = conversation?.sessionId ?? null;
+    } else {
+      resolvedSessionId = sessionId ?? conversation?.sessionId ?? null;
+    }
+
     const updates: Partial<Conversation> = {
-      // For native sessions, don't persist messages (SDK handles that)
-      // For legacy sessions, persist messages as before
       messages: isNative ? state.messages : state.getPersistedMessages(),
-      // Preserve existing sessionId when SDK hasn't captured a new one yet
-      sessionId: sessionInvalidated ? null : (isForkSourceOnly ? (conversation?.sessionId ?? null) : (sessionId ?? conversation?.sessionId ?? null)),
+      sessionId: resolvedSessionId,
       sdkSessionId: isNative && sessionId && !isForkSourceOnly ? sessionId : conversation?.sdkSessionId,
       previousSdkSessionIds,
       isNative: isNative || undefined,

@@ -183,16 +183,7 @@ export class TabManager implements TabManagerInterface {
             ? conversation.externalContextPaths || []
             : (this.plugin.settings.persistentExternalContextPaths || []);
 
-          // Pending fork: resume from forkSourceSessionId until SDK captures a new session ID.
-          const resolvedSessionId = conversation.sessionId ?? conversation.forkSourceSessionId ?? null;
-          if (!conversation.sessionId && conversation.forkSourceSessionId) {
-            tab.service.setPendingForkSession(true);
-            tab.service.setPendingResumeAt(conversation.forkResumeAt);
-          } else {
-            tab.service.setPendingForkSession(false);
-            tab.service.setPendingResumeAt(undefined);
-          }
-
+          const resolvedSessionId = tab.service.applyForkState(conversation);
           tab.service.setSessionId(resolvedSessionId, externalContextPaths);
         }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
@@ -463,7 +454,6 @@ export class TabManager implements TabManagerInterface {
       : sourceTitle;
     let title = forkPrefix + truncatedSource + forkSuffix;
 
-    // Deduplicate against existing conversation titles
     const existingTitles = new Set(this.plugin.getConversationList().map(c => c.title));
     if (existingTitles.has(title)) {
       let n = 2;

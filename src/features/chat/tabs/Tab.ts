@@ -261,15 +261,7 @@ export async function initializeTabService(
       const conversation = await plugin.getConversationById(tab.conversationId);
 
       if (conversation) {
-        // Fork: prefer owned sessionId; only fall back to forkSourceSessionId if this is pending fork.
-        sessionId = conversation.sessionId ?? conversation.forkSourceSessionId ?? undefined;
-        if (!conversation.sessionId && conversation.forkSourceSessionId) {
-          service.setPendingForkSession(true);
-          service.setPendingResumeAt(conversation.forkResumeAt);
-        } else {
-          service.setPendingForkSession(false);
-          service.setPendingResumeAt(undefined);
-        }
+        sessionId = service.applyForkState(conversation) ?? undefined;
 
         const hasMessages = conversation.messages.length > 0;
         externalContextPaths = hasMessages
@@ -545,14 +537,6 @@ export function initializeTabUI(
   updateScrollToBottomVisibility();
 }
 
-/**
- * Initializes the tab's controllers.
- * Call this after UI components are initialized.
- *
- * @param tab The tab data to initialize controllers for.
- * @param plugin The plugin instance.
- * @param component The Obsidian Component for registering event handlers (typically ClaudianView).
- */
 export interface ForkContext {
   messages: ChatMessage[];
   sourceSessionId: string;
