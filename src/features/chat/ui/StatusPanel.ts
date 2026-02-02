@@ -648,7 +648,7 @@ export class StatusPanel {
 
       const entryLabelEl = document.createElement('span');
       entryLabelEl.className = 'claudian-tool-label';
-      entryLabelEl.textContent = `Command: ${this.truncateDescription(info.command, 60)}`;
+      entryLabelEl.textContent = `Bash: ${this.truncateDescription(info.command, 60)}`;
       entryHeaderEl.appendChild(entryLabelEl);
 
       const entryStatusEl = document.createElement('span');
