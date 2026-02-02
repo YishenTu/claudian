@@ -552,18 +552,20 @@ export class StatusPanel {
     setIcon(headerIconEl, 'terminal');
     this.bashHeaderEl.appendChild(headerIconEl);
 
+    const latest = Array.from(this.currentBashOutputs.values()).at(-1);
+
     const headerLabelEl = document.createElement('span');
     headerLabelEl.className = 'claudian-tool-label';
-    headerLabelEl.textContent = 'Bash';
+    if (this.isBashExpanded) {
+      headerLabelEl.textContent = 'Command panel';
+    } else {
+      headerLabelEl.textContent = latest ? this.truncateDescription(latest.command, 60) : 'Command panel';
+    }
     this.bashHeaderEl.appendChild(headerLabelEl);
-
-    const latest = Array.from(this.currentBashOutputs.values()).at(-1);
 
     const previewEl = document.createElement('span');
     previewEl.className = 'claudian-tool-current';
-    if (!this.isBashExpanded && latest) {
-      previewEl.textContent = this.truncateDescription(latest.command, 60);
-    }
+    previewEl.style.display = this.isBashExpanded ? '' : 'none';
     this.bashHeaderEl.appendChild(previewEl);
 
     const summaryStatusEl = document.createElement('span');

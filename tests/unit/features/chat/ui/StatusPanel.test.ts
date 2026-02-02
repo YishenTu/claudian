@@ -859,6 +859,9 @@ describe('StatusPanel', () => {
 
       const header = containerEl.querySelector('.claudian-status-panel-bash-header');
       expect(header).not.toBeNull();
+      const label = header!.querySelector('.claudian-tool-label');
+      expect(label).not.toBeNull();
+      expect(label!.textContent).toBe('Command panel');
 
       const entries = containerEl.querySelectorAll('.claudian-status-panel-bash-entry');
       expect(entries.length).toBe(1);
@@ -879,12 +882,25 @@ describe('StatusPanel', () => {
 
       const header = containerEl.querySelector('.claudian-status-panel-bash-header');
       expect(header).not.toBeNull();
+      const label = header!.querySelector('.claudian-tool-label');
+      expect(label).not.toBeNull();
+      expect(label!.textContent).toBe('Command panel');
 
       header!.click();
       expect(content!.style.display).toBe('none');
+      const collapsedHeader = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(collapsedHeader).not.toBeNull();
+      const collapsedLabel = collapsedHeader!.querySelector('.claudian-tool-label');
+      expect(collapsedLabel).not.toBeNull();
+      expect(collapsedLabel!.textContent).toBe('echo hello');
 
       header!.click();
       expect(content!.style.display).toBe('block');
+      const expandedHeaderAgain = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(expandedHeaderAgain).not.toBeNull();
+      const expandedLabelAgain = expandedHeaderAgain!.querySelector('.claudian-tool-label');
+      expect(expandedLabelAgain).not.toBeNull();
+      expect(expandedLabelAgain!.textContent).toBe('Command panel');
     });
 
     it('should clear bash outputs via action button', () => {
