@@ -693,9 +693,9 @@ export class StatusPanel {
       textarea.setAttribute('readonly', 'true');
       textarea.style.position = 'fixed';
       textarea.style.left = '-9999px';
-      (document.body as any)?.appendChild?.(textarea);
-      (textarea as any).select?.();
-      (document as any).execCommand?.('copy');
+      document.body?.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
       textarea.remove();
     } catch {
       // Ignore clipboard failures
@@ -715,15 +715,14 @@ export class StatusPanel {
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', ariaLabel);
     setIcon(el, icon);
-    // Optional chaining guards against mock environments that dispatch plain objects
     el.addEventListener('click', (e) => {
-      e.stopPropagation?.();
+      e.stopPropagation();
       action();
     });
     el.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault?.();
-        e.stopPropagation?.();
+        e.preventDefault();
+        e.stopPropagation();
         action();
       }
     });

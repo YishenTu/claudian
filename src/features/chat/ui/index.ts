@@ -13,5 +13,3 @@ export {
 } from './InputToolbar';
 export { type InstructionModeCallbacks, InstructionModeManager, type InstructionModeState } from './InstructionModeManager';
 export { type PanelBashOutput, type PanelSubagentInfo, StatusPanel } from './StatusPanel';
-// Backwards compatibility alias
-export { StatusPanel as TodoPanel } from './StatusPanel';

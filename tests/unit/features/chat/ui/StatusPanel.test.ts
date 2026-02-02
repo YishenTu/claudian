@@ -140,7 +140,7 @@ class MockElement {
   }
 
   click(): void {
-    this.dispatchEvent({ type: 'click' });
+    this.dispatchEvent({ type: 'click', stopPropagation: jest.fn(), preventDefault: jest.fn() });
   }
 
   empty(): void {
