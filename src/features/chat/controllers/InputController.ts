@@ -948,8 +948,9 @@ export class InputController {
       {
         onSelect: (id) => {
           this.destroyResumeDropdown();
-          openConversation(id).catch(() => {
-            new Notice('Failed to open conversation');
+          openConversation(id).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(`Failed to open conversation: ${msg}`);
           });
         },
         onDismiss: () => {

@@ -1075,6 +1075,22 @@ describe('InputController - Message Queue', () => {
       expect(controller.isResumeDropdownVisible()).toBe(false);
     });
 
+    it('should show notice with error message when openConversation rejects', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      deps.openConversation = jest.fn().mockRejectedValue(new Error('session not found'));
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ResumeSessionDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onSelect('conv-1');
+
+      await Promise.resolve();
+
+      expect(mockNotice).toHaveBeenCalledWith('Failed to open conversation: session not found');
+    });
+
     it('should destroy existing dropdown before creating new one', async () => {
       (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
       inputEl.value = '/resume';

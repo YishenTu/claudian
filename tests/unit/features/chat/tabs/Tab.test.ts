@@ -692,7 +692,9 @@ describe('Tab - Destruction', () => {
       const cancelInstructionRefine = jest.fn();
       const cancelTitleGeneration = jest.fn();
       const destroyTodoPanel = jest.fn();
+      const destroyResumeDropdown = jest.fn();
 
+      tab.controllers.inputController = { destroyResumeDropdown } as any;
       tab.ui.fileContextManager = { destroy: destroyFileContext } as any;
       tab.ui.slashCommandDropdown = { destroy: destroySlashDropdown } as any;
       tab.ui.instructionModeManager = { destroy: destroyInstructionMode } as any;
@@ -702,6 +704,7 @@ describe('Tab - Destruction', () => {
 
       await destroyTab(tab);
 
+      expect(destroyResumeDropdown).toHaveBeenCalled();
       expect(destroyFileContext).toHaveBeenCalled();
       expect(destroySlashDropdown).toHaveBeenCalled();
       expect(destroyInstructionMode).toHaveBeenCalled();
@@ -1836,8 +1839,13 @@ describe('Tab - Controller Configuration', () => {
       mockFileContextManager.isMentionDropdownVisible.mockReturnValue(true);
       expect(config.shouldSkipEscapeHandling()).toBe(true);
 
-      // Test when nothing active
+      // Test when resume dropdown is visible
       mockFileContextManager.isMentionDropdownVisible.mockReturnValue(false);
+      mockInputController.isResumeDropdownVisible.mockReturnValue(true);
+      expect(config.shouldSkipEscapeHandling()).toBe(true);
+
+      // Test when nothing active
+      mockInputController.isResumeDropdownVisible.mockReturnValue(false);
       expect(config.shouldSkipEscapeHandling()).toBe(false);
     });
 
