@@ -66,6 +66,8 @@ export type TranslationKey =
   | 'chat.fork.errorMessageNotFound'
   | 'chat.fork.errorNoSession'
   | 'chat.fork.errorNoActiveTab'
+  | 'chat.fork.commandNoMessages'
+  | 'chat.fork.commandNoAssistantUuid'
 
   // Settings - Customization
   | 'settings.title'

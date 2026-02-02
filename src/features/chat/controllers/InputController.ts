@@ -61,6 +61,7 @@ export interface InputControllerDeps {
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
+  onForkAll?: () => Promise<void>;
 }
 
 export class InputController {
@@ -899,6 +900,14 @@ export class InputController {
       case 'resume':
         this.showResumeDropdown();
         break;
+      case 'fork': {
+        if (!this.deps.onForkAll) {
+          new Notice('Fork not available.');
+          return;
+        }
+        await this.deps.onForkAll();
+        break;
+      }
       default:
         // Unknown command - notify user
         new Notice(`Unknown command: ${action}`);

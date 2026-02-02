@@ -2764,3 +2764,179 @@ describe('Tab - handleForkRequest', () => {
     expect(forkCallback).toBeUndefined();
   });
 });
+
+describe('Tab - handleForkAll (via /fork command)', () => {
+
+  function setupForkAllTest(overrides: Record<string, any> = {}) {
+    const options = createMockOptions(overrides);
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+    const forkRequestCallback = jest.fn().mockResolvedValue(undefined);
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager, forkRequestCallback);
+
+    // Extract onForkAll from InputController constructor call
+    const { InputController } = jest.requireMock('@/features/chat/controllers') as { InputController: jest.Mock };
+    const lastCall = InputController.mock.calls[InputController.mock.calls.length - 1];
+    const config = lastCall[0];
+    const onForkAll = config.onForkAll as (() => Promise<void>) | undefined;
+
+    return { tab, onForkAll: onForkAll!, forkRequestCallback, plugin: options.plugin };
+  }
+
+  beforeEach(() => {
+    mockNotice.mockClear();
+  });
+
+  it('should call forkRequestCallback with all messages and last assistant UUID', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'My Conversation',
+        currentNote: 'notes/test.md',
+      }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+      { id: 'u2', role: 'user', content: 'world', timestamp: 4, sdkUserUuid: 'user-u2' },
+      { id: 'a2', role: 'assistant', content: 'resp2', timestamp: 5, sdkAssistantUuid: 'asst-2' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-abc') } as any;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-2', // last assistant UUID
+      sourceTitle: 'My Conversation',
+      currentNote: 'notes/test.md',
+    }));
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages).toHaveLength(5); // all messages
+    expect(ctx.messages.map((m: any) => m.id)).toEqual(['a0', 'u1', 'a1', 'u2', 'a2']);
+    expect(ctx.forkAtUserMessage).toBe(3); // 2 user messages + 1
+  });
+
+  it('should show notice when streaming', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+
+    tab.state.isStreaming = true;
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no messages', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+
+    tab.state.messages = [];
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalledWith('Cannot fork: no messages in conversation');
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no assistant message has sdkAssistantUuid', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2 },
+    ];
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalledWith('Cannot fork: no assistant response with identifiers');
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no session ID is available', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue(null),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should fall back to conversation session ID when service has none', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        sdkSessionId: 'conv-session-xyz',
+        title: 'Fallback Chat',
+      }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'conv-session-xyz',
+    }));
+  });
+
+  it('should deep-clone messages (not share references)', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'Test' }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    const originalMsg = { id: 'a0', role: 'assistant' as const, content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' };
+    tab.state.messages = [
+      originalMsg,
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages[0]).not.toBe(originalMsg);
+    expect(ctx.messages[0]).toEqual(originalMsg);
+  });
+
+  it('should not set onForkAll on InputController when no forkRequestCallback provided', () => {
+    const options = createMockOptions();
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+    const { InputController } = jest.requireMock('@/features/chat/controllers') as { InputController: jest.Mock };
+    const lastCall = InputController.mock.calls[InputController.mock.calls.length - 1];
+    const config = lastCall[0];
+    expect(config.onForkAll).toBeUndefined();
+  });
+});

@@ -1111,6 +1111,35 @@ describe('InputController - Message Queue', () => {
     });
   });
 
+  describe('Built-in commands - /fork', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should call onForkAll callback when /fork is executed', async () => {
+      const mockOnForkAll = jest.fn().mockResolvedValue(undefined);
+      deps.onForkAll = mockOnForkAll;
+      inputEl.value = '/fork';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockOnForkAll).toHaveBeenCalled();
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should show notice when onForkAll is not available', async () => {
+      deps.onForkAll = undefined;
+      inputEl.value = '/fork';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('Fork not available.');
+      expect(inputEl.value).toBe('');
+    });
+  });
+
   describe('Cancel streaming - restore behavior', () => {
     it('should set cancelRequested and call agent cancel', () => {
       deps.state.isStreaming = true;

@@ -46,7 +46,9 @@
       "unavailableNoResponse": "Cannot fork: no response to fork from",
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
-      "errorNoActiveTab": "No active tab"
+      "errorNoActiveTab": "No active tab",
+      "commandNoMessages": "Cannot fork: no messages in conversation",
+      "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
     },
     "bangBash": {
       "placeholder": "> Run a bash command...",

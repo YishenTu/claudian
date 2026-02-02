@@ -655,6 +655,70 @@ async function handleForkRequest(
   });
 }
 
+async function handleForkAll(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
+): Promise<void> {
+  const { state } = tab;
+
+  if (state.isStreaming) {
+    new Notice(t('chat.fork.unavailableStreaming'));
+    return;
+  }
+
+  const msgs = state.messages;
+  if (msgs.length === 0) {
+    new Notice(t('chat.fork.commandNoMessages'));
+    return;
+  }
+
+  // Find last assistant message with sdkAssistantUuid
+  let lastAssistantUuid: string | undefined;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
+      lastAssistantUuid = msgs[i].sdkAssistantUuid;
+      break;
+    }
+  }
+
+  if (!lastAssistantUuid) {
+    new Notice(t('chat.fork.commandNoAssistantUuid'));
+    return;
+  }
+
+  const serviceSessionId = tab.service?.getSessionId() ?? null;
+  let sourceSessionId = serviceSessionId;
+
+  if (!sourceSessionId && tab.conversationId) {
+    const conversation = plugin.getConversationSync(tab.conversationId);
+    sourceSessionId =
+      conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
+  }
+
+  if (!sourceSessionId) {
+    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
+    return;
+  }
+
+  const clonedMessages = deepCloneMessages(msgs);
+
+  const sourceConversation = tab.conversationId
+    ? plugin.getConversationSync(tab.conversationId)
+    : undefined;
+
+  const totalUserMessages = msgs.filter(m => m.role === 'user').length;
+
+  await forkRequestCallback({
+    messages: clonedMessages,
+    sourceSessionId,
+    resumeAt: lastAssistantUuid,
+    sourceTitle: sourceConversation?.title,
+    forkAtUserMessage: totalUserMessages + 1,
+    currentNote: sourceConversation?.currentNote,
+  });
+}
+
 export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
@@ -790,6 +854,9 @@ export function initializeTabControllers(
       }
     },
     openConversation,
+    onForkAll: forkRequestCallback
+      ? () => handleForkAll(tab, plugin, forkRequestCallback)
+      : undefined,
   });
 
   // Navigation controller

@@ -131,5 +131,27 @@ describe('builtInCommands', () => {
       expect(resumeCmd?.action).toBe('resume');
       expect(resumeCmd?.description).toBe('Resume a previous conversation');
     });
+
+    it('has fork command without args', () => {
+      const forkCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fork');
+      expect(forkCmd).toBeDefined();
+      expect(forkCmd?.action).toBe('fork');
+      expect(forkCmd?.hasArgs).toBeUndefined();
+    });
+  });
+
+  describe('detectBuiltInCommand - /fork', () => {
+    it('detects /fork command', () => {
+      const result = detectBuiltInCommand('/fork');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('fork');
+      expect(result?.command.action).toBe('fork');
+      expect(result?.args).toBe('');
+    });
+
+    it('detects /fork case-insensitively', () => {
+      expect(detectBuiltInCommand('/FORK')).not.toBeNull();
+      expect(detectBuiltInCommand('/Fork')).not.toBeNull();
+    });
   });
 });
