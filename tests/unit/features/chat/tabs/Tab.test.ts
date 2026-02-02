@@ -173,6 +173,9 @@ const createMockInputController = () => ({
   cancelStreaming: jest.fn(),
   handleInstructionSubmit: jest.fn(),
   updateQueueIndicator: jest.fn(),
+  handleResumeKeydown: jest.fn().mockReturnValue(false),
+  isResumeDropdownVisible: jest.fn().mockReturnValue(false),
+  destroyResumeDropdown: jest.fn(),
 });
 
 jest.mock('@/features/chat/ui', () => ({

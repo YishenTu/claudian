@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
+import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -66,6 +67,7 @@ export class InputController {
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
   private pendingAskInline: InlineAskUserQuestion | null = null;
   private pendingExitPlanModeInline: InlineExitPlanMode | null = null;
+  private activeResumeDropdown: ResumeSessionDropdown | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -893,9 +895,61 @@ export class InputController {
         }
         break;
       }
+      case 'resume':
+        this.showResumeDropdown();
+        break;
       default:
         // Unknown command - notify user
         new Notice(`Unknown command: ${action}`);
     }
+  }
+
+  // ============================================
+  // Resume Session Dropdown
+  // ============================================
+
+  handleResumeKeydown(e: KeyboardEvent): boolean {
+    if (!this.activeResumeDropdown?.isVisible()) return false;
+    return this.activeResumeDropdown.handleKeydown(e);
+  }
+
+  isResumeDropdownVisible(): boolean {
+    return this.activeResumeDropdown?.isVisible() ?? false;
+  }
+
+  destroyResumeDropdown(): void {
+    if (this.activeResumeDropdown) {
+      this.activeResumeDropdown.destroy();
+      this.activeResumeDropdown = null;
+    }
+  }
+
+  private showResumeDropdown(): void {
+    const { plugin, state, conversationController } = this.deps;
+
+    // Clean up any existing dropdown
+    this.destroyResumeDropdown();
+
+    const conversations = plugin.getConversationList();
+    if (conversations.length === 0) {
+      new Notice('No conversations to resume');
+      return;
+    }
+
+    this.activeResumeDropdown = new ResumeSessionDropdown(
+      this.deps.getInputContainerEl(),
+      this.deps.getInputEl(),
+      conversations,
+      state.currentConversationId,
+      {
+        onSelect: (id) => {
+          this.destroyResumeDropdown();
+          conversationController.switchTo(id).catch(() => {});
+        },
+        onDismiss: () => {
+          this.destroyResumeDropdown();
+        },
+      }
+    );
   }
 }

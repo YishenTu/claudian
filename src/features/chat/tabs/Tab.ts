@@ -799,6 +799,7 @@ export function initializeTabControllers(
     shouldSkipEscapeHandling: () => {
       if (ui.instructionModeManager?.isActive()) return true;
       if (ui.bangBashModeManager?.isActive()) return true;
+      if (tab.controllers.inputController?.isResumeDropdownVisible()) return true;
       if (ui.slashCommandDropdown?.isVisible()) return true;
       if (ui.fileContextManager?.isMentionDropdownVisible()) return true;
       return false;
@@ -847,6 +848,10 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     }
 
     if (ui.instructionModeManager?.handleKeydown(e)) {
+      return;
+    }
+
+    if (controllers.inputController?.handleResumeKeydown(e)) {
       return;
     }
 
@@ -992,6 +997,7 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.state.currentThinkingState = null;
 
   // Cleanup UI components
+  tab.controllers.inputController?.destroyResumeDropdown();
   tab.ui.fileContextManager?.destroy();
   tab.ui.slashCommandDropdown?.destroy();
   tab.ui.slashCommandDropdown = null;

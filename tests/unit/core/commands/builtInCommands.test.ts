@@ -74,6 +74,14 @@ describe('builtInCommands', () => {
     it('returns null for just slash', () => {
       expect(detectBuiltInCommand('/')).toBeNull();
     });
+
+    it('detects /resume command', () => {
+      const result = detectBuiltInCommand('/resume');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('resume');
+      expect(result?.command.action).toBe('resume');
+      expect(result?.args).toBe('');
+    });
   });
 
   describe('getBuiltInCommandsForDropdown', () => {
@@ -115,6 +123,13 @@ describe('builtInCommands', () => {
       expect(addDirCmd?.action).toBe('add-dir');
       expect(addDirCmd?.hasArgs).toBe(true);
       expect(addDirCmd?.description).toBe('Add external context directory');
+    });
+
+    it('has resume command', () => {
+      const resumeCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'resume');
+      expect(resumeCmd).toBeDefined();
+      expect(resumeCmd?.action).toBe('resume');
+      expect(resumeCmd?.description).toBe('Resume a previous conversation');
     });
   });
 });
