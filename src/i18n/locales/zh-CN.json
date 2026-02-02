@@ -49,7 +49,8 @@
       "errorNoActiveTab": "No active tab"
     },
     "bangBash": {
-      "placeholder": "> 运行命令..."
+      "placeholder": "> 运行命令...",
+      "commandPanel": "命令面板"
     }
   },
   "settings": {

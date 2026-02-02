@@ -100,6 +100,8 @@ export class BangBashModeManager {
     try {
       this.clear();
       await this.callbacks.onSubmit(rawCommand);
+    } catch {
+      // onSubmit errors are handled by the caller (e.g. status panel updates)
     } finally {
       this.isSubmitting = false;
     }

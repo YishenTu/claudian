@@ -1,8 +1,9 @@
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import type { TodoItem } from '../../../core/tools';
 import { getToolIcon, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools';
 import type { AsyncSubagentStatus } from '../../../core/types';
+import { t } from '../../../i18n';
 import { renderTodoItems } from '../rendering/todoUtils';
 
 /** Terminal states for async subagents (no longer trackable). */
@@ -560,9 +561,9 @@ export class StatusPanel {
     const headerLabelEl = document.createElement('span');
     headerLabelEl.className = 'claudian-tool-label';
     if (this.isBashExpanded) {
-      headerLabelEl.textContent = 'Command panel';
+      headerLabelEl.textContent = t('chat.bangBash.commandPanel');
     } else {
-      headerLabelEl.textContent = latest ? this.truncateDescription(latest.command, 60) : 'Command panel';
+      headerLabelEl.textContent = latest ? this.truncateDescription(latest.command, 60) : t('chat.bangBash.commandPanel');
     }
     this.bashHeaderEl.appendChild(headerLabelEl);
 
@@ -698,7 +699,7 @@ export class StatusPanel {
       document.execCommand('copy');
       textarea.remove();
     } catch {
-      // Ignore clipboard failures
+      new Notice('Failed to copy to clipboard');
     }
   }
 

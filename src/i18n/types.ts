@@ -41,6 +41,7 @@ export type TranslationKey =
   | 'chat.rewind.unavailableStreaming'
   | 'chat.rewind.unavailableNoUuid'
   | 'chat.bangBash.placeholder'
+  | 'chat.bangBash.commandPanel'
 
   // Chat - Fork
   | 'chat.fork.ariaLabel'

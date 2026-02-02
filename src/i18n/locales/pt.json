@@ -49,7 +49,8 @@
       "errorNoActiveTab": "No active tab"
     },
     "bangBash": {
-      "placeholder": "> Run a bash command..."
+      "placeholder": "> Run a bash command...",
+      "commandPanel": "Command panel"
     }
   },
   "settings": {

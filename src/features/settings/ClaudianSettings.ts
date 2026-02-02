@@ -541,13 +541,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    const bangBashValidationEl = containerEl.createDiv({ cls: 'claudian-bang-bash-validation' });
-    bangBashValidationEl.style.color = 'var(--text-error)';
-    bangBashValidationEl.style.fontSize = '0.85em';
-    bangBashValidationEl.style.marginTop = '-0.5em';
-    bangBashValidationEl.style.marginBottom = '0.5em';
-    bangBashValidationEl.style.display = 'none';
-
     new Setting(containerEl)
       .setName(t('settings.enableBangBash.name'))
       .setDesc(t('settings.enableBangBash.desc'))
@@ -570,6 +563,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    const bangBashValidationEl = containerEl.createDiv({ cls: 'claudian-bang-bash-validation' });
+    bangBashValidationEl.style.color = 'var(--text-error)';
+    bangBashValidationEl.style.fontSize = '0.85em';
+    bangBashValidationEl.style.marginTop = '-0.5em';
+    bangBashValidationEl.style.marginBottom = '0.5em';
+    bangBashValidationEl.style.display = 'none';
 
     const maxTabsSetting = new Setting(containerEl)
       .setName(t('settings.maxTabs.name'))
