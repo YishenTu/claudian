@@ -1046,6 +1046,26 @@ describe('InputController - Message Queue', () => {
       expect(mockDropdownInstance.destroy).toHaveBeenCalled();
     });
 
+    it('should call openConversation on select callback when provided', async () => {
+      const conversations = [
+        { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
+      ];
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(conversations);
+      (deps.conversationController as any).switchTo = jest.fn().mockResolvedValue(undefined);
+      deps.openConversation = jest.fn().mockResolvedValue(undefined);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ResumeSessionDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onSelect('conv-1');
+
+      expect(deps.openConversation).toHaveBeenCalledWith('conv-1');
+      expect((deps.conversationController as any).switchTo).not.toHaveBeenCalled();
+      expect(mockDropdownInstance.destroy).toHaveBeenCalled();
+    });
+
     it('should destroy dropdown on dismiss callback', async () => {
       const conversations = [
         { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },

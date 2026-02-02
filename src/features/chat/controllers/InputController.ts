@@ -945,12 +945,11 @@ export class InputController {
       {
         onSelect: (id) => {
           this.destroyResumeDropdown();
-          const open = this.deps.openConversation;
-          if (open) {
-            open(id).catch(() => {});
-          } else {
-            conversationController.switchTo(id).catch(() => {});
-          }
+          const openConversation =
+            this.deps.openConversation ?? ((conversationId: string) => conversationController.switchTo(conversationId));
+          Promise.resolve(openConversation(id)).catch(() => {
+            new Notice('Failed to open conversation');
+          });
         },
         onDismiss: () => {
           this.destroyResumeDropdown();
