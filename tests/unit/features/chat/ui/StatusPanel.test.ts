@@ -903,6 +903,46 @@ describe('StatusPanel', () => {
       expect(expandedLabelAgain!.textContent).toBe('Command panel');
     });
 
+    it('should collapse and expand individual bash output entries', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      expect(entry).not.toBeNull();
+
+      const entryHeader = entry!.querySelector('.claudian-tool-header');
+      const entryContent = entry!.querySelector('.claudian-tool-content');
+
+      expect(entryContent).not.toBeNull();
+      expect(entryContent!.style.display).toBe('block');
+      expect(entryHeader!.getAttribute('aria-expanded')).toBe('true');
+
+      entryHeader!.click();
+
+      const entryAfterClick = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const contentAfterClick = entryAfterClick!.querySelector('.claudian-tool-content');
+      const headerAfterClick = entryAfterClick!.querySelector('.claudian-tool-header');
+
+      expect(contentAfterClick!.style.display).toBe('none');
+      expect(headerAfterClick!.getAttribute('aria-expanded')).toBe('false');
+
+      const event = { type: 'keydown', key: 'Enter', preventDefault: jest.fn() };
+      headerAfterClick!.dispatchEvent(event);
+
+      const entryAfterKeydown = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const contentAfterKeydown = entryAfterKeydown!.querySelector('.claudian-tool-content');
+      const headerAfterKeydown = entryAfterKeydown!.querySelector('.claudian-tool-header');
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(contentAfterKeydown!.style.display).toBe('block');
+      expect(headerAfterKeydown!.getAttribute('aria-expanded')).toBe('true');
+    });
+
     it('should clear bash outputs via action button', () => {
       panel.addBashOutput({
         id: 'bash-1',

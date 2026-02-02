@@ -45,6 +45,7 @@ export class StatusPanel {
   private bashContentEl: HTMLElement | null = null;
   private isBashExpanded = true;
   private currentBashOutputs: Map<string, PanelBashOutput> = new Map();
+  private bashEntryExpanded: Map<string, boolean> = new Map();
 
   // Todo section
   private todoContainerEl: HTMLElement | null = null;
@@ -518,6 +519,7 @@ export class StatusPanel {
       const oldest = this.currentBashOutputs.keys().next().value as string | undefined;
       if (!oldest) break;
       this.currentBashOutputs.delete(oldest);
+      this.bashEntryExpanded.delete(oldest);
     }
     this.renderBashOutputs();
   }
@@ -531,11 +533,13 @@ export class StatusPanel {
 
   clearBashOutputs(): void {
     this.currentBashOutputs.clear();
+    this.bashEntryExpanded.clear();
     this.renderBashOutputs();
   }
 
-  private renderBashOutputs(): void {
+  private renderBashOutputs(options: { scroll?: boolean } = {}): void {
     if (!this.bashOutputContainerEl || !this.bashHeaderEl || !this.bashContentEl) return;
+    const scroll = options.scroll ?? true;
 
     if (this.currentBashOutputs.size === 0) {
       this.bashOutputContainerEl.style.display = 'none';
@@ -615,6 +619,8 @@ export class StatusPanel {
 
       const entryHeaderEl = document.createElement('div');
       entryHeaderEl.className = 'claudian-tool-header';
+      entryHeaderEl.setAttribute('tabindex', '0');
+      entryHeaderEl.setAttribute('role', 'button');
 
       const entryIconEl = document.createElement('span');
       entryIconEl.className = 'claudian-tool-icon';
@@ -624,7 +630,7 @@ export class StatusPanel {
 
       const entryLabelEl = document.createElement('span');
       entryLabelEl.className = 'claudian-tool-label';
-      entryLabelEl.textContent = `Bash: ${this.truncateDescription(info.command, 60)}`;
+      entryLabelEl.textContent = `Command: ${this.truncateDescription(info.command, 60)}`;
       entryHeaderEl.appendChild(entryLabelEl);
 
       const entryStatusEl = document.createElement('span');
@@ -639,6 +645,21 @@ export class StatusPanel {
 
       const contentEl = document.createElement('div');
       contentEl.className = 'claudian-tool-content';
+      const isEntryExpanded = this.bashEntryExpanded.get(info.id) ?? true;
+      contentEl.style.display = isEntryExpanded ? 'block' : 'none';
+      entryHeaderEl.setAttribute('aria-expanded', String(isEntryExpanded));
+      entryHeaderEl.setAttribute('aria-label', `${isEntryExpanded ? 'Collapse' : 'Expand'} command output`);
+      entryHeaderEl.addEventListener('click', () => {
+        this.bashEntryExpanded.set(info.id, !isEntryExpanded);
+        this.renderBashOutputs({ scroll: false });
+      });
+      entryHeaderEl.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.bashEntryExpanded.set(info.id, !isEntryExpanded);
+          this.renderBashOutputs({ scroll: false });
+        }
+      });
 
       const rowEl = document.createElement('div');
       rowEl.className = 'claudian-tool-result-row';
@@ -660,12 +681,14 @@ export class StatusPanel {
       this.bashContentEl.appendChild(entryEl);
     }
 
-    this.scrollToBottom();
+    if (scroll) {
+      this.scrollToBottom();
+    }
   }
 
   private toggleBashSection(): void {
     this.isBashExpanded = !this.isBashExpanded;
-    this.renderBashOutputs();
+    this.renderBashOutputs({ scroll: false });
   }
 
   // ============================================
