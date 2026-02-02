@@ -829,7 +829,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
-    // Bang-bash mode fully disables other input enhancements.
     if (ui.bangBashModeManager?.isActive()) {
       ui.bangBashModeManager.handleKeydown(e);
       syncBangBashSuppression();
@@ -848,11 +847,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     }
 
     if (ui.instructionModeManager?.handleKeydown(e)) {
-      return;
-    }
-
-    if (ui.bangBashModeManager?.handleKeydown(e)) {
-      syncBangBashSuppression();
       return;
     }
 

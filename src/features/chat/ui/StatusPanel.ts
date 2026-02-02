@@ -17,7 +17,6 @@ export interface PanelSubagentInfo {
   result?: string;
 }
 
-/** Bash output display info for the panel. */
 export interface PanelBashOutput {
   id: string;
   command: string;
@@ -586,45 +585,12 @@ export class StatusPanel {
 
     const actionsEl = document.createElement('span');
     actionsEl.className = 'claudian-status-panel-bash-actions';
-
-    const copyEl = document.createElement('span');
-    copyEl.className = 'claudian-status-panel-bash-action claudian-status-panel-bash-action-copy';
-    copyEl.setAttribute('role', 'button');
-    copyEl.setAttribute('tabindex', '0');
-    copyEl.setAttribute('aria-label', 'Copy latest command output');
-    setIcon(copyEl, 'copy');
-    copyEl.addEventListener('click', (e) => {
-      (e as any).stopPropagation?.();
+    this.appendActionButton(actionsEl, 'copy', 'Copy latest command output', 'copy', () => {
       void this.copyLatestBashOutput();
     });
-    copyEl.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        e.stopPropagation();
-        void this.copyLatestBashOutput();
-      }
-    });
-    actionsEl.appendChild(copyEl);
-
-    const clearEl = document.createElement('span');
-    clearEl.className = 'claudian-status-panel-bash-action claudian-status-panel-bash-action-clear';
-    clearEl.setAttribute('role', 'button');
-    clearEl.setAttribute('tabindex', '0');
-    clearEl.setAttribute('aria-label', 'Clear bash output');
-    setIcon(clearEl, 'trash');
-    clearEl.addEventListener('click', (e) => {
-      (e as any).stopPropagation?.();
+    this.appendActionButton(actionsEl, 'clear', 'Clear bash output', 'trash', () => {
       this.clearBashOutputs();
     });
-    clearEl.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.clearBashOutputs();
-      }
-    });
-    actionsEl.appendChild(clearEl);
-
     this.bashHeaderEl.appendChild(actionsEl);
 
     this.bashContentEl.style.display = this.isBashExpanded ? 'block' : 'none';
@@ -734,6 +700,34 @@ export class StatusPanel {
     } catch {
       // Ignore clipboard failures
     }
+  }
+
+  private appendActionButton(
+    parent: HTMLElement,
+    name: string,
+    ariaLabel: string,
+    icon: string,
+    action: () => void
+  ): void {
+    const el = document.createElement('span');
+    el.className = `claudian-status-panel-bash-action claudian-status-panel-bash-action-${name}`;
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-label', ariaLabel);
+    setIcon(el, icon);
+    // Optional chaining guards against mock environments that dispatch plain objects
+    el.addEventListener('click', (e) => {
+      e.stopPropagation?.();
+      action();
+    });
+    el.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        action();
+      }
+    });
+    parent.appendChild(el);
   }
 
   private toggleBashSection(): void {

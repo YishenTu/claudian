@@ -555,6 +555,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         toggle
           .setValue(this.plugin.settings.enableBangBash ?? false)
           .onChange(async (value) => {
+            bangBashValidationEl.style.display = 'none';
             if (value) {
               const enhancedPath = getEnhancedPath();
               const nodePath = findNodeExecutable(enhancedPath);
@@ -564,9 +565,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
                 toggle.setValue(false);
                 return;
               }
-              bangBashValidationEl.style.display = 'none';
-            } else {
-              bangBashValidationEl.style.display = 'none';
             }
             this.plugin.settings.enableBangBash = value;
             await this.plugin.saveSettings();

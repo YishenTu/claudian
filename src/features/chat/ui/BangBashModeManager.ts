@@ -27,10 +27,6 @@ export class BangBashModeManager {
     this.originalPlaceholder = inputEl.placeholder;
   }
 
-  /**
-   * Handles keydown to detect ! trigger.
-   * Returns true if the event was consumed (should prevent default).
-   */
   handleTriggerKey(e: KeyboardEvent): boolean {
     if (!this.state.active && this.inputEl.value === '' && e.key === '!') {
       if (this.enterMode()) {
@@ -123,9 +119,7 @@ export class BangBashModeManager {
   }
 
   private cancel(): void {
-    this.inputEl.value = '';
-    this.exitMode();
-    this.callbacks.resetInputHeight?.();
+    this.clear();
   }
 
   clear(): void {

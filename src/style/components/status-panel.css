@@ -241,7 +241,3 @@
   overflow-y: auto;
   word-break: break-word;
 }
-
-.claudian-status-panel-error-icon {
-  color: var(--color-red);
-}
