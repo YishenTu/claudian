@@ -50,11 +50,7 @@ function getRenderedItems(containerEl: any): { title: string; isCurrent: boolean
   if (!dropdownEl) return [];
   const items = dropdownEl.querySelectorAll('.claudian-resume-item');
   return items.map((item: any) => {
-    const titleEl = item.children.find((c: any) =>
-      c.querySelector('.claudian-resume-item-title')
-    )?.querySelector('.claudian-resume-item-title');
-
-    // Fall back: check direct children for content div, then find title inside
+    // Check direct children for content div, then find title inside
     let title = '';
     for (const child of item.children) {
       const found = child.querySelector?.('.claudian-resume-item-title');

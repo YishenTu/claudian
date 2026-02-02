@@ -2,10 +2,10 @@ import { Notice } from 'obsidian';
 
 import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
-import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
