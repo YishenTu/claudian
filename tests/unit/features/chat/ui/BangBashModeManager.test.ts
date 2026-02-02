@@ -258,4 +258,64 @@ describe('BangBashModeManager', () => {
     expect(handled).toBe(false);
     expect(manager.isActive()).toBe(false);
   });
+
+  it('should prevent double-submit when Enter is pressed rapidly', async () => {
+    const wrapper = createWrapper();
+    const inputEl = { value: '', placeholder: 'Ask...' } as any;
+    let resolveSubmit: () => void;
+    const submitPromise = new Promise<void>((resolve) => { resolveSubmit = resolve; });
+    const callbacks = {
+      onSubmit: jest.fn().mockReturnValue(submitPromise),
+      getInputWrapper: () => wrapper,
+    };
+
+    const manager = new BangBashModeManager(inputEl, callbacks);
+    manager.handleTriggerKey(createKeyEvent('!'));
+
+    inputEl.value = 'ls -la';
+    manager.handleInputChange();
+
+    // First Enter
+    manager.handleKeydown(createKeyEvent('Enter'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // Re-enter mode and try to submit again while first is still running
+    manager.handleTriggerKey(createKeyEvent('!'));
+    inputEl.value = 'echo second';
+    manager.handleInputChange();
+    manager.handleKeydown(createKeyEvent('Enter'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // Only the first submit should have been called
+    expect(callbacks.onSubmit).toHaveBeenCalledTimes(1);
+    expect(callbacks.onSubmit).toHaveBeenCalledWith('ls -la');
+
+    // Resolve the first submit
+    resolveSubmit!();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+
+  it('should not produce unhandled rejection when onSubmit throws', async () => {
+    const wrapper = createWrapper();
+    const inputEl = { value: '', placeholder: 'Ask...' } as any;
+    const callbacks = {
+      onSubmit: jest.fn().mockRejectedValue(new Error('boom')),
+      getInputWrapper: () => wrapper,
+    };
+
+    const manager = new BangBashModeManager(inputEl, callbacks);
+    manager.handleTriggerKey(createKeyEvent('!'));
+
+    inputEl.value = 'bad-command';
+    manager.handleInputChange();
+
+    manager.handleKeydown(createKeyEvent('Enter'));
+
+    // Wait for async submit to complete
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // Should not throw, error is caught internally
+    expect(callbacks.onSubmit).toHaveBeenCalledWith('bad-command');
+    expect(manager.isActive()).toBe(false);
+  });
 });

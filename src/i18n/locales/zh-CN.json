@@ -50,7 +50,15 @@
     },
     "bangBash": {
       "placeholder": "> 运行命令...",
-      "commandPanel": "命令面板"
+      "commandPanel": "命令面板",
+      "copyAriaLabel": "复制最新命令输出",
+      "clearAriaLabel": "清除命令输出",
+      "commandLabel": "命令: {command}",
+      "statusLabel": "状态: {status}",
+      "collapseOutput": "折叠命令输出",
+      "expandOutput": "展开命令输出",
+      "running": "运行中...",
+      "copyFailed": "复制到剪贴板失败"
     }
   },
   "settings": {

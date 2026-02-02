@@ -85,12 +85,7 @@ export class SlashCommandDropdown {
   }
 
   handleInputChange(): void {
-    if (!this.enabled) {
-      if (this.isVisible()) {
-        this.hide();
-      }
-      return;
-    }
+    if (!this.enabled) return;
 
     const text = this.getInputValue();
     const cursorPos = this.getCursorPosition();
@@ -117,14 +112,7 @@ export class SlashCommandDropdown {
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
-    if (!this.enabled) {
-      if (this.isVisible()) {
-        this.hide();
-      }
-      return false;
-    }
-
-    if (!this.isVisible()) return false;
+    if (!this.enabled || !this.isVisible()) return false;
 
     switch (e.key) {
       case 'ArrowDown':

@@ -50,7 +50,15 @@
     },
     "bangBash": {
       "placeholder": "> Run a bash command...",
-      "commandPanel": "Command panel"
+      "commandPanel": "Command panel",
+      "copyAriaLabel": "Copy latest command output",
+      "clearAriaLabel": "Clear bash output",
+      "commandLabel": "Command: {command}",
+      "statusLabel": "Status: {status}",
+      "collapseOutput": "Collapse command output",
+      "expandOutput": "Expand command output",
+      "running": "Running...",
+      "copyFailed": "Failed to copy to clipboard"
     }
   },
   "settings": {

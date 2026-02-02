@@ -42,6 +42,14 @@ export type TranslationKey =
   | 'chat.rewind.unavailableNoUuid'
   | 'chat.bangBash.placeholder'
   | 'chat.bangBash.commandPanel'
+  | 'chat.bangBash.copyAriaLabel'
+  | 'chat.bangBash.clearAriaLabel'
+  | 'chat.bangBash.commandLabel'
+  | 'chat.bangBash.statusLabel'
+  | 'chat.bangBash.collapseOutput'
+  | 'chat.bangBash.expandOutput'
+  | 'chat.bangBash.running'
+  | 'chat.bangBash.copyFailed'
 
   // Chat - Fork
   | 'chat.fork.ariaLabel'

@@ -524,7 +524,7 @@ export class StatusPanel {
     this.renderBashOutputs();
   }
 
-  updateBashOutput(id: string, updates: Partial<PanelBashOutput>): void {
+  updateBashOutput(id: string, updates: Partial<Omit<PanelBashOutput, 'id' | 'command'>>): void {
     const existing = this.currentBashOutputs.get(id);
     if (!existing) return;
     this.currentBashOutputs.set(id, { ...existing, ...updates });
@@ -576,7 +576,7 @@ export class StatusPanel {
     summaryStatusEl.className = 'claudian-tool-status';
     if (!this.isBashExpanded && latest) {
       summaryStatusEl.classList.add(`status-${latest.status}`);
-      summaryStatusEl.setAttribute('aria-label', `Status: ${latest.status}`);
+      summaryStatusEl.setAttribute('aria-label', t('chat.bangBash.statusLabel', { status: latest.status }));
       if (latest.status === 'completed') setIcon(summaryStatusEl, 'check');
       if (latest.status === 'error') setIcon(summaryStatusEl, 'x');
     } else {
@@ -584,12 +584,14 @@ export class StatusPanel {
     }
     this.bashHeaderEl.appendChild(summaryStatusEl);
 
+    this.bashHeaderEl.setAttribute('aria-expanded', String(this.isBashExpanded));
+
     const actionsEl = document.createElement('span');
     actionsEl.className = 'claudian-status-panel-bash-actions';
-    this.appendActionButton(actionsEl, 'copy', 'Copy latest command output', 'copy', () => {
+    this.appendActionButton(actionsEl, 'copy', t('chat.bangBash.copyAriaLabel'), 'copy', () => {
       void this.copyLatestBashOutput();
     });
-    this.appendActionButton(actionsEl, 'clear', 'Clear bash output', 'trash', () => {
+    this.appendActionButton(actionsEl, 'clear', t('chat.bangBash.clearAriaLabel'), 'trash', () => {
       this.clearBashOutputs();
     });
     this.bashHeaderEl.appendChild(actionsEl);
@@ -627,13 +629,13 @@ export class StatusPanel {
 
     const entryLabelEl = document.createElement('span');
     entryLabelEl.className = 'claudian-tool-label';
-    entryLabelEl.textContent = `Command: ${this.truncateDescription(info.command, 60)}`;
+    entryLabelEl.textContent = t('chat.bangBash.commandLabel', { command: this.truncateDescription(info.command, 60) });
     entryHeaderEl.appendChild(entryLabelEl);
 
     const entryStatusEl = document.createElement('span');
     entryStatusEl.className = 'claudian-tool-status';
     entryStatusEl.classList.add(`status-${info.status}`);
-    entryStatusEl.setAttribute('aria-label', `Status: ${info.status}`);
+    entryStatusEl.setAttribute('aria-label', t('chat.bangBash.statusLabel', { status: info.status }));
     if (info.status === 'completed') setIcon(entryStatusEl, 'check');
     if (info.status === 'error') setIcon(entryStatusEl, 'x');
     entryHeaderEl.appendChild(entryStatusEl);
@@ -645,7 +647,7 @@ export class StatusPanel {
     const isEntryExpanded = this.bashEntryExpanded.get(info.id) ?? true;
     contentEl.style.display = isEntryExpanded ? 'block' : 'none';
     entryHeaderEl.setAttribute('aria-expanded', String(isEntryExpanded));
-    entryHeaderEl.setAttribute('aria-label', `${isEntryExpanded ? 'Collapse' : 'Expand'} command output`);
+    entryHeaderEl.setAttribute('aria-label', isEntryExpanded ? t('chat.bangBash.collapseOutput') : t('chat.bangBash.expandOutput'));
     entryHeaderEl.addEventListener('click', () => {
       this.bashEntryExpanded.set(info.id, !isEntryExpanded);
       this.renderBashOutputs({ scroll: false });
@@ -664,11 +666,9 @@ export class StatusPanel {
     const textEl = document.createElement('span');
     textEl.className = 'claudian-tool-result-text';
     if (info.status === 'running' && !info.output) {
-      textEl.textContent = 'Running...';
+      textEl.textContent = t('chat.bangBash.running');
     } else if (info.output) {
       textEl.textContent = info.output;
-    } else {
-      textEl.textContent = '';
     }
 
     rowEl.appendChild(textEl);
@@ -682,28 +682,12 @@ export class StatusPanel {
     const latest = Array.from(this.currentBashOutputs.values()).at(-1);
     if (!latest) return;
 
-    const output = latest.output?.trim() || (latest.status === 'running' ? 'Running...' : '');
+    const output = latest.output?.trim() || (latest.status === 'running' ? t('chat.bangBash.running') : '');
     const text = output ? `$ ${latest.command}\n${output}` : `$ ${latest.command}`;
-
     try {
       await navigator.clipboard.writeText(text);
-      return;
     } catch {
-      // Fall through to legacy copy method
-    }
-
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.setAttribute('readonly', 'true');
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      document.body?.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      textarea.remove();
-    } catch {
-      new Notice('Failed to copy to clipboard');
+      new Notice(t('chat.bangBash.copyFailed'));
     }
   }
 

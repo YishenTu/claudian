@@ -101,7 +101,7 @@ export class BangBashModeManager {
       this.clear();
       await this.callbacks.onSubmit(rawCommand);
     } catch {
-      // Swallowed: submit() is fire-and-forget from handleKeydown
+      // Prevent unhandled rejection; onSubmit errors are surfaced through StatusPanel
     } finally {
       this.isSubmitting = false;
     }

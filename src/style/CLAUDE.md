@@ -39,6 +39,7 @@ CSS is built into root `styles.css` via `npm run build:css` (also runs in `npm r
 | Context | `-file-chip`, `-image-chip`, `-mention-dropdown` |
 | Plan mode | `-plan-approval-inline`, `-plan-content-preview`, `-plan-feedback-*`, `-plan-permissions` |
 | Ask user | `-ask-list`, `-ask-item`, `-ask-cursor`, `-ask-hints` |
+| Command panel | `-status-panel-bash`, `-status-panel-bash-header`, `-status-panel-bash-entry`, `-status-panel-bash-actions` |
 | Modals | `-instruction-modal`, `-mcp-modal`, `-fork-target-*` |
 
 ## Gotchas

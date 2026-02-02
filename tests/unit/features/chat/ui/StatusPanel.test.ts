@@ -1,11 +1,12 @@
 import type { TodoItem } from '@/core/tools';
 import { StatusPanel } from '@/features/chat/ui/StatusPanel';
 
-// Mock obsidian setIcon
+// Mock obsidian
 jest.mock('obsidian', () => ({
   setIcon: jest.fn((el: any, iconName: string) => {
     el.setAttribute('data-icon', iconName);
   }),
+  Notice: jest.fn(),
 }));
 
 type Listener = (event: any) => void;
@@ -1061,6 +1062,102 @@ describe('StatusPanel', () => {
       const content = containerEl.querySelector('.claudian-status-panel-bash-content');
       expect(content).not.toBeNull();
       expect((content as any).scrollTop).toBe((content as any).scrollHeight);
+    });
+
+    it('should update a running bash output to completed with output', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'running',
+        output: '',
+      });
+
+      let entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      let text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('Running...');
+
+      panel.updateBashOutput('bash-1', { status: 'completed', output: 'hello', exitCode: 0 });
+
+      entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('hello');
+
+      const statusEl = entry!.querySelector('.claudian-tool-status');
+      expect(statusEl!.classList.contains('status-completed')).toBe(true);
+    });
+
+    it('should update a running bash output to error', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'bad-command',
+        status: 'running',
+        output: '',
+      });
+
+      panel.updateBashOutput('bash-1', { status: 'error', output: 'command not found', exitCode: 127 });
+
+      const entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('command not found');
+
+      const statusEl = entry!.querySelector('.claudian-tool-status');
+      expect(statusEl!.classList.contains('status-error')).toBe(true);
+    });
+
+    it('should be a no-op when updating a non-existent bash output', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'running',
+        output: '',
+      });
+
+      panel.updateBashOutput('nonexistent', { status: 'completed', output: 'done' });
+
+      const entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('Running...');
+    });
+
+    it('should set aria-expanded on the bash section header', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const header = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(header!.getAttribute('aria-expanded')).toBe('true');
+
+      header!.click();
+      const headerAfterCollapse = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(headerAfterCollapse!.getAttribute('aria-expanded')).toBe('false');
+
+      headerAfterCollapse!.click();
+      const headerAfterExpand = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(headerAfterExpand!.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('should handle clipboard failure gracefully', async () => {
+      writeTextMock.mockRejectedValueOnce(new Error('Clipboard denied'));
+
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const copyButton = containerEl.querySelector('.claudian-status-panel-bash-action-copy');
+      expect(copyButton).not.toBeNull();
+
+      copyButton!.click();
+
+      await Promise.resolve();
+      expect(writeTextMock).toHaveBeenCalled();
     });
   });
 });
