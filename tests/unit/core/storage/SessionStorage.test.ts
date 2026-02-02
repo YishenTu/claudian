@@ -1099,5 +1099,39 @@ describe('SessionStorage', () => {
       // Should not include messages
       expect(metadata).not.toHaveProperty('messages');
     });
+
+    it('includes forkSource when set', () => {
+      const conversation: Conversation = {
+        id: 'conv-fork',
+        title: 'Fork Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: null,
+        messages: [],
+        forkSource: { sessionId: 'source-session-abc', resumeAt: 'asst-uuid-xyz' },
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.forkSource).toEqual({
+        sessionId: 'source-session-abc',
+        resumeAt: 'asst-uuid-xyz',
+      });
+    });
+
+    it('omits forkSource when not set', () => {
+      const conversation: Conversation = {
+        id: 'conv-no-fork',
+        title: 'No Fork',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: 'sdk-session',
+        messages: [],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.forkSource).toBeUndefined();
+    });
   });
 });

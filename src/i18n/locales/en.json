@@ -31,6 +31,22 @@
       "cannot": "Cannot rewind: {error}",
       "unavailableStreaming": "Cannot rewind while streaming",
       "unavailableNoUuid": "Cannot rewind: missing message identifiers"
+    },
+    "fork": {
+      "ariaLabel": "Fork conversation",
+      "chooseTarget": "Fork conversation",
+      "targetNewTab": "New tab",
+      "targetCurrentTab": "Current tab",
+      "maxTabsReached": "Cannot fork: maximum {count} tabs reached",
+      "notice": "Forked to new tab",
+      "noticeCurrentTab": "Forked in current tab",
+      "failed": "Fork failed: {error}",
+      "unavailableStreaming": "Cannot fork while streaming",
+      "unavailableNoUuid": "Cannot fork: missing message identifiers",
+      "unavailableNoResponse": "Cannot fork: no response to fork from",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

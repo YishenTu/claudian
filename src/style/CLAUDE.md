@@ -8,7 +8,7 @@ src/style/
 ├── components/     # header, history, messages, code, thinking, toolcalls, status-panel, subagent, input, context-footer, tabs, scroll-to-bottom
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands, file-link, image-embed, plan-mode, ask-user-question
-├── modals/         # instruction, mcp-modal
+├── modals/         # instruction, mcp-modal, fork-target
 ├── settings/       # base (shared .claudian-sp-* panel layout), env-snippets, slash-settings, mcp-settings, plugin-settings, agent-settings
 ├── accessibility.css
 └── index.css       # Build order (@import list)
@@ -39,7 +39,7 @@ CSS is built into root `styles.css` via `npm run build:css` (also runs in `npm r
 | Context | `-file-chip`, `-image-chip`, `-mention-dropdown` |
 | Plan mode | `-plan-approval-inline`, `-plan-content-preview`, `-plan-feedback-*`, `-plan-permissions` |
 | Ask user | `-ask-list`, `-ask-item`, `-ask-cursor`, `-ask-hints` |
-| Modals | `-instruction-modal`, `-mcp-modal` |
+| Modals | `-instruction-modal`, `-mcp-modal`, `-fork-target-*` |
 
 ## Gotchas
 

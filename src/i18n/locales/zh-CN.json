@@ -31,6 +31,22 @@
       "cannot": "无法回退：{error}",
       "unavailableStreaming": "流式响应中无法回退",
       "unavailableNoUuid": "无法回退：缺少消息标识符"
+    },
+    "fork": {
+      "ariaLabel": "分叉对话",
+      "chooseTarget": "分叉对话",
+      "targetNewTab": "新标签页",
+      "targetCurrentTab": "当前标签页",
+      "maxTabsReached": "无法分叉：已达到最大 {count} 个标签页",
+      "notice": "已分叉到新标签页",
+      "noticeCurrentTab": "已在当前标签页分叉",
+      "failed": "分叉失败：{error}",
+      "unavailableStreaming": "流式响应中无法分叉",
+      "unavailableNoUuid": "无法分叉：缺少消息标识符",
+      "unavailableNoResponse": "无法分叉：没有可分叉的响应",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

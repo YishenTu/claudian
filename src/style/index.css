@@ -42,6 +42,7 @@
 /* Modals */
 @import "./modals/instruction.css";
 @import "./modals/mcp-modal.css";
+@import "./modals/fork-target.css";
 
 /* Settings */
 @import "./settings/base.css";

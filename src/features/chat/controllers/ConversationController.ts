@@ -293,7 +293,11 @@ export class ConversationController {
         : plugin.settings.persistentExternalContextPaths || [];
 
       // Update agent service session ID with correct external contexts
-      this.getAgentService()?.setSessionId(conversation.sessionId ?? null, externalContextPaths);
+      const agentService = this.getAgentService();
+      if (agentService) {
+        const resolvedSessionId = agentService.applyForkState(conversation);
+        agentService.setSessionId(resolvedSessionId, externalContextPaths);
+      }
 
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
@@ -471,13 +475,26 @@ export class ConversationController {
       ? [...new Set([...(conversation?.previousSdkSessionIds || []), oldSdkSessionId])]
       : conversation?.previousSdkSessionIds;
 
+    // Don't persist the fork source session ID as the conversation's own session.
+    // The agent service holds it for resume purposes only; the conversation gets
+    // its own ID after SDK captureSession() returns a new session.
+    const isForkSourceOnly = !!conversation?.forkSource &&
+      !conversation?.sdkSessionId &&
+      sessionId === conversation.forkSource.sessionId;
+
+    let resolvedSessionId: string | null;
+    if (sessionInvalidated) {
+      resolvedSessionId = null;
+    } else if (isForkSourceOnly) {
+      resolvedSessionId = conversation?.sessionId ?? null;
+    } else {
+      resolvedSessionId = sessionId ?? conversation?.sessionId ?? null;
+    }
+
     const updates: Partial<Conversation> = {
-      // For native sessions, don't persist messages (SDK handles that)
-      // For legacy sessions, persist messages as before
       messages: isNative ? state.messages : state.getPersistedMessages(),
-      // Preserve existing sessionId when SDK hasn't captured a new one yet
-      sessionId: sessionInvalidated ? null : (sessionId ?? conversation?.sessionId ?? null),
-      sdkSessionId: isNative && sessionId ? sessionId : conversation?.sdkSessionId,
+      sessionId: resolvedSessionId,
+      sdkSessionId: isNative && sessionId && !isForkSourceOnly ? sessionId : conversation?.sdkSessionId,
       previousSdkSessionIds,
       isNative: isNative || undefined,
       legacyCutoffAt,
@@ -494,6 +511,13 @@ export class ConversationController {
 
     if (options) {
       updates.resumeSessionAt = options.resumeSessionAt;
+    }
+
+    // Clear fork metadata after first save with a new session ID (one-time use)
+    if (conversation?.forkSource && sessionId && sessionId !== conversation.forkSource.sessionId) {
+      updates.forkSource = undefined;
+      // Don't add forkSource.sessionId to previousSdkSessionIds
+      // (the source session belongs to the original conversation)
     }
 
     // At this point, currentConversationId is guaranteed to be set

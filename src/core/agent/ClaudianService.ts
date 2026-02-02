@@ -53,6 +53,7 @@ import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL
 import type {
   ApprovalDecision,
   ChatMessage,
+  Conversation,
   ExitPlanModeCallback,
   ExitPlanModeDecision,
   ImageAttachment,
@@ -153,6 +154,7 @@ export class ClaudianService {
   private currentAllowedTools: string[] | null = null;
 
   private pendingResumeAt?: string;
+  private pendingForkSession = false;
 
   // Last sent message for crash recovery (Phase 1.3)
   private lastSentMessage: SDKUserMessage | null = null;
@@ -194,6 +196,18 @@ export class ClaudianService {
 
   setPendingResumeAt(uuid: string | undefined): void {
     this.pendingResumeAt = uuid;
+  }
+
+  /** One-shot: consumed on the next query, then cleared by routeMessage on session init. */
+  applyForkState(conv: Pick<Conversation, 'sessionId' | 'sdkSessionId' | 'forkSource'>): string | null {
+    const isPending = !conv.sessionId && !conv.sdkSessionId && !!conv.forkSource;
+    this.pendingForkSession = isPending;
+    if (isPending) {
+      this.pendingResumeAt = conv.forkSource!.resumeAt;
+    } else {
+      this.pendingResumeAt = undefined;
+    }
+    return conv.sessionId ?? conv.forkSource?.sessionId ?? null;
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -457,8 +471,9 @@ export class ClaudianService {
     const ctx: PersistentQueryContext = {
       ...baseContext,
       abortController: this.queryAbortController ?? undefined,
-      resumeSessionId,
-      resumeSessionAt,
+      resume: resumeSessionId
+        ? { sessionId: resumeSessionId, sessionAt: resumeSessionAt, fork: this.pendingForkSession || undefined }
+        : undefined,
       canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
@@ -620,7 +635,13 @@ export class ClaudianService {
     // Transform SDK message to StreamChunks
     for (const event of transformSDKMessage(message, this.getTransformOptions())) {
       if (isSessionInitEvent(event)) {
+        // Fork: suppress needsHistoryRebuild since SDK returns a different session ID by design
+        const wasFork = this.pendingForkSession;
         this.sessionManager.captureSession(event.sessionId);
+        if (wasFork) {
+          this.sessionManager.clearHistoryRebuild();
+          this.pendingForkSession = false;
+        }
         this.messageChannel?.setSessionId(event.sessionId);
         if (event.agents) {
           try { this.plugin.agentManager.setBuiltinAgentNames(event.agents); } catch { /* non-critical */ }

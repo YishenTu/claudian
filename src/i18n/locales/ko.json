@@ -31,6 +31,22 @@
       "cannot": "되감기 불가: {error}",
       "unavailableStreaming": "스트리밍 중에는 되감기할 수 없습니다",
       "unavailableNoUuid": "되감기 불가: 메시지 식별자 누락"
+    },
+    "fork": {
+      "ariaLabel": "대화 분기",
+      "chooseTarget": "대화 분기",
+      "targetNewTab": "새 탭",
+      "targetCurrentTab": "현재 탭",
+      "maxTabsReached": "분기 불가: 최대 {count}개 탭에 도달했습니다",
+      "notice": "새 탭으로 분기됨",
+      "noticeCurrentTab": "현재 탭에서 분기됨",
+      "failed": "분기 실패: {error}",
+      "unavailableStreaming": "스트리밍 중에는 분기할 수 없습니다",
+      "unavailableNoUuid": "분기 불가: 메시지 식별자 누락",
+      "unavailableNoResponse": "분기 불가: 분기할 응답이 없습니다",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

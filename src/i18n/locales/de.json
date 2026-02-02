@@ -31,6 +31,22 @@
       "cannot": "Zurückspulen nicht möglich: {error}",
       "unavailableStreaming": "Zurückspulen während des Streamings nicht möglich",
       "unavailableNoUuid": "Zurückspulen nicht möglich: Nachrichtenkennungen fehlen"
+    },
+    "fork": {
+      "ariaLabel": "Konversation verzweigen",
+      "chooseTarget": "Konversation verzweigen",
+      "targetNewTab": "Neuer Tab",
+      "targetCurrentTab": "Aktueller Tab",
+      "maxTabsReached": "Verzweigung nicht möglich: maximal {count} Tabs erreicht",
+      "notice": "In neuem Tab verzweigt",
+      "noticeCurrentTab": "Im aktuellen Tab verzweigt",
+      "failed": "Verzweigung fehlgeschlagen: {error}",
+      "unavailableStreaming": "Verzweigung während des Streamings nicht möglich",
+      "unavailableNoUuid": "Verzweigung nicht möglich: Nachrichtenkennungen fehlen",
+      "unavailableNoResponse": "Verzweigung nicht möglich: keine Antwort zum Verzweigen vorhanden",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

@@ -41,6 +41,22 @@ export type TranslationKey =
   | 'chat.rewind.unavailableStreaming'
   | 'chat.rewind.unavailableNoUuid'
 
+  // Chat - Fork
+  | 'chat.fork.ariaLabel'
+  | 'chat.fork.chooseTarget'
+  | 'chat.fork.targetNewTab'
+  | 'chat.fork.targetCurrentTab'
+  | 'chat.fork.maxTabsReached'
+  | 'chat.fork.notice'
+  | 'chat.fork.noticeCurrentTab'
+  | 'chat.fork.failed'
+  | 'chat.fork.unavailableStreaming'
+  | 'chat.fork.unavailableNoUuid'
+  | 'chat.fork.unavailableNoResponse'
+  | 'chat.fork.errorMessageNotFound'
+  | 'chat.fork.errorNoSession'
+  | 'chat.fork.errorNoActiveTab'
+
   // Settings - Customization
   | 'settings.title'
   | 'settings.customization'
