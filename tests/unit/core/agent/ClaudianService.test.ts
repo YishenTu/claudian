@@ -1183,6 +1183,43 @@ describe('ClaudianService', () => {
       );
       expect(textChunks).toHaveLength(0);
     });
+
+    it('should suppress history rebuild and clear pendingForkSession on fork session init', async () => {
+      // Set an existing session so captureSession detects a mismatch
+      service.setSessionId('old-session');
+
+      // Apply fork state to mark as pending fork
+      service.applyForkState({
+        sessionId: null,
+        forkSource: { sessionId: 'old-session', resumeAt: 'asst-uuid-1' },
+      });
+      expect((service as any).pendingForkSession).toBe(true);
+
+      // Simulate session_init from SDK with a NEW session ID (fork creates a new session)
+      const message = { type: 'system', subtype: 'init', session_id: 'forked-session-new' };
+      await (service as any).routeMessage(message);
+
+      // Session should be captured
+      expect(service.getSessionId()).toBe('forked-session-new');
+      // Fork path should suppress the history rebuild that captureSession would normally trigger
+      expect((service as any).sessionManager.needsHistoryRebuild()).toBe(false);
+      // pendingForkSession should be consumed (one-shot)
+      expect((service as any).pendingForkSession).toBe(false);
+    });
+
+    it('should NOT suppress history rebuild for non-fork session mismatch', async () => {
+      // Set an existing session so captureSession detects a mismatch
+      service.setSessionId('old-session');
+      // No fork state applied — this is a normal session mismatch
+
+      const message = { type: 'system', subtype: 'init', session_id: 'different-session' };
+      await (service as any).routeMessage(message);
+
+      expect(service.getSessionId()).toBe('different-session');
+      // Normal mismatch should trigger history rebuild
+      expect((service as any).sessionManager.needsHistoryRebuild()).toBe(true);
+      expect((service as any).pendingForkSession).toBe(false);
+    });
   });
 
   describe('applyDynamicUpdates', () => {

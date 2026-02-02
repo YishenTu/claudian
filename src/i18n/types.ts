@@ -53,6 +53,9 @@ export type TranslationKey =
   | 'chat.fork.unavailableStreaming'
   | 'chat.fork.unavailableNoUuid'
   | 'chat.fork.unavailableNoResponse'
+  | 'chat.fork.errorMessageNotFound'
+  | 'chat.fork.errorNoSession'
+  | 'chat.fork.errorNoActiveTab'
 
   // Settings - Customization
   | 'settings.title'

@@ -43,7 +43,10 @@
       "failed": "Falha ao bifurcar: {error}",
       "unavailableStreaming": "Não é possível bifurcar durante a transmissão",
       "unavailableNoUuid": "Não é possível bifurcar: identificadores de mensagem ausentes",
-      "unavailableNoResponse": "Não é possível bifurcar: nenhuma resposta para bifurcar"
+      "unavailableNoResponse": "Não é possível bifurcar: nenhuma resposta para bifurcar",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

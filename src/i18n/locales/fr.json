@@ -43,7 +43,10 @@
       "failed": "Échec de la bifurcation : {error}",
       "unavailableStreaming": "Impossible de bifurquer pendant le streaming",
       "unavailableNoUuid": "Impossible de bifurquer : identifiants de message manquants",
-      "unavailableNoResponse": "Impossible de bifurquer : aucune réponse pour bifurquer"
+      "unavailableNoResponse": "Impossible de bifurquer : aucune réponse pour bifurquer",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

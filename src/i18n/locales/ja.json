@@ -43,7 +43,10 @@
       "failed": "分岐に失敗：{error}",
       "unavailableStreaming": "ストリーミング中は分岐できません",
       "unavailableNoUuid": "分岐できません：メッセージ識別子がありません",
-      "unavailableNoResponse": "分岐できません：分岐元の応答がありません"
+      "unavailableNoResponse": "分岐できません：分岐元の応答がありません",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

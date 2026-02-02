@@ -43,7 +43,10 @@
       "failed": "분기 실패: {error}",
       "unavailableStreaming": "스트리밍 중에는 분기할 수 없습니다",
       "unavailableNoUuid": "분기 불가: 메시지 식별자 누락",
-      "unavailableNoResponse": "분기 불가: 분기할 응답이 없습니다"
+      "unavailableNoResponse": "분기 불가: 분기할 응답이 없습니다",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

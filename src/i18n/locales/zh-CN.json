@@ -43,7 +43,10 @@
       "failed": "分叉失败：{error}",
       "unavailableStreaming": "流式响应中无法分叉",
       "unavailableNoUuid": "无法分叉：缺少消息标识符",
-      "unavailableNoResponse": "无法分叉：没有可分叉的响应"
+      "unavailableNoResponse": "无法分叉：没有可分叉的响应",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

@@ -396,7 +396,7 @@ export class TabManager implements TabManagerInterface {
     } else {
       const success = await this.forkInCurrentTab(context);
       if (!success) {
-        new Notice(t('chat.fork.failed', { error: 'No active tab' }));
+        new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoActiveTab') }));
         return;
       }
       new Notice(t('chat.fork.noticeCurrentTab'));
@@ -410,7 +410,12 @@ export class TabManager implements TabManagerInterface {
     }
 
     const conversationId = await this.createForkConversation(context);
-    return this.createTab(conversationId);
+    try {
+      return await this.createTab(conversationId);
+    } catch (error) {
+      await this.plugin.deleteConversation(conversationId).catch(() => {});
+      throw error;
+    }
   }
 
   async forkInCurrentTab(context: ForkContext): Promise<boolean> {
@@ -418,8 +423,12 @@ export class TabManager implements TabManagerInterface {
     if (!activeTab?.controllers.conversationController) return false;
 
     const conversationId = await this.createForkConversation(context);
-    // switchTo handles fork metadata; callback chain syncs tab.conversationId
-    await activeTab.controllers.conversationController.switchTo(conversationId);
+    try {
+      await activeTab.controllers.conversationController.switchTo(conversationId);
+    } catch (error) {
+      await this.plugin.deleteConversation(conversationId).catch(() => {});
+      throw error;
+    }
     return true;
   }
 

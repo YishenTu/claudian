@@ -43,7 +43,10 @@
       "failed": "Ошибка ответвления: {error}",
       "unavailableStreaming": "Невозможно ответвить во время потоковой передачи",
       "unavailableNoUuid": "Невозможно ответвить: отсутствуют идентификаторы сообщений",
-      "unavailableNoResponse": "Невозможно ответвить: нет ответа для ответвления"
+      "unavailableNoResponse": "Невозможно ответвить: нет ответа для ответвления",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

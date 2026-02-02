@@ -43,7 +43,10 @@
       "failed": "Verzweigung fehlgeschlagen: {error}",
       "unavailableStreaming": "Verzweigung während des Streamings nicht möglich",
       "unavailableNoUuid": "Verzweigung nicht möglich: Nachrichtenkennungen fehlen",
-      "unavailableNoResponse": "Verzweigung nicht möglich: keine Antwort zum Verzweigen vorhanden"
+      "unavailableNoResponse": "Verzweigung nicht möglich: keine Antwort zum Verzweigen vorhanden",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {

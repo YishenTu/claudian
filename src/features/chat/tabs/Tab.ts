@@ -571,7 +571,7 @@ async function handleForkRequest(
   const msgs = state.messages;
   const userIdx = msgs.findIndex(m => m.id === userMessageId);
   if (userIdx === -1) {
-    new Notice(t('chat.fork.failed', { error: 'Message not found' }));
+    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorMessageNotFound') }));
     return;
   }
 
@@ -598,7 +598,7 @@ async function handleForkRequest(
   }
 
   if (!sourceSessionId) {
-    new Notice(t('chat.fork.failed', { error: 'No session ID available' }));
+    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
     return;
   }
 

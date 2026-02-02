@@ -43,7 +43,10 @@
       "failed": "Fork failed: {error}",
       "unavailableStreaming": "Cannot fork while streaming",
       "unavailableNoUuid": "Cannot fork: missing message identifiers",
-      "unavailableNoResponse": "Cannot fork: no response to fork from"
+      "unavailableNoResponse": "Cannot fork: no response to fork from",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab"
     }
   },
   "settings": {
