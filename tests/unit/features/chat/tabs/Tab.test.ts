@@ -2364,13 +2364,13 @@ describe('Tab - handleForkRequest', () => {
     expect(mockNotice).toHaveBeenCalled();
   });
 
-  it('should silently return when message ID not found', async () => {
+  it('should show notice when message ID not found', async () => {
     const { forkCallback, forkRequestCallback } = setupForkTest();
 
     await forkCallback('nonexistent');
 
     expect(forkRequestCallback).not.toHaveBeenCalled();
-    expect(mockNotice).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalledWith('Fork failed: Message not found');
   });
 
   it('should show notice when user message has no sdkUserUuid', async () => {

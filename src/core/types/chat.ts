@@ -5,6 +5,12 @@
 import type { SDKToolUseResult } from './diff';
 import type { SubagentInfo, SubagentMode, ToolCallInfo } from './tools';
 
+/** Fork origin reference: identifies the source session and resume point. */
+export interface ForkSource {
+  sessionId: string;
+  resumeAt: string;
+}
+
 /** View type identifier for Obsidian. */
 export const VIEW_TYPE_CLAUDIAN = 'claudian-view';
 
@@ -104,7 +110,7 @@ export interface Conversation {
   /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
   /** Fork origin: source session to resume + fork from. Cleared after first SDK session init. */
-  forkSource?: { sessionId: string; resumeAt: string };
+  forkSource?: ForkSource;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -163,7 +169,7 @@ export interface SessionMetadata {
   /** Assistant UUID for resumeSessionAt after rewind. */
   resumeSessionAt?: string;
   /** Fork origin: source session to resume + fork from. Cleared after first SDK session init. */
-  forkSource?: { sessionId: string; resumeAt: string };
+  forkSource?: ForkSource;
 }
 
 /** Normalized stream chunk from the Claude Agent SDK. */

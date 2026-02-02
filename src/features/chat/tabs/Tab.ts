@@ -570,7 +570,10 @@ async function handleForkRequest(
 
   const msgs = state.messages;
   const userIdx = msgs.findIndex(m => m.id === userMessageId);
-  if (userIdx === -1) return;
+  if (userIdx === -1) {
+    new Notice(t('chat.fork.failed', { error: 'Message not found' }));
+    return;
+  }
 
   const userMsg = msgs[userIdx];
   if (!userMsg.sdkUserUuid) {

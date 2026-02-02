@@ -1825,6 +1825,64 @@ describe('ConversationController - Fork Session ID Isolation', () => {
   });
 });
 
+describe('ConversationController - switchTo fork path', () => {
+  let controller: ConversationController;
+  let deps: ConversationControllerDeps;
+  let mockAgentService: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAgentService = {
+      getSessionId: jest.fn().mockReturnValue(null),
+      setSessionId: jest.fn(),
+      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
+      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
+    };
+    deps = createMockDeps({
+      getAgentService: () => mockAgentService,
+    });
+    controller = new ConversationController(deps);
+  });
+
+  it('should call applyForkState and pass resolved session ID to setSessionId for pending fork', async () => {
+    deps.state.currentConversationId = 'old-conv';
+
+    const forkConversation = {
+      id: 'fork-conv',
+      messages: [{ id: '1', role: 'user', content: 'forked msg', timestamp: Date.now() }],
+      sessionId: null,
+      sdkSessionId: undefined,
+      isNative: true,
+      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
+    };
+    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(forkConversation);
+
+    await controller.switchTo('fork-conv');
+
+    expect(mockAgentService.applyForkState).toHaveBeenCalledWith(forkConversation);
+    expect(mockAgentService.setSessionId).toHaveBeenCalledWith('source-session-abc', expect.any(Array));
+  });
+
+  it('should resolve to own sessionId when fork already has its own session', async () => {
+    deps.state.currentConversationId = 'old-conv';
+
+    const forkConversation = {
+      id: 'fork-conv',
+      messages: [{ id: '1', role: 'user', content: 'forked msg', timestamp: Date.now() }],
+      sessionId: 'own-session-xyz',
+      sdkSessionId: 'own-session-xyz',
+      isNative: true,
+      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
+    };
+    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(forkConversation);
+
+    await controller.switchTo('fork-conv');
+
+    expect(mockAgentService.applyForkState).toHaveBeenCalledWith(forkConversation);
+    expect(mockAgentService.setSessionId).toHaveBeenCalledWith('own-session-xyz', expect.any(Array));
+  });
+});
+
 describe('ConversationController - restoreExternalContextPaths null selector', () => {
   it('should return early when external context selector is null', async () => {
     const deps = createMockDeps({

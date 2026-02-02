@@ -3050,13 +3050,14 @@ describe('ClaudianService', () => {
       expect((service as any).pendingForkSession).toBe(false);
     });
 
-    it('clears pendingForkSession from previous call', () => {
+    it('clears pendingForkSession and pendingResumeAt from previous call', () => {
       // First call: set fork state
       service.applyForkState({
         sessionId: null,
         forkSource: { sessionId: 'source-1', resumeAt: 'asst-1' },
       });
       expect((service as any).pendingForkSession).toBe(true);
+      expect((service as any).pendingResumeAt).toBe('asst-1');
 
       // Second call: conversation has own sessionId, should clear fork state
       service.applyForkState({
@@ -3064,6 +3065,35 @@ describe('ClaudianService', () => {
         forkSource: { sessionId: 'source-1', resumeAt: 'asst-1' },
       });
       expect((service as any).pendingForkSession).toBe(false);
+      expect((service as any).pendingResumeAt).toBeUndefined();
+    });
+
+    it('clears pendingResumeAt when switching to non-fork conversation', () => {
+      // Set fork state
+      service.applyForkState({
+        sessionId: null,
+        forkSource: { sessionId: 'source-1', resumeAt: 'asst-1' },
+      });
+      expect((service as any).pendingResumeAt).toBe('asst-1');
+
+      // Switch to a normal conversation (no forkSource)
+      service.applyForkState({ sessionId: 'normal-session' });
+      expect((service as any).pendingResumeAt).toBeUndefined();
+    });
+
+    it('treats conversation as not pending when sdkSessionId is set', () => {
+      const conv = {
+        sessionId: null as string | null,
+        sdkSessionId: 'sdk-session-xyz',
+        forkSource: { sessionId: 'source-session', resumeAt: 'asst-uuid-123' },
+      };
+
+      const result = service.applyForkState(conv);
+
+      // Returns forkSource.sessionId via the ?? chain, but does NOT set pending fork state
+      expect(result).toBe('source-session');
+      expect((service as any).pendingForkSession).toBe(false);
+      expect((service as any).pendingResumeAt).toBeUndefined();
     });
   });
 });

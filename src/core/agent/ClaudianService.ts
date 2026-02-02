@@ -199,11 +199,13 @@ export class ClaudianService {
   }
 
   /** One-shot: consumed on the next query, then cleared by routeMessage on session init. */
-  applyForkState(conv: Pick<Conversation, 'sessionId' | 'forkSource'>): string | null {
-    const isPending = !conv.sessionId && !!conv.forkSource;
+  applyForkState(conv: Pick<Conversation, 'sessionId' | 'sdkSessionId' | 'forkSource'>): string | null {
+    const isPending = !conv.sessionId && !conv.sdkSessionId && !!conv.forkSource;
     this.pendingForkSession = isPending;
     if (isPending) {
       this.pendingResumeAt = conv.forkSource!.resumeAt;
+    } else {
+      this.pendingResumeAt = undefined;
     }
     return conv.sessionId ?? conv.forkSource?.sessionId ?? null;
   }

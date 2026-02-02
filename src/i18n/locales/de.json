@@ -33,17 +33,17 @@
       "unavailableNoUuid": "Zurückspulen nicht möglich: Nachrichtenkennungen fehlen"
     },
     "fork": {
-      "ariaLabel": "Fork conversation",
-      "chooseTarget": "Fork conversation",
-      "targetNewTab": "New tab",
-      "targetCurrentTab": "Current tab",
-      "maxTabsReached": "Cannot fork: maximum {count} tabs reached",
-      "notice": "Forked to new tab",
-      "noticeCurrentTab": "Forked in current tab",
-      "failed": "Fork failed: {error}",
-      "unavailableStreaming": "Cannot fork while streaming",
-      "unavailableNoUuid": "Cannot fork: missing message identifiers",
-      "unavailableNoResponse": "Cannot fork: no response to fork from"
+      "ariaLabel": "Konversation verzweigen",
+      "chooseTarget": "Konversation verzweigen",
+      "targetNewTab": "Neuer Tab",
+      "targetCurrentTab": "Aktueller Tab",
+      "maxTabsReached": "Verzweigung nicht möglich: maximal {count} Tabs erreicht",
+      "notice": "In neuem Tab verzweigt",
+      "noticeCurrentTab": "Im aktuellen Tab verzweigt",
+      "failed": "Verzweigung fehlgeschlagen: {error}",
+      "unavailableStreaming": "Verzweigung während des Streamings nicht möglich",
+      "unavailableNoUuid": "Verzweigung nicht möglich: Nachrichtenkennungen fehlen",
+      "unavailableNoResponse": "Verzweigung nicht möglich: keine Antwort zum Verzweigen vorhanden"
     }
   },
   "settings": {
