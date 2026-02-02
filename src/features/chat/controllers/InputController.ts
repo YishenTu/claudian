@@ -937,6 +937,9 @@ export class InputController {
       return;
     }
 
+    const openConversation = this.deps.openConversation
+      ?? ((id: string) => conversationController.switchTo(id));
+
     this.activeResumeDropdown = new ResumeSessionDropdown(
       this.deps.getInputContainerEl(),
       this.deps.getInputEl(),
@@ -945,9 +948,7 @@ export class InputController {
       {
         onSelect: (id) => {
           this.destroyResumeDropdown();
-          const openConversation =
-            this.deps.openConversation ?? ((conversationId: string) => conversationController.switchTo(conversationId));
-          Promise.resolve(openConversation(id)).catch(() => {
+          openConversation(id).catch(() => {
             new Notice('Failed to open conversation');
           });
         },

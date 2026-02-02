@@ -980,6 +980,10 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('Built-in commands - /resume', () => {
+    const mockConversations = [
+      { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
+    ];
+
     let mockDropdownInstance: {
       isVisible: jest.Mock;
       handleKeydown: jest.Mock;
@@ -1009,10 +1013,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should create dropdown when conversations exist', async () => {
-      const conversations = [
-        { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
-      ];
-      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(conversations);
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
       inputEl.value = '/resume';
       controller = new InputController(deps);
 
@@ -1021,7 +1022,7 @@ describe('InputController - Message Queue', () => {
       expect(ResumeSessionDropdown).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        conversations,
+        mockConversations,
         deps.state.currentConversationId,
         expect.objectContaining({ onSelect: expect.any(Function), onDismiss: expect.any(Function) }),
       );
@@ -1029,10 +1030,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should call switchTo on select callback', async () => {
-      const conversations = [
-        { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
-      ];
-      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(conversations);
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
       (deps.conversationController as any).switchTo = jest.fn().mockResolvedValue(undefined);
       inputEl.value = '/resume';
       controller = new InputController(deps);
@@ -1047,10 +1045,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should call openConversation on select callback when provided', async () => {
-      const conversations = [
-        { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
-      ];
-      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(conversations);
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
       (deps.conversationController as any).switchTo = jest.fn().mockResolvedValue(undefined);
       deps.openConversation = jest.fn().mockResolvedValue(undefined);
       inputEl.value = '/resume';
@@ -1067,10 +1062,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should destroy dropdown on dismiss callback', async () => {
-      const conversations = [
-        { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
-      ];
-      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(conversations);
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
       inputEl.value = '/resume';
       controller = new InputController(deps);
 
@@ -1084,10 +1076,7 @@ describe('InputController - Message Queue', () => {
     });
 
     it('should destroy existing dropdown before creating new one', async () => {
-      const conversations = [
-        { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
-      ];
-      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(conversations);
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
       inputEl.value = '/resume';
       controller = new InputController(deps);
 
