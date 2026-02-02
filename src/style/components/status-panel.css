@@ -194,35 +194,48 @@
   margin-bottom: 4px;
 }
 
-.claudian-status-panel-bash-entry {
-  margin-bottom: 4px;
+.claudian-status-panel-bash-header {
+  padding: 4px 0;
 }
 
-.claudian-status-panel-bash-header {
+.claudian-status-panel-bash-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 0;
+  gap: 6px;
 }
 
-.claudian-status-panel-bash-command {
-  font-family: var(--font-monospace);
-  font-size: 13px;
+.claudian-status-panel-bash-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.claudian-status-panel-bash-action:hover {
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-status-panel-bash-output {
-  font-family: var(--font-monospace);
-  font-size: 12px;
-  color: var(--text-muted);
+.claudian-status-panel-bash-content {
+  padding-top: 2px;
+}
+
+.claudian-status-panel-bash-entry {
+  margin: 4px 0;
+}
+
+.claudian-status-panel-bash-entry .claudian-tool-call {
+  margin: 0;
+}
+
+/* Keep bash output blocks from growing without bound */
+.claudian-status-panel-bash-entry .claudian-tool-result-text {
   max-height: 200px;
   overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: var(--background-modifier-form-field);
-  padding: 8px;
-  border-radius: 4px;
-  margin: 4px 0 0 0;
+  word-break: break-word;
 }
 
 .claudian-status-panel-error-icon {

@@ -838,4 +838,87 @@ describe('StatusPanel', () => {
       expect(panel.areAllSubagentsCompleted()).toBe(true);
     });
   });
+
+  describe('bash outputs', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should render bash section with header and entries', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const bashContainer = containerEl.querySelector('.claudian-status-panel-bash');
+      expect(bashContainer).not.toBeNull();
+      expect(bashContainer!.style.display).toBe('block');
+
+      const header = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(header).not.toBeNull();
+
+      const entries = containerEl.querySelectorAll('.claudian-status-panel-bash-entry');
+      expect(entries.length).toBe(1);
+    });
+
+    it('should collapse and expand the bash section', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content).not.toBeNull();
+      expect(content!.style.display).toBe('block');
+
+      const header = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(header).not.toBeNull();
+
+      header!.click();
+      expect(content!.style.display).toBe('none');
+
+      header!.click();
+      expect(content!.style.display).toBe('block');
+    });
+
+    it('should clear bash outputs via action button', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const clearButton = containerEl.querySelector('.claudian-status-panel-bash-action');
+      expect(clearButton).not.toBeNull();
+
+      clearButton!.click();
+
+      const bashContainer = containerEl.querySelector('.claudian-status-panel-bash');
+      expect(bashContainer).not.toBeNull();
+      expect(bashContainer!.style.display).toBe('none');
+    });
+
+    it('should cap bash outputs to the most recent entries', () => {
+      for (let i = 0; i < 55; i++) {
+        panel.addBashOutput({
+          id: `bash-${i}`,
+          command: `echo ${i}`,
+          status: 'completed',
+          output: `${i}`,
+          exitCode: 0,
+        });
+      }
+
+      const entries = containerEl.querySelectorAll('.claudian-status-panel-bash-entry');
+      expect(entries.length).toBe(50);
+    });
+  });
 });
