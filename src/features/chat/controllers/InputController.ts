@@ -2,10 +2,10 @@ import { Notice } from 'obsidian';
 
 import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
-import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
@@ -60,6 +60,7 @@ export interface InputControllerDeps {
   getSubagentManager: () => SubagentManager;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
+  openConversation?: (conversationId: string) => Promise<void>;
 }
 
 export class InputController {
@@ -936,6 +937,9 @@ export class InputController {
       return;
     }
 
+    const openConversation = this.deps.openConversation
+      ?? ((id: string) => conversationController.switchTo(id));
+
     this.activeResumeDropdown = new ResumeSessionDropdown(
       this.deps.getInputContainerEl(),
       this.deps.getInputEl(),
@@ -944,7 +948,9 @@ export class InputController {
       {
         onSelect: (id) => {
           this.destroyResumeDropdown();
-          conversationController.switchTo(id).catch(() => {});
+          openConversation(id).catch(() => {
+            new Notice('Failed to open conversation');
+          });
         },
         onDismiss: () => {
           this.destroyResumeDropdown();

@@ -661,6 +661,7 @@ export function initializeTabControllers(
   component: Component,
   mcpManager: McpServerManager,
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
+  openConversation?: (conversationId: string) => Promise<void>,
 ): void {
   const { dom, state, services, ui } = tab;
 
@@ -788,6 +789,7 @@ export function initializeTabControllers(
         return false;
       }
     },
+    openConversation,
   });
 
   // Navigation controller

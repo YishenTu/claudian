@@ -1153,6 +1153,32 @@ describe('Tab - Event Handler Behavior', () => {
       expect(mockSlashCommandDropdown.handleKeydown).toHaveBeenCalled();
     });
 
+    it('should handle resume dropdown keydown', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockInputController.handleResumeKeydown.mockReturnValueOnce(true);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'ArrowDown', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockInputController.handleResumeKeydown).toHaveBeenCalled();
+      expect(mockSlashCommandDropdown.handleKeydown).not.toHaveBeenCalled();
+      expect(mockFileContextManager.handleMentionKeydown).not.toHaveBeenCalled();
+    });
+
     it('should handle file context mention keydown', () => {
       const options = createMockOptions();
       const tab = createTab(options);
