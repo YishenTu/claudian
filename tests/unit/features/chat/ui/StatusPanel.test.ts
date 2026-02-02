@@ -225,10 +225,15 @@ describe('StatusPanel', () => {
   let containerEl: MockElement;
   let panel: StatusPanel;
   let originalDocument: any;
+  let originalNavigator: any;
+  let writeTextMock: jest.Mock;
 
   beforeEach(() => {
     originalDocument = (global as any).document;
+    originalNavigator = (global as any).navigator;
     (global as any).document = createMockDocument();
+    writeTextMock = jest.fn().mockResolvedValue(undefined);
+    (global as any).navigator = { clipboard: { writeText: writeTextMock } };
     containerEl = new MockElement('div');
     panel = new StatusPanel();
   });
@@ -236,6 +241,7 @@ describe('StatusPanel', () => {
   afterEach(() => {
     panel.destroy();
     (global as any).document = originalDocument;
+    (global as any).navigator = originalNavigator;
   });
 
   describe('mount', () => {
@@ -953,7 +959,7 @@ describe('StatusPanel', () => {
         exitCode: 0,
       });
 
-      const clearButton = containerEl.querySelector('.claudian-status-panel-bash-action');
+      const clearButton = containerEl.querySelector('.claudian-status-panel-bash-action-clear');
       expect(clearButton).not.toBeNull();
 
       clearButton!.click();
@@ -961,6 +967,24 @@ describe('StatusPanel', () => {
       const bashContainer = containerEl.querySelector('.claudian-status-panel-bash');
       expect(bashContainer).not.toBeNull();
       expect(bashContainer!.style.display).toBe('none');
+    });
+
+    it('should copy latest bash output via action button', async () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const copyButton = containerEl.querySelector('.claudian-status-panel-bash-action-copy');
+      expect(copyButton).not.toBeNull();
+
+      copyButton!.click();
+
+      await Promise.resolve();
+      expect(writeTextMock).toHaveBeenCalledWith('$ echo hello\nhello');
     });
 
     it('should cap bash outputs to the most recent entries', () => {

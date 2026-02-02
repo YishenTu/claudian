@@ -587,8 +587,26 @@ export class StatusPanel {
     const actionsEl = document.createElement('span');
     actionsEl.className = 'claudian-status-panel-bash-actions';
 
+    const copyEl = document.createElement('span');
+    copyEl.className = 'claudian-status-panel-bash-action claudian-status-panel-bash-action-copy';
+    copyEl.setAttribute('role', 'button');
+    copyEl.setAttribute('tabindex', '0');
+    copyEl.setAttribute('aria-label', 'Copy latest command output');
+    setIcon(copyEl, 'copy');
+    copyEl.addEventListener('click', (e) => {
+      (e as any).stopPropagation?.();
+      void this.copyLatestBashOutput();
+    });
+    copyEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        void this.copyLatestBashOutput();
+      }
+    });
+    actionsEl.appendChild(copyEl);
+
     const clearEl = document.createElement('span');
-    clearEl.className = 'claudian-status-panel-bash-action';
+    clearEl.className = 'claudian-status-panel-bash-action claudian-status-panel-bash-action-clear';
     clearEl.setAttribute('role', 'button');
     clearEl.setAttribute('tabindex', '0');
     clearEl.setAttribute('aria-label', 'Clear bash output');
@@ -684,6 +702,35 @@ export class StatusPanel {
     if (scroll) {
       this.bashContentEl.scrollTop = this.bashContentEl.scrollHeight;
       this.scrollToBottom();
+    }
+  }
+
+  private async copyLatestBashOutput(): Promise<void> {
+    const latest = Array.from(this.currentBashOutputs.values()).at(-1);
+    if (!latest) return;
+
+    const output = latest.output?.trim() || (latest.status === 'running' ? 'Running...' : '');
+    const text = output ? `$ ${latest.command}\n${output}` : `$ ${latest.command}`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to legacy copy method
+    }
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      (document.body as any)?.appendChild?.(textarea);
+      (textarea as any).select?.();
+      (document as any).execCommand?.('copy');
+      textarea.remove();
+    } catch {
+      // Ignore clipboard failures
     }
   }
 
