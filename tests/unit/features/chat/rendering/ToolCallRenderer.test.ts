@@ -156,14 +156,14 @@ describe('ToolCallRenderer', () => {
 
     it('should label Bash tool and truncate long commands', () => {
       const shortCmd = 'npm test';
-      expect(getToolLabel('Bash', { command: shortCmd })).toBe('Bash: npm test');
+      expect(getToolLabel('Bash', { command: shortCmd })).toBe('Command: npm test');
 
       const longCmd = 'a'.repeat(50);
-      expect(getToolLabel('Bash', { command: longCmd })).toBe(`Bash: ${'a'.repeat(40)}...`);
+      expect(getToolLabel('Bash', { command: longCmd })).toBe(`Command: ${'a'.repeat(40)}...`);
     });
 
     it('should label Bash with fallback for missing command', () => {
-      expect(getToolLabel('Bash', {})).toBe('Bash: command');
+      expect(getToolLabel('Bash', {})).toBe('Command: command');
     });
 
     it('should label Glob tool', () => {

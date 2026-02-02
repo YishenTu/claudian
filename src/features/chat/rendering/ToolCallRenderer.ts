@@ -42,7 +42,7 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       return `Edit: ${shortenPath(input.file_path as string) || 'file'}`;
     case TOOL_BASH: {
       const cmd = (input.command as string) || 'command';
-      return `Bash: ${cmd.length > 40 ? cmd.substring(0, 40) + '...' : cmd}`;
+      return `Command: ${cmd.length > 40 ? cmd.substring(0, 40) + '...' : cmd}`;
     }
     case TOOL_GLOB:
       return `Glob: ${input.pattern || 'files'}`;
