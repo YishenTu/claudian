@@ -601,77 +601,81 @@ export class StatusPanel {
     }
 
     for (const info of this.currentBashOutputs.values()) {
-      const entryEl = document.createElement('div');
-      entryEl.className = 'claudian-tool-call claudian-status-panel-bash-entry';
-
-      const entryHeaderEl = document.createElement('div');
-      entryHeaderEl.className = 'claudian-tool-header';
-      entryHeaderEl.setAttribute('tabindex', '0');
-      entryHeaderEl.setAttribute('role', 'button');
-
-      const entryIconEl = document.createElement('span');
-      entryIconEl.className = 'claudian-tool-icon';
-      entryIconEl.setAttribute('aria-hidden', 'true');
-      setIcon(entryIconEl, 'terminal');
-      entryHeaderEl.appendChild(entryIconEl);
-
-      const entryLabelEl = document.createElement('span');
-      entryLabelEl.className = 'claudian-tool-label';
-      entryLabelEl.textContent = `Command: ${this.truncateDescription(info.command, 60)}`;
-      entryHeaderEl.appendChild(entryLabelEl);
-
-      const entryStatusEl = document.createElement('span');
-      entryStatusEl.className = 'claudian-tool-status';
-      entryStatusEl.classList.add(`status-${info.status}`);
-      entryStatusEl.setAttribute('aria-label', `Status: ${info.status}`);
-      if (info.status === 'completed') setIcon(entryStatusEl, 'check');
-      if (info.status === 'error') setIcon(entryStatusEl, 'x');
-      entryHeaderEl.appendChild(entryStatusEl);
-
-      entryEl.appendChild(entryHeaderEl);
-
-      const contentEl = document.createElement('div');
-      contentEl.className = 'claudian-tool-content';
-      const isEntryExpanded = this.bashEntryExpanded.get(info.id) ?? true;
-      contentEl.style.display = isEntryExpanded ? 'block' : 'none';
-      entryHeaderEl.setAttribute('aria-expanded', String(isEntryExpanded));
-      entryHeaderEl.setAttribute('aria-label', `${isEntryExpanded ? 'Collapse' : 'Expand'} command output`);
-      entryHeaderEl.addEventListener('click', () => {
-        this.bashEntryExpanded.set(info.id, !isEntryExpanded);
-        this.renderBashOutputs({ scroll: false });
-      });
-      entryHeaderEl.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this.bashEntryExpanded.set(info.id, !isEntryExpanded);
-          this.renderBashOutputs({ scroll: false });
-        }
-      });
-
-      const rowEl = document.createElement('div');
-      rowEl.className = 'claudian-tool-result-row';
-
-      const textEl = document.createElement('span');
-      textEl.className = 'claudian-tool-result-text';
-      if (info.status === 'running' && !info.output) {
-        textEl.textContent = 'Running...';
-      } else if (info.output) {
-        textEl.textContent = info.output;
-      } else {
-        textEl.textContent = '';
-      }
-
-      rowEl.appendChild(textEl);
-      contentEl.appendChild(rowEl);
-
-      entryEl.appendChild(contentEl);
-      this.bashContentEl.appendChild(entryEl);
+      this.bashContentEl.appendChild(this.renderBashEntry(info));
     }
 
     if (scroll) {
       this.bashContentEl.scrollTop = this.bashContentEl.scrollHeight;
       this.scrollToBottom();
     }
+  }
+
+  private renderBashEntry(info: PanelBashOutput): HTMLElement {
+    const entryEl = document.createElement('div');
+    entryEl.className = 'claudian-tool-call claudian-status-panel-bash-entry';
+
+    const entryHeaderEl = document.createElement('div');
+    entryHeaderEl.className = 'claudian-tool-header';
+    entryHeaderEl.setAttribute('tabindex', '0');
+    entryHeaderEl.setAttribute('role', 'button');
+
+    const entryIconEl = document.createElement('span');
+    entryIconEl.className = 'claudian-tool-icon';
+    entryIconEl.setAttribute('aria-hidden', 'true');
+    setIcon(entryIconEl, 'terminal');
+    entryHeaderEl.appendChild(entryIconEl);
+
+    const entryLabelEl = document.createElement('span');
+    entryLabelEl.className = 'claudian-tool-label';
+    entryLabelEl.textContent = `Command: ${this.truncateDescription(info.command, 60)}`;
+    entryHeaderEl.appendChild(entryLabelEl);
+
+    const entryStatusEl = document.createElement('span');
+    entryStatusEl.className = 'claudian-tool-status';
+    entryStatusEl.classList.add(`status-${info.status}`);
+    entryStatusEl.setAttribute('aria-label', `Status: ${info.status}`);
+    if (info.status === 'completed') setIcon(entryStatusEl, 'check');
+    if (info.status === 'error') setIcon(entryStatusEl, 'x');
+    entryHeaderEl.appendChild(entryStatusEl);
+
+    entryEl.appendChild(entryHeaderEl);
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'claudian-tool-content';
+    const isEntryExpanded = this.bashEntryExpanded.get(info.id) ?? true;
+    contentEl.style.display = isEntryExpanded ? 'block' : 'none';
+    entryHeaderEl.setAttribute('aria-expanded', String(isEntryExpanded));
+    entryHeaderEl.setAttribute('aria-label', `${isEntryExpanded ? 'Collapse' : 'Expand'} command output`);
+    entryHeaderEl.addEventListener('click', () => {
+      this.bashEntryExpanded.set(info.id, !isEntryExpanded);
+      this.renderBashOutputs({ scroll: false });
+    });
+    entryHeaderEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.bashEntryExpanded.set(info.id, !isEntryExpanded);
+        this.renderBashOutputs({ scroll: false });
+      }
+    });
+
+    const rowEl = document.createElement('div');
+    rowEl.className = 'claudian-tool-result-row';
+
+    const textEl = document.createElement('span');
+    textEl.className = 'claudian-tool-result-text';
+    if (info.status === 'running' && !info.output) {
+      textEl.textContent = 'Running...';
+    } else if (info.output) {
+      textEl.textContent = info.output;
+    } else {
+      textEl.textContent = '';
+    }
+
+    rowEl.appendChild(textEl);
+    contentEl.appendChild(rowEl);
+
+    entryEl.appendChild(contentEl);
+    return entryEl;
   }
 
   private async copyLatestBashOutput(): Promise<void> {

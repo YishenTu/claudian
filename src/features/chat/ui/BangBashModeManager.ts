@@ -74,7 +74,7 @@ export class BangBashModeManager {
 
     if (e.key === 'Escape' && !e.isComposing) {
       e.preventDefault();
-      this.cancel();
+      this.clear();
       return true;
     }
 
@@ -101,14 +101,10 @@ export class BangBashModeManager {
       this.clear();
       await this.callbacks.onSubmit(rawCommand);
     } catch {
-      // onSubmit errors are handled by the caller (e.g. status panel updates)
+      // Swallowed: submit() is fire-and-forget from handleKeydown
     } finally {
       this.isSubmitting = false;
     }
-  }
-
-  private cancel(): void {
-    this.clear();
   }
 
   clear(): void {
@@ -118,10 +114,6 @@ export class BangBashModeManager {
   }
 
   destroy(): void {
-    const wrapper = this.callbacks.getInputWrapper();
-    if (wrapper) {
-      wrapper.removeClass('claudian-input-bang-bash-mode');
-    }
-    this.inputEl.placeholder = this.originalPlaceholder;
+    this.exitMode();
   }
 }
