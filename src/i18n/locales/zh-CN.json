@@ -49,7 +49,7 @@
       "errorNoActiveTab": "No active tab"
     },
     "bangBash": {
-      "placeholder": "> Run a bash command..."
+      "placeholder": "> 运行命令..."
     }
   },
   "settings": {
@@ -231,10 +231,10 @@
       "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
     },
     "enableBangBash": {
-      "name": "Enable bash mode (!)",
-      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.",
+      "name": "启用命令模式 (!)",
+      "desc": "在空输入框中输入 ! 进入命令模式。通过 Node.js child_process 直接运行命令。需要重新打开视图。",
       "validation": {
-        "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
+        "noNode": "未在 PATH 中找到 Node.js。请安装 Node.js 或检查 PATH 配置。"
       }
     },
     "maxTabs": {

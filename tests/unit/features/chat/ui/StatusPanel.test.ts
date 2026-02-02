@@ -969,6 +969,28 @@ describe('StatusPanel', () => {
       expect(bashContainer!.style.display).toBe('none');
     });
 
+    it('should stopPropagation on clear button keydown to prevent header toggle', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content!.style.display).toBe('block');
+
+      const clearButton = containerEl.querySelector('.claudian-status-panel-bash-action-clear');
+      expect(clearButton).not.toBeNull();
+
+      const event = { type: 'keydown', key: 'Enter', preventDefault: jest.fn(), stopPropagation: jest.fn() };
+      clearButton!.dispatchEvent(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+    });
+
     it('should copy latest bash output via action button', async () => {
       panel.addBashOutput({
         id: 'bash-1',
@@ -982,6 +1004,31 @@ describe('StatusPanel', () => {
       expect(copyButton).not.toBeNull();
 
       copyButton!.click();
+
+      await Promise.resolve();
+      expect(writeTextMock).toHaveBeenCalledWith('$ echo hello\nhello');
+    });
+
+    it('should stopPropagation on copy button keydown to prevent header toggle', async () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content!.style.display).toBe('block');
+
+      const copyButton = containerEl.querySelector('.claudian-status-panel-bash-action-copy');
+      expect(copyButton).not.toBeNull();
+
+      const event = { type: 'keydown', key: ' ', preventDefault: jest.fn(), stopPropagation: jest.fn() };
+      copyButton!.dispatchEvent(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
 
       await Promise.resolve();
       expect(writeTextMock).toHaveBeenCalledWith('$ echo hello\nhello');

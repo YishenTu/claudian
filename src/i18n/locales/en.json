@@ -232,7 +232,7 @@
     },
     "enableBangBash": {
       "name": "Enable bash mode (!)",
-      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.",
+      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process. Requires view reopen.",
       "validation": {
         "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
       }

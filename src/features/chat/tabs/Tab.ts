@@ -403,8 +403,8 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
             statusPanel.addBashOutput({ id, command, status: 'running', output: '' });
 
             const result = await bashService.execute(command);
-            const output = (result.stdout + result.stderr).trim();
-            const status = (result.exitCode === 0 && !result.error) ? 'completed' : 'error';
+            const output = [result.stdout, result.stderr, result.error].filter(Boolean).join('\n').trim();
+            const status = result.exitCode === 0 ? 'completed' : 'error';
             statusPanel.updateBashOutput(id, { status, output, exitCode: result.exitCode });
           },
           getInputWrapper: () => dom.inputWrapper,

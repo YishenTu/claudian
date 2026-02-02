@@ -600,6 +600,7 @@ export class StatusPanel {
     copyEl.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
+        e.stopPropagation();
         void this.copyLatestBashOutput();
       }
     });
@@ -618,6 +619,7 @@ export class StatusPanel {
     clearEl.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
+        e.stopPropagation();
         this.clearBashOutputs();
       }
     });
@@ -648,7 +650,7 @@ export class StatusPanel {
 
       const entryLabelEl = document.createElement('span');
       entryLabelEl.className = 'claudian-tool-label';
-      entryLabelEl.textContent = `Bash: ${this.truncateDescription(info.command, 60)}`;
+      entryLabelEl.textContent = `Command: ${this.truncateDescription(info.command, 60)}`;
       entryHeaderEl.appendChild(entryLabelEl);
 
       const entryStatusEl = document.createElement('span');

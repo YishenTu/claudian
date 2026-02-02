@@ -30,12 +30,16 @@ export class BangBashService {
         shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
       }, (error, stdout, stderr) => {
         if (error && 'killed' in error && error.killed) {
+          // Node.js types declare code as number, but maxBuffer errors set it to a string at runtime
+          const isMaxBuffer = 'code' in error && (error.code as unknown) === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
           resolve({
             command,
             stdout: stdout ?? '',
             stderr: stderr ?? '',
             exitCode: 124,
-            error: `Command timed out after ${TIMEOUT_MS / 1000}s`,
+            error: isMaxBuffer
+              ? 'Output exceeded maximum buffer size (1MB)'
+              : `Command timed out after ${TIMEOUT_MS / 1000}s`,
           });
           return;
         }
@@ -44,8 +48,8 @@ export class BangBashService {
           command,
           stdout: stdout ?? '',
           stderr: stderr ?? '',
-          exitCode: error?.code ?? 0,
-          error: error && !('code' in error) ? error.message : undefined,
+          exitCode: typeof error?.code === 'number' ? error.code : error ? 1 : 0,
+          error: error?.message,
         });
       });
     });
