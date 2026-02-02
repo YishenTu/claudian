@@ -63,6 +63,7 @@ class MockElement {
   dataset: Record<string, string> = {};
   parent: MockElement | null = null;
   textContent = '';
+  private _scrollTop = 0;
   private listeners: Record<string, Listener[]> = {};
 
   constructor(tagName: string) {
@@ -83,11 +84,11 @@ class MockElement {
   }
 
   get scrollTop(): number {
-    return 0;
+    return this._scrollTop;
   }
 
   set scrollTop(_value: number) {
-    // no-op for mock
+    this._scrollTop = _value;
   }
 
   appendChild(child: MockElement): MockElement {
@@ -975,6 +976,20 @@ describe('StatusPanel', () => {
 
       const entries = containerEl.querySelectorAll('.claudian-status-panel-bash-entry');
       expect(entries.length).toBe(50);
+    });
+
+    it('should scroll bash content to bottom when outputs update', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content).not.toBeNull();
+      expect((content as any).scrollTop).toBe((content as any).scrollHeight);
     });
   });
 });

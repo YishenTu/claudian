@@ -221,6 +221,10 @@
 
 .claudian-status-panel-bash-content {
   padding-top: 2px;
+  max-height: 320px;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .claudian-status-panel-bash-entry {

@@ -682,6 +682,7 @@ export class StatusPanel {
     }
 
     if (scroll) {
+      this.bashContentEl.scrollTop = this.bashContentEl.scrollHeight;
       this.scrollToBottom();
     }
   }
