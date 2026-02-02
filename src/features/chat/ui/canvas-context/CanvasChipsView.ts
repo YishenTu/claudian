@@ -6,7 +6,8 @@
  */
 
 import { setIcon } from 'obsidian';
-import type { CanvasContext, PinnedNode } from './CanvasContextManager';
+
+import type { CanvasContext } from './CanvasContextManager';
 import { getNodeSummary } from './fileUtil';
 
 export interface CanvasChipsViewCallbacks {
@@ -132,7 +133,7 @@ export class CanvasChipsView {
     nameEl.setText(summary);
 
     // Ancestor count indicator - get from nodeContext for accuracy
-    const ancestorCount = nodeContext 
+    const ancestorCount = nodeContext
       ? nodeContext.messages.filter(m => !m.isCurrentNode).length
       : this.getAncestorCountHint(node);
     if (ancestorCount > 0) {

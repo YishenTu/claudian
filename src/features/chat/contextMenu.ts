@@ -4,10 +4,11 @@
  * Registers right-click menu items for adding files/selections to chat.
  */
 
-import type { Menu, App, Editor } from 'obsidian';
+import type { App, Editor,Menu } from 'obsidian';
 import { Notice, TFile } from 'obsidian';
-import type ClaudianPlugin from '../../main';
+
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
+import type ClaudianPlugin from '../../main';
 import type { ClaudianView } from './ClaudianView';
 
 /**

@@ -30,7 +30,12 @@ function createMockFileContextManager() {
     getCurrentNotePath: jest.fn().mockReturnValue(null),
     shouldSendCurrentNote: jest.fn().mockReturnValue(false),
     markCurrentNoteSent: jest.fn(),
+    markAllFilesSent: jest.fn(),
     transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+    getUnsentFiles: jest.fn().mockReturnValue([]),
+    shouldSendCanvasContext: jest.fn().mockReturnValue(false),
+    getCanvasContext: jest.fn().mockReturnValue(null),
+    markCanvasContextSent: jest.fn(),
   };
 }
 
@@ -141,7 +146,12 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       getCurrentNotePath: jest.fn().mockReturnValue(null),
       shouldSendCurrentNote: jest.fn().mockReturnValue(false),
       markCurrentNoteSent: jest.fn(),
+      markAllFilesSent: jest.fn(),
       transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      getUnsentFiles: jest.fn().mockReturnValue([]),
+      shouldSendCanvasContext: jest.fn().mockReturnValue(false),
+      getCanvasContext: jest.fn().mockReturnValue(null),
+      markCanvasContextSent: jest.fn(),
     }) as any,
     getImageContextManager: () => imageContextManager as any,
     getMcpServerSelector: () => null,
@@ -420,7 +430,12 @@ describe('InputController - Message Queue', () => {
         getCurrentNotePath: jest.fn().mockReturnValue('notes/session.md'),
         shouldSendCurrentNote: jest.fn().mockImplementation(() => !currentNoteSent),
         markCurrentNoteSent: jest.fn().mockImplementation(() => { currentNoteSent = true; }),
+        markAllFilesSent: jest.fn(),
         transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+        getUnsentFiles: jest.fn().mockReturnValue([]),
+        shouldSendCanvasContext: jest.fn().mockReturnValue(false),
+        getCanvasContext: jest.fn().mockReturnValue(null),
+        markCanvasContextSent: jest.fn(),
       };
 
       deps.getFileContextManager = () => fileContextManager as any;

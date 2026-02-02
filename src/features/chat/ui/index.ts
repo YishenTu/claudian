@@ -1,12 +1,12 @@
-export { type FileContextCallbacks,FileContextManager } from './FileContext';
-export { type ImageContextCallbacks,ImageContextManager } from './ImageContext';
 export {
+  CanvasChipsView,
   type CanvasContext,
-  type NodeContext,
   type CanvasContextCallbacks,
   CanvasContextManager,
-  CanvasChipsView,
+  type NodeContext,
 } from './canvas-context';
+export { type FileContextCallbacks,FileContextManager } from './FileContext';
+export { type ImageContextCallbacks,ImageContextManager } from './ImageContext';
 export {
   type AddExternalContextResult,
   ContextUsageMeter,

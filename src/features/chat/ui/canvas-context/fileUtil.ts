@@ -5,6 +5,7 @@
 
 import type { App, TFile } from 'obsidian';
 import { resolveSubpath } from 'obsidian';
+
 import type { CanvasNode } from './canvas-internal';
 
 /**

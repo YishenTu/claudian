@@ -4,11 +4,10 @@
  * Provides awareness of Canvas nodes for Claudian conversations.
  */
 
-export type { Canvas, CanvasNode, CanvasEdge, CanvasView } from './canvas-internal';
-export type { CanvasContext, NodeContext, CanvasContextCallbacks, PinnedNode } from './CanvasContextManager';
+export type { Canvas, CanvasEdge, CanvasNode, CanvasView } from './canvas-internal';
 export type { CanvasChipsViewCallbacks } from './CanvasChipsView';
-
-export { CanvasContextManager } from './CanvasContextManager';
 export { CanvasChipsView } from './CanvasChipsView';
-export { visitNodeAndAncestors, collectAncestors, nodeParents, nodeChildren } from './canvasUtil';
-export { readNodeContent, readFileContent, getNodeSummary } from './fileUtil';
+export type { CanvasContext, CanvasContextCallbacks, NodeContext, PinnedNode } from './CanvasContextManager';
+export { CanvasContextManager } from './CanvasContextManager';
+export { collectAncestors, nodeChildren,nodeParents, visitNodeAndAncestors } from './canvasUtil';
+export { getNodeSummary,readFileContent, readNodeContent } from './fileUtil';
