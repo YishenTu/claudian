@@ -1,3 +1,5 @@
+import { Notice } from 'obsidian';
+
 import { t } from '../../../i18n';
 
 export interface BangBashModeCallbacks {
@@ -100,8 +102,8 @@ export class BangBashModeManager {
     try {
       this.clear();
       await this.callbacks.onSubmit(rawCommand);
-    } catch {
-      // Prevent unhandled rejection; onSubmit errors are surfaced through StatusPanel
+    } catch (e) {
+      new Notice(`Command failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       this.isSubmitting = false;
     }

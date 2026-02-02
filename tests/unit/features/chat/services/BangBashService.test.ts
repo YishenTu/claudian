@@ -19,6 +19,27 @@ describe('BangBashService', () => {
     jest.resetAllMocks();
   });
 
+  it('should pass correct exec options', async () => {
+    execMock.mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      cb(null, '', '');
+      return undefined as any;
+    });
+
+    await service.execute('echo hello');
+
+    expect(execMock).toHaveBeenCalledWith(
+      'echo hello',
+      expect.objectContaining({
+        cwd: '/test/dir',
+        env: expect.objectContaining({ PATH: '/usr/bin' }),
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+        shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
+      }),
+      expect.any(Function)
+    );
+  });
+
   it('should return stdout for a successful command', async () => {
     execMock.mockImplementation((_cmd: any, _opts: any, cb: any) => {
       cb(null, 'hello\n', '');
