@@ -120,8 +120,13 @@ export class TabManager implements TabManagerInterface {
     });
 
     // Initialize controllers (pass mcpManager for lazy service initialization)
-    initializeTabControllers(tab, this.plugin, this.view, this.mcpManager, (forkContext) =>
-      this.handleForkRequest(forkContext),
+    initializeTabControllers(
+      tab,
+      this.plugin,
+      this.view,
+      this.mcpManager,
+      (forkContext) => this.handleForkRequest(forkContext),
+      (conversationId) => this.openConversation(conversationId),
     );
 
     // Wire input event handlers

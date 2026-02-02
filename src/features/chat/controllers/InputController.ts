@@ -60,6 +60,7 @@ export interface InputControllerDeps {
   getSubagentManager: () => SubagentManager;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
+  openConversation?: (conversationId: string) => Promise<void>;
 }
 
 export class InputController {
@@ -944,7 +945,12 @@ export class InputController {
       {
         onSelect: (id) => {
           this.destroyResumeDropdown();
-          conversationController.switchTo(id).catch(() => {});
+          const open = this.deps.openConversation;
+          if (open) {
+            open(id).catch(() => {});
+          } else {
+            conversationController.switchTo(id).catch(() => {});
+          }
         },
         onDismiss: () => {
           this.destroyResumeDropdown();
