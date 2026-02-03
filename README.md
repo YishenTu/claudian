@@ -251,7 +251,7 @@ src/
 - [x] Claude in Chrome support
 - [x] `/compact` command
 - [x] Plan mode
-- [x] `rewind` and `fork` support
+- [x] `rewind` and `fork` support (including `/fork` command)
 - [x] `!command` support
 - [ ] Tool renderers refinement
 - [ ] Hooks and other advanced features
