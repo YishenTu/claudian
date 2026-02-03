@@ -1,4 +1,27 @@
-import { getPathFromToolInput } from '@/core/tools/toolInput';
+import { extractResolvedAnswers, getPathFromToolInput } from '@/core/tools/toolInput';
+
+describe('extractResolvedAnswers', () => {
+  it('returns undefined when result is not an object', () => {
+    expect(extractResolvedAnswers('bad')).toBeUndefined();
+    expect(extractResolvedAnswers(123)).toBeUndefined();
+    expect(extractResolvedAnswers(undefined)).toBeUndefined();
+    expect(extractResolvedAnswers(null)).toBeUndefined();
+  });
+
+  it('returns undefined when answers is missing', () => {
+    expect(extractResolvedAnswers({})).toBeUndefined();
+  });
+
+  it('returns undefined when answers is not an object', () => {
+    expect(extractResolvedAnswers({ answers: 'bad' })).toBeUndefined();
+    expect(extractResolvedAnswers({ answers: null })).toBeUndefined();
+  });
+
+  it('returns answers when valid', () => {
+    const answers = { foo: 'bar', baz: 1 };
+    expect(extractResolvedAnswers({ answers })).toBe(answers);
+  });
+});
 
 describe('getPathFromToolInput', () => {
   describe('Read tool', () => {
@@ -19,6 +42,12 @@ describe('getPathFromToolInput', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should fall back to notebook_path when file_path is empty', () => {
+      const result = getPathFromToolInput('Read', { file_path: '', notebook_path: '/path/to/notebook.ipynb' });
+
+      expect(result).toBe('/path/to/notebook.ipynb');
+    });
   });
 
   describe('Write tool', () => {
@@ -32,6 +61,12 @@ describe('getPathFromToolInput', () => {
       const result = getPathFromToolInput('Write', { content: 'some content' });
 
       expect(result).toBeNull();
+    });
+
+    it('should fall back to notebook_path when file_path is missing', () => {
+      const result = getPathFromToolInput('Write', { notebook_path: '/path/to/notebook.ipynb' });
+
+      expect(result).toBe('/path/to/notebook.ipynb');
     });
   });
 
@@ -53,6 +88,16 @@ describe('getPathFromToolInput', () => {
       });
 
       expect(result).toBeNull();
+    });
+
+    it('should fall back to notebook_path when file_path is missing', () => {
+      const result = getPathFromToolInput('Edit', {
+        notebook_path: '/path/to/notebook.ipynb',
+        old_string: 'old',
+        new_string: 'new',
+      });
+
+      expect(result).toBe('/path/to/notebook.ipynb');
     });
   });
 
@@ -98,6 +143,12 @@ describe('getPathFromToolInput', () => {
 
     it('should extract pattern as fallback from Glob tool input', () => {
       const result = getPathFromToolInput('Glob', { pattern: '**/*.ts' });
+
+      expect(result).toBe('**/*.ts');
+    });
+
+    it('should fall back to pattern when path is empty', () => {
+      const result = getPathFromToolInput('Glob', { path: '', pattern: '**/*.ts' });
 
       expect(result).toBe('**/*.ts');
     });
