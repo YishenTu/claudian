@@ -47,8 +47,8 @@
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab",
-      "commandNoMessages": "Cannot fork: no messages in conversation",
-      "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
+      "commandNoMessages": "Verzweigung nicht möglich: keine Nachrichten in der Konversation",
+      "commandNoAssistantUuid": "Verzweigung nicht möglich: keine Assistentenantwort mit Kennungen"
     },
     "bangBash": {
       "placeholder": "> Run a bash command...",

@@ -575,7 +575,10 @@ export interface ForkContext {
   sourceSessionId: string;
   resumeAt: string;
   sourceTitle?: string;
-  /** 1-based index of the user message where the fork happens (counting only user messages). */
+  /**
+   * 1-based index used for fork title suffix (counts only non-interrupt user messages).
+   * For /fork (fork all), this is the next user message number (count + 1).
+   */
   forkAtUserMessage?: number;
   currentNote?: string;
 }
@@ -586,6 +589,26 @@ function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
     return sc(messages);
   }
   return JSON.parse(JSON.stringify(messages)) as ChatMessage[];
+}
+
+function countUserMessagesForForkTitle(messages: ChatMessage[]): number {
+  // Keep fork numbering stable by excluding non-semantic user messages.
+  return messages.filter(m => m.role === 'user' && !m.isInterrupt && !m.isRebuiltContext).length;
+}
+
+function resolveSourceSessionId(tab: TabData, plugin: ClaudianPlugin): string | null {
+  // Prefer service sessionId (current SDK state); fall back to conversation metadata if service is lazy/uninitialized.
+  const serviceSessionId = tab.service?.getSessionId() ?? null;
+  if (serviceSessionId) {
+    return serviceSessionId;
+  }
+
+  if (!tab.conversationId) {
+    return null;
+  }
+
+  const conversation = plugin.getConversationSync(tab.conversationId);
+  return conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
 }
 
 async function handleForkRequest(
@@ -620,15 +643,7 @@ async function handleForkRequest(
     return;
   }
 
-  // Prefer service sessionId (current SDK state); fall back to conversation metadata if service is lazy/uninitialized.
-  const serviceSessionId = tab.service?.getSessionId() ?? null;
-  let sourceSessionId = serviceSessionId;
-
-  if (!sourceSessionId && tab.conversationId) {
-    const conversation = plugin.getConversationSync(tab.conversationId);
-    sourceSessionId =
-      conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
-  }
+  const sourceSessionId = resolveSourceSessionId(tab, plugin);
 
   if (!sourceSessionId) {
     new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
@@ -643,7 +658,7 @@ async function handleForkRequest(
     : undefined;
 
   // 1-based user message number (the message being forked at)
-  const forkAtUserMessage = msgs.slice(0, userIdx + 1).filter(m => m.role === 'user').length;
+  const forkAtUserMessage = countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1));
 
   await forkRequestCallback({
     messages: messagesBeforeFork,
@@ -687,14 +702,7 @@ async function handleForkAll(
     return;
   }
 
-  const serviceSessionId = tab.service?.getSessionId() ?? null;
-  let sourceSessionId = serviceSessionId;
-
-  if (!sourceSessionId && tab.conversationId) {
-    const conversation = plugin.getConversationSync(tab.conversationId);
-    sourceSessionId =
-      conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
-  }
+  const sourceSessionId = resolveSourceSessionId(tab, plugin);
 
   if (!sourceSessionId) {
     new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
@@ -707,7 +715,7 @@ async function handleForkAll(
     ? plugin.getConversationSync(tab.conversationId)
     : undefined;
 
-  const totalUserMessages = msgs.filter(m => m.role === 'user').length;
+  const totalUserMessages = countUserMessagesForForkTitle(msgs);
 
   await forkRequestCallback({
     messages: clonedMessages,

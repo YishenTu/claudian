@@ -47,8 +47,8 @@
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab",
-      "commandNoMessages": "Cannot fork: no messages in conversation",
-      "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
+      "commandNoMessages": "포크할 수 없습니다: 대화에 메시지가 없습니다",
+      "commandNoAssistantUuid": "포크할 수 없습니다: 식별자가 있는 어시스턴트 응답이 없습니다"
     },
     "bangBash": {
       "placeholder": "> Run a bash command...",

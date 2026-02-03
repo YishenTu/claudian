@@ -47,8 +47,8 @@
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab",
-      "commandNoMessages": "Cannot fork: no messages in conversation",
-      "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
+      "commandNoMessages": "Não é possível bifurcar: não há mensagens na conversa",
+      "commandNoAssistantUuid": "Não é possível bifurcar: não há resposta do assistente com identificadores"
     },
     "bangBash": {
       "placeholder": "> Run a bash command...",

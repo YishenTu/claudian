@@ -47,8 +47,8 @@
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab",
-      "commandNoMessages": "Cannot fork: no messages in conversation",
-      "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
+      "commandNoMessages": "无法分叉：对话中没有消息",
+      "commandNoAssistantUuid": "无法分叉：没有带标识符的助手回复"
     },
     "bangBash": {
       "placeholder": "> 运行命令...",

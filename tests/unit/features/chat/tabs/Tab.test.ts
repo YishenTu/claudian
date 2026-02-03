@@ -2823,6 +2823,40 @@ describe('Tab - handleForkAll (via /fork command)', () => {
     expect(ctx.forkAtUserMessage).toBe(3); // 2 user messages + 1
   });
 
+  it('should include trailing user + interrupt messages and not count interrupt for fork number', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'My Conversation',
+        currentNote: 'notes/test.md',
+      }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+      { id: 'u2', role: 'user', content: 'world', timestamp: 4, sdkUserUuid: 'user-u2' },
+      { id: 'a2', role: 'assistant', content: 'resp2', timestamp: 5, sdkAssistantUuid: 'asst-2' },
+      { id: 'u3', role: 'user', content: 'more', timestamp: 6, sdkUserUuid: 'user-u3' },
+      { id: 'int-1', role: 'user', content: '[Request interrupted by user]', timestamp: 7, sdkUserUuid: 'user-int', isInterrupt: true },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-abc') } as any;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-2',
+      forkAtUserMessage: 4, // u1, u2, u3 + 1 (interrupt excluded)
+    }));
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages).toHaveLength(7);
+    expect(ctx.messages.map((m: any) => m.id)).toEqual(['a0', 'u1', 'a1', 'u2', 'a2', 'u3', 'int-1']);
+  });
+
   it('should show notice when streaming', async () => {
     const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
 
