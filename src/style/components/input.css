@@ -189,3 +189,8 @@
   border-color: #f472b6 !important;
   box-shadow: 0 0 0 1px #f472b6;
 }
+
+/* Monospace input while in bash mode */
+.claudian-input-wrapper.claudian-input-bang-bash-mode .claudian-input {
+  font-family: var(--font-monospace);
+}
