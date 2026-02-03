@@ -74,6 +74,9 @@ export function extractString(
 ): string | undefined {
   const val = fm[key];
   if (typeof val === 'string' && val.length > 0) return val;
+  if (Array.isArray(val) && val.length > 0 && val.every(v => typeof v === 'string')) {
+    return val.map(v => `[${v}]`).join(' ');
+  }
   return undefined;
 }
 

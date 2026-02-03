@@ -90,5 +90,5 @@ dev
 # yarn.lock
 # package-lock.json
 
-# .claude/
-settings.local.json
+.claude/
+.codex/

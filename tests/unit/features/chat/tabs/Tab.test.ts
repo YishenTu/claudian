@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/mockElement';
+import { Notice } from 'obsidian';
 
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
@@ -34,6 +35,7 @@ jest.mock('@/core/agent', () => ({
     ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
     isReady: jest.fn().mockReturnValue(false),
+    applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
     onReadyStateChange: jest.fn((listener: (ready: boolean) => void) => {
       listener(false);
       return () => {};
@@ -51,6 +53,7 @@ const createMockFileContextManager = () => ({
   handleInputChange: jest.fn(),
   handleMentionKeydown: jest.fn().mockReturnValue(false),
   isMentionDropdownVisible: jest.fn().mockReturnValue(false),
+  hideMentionDropdown: jest.fn(),
   destroy: jest.fn(),
 });
 
@@ -61,10 +64,20 @@ const createMockImageContextManager = () => ({
 const createMockSlashCommandDropdown = () => ({
   handleKeydown: jest.fn().mockReturnValue(false),
   isVisible: jest.fn().mockReturnValue(false),
+  hide: jest.fn(),
+  setEnabled: jest.fn(),
   destroy: jest.fn(),
 });
 
 const createMockInstructionModeManager = () => ({
+  handleTriggerKey: jest.fn().mockReturnValue(false),
+  handleKeydown: jest.fn().mockReturnValue(false),
+  handleInputChange: jest.fn(),
+  isActive: jest.fn().mockReturnValue(false),
+  destroy: jest.fn(),
+});
+
+const createMockBangBashModeManager = () => ({
   handleTriggerKey: jest.fn().mockReturnValue(false),
   handleKeydown: jest.fn().mockReturnValue(false),
   handleInputChange: jest.fn(),
@@ -99,6 +112,7 @@ const createMockClaudianService = (overrides?: {
   ensureReady: overrides?.ensureReady ?? jest.fn().mockResolvedValue(true),
   closePersistentQuery: jest.fn(),
   isReady: jest.fn().mockReturnValue(false),
+  applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
   onReadyStateChange: overrides?.onReadyStateChange ?? jest.fn((listener: (ready: boolean) => void) => {
     listener(false);
     return () => {};
@@ -132,6 +146,7 @@ let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
 let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
 let mockSlashCommandDropdown: ReturnType<typeof createMockSlashCommandDropdown>;
 let mockInstructionModeManager: ReturnType<typeof createMockInstructionModeManager>;
+let mockBangBashModeManager: ReturnType<typeof createMockBangBashModeManager>;
 let mockStatusPanel: ReturnType<typeof createMockStatusPanel>;
 let mockModelSelector: ReturnType<typeof createMockModelSelector>;
 let mockThinkingBudgetSelector: ReturnType<typeof createMockThinkingBudgetSelector>;
@@ -158,6 +173,9 @@ const createMockInputController = () => ({
   cancelStreaming: jest.fn(),
   handleInstructionSubmit: jest.fn(),
   updateQueueIndicator: jest.fn(),
+  handleResumeKeydown: jest.fn().mockReturnValue(false),
+  isResumeDropdownVisible: jest.fn().mockReturnValue(false),
+  destroyResumeDropdown: jest.fn(),
 });
 
 jest.mock('@/features/chat/ui', () => ({
@@ -674,7 +692,9 @@ describe('Tab - Destruction', () => {
       const cancelInstructionRefine = jest.fn();
       const cancelTitleGeneration = jest.fn();
       const destroyTodoPanel = jest.fn();
+      const destroyResumeDropdown = jest.fn();
 
+      tab.controllers.inputController = { destroyResumeDropdown } as any;
       tab.ui.fileContextManager = { destroy: destroyFileContext } as any;
       tab.ui.slashCommandDropdown = { destroy: destroySlashDropdown } as any;
       tab.ui.instructionModeManager = { destroy: destroyInstructionMode } as any;
@@ -684,6 +704,7 @@ describe('Tab - Destruction', () => {
 
       await destroyTab(tab);
 
+      expect(destroyResumeDropdown).toHaveBeenCalled();
       expect(destroyFileContext).toHaveBeenCalled();
       expect(destroySlashDropdown).toHaveBeenCalled();
       expect(destroyInstructionMode).toHaveBeenCalled();
@@ -980,9 +1001,88 @@ describe('Tab - Controller Initialization', () => {
 describe('Tab - Event Handler Behavior', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFileContextManager = createMockFileContextManager();
+    mockSlashCommandDropdown = createMockSlashCommandDropdown();
+    mockInstructionModeManager = createMockInstructionModeManager();
+    mockBangBashModeManager = createMockBangBashModeManager();
+    mockInputController = createMockInputController();
+    mockSelectionController = createMockSelectionController();
   });
 
   describe('wireTabInputEvents - keydown handlers', () => {
+    it('should not pass keydown events to other handlers when bang-bash mode is active', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.bangBashModeManager = mockBangBashModeManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockBangBashModeManager.isActive.mockReturnValue(true);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: '#', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockBangBashModeManager.handleKeydown).toHaveBeenCalled();
+      expect(mockInstructionModeManager.handleTriggerKey).not.toHaveBeenCalled();
+      expect(mockSlashCommandDropdown.handleKeydown).not.toHaveBeenCalled();
+      expect(mockFileContextManager.handleMentionKeydown).not.toHaveBeenCalled();
+    });
+
+    it('should suppress slash dropdown and mention handling on bang-bash enter/exit', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      let active = false;
+      tab.ui.bangBashModeManager = {
+        isActive: jest.fn(() => active),
+        handleTriggerKey: jest.fn((e: any) => {
+          active = true;
+          e.preventDefault();
+          return true;
+        }),
+        handleKeydown: jest.fn((e: any) => {
+          if (!active) return false;
+          if (e.key === 'Escape') {
+            active = false;
+            e.preventDefault();
+            return true;
+          }
+          return false;
+        }),
+        handleInputChange: jest.fn(),
+        destroy: jest.fn(),
+      } as any;
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+
+      keydownHandler({ key: '!', preventDefault: jest.fn() });
+      expect(mockSlashCommandDropdown.setEnabled).toHaveBeenCalledWith(false);
+      expect(mockFileContextManager.hideMentionDropdown).toHaveBeenCalled();
+
+      keydownHandler({ key: 'Escape', preventDefault: jest.fn() });
+      expect(mockSlashCommandDropdown.setEnabled).toHaveBeenCalledWith(true);
+    });
+
     it('should handle instruction mode trigger key', () => {
       const options = createMockOptions();
       const tab = createTab(options);
@@ -1054,6 +1154,32 @@ describe('Tab - Event Handler Behavior', () => {
       keydownHandler(event);
 
       expect(mockSlashCommandDropdown.handleKeydown).toHaveBeenCalled();
+    });
+
+    it('should handle resume dropdown keydown', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockInputController.handleResumeKeydown.mockReturnValueOnce(true);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const keydownHandler = listeners.get('keydown')[0];
+      const event = { key: 'ArrowDown', preventDefault: jest.fn() };
+      keydownHandler(event);
+
+      expect(mockInputController.handleResumeKeydown).toHaveBeenCalled();
+      expect(mockSlashCommandDropdown.handleKeydown).not.toHaveBeenCalled();
+      expect(mockFileContextManager.handleMentionKeydown).not.toHaveBeenCalled();
     });
 
     it('should handle file context mention keydown', () => {
@@ -1250,6 +1376,29 @@ describe('Tab - Event Handler Behavior', () => {
       focusHandler();
 
       expect(mockSelectionController.showHighlight).toHaveBeenCalled();
+    });
+  });
+
+  describe('wireTabInputEvents - input handlers', () => {
+    it('should not call FileContextManager.handleInputChange when bang-bash mode is active', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.bangBashModeManager = mockBangBashModeManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+      tab.ui.fileContextManager = mockFileContextManager as any;
+
+      mockBangBashModeManager.isActive.mockReturnValue(true);
+
+      wireTabInputEvents(tab, options.plugin);
+
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      const inputHandler = listeners.get('input')[0];
+      inputHandler();
+
+      expect(mockFileContextManager.handleInputChange).not.toHaveBeenCalled();
+      expect(mockBangBashModeManager.handleInputChange).toHaveBeenCalled();
     });
   });
 });
@@ -1690,8 +1839,13 @@ describe('Tab - Controller Configuration', () => {
       mockFileContextManager.isMentionDropdownVisible.mockReturnValue(true);
       expect(config.shouldSkipEscapeHandling()).toBe(true);
 
-      // Test when nothing active
+      // Test when resume dropdown is visible
       mockFileContextManager.isMentionDropdownVisible.mockReturnValue(false);
+      mockInputController.isResumeDropdownVisible.mockReturnValue(true);
+      expect(config.shouldSkipEscapeHandling()).toBe(true);
+
+      // Test when nothing active
+      mockInputController.isResumeDropdownVisible.mockReturnValue(false);
       expect(config.shouldSkipEscapeHandling()).toBe(false);
     });
 
@@ -2320,5 +2474,503 @@ describe('Tab - Scroll to Bottom Button', () => {
       // Button should now be visible (autoScrollEnabled is false AND overflow exists)
       expect(tab.dom.scrollToBottomEl?.classList.contains('visible')).toBe(true);
     });
+  });
+});
+
+const mockNotice = Notice as jest.Mock;
+
+describe('Tab - handleForkRequest', () => {
+
+  function setupForkTest(overrides: Record<string, any> = {}) {
+    const options = createMockOptions(overrides);
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+    const forkRequestCallback = jest.fn().mockResolvedValue(undefined);
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager, forkRequestCallback);
+
+    // Extract the fork callback from the MessageRenderer constructor
+    const { MessageRenderer } = jest.requireMock('@/features/chat/rendering') as { MessageRenderer: jest.Mock };
+    const lastCall = MessageRenderer.mock.calls[MessageRenderer.mock.calls.length - 1];
+    const forkCallback = lastCall[4]; // 5th argument is forkCallback
+
+    return { tab, forkCallback, forkRequestCallback, plugin: options.plugin };
+  }
+
+  beforeEach(() => {
+    mockNotice.mockClear();
+  });
+
+  it('should show notice when streaming', async () => {
+    const { tab, forkCallback } = setupForkTest();
+
+    tab.state.isStreaming = true;
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+    ];
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should show notice when message ID not found', async () => {
+    const { forkCallback, forkRequestCallback } = setupForkTest();
+
+    await forkCallback('nonexistent');
+
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalledWith('Fork failed: Message not found');
+  });
+
+  it('should show notice when user message has no sdkUserUuid', async () => {
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest();
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1 },
+    ];
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no assistant response follows the user message', async () => {
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest();
+
+    // User message without a following assistant response with UUID
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      // No assistant response after u1
+    ];
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no session ID is available', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue(null),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    // No service and no conversation
+    tab.service = null;
+
+    await forkCallback('u1');
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should call forkRequestCallback with correct ForkContext on success', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'My Conversation',
+        currentNote: 'notes/test.md',
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+      { id: 'u2', role: 'user', content: 'world', timestamp: 4, sdkUserUuid: 'user-u2' },
+      { id: 'a2', role: 'assistant', content: 'resp2', timestamp: 5, sdkAssistantUuid: 'asst-2' },
+    ];
+
+    // Service has a session ID
+    tab.service = {
+      getSessionId: jest.fn().mockReturnValue('session-abc'),
+    } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u2');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-1', // prev assistant UUID before u2
+      sourceTitle: 'My Conversation',
+      currentNote: 'notes/test.md',
+      forkAtUserMessage: 2, // u2 is the 2nd user message
+    }));
+
+    // Messages should be deep-cloned and sliced before the fork point
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages).toHaveLength(3); // a0, u1, a1 (before u2)
+    expect(ctx.messages.map((m: any) => m.id)).toEqual(['a0', 'u1', 'a1']);
+  });
+
+  it('should fall back to conversation session ID when service has none', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        sdkSessionId: 'conv-session-xyz',
+        title: 'Fallback Chat',
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'conv-session-xyz',
+    }));
+  });
+
+  it('should produce deep-cloned messages that do not share references with originals', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'Test' }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    const originalMsg = { id: 'a0', role: 'assistant' as const, content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' };
+    tab.state.messages = [
+      originalMsg,
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    // Deep clone should not share references
+    expect(ctx.messages[0]).not.toBe(originalMsg);
+    expect(ctx.messages[0]).toEqual(originalMsg);
+  });
+
+  it('should fork at first user message with empty messages before fork', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'First Fork' }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    // No assistant message before u1, so findRewindContext returns no prevAssistantUuid
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should fall back to conversation forkSource.sessionId when no sessionId or sdkSessionId', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'Nested Fork',
+        forkSource: { sessionId: 'original-source-session', resumeAt: 'asst-prev' },
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'original-source-session',
+    }));
+  });
+
+  it('should prefer service session ID over conversation metadata', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'Test',
+        sdkSessionId: 'conv-session',
+        sessionId: 'old-session',
+      }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('service-session') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'service-session',
+    }));
+  });
+
+  it('should set forkAtUserMessage to 1 for the first user message', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'Test' }),
+    });
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      forkAtUserMessage: 1,
+    }));
+  });
+
+  it('should not set forkCallback on renderer when no forkRequestCallback provided', () => {
+    const options = createMockOptions();
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+    const { MessageRenderer } = jest.requireMock('@/features/chat/rendering') as { MessageRenderer: jest.Mock };
+    const lastCall = MessageRenderer.mock.calls[MessageRenderer.mock.calls.length - 1];
+    const forkCallback = lastCall[4];
+
+    expect(forkCallback).toBeUndefined();
+  });
+});
+
+describe('Tab - handleForkAll (via /fork command)', () => {
+
+  function setupForkAllTest(overrides: Record<string, any> = {}) {
+    const options = createMockOptions(overrides);
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+    const forkRequestCallback = jest.fn().mockResolvedValue(undefined);
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager, forkRequestCallback);
+
+    // Extract onForkAll from InputController constructor call
+    const { InputController } = jest.requireMock('@/features/chat/controllers') as { InputController: jest.Mock };
+    const lastCall = InputController.mock.calls[InputController.mock.calls.length - 1];
+    const config = lastCall[0];
+    const onForkAll = config.onForkAll as (() => Promise<void>) | undefined;
+
+    return { tab, onForkAll: onForkAll!, forkRequestCallback, plugin: options.plugin };
+  }
+
+  beforeEach(() => {
+    mockNotice.mockClear();
+  });
+
+  it('should call forkRequestCallback with all messages and last assistant UUID', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'My Conversation',
+        currentNote: 'notes/test.md',
+      }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+      { id: 'u2', role: 'user', content: 'world', timestamp: 4, sdkUserUuid: 'user-u2' },
+      { id: 'a2', role: 'assistant', content: 'resp2', timestamp: 5, sdkAssistantUuid: 'asst-2' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-abc') } as any;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-2', // last assistant UUID
+      sourceTitle: 'My Conversation',
+      currentNote: 'notes/test.md',
+    }));
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages).toHaveLength(5); // all messages
+    expect(ctx.messages.map((m: any) => m.id)).toEqual(['a0', 'u1', 'a1', 'u2', 'a2']);
+    expect(ctx.forkAtUserMessage).toBe(3); // 2 user messages + 1
+  });
+
+  it('should include trailing user + interrupt messages and not count interrupt for fork number', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        title: 'My Conversation',
+        currentNote: 'notes/test.md',
+      }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u1' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+      { id: 'u2', role: 'user', content: 'world', timestamp: 4, sdkUserUuid: 'user-u2' },
+      { id: 'a2', role: 'assistant', content: 'resp2', timestamp: 5, sdkAssistantUuid: 'asst-2' },
+      { id: 'u3', role: 'user', content: 'more', timestamp: 6, sdkUserUuid: 'user-u3' },
+      { id: 'int-1', role: 'user', content: '[Request interrupted by user]', timestamp: 7, sdkUserUuid: 'user-int', isInterrupt: true },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-abc') } as any;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'session-abc',
+      resumeAt: 'asst-2',
+      forkAtUserMessage: 4, // u1, u2, u3 + 1 (interrupt excluded)
+    }));
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages).toHaveLength(7);
+    expect(ctx.messages.map((m: any) => m.id)).toEqual(['a0', 'u1', 'a1', 'u2', 'a2', 'u3', 'int-1']);
+  });
+
+  it('should show notice when streaming', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+
+    tab.state.isStreaming = true;
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no messages', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+
+    tab.state.messages = [];
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalledWith('Cannot fork: no messages in conversation');
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no assistant message has sdkAssistantUuid', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2 },
+    ];
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalledWith('Cannot fork: no assistant response with identifiers');
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should show notice when no session ID is available', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue(null),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+
+    await onForkAll();
+
+    expect(mockNotice).toHaveBeenCalled();
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should fall back to conversation session ID when service has none', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({
+        sdkSessionId: 'conv-session-xyz',
+        title: 'Fallback Chat',
+      }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = null;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    expect(forkRequestCallback).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: 'conv-session-xyz',
+    }));
+  });
+
+  it('should deep-clone messages (not share references)', async () => {
+    const plugin = createMockPlugin({
+      getConversationSync: jest.fn().mockReturnValue({ title: 'Test' }),
+    });
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest({ plugin });
+
+    const originalMsg = { id: 'a0', role: 'assistant' as const, content: 'hi', timestamp: 1, sdkAssistantUuid: 'asst-0' };
+    tab.state.messages = [
+      originalMsg,
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, sdkAssistantUuid: 'asst-1' },
+    ];
+    tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
+    tab.conversationId = 'conv-1';
+
+    await onForkAll();
+
+    const ctx = forkRequestCallback.mock.calls[0][0];
+    expect(ctx.messages[0]).not.toBe(originalMsg);
+    expect(ctx.messages[0]).toEqual(originalMsg);
+  });
+
+  it('should not set onForkAll on InputController when no forkRequestCallback provided', () => {
+    const options = createMockOptions();
+    const tab = createTab(options);
+    const mockComponent = {} as any;
+
+    initializeTabUI(tab, options.plugin);
+    initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+    const { InputController } = jest.requireMock('@/features/chat/controllers') as { InputController: jest.Mock };
+    const lastCall = InputController.mock.calls[InputController.mock.calls.length - 1];
+    const config = lastCall[0];
+    expect(config.onForkAll).toBeUndefined();
   });
 });

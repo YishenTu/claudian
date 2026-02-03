@@ -254,7 +254,7 @@ describe('MessageRenderer', () => {
     expect(messagesEl.querySelector('.claudian-message-rewind-btn')).toBeNull();
   });
 
-  it('adds a rewind button for eligible streamed user messages via refreshRewindButton', () => {
+  it('adds a rewind button for eligible streamed user messages via refreshActionButtons', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
     const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
@@ -275,7 +275,7 @@ describe('MessageRenderer', () => {
       { id: 'a2', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'resp-a' },
     ];
 
-    renderer.refreshRewindButton(userMsg, allMessages, 1);
+    renderer.refreshActionButtons(userMsg, allMessages, 1);
 
     const btn = messagesEl.querySelector('.claudian-message-rewind-btn');
     expect(btn).not.toBeNull();

@@ -1,11 +1,15 @@
 import type { Component } from 'obsidian';
+import { Notice } from 'obsidian';
 
 import { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
-import type { ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
+import type { ChatMessage, ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import { getEnhancedPath } from '../../../utils/env';
+import { getVaultPath } from '../../../utils/path';
 import {
   ConversationController,
   InputController,
@@ -14,11 +18,14 @@ import {
   StreamController,
 } from '../controllers';
 import { cleanupThinkingBlock, MessageRenderer } from '../rendering';
+import { findRewindContext } from '../rewind';
+import { BangBashService } from '../services/BangBashService';
 import { InstructionRefineService } from '../services/InstructionRefineService';
 import { SubagentManager } from '../services/SubagentManager';
 import { TitleGenerationService } from '../services/TitleGenerationService';
 import { ChatState } from '../state';
 import {
+  BangBashModeManager as BangBashModeManagerClass,
   createInputToolbar,
   FileContextManager,
   ImageContextManager,
@@ -111,6 +118,7 @@ export function createTab(options: TabCreateOptions): TabData {
       permissionToggle: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
+      bangBashModeManager: null,
       contextUsageMeter: null,
       statusPanel: null,
     },
@@ -256,8 +264,10 @@ export async function initializeTabService(
     let externalContextPaths = plugin.settings.persistentExternalContextPaths || [];
     if (tab.conversationId) {
       const conversation = await plugin.getConversationById(tab.conversationId);
-      sessionId = conversation?.sessionId ?? undefined;
+
       if (conversation) {
+        sessionId = service.applyForkState(conversation) ?? undefined;
+
         const hasMessages = conversation.messages.length > 0;
         externalContextPaths = hasMessages
           ? conversation.externalContextPaths || []
@@ -374,6 +384,34 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
       getInputWrapper: () => dom.inputWrapper,
     }
   );
+
+  // Bang bash mode (! command execution)
+  if (plugin.settings.enableBangBash) {
+    const vaultPath = getVaultPath(plugin.app);
+    if (vaultPath) {
+      const enhancedPath = getEnhancedPath();
+      const bashService = new BangBashService(vaultPath, enhancedPath);
+
+      tab.ui.bangBashModeManager = new BangBashModeManagerClass(
+        dom.inputEl,
+        {
+          onSubmit: async (command) => {
+            const statusPanel = tab.ui.statusPanel;
+            if (!statusPanel) return;
+
+            const id = `bash-${Date.now()}`;
+            statusPanel.addBashOutput({ id, command, status: 'running', output: '' });
+
+            const result = await bashService.execute(command);
+            const output = [result.stdout, result.stderr, result.error].filter(Boolean).join('\n').trim();
+            const status = result.exitCode === 0 ? 'completed' : 'error';
+            statusPanel.updateBashOutput(id, { status, output, exitCode: result.exitCode });
+          },
+          getInputWrapper: () => dom.inputWrapper,
+        }
+      );
+    }
+  }
 
   tab.ui.statusPanel = new StatusPanel();
   tab.ui.statusPanel.mount(dom.statusPanelContainerEl);
@@ -532,19 +570,159 @@ export function initializeTabUI(
   updateScrollToBottomVisibility();
 }
 
+export interface ForkContext {
+  messages: ChatMessage[];
+  sourceSessionId: string;
+  resumeAt: string;
+  sourceTitle?: string;
+  /** 1-based index used for fork title suffix (counts only non-interrupt user messages). */
+  forkAtUserMessage?: number;
+  currentNote?: string;
+}
+
+function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
+  const sc = (globalThis as unknown as { structuredClone?: <T>(value: T) => T }).structuredClone;
+  if (typeof sc === 'function') {
+    return sc(messages);
+  }
+  return JSON.parse(JSON.stringify(messages)) as ChatMessage[];
+}
+
+function countUserMessagesForForkTitle(messages: ChatMessage[]): number {
+  // Keep fork numbering stable by excluding non-semantic user messages.
+  return messages.filter(m => m.role === 'user' && !m.isInterrupt && !m.isRebuiltContext).length;
+}
+
+interface ForkSource {
+  sourceSessionId: string;
+  sourceTitle?: string;
+  currentNote?: string;
+}
+
 /**
- * Initializes the tab's controllers.
- * Call this after UI components are initialized.
- *
- * @param tab The tab data to initialize controllers for.
- * @param plugin The plugin instance.
- * @param component The Obsidian Component for registering event handlers (typically ClaudianView).
+ * Resolves session ID and conversation metadata needed for forking.
+ * Prefers the live service session ID; falls back to persisted conversation metadata.
+ * Shows a notice and returns null when no session can be resolved.
  */
+function resolveForkSource(tab: TabData, plugin: ClaudianPlugin): ForkSource | null {
+  let sourceSessionId = tab.service?.getSessionId() ?? null;
+
+  if (!sourceSessionId && tab.conversationId) {
+    const conversation = plugin.getConversationSync(tab.conversationId);
+    sourceSessionId = conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
+  }
+
+  if (!sourceSessionId) {
+    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
+    return null;
+  }
+
+  const sourceConversation = tab.conversationId
+    ? plugin.getConversationSync(tab.conversationId)
+    : undefined;
+
+  return {
+    sourceSessionId,
+    sourceTitle: sourceConversation?.title,
+    currentNote: sourceConversation?.currentNote,
+  };
+}
+
+async function handleForkRequest(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  userMessageId: string,
+  forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
+): Promise<void> {
+  const { state } = tab;
+
+  if (state.isStreaming) {
+    new Notice(t('chat.fork.unavailableStreaming'));
+    return;
+  }
+
+  const msgs = state.messages;
+  const userIdx = msgs.findIndex(m => m.id === userMessageId);
+  if (userIdx === -1) {
+    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorMessageNotFound') }));
+    return;
+  }
+
+  if (!msgs[userIdx].sdkUserUuid) {
+    new Notice(t('chat.fork.unavailableNoUuid'));
+    return;
+  }
+
+  const rewindCtx = findRewindContext(msgs, userIdx);
+  if (!rewindCtx.hasResponse || !rewindCtx.prevAssistantUuid) {
+    new Notice(t('chat.fork.unavailableNoResponse'));
+    return;
+  }
+
+  const source = resolveForkSource(tab, plugin);
+  if (!source) return;
+
+  await forkRequestCallback({
+    messages: deepCloneMessages(msgs.slice(0, userIdx)),
+    sourceSessionId: source.sourceSessionId,
+    resumeAt: rewindCtx.prevAssistantUuid,
+    sourceTitle: source.sourceTitle,
+    forkAtUserMessage: countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1)),
+    currentNote: source.currentNote,
+  });
+}
+
+async function handleForkAll(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
+): Promise<void> {
+  const { state } = tab;
+
+  if (state.isStreaming) {
+    new Notice(t('chat.fork.unavailableStreaming'));
+    return;
+  }
+
+  const msgs = state.messages;
+  if (msgs.length === 0) {
+    new Notice(t('chat.fork.commandNoMessages'));
+    return;
+  }
+
+  let lastAssistantUuid: string | undefined;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
+      lastAssistantUuid = msgs[i].sdkAssistantUuid;
+      break;
+    }
+  }
+
+  if (!lastAssistantUuid) {
+    new Notice(t('chat.fork.commandNoAssistantUuid'));
+    return;
+  }
+
+  const source = resolveForkSource(tab, plugin);
+  if (!source) return;
+
+  await forkRequestCallback({
+    messages: deepCloneMessages(msgs),
+    sourceSessionId: source.sourceSessionId,
+    resumeAt: lastAssistantUuid,
+    sourceTitle: source.sourceTitle,
+    forkAtUserMessage: countUserMessagesForForkTitle(msgs) + 1,
+    currentNote: source.currentNote,
+  });
+}
+
 export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
   component: Component,
-  mcpManager: McpServerManager
+  mcpManager: McpServerManager,
+  forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
+  openConversation?: (conversationId: string) => Promise<void>,
 ): void {
   const { dom, state, services, ui } = tab;
 
@@ -554,6 +732,9 @@ export function initializeTabControllers(
     component,
     dom.messagesEl,
     (id) => tab.controllers.conversationController!.rewind(id),
+    forkRequestCallback
+      ? (id) => handleForkRequest(tab, plugin, id, forkRequestCallback)
+      : undefined,
   );
 
   // Selection controller
@@ -669,6 +850,10 @@ export function initializeTabControllers(
         return false;
       }
     },
+    openConversation,
+    onForkAll: forkRequestCallback
+      ? () => handleForkAll(tab, plugin, forkRequestCallback)
+      : undefined,
   });
 
   // Navigation controller
@@ -679,6 +864,8 @@ export function initializeTabControllers(
     isStreaming: () => state.isStreaming,
     shouldSkipEscapeHandling: () => {
       if (ui.instructionModeManager?.isActive()) return true;
+      if (ui.bangBashModeManager?.isActive()) return true;
+      if (tab.controllers.inputController?.isResumeDropdownVisible()) return true;
       if (ui.slashCommandDropdown?.isVisible()) return true;
       if (ui.fileContextManager?.isMentionDropdownVisible()) return true;
       return false;
@@ -695,14 +882,42 @@ export function initializeTabControllers(
 export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   const { dom, ui, state, controllers } = tab;
 
+  let wasBangBashActive = ui.bangBashModeManager?.isActive() ?? false;
+  const syncBangBashSuppression = (): void => {
+    const isActive = ui.bangBashModeManager?.isActive() ?? false;
+    if (isActive === wasBangBashActive) return;
+    wasBangBashActive = isActive;
+
+    ui.slashCommandDropdown?.setEnabled(!isActive);
+    if (isActive) {
+      ui.fileContextManager?.hideMentionDropdown();
+    }
+  };
+
   // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
+    if (ui.bangBashModeManager?.isActive()) {
+      ui.bangBashModeManager.handleKeydown(e);
+      syncBangBashSuppression();
+      return;
+    }
+
     // Check for # trigger first (empty input + # keystroke)
     if (ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
     }
 
+    // Check for ! trigger (empty input + ! keystroke)
+    if (ui.bangBashModeManager?.handleTriggerKey(e)) {
+      syncBangBashSuppression();
+      return;
+    }
+
     if (ui.instructionModeManager?.handleKeydown(e)) {
+      return;
+    }
+
+    if (controllers.inputController?.handleResumeKeydown(e)) {
       return;
     }
 
@@ -732,8 +947,12 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
   // Input change handler (includes auto-resize)
   const inputHandler = () => {
-    ui.fileContextManager?.handleInputChange();
+    if (!ui.bangBashModeManager?.isActive()) {
+      ui.fileContextManager?.handleInputChange();
+    }
     ui.instructionModeManager?.handleInputChange();
+    ui.bangBashModeManager?.handleInputChange();
+    syncBangBashSuppression();
     // Auto-resize textarea based on content
     autoResizeTextarea(dom.inputEl);
   };
@@ -844,11 +1063,14 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.state.currentThinkingState = null;
 
   // Cleanup UI components
+  tab.controllers.inputController?.destroyResumeDropdown();
   tab.ui.fileContextManager?.destroy();
   tab.ui.slashCommandDropdown?.destroy();
   tab.ui.slashCommandDropdown = null;
   tab.ui.instructionModeManager?.destroy();
   tab.ui.instructionModeManager = null;
+  tab.ui.bangBashModeManager?.destroy();
+  tab.ui.bangBashModeManager = null;
   tab.services.instructionRefineService?.cancel();
   tab.services.instructionRefineService = null;
   tab.services.titleGenerationService?.cancel();

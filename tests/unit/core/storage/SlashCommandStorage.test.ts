@@ -230,7 +230,7 @@ Do the thing`;
       );
       expect(mockAdapter.write).toHaveBeenCalledWith(
         '.claude/commands/review-code.md',
-        expect.stringContaining('argument-hint: [file] [focus]')
+        expect.stringContaining('argument-hint: "[file] [focus]"')
       );
       expect(mockAdapter.write).toHaveBeenCalledWith(
         '.claude/commands/review-code.md',

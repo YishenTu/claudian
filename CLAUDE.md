@@ -24,7 +24,7 @@ npm run test:watch # Run tests in watch mode
 | **features/chat** | Main sidebar interface | See [`src/features/chat/CLAUDE.md`](src/features/chat/CLAUDE.md) |
 | **features/inline-edit** | Inline edit modal | `InlineEditService`, read-only tools |
 | **features/settings** | Settings tab | UI components for all settings |
-| **shared** | Reusable UI | Dropdowns, instruction modal, @-mention, icons |
+| **shared** | Reusable UI | Dropdowns, instruction modal, fork target modal, @-mention, icons |
 | **i18n** | Internationalization | 10 locales |
 | **utils** | Utility functions | date, path, env, editor, session, markdown, diff, context, sdkSession, frontmatter, slashCommand, mcp, claudeCli, externalContext, externalContextScanner, fileLink, imageEmbed, inlineEdit |
 | **style** | Modular CSS | See [`src/style/CLAUDE.md`](src/style/CLAUDE.md) |

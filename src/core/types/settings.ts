@@ -249,6 +249,7 @@ export interface ClaudianSettings {
   titleGenerationModel: string;  // Model for auto title generation (empty = auto)
   show1MModel: boolean;  // Show Sonnet (1M) in model selector (requires Max subscription)
   enableChrome: boolean;  // Enable Chrome extension support (passes --chrome flag)
+  enableBangBash: boolean;  // Enable ! bash mode for direct command execution
 
   // Content settings
   excludedTags: string[];
@@ -314,6 +315,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
   show1MModel: false,  // Hidden by default
   enableChrome: false,  // Disabled by default
+  enableBangBash: false,  // Disabled by default
 
   // Content settings
   excludedTags: [],

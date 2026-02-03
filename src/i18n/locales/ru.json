@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения будут отменены.",
+      "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения будут отменены. Откат не затрагивает файлы, отредактированные вручную или через bash.",
       "confirmButton": "Откатить",
       "ariaLabel": "Откатить сюда",
       "notice": "Откачено: восстановлено файлов — {count}",
@@ -31,6 +31,36 @@
       "cannot": "Невозможно откатить: {error}",
       "unavailableStreaming": "Невозможно откатить во время потоковой передачи",
       "unavailableNoUuid": "Невозможно откатить: отсутствуют идентификаторы сообщений"
+    },
+    "fork": {
+      "ariaLabel": "Ответвить разговор",
+      "chooseTarget": "Ответвить разговор",
+      "targetNewTab": "Новая вкладка",
+      "targetCurrentTab": "Текущая вкладка",
+      "maxTabsReached": "Невозможно ответвить: достигнут максимум {count} вкладок",
+      "notice": "Ответвлено в новую вкладку",
+      "noticeCurrentTab": "Ответвлено в текущей вкладке",
+      "failed": "Ошибка ответвления: {error}",
+      "unavailableStreaming": "Невозможно ответвить во время потоковой передачи",
+      "unavailableNoUuid": "Невозможно ответвить: отсутствуют идентификаторы сообщений",
+      "unavailableNoResponse": "Невозможно ответвить: нет ответа для ответвления",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab",
+      "commandNoMessages": "Нельзя форкнуть: в диалоге нет сообщений",
+      "commandNoAssistantUuid": "Нельзя форкнуть: нет ответа ассистента с идентификаторами"
+    },
+    "bangBash": {
+      "placeholder": "> Run a bash command...",
+      "commandPanel": "Command panel",
+      "copyAriaLabel": "Copy latest command output",
+      "clearAriaLabel": "Clear bash output",
+      "commandLabel": "{command}",
+      "statusLabel": "Status: {status}",
+      "collapseOutput": "Collapse command output",
+      "expandOutput": "Expand command output",
+      "running": "Running...",
+      "copyFailed": "Failed to copy to clipboard"
     }
   },
   "settings": {
@@ -210,6 +240,13 @@
     "enableChrome": {
       "name": "Включить расширение Chrome",
       "desc": "Разрешить Claude взаимодействовать с Chrome через расширение claude-in-chrome. Требуется установка расширения. Требуется перезапуск сессии."
+    },
+    "enableBangBash": {
+      "name": "Enable bash mode (!)",
+      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.",
+      "validation": {
+        "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
+      }
     },
     "maxTabs": {
       "name": "Максимум вкладок чата",

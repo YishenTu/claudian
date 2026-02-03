@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "回退到此处？此消息之后的文件更改将被还原。",
+      "confirmMessage": "回退到此处？此消息之后的文件更改将被还原。回退不会影响手动或通过 bash 编辑的文件。",
       "confirmButton": "回退",
       "ariaLabel": "回退到此处",
       "notice": "已回退：还原了 {count} 个文件",
@@ -31,6 +31,36 @@
       "cannot": "无法回退：{error}",
       "unavailableStreaming": "流式响应中无法回退",
       "unavailableNoUuid": "无法回退：缺少消息标识符"
+    },
+    "fork": {
+      "ariaLabel": "分叉对话",
+      "chooseTarget": "分叉对话",
+      "targetNewTab": "新标签页",
+      "targetCurrentTab": "当前标签页",
+      "maxTabsReached": "无法分叉：已达到最大 {count} 个标签页",
+      "notice": "已分叉到新标签页",
+      "noticeCurrentTab": "已在当前标签页分叉",
+      "failed": "分叉失败：{error}",
+      "unavailableStreaming": "流式响应中无法分叉",
+      "unavailableNoUuid": "无法分叉：缺少消息标识符",
+      "unavailableNoResponse": "无法分叉：没有可分叉的响应",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab",
+      "commandNoMessages": "无法分叉：对话中没有消息",
+      "commandNoAssistantUuid": "无法分叉：没有带标识符的助手回复"
+    },
+    "bangBash": {
+      "placeholder": "> 运行命令...",
+      "commandPanel": "命令面板",
+      "copyAriaLabel": "复制最新命令输出",
+      "clearAriaLabel": "清除命令输出",
+      "commandLabel": "{command}",
+      "statusLabel": "状态: {status}",
+      "collapseOutput": "折叠命令输出",
+      "expandOutput": "展开命令输出",
+      "running": "运行中...",
+      "copyFailed": "复制到剪贴板失败"
     }
   },
   "settings": {
@@ -210,6 +240,13 @@
     "enableChrome": {
       "name": "启用 Chrome 扩展",
       "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
+    },
+    "enableBangBash": {
+      "name": "启用命令模式 (!)",
+      "desc": "在空输入框中输入 ! 进入命令模式。通过 Node.js child_process 直接运行命令。需要重新打开视图。",
+      "validation": {
+        "noNode": "未在 PATH 中找到 Node.js。请安装 Node.js 或检查 PATH 配置。"
+      }
     },
     "maxTabs": {
       "name": "最大聊天标签数",

@@ -287,6 +287,7 @@ export default class ClaudianPlugin extends Plugin {
       conversation.previousSdkSessionIds = meta.previousSdkSessionIds ?? conversation.previousSdkSessionIds;
       conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
       conversation.resumeSessionAt = meta.resumeSessionAt ?? conversation.resumeSessionAt;
+      conversation.forkSource = meta.forkSource ?? conversation.forkSource;
     }
 
     // Also load native session metadata (no legacy JSONL)
@@ -318,6 +319,7 @@ export default class ClaudianPlugin extends Plugin {
           isNative: true,
           subagentData: meta.subagentData, // Preserve for applying to loaded messages
           resumeSessionAt: meta.resumeSessionAt,
+          forkSource: meta.forkSource,
         };
       });
 
@@ -572,16 +574,27 @@ export default class ClaudianPlugin extends Plugin {
     return firstUserMsg.content.substring(0, 50) + (firstUserMsg.content.length > 50 ? '...' : '');
   }
 
+  /** Fork has no owned session yet; still referencing the source session for resume. */
+  private isPendingFork(conversation: Conversation): boolean {
+    return !!conversation.forkSource &&
+      !conversation.sdkSessionId &&
+      !conversation.sessionId;
+  }
+
   private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
     if (!conversation.isNative || conversation.sdkMessagesLoaded) return;
 
     const vaultPath = getVaultPath(this.app);
     if (!vaultPath) return;
 
-    const allSessionIds: string[] = [
-      ...(conversation.previousSdkSessionIds || []),
-      conversation.sdkSessionId ?? conversation.sessionId,
-    ].filter((id): id is string => !!id);
+    const isPendingFork = this.isPendingFork(conversation);
+
+    const allSessionIds: string[] = isPendingFork
+      ? [conversation.forkSource!.sessionId]
+      : [
+          ...(conversation.previousSdkSessionIds || []),
+          conversation.sdkSessionId ?? conversation.sessionId,
+        ].filter((id): id is string => !!id);
 
     if (allSessionIds.length === 0) return;
 
@@ -590,7 +603,9 @@ export default class ClaudianPlugin extends Plugin {
     let errorCount = 0;
     let successCount = 0;
 
-    const currentSessionId = conversation.sdkSessionId ?? conversation.sessionId;
+    const currentSessionId = isPendingFork
+      ? conversation.forkSource!.sessionId
+      : (conversation.sdkSessionId ?? conversation.sessionId);
 
     for (const sessionId of allSessionIds) {
       if (!sdkSessionExists(vaultPath, sessionId)) {
@@ -599,8 +614,11 @@ export default class ClaudianPlugin extends Plugin {
       }
 
       const isCurrentSession = sessionId === currentSessionId;
+      const truncateAt = isCurrentSession
+        ? (isPendingFork ? conversation.forkSource!.resumeAt : conversation.resumeSessionAt)
+        : undefined;
       const result: SDKSessionLoadResult = await loadSDKSessionMessages(
-        vaultPath, sessionId, isCurrentSession ? conversation.resumeSessionAt : undefined
+        vaultPath, sessionId, truncateAt
       );
 
       if (result.error) {
@@ -820,7 +838,8 @@ export default class ClaudianPlugin extends Plugin {
    * For native sessions, saves metadata only (SDK handles messages including images).
    * For legacy sessions, saves full JSONL.
    *
-   * Image data is cleared from memory after save (SDK/JSONL has persisted it).
+   * Image data is cleared from memory after save (SDK/JSONL has persisted it),
+   * except for pending fork conversations whose images aren't yet in SDK storage.
    */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
@@ -838,11 +857,14 @@ export default class ClaudianPlugin extends Plugin {
       await this.storage.sessions.saveConversation(conversation);
     }
 
-    // Clear image data from memory after save (data is persisted by SDK or JSONL)
-    for (const msg of conversation.messages) {
-      if (msg.images) {
-        for (const img of msg.images) {
-          img.data = '';
+    // Clear image data from memory after save (data is persisted by SDK or JSONL).
+    // Skip for pending forks: their deep-cloned images aren't in SDK storage yet.
+    if (!this.isPendingFork(conversation)) {
+      for (const msg of conversation.messages) {
+        if (msg.images) {
+          for (const img of msg.images) {
+            img.data = '';
+          }
         }
       }
     }

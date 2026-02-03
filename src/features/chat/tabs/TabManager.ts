@@ -1,12 +1,17 @@
+import { Notice } from 'obsidian';
+
 import type { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
 import type { SlashCommand } from '../../../core/types';
+import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
+import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
 import {
   activateTab,
   createTab,
   deactivateTab,
   destroyTab,
+  type ForkContext,
   getTabTitle,
   initializeTabControllers,
   initializeTabService,
@@ -115,7 +120,14 @@ export class TabManager implements TabManagerInterface {
     });
 
     // Initialize controllers (pass mcpManager for lazy service initialization)
-    initializeTabControllers(tab, this.plugin, this.view, this.mcpManager);
+    initializeTabControllers(
+      tab,
+      this.plugin,
+      this.view,
+      this.mcpManager,
+      (forkContext) => this.handleForkRequest(forkContext),
+      (conversationId) => this.openConversation(conversationId),
+    );
 
     // Wire input event handlers
     wireTabInputEvents(tab, this.plugin);
@@ -175,7 +187,9 @@ export class TabManager implements TabManagerInterface {
           const externalContextPaths = hasMessages
             ? conversation.externalContextPaths || []
             : (this.plugin.settings.persistentExternalContextPaths || []);
-          tab.service.setSessionId(conversation.sessionId ?? null, externalContextPaths);
+
+          const resolvedSessionId = tab.service.applyForkState(conversation);
+          tab.service.setSessionId(resolvedSessionId, externalContextPaths);
         }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
@@ -366,6 +380,101 @@ export class TabManager implements TabManagerInterface {
       // Sync tab.conversationId with the newly created conversation
       activeTab.conversationId = activeTab.state.currentConversationId;
     }
+  }
+
+  // ============================================
+  // Fork
+  // ============================================
+
+  private async handleForkRequest(context: ForkContext): Promise<void> {
+    const target = await chooseForkTarget(this.plugin.app);
+    if (!target) return;
+
+    if (target === 'new-tab') {
+      const tab = await this.forkToNewTab(context);
+      if (!tab) {
+        const maxTabs = this.getMaxTabs();
+        new Notice(t('chat.fork.maxTabsReached', { count: String(maxTabs) }));
+        return;
+      }
+      new Notice(t('chat.fork.notice'));
+    } else {
+      const success = await this.forkInCurrentTab(context);
+      if (!success) {
+        new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoActiveTab') }));
+        return;
+      }
+      new Notice(t('chat.fork.noticeCurrentTab'));
+    }
+  }
+
+  async forkToNewTab(context: ForkContext): Promise<TabData | null> {
+    const maxTabs = this.getMaxTabs();
+    if (this.tabs.size >= maxTabs) {
+      return null;
+    }
+
+    const conversationId = await this.createForkConversation(context);
+    try {
+      return await this.createTab(conversationId);
+    } catch (error) {
+      await this.plugin.deleteConversation(conversationId).catch(() => {});
+      throw error;
+    }
+  }
+
+  async forkInCurrentTab(context: ForkContext): Promise<boolean> {
+    const activeTab = this.getActiveTab();
+    if (!activeTab?.controllers.conversationController) return false;
+
+    const conversationId = await this.createForkConversation(context);
+    try {
+      await activeTab.controllers.conversationController.switchTo(conversationId);
+    } catch (error) {
+      await this.plugin.deleteConversation(conversationId).catch(() => {});
+      throw error;
+    }
+    return true;
+  }
+
+  private async createForkConversation(context: ForkContext): Promise<string> {
+    const conversation = await this.plugin.createConversation();
+
+    const title = context.sourceTitle
+      ? this.buildForkTitle(context.sourceTitle, context.forkAtUserMessage)
+      : undefined;
+
+    await this.plugin.updateConversation(conversation.id, {
+      messages: context.messages,
+      forkSource: { sessionId: context.sourceSessionId, resumeAt: context.resumeAt },
+      // Prevent immediate SDK message load from merging duplicates with the copied messages.
+      // This is in-memory only (not persisted in metadata).
+      sdkMessagesLoaded: true,
+      ...(title && { title }),
+      ...(context.currentNote && { currentNote: context.currentNote }),
+    });
+
+    return conversation.id;
+  }
+
+  private buildForkTitle(sourceTitle: string, forkAtUserMessage?: number): string {
+    const MAX_TITLE_LENGTH = 50;
+    const forkSuffix = forkAtUserMessage ? ` (#${forkAtUserMessage})` : '';
+    const forkPrefix = 'Fork: ';
+    const maxSourceLength = MAX_TITLE_LENGTH - forkPrefix.length - forkSuffix.length;
+    const truncatedSource = sourceTitle.length > maxSourceLength
+      ? sourceTitle.slice(0, maxSourceLength - 1) + '…'
+      : sourceTitle;
+    let title = forkPrefix + truncatedSource + forkSuffix;
+
+    const existingTitles = new Set(this.plugin.getConversationList().map(c => c.title));
+    if (existingTitles.has(title)) {
+      let n = 2;
+      while (existingTitles.has(`${title} ${n}`)) n++;
+      title = `${title} ${n}`;
+    }
+
+    return title;
   }
 
   // ============================================

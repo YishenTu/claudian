@@ -5,6 +5,7 @@ import { detectBuiltInCommand } from '../../../core/commands';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
@@ -59,6 +60,8 @@ export interface InputControllerDeps {
   getSubagentManager: () => SubagentManager;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
+  openConversation?: (conversationId: string) => Promise<void>;
+  onForkAll?: () => Promise<void>;
 }
 
 export class InputController {
@@ -66,6 +69,7 @@ export class InputController {
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
   private pendingAskInline: InlineAskUserQuestion | null = null;
   private pendingExitPlanModeInline: InlineExitPlanMode | null = null;
+  private activeResumeDropdown: ResumeSessionDropdown | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -417,7 +421,7 @@ export class InputController {
         await conversationController.save(true, saveExtras);
 
         const userMsgIndex = state.messages.indexOf(userMsg);
-        renderer.refreshRewindButton(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
+        renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
 
         // approve-new-session: create fresh conversation and send plan content
         // Must be inside the invalidation guard — if the tab was closed or
@@ -893,9 +897,75 @@ export class InputController {
         }
         break;
       }
+      case 'resume':
+        this.showResumeDropdown();
+        break;
+      case 'fork': {
+        if (!this.deps.onForkAll) {
+          new Notice('Fork not available.');
+          return;
+        }
+        await this.deps.onForkAll();
+        break;
+      }
       default:
         // Unknown command - notify user
         new Notice(`Unknown command: ${action}`);
     }
+  }
+
+  // ============================================
+  // Resume Session Dropdown
+  // ============================================
+
+  handleResumeKeydown(e: KeyboardEvent): boolean {
+    if (!this.activeResumeDropdown?.isVisible()) return false;
+    return this.activeResumeDropdown.handleKeydown(e);
+  }
+
+  isResumeDropdownVisible(): boolean {
+    return this.activeResumeDropdown?.isVisible() ?? false;
+  }
+
+  destroyResumeDropdown(): void {
+    if (this.activeResumeDropdown) {
+      this.activeResumeDropdown.destroy();
+      this.activeResumeDropdown = null;
+    }
+  }
+
+  private showResumeDropdown(): void {
+    const { plugin, state, conversationController } = this.deps;
+
+    // Clean up any existing dropdown
+    this.destroyResumeDropdown();
+
+    const conversations = plugin.getConversationList();
+    if (conversations.length === 0) {
+      new Notice('No conversations to resume');
+      return;
+    }
+
+    const openConversation = this.deps.openConversation
+      ?? ((id: string) => conversationController.switchTo(id));
+
+    this.activeResumeDropdown = new ResumeSessionDropdown(
+      this.deps.getInputContainerEl(),
+      this.deps.getInputEl(),
+      conversations,
+      state.currentConversationId,
+      {
+        onSelect: (id) => {
+          this.destroyResumeDropdown();
+          openConversation(id).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(`Failed to open conversation: ${msg}`);
+          });
+        },
+        onDismiss: () => {
+          this.destroyResumeDropdown();
+        },
+      }
+    );
   }
 }

@@ -4,6 +4,7 @@ export {
   type ContentBlock,
   type Conversation,
   type ConversationMeta,
+  type ForkSource,
   type ImageAttachment,
   type ImageMediaType,
   type SessionMetadata,

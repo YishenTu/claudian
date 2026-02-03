@@ -3,6 +3,11 @@ import { Notice } from 'obsidian';
 
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { ResumeSessionDropdown } from '@/shared/components/ResumeSessionDropdown';
+
+jest.mock('@/shared/components/ResumeSessionDropdown', () => ({
+  ResumeSessionDropdown: jest.fn(),
+}));
 
 beforeAll(() => {
   globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -113,7 +118,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       addMessage: jest.fn().mockReturnValue({
         querySelector: jest.fn().mockReturnValue(createMockEl()),
       }),
-      refreshRewindButton: jest.fn(),
+      refreshActionButtons: jest.fn(),
     } as any,
     streamController: {
       showThinkingIndicator: jest.fn(),
@@ -970,6 +975,167 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect((deps.conversationController as any).createNew).toHaveBeenCalled();
+      expect(inputEl.value).toBe('');
+    });
+  });
+
+  describe('Built-in commands - /resume', () => {
+    const mockConversations = [
+      { id: 'conv-1', title: 'Chat 1', createdAt: 1000, updatedAt: 1000, messageCount: 1, preview: '' },
+    ];
+
+    let mockDropdownInstance: {
+      isVisible: jest.Mock;
+      handleKeydown: jest.Mock;
+      destroy: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockNotice.mockClear();
+      mockDropdownInstance = {
+        isVisible: jest.fn().mockReturnValue(true),
+        handleKeydown: jest.fn().mockReturnValue(false),
+        destroy: jest.fn(),
+      };
+      (ResumeSessionDropdown as jest.Mock).mockImplementation(() => mockDropdownInstance);
+    });
+
+    it('should show notice when no conversations exist', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue([]);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('No conversations to resume');
+      expect(ResumeSessionDropdown).not.toHaveBeenCalled();
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should create dropdown when conversations exist', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(ResumeSessionDropdown).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockConversations,
+        deps.state.currentConversationId,
+        expect.objectContaining({ onSelect: expect.any(Function), onDismiss: expect.any(Function) }),
+      );
+      expect(controller.isResumeDropdownVisible()).toBe(true);
+    });
+
+    it('should call switchTo on select callback', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      (deps.conversationController as any).switchTo = jest.fn().mockResolvedValue(undefined);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ResumeSessionDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onSelect('conv-1');
+
+      expect((deps.conversationController as any).switchTo).toHaveBeenCalledWith('conv-1');
+      expect(mockDropdownInstance.destroy).toHaveBeenCalled();
+    });
+
+    it('should call openConversation on select callback when provided', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      (deps.conversationController as any).switchTo = jest.fn().mockResolvedValue(undefined);
+      deps.openConversation = jest.fn().mockResolvedValue(undefined);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ResumeSessionDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onSelect('conv-1');
+
+      expect(deps.openConversation).toHaveBeenCalledWith('conv-1');
+      expect((deps.conversationController as any).switchTo).not.toHaveBeenCalled();
+      expect(mockDropdownInstance.destroy).toHaveBeenCalled();
+    });
+
+    it('should destroy dropdown on dismiss callback', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ResumeSessionDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onDismiss();
+
+      expect(mockDropdownInstance.destroy).toHaveBeenCalled();
+      expect(controller.isResumeDropdownVisible()).toBe(false);
+    });
+
+    it('should show notice with error message when openConversation rejects', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      deps.openConversation = jest.fn().mockRejectedValue(new Error('session not found'));
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ResumeSessionDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onSelect('conv-1');
+
+      await Promise.resolve();
+
+      expect(mockNotice).toHaveBeenCalledWith('Failed to open conversation: session not found');
+    });
+
+    it('should destroy existing dropdown before creating new one', async () => {
+      (deps.plugin as any).getConversationList = jest.fn().mockReturnValue(mockConversations);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+      const firstInstance = mockDropdownInstance;
+
+      // Create new mock instance for second call
+      const secondInstance = { isVisible: jest.fn().mockReturnValue(true), handleKeydown: jest.fn(), destroy: jest.fn() };
+      (ResumeSessionDropdown as jest.Mock).mockImplementation(() => secondInstance);
+
+      inputEl.value = '/resume';
+      await controller.sendMessage();
+
+      expect(firstInstance.destroy).toHaveBeenCalled();
+      expect(ResumeSessionDropdown).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Built-in commands - /fork', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('should call onForkAll callback when /fork is executed', async () => {
+      const mockOnForkAll = jest.fn().mockResolvedValue(undefined);
+      deps.onForkAll = mockOnForkAll;
+      inputEl.value = '/fork';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockOnForkAll).toHaveBeenCalled();
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should show notice when onForkAll is not available', async () => {
+      deps.onForkAll = undefined;
+      inputEl.value = '/fork';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('Fork not available.');
       expect(inputEl.value).toBe('');
     });
   });

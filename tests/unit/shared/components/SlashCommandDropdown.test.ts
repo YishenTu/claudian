@@ -115,6 +115,33 @@ describe('SlashCommandDropdown', () => {
     });
   });
 
+  describe('setEnabled', () => {
+    it('should not show dropdown when disabled', async () => {
+      dropdown.setEnabled(false);
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(dropdown.isVisible()).toBe(false);
+      expect(getRenderedCommandNames(containerEl)).toEqual([]);
+    });
+
+    it('should hide dropdown when disabling while visible', async () => {
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(dropdown.isVisible()).toBe(true);
+
+      dropdown.setEnabled(false);
+
+      expect(dropdown.isVisible()).toBe(false);
+    });
+  });
+
   describe('FILTERED_SDK_COMMANDS filtering', () => {
     it('should filter out context, cost, init, release-notes, security-review', async () => {
       const allSdkCommands = [...SDK_COMMANDS, ...FILTERED_SDK_COMMANDS_LIST];

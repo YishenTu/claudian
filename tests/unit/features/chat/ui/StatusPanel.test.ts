@@ -1,11 +1,12 @@
 import type { TodoItem } from '@/core/tools';
 import { StatusPanel } from '@/features/chat/ui/StatusPanel';
 
-// Mock obsidian setIcon
+// Mock obsidian
 jest.mock('obsidian', () => ({
   setIcon: jest.fn((el: any, iconName: string) => {
     el.setAttribute('data-icon', iconName);
   }),
+  Notice: jest.fn(),
 }));
 
 type Listener = (event: any) => void;
@@ -63,6 +64,7 @@ class MockElement {
   dataset: Record<string, string> = {};
   parent: MockElement | null = null;
   textContent = '';
+  private _scrollTop = 0;
   private listeners: Record<string, Listener[]> = {};
 
   constructor(tagName: string) {
@@ -83,11 +85,11 @@ class MockElement {
   }
 
   get scrollTop(): number {
-    return 0;
+    return this._scrollTop;
   }
 
   set scrollTop(_value: number) {
-    // no-op for mock
+    this._scrollTop = _value;
   }
 
   appendChild(child: MockElement): MockElement {
@@ -139,7 +141,7 @@ class MockElement {
   }
 
   click(): void {
-    this.dispatchEvent({ type: 'click' });
+    this.dispatchEvent({ type: 'click', stopPropagation: jest.fn(), preventDefault: jest.fn() });
   }
 
   empty(): void {
@@ -224,10 +226,15 @@ describe('StatusPanel', () => {
   let containerEl: MockElement;
   let panel: StatusPanel;
   let originalDocument: any;
+  let originalNavigator: any;
+  let writeTextMock: jest.Mock;
 
   beforeEach(() => {
     originalDocument = (global as any).document;
+    originalNavigator = (global as any).navigator;
     (global as any).document = createMockDocument();
+    writeTextMock = jest.fn().mockResolvedValue(undefined);
+    (global as any).navigator = { clipboard: { writeText: writeTextMock } };
     containerEl = new MockElement('div');
     panel = new StatusPanel();
   });
@@ -235,6 +242,7 @@ describe('StatusPanel', () => {
   afterEach(() => {
     panel.destroy();
     (global as any).document = originalDocument;
+    (global as any).navigator = originalNavigator;
   });
 
   describe('mount', () => {
@@ -836,6 +844,320 @@ describe('StatusPanel', () => {
       panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
 
       expect(panel.areAllSubagentsCompleted()).toBe(true);
+    });
+  });
+
+  describe('bash outputs', () => {
+    beforeEach(() => {
+      panel.mount(containerEl as unknown as HTMLElement);
+    });
+
+    it('should render bash section with header and entries', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const bashContainer = containerEl.querySelector('.claudian-status-panel-bash');
+      expect(bashContainer).not.toBeNull();
+      expect(bashContainer!.style.display).toBe('block');
+
+      const header = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(header).not.toBeNull();
+      const label = header!.querySelector('.claudian-tool-label');
+      expect(label).not.toBeNull();
+      expect(label!.textContent).toBe('Command panel');
+
+      const entries = containerEl.querySelectorAll('.claudian-status-panel-bash-entry');
+      expect(entries.length).toBe(1);
+    });
+
+    it('should collapse and expand the bash section', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content).not.toBeNull();
+      expect(content!.style.display).toBe('block');
+
+      const header = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(header).not.toBeNull();
+      const label = header!.querySelector('.claudian-tool-label');
+      expect(label).not.toBeNull();
+      expect(label!.textContent).toBe('Command panel');
+
+      header!.click();
+      expect(content!.style.display).toBe('none');
+      const collapsedHeader = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(collapsedHeader).not.toBeNull();
+      const collapsedLabel = collapsedHeader!.querySelector('.claudian-tool-label');
+      expect(collapsedLabel).not.toBeNull();
+      expect(collapsedLabel!.textContent).toBe('echo hello');
+
+      header!.click();
+      expect(content!.style.display).toBe('block');
+      const expandedHeaderAgain = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(expandedHeaderAgain).not.toBeNull();
+      const expandedLabelAgain = expandedHeaderAgain!.querySelector('.claudian-tool-label');
+      expect(expandedLabelAgain).not.toBeNull();
+      expect(expandedLabelAgain!.textContent).toBe('Command panel');
+    });
+
+    it('should collapse and expand individual bash output entries', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      expect(entry).not.toBeNull();
+
+      const entryHeader = entry!.querySelector('.claudian-tool-header');
+      const entryContent = entry!.querySelector('.claudian-tool-content');
+
+      expect(entryContent).not.toBeNull();
+      expect(entryContent!.style.display).toBe('block');
+      expect(entryHeader!.getAttribute('aria-expanded')).toBe('true');
+
+      entryHeader!.click();
+
+      const entryAfterClick = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const contentAfterClick = entryAfterClick!.querySelector('.claudian-tool-content');
+      const headerAfterClick = entryAfterClick!.querySelector('.claudian-tool-header');
+
+      expect(contentAfterClick!.style.display).toBe('none');
+      expect(headerAfterClick!.getAttribute('aria-expanded')).toBe('false');
+
+      const event = { type: 'keydown', key: 'Enter', preventDefault: jest.fn() };
+      headerAfterClick!.dispatchEvent(event);
+
+      const entryAfterKeydown = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const contentAfterKeydown = entryAfterKeydown!.querySelector('.claudian-tool-content');
+      const headerAfterKeydown = entryAfterKeydown!.querySelector('.claudian-tool-header');
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(contentAfterKeydown!.style.display).toBe('block');
+      expect(headerAfterKeydown!.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('should clear bash outputs via action button', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const clearButton = containerEl.querySelector('.claudian-status-panel-bash-action-clear');
+      expect(clearButton).not.toBeNull();
+
+      clearButton!.click();
+
+      const bashContainer = containerEl.querySelector('.claudian-status-panel-bash');
+      expect(bashContainer).not.toBeNull();
+      expect(bashContainer!.style.display).toBe('none');
+    });
+
+    it('should stopPropagation on clear button keydown to prevent header toggle', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content!.style.display).toBe('block');
+
+      const clearButton = containerEl.querySelector('.claudian-status-panel-bash-action-clear');
+      expect(clearButton).not.toBeNull();
+
+      const event = { type: 'keydown', key: 'Enter', preventDefault: jest.fn(), stopPropagation: jest.fn() };
+      clearButton!.dispatchEvent(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+    });
+
+    it('should copy latest bash output via action button', async () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const copyButton = containerEl.querySelector('.claudian-status-panel-bash-action-copy');
+      expect(copyButton).not.toBeNull();
+
+      copyButton!.click();
+
+      await Promise.resolve();
+      expect(writeTextMock).toHaveBeenCalledWith('$ echo hello\nhello');
+    });
+
+    it('should stopPropagation on copy button keydown to prevent header toggle', async () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content!.style.display).toBe('block');
+
+      const copyButton = containerEl.querySelector('.claudian-status-panel-bash-action-copy');
+      expect(copyButton).not.toBeNull();
+
+      const event = { type: 'keydown', key: ' ', preventDefault: jest.fn(), stopPropagation: jest.fn() };
+      copyButton!.dispatchEvent(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+
+      await Promise.resolve();
+      expect(writeTextMock).toHaveBeenCalledWith('$ echo hello\nhello');
+    });
+
+    it('should cap bash outputs to the most recent entries', () => {
+      for (let i = 0; i < 55; i++) {
+        panel.addBashOutput({
+          id: `bash-${i}`,
+          command: `echo ${i}`,
+          status: 'completed',
+          output: `${i}`,
+          exitCode: 0,
+        });
+      }
+
+      const entries = containerEl.querySelectorAll('.claudian-status-panel-bash-entry');
+      expect(entries.length).toBe(50);
+    });
+
+    it('should scroll bash content to bottom when outputs update', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const content = containerEl.querySelector('.claudian-status-panel-bash-content');
+      expect(content).not.toBeNull();
+      expect((content as any).scrollTop).toBe((content as any).scrollHeight);
+    });
+
+    it('should update a running bash output to completed with output', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'running',
+        output: '',
+      });
+
+      let entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      let text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('Running...');
+
+      panel.updateBashOutput('bash-1', { status: 'completed', output: 'hello', exitCode: 0 });
+
+      entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('hello');
+
+      const statusEl = entry!.querySelector('.claudian-tool-status');
+      expect(statusEl!.classList.contains('status-completed')).toBe(true);
+    });
+
+    it('should update a running bash output to error', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'bad-command',
+        status: 'running',
+        output: '',
+      });
+
+      panel.updateBashOutput('bash-1', { status: 'error', output: 'command not found', exitCode: 127 });
+
+      const entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('command not found');
+
+      const statusEl = entry!.querySelector('.claudian-tool-status');
+      expect(statusEl!.classList.contains('status-error')).toBe(true);
+    });
+
+    it('should be a no-op when updating a non-existent bash output', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'running',
+        output: '',
+      });
+
+      panel.updateBashOutput('nonexistent', { status: 'completed', output: 'done' });
+
+      const entry = containerEl.querySelector('.claudian-status-panel-bash-entry');
+      const text = entry!.querySelector('.claudian-tool-result-text');
+      expect(text!.textContent).toBe('Running...');
+    });
+
+    it('should set aria-expanded on the bash section header', () => {
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const header = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(header!.getAttribute('aria-expanded')).toBe('true');
+
+      header!.click();
+      const headerAfterCollapse = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(headerAfterCollapse!.getAttribute('aria-expanded')).toBe('false');
+
+      headerAfterCollapse!.click();
+      const headerAfterExpand = containerEl.querySelector('.claudian-status-panel-bash-header');
+      expect(headerAfterExpand!.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('should handle clipboard failure gracefully', async () => {
+      writeTextMock.mockRejectedValueOnce(new Error('Clipboard denied'));
+
+      panel.addBashOutput({
+        id: 'bash-1',
+        command: 'echo hello',
+        status: 'completed',
+        output: 'hello',
+        exitCode: 0,
+      });
+
+      const copyButton = containerEl.querySelector('.claudian-status-panel-bash-action-copy');
+      expect(copyButton).not.toBeNull();
+
+      copyButton!.click();
+
+      await Promise.resolve();
+      expect(writeTextMock).toHaveBeenCalled();
     });
   });
 });

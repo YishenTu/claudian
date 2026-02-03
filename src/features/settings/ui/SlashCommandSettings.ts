@@ -4,7 +4,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 import type { SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
-import { extractFirstParagraph, isSkill, parseSlashCommandContent, validateCommandName } from '../../../utils/slashCommand';
+import { extractFirstParagraph, isSkill, normalizeArgumentHint, parseSlashCommandContent, validateCommandName } from '../../../utils/slashCommand';
 
 function resolveAllowedTools(inputValue: string, parsedTools?: string[]): string[] | undefined {
   const trimmed = inputValue.trim();
@@ -244,7 +244,7 @@ export class SlashCommandModal extends Modal {
         id,
         name,
         description: descInput.value.trim() || parsed.description || undefined,
-        argumentHint: hintInput.value.trim() || parsed.argumentHint || undefined,
+        argumentHint: normalizeArgumentHint(hintInput.value.trim()) || parsed.argumentHint || undefined,
         model: modelInput.value.trim() || parsed.model || undefined,
         allowedTools: resolveAllowedTools(toolsInput.value, parsed.allowedTools),
         content: promptContent,
