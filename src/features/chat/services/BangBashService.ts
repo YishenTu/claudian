@@ -49,7 +49,6 @@ export class BangBashService {
           stdout: stdout ?? '',
           stderr: stderr ?? '',
           exitCode: typeof error?.code === 'number' ? error.code : error ? 1 : 0,
-          error: error?.message,
         });
       });
     });

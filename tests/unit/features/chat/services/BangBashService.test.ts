@@ -116,7 +116,7 @@ describe('BangBashService', () => {
     expect(result.stdout).toBe('partial output');
   });
 
-  it('should surface error.message for non-zero exit', async () => {
+  it('should not surface redundant error.message for non-zero exit', async () => {
     const error = Object.assign(new Error('Command failed: exit 1'), { code: 1 });
     execMock.mockImplementation((_cmd: any, _opts: any, cb: any) => {
       cb(error, '', '');
@@ -125,8 +125,7 @@ describe('BangBashService', () => {
 
     const result = await service.execute('exit 1');
     expect(result.exitCode).toBe(1);
-    expect(result.error).toBeDefined();
-    expect(typeof result.error).toBe('string');
+    expect(result.error).toBeUndefined();
   });
 
   it('should handle null stdout/stderr gracefully', async () => {
