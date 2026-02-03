@@ -231,6 +231,13 @@
   margin: 4px 0;
 }
 
+.claudian-status-panel-bash-entry .claudian-tool-icon svg {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  top: -1px;
+}
+
 .claudian-status-panel-bash-entry .claudian-tool-call {
   margin: 0;
 }

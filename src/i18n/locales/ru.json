@@ -55,7 +55,7 @@
       "commandPanel": "Command panel",
       "copyAriaLabel": "Copy latest command output",
       "clearAriaLabel": "Clear bash output",
-      "commandLabel": "Command: {command}",
+      "commandLabel": "{command}",
       "statusLabel": "Status: {status}",
       "collapseOutput": "Collapse command output",
       "expandOutput": "Expand command output",

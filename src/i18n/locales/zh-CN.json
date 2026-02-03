@@ -55,7 +55,7 @@
       "commandPanel": "命令面板",
       "copyAriaLabel": "复制最新命令输出",
       "clearAriaLabel": "清除命令输出",
-      "commandLabel": "命令: {command}",
+      "commandLabel": "{command}",
       "statusLabel": "状态: {status}",
       "collapseOutput": "折叠命令输出",
       "expandOutput": "展开命令输出",

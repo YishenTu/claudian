@@ -624,7 +624,7 @@ export class StatusPanel {
     const entryIconEl = document.createElement('span');
     entryIconEl.className = 'claudian-tool-icon';
     entryIconEl.setAttribute('aria-hidden', 'true');
-    setIcon(entryIconEl, 'terminal');
+    setIcon(entryIconEl, 'dollar-sign');
     entryHeaderEl.appendChild(entryIconEl);
 
     const entryLabelEl = document.createElement('span');
