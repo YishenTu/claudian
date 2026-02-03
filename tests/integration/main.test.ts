@@ -41,6 +41,7 @@ describe('ClaudianPlugin', () => {
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
         revealLeaf: jest.fn(),
+        on: jest.fn().mockReturnValue({ id: 'mock-event-ref' }),
       },
     };
 

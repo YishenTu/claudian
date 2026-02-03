@@ -89,6 +89,9 @@ function createMockApp(options: {
       getLeaf: jest.fn(() => ({
         openFile: jest.fn().mockResolvedValue(undefined),
       })),
+      getLeavesOfType: jest.fn(() => []),
+      on: jest.fn(() => ({ id: 'event-ref' })),
+      offref: jest.fn(),
     },
     metadataCache: {
       getFileCache: jest.fn((file: TFile) => fileCacheByPath.get(file.path) || null),

@@ -28,6 +28,7 @@ import {
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
 import { ClaudianView } from './features/chat/ClaudianView';
+import { registerContextMenus } from './features/chat/contextMenu';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
@@ -181,7 +182,39 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'add-current-file-to-chat',
+      name: 'Add current file to chat',
+      checkCallback: (checking: boolean) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) return false;
+
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        if (!leaf) return false;
+
+        const view = leaf.view as ClaudianView;
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        const activeTab = tabManager.getActiveTab();
+        if (!activeTab?.ui.fileContextManager) return false;
+
+        if (!checking) {
+          const added = activeTab.ui.fileContextManager.addFile(activeFile.path);
+          if (added) {
+            new Notice(`Added "${activeFile.basename}" to chat context`);
+          } else {
+            new Notice(`"${activeFile.basename}" is already in chat context`);
+          }
+        }
+        return true;
+      },
+    });
+
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
+
+    // Register context menus (right-click on files and editor)
+    registerContextMenus(this);
   }
 
   async onunload() {

@@ -1,0 +1,117 @@
+/* Canvas context indicator (attached canvas nodes) */
+.claudian-canvas-indicator {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* Canvas chip base styles */
+.claudian-canvas-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  max-width: 200px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.claudian-canvas-chip:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Canvas file chip (shows canvas name) */
+.claudian-canvas-file-chip {
+  background: linear-gradient(135deg, var(--background-primary) 0%, var(--background-secondary) 100%);
+  border-color: var(--interactive-accent-hover);
+}
+
+.claudian-canvas-file-chip .claudian-canvas-chip-icon {
+  color: var(--interactive-accent);
+}
+
+/* Canvas node chip (shows selected node) */
+.claudian-canvas-node-chip {
+  background: var(--background-primary);
+}
+
+/* Multi-selection chip */
+.claudian-canvas-multi-chip {
+  background: var(--background-secondary);
+}
+
+.claudian-canvas-chip-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-canvas-chip-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-canvas-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+/* Separator between canvas and node */
+.claudian-canvas-separator {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0 2px;
+  user-select: none;
+}
+
+/* Ancestor count badge */
+.claudian-canvas-ancestor-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 14px;
+  padding: 0 4px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+/* Remove button for canvas context */
+.claudian-canvas-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-canvas-chip-remove:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Focus styles for accessibility */
+.claudian-canvas-chip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}

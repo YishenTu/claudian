@@ -84,6 +84,12 @@ export interface TabManagerInterface {
 
   /** Gets all tabs. */
   getAllTabs(): TabData[];
+
+  /** Gets the currently active tab. */
+  getActiveTab(): TabData | null;
+
+  /** Gets the active tab ID. */
+  getActiveTabId(): TabId | null;
 }
 
 /** Tab identifier type. */

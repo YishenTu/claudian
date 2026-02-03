@@ -7,7 +7,7 @@ import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../
 import type ClaudianPlugin from '../../../main';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
-import { appendCurrentNote } from '../../../utils/context';
+import { appendAttachedFiles, appendCanvasContext, appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
@@ -211,6 +211,24 @@ export class InputController {
         currentNoteForMessage = currentNotePath;
       }
 
+      // Append additional attached files (user-selected via right-click menu or command)
+      if (fileContextManager) {
+        const unsentFiles = fileContextManager.getUnsentFiles();
+        // Filter out current note (already handled above)
+        const additionalFiles = unsentFiles.filter(f => f !== currentNotePath);
+        if (additionalFiles.length > 0) {
+          promptToSend = appendAttachedFiles(promptToSend, additionalFiles);
+        }
+      }
+
+      // Append canvas context if available (selected nodes and their ancestors)
+      if (fileContextManager?.shouldSendCanvasContext()) {
+        const canvasContext = fileContextManager.getCanvasContextForPrompt();
+        if (canvasContext) {
+          promptToSend = appendCanvasContext(promptToSend, canvasContext);
+        }
+      }
+
       // Append editor context if available
       if (editorContext) {
         promptToSend = appendEditorContext(promptToSend, editorContext);
@@ -223,6 +241,8 @@ export class InputController {
     }
 
     fileContextManager?.markCurrentNoteSent();
+    fileContextManager?.markAllFilesSent();
+    fileContextManager?.markCanvasContextSent();
 
     const userMsg: ChatMessage = {
       id: this.deps.generateId(),

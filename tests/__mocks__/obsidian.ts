@@ -13,6 +13,7 @@ export class Plugin {
   addCommand = jest.fn();
   addSettingTab = jest.fn();
   registerView = jest.fn();
+  registerEvent = jest.fn();
   loadData = jest.fn().mockResolvedValue({});
   saveData = jest.fn().mockResolvedValue(undefined);
 }
@@ -31,17 +32,19 @@ export class PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display() {}
+  display() { }
 }
 
 export class ItemView {
   app: any;
   leaf: any;
   containerEl: any = {
-    children: [{}, { empty: jest.fn(), addClass: jest.fn(), createDiv: jest.fn().mockReturnValue({
-      createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn(), setAttribute: jest.fn() }),
-      createDiv: jest.fn().mockReturnValue({ createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }) }),
-    }) }],
+    children: [{}, {
+      empty: jest.fn(), addClass: jest.fn(), createDiv: jest.fn().mockReturnValue({
+        createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn(), setAttribute: jest.fn() }),
+        createDiv: jest.fn().mockReturnValue({ createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }) }),
+      })
+    }],
   };
 
   constructor(leaf: any) {
@@ -61,7 +64,7 @@ export class ItemView {
   }
 }
 
-export class WorkspaceLeaf {}
+export class WorkspaceLeaf { }
 
 export class App {
   vault: any = {
@@ -89,7 +92,7 @@ export class MarkdownView {
 }
 
 export class Setting {
-  constructor(containerEl: any) {}
+  constructor(containerEl: any) { }
   setName = jest.fn().mockReturnThis();
   setDesc = jest.fn().mockReturnThis();
   addToggle = jest.fn().mockReturnThis();
@@ -173,7 +176,7 @@ export const MarkdownRenderer = {
 export const setIcon = jest.fn();
 
 // Notice mock that tracks constructor calls
-export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => {});
+export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => { });
 
 function unquoteYaml(value: string): string {
   if (
