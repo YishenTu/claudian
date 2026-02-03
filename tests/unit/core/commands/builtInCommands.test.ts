@@ -82,6 +82,19 @@ describe('builtInCommands', () => {
       expect(result?.command.action).toBe('resume');
       expect(result?.args).toBe('');
     });
+
+    it('detects /fork command', () => {
+      const result = detectBuiltInCommand('/fork');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('fork');
+      expect(result?.command.action).toBe('fork');
+      expect(result?.args).toBe('');
+    });
+
+    it('detects /fork case-insensitively', () => {
+      expect(detectBuiltInCommand('/FORK')).not.toBeNull();
+      expect(detectBuiltInCommand('/Fork')).not.toBeNull();
+    });
   });
 
   describe('getBuiltInCommandsForDropdown', () => {
@@ -140,18 +153,4 @@ describe('builtInCommands', () => {
     });
   });
 
-  describe('detectBuiltInCommand - /fork', () => {
-    it('detects /fork command', () => {
-      const result = detectBuiltInCommand('/fork');
-      expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('fork');
-      expect(result?.command.action).toBe('fork');
-      expect(result?.args).toBe('');
-    });
-
-    it('detects /fork case-insensitively', () => {
-      expect(detectBuiltInCommand('/FORK')).not.toBeNull();
-      expect(detectBuiltInCommand('/Fork')).not.toBeNull();
-    });
-  });
 });

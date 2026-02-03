@@ -575,10 +575,7 @@ export interface ForkContext {
   sourceSessionId: string;
   resumeAt: string;
   sourceTitle?: string;
-  /**
-   * 1-based index used for fork title suffix (counts only non-interrupt user messages).
-   * For /fork (fork all), this is the next user message number (count + 1).
-   */
+  /** 1-based index used for fork title suffix (counts only non-interrupt user messages). */
   forkAtUserMessage?: number;
   currentNote?: string;
 }
@@ -596,19 +593,39 @@ function countUserMessagesForForkTitle(messages: ChatMessage[]): number {
   return messages.filter(m => m.role === 'user' && !m.isInterrupt && !m.isRebuiltContext).length;
 }
 
-function resolveSourceSessionId(tab: TabData, plugin: ClaudianPlugin): string | null {
-  // Prefer service sessionId (current SDK state); fall back to conversation metadata if service is lazy/uninitialized.
-  const serviceSessionId = tab.service?.getSessionId() ?? null;
-  if (serviceSessionId) {
-    return serviceSessionId;
+interface ForkSource {
+  sourceSessionId: string;
+  sourceTitle?: string;
+  currentNote?: string;
+}
+
+/**
+ * Resolves session ID and conversation metadata needed for forking.
+ * Prefers the live service session ID; falls back to persisted conversation metadata.
+ * Shows a notice and returns null when no session can be resolved.
+ */
+function resolveForkSource(tab: TabData, plugin: ClaudianPlugin): ForkSource | null {
+  let sourceSessionId = tab.service?.getSessionId() ?? null;
+
+  if (!sourceSessionId && tab.conversationId) {
+    const conversation = plugin.getConversationSync(tab.conversationId);
+    sourceSessionId = conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
   }
 
-  if (!tab.conversationId) {
+  if (!sourceSessionId) {
+    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
     return null;
   }
 
-  const conversation = plugin.getConversationSync(tab.conversationId);
-  return conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
+  const sourceConversation = tab.conversationId
+    ? plugin.getConversationSync(tab.conversationId)
+    : undefined;
+
+  return {
+    sourceSessionId,
+    sourceTitle: sourceConversation?.title,
+    currentNote: sourceConversation?.currentNote,
+  };
 }
 
 async function handleForkRequest(
@@ -631,8 +648,7 @@ async function handleForkRequest(
     return;
   }
 
-  const userMsg = msgs[userIdx];
-  if (!userMsg.sdkUserUuid) {
+  if (!msgs[userIdx].sdkUserUuid) {
     new Notice(t('chat.fork.unavailableNoUuid'));
     return;
   }
@@ -643,30 +659,16 @@ async function handleForkRequest(
     return;
   }
 
-  const sourceSessionId = resolveSourceSessionId(tab, plugin);
-
-  if (!sourceSessionId) {
-    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
-    return;
-  }
-
-  // Slice messages before the clicked user message
-  const messagesBeforeFork = deepCloneMessages(msgs.slice(0, userIdx));
-
-  const sourceConversation = tab.conversationId
-    ? plugin.getConversationSync(tab.conversationId)
-    : undefined;
-
-  // 1-based user message number (the message being forked at)
-  const forkAtUserMessage = countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1));
+  const source = resolveForkSource(tab, plugin);
+  if (!source) return;
 
   await forkRequestCallback({
-    messages: messagesBeforeFork,
-    sourceSessionId,
+    messages: deepCloneMessages(msgs.slice(0, userIdx)),
+    sourceSessionId: source.sourceSessionId,
     resumeAt: rewindCtx.prevAssistantUuid,
-    sourceTitle: sourceConversation?.title,
-    forkAtUserMessage,
-    currentNote: sourceConversation?.currentNote,
+    sourceTitle: source.sourceTitle,
+    forkAtUserMessage: countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1)),
+    currentNote: source.currentNote,
   });
 }
 
@@ -688,7 +690,6 @@ async function handleForkAll(
     return;
   }
 
-  // Find last assistant message with sdkAssistantUuid
   let lastAssistantUuid: string | undefined;
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
@@ -702,28 +703,16 @@ async function handleForkAll(
     return;
   }
 
-  const sourceSessionId = resolveSourceSessionId(tab, plugin);
-
-  if (!sourceSessionId) {
-    new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
-    return;
-  }
-
-  const clonedMessages = deepCloneMessages(msgs);
-
-  const sourceConversation = tab.conversationId
-    ? plugin.getConversationSync(tab.conversationId)
-    : undefined;
-
-  const totalUserMessages = countUserMessagesForForkTitle(msgs);
+  const source = resolveForkSource(tab, plugin);
+  if (!source) return;
 
   await forkRequestCallback({
-    messages: clonedMessages,
-    sourceSessionId,
+    messages: deepCloneMessages(msgs),
+    sourceSessionId: source.sourceSessionId,
     resumeAt: lastAssistantUuid,
-    sourceTitle: sourceConversation?.title,
-    forkAtUserMessage: totalUserMessages + 1,
-    currentNote: sourceConversation?.currentNote,
+    sourceTitle: source.sourceTitle,
+    forkAtUserMessage: countUserMessagesForForkTitle(msgs) + 1,
+    currentNote: source.currentNote,
   });
 }
 
