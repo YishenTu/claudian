@@ -1,8 +1,9 @@
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import type { TodoItem } from '../../../core/tools';
 import { getToolIcon, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools';
 import type { AsyncSubagentStatus } from '../../../core/types';
+import { t } from '../../../i18n';
 import { renderTodoItems } from '../rendering/todoUtils';
 
 /** Terminal states for async subagents (no longer trackable). */
@@ -17,6 +18,16 @@ export interface PanelSubagentInfo {
   result?: string;
 }
 
+export interface PanelBashOutput {
+  id: string;
+  command: string;
+  status: 'running' | 'completed' | 'error';
+  output: string;
+  exitCode?: number;
+}
+
+const MAX_BASH_OUTPUTS = 50;
+
 /**
  * StatusPanel - persistent bottom panel for async subagent status and todos.
  */
@@ -28,6 +39,14 @@ export class StatusPanel {
   private subagentContainerEl: HTMLElement | null = null;
   private currentSubagents: Map<string, PanelSubagentInfo> = new Map();
 
+  // Bash output section (between subagents and todos)
+  private bashOutputContainerEl: HTMLElement | null = null;
+  private bashHeaderEl: HTMLElement | null = null;
+  private bashContentEl: HTMLElement | null = null;
+  private isBashExpanded = true;
+  private currentBashOutputs: Map<string, PanelBashOutput> = new Map();
+  private bashEntryExpanded: Map<string, boolean> = new Map();
+
   // Todo section
   private todoContainerEl: HTMLElement | null = null;
   private todoHeaderEl: HTMLElement | null = null;
@@ -38,6 +57,8 @@ export class StatusPanel {
   // Event handler references for cleanup
   private todoClickHandler: (() => void) | null = null;
   private todoKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private bashClickHandler: (() => void) | null = null;
+  private bashKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
   /**
    * Mount the panel into the messages container.
@@ -69,6 +90,17 @@ export class StatusPanel {
     this.todoClickHandler = null;
     this.todoKeydownHandler = null;
 
+    if (this.bashHeaderEl) {
+      if (this.bashClickHandler) {
+        this.bashHeaderEl.removeEventListener('click', this.bashClickHandler);
+      }
+      if (this.bashKeydownHandler) {
+        this.bashHeaderEl.removeEventListener('keydown', this.bashKeydownHandler);
+      }
+    }
+    this.bashClickHandler = null;
+    this.bashKeydownHandler = null;
+
     // Remove old panel from DOM
     if (this.panelEl) {
       this.panelEl.remove();
@@ -77,6 +109,9 @@ export class StatusPanel {
     // Clear references and recreate
     this.panelEl = null;
     this.subagentContainerEl = null;
+    this.bashOutputContainerEl = null;
+    this.bashHeaderEl = null;
+    this.bashContentEl = null;
     this.todoContainerEl = null;
     this.todoHeaderEl = null;
     this.todoContentEl = null;
@@ -84,6 +119,7 @@ export class StatusPanel {
 
     // Re-render current state
     this.renderSubagentStatus();
+    this.renderBashOutputs();
     if (this.currentTodos && this.currentTodos.length > 0) {
       this.updateTodos(this.currentTodos);
     }
@@ -106,6 +142,33 @@ export class StatusPanel {
     this.subagentContainerEl.className = 'claudian-status-panel-subagents';
     this.subagentContainerEl.style.display = 'none';
     this.panelEl.appendChild(this.subagentContainerEl);
+
+    // Bash output container (between subagents and todos) - hidden by default
+    this.bashOutputContainerEl = document.createElement('div');
+    this.bashOutputContainerEl.className = 'claudian-status-panel-bash';
+    this.bashOutputContainerEl.style.display = 'none';
+
+    this.bashHeaderEl = document.createElement('div');
+    this.bashHeaderEl.className = 'claudian-tool-header claudian-status-panel-bash-header';
+    this.bashHeaderEl.setAttribute('tabindex', '0');
+    this.bashHeaderEl.setAttribute('role', 'button');
+
+    this.bashClickHandler = () => this.toggleBashSection();
+    this.bashKeydownHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.toggleBashSection();
+      }
+    };
+    this.bashHeaderEl.addEventListener('click', this.bashClickHandler);
+    this.bashHeaderEl.addEventListener('keydown', this.bashKeydownHandler);
+
+    this.bashContentEl = document.createElement('div');
+    this.bashContentEl.className = 'claudian-status-panel-bash-content';
+
+    this.bashOutputContainerEl.appendChild(this.bashHeaderEl);
+    this.bashOutputContainerEl.appendChild(this.bashContentEl);
+    this.panelEl.appendChild(this.bashOutputContainerEl);
 
     // Todo container
     this.todoContainerEl = document.createElement('div');
@@ -447,6 +510,220 @@ export class StatusPanel {
   }
 
   // ============================================
+  // Bash Output Methods
+  // ============================================
+
+  addBashOutput(info: PanelBashOutput): void {
+    this.currentBashOutputs.set(info.id, info);
+    while (this.currentBashOutputs.size > MAX_BASH_OUTPUTS) {
+      const oldest = this.currentBashOutputs.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.currentBashOutputs.delete(oldest);
+      this.bashEntryExpanded.delete(oldest);
+    }
+    this.renderBashOutputs();
+  }
+
+  updateBashOutput(id: string, updates: Partial<Omit<PanelBashOutput, 'id' | 'command'>>): void {
+    const existing = this.currentBashOutputs.get(id);
+    if (!existing) return;
+    this.currentBashOutputs.set(id, { ...existing, ...updates });
+    this.renderBashOutputs();
+  }
+
+  clearBashOutputs(): void {
+    this.currentBashOutputs.clear();
+    this.bashEntryExpanded.clear();
+    this.renderBashOutputs();
+  }
+
+  private renderBashOutputs(options: { scroll?: boolean } = {}): void {
+    if (!this.bashOutputContainerEl || !this.bashHeaderEl || !this.bashContentEl) return;
+    const scroll = options.scroll ?? true;
+
+    if (this.currentBashOutputs.size === 0) {
+      this.bashOutputContainerEl.style.display = 'none';
+      return;
+    }
+
+    this.bashOutputContainerEl.style.display = 'block';
+    this.bashHeaderEl.empty();
+    this.bashContentEl.empty();
+
+    const headerIconEl = document.createElement('span');
+    headerIconEl.className = 'claudian-tool-icon';
+    headerIconEl.setAttribute('aria-hidden', 'true');
+    setIcon(headerIconEl, 'terminal');
+    this.bashHeaderEl.appendChild(headerIconEl);
+
+    const latest = Array.from(this.currentBashOutputs.values()).at(-1);
+
+    const headerLabelEl = document.createElement('span');
+    headerLabelEl.className = 'claudian-tool-label';
+    if (this.isBashExpanded) {
+      headerLabelEl.textContent = t('chat.bangBash.commandPanel');
+    } else {
+      headerLabelEl.textContent = latest ? this.truncateDescription(latest.command, 60) : t('chat.bangBash.commandPanel');
+    }
+    this.bashHeaderEl.appendChild(headerLabelEl);
+
+    const previewEl = document.createElement('span');
+    previewEl.className = 'claudian-tool-current';
+    previewEl.style.display = this.isBashExpanded ? '' : 'none';
+    this.bashHeaderEl.appendChild(previewEl);
+
+    const summaryStatusEl = document.createElement('span');
+    summaryStatusEl.className = 'claudian-tool-status';
+    if (!this.isBashExpanded && latest) {
+      summaryStatusEl.classList.add(`status-${latest.status}`);
+      summaryStatusEl.setAttribute('aria-label', t('chat.bangBash.statusLabel', { status: latest.status }));
+      if (latest.status === 'completed') setIcon(summaryStatusEl, 'check');
+      if (latest.status === 'error') setIcon(summaryStatusEl, 'x');
+    } else {
+      summaryStatusEl.style.display = 'none';
+    }
+    this.bashHeaderEl.appendChild(summaryStatusEl);
+
+    this.bashHeaderEl.setAttribute('aria-expanded', String(this.isBashExpanded));
+
+    const actionsEl = document.createElement('span');
+    actionsEl.className = 'claudian-status-panel-bash-actions';
+    this.appendActionButton(actionsEl, 'copy', t('chat.bangBash.copyAriaLabel'), 'copy', () => {
+      void this.copyLatestBashOutput();
+    });
+    this.appendActionButton(actionsEl, 'clear', t('chat.bangBash.clearAriaLabel'), 'trash', () => {
+      this.clearBashOutputs();
+    });
+    this.bashHeaderEl.appendChild(actionsEl);
+
+    this.bashContentEl.style.display = this.isBashExpanded ? 'block' : 'none';
+
+    if (!this.isBashExpanded) {
+      return;
+    }
+
+    for (const info of this.currentBashOutputs.values()) {
+      this.bashContentEl.appendChild(this.renderBashEntry(info));
+    }
+
+    if (scroll) {
+      this.bashContentEl.scrollTop = this.bashContentEl.scrollHeight;
+      this.scrollToBottom();
+    }
+  }
+
+  private renderBashEntry(info: PanelBashOutput): HTMLElement {
+    const entryEl = document.createElement('div');
+    entryEl.className = 'claudian-tool-call claudian-status-panel-bash-entry';
+
+    const entryHeaderEl = document.createElement('div');
+    entryHeaderEl.className = 'claudian-tool-header';
+    entryHeaderEl.setAttribute('tabindex', '0');
+    entryHeaderEl.setAttribute('role', 'button');
+
+    const entryIconEl = document.createElement('span');
+    entryIconEl.className = 'claudian-tool-icon';
+    entryIconEl.setAttribute('aria-hidden', 'true');
+    setIcon(entryIconEl, 'dollar-sign');
+    entryHeaderEl.appendChild(entryIconEl);
+
+    const entryLabelEl = document.createElement('span');
+    entryLabelEl.className = 'claudian-tool-label';
+    entryLabelEl.textContent = t('chat.bangBash.commandLabel', { command: this.truncateDescription(info.command, 60) });
+    entryHeaderEl.appendChild(entryLabelEl);
+
+    const entryStatusEl = document.createElement('span');
+    entryStatusEl.className = 'claudian-tool-status';
+    entryStatusEl.classList.add(`status-${info.status}`);
+    entryStatusEl.setAttribute('aria-label', t('chat.bangBash.statusLabel', { status: info.status }));
+    if (info.status === 'completed') setIcon(entryStatusEl, 'check');
+    if (info.status === 'error') setIcon(entryStatusEl, 'x');
+    entryHeaderEl.appendChild(entryStatusEl);
+
+    entryEl.appendChild(entryHeaderEl);
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'claudian-tool-content';
+    const isEntryExpanded = this.bashEntryExpanded.get(info.id) ?? true;
+    contentEl.style.display = isEntryExpanded ? 'block' : 'none';
+    entryHeaderEl.setAttribute('aria-expanded', String(isEntryExpanded));
+    entryHeaderEl.setAttribute('aria-label', isEntryExpanded ? t('chat.bangBash.collapseOutput') : t('chat.bangBash.expandOutput'));
+    entryHeaderEl.addEventListener('click', () => {
+      this.bashEntryExpanded.set(info.id, !isEntryExpanded);
+      this.renderBashOutputs({ scroll: false });
+    });
+    entryHeaderEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.bashEntryExpanded.set(info.id, !isEntryExpanded);
+        this.renderBashOutputs({ scroll: false });
+      }
+    });
+
+    const rowEl = document.createElement('div');
+    rowEl.className = 'claudian-tool-result-row';
+
+    const textEl = document.createElement('span');
+    textEl.className = 'claudian-tool-result-text';
+    if (info.status === 'running' && !info.output) {
+      textEl.textContent = t('chat.bangBash.running');
+    } else if (info.output) {
+      textEl.textContent = info.output;
+    }
+
+    rowEl.appendChild(textEl);
+    contentEl.appendChild(rowEl);
+
+    entryEl.appendChild(contentEl);
+    return entryEl;
+  }
+
+  private async copyLatestBashOutput(): Promise<void> {
+    const latest = Array.from(this.currentBashOutputs.values()).at(-1);
+    if (!latest) return;
+
+    const output = latest.output?.trim() || (latest.status === 'running' ? t('chat.bangBash.running') : '');
+    const text = output ? `$ ${latest.command}\n${output}` : `$ ${latest.command}`;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      new Notice(t('chat.bangBash.copyFailed'));
+    }
+  }
+
+  private appendActionButton(
+    parent: HTMLElement,
+    name: string,
+    ariaLabel: string,
+    icon: string,
+    action: () => void
+  ): void {
+    const el = document.createElement('span');
+    el.className = `claudian-status-panel-bash-action claudian-status-panel-bash-action-${name}`;
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-label', ariaLabel);
+    setIcon(el, icon);
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      action();
+    });
+    el.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        action();
+      }
+    });
+    parent.appendChild(el);
+  }
+
+  private toggleBashSection(): void {
+    this.isBashExpanded = !this.isBashExpanded;
+    this.renderBashOutputs({ scroll: false });
+  }
+
+  // ============================================
   // Cleanup
   // ============================================
 
@@ -466,14 +743,29 @@ export class StatusPanel {
     this.todoClickHandler = null;
     this.todoKeydownHandler = null;
 
-    // Clear subagent tracking
+    if (this.bashHeaderEl) {
+      if (this.bashClickHandler) {
+        this.bashHeaderEl.removeEventListener('click', this.bashClickHandler);
+      }
+      if (this.bashKeydownHandler) {
+        this.bashHeaderEl.removeEventListener('keydown', this.bashKeydownHandler);
+      }
+    }
+    this.bashClickHandler = null;
+    this.bashKeydownHandler = null;
+
+    // Clear subagent and bash output tracking
     this.currentSubagents.clear();
+    this.currentBashOutputs.clear();
 
     if (this.panelEl) {
       this.panelEl.remove();
       this.panelEl = null;
     }
     this.subagentContainerEl = null;
+    this.bashOutputContainerEl = null;
+    this.bashHeaderEl = null;
+    this.bashContentEl = null;
     this.todoContainerEl = null;
     this.todoHeaderEl = null;
     this.todoContentEl = null;

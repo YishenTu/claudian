@@ -22,7 +22,7 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos.",
+      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos. El rebobinado no afecta archivos editados manualmente o mediante bash.",
       "confirmButton": "Rebobinar",
       "ariaLabel": "Rebobinar hasta aquí",
       "notice": "Rebobinado: {count} archivo(s) revertido(s)",
@@ -31,6 +31,36 @@
       "cannot": "No se puede rebobinar: {error}",
       "unavailableStreaming": "No se puede rebobinar durante la transmisión",
       "unavailableNoUuid": "No se puede rebobinar: faltan identificadores de mensaje"
+    },
+    "fork": {
+      "ariaLabel": "Bifurcar conversación",
+      "chooseTarget": "Bifurcar conversación",
+      "targetNewTab": "Nueva pestaña",
+      "targetCurrentTab": "Pestaña actual",
+      "maxTabsReached": "No se puede bifurcar: máximo de {count} pestañas alcanzado",
+      "notice": "Bifurcado a nueva pestaña",
+      "noticeCurrentTab": "Bifurcado en pestaña actual",
+      "failed": "Error al bifurcar: {error}",
+      "unavailableStreaming": "No se puede bifurcar durante la transmisión",
+      "unavailableNoUuid": "No se puede bifurcar: faltan identificadores de mensaje",
+      "unavailableNoResponse": "No se puede bifurcar: no hay respuesta para bifurcar",
+      "errorMessageNotFound": "Message not found",
+      "errorNoSession": "No session ID available",
+      "errorNoActiveTab": "No active tab",
+      "commandNoMessages": "No se puede bifurcar: no hay mensajes en la conversación",
+      "commandNoAssistantUuid": "No se puede bifurcar: no hay respuesta del asistente con identificadores"
+    },
+    "bangBash": {
+      "placeholder": "> Run a bash command...",
+      "commandPanel": "Command panel",
+      "copyAriaLabel": "Copy latest command output",
+      "clearAriaLabel": "Clear bash output",
+      "commandLabel": "{command}",
+      "statusLabel": "Status: {status}",
+      "collapseOutput": "Collapse command output",
+      "expandOutput": "Expand command output",
+      "running": "Running...",
+      "copyFailed": "Failed to copy to clipboard"
     }
   },
   "settings": {
@@ -210,6 +240,13 @@
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",
       "desc": "Permitir que Claude interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada. Requiere reinicio de sesión."
+    },
+    "enableBangBash": {
+      "name": "Enable bash mode (!)",
+      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.",
+      "validation": {
+        "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
+      }
     },
     "maxTabs": {
       "name": "Máximo de pestañas de chat",

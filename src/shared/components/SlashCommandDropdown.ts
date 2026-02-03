@@ -7,6 +7,7 @@
 
 import { getBuiltInCommandsForDropdown } from '../../core/commands';
 import type { SlashCommand } from '../../core/types';
+import { normalizeArgumentHint } from '../../utils/slashCommand';
 
 /**
  * SDK commands to filter out from the dropdown.
@@ -42,6 +43,7 @@ export class SlashCommandDropdown {
   private dropdownEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | HTMLInputElement;
   private callbacks: SlashCommandDropdownCallbacks;
+  private enabled = true;
   private onInput: () => void;
   private slashStartIndex = -1;
   private selectedIndex = 0;
@@ -72,11 +74,20 @@ export class SlashCommandDropdown {
     this.inputEl.addEventListener('input', this.onInput);
   }
 
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.hide();
+    }
+  }
+
   setHiddenCommands(commands: Set<string>): void {
     this.hiddenCommands = commands;
   }
 
   handleInputChange(): void {
+    if (!this.enabled) return;
+
     const text = this.getInputValue();
     const cursorPos = this.getCursorPosition();
     const textBeforeCursor = text.substring(0, cursorPos);
@@ -102,7 +113,7 @@ export class SlashCommandDropdown {
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
-    if (!this.isVisible()) return false;
+    if (!this.enabled || !this.isVisible()) return false;
 
     switch (e.key) {
       case 'ArrowDown':
@@ -282,7 +293,7 @@ export class SlashCommandDropdown {
 
         if (cmd.argumentHint) {
           const hintEl = itemEl.createSpan({ cls: 'claudian-slash-hint' });
-          hintEl.setText(`[${cmd.argumentHint}]`);
+          hintEl.setText(normalizeArgumentHint(cmd.argumentHint));
         }
 
         if (cmd.description) {

@@ -1,0 +1,119 @@
+/* Resume Session Dropdown */
+.claudian-resume-dropdown {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--background-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  max-height: 400px;
+  overflow: hidden;
+}
+
+.claudian-resume-dropdown.visible {
+  display: block;
+}
+
+.claudian-resume-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-resume-list {
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.claudian-resume-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.claudian-resume-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+  transition: background 0.1s ease;
+}
+
+.claudian-resume-item:last-child {
+  border-bottom: none;
+}
+
+.claudian-resume-item:hover,
+.claudian-resume-item.selected {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-resume-item.current {
+  background: var(--background-secondary);
+  border-inline-start: 2px solid var(--interactive-accent);
+  padding-inline-start: 10px;
+}
+
+.claudian-resume-item-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.claudian-resume-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-resume-item.current .claudian-resume-item-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-resume-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-resume-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-resume-item-date {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+/* Scrollbar */
+.claudian-resume-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.claudian-resume-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claudian-resume-list::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+}

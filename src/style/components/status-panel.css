@@ -187,3 +187,64 @@
 .claudian-todo-list-container .claudian-todo-completed .claudian-todo-text {
   color: var(--text-muted);
 }
+
+/* Bash Output Section */
+
+.claudian-status-panel-bash {
+  margin-bottom: 4px;
+}
+
+.claudian-status-panel-bash-header {
+  padding: 4px 0;
+}
+
+.claudian-status-panel-bash-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.claudian-status-panel-bash-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.claudian-status-panel-bash-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-status-panel-bash-content {
+  padding-top: 2px;
+  max-height: 320px;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.claudian-status-panel-bash-entry {
+  margin: 4px 0;
+}
+
+.claudian-status-panel-bash-entry .claudian-tool-icon svg {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  top: -1px;
+}
+
+.claudian-status-panel-bash-entry .claudian-tool-call {
+  margin: 0;
+}
+
+/* Keep bash output blocks from growing without bound */
+.claudian-status-panel-bash-entry .claudian-tool-result-text {
+  max-height: 200px;
+  overflow-y: auto;
+  word-break: break-word;
+}

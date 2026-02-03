@@ -325,7 +325,7 @@ describe('QueryOptionsBuilder', () => {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
-        resumeSessionId: 'session-123',
+        resume: { sessionId: 'session-123' },
       };
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
@@ -423,19 +423,69 @@ describe('QueryOptionsBuilder', () => {
       expect(options.enableFileCheckpointing).toBe(true);
     });
 
-    it('sets resumeSessionAt when provided', () => {
+    it('sets resumeSessionAt when provided in resume', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
-        resumeSessionAt: 'asst-uuid-456',
+        resume: { sessionId: 'session-123', sessionAt: 'asst-uuid-456' },
       };
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
       expect(options.resumeSessionAt).toBe('asst-uuid-456');
     });
 
-    it('does not set resumeSessionAt when not provided', () => {
+    it('does not set resumeSessionAt when resume has no sessionAt', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        resume: { sessionId: 'session-123' },
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.resumeSessionAt).toBeUndefined();
+    });
+
+    it('sets forkSession when resume.fork is true', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        resume: { sessionId: 'session-123', fork: true },
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.forkSession).toBe(true);
+    });
+
+    it('does not set forkSession when resume has no fork', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        resume: { sessionId: 'session-123' },
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.forkSession).toBeUndefined();
+    });
+
+    it('sets both forkSession and resumeSessionAt when fork resumes at specific point', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        resume: { sessionId: 'session-123', sessionAt: 'asst-uuid-456', fork: true },
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.resume).toBe('session-123');
+      expect(options.resumeSessionAt).toBe('asst-uuid-456');
+      expect(options.forkSession).toBe(true);
+    });
+
+    it('does not set resume options when no resume provided', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
@@ -443,7 +493,9 @@ describe('QueryOptionsBuilder', () => {
       };
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
+      expect(options.resume).toBeUndefined();
       expect(options.resumeSessionAt).toBeUndefined();
+      expect(options.forkSession).toBeUndefined();
     });
 
     it('does not pass plugins or agents via SDK options (SDK auto-discovers from settings)', () => {

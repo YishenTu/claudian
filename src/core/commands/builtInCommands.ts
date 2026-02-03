@@ -5,7 +5,7 @@
  * These are handled separately from user-defined slash commands.
  */
 
-export type BuiltInCommandAction = 'clear' | 'add-dir';
+export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork';
 
 export interface BuiltInCommand {
   name: string;
@@ -36,7 +36,17 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     description: 'Add external context directory',
     action: 'add-dir',
     hasArgs: true,
-    argumentHint: 'path/to/directory',
+    argumentHint: '[path/to/directory]',
+  },
+  {
+    name: 'resume',
+    description: 'Resume a previous conversation',
+    action: 'resume',
+  },
+  {
+    name: 'fork',
+    description: 'Fork entire conversation to new session',
+    action: 'fork',
   },
 ];
 

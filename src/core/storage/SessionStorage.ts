@@ -399,6 +399,7 @@ export class SessionStorage {
       legacyCutoffAt: conversation.legacyCutoffAt,
       subagentData: Object.keys(subagentData).length > 0 ? subagentData : undefined,
       resumeSessionAt: conversation.resumeSessionAt,
+      forkSource: conversation.forkSource,
     };
   }
 

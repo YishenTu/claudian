@@ -82,9 +82,16 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
   };
 }
 
+export function normalizeArgumentHint(hint: string): string {
+  if (!hint) return hint;
+  if (hint.includes('[') || hint.includes('<')) return hint;
+  return `[${hint}]`;
+}
+
 export function yamlString(value: string): string {
   if (value.includes(':') || value.includes('#') || value.includes('\n') ||
-      value.startsWith(' ') || value.endsWith(' ')) {
+      value.startsWith(' ') || value.endsWith(' ') ||
+      value.startsWith('[') || value.startsWith('{')) {
     return `"${value.replace(/"/g, '\\"')}"`;
   }
   return value;

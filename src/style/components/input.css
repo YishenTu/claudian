@@ -183,3 +183,14 @@
   border-color: #60a5fa !important;
   box-shadow: 0 0 0 1px #60a5fa;
 }
+
+/* Pink border when bash mode is active */
+.claudian-input-bang-bash-mode {
+  border-color: #f472b6 !important;
+  box-shadow: 0 0 0 1px #f472b6;
+}
+
+/* Monospace input while in bash mode */
+.claudian-input-wrapper.claudian-input-bang-bash-mode .claudian-input {
+  font-family: var(--font-monospace);
+}

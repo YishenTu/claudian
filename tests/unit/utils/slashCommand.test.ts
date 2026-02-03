@@ -631,7 +631,7 @@ describe('serializeSlashCommandMarkdown', () => {
 
     expect(result).toContain('name: my-skill');
     expect(result).toContain('description: Test command');
-    expect(result).toContain('argument-hint: [file]');
+    expect(result).toContain('argument-hint: "[file]"');
     expect(result).toContain('allowed-tools:');
     expect(result).toContain('  - Read');
     expect(result).toContain('  - Grep');

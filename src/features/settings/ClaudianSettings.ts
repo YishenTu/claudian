@@ -7,7 +7,7 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { formatContextLimit, getCustomModelIds, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
@@ -540,6 +540,36 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName(t('settings.enableBangBash.name'))
+      .setDesc(t('settings.enableBangBash.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableBangBash ?? false)
+          .onChange(async (value) => {
+            bangBashValidationEl.style.display = 'none';
+            if (value) {
+              const enhancedPath = getEnhancedPath();
+              const nodePath = findNodeExecutable(enhancedPath);
+              if (!nodePath) {
+                bangBashValidationEl.setText(t('settings.enableBangBash.validation.noNode'));
+                bangBashValidationEl.style.display = 'block';
+                toggle.setValue(false);
+                return;
+              }
+            }
+            this.plugin.settings.enableBangBash = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    const bangBashValidationEl = containerEl.createDiv({ cls: 'claudian-bang-bash-validation' });
+    bangBashValidationEl.style.color = 'var(--text-error)';
+    bangBashValidationEl.style.fontSize = '0.85em';
+    bangBashValidationEl.style.marginTop = '-0.5em';
+    bangBashValidationEl.style.marginBottom = '0.5em';
+    bangBashValidationEl.style.display = 'none';
 
     const maxTabsSetting = new Setting(containerEl)
       .setName(t('settings.maxTabs.name'))

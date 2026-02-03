@@ -1,0 +1,21 @@
+/* Fork Target Modal */
+.claudian-fork-target-modal {
+  max-width: 340px;
+}
+
+.claudian-fork-target-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.claudian-fork-target-option {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+.claudian-fork-target-option:hover {
+  background: var(--background-modifier-hover);
+}

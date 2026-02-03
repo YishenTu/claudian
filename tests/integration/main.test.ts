@@ -1,6 +1,7 @@
 import * as os from 'os';
 
 import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import * as sdkSession from '@/utils/sdkSession';
 
 // Mock fs for ClaudianService
 jest.mock('fs');
@@ -782,6 +783,83 @@ describe('ClaudianPlugin', () => {
 
       const updated = await plugin.getConversationById(conv.id);
       expect(updated?.previousSdkSessionIds).toEqual([]);
+    });
+  });
+
+  describe('loadSdkMessagesForConversation - fork branch', () => {
+    it('should load from forkSource.sessionId and truncate at forkSource.resumeAt for pending fork', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        forkSource: { sessionId: 'source-session-abc', resumeAt: 'asst-uuid-cutoff' },
+        // No sessionId or sdkSessionId → isPendingFork returns true
+        sessionId: null,
+        sdkSessionId: undefined,
+        // Reset sdkMessagesLoaded to simulate plugin restart
+        sdkMessagesLoaded: false,
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          { id: 'sdk-msg-1', role: 'user', content: 'Hello', timestamp: 1000 },
+          { id: 'sdk-msg-2', role: 'assistant', content: 'Hi', timestamp: 1001 },
+        ],
+        skippedLines: 0,
+      });
+
+      // Trigger loadSdkMessagesForConversation via public API
+      const loaded = await plugin.getConversationById(conv.id);
+
+      // Should check existence of source session, not the conversation's own session
+      expect(existsSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'source-session-abc'
+      );
+
+      // Should load from forkSource.sessionId with forkSource.resumeAt as truncation point
+      expect(loadSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'source-session-abc',
+        'asst-uuid-cutoff'
+      );
+
+      // Messages should be loaded
+      expect(loaded?.sdkMessagesLoaded).toBe(true);
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('should NOT use fork path when conversation has its own sdkSessionId', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        forkSource: { sessionId: 'source-session', resumeAt: 'asst-uuid' },
+        sdkSessionId: 'own-session-id',
+        sdkMessagesLoaded: false,
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      await plugin.getConversationById(conv.id);
+
+      // Should load from own session, not forkSource session
+      expect(existsSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'own-session-id'
+      );
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
     });
   });
 
