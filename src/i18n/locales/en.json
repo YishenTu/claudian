@@ -277,6 +277,10 @@
         "isDirectory": "Path is a directory, not a file"
       }
     },
+    "useCCWorkingDirectory": {
+      "name": "Use Claude Code working directory",
+      "desc": "When enabled, use your home directory as the working directory (same as Claude Code CLI). This merges conversation history with Claude Code CLI. When disabled, use the vault path as the working directory."
+    },
     "language": {
       "name": "Language",
       "desc": "Change the display language of the plugin interface"
