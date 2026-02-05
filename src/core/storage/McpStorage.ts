@@ -1,5 +1,7 @@
 /**
- * McpStorage - Handles .claude/mcp.json read/write
+ * McpStorage - Handles MCP server configuration read/write
+ *
+ * Prioritizes global Claude Code config (~/.claude/mcp.json) over vault config.
  *
  * MCP server configurations are stored in Claude Code-compatible format
  * with optional Claudian-specific metadata in _claudian field.
@@ -17,6 +19,10 @@
  * }
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
 import type {
   ClaudianMcpConfigFile,
   ClaudianMcpServer,
@@ -29,16 +35,52 @@ import type { VaultFileAdapter } from './VaultFileAdapter';
 /** Path to MCP config file relative to vault root. */
 export const MCP_CONFIG_PATH = '.claude/mcp.json';
 
+/** Global MCP config path (shared with Claude Code CLI). */
+const GLOBAL_MCP_CONFIG_PATH = path.join(os.homedir(), '.claude', 'mcp.json');
+
 export class McpStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  private useGlobalConfig: boolean;
+
+  constructor(
+    private adapter: VaultFileAdapter,
+    options?: { preferGlobal?: boolean }
+  ) {
+    // Default to global config (Claude Code CLI behavior)
+    this.useGlobalConfig = options?.preferGlobal ?? true;
+  }
 
   async load(): Promise<ClaudianMcpServer[]> {
+    // Try global config first (Claude Code CLI compatibility)
+    if (this.useGlobalConfig) {
+      const globalServers = await this.loadFromFile(GLOBAL_MCP_CONFIG_PATH);
+      if (globalServers.length > 0) {
+        return globalServers;
+      }
+    }
+
+    // Fallback to vault config
+    return this.loadFromFile(MCP_CONFIG_PATH, true);
+  }
+
+  private async loadFromFile(
+    filePath: string,
+    isVaultPath = false
+  ): Promise<ClaudianMcpServer[]> {
     try {
-      if (!(await this.adapter.exists(MCP_CONFIG_PATH))) {
-        return [];
+      let content: string;
+
+      if (isVaultPath) {
+        if (!(await this.adapter.exists(filePath))) {
+          return [];
+        }
+        content = await this.adapter.read(filePath);
+      } else {
+        if (!fs.existsSync(filePath)) {
+          return [];
+        }
+        content = fs.readFileSync(filePath, 'utf-8');
       }
 
-      const content = await this.adapter.read(MCP_CONFIG_PATH);
       const file = JSON.parse(content) as ClaudianMcpConfigFile;
 
       if (!file.mcpServers || typeof file.mcpServers !== 'object') {
@@ -115,16 +157,34 @@ export class McpStorage {
       }
     }
 
+    // Determine target file path
+    const targetPath = this.useGlobalConfig ? GLOBAL_MCP_CONFIG_PATH : MCP_CONFIG_PATH;
+
+    // Load existing file (if any)
     let existing: Record<string, unknown> | null = null;
-    if (await this.adapter.exists(MCP_CONFIG_PATH)) {
-      try {
-        const raw = await this.adapter.read(MCP_CONFIG_PATH);
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-          existing = parsed as Record<string, unknown>;
+    if (this.useGlobalConfig) {
+      if (fs.existsSync(targetPath)) {
+        try {
+          const raw = fs.readFileSync(targetPath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            existing = parsed as Record<string, unknown>;
+          }
+        } catch {
+          existing = null;
         }
-      } catch {
-        existing = null;
+      }
+    } else {
+      if (await this.adapter.exists(targetPath)) {
+        try {
+          const raw = await this.adapter.read(targetPath);
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            existing = parsed as Record<string, unknown>;
+          }
+        } catch {
+          existing = null;
+        }
       }
     }
 
@@ -150,10 +210,24 @@ export class McpStorage {
     }
 
     const content = JSON.stringify(file, null, 2);
-    await this.adapter.write(MCP_CONFIG_PATH, content);
+
+    // Write to target location
+    if (this.useGlobalConfig) {
+      // Ensure directory exists
+      const dir = path.dirname(targetPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(targetPath, content, 'utf-8');
+    } else {
+      await this.adapter.write(MCP_CONFIG_PATH, content);
+    }
   }
 
   async exists(): Promise<boolean> {
+    if (this.useGlobalConfig) {
+      return fs.existsSync(GLOBAL_MCP_CONFIG_PATH);
+    }
     return this.adapter.exists(MCP_CONFIG_PATH);
   }
 

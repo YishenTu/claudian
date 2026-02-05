@@ -199,7 +199,7 @@ export interface EnvSnippet {
 }
 
 /** Source of a slash command. */
-export type SlashCommandSource = 'builtin' | 'user' | 'plugin' | 'sdk';
+export type SlashCommandSource = 'builtin' | 'user' | 'plugin' | 'sdk' | 'vault' | 'global';
 
 /** Slash command configuration with Claude Code compatibility. */
 export interface SlashCommand {

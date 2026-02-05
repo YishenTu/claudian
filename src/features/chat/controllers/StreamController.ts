@@ -378,7 +378,7 @@ export class StreamController {
   // ============================================
 
   async appendText(text: string): Promise<void> {
-    const { state, renderer } = this.deps;
+    const { state } = this.deps;
     if (!state.currentContentEl) return;
 
     this.hideThinkingIndicator();
@@ -389,19 +389,26 @@ export class StreamController {
     }
 
     state.currentTextContent += text;
-    await renderer.renderContent(state.currentTextEl, state.currentTextContent);
+
+    // Streaming optimization: Show plain text immediately (very fast).
+    // Full markdown render with MathJax happens in finalizeCurrentTextBlock().
+    state.currentTextEl.textContent = state.currentTextContent;
   }
 
   finalizeCurrentTextBlock(msg?: ChatMessage): void {
     const { state, renderer } = this.deps;
+
+    // At stream end, do full markdown render (includes MathJax).
     if (msg && state.currentTextContent) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'text', content: state.currentTextContent });
-      // Copy button added here (not during streaming) to match history-loaded messages
+
       if (state.currentTextEl) {
+        void renderer.renderContent(state.currentTextEl, state.currentTextContent);
         renderer.addTextCopyButton(state.currentTextEl, state.currentTextContent);
       }
     }
+
     state.currentTextEl = null;
     state.currentTextContent = '';
   }
@@ -765,6 +772,12 @@ export class StreamController {
   resetStreamingState(): void {
     const { state } = this.deps;
     this.hideThinkingIndicator();
+
+    // Render any pending text content before clearing (for invalidated streams)
+    if (state.currentTextEl && state.currentTextContent) {
+      void this.deps.renderer.renderContent(state.currentTextEl, state.currentTextContent);
+    }
+
     state.currentContentEl = null;
     state.currentTextEl = null;
     state.currentTextContent = '';

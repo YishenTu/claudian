@@ -129,9 +129,10 @@ export class StorageService {
     this.ccSettings = new CCSettingsStorage(this.adapter);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
-    this.skills = new SkillStorage(this.adapter);
+    // Prefer global config (~/.claude/) over vault config for CC compatibility
+    this.skills = new SkillStorage(this.adapter, { preferGlobal: true });
     this.sessions = new SessionStorage(this.adapter);
-    this.mcp = new McpStorage(this.adapter);
+    this.mcp = new McpStorage(this.adapter, { preferGlobal: true });
     this.agents = new AgentVaultStorage(this.adapter);
   }
 
@@ -378,6 +379,7 @@ export class StorageService {
 
   async loadAllSlashCommands(): Promise<SlashCommand[]> {
     const commands = await this.commands.loadAll();
+    // loadAll() now includes both global and vault skills (global takes precedence)
     const skills = await this.skills.loadAll();
     return [...commands, ...skills];
   }

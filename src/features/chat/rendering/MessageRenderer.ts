@@ -445,6 +445,86 @@ export class MessageRenderer {
     }
   }
 
+
+  /**
+   * Appends new content to an element without re-rendering existing content.
+   * Used for incremental rendering during streaming to improve performance.
+   * @param el The parent element to append to
+   * @param markdown The new markdown content to render
+   * @param isFirstChunk Whether this is the first chunk (renders directly into el)
+   */
+  async appendContent(el: HTMLElement, markdown: string, isFirstChunk: boolean): Promise<void> {
+    // For first chunk or when document is empty, use normal renderContent
+    if (isFirstChunk || el.children.length === 0) {
+      await this.renderContent(el, markdown);
+      return;
+    }
+
+    // Create a temporary container for the new content
+    const tempEl = createEl('div', { cls: 'claudian-streaming-chunk' });
+
+    try {
+      // Replace image embeds with HTML img tags before rendering
+      const processedMarkdown = replaceImageEmbedsWithHtml(
+        markdown,
+        this.app,
+        this.plugin.settings.mediaFolder
+      );
+      await MarkdownRenderer.renderMarkdown(processedMarkdown, tempEl, '', this.component);
+
+      // Wrap pre elements and move buttons outside scroll area
+      tempEl.querySelectorAll('pre').forEach((pre) => {
+        if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
+
+        const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
+        pre.parentElement?.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+
+        const code = pre.querySelector('code[class*="language-"]');
+        if (code) {
+          const match = code.className.match(/language-(\w+)/);
+          if (match) {
+            wrapper.classList.add('has-language');
+            const label = createEl('span', {
+              cls: 'claudian-code-lang-label',
+              text: match[1],
+            });
+            wrapper.appendChild(label);
+            label.addEventListener('click', async () => {
+              try {
+                await navigator.clipboard.writeText(code.textContent || '');
+                label.setText('copied!');
+                setTimeout(() => label.setText(match[1]), 1500);
+              } catch {
+                // Clipboard API may fail in non-secure contexts
+              }
+            });
+          }
+        }
+
+        const copyBtn = pre.querySelector('.copy-code-button');
+        if (copyBtn) {
+          wrapper.appendChild(copyBtn);
+        }
+      });
+
+      // Process file paths
+      processFileLinks(this.app, tempEl);
+
+      // Move all children from temp container to the main element
+      while (tempEl.firstChild) {
+        el.appendChild(tempEl.firstChild);
+      }
+    } catch (error) {
+      // If incremental render fails, fall back to full render
+      console.warn('[Claudian] Incremental render failed, falling back to full render:', error);
+      await this.renderContent(el, el.textContent + markdown);
+    }
+
+    // Clean up temp element
+    tempEl.remove();
+  }
+
   // ============================================
   // Copy Button
   // ============================================
