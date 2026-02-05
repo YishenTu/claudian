@@ -63,7 +63,7 @@ export interface CanvasEdge {
 export interface Canvas {
   edges: CanvasEdge[];
   selection: Set<CanvasNode>;
-  nodes: CanvasNode[];
+  nodes: Map<string, CanvasNode>;
   wrapperEl: HTMLElement | null;
   view: CanvasView;
   addNode(node: CanvasNode): void;

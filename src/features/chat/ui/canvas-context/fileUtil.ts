@@ -60,8 +60,9 @@ export async function readNodeContent(node: CanvasNode): Promise<string | null> 
               const arrayBuffer = await app.vault.adapter.readBinary((tfile as TFile).path);
               const base64 = arrayBufferToBase64(arrayBuffer);
               return `[Image: ${(tfile as TFile).basename}] data:image/${ext};base64,${base64}`;
-            } catch {
-              return `[Image: ${(tfile as TFile).basename}]`;
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : 'unknown error';
+              return `[Image: ${(tfile as TFile).basename} (load failed: ${msg})]`;
             }
           }
 

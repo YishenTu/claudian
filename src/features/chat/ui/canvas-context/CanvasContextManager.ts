@@ -287,9 +287,9 @@ export class CanvasContextManager {
     for (const pinnedNode of this.pinnedNodes.values()) {
       const node = this.findNodeById(canvas, pinnedNode.nodeId);
       if (node) {
-        resolvedNodes.push(node);
         const context = await this.buildNodeContext(node);
         if (context) {
+          resolvedNodes.push(node);
           nodeContexts.push(context);
         }
       } else {
@@ -443,9 +443,9 @@ export class CanvasContextManager {
     for (const pinnedNode of this.pinnedNodes.values()) {
       const node = this.findNodeById(canvas, pinnedNode.nodeId);
       if (node) {
-        selectedNodes.push(node);
         const context = await this.buildNodeContext(node);
         if (context) {
+          selectedNodes.push(node);
           nodeContexts.push(context);
         }
       } else {
@@ -488,35 +488,9 @@ export class CanvasContextManager {
 
   /**
    * Find a node by ID in a canvas.
-   * Handles both array and Map implementations of canvas.nodes.
    */
   private findNodeById(canvas: Canvas, nodeId: string): CanvasNode | null {
-    const nodes = canvas.nodes;
-    
-    // Handle Map-like structure (actual Obsidian internal API)
-    if (nodes && typeof (nodes as unknown as Map<string, CanvasNode>).get === 'function') {
-      return (nodes as unknown as Map<string, CanvasNode>).get(nodeId) ?? null;
-    }
-    
-    // Handle array structure (as per type definition)
-    if (Array.isArray(nodes)) {
-      for (const node of nodes) {
-        if (node.id === nodeId) {
-          return node;
-        }
-      }
-    }
-    
-    // Handle iterable (Set or similar)
-    if (nodes && typeof nodes[Symbol.iterator] === 'function') {
-      for (const node of nodes as Iterable<CanvasNode>) {
-        if (node.id === nodeId) {
-          return node;
-        }
-      }
-    }
-    
-    return null;
+    return canvas.nodes.get(nodeId) ?? null;
   }
 
   /**
@@ -563,8 +537,7 @@ export class CanvasContextManager {
         summary: getNodeSummary(node),
         messages,
       };
-    } catch (error) {
-      console.error('Failed to build node context:', error);
+    } catch {
       return null;
     }
   }
