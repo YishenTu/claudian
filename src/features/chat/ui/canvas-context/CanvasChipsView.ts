@@ -7,7 +7,8 @@
 
 import { setIcon } from 'obsidian';
 
-import type { CanvasContext } from './CanvasContextManager';
+import type { CanvasEdge, CanvasNode } from './canvas-internal';
+import type { CanvasContext, NodeContext } from './CanvasContextManager';
 import { getNodeSummary } from './fileUtil';
 
 export interface CanvasChipsViewCallbacks {
@@ -115,7 +116,7 @@ export class CanvasChipsView {
   /**
    * Render a single node chip with summary and remove button.
    */
-  private renderSingleNodeChip(node: any, nodeContext?: { messages: Array<{ isCurrentNode: boolean }> }): void {
+  private renderSingleNodeChip(node: CanvasNode, nodeContext?: NodeContext): void {
     const chipEl = this.canvasIndicatorEl.createDiv({
       cls: 'claudian-canvas-chip claudian-canvas-node-chip',
     });
@@ -183,13 +184,13 @@ export class CanvasChipsView {
    * Get a hint of how many ancestors are included.
    * This is a rough estimate based on edges.
    */
-  private getAncestorCountHint(node: any): number {
+  private getAncestorCountHint(node: CanvasNode): number {
     try {
       const canvas = node.canvas;
       if (!canvas) return 0;
 
       const visited = new Set<string>();
-      const queue = [node];
+      const queue: CanvasNode[] = [node];
       let count = 0;
 
       while (queue.length > 0 && count < 20) {
@@ -199,8 +200,8 @@ export class CanvasChipsView {
 
         const edges = canvas.getEdgesForNode(current);
         const parents = edges
-          .filter((e: any) => e.to.node.id === current.id)
-          .map((e: any) => e.from.node);
+          .filter((e: CanvasEdge) => e.to.node.id === current.id)
+          .map((e: CanvasEdge) => e.from.node);
 
         for (const parent of parents) {
           if (!visited.has(parent.id)) {

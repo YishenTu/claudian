@@ -48,35 +48,34 @@ export async function readNodeContent(node: CanvasNode): Promise<string | null> 
 
     case 'file': {
       const file = app.vault.getAbstractFileByPath(nodeData.file);
-      if (!(file instanceof app.vault.adapter.constructor)) {
-        // Check if it's a TFile
-        const tfile = app.vault.getAbstractFileByPath(nodeData.file);
-        if (tfile && 'extension' in tfile) {
-          const ext = (tfile as TFile).extension;
+      // Check if it's a TFile (has 'extension' property, unlike TFolder)
+      if (!file || !('extension' in file)) {
+        return null;
+      }
 
-          // Handle images - convert to base64
-          if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
-            try {
-              const arrayBuffer = await app.vault.adapter.readBinary((tfile as TFile).path);
-              const base64 = arrayBufferToBase64(arrayBuffer);
-              return `[Image: ${(tfile as TFile).basename}] data:image/${ext};base64,${base64}`;
-            } catch (error) {
-              const msg = error instanceof Error ? error.message : 'unknown error';
-              return `[Image: ${(tfile as TFile).basename} (load failed: ${msg})]`;
-            }
-          }
+      const tfile = file as TFile;
+      const ext = tfile.extension;
 
-          // Handle subpath if present
-          if (nodeData.subpath) {
-            return await readFileContent(app, tfile as TFile, nodeData.subpath);
-          }
-
-          // Read regular file content
-          const body = await app.vault.read(tfile as TFile);
-          return `## ${(tfile as TFile).basename}\n${body}`;
+      // Handle images - convert to base64
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+        try {
+          const arrayBuffer = await app.vault.adapter.readBinary(tfile.path);
+          const base64 = arrayBufferToBase64(arrayBuffer);
+          return `[Image: ${tfile.basename}] data:image/${ext};base64,${base64}`;
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'unknown error';
+          return `[Image: ${tfile.basename} (load failed: ${msg})]`;
         }
       }
-      return null;
+
+      // Handle subpath if present
+      if (nodeData.subpath) {
+        return await readFileContent(app, tfile, nodeData.subpath);
+      }
+
+      // Read regular file content
+      const body = await app.vault.read(tfile);
+      return `## ${tfile.basename}\n${body}`;
     }
 
     case 'link':

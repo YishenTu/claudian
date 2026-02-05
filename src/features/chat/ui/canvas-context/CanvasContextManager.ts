@@ -104,10 +104,10 @@ export class CanvasContextManager {
     });
 
     // Poll for selection changes (Canvas doesn't emit selection events)
-    // Using 200ms for more responsive selection detection
+    // Using 500ms to balance responsiveness with performance
     this.selectionCheckInterval = setInterval(() => {
       this.checkSelectionChange();
-    }, 200);
+    }, 500);
 
     // Initial check
     this.checkAndNotify();
@@ -624,6 +624,11 @@ export class CanvasContextManager {
    * Check for selection changes and notify if changed.
    */
   private checkSelectionChange(): void {
+    // Only poll when a canvas is active to avoid unnecessary work
+    if (!this.isCanvasActive()) {
+      return;
+    }
+
     const selectedNodes = this.getSelectedNodes();
     const currentIds = selectedNodes
       .map((n) => n.id)
