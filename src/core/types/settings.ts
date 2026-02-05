@@ -199,7 +199,7 @@ export interface EnvSnippet {
 }
 
 /** Source of a slash command. */
-export type SlashCommandSource = 'builtin' | 'user' | 'plugin' | 'sdk' | 'vault' | 'global';
+export type SlashCommandSource = 'builtin' | 'user' | 'plugin' | 'sdk';
 
 /** Slash command configuration with Claude Code compatibility. */
 export interface SlashCommand {
@@ -279,7 +279,6 @@ export interface ClaudianSettings {
   claudeCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
   claudeCliPathsByHost: HostnameCliPaths;  // Per-device paths keyed by hostname (preferred)
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
-  useCCWorkingDirectory: boolean;  // Use user's home directory as cwd (same as CC CLI), instead of vault path
 
   // State (merged from data.json)
   lastClaudeModel?: ClaudeModel;
@@ -344,7 +343,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   claudeCliPath: '',  // Legacy field (empty = not migrated)
   claudeCliPathsByHost: {},  // Per-device paths keyed by hostname
   loadUserClaudeSettings: true,  // Default on for compatibility
-  useCCWorkingDirectory: true,  // Default to using home directory (same as CC CLI)
 
   lastClaudeModel: 'haiku',
   lastCustomModel: '',

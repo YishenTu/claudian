@@ -277,10 +277,6 @@
         "isDirectory": "路徑是目錄，不是檔案"
       }
     },
-    "useCCWorkingDirectory": {
-      "name": "使用 Claude Code 工作目錄",
-      "desc": "啟用後，將使用您的主目錄作為工作目錄（與 Claude Code CLI 相同）。這會將與 Claude Code CLI 的對話歷史合併。停用時，將使用保險庫路徑作為工作目錄。"
-    },
     "language": {
       "name": "語言",
       "desc": "更改插件介面的顯示語言"

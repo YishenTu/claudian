@@ -121,22 +121,17 @@ export class StorageService {
   private adapter: VaultFileAdapter;
   private plugin: Plugin;
   private app: App;
-  private vaultPath: string;
 
   constructor(plugin: Plugin) {
     this.plugin = plugin;
     this.app = plugin.app;
     this.adapter = new VaultFileAdapter(this.app);
-    this.vaultPath = (this.app.vault.adapter as any).basePath;
     this.ccSettings = new CCSettingsStorage(this.adapter);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
-    // Prefer global config (~/.claude/) over vault config for CC compatibility
+    // Use global config (~/.claude/) for CC compatibility
     this.skills = new SkillStorage(this.adapter, { preferGlobal: true });
-    this.sessions = new SessionStorage(this.adapter, {
-      vaultPath: this.vaultPath,
-      useCCWorkingDirectory: true, // Will be updated after settings load
-    });
+    this.sessions = new SessionStorage(this.adapter);
     this.mcp = new McpStorage(this.adapter, { preferGlobal: true });
     this.agents = new AgentVaultStorage(this.adapter);
   }
@@ -147,12 +142,6 @@ export class StorageService {
 
     const cc = await this.ccSettings.load();
     const claudian = await this.claudianSettings.load();
-
-    // Re-create SessionStorage with loaded settings
-    this.sessions = new SessionStorage(this.adapter, {
-      vaultPath: this.vaultPath,
-      useCCWorkingDirectory: claudian.useCCWorkingDirectory ?? true,
-    });
 
     return { cc, claudian };
   }
@@ -390,7 +379,6 @@ export class StorageService {
 
   async loadAllSlashCommands(): Promise<SlashCommand[]> {
     const commands = await this.commands.loadAll();
-    // loadAll() now includes both global and vault skills (global takes precedence)
     const skills = await this.skills.loadAll();
     return [...commands, ...skills];
   }

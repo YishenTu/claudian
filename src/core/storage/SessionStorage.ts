@@ -1,6 +1,5 @@
 /**
  * SessionStorage - Handles chat session files in vault/.claude/sessions/
- * and SDK native sessions in ~/.claude/projects/
  *
  * Each conversation is stored as a JSONL (JSON Lines) file.
  * First line contains metadata, subsequent lines contain messages.
@@ -12,10 +11,6 @@
  * {"type":"message","id":"msg-2","role":"assistant","content":"...","timestamp":1703500002}
  * ```
  */
-
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 
 import type {
   ChatMessage,
@@ -29,9 +24,6 @@ import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to sessions folder relative to vault root. */
 export const SESSIONS_PATH = '.claude/sessions';
-
-/** Path to SDK projects directory. */
-const SDK_PROJECTS_PATH = path.join(os.homedir(), '.claude', 'projects');
 
 /** Metadata record stored as first line of JSONL. */
 interface SessionMetaRecord {
@@ -57,109 +49,7 @@ interface SessionMessageRecord {
 type SessionRecord = SessionMetaRecord | SessionMessageRecord;
 
 export class SessionStorage {
-  private vaultPath: string;
-  private useCCWorkingDirectory: boolean;
-
-  constructor(
-    private adapter: VaultFileAdapter,
-    options?: { vaultPath?: string; useCCWorkingDirectory?: boolean }
-  ) {
-    this.vaultPath = options?.vaultPath || '';
-    this.useCCWorkingDirectory = options?.useCCWorkingDirectory ?? true;
-  }
-
-  /**
-   * Get the SDK project directory to use for sessions.
-   * Returns the encoded vault path or home directory based on settings.
-   */
-  private getSDKProjectDir(): string {
-    if (this.useCCWorkingDirectory) {
-      // Use home directory (same as CC CLI)
-      return path.join(SDK_PROJECTS_PATH, path.resolve(os.homedir()).replace(/[^a-zA-Z0-9]/g, '-'));
-    }
-    // Use vault path
-    return path.join(SDK_PROJECTS_PATH, path.resolve(this.vaultPath).replace(/[^a-zA-Z0-9]/g, '-'));
-  }
-
-  /**
-   * List SDK native sessions from ~/.claude/projects/{dir}/
-   */
-  async listSDKSessions(): Promise<SessionMetadata[]> {
-    const metas: SessionMetadata[] = [];
-    const sdkProjectDir = this.getSDKProjectDir();
-
-    try {
-      if (!fs.existsSync(sdkProjectDir)) {
-        return metas;
-      }
-
-      const files = fs.readdirSync(sdkProjectDir, { withFileTypes: true });
-
-      for (const file of files) {
-        if (!file.isFile() || !file.name.endsWith('.jsonl')) continue;
-
-        const sessionId = file.name.replace('.jsonl', '');
-        const filePath = path.join(sdkProjectDir, file.name);
-
-        try {
-          // Read first line to get basic info
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n').filter(l => l.trim());
-
-          if (lines.length === 0) continue;
-
-          // Try to find corresponding metadata file
-          const metaPath = path.join(sdkProjectDir, `${sessionId}.meta.json`);
-          let meta: SessionMetadata | null = null;
-
-          if (fs.existsSync(metaPath)) {
-            try {
-              const metaContent = fs.readFileSync(metaPath, 'utf-8');
-              meta = JSON.parse(metaContent) as SessionMetadata;
-            } catch {
-              // Ignore invalid metadata
-            }
-          }
-
-          if (meta) {
-            metas.push(meta);
-          } else {
-            // Create minimal metadata from SDK session
-            const firstLine = lines[0];
-            try {
-              const parsed = JSON.parse(firstLine);
-              if (parsed.type === 'error' || parsed.type === 'initiation_status') {
-                // Skip error/status messages
-                continue;
-              }
-
-              // Use timestamp from file or current time
-              const stats = fs.statSync(filePath);
-              const timestamp = Math.floor(stats.mtimeMs / 1000);
-
-              metas.push({
-                id: sessionId,
-                title: sessionId.slice(0, 8), // Use first 8 chars as title
-                createdAt: timestamp,
-                updatedAt: timestamp,
-                lastResponseAt: timestamp,
-                sessionId,
-                sdkSessionId: sessionId,
-              } as SessionMetadata);
-            } catch {
-              // Skip invalid sessions
-            }
-          }
-        } catch {
-          // Skip files that fail to load
-        }
-      }
-    } catch {
-      // Return empty list if directory listing fails
-    }
-
-    return metas;
-  }
+  constructor(private adapter: VaultFileAdapter) { }
 
   async loadConversation(id: string): Promise<Conversation | null> {
     const filePath = this.getFilePath(id);
@@ -220,7 +110,6 @@ export class SessionStorage {
     const conversations: Conversation[] = [];
     let failedCount = 0;
 
-    // 1. Load legacy conversations from vault
     try {
       const files = await this.adapter.listFiles(SESSIONS_PATH);
 
@@ -239,64 +128,11 @@ export class SessionStorage {
           failedCount++;
         }
       }
+
+      conversations.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch {
       // Return empty list if directory listing fails
     }
-
-    // 2. Load SDK sessions from ~/.claude/projects/{dir}/
-    try {
-      const sdkProjectDir = this.getSDKProjectDir();
-      if (fs.existsSync(sdkProjectDir)) {
-        const files = fs.readdirSync(sdkProjectDir, { withFileTypes: true });
-
-        for (const file of files) {
-          if (!file.isFile() || !file.name.endsWith('.jsonl')) continue;
-
-          const sessionId = file.name.replace('.jsonl', '');
-
-          // Skip if already loaded from vault
-          if (conversations.some(c => c.sdkSessionId === sessionId)) continue;
-
-          try {
-            const metaPath = path.join(sdkProjectDir, `${sessionId}.meta.json`);
-            let meta: SessionMetadata | null = null;
-
-            if (fs.existsSync(metaPath)) {
-              try {
-                const metaContent = fs.readFileSync(metaPath, 'utf-8');
-                meta = JSON.parse(metaContent) as SessionMetadata;
-              } catch {
-                // Ignore invalid metadata
-              }
-            }
-
-            // Create minimal Conversation object
-            const stats = fs.statSync(path.join(sdkProjectDir, file.name));
-            const timestamp = Math.floor(stats.mtimeMs / 1000);
-
-            const conversation: Conversation = {
-              id: meta?.id || sessionId,
-              title: meta?.title || sessionId.slice(0, 8),
-              messages: [], // SDK sessions store messages separately
-              createdAt: meta?.createdAt || timestamp,
-              updatedAt: meta?.updatedAt || timestamp,
-              lastResponseAt: meta?.lastResponseAt || timestamp,
-              sessionId: sessionId,
-              sdkSessionId: sessionId,
-              isNative: true,
-            };
-
-            conversations.push(conversation);
-          } catch {
-            // Skip failed sessions
-          }
-        }
-      }
-    } catch {
-      // Continue if SDK session loading fails
-    }
-
-    conversations.sort((a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt));
 
     return { conversations, failedCount };
   }
@@ -506,24 +342,23 @@ export class SessionStorage {
   }
 
   /**
-   * List all conversations, merging legacy JSONL, native metadata, and SDK sessions.
+   * List all conversations, merging legacy JSONL and native metadata sources.
    * Legacy conversations take precedence if both exist.
    */
   async listAllConversations(): Promise<ConversationMeta[]> {
     const metas: ConversationMeta[] = [];
-    const seenIds = new Set<string>();
 
     // 1. Load legacy conversations (existing .jsonl files)
     const legacyMetas = await this.listConversations();
-    for (const meta of legacyMetas) {
-      metas.push(meta);
-      seenIds.add(meta.id);
-    }
+    metas.push(...legacyMetas);
 
-    // 2. Load native metadata (.meta.json files in vault)
+    // 2. Load native metadata (.meta.json files)
     const nativeMetas = await this.listNativeMetadata();
+
+    // 3. Merge, avoiding duplicates (legacy takes precedence)
+    const legacyIds = new Set(legacyMetas.map(m => m.id));
     for (const meta of nativeMetas) {
-      if (!seenIds.has(meta.id)) {
+      if (!legacyIds.has(meta.id)) {
         metas.push({
           id: meta.id,
           title: meta.title,
@@ -535,26 +370,6 @@ export class SessionStorage {
           titleGenerationStatus: meta.titleGenerationStatus,
           isNative: true,
         });
-        seenIds.add(meta.id);
-      }
-    }
-
-    // 3. Load SDK sessions from ~/.claude/projects/{dir}/
-    const sdkSessions = await this.listSDKSessions();
-    for (const meta of sdkSessions) {
-      if (!seenIds.has(meta.id)) {
-        metas.push({
-          id: meta.id,
-          title: meta.title,
-          createdAt: meta.createdAt,
-          updatedAt: meta.updatedAt,
-          lastResponseAt: meta.lastResponseAt,
-          messageCount: 0,
-          preview: 'SDK session',
-          titleGenerationStatus: meta.titleGenerationStatus,
-          isNative: true,
-        });
-        seenIds.add(meta.id);
       }
     }
 

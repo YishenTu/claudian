@@ -10,7 +10,6 @@
  * all required dependencies (settings, managers, paths).
  */
 
-import * as os from 'os';
 import type {
   CanUseTool,
   Options,
@@ -100,15 +99,6 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
 
 /** Static builder for SDK Options and configuration objects. */
 export class QueryOptionsBuilder {
-  /**
-   * Get the working directory based on settings.
-   * When useCCWorkingDirectory is true, use the user's home directory
-   * (same as Claude Code CLI default). Otherwise, use the vault path.
-   */
-  private static getWorkingDirectory(ctx: QueryOptionsContext): string {
-    return ctx.settings.useCCWorkingDirectory ? os.homedir() : ctx.vaultPath;
-  }
-
   /**
    * Some changes (model, thinking tokens) can be updated dynamically; others require restart.
    */
@@ -201,10 +191,8 @@ export class QueryOptionsBuilder {
       userName: ctx.settings.userName,
     });
 
-    const workingDirectory = QueryOptionsBuilder.getWorkingDirectory(ctx);
-
     const options: Options = {
-      cwd: workingDirectory,
+      cwd: ctx.vaultPath,
       systemPrompt,
       model: resolved.model,
       abortController: ctx.abortController,
@@ -271,10 +259,8 @@ export class QueryOptionsBuilder {
       userName: ctx.settings.userName,
     });
 
-    const workingDirectory = QueryOptionsBuilder.getWorkingDirectory(ctx);
-
     const options: Options = {
-      cwd: workingDirectory,
+      cwd: ctx.vaultPath,
       systemPrompt,
       model: resolved.model,
       abortController: ctx.abortController,

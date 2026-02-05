@@ -229,8 +229,6 @@ export type TranslationKey =
   | 'settings.cliPath.descUnix'
   | 'settings.cliPath.validation.notExist'
   | 'settings.cliPath.validation.isDirectory'
-  | 'settings.useCCWorkingDirectory.name'
-  | 'settings.useCCWorkingDirectory.desc'
 
   // Settings - Language
   | 'settings.language.name'

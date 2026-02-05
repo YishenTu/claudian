@@ -277,10 +277,6 @@
         "isDirectory": "Pfad ist ein Verzeichnis, keine Datei"
       }
     },
-    "useCCWorkingDirectory": {
-      "name": "Claude Code-Arbeitsverzeichnis verwenden",
-      "desc": "Wenn aktiviert, wird Ihr Home-Verzeichnis als Arbeitsverzeichnis verwendet (wie Claude Code CLI). Dies führt die Gesprächsverläufe mit Claude Code CLI zusammen. Wenn deaktiviert, wird der Vault-Pfad als Arbeitsverzeichnis verwendet."
-    },
     "language": {
       "name": "Sprache",
       "desc": "Anzeigesprache der Plugin-Oberfläche ändern"

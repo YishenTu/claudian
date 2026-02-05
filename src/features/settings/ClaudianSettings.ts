@@ -677,19 +677,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.style.borderColor = 'var(--text-error)';
       }
     });
-
-    // Use Claude Code working directory setting
-    new Setting(containerEl)
-      .setName(t('settings.useCCWorkingDirectory.name'))
-      .setDesc(t('settings.useCCWorkingDirectory.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.useCCWorkingDirectory ?? true)
-          .onChange(async (value) => {
-            this.plugin.settings.useCCWorkingDirectory = value;
-            await this.plugin.saveSettings();
-          })
-      );
   }
 
   private renderContextLimitsSection(): void {
