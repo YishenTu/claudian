@@ -1,8 +1,12 @@
 import {
+  appendAttachedFiles,
+  appendCanvasContext,
   appendContextFiles,
   appendCurrentNote,
   extractContentBeforeXmlContext,
   extractUserQuery,
+  formatAttachedFiles,
+  formatCanvasContext,
   formatCurrentNote,
   stripCurrentNoteContext,
   XML_CONTEXT_PATTERN,
@@ -242,5 +246,118 @@ describe('appendContextFiles', () => {
   it('handles empty file array', () => {
     const result = appendContextFiles('Query', []);
     expect(result).toBe('Query\n\n<context_files>\n\n</context_files>');
+  });
+});
+
+describe('formatAttachedFiles', () => {
+  it('formats attached files as bulleted list in XML', () => {
+    const result = formatAttachedFiles(['file1.md', 'file2.md']);
+    expect(result).toBe('<attached_files>\n- file1.md\n- file2.md\n</attached_files>');
+  });
+
+  it('handles single file', () => {
+    const result = formatAttachedFiles(['single.md']);
+    expect(result).toBe('<attached_files>\n- single.md\n</attached_files>');
+  });
+
+  it('returns empty string for empty array', () => {
+    const result = formatAttachedFiles([]);
+    expect(result).toBe('');
+  });
+
+  it('handles paths with directories', () => {
+    const result = formatAttachedFiles(['notes/subfolder/file.md']);
+    expect(result).toBe('<attached_files>\n- notes/subfolder/file.md\n</attached_files>');
+  });
+});
+
+describe('appendAttachedFiles', () => {
+  it('appends attached files to prompt', () => {
+    const result = appendAttachedFiles('My query', ['file1.md', 'file2.md']);
+    expect(result).toBe('My query\n\n<attached_files>\n- file1.md\n- file2.md\n</attached_files>');
+  });
+
+  it('returns prompt unchanged for empty array', () => {
+    const result = appendAttachedFiles('My query', []);
+    expect(result).toBe('My query');
+  });
+
+  it('preserves original prompt content', () => {
+    const prompt = 'Multi\nline\nprompt';
+    const result = appendAttachedFiles(prompt, ['file.md']);
+    expect(result.startsWith('Multi\nline\nprompt\n\n')).toBe(true);
+  });
+});
+
+describe('formatCanvasContext', () => {
+  it('wraps canvas context in XML tags', () => {
+    const canvasContext = '[Canvas: MyCanvas]\n[Selected: 1 node(s)]';
+    const result = formatCanvasContext(canvasContext);
+    expect(result).toBe('<canvas_context>\n[Canvas: MyCanvas]\n[Selected: 1 node(s)]\n</canvas_context>');
+  });
+
+  it('handles multiline context', () => {
+    const canvasContext = '[Canvas: Test]\n\n<ancestor_context>\n[USER]\nHello\n</ancestor_context>';
+    const result = formatCanvasContext(canvasContext);
+    expect(result).toContain('<canvas_context>');
+    expect(result).toContain('</canvas_context>');
+    expect(result).toContain('<ancestor_context>');
+  });
+});
+
+describe('appendCanvasContext', () => {
+  it('appends canvas context to prompt', () => {
+    const result = appendCanvasContext('My query', '[Canvas: Test]');
+    expect(result).toBe('My query\n\n<canvas_context>\n[Canvas: Test]\n</canvas_context>');
+  });
+
+  it('preserves original prompt content', () => {
+    const prompt = 'Multi\nline\nprompt';
+    const result = appendCanvasContext(prompt, '[Canvas: Test]');
+    expect(result.startsWith('Multi\nline\nprompt\n\n')).toBe(true);
+  });
+});
+
+describe('XML_CONTEXT_PATTERN extended', () => {
+  it('matches canvas_context tag', () => {
+    const text = 'Query\n\n<canvas_context>\n[Canvas: Test]\n</canvas_context>';
+    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
+  });
+
+  it('matches attached_files tag', () => {
+    const text = 'Query\n\n<attached_files>\n- file.md\n</attached_files>';
+    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
+  });
+
+  it('matches canvas_context without double newline (should not match)', () => {
+    const text = 'Query\n<canvas_context>\n[Canvas: Test]\n</canvas_context>';
+    expect(XML_CONTEXT_PATTERN.test(text)).toBe(false);
+  });
+});
+
+describe('extractUserQuery with new context types', () => {
+  it('strips canvas_context tags in fallback mode', () => {
+    const prompt = 'Query <canvas_context>[Canvas: Test]</canvas_context> end';
+    expect(extractUserQuery(prompt)).toBe('Query end');
+  });
+
+  it('strips attached_files tags in fallback mode', () => {
+    const prompt = 'Query <attached_files>file.md</attached_files> end';
+    expect(extractUserQuery(prompt)).toBe('Query end');
+  });
+
+  it('extracts content before canvas_context tag', () => {
+    const prompt = 'User query\n\n<canvas_context>\n[Canvas: Test]\n</canvas_context>';
+    expect(extractUserQuery(prompt)).toBe('User query');
+  });
+
+  it('extracts content before attached_files tag', () => {
+    const prompt = 'User query\n\n<attached_files>\n- file.md\n</attached_files>';
+    expect(extractUserQuery(prompt)).toBe('User query');
+  });
+
+  it('handles combined context types', () => {
+    const prompt = 'Query\n\n<current_note>\ntest.md\n</current_note>\n\n<canvas_context>\n[Canvas: Test]\n</canvas_context>';
+    expect(extractUserQuery(prompt)).toBe('Query');
   });
 });

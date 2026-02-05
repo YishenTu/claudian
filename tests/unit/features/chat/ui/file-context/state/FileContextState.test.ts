@@ -192,4 +192,133 @@ describe('FileContextState', () => {
       expect(changed).toBe(true);
     });
   });
+
+  describe('sent files tracking', () => {
+    it('should track if a file has been sent', () => {
+      expect(state.hasFileSent('file1.md')).toBe(false);
+      state.markFileSent('file1.md');
+      expect(state.hasFileSent('file1.md')).toBe(true);
+    });
+
+    it('should return unsent files only', () => {
+      state.attachFile('file1.md');
+      state.attachFile('file2.md');
+      state.attachFile('file3.md');
+      state.markFileSent('file2.md');
+
+      const unsent = state.getUnsentFiles();
+      expect(unsent).toContain('file1.md');
+      expect(unsent).toContain('file3.md');
+      expect(unsent).not.toContain('file2.md');
+    });
+
+    it('should return empty array when all files are sent', () => {
+      state.attachFile('file1.md');
+      state.attachFile('file2.md');
+      state.markFileSent('file1.md');
+      state.markFileSent('file2.md');
+
+      expect(state.getUnsentFiles()).toEqual([]);
+    });
+
+    it('should mark all attached files as sent', () => {
+      state.attachFile('file1.md');
+      state.attachFile('file2.md');
+      state.attachFile('file3.md');
+
+      state.markAllFilesSent();
+
+      expect(state.hasFileSent('file1.md')).toBe(true);
+      expect(state.hasFileSent('file2.md')).toBe(true);
+      expect(state.hasFileSent('file3.md')).toBe(true);
+      expect(state.getUnsentFiles()).toEqual([]);
+    });
+
+    it('should reset sent files on new conversation', () => {
+      state.attachFile('file1.md');
+      state.markFileSent('file1.md');
+
+      state.resetForNewConversation();
+
+      expect(state.hasFileSent('file1.md')).toBe(false);
+    });
+
+    it('should reset sent files on loaded conversation', () => {
+      state.attachFile('file1.md');
+      state.markFileSent('file1.md');
+
+      state.resetForLoadedConversation(true);
+
+      expect(state.hasFileSent('file1.md')).toBe(false);
+    });
+  });
+
+  describe('additional files', () => {
+    it('should add an additional file', () => {
+      state.addAdditionalFile('extra.md');
+
+      expect(state.getAdditionalFiles().has('extra.md')).toBe(true);
+      expect(state.getAttachedFiles().has('extra.md')).toBe(true);
+    });
+
+    it('should return a copy of additional files', () => {
+      state.addAdditionalFile('extra.md');
+      const files = state.getAdditionalFiles();
+      files.add('another.md');
+
+      expect(state.getAdditionalFiles().has('another.md')).toBe(false);
+    });
+
+    it('should check if a file is an additional file', () => {
+      state.attachFile('regular.md');
+      state.addAdditionalFile('extra.md');
+
+      expect(state.isAdditionalFile('extra.md')).toBe(true);
+      expect(state.isAdditionalFile('regular.md')).toBe(false);
+    });
+
+    it('should remove an additional file from all tracking sets', () => {
+      state.addAdditionalFile('extra.md');
+      state.markFileSent('extra.md');
+
+      state.removeAdditionalFile('extra.md');
+
+      expect(state.getAdditionalFiles().has('extra.md')).toBe(false);
+      expect(state.getAttachedFiles().has('extra.md')).toBe(false);
+      expect(state.hasFileSent('extra.md')).toBe(false);
+    });
+
+    it('should handle removing non-existent additional file gracefully', () => {
+      state.removeAdditionalFile('nonexistent.md');
+      expect(state.getAdditionalFiles().size).toBe(0);
+    });
+
+    it('should reset additional files on new conversation', () => {
+      state.addAdditionalFile('extra.md');
+
+      state.resetForNewConversation();
+
+      expect(state.getAdditionalFiles().size).toBe(0);
+    });
+
+    it('should reset additional files on loaded conversation', () => {
+      state.addAdditionalFile('extra.md');
+
+      state.resetForLoadedConversation(false);
+
+      expect(state.getAdditionalFiles().size).toBe(0);
+    });
+
+    it('should allow multiple additional files', () => {
+      state.addAdditionalFile('extra1.md');
+      state.addAdditionalFile('extra2.md');
+      state.addAdditionalFile('extra3.md');
+
+      const additionalFiles = state.getAdditionalFiles();
+      expect(additionalFiles.size).toBe(3);
+      expect(additionalFiles.has('extra1.md')).toBe(true);
+      expect(additionalFiles.has('extra2.md')).toBe(true);
+      expect(additionalFiles.has('extra3.md')).toBe(true);
+    });
+  });
 });
