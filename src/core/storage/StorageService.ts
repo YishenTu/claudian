@@ -127,7 +127,7 @@ export class StorageService {
     this.plugin = plugin;
     this.app = plugin.app;
     this.adapter = new VaultFileAdapter(this.app);
-    this.vaultPath = this.plugin.app.vault.adapter.getPath();
+    this.vaultPath = (this.app.vault.adapter as any).basePath;
     this.ccSettings = new CCSettingsStorage(this.adapter);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
