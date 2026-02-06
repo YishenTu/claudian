@@ -81,6 +81,10 @@ export class MessageRenderer {
 
     const msgEl = this.messagesEl.createDiv({
       cls: `claudian-message claudian-message-${msg.role}`,
+      attr: {
+        'data-message-id': msg.id,
+        'data-role': msg.role,
+      },
     });
 
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
@@ -158,6 +162,10 @@ export class MessageRenderer {
 
     const msgEl = this.messagesEl.createDiv({
       cls: `claudian-message claudian-message-${msg.role}`,
+      attr: {
+        'data-message-id': msg.id,
+        'data-role': msg.role,
+      },
     });
 
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });

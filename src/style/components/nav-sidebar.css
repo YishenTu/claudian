@@ -1,0 +1,53 @@
+/* Navigation Sidebar */
+.claudian-nav-sidebar {
+    position: absolute;
+    right: 20px;
+    bottom: 80px; /* Above input area/status panel */
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.claudian-nav-sidebar.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.claudian-nav-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+}
+
+.claudian-nav-btn:hover {
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    transform: scale(1.05);
+}
+
+.claudian-nav-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Specific button spacing/grouping if needed */
+.claudian-nav-btn-top {
+    margin-bottom: 4px;
+}
+
+.claudian-nav-btn-bottom {
+    margin-top: 4px;
+}

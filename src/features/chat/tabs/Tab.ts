@@ -31,6 +31,7 @@ import {
   FileContextManager,
   ImageContextManager,
   InstructionModeManager as InstructionModeManagerClass,
+  NavigationSidebar,
   StatusPanel,
 } from '../ui';
 import type { TabData, TabDOMElements, TabId } from './types';
@@ -123,6 +124,7 @@ export function createTab(options: TabCreateOptions): TabData {
       bangBashModeManager: null,
       contextUsageMeter: null,
       statusPanel: null,
+      navigationSidebar: null,
     },
     dom,
     renderer: null,
@@ -177,16 +179,6 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   // Welcome message placeholder
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
 
-  // Scroll-to-bottom button (positioned absolutely in wrapper, overlays bottom of messages)
-  const scrollToBottomEl = messagesWrapperEl.createEl('button', {
-    cls: 'claudian-scroll-to-bottom',
-    attr: {
-      'aria-label': 'Scroll to bottom',
-      type: 'button',
-    },
-  });
-  scrollToBottomEl.textContent = 'Scroll to bottom';
-
   // Status panel container (fixed between messages and input)
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
 
@@ -223,7 +215,6 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     contextRowEl,
     selectionIndicatorEl: null,
     canvasIndicatorEl: null,
-    scrollToBottomEl,
     eventCleanups: [],
   };
 }
@@ -541,42 +532,34 @@ export function initializeTabUI(
     () => new Set((plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase()))
   );
 
+  // Initialize navigation sidebar
+  if (dom.messagesEl.parentElement) {
+    tab.ui.navigationSidebar = new NavigationSidebar(
+      dom.messagesEl.parentElement,
+      dom.messagesEl
+    );
+  }
+
   // Initialize instruction mode and todo panel
   initializeInstructionAndTodo(tab, plugin);
 
   // Initialize input toolbar
   initializeInputToolbar(tab, plugin);
 
-  // Helper to update scroll-to-bottom button visibility
-  const updateScrollToBottomVisibility = () => {
-    if (dom.scrollToBottomEl) {
-      // Show button when user has scrolled up AND there's content to scroll to
-      const hasOverflow = dom.messagesEl.scrollHeight > dom.messagesEl.clientHeight;
-      const shouldShow = !state.autoScrollEnabled && hasOverflow;
-      dom.scrollToBottomEl.classList.toggle('visible', shouldShow);
-    }
-  };
-
-  // Store reference for use in activateTab
-  dom.updateScrollVisibility = updateScrollToBottomVisibility;
-
   // Update ChatState callbacks for UI updates
   state.callbacks = {
     ...state.callbacks,
     onUsageChanged: (usage) => tab.ui.contextUsageMeter?.update(usage),
     onTodosChanged: (todos) => tab.ui.statusPanel?.updateTodos(todos),
-    onAutoScrollChanged: () => updateScrollToBottomVisibility(),
+    onAutoScrollChanged: () => tab.ui.navigationSidebar?.updateVisibility(),
   };
 
   // ResizeObserver to detect overflow changes (e.g., content growth)
   const resizeObserver = new ResizeObserver(() => {
-    updateScrollToBottomVisibility();
+    tab.ui.navigationSidebar?.updateVisibility();
   });
   resizeObserver.observe(dom.messagesEl);
   dom.eventCleanups.push(() => resizeObserver.disconnect());
-
-  // Sync initial button visibility with current state
-  updateScrollToBottomVisibility();
 }
 
 export interface ForkContext {
@@ -1031,20 +1014,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
     if (reEnableTimeout) clearTimeout(reEnableTimeout);
   });
-
-  // Scroll-to-bottom button click handler
-  if (dom.scrollToBottomEl) {
-    const scrollToBottomHandler = () => {
-      // Scroll to bottom
-      dom.messagesEl.scrollTop = dom.messagesEl.scrollHeight;
-      // Re-enable auto-scroll only if allowed by settings
-      if (isAutoScrollAllowed()) {
-        state.autoScrollEnabled = true;
-      }
-    };
-    dom.scrollToBottomEl.addEventListener('click', scrollToBottomHandler);
-    dom.eventCleanups.push(() => dom.scrollToBottomEl?.removeEventListener('click', scrollToBottomHandler));
-  }
 }
 
 /**
@@ -1054,8 +1023,8 @@ export function activateTab(tab: TabData): void {
   tab.dom.contentEl.style.display = 'flex';
   tab.controllers.selectionController?.start();
   tab.controllers.canvasSelectionController?.start();
-  // Refresh scroll-to-bottom button visibility (dimensions now available after display)
-  tab.dom.updateScrollVisibility?.();
+  // Refresh navigation sidebar visibility (dimensions now available after display)
+  tab.ui.navigationSidebar?.updateVisibility();
 }
 
 /**
@@ -1100,6 +1069,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.services.titleGenerationService = null;
   tab.ui.statusPanel?.destroy();
   tab.ui.statusPanel = null;
+  tab.ui.navigationSidebar?.destroy();
+  tab.ui.navigationSidebar = null;
 
   // Cleanup subagents
   tab.services.subagentManager.orphanAllActive();

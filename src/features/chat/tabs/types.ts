@@ -28,6 +28,7 @@ import type {
   StatusPanel,
   ThinkingBudgetSelector,
 } from '../ui';
+import type { NavigationSidebar } from '../ui';
 
 /**
  * Default number of tabs allowed.
@@ -133,6 +134,7 @@ export interface TabUIComponents {
   bangBashModeManager: BangBashModeManager | null;
   contextUsageMeter: ContextUsageMeter | null;
   statusPanel: StatusPanel | null;
+  navigationSidebar: NavigationSidebar | null;
 }
 
 /**
@@ -158,12 +160,6 @@ export interface TabDOMElements {
 
   selectionIndicatorEl: HTMLElement | null;
   canvasIndicatorEl: HTMLElement | null;
-
-  /** Scroll-to-bottom button (shown when user scrolls up). */
-  scrollToBottomEl: HTMLElement | null;
-
-  /** Updates scroll-to-bottom button visibility (called on tab activation). */
-  updateScrollVisibility?: () => void;
 
   /** Cleanup functions for event listeners (prevents memory leaks). */
   eventCleanups: Array<() => void>;
