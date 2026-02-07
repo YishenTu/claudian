@@ -393,6 +393,7 @@ export class FileContextManager {
       if (normalizedNew) {
         this.state.attachFile(normalizedNew);
       }
+      this.state.renameAdditionalFile(normalizedOld, normalizedNew ?? normalizedOld);
       needsUpdate = true;
     }
 
@@ -414,7 +415,10 @@ export class FileContextManager {
     }
 
     // Remove from attached files
-    if (this.state.getAttachedFiles().has(normalized)) {
+    if (this.state.isAdditionalFile(normalized)) {
+      this.state.removeAdditionalFile(normalized);
+      needsUpdate = true;
+    } else if (this.state.getAttachedFiles().has(normalized)) {
       this.state.detachFile(normalized);
       needsUpdate = true;
     }

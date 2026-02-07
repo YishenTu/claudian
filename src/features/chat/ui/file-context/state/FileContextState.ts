@@ -66,6 +66,17 @@ export class FileContextState {
     this.sentFiles.delete(filePath);
   }
 
+  /** Rename an additional file (update path in additionalFiles and sentFiles). */
+  renameAdditionalFile(oldPath: string, newPath: string): void {
+    if (!this.additionalFiles.has(oldPath)) return;
+    this.additionalFiles.delete(oldPath);
+    this.additionalFiles.add(newPath);
+    if (this.sentFiles.has(oldPath)) {
+      this.sentFiles.delete(oldPath);
+      this.sentFiles.add(newPath);
+    }
+  }
+
   /** Check if a file is an additional file (user-selected). */
   isAdditionalFile(filePath: string): boolean {
     return this.additionalFiles.has(filePath);
@@ -123,6 +134,8 @@ export class FileContextState {
   clearAttachments(): void {
     this.attachedFiles.clear();
     this.contextFileMap.clear();
+    this.additionalFiles.clear();
+    this.sentFiles.clear();
   }
 
   /** Transform text by replacing external context file display names with absolute paths. */

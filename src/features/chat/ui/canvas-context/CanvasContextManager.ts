@@ -83,6 +83,8 @@ export class CanvasContextManager {
    */
   private pinnedNodes: Map<string, PinnedNode> = new Map();
   private pinnedCanvasPath: string | null = null;
+  /** Tracks the canvas selection IDs that last populated pinnedNodes, to avoid overwriting manual removals. */
+  private lastPinnedSelectionIds: string = '';
 
   constructor(app: App, callbacks: CanvasContextCallbacks = {}) {
     this.app = app;
@@ -246,21 +248,28 @@ export class CanvasContextManager {
 
     // Case 3: Canvas is active with new selection - replace pinned nodes with current selection
     if (selectedNodes.length > 0) {
-      this.pinnedCanvasPath = canvasFile.path;
-      
-      // Clear existing pinned nodes and replace with current selection
-      // This ensures the context always reflects the latest selection
-      this.pinnedNodes.clear();
-      
-      for (const node of selectedNodes) {
-        const nodeData = node.getData();
-        this.pinnedNodes.set(node.id, {
-          nodeId: node.id,
-          canvasPath: canvasFile.path,
-          summary: getNodeSummary(node, 50),
-          nodeType: nodeData.type || 'text',
-        });
+      const selectionIds = selectedNodes.map(n => n.id).sort().join(',');
+
+      // Only replace pinned nodes when canvas selection has actually changed.
+      // This preserves manual removals (unpinNode) when selection is unchanged.
+      if (selectionIds !== this.lastPinnedSelectionIds) {
+        this.lastPinnedSelectionIds = selectionIds;
+        this.pinnedCanvasPath = canvasFile.path;
+        this.pinnedNodes.clear();
+
+        for (const node of selectedNodes) {
+          const nodeData = node.getData();
+          this.pinnedNodes.set(node.id, {
+            nodeId: node.id,
+            canvasPath: canvasFile.path,
+            summary: getNodeSummary(node, 50),
+            nodeType: nodeData.type || 'text',
+          });
+        }
       }
+    } else {
+      // No selection: reset tracking so next selection will be picked up
+      this.lastPinnedSelectionIds = '';
     }
 
     // Case 4: Build context from all pinned nodes
@@ -335,6 +344,7 @@ export class CanvasContextManager {
     this.pinnedCanvasPath = null;
     this.currentContext = null;
     this.lastSelectionIds = '';
+    this.lastPinnedSelectionIds = '';
   }
 
   // ========================================
@@ -388,6 +398,7 @@ export class CanvasContextManager {
   clearPinnedNodes(): void {
     this.pinnedNodes.clear();
     this.pinnedCanvasPath = null;
+    this.lastPinnedSelectionIds = '';
     this.stickyContext = null;
     this.currentContext = null;
     this.callbacks.onContextChange?.();

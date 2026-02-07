@@ -238,11 +238,12 @@ export class InputController {
       if (fileContextManager) {
         promptToSend = fileContextManager.transformContextMentions(promptToSend);
       }
-    }
 
-    fileContextManager?.markCurrentNoteSent();
-    fileContextManager?.markAllFilesSent();
-    fileContextManager?.markCanvasContextSent();
+      // Mark as sent only after actually appending context
+      fileContextManager?.markCurrentNoteSent();
+      fileContextManager?.markAllFilesSent();
+      fileContextManager?.markCanvasContextSent();
+    }
 
     const userMsg: ChatMessage = {
       id: this.deps.generateId(),
