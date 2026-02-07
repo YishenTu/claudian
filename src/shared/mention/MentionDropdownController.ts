@@ -109,7 +109,7 @@ export class MentionDropdownController {
 
   destroy(): void {
     if (this.debounceTimer !== null) {
-      window.clearTimeout(this.debounceTimer);
+      clearTimeout(this.debounceTimer);
     }
     this.dropdown.destroy();
   }
@@ -131,10 +131,10 @@ export class MentionDropdownController {
 
   handleInputChange(): void {
     if (this.debounceTimer !== null) {
-      window.clearTimeout(this.debounceTimer);
+      clearTimeout(this.debounceTimer);
     }
 
-    this.debounceTimer = window.setTimeout(() => {
+    this.debounceTimer = setTimeout(() => {
       const text = this.inputEl.value;
       this.updateMcpMentionsFromText(text);
 
