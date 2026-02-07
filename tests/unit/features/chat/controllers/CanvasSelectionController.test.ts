@@ -8,11 +8,18 @@ function createMockIndicator() {
 }
 
 function createMockContextRow() {
+  const elements: Record<string, any> = {
+    '.claudian-selection-indicator': { style: { display: 'none' } },
+    '.claudian-canvas-indicator': { style: { display: 'none' } },
+    '.claudian-file-indicator': null,
+    '.claudian-image-preview': null,
+  };
+
   return {
     classList: {
       toggle: jest.fn(),
     },
-    querySelector: jest.fn().mockReturnValue(null),
+    querySelector: jest.fn((selector: string) => elements[selector] ?? null),
   } as any;
 }
 
@@ -138,7 +145,49 @@ describe('CanvasSelectionController', () => {
     expect(contextRowEl.classList.toggle).not.toHaveBeenCalled();
   });
 
+  it('keeps context row visible when editor selection indicator is visible', () => {
+    const editorIndicator = { style: { display: 'block' } };
+    contextRowEl.querySelector.mockImplementation((selector: string) => {
+      if (selector === '.claudian-selection-indicator') return editorIndicator;
+      return null;
+    });
+
+    controller.updateContextRowVisibility();
+
+    expect(contextRowEl.classList.toggle).toHaveBeenCalledWith('has-content', true);
+  });
+
+  it('prefers active canvas leaf when multiple canvases are open', () => {
+    const activeNode = createMockCanvasNode('active-node');
+    const inactiveNode = createMockCanvasNode('inactive-node');
+    const inactiveCanvasView = {
+      getViewType: () => 'canvas',
+      canvas: { selection: new Set([inactiveNode]) },
+      file: { path: 'inactive.canvas' },
+    };
+    const activeCanvasView = {
+      getViewType: () => 'canvas',
+      canvas: { selection: new Set([activeNode]) },
+      file: { path: 'active.canvas' },
+    };
+
+    app.workspace.getLeavesOfType.mockReturnValue([
+      { view: inactiveCanvasView },
+      { view: activeCanvasView },
+    ]);
+    app.workspace.activeLeaf = { view: activeCanvasView };
+
+    controller.start();
+    jest.advanceTimersByTime(250);
+
+    expect(controller.getContext()).toEqual({
+      canvasPath: 'active.canvas',
+      nodeIds: ['active-node'],
+    });
+  });
+
   it('handles no canvas view gracefully', () => {
+    app.workspace.activeLeaf = null;
     app.workspace.getLeavesOfType.mockReturnValue([]);
 
     controller.start();

@@ -1,6 +1,7 @@
 import type { App, ItemView } from 'obsidian';
 
 import type { CanvasSelectionContext } from '../../../utils/canvas';
+import { updateContextRowHasContent } from './contextRowVisibility';
 
 const CANVAS_POLL_INTERVAL = 250;
 
@@ -85,6 +86,12 @@ export class CanvasSelectionController {
   }
 
   private getCanvasView(): ItemView | null {
+    const activeLeaf = (this.app.workspace as any).activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    const activeView = activeLeaf?.view as ItemView | undefined;
+    if (activeView?.getViewType?.() === 'canvas' && (activeView as any).file) {
+      return activeView;
+    }
+
     const leaves = this.app.workspace.getLeavesOfType('canvas');
     if (leaves.length === 0) return null;
     const leaf = leaves.find(l => (l.view as any).file);
@@ -112,12 +119,7 @@ export class CanvasSelectionController {
 
   updateContextRowVisibility(): void {
     if (!this.contextRowEl) return;
-    const hasSelection = this.storedSelection !== null;
-    const fileIndicator = this.contextRowEl.querySelector('.claudian-file-indicator') as HTMLElement | null;
-    const imagePreview = this.contextRowEl.querySelector('.claudian-image-preview') as HTMLElement | null;
-    const hasFileChips = fileIndicator?.style.display === 'flex';
-    const hasImageChips = imagePreview?.style.display === 'flex';
-    this.contextRowEl.classList.toggle('has-content', hasSelection || hasFileChips || hasImageChips);
+    updateContextRowHasContent(this.contextRowEl);
     this.onVisibilityChange?.();
   }
 

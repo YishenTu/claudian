@@ -14,11 +14,18 @@ function createMockIndicator() {
 }
 
 function createMockContextRow() {
+  const elements: Record<string, any> = {
+    '.claudian-selection-indicator': { style: { display: 'none' } },
+    '.claudian-canvas-indicator': { style: { display: 'none' } },
+    '.claudian-file-indicator': null,
+    '.claudian-image-preview': null,
+  };
+
   return {
     classList: {
       toggle: jest.fn(),
     },
-    querySelector: jest.fn().mockReturnValue(null),
+    querySelector: jest.fn((selector: string) => elements[selector] ?? null),
   } as any;
 }
 
@@ -102,5 +109,17 @@ describe('SelectionController', () => {
     expect(controller.hasSelection()).toBe(false);
     expect(indicatorEl.style.display).toBe('none');
     expect(hideSelectionHighlight).toHaveBeenCalledWith(editorView);
+  });
+
+  it('keeps context row visible when canvas selection indicator is visible', () => {
+    const canvasIndicator = { style: { display: 'block' } };
+    contextRowEl.querySelector.mockImplementation((selector: string) => {
+      if (selector === '.claudian-canvas-indicator') return canvasIndicator;
+      return null;
+    });
+
+    controller.updateContextRowVisibility();
+
+    expect(contextRowEl.classList.toggle).toHaveBeenCalledWith('has-content', true);
   });
 });
