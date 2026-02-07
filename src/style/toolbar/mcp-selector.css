@@ -169,11 +169,8 @@
   font-weight: 600;
   padding: 1px 4px;
   border-radius: 3px;
-  <<<<<<< HEAD background: rgba(var(--claudian-brand-rgb), 0.2);
+  background: rgba(var(--claudian-brand-rgb), 0.2);
   color: var(--claudian-brand);
   flex-shrink: 0;
   margin-left: auto;
-  =======background: rgba(217, 119, 87, 0.2);
-  color: #D97757;
-  >>>>>>>0e0c307 (feat: Hide disabled MCP servers from dropdown menu)
 }
