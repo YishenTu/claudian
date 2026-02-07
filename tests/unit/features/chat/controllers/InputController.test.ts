@@ -131,6 +131,9 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     selectionController: {
       getContext: jest.fn().mockReturnValue(null),
     } as any,
+    canvasSelectionController: {
+      getContext: jest.fn().mockReturnValue(null),
+    } as any,
     conversationController: {
       save: jest.fn(),
       generateFallbackTitle: jest.fn().mockReturnValue('Test Title'),
@@ -209,6 +212,7 @@ describe('InputController - Message Queue', () => {
         content: 'queued message',
         images: undefined,
         editorContext: null,
+        canvasContext: null,
         hidden: undefined,
       });
       expect(inputEl.value).toBe('');
@@ -228,6 +232,7 @@ describe('InputController - Message Queue', () => {
         content: 'queued with images',
         images: mockImages,
         editorContext: null,
+        canvasContext: null,
         hidden: undefined,
       });
       expect(imageContextManager.clearImages).toHaveBeenCalled();
@@ -283,6 +288,7 @@ describe('InputController - Message Queue', () => {
           content: 'queued plan',
           images: undefined,
           editorContext: null,
+          canvasContext: null,
         };
 
         const sendSpy = jest.spyOn(controller, 'sendMessage').mockResolvedValue(undefined);
@@ -301,7 +307,7 @@ describe('InputController - Message Queue', () => {
 
   describe('Queue indicator UI', () => {
     it('should show queue indicator when message is queued', () => {
-      deps.state.queuedMessage = { content: 'test message', images: undefined, editorContext: null };
+      deps.state.queuedMessage = { content: 'test message', images: undefined, editorContext: null, canvasContext: null };
 
       controller.updateQueueIndicator();
 
@@ -321,7 +327,7 @@ describe('InputController - Message Queue', () => {
 
     it('should truncate long message preview in indicator', () => {
       const longMessage = 'a'.repeat(100);
-      deps.state.queuedMessage = { content: longMessage, images: undefined, editorContext: null };
+      deps.state.queuedMessage = { content: longMessage, images: undefined, editorContext: null, canvasContext: null };
 
       controller.updateQueueIndicator();
 
@@ -332,7 +338,7 @@ describe('InputController - Message Queue', () => {
 
     it('should include [images] when queue message has images', () => {
       const mockImages = [{ id: 'img1', name: 'test.png' }];
-      deps.state.queuedMessage = { content: 'queued content', images: mockImages as any, editorContext: null };
+      deps.state.queuedMessage = { content: 'queued content', images: mockImages as any, editorContext: null, canvasContext: null };
 
       controller.updateQueueIndicator();
 
@@ -344,7 +350,7 @@ describe('InputController - Message Queue', () => {
 
     it('should show [images] when queue message has only images', () => {
       const mockImages = [{ id: 'img1', name: 'test.png' }];
-      deps.state.queuedMessage = { content: '', images: mockImages as any, editorContext: null };
+      deps.state.queuedMessage = { content: '', images: mockImages as any, editorContext: null, canvasContext: null };
 
       controller.updateQueueIndicator();
 
@@ -355,7 +361,7 @@ describe('InputController - Message Queue', () => {
 
   describe('Clearing queued message', () => {
     it('should clear queued message and update indicator', () => {
-      deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null };
+      deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null, canvasContext: null };
 
       controller.clearQueuedMessage();
 
@@ -367,7 +373,7 @@ describe('InputController - Message Queue', () => {
 
   describe('Cancel streaming', () => {
     it('should clear queue on cancel', () => {
-      deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null };
+      deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null, canvasContext: null };
       deps.state.isStreaming = true;
 
       controller.cancelStreaming();
@@ -1153,7 +1159,7 @@ describe('InputController - Message Queue', () => {
 
     it('should restore queued message to input when cancelling', () => {
       deps.state.isStreaming = true;
-      deps.state.queuedMessage = { content: 'restored text', images: undefined, editorContext: null };
+      deps.state.queuedMessage = { content: 'restored text', images: undefined, editorContext: null, canvasContext: null };
       controller = new InputController(deps);
 
       controller.cancelStreaming();
@@ -1165,7 +1171,7 @@ describe('InputController - Message Queue', () => {
     it('should restore queued images to image context manager when cancelling', () => {
       deps.state.isStreaming = true;
       const mockImages = [{ id: 'img1', name: 'test.png' }];
-      deps.state.queuedMessage = { content: 'msg', images: mockImages as any, editorContext: null };
+      deps.state.queuedMessage = { content: 'msg', images: mockImages as any, editorContext: null, canvasContext: null };
 
       controller = new InputController(deps);
       controller.cancelStreaming();
@@ -1622,6 +1628,7 @@ describe('InputController - Message Queue', () => {
           content: 'queued content',
           images: mockImages as any,
           editorContext: null,
+          canvasContext: null,
         };
         const imageContextManager = deps.getImageContextManager()!;
         const sendSpy = jest.spyOn(controller, 'sendMessage').mockResolvedValue(undefined);

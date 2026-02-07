@@ -11,8 +11,12 @@ export function normalizeInsertionText(text: string): string {
   return text.replace(/^(?:\r?\n)+|(?:\r?\n)+$/g, '');
 }
 
-/** Escapes angle brackets to prevent HTML injection in diff previews. */
+/** Escapes HTML special characters to prevent injection in rendered content. */
 export function escapeHtml(text: string): string {
-  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 

@@ -142,12 +142,12 @@ describe('InlineEditModal - Insertion Newline Trimming', () => {
 });
 
 describe('inlineEditUtils - escapeHtml', () => {
-  it('should escape angle brackets', () => {
-    expect(escapeHtml('a < b && c > d')).toBe('a &lt; b && c &gt; d');
+  it('should escape angle brackets and ampersands', () => {
+    expect(escapeHtml('a < b && c > d')).toBe('a &lt; b &amp;&amp; c &gt; d');
   });
 
-  it('should leave ampersands untouched (matching current preview behavior)', () => {
-    expect(escapeHtml('a & b')).toBe('a & b');
+  it('should escape ampersands', () => {
+    expect(escapeHtml('a & b')).toBe('a &amp; b');
   });
 
   it('should handle empty string', () => {

@@ -7,6 +7,7 @@ import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../
 import type ClaudianPlugin from '../../../main';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
+import { appendCanvasContext, type CanvasSelectionContext } from '../../../utils/canvas';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
@@ -22,6 +23,7 @@ import type { TitleGenerationService } from '../services/TitleGenerationService'
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
 import type { AddExternalContextResult, FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector, StatusPanel } from '../ui';
+import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
@@ -38,6 +40,7 @@ export interface InputControllerDeps {
   renderer: MessageRenderer;
   streamController: StreamController;
   selectionController: SelectionController;
+  canvasSelectionController: CanvasSelectionController;
   conversationController: ConversationController;
   getInputEl: () => HTMLTextAreaElement;
   getWelcomeEl: () => HTMLElement | null;
@@ -95,9 +98,10 @@ export class InputController {
 
   async sendMessage(options?: {
     editorContextOverride?: EditorSelectionContext | null;
+    canvasContextOverride?: CanvasSelectionContext | null;
     content?: string;
   }): Promise<void> {
-    const { plugin, state, renderer, streamController, selectionController, conversationController } = this.deps;
+    const { plugin, state, renderer, streamController, selectionController, canvasSelectionController, conversationController } = this.deps;
 
     // During conversation creation/switching, don't send - input is preserved so user can retry
     if (state.isCreatingConversation || state.isSwitchingConversation) return;
@@ -132,6 +136,7 @@ export class InputController {
     if (state.isStreaming) {
       const images = hasImages ? [...(imageContextManager?.getAttachedImages() || [])] : undefined;
       const editorContext = selectionController.getContext();
+      const canvasContext = canvasSelectionController.getContext();
       // Append to existing queued message if any
       if (state.queuedMessage) {
         state.queuedMessage.content += '\n\n' + content;
@@ -139,11 +144,13 @@ export class InputController {
           state.queuedMessage.images = [...(state.queuedMessage.images || []), ...images];
         }
         state.queuedMessage.editorContext = editorContext;
+        state.queuedMessage.canvasContext = canvasContext;
       } else {
         state.queuedMessage = {
           content,
           images,
           editorContext,
+          canvasContext,
         };
       }
 
@@ -214,6 +221,15 @@ export class InputController {
       // Append editor context if available
       if (editorContext) {
         promptToSend = appendEditorContext(promptToSend, editorContext);
+      }
+
+      // Append canvas selection context if available
+      const canvasContextOverride = options?.canvasContextOverride;
+      const canvasContext = canvasContextOverride !== undefined
+        ? canvasContextOverride
+        : canvasSelectionController.getContext();
+      if (canvasContext) {
+        promptToSend = appendCanvasContext(promptToSend, canvasContext);
       }
 
       // Transform context file mentions (e.g., @folder/file.ts) to absolute paths
@@ -494,7 +510,7 @@ export class InputController {
     const { state } = this.deps;
     if (!state.queuedMessage) return;
 
-    const { content, images, editorContext } = state.queuedMessage;
+    const { content, images, editorContext, canvasContext } = state.queuedMessage;
     state.queuedMessage = null;
     this.updateQueueIndicator();
 
@@ -504,7 +520,7 @@ export class InputController {
       this.deps.getImageContextManager()?.setImages(images);
     }
 
-    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext }), 0);
+    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, canvasContextOverride: canvasContext }), 0);
   }
 
   // ============================================

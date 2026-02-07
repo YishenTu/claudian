@@ -5,6 +5,8 @@
  * Patterns are treated as case-insensitive regex with fallback to substring match.
  */
 
+const MAX_PATTERN_LENGTH = 500;
+
 export function isCommandBlocked(
   command: string,
   patterns: string[],
@@ -15,6 +17,9 @@ export function isCommandBlocked(
   }
 
   return patterns.some((pattern) => {
+    if (pattern.length > MAX_PATTERN_LENGTH) {
+      return command.toLowerCase().includes(pattern.toLowerCase());
+    }
     try {
       return new RegExp(pattern, 'i').test(command);
     } catch {

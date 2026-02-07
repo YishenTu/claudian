@@ -1,3 +1,5 @@
+import * as nodePath from 'path';
+
 import type { ExitPlanModeDecision } from '../../../core/types/tools';
 import type { RenderContentFn } from './MessageRenderer';
 
@@ -134,6 +136,13 @@ export class InlineExitPlanMode {
   private readPlanContent(): string | null {
     const planFilePath = this.input.planFilePath as string | undefined;
     if (!planFilePath) return null;
+
+    const resolved = nodePath.resolve(planFilePath).replace(/\\/g, '/');
+    if (!resolved.includes('/.claude/plans/')) {
+      this.planReadError = 'path outside allowed plan directory';
+      return null;
+    }
+
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const fs = require('fs');

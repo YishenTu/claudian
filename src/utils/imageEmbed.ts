@@ -9,6 +9,8 @@
 
 import type { App, TFile } from 'obsidian';
 
+import { escapeHtml } from './inlineEdit';
+
 const IMAGE_EXTENSIONS = new Set([
   'png',
   'jpg',
@@ -47,13 +49,6 @@ function resolveImageFile(
   return null;
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /** Supports formats: "100" (width only) or "100x200" (width x height) */
 function buildStyleAttribute(altText: string | undefined): string {

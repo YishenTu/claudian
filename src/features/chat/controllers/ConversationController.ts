@@ -632,7 +632,7 @@ export class ConversationController {
           try {
             await options.onSelectConversation(conv.id);
           } catch {
-            // Silently ignore selection errors
+            new Notice('Failed to load conversation');
           }
         });
       }
@@ -653,7 +653,7 @@ export class ConversationController {
           try {
             await this.regenerateTitle(conv.id);
           } catch {
-            // Silently ignore regeneration errors
+            new Notice('Failed to regenerate response');
           }
         });
       }
@@ -680,7 +680,7 @@ export class ConversationController {
             await this.loadActive();
           }
         } catch {
-          // Silently ignore deletion errors
+          new Notice('Failed to delete conversation');
         }
       });
     }
@@ -706,7 +706,7 @@ export class ConversationController {
         await this.deps.plugin.renameConversation(convId, newTitle);
         this.updateHistoryDropdown();
       } catch {
-        // Silently ignore rename errors
+        new Notice('Failed to rename conversation');
       }
     };
 

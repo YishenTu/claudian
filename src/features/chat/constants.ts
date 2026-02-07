@@ -41,6 +41,7 @@ export const FLAVOR_TEXTS = [
   'Analyzing...',
   'Considering...',
   'Working on it...',
+  'Vibing...',
   'One moment...',
   'On it...',
   // Thoughtful

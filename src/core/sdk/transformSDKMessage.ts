@@ -107,10 +107,10 @@ export function* transformSDKMessage(
 
     case 'user':
       // Check for blocked tool calls (from hook denials)
-      if ((message as any)._blocked && (message as any)._blockReason) {
+      if (message._blocked && message._blockReason) {
         yield {
           type: 'blocked',
-          content: (message as any)._blockReason,
+          content: message._blockReason,
         };
         break;
       }

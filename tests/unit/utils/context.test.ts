@@ -94,6 +94,11 @@ describe('XML_CONTEXT_PATTERN', () => {
     expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
   });
 
+  it('matches canvas_selection tag', () => {
+    const text = 'Query\n\n<canvas_selection path="my.canvas">\nnode1, node2\n</canvas_selection>';
+    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
+  });
+
   it('does not match without double newline separator', () => {
     const text = 'Query\n<current_note>\ntest.md\n</current_note>';
     expect(XML_CONTEXT_PATTERN.test(text)).toBe(false);
@@ -203,6 +208,11 @@ describe('extractUserQuery', () => {
 
     it('strips context_files tags', () => {
       const prompt = 'Query <context_files>file.md</context_files> end';
+      expect(extractUserQuery(prompt)).toBe('Query end');
+    });
+
+    it('strips canvas_selection tags', () => {
+      const prompt = 'Query <canvas_selection path="x.canvas">node1</canvas_selection> end';
       expect(extractUserQuery(prompt)).toBe('Query end');
     });
 

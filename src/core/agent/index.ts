@@ -11,6 +11,6 @@ export type {
   ClosePersistentQueryOptions,
   PersistentQueryConfig,
   ResponseHandler,
-  SDKContentBlock,
   SessionState,
+  UserContentBlock,
 } from './types';

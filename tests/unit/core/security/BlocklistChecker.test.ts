@@ -112,6 +112,19 @@ describe('BlocklistChecker', () => {
         const patterns = ['echo '];
         expect(isCommandBlocked(longCommand, patterns, true)).toBe(true);
       });
+
+      it('falls back to substring match for patterns exceeding max length', () => {
+        const longPattern = 'rm ' + 'a'.repeat(500);
+        const command = 'rm ' + 'a'.repeat(500);
+        expect(isCommandBlocked(command, [longPattern], true)).toBe(true);
+      });
+
+      it('does not match long pattern via regex', () => {
+        const longPattern = 'rm.*' + 'a'.repeat(500);
+        const command = 'rm something';
+        // Long pattern uses substring match, so regex wildcards are treated literally
+        expect(isCommandBlocked(command, [longPattern], true)).toBe(false);
+      });
     });
   });
 

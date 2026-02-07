@@ -141,7 +141,7 @@ describe('ChatState', () => {
   describe('queued message', () => {
     it('stores and retrieves queued message', () => {
       const chatState = new ChatState();
-      const queued = { content: 'queued', editorContext: null };
+      const queued = { content: 'queued', editorContext: null, canvasContext: null };
 
       chatState.queuedMessage = queued;
 
@@ -423,7 +423,7 @@ describe('ChatState', () => {
       chatState.cancelRequested = true;
       chatState.currentContentEl = {} as HTMLElement;
       chatState.toolCallElements.set('a', {} as HTMLElement);
-      chatState.queuedMessage = { content: 'queued', editorContext: null };
+      chatState.queuedMessage = { content: 'queued', editorContext: null, canvasContext: null };
       chatState.usage = { inputTokens: 100, outputTokens: 50 } as any;
       chatState.currentTodos = [{ content: 'Test', status: 'pending' as const, activeForm: 'Testing' }];
       // autoScrollEnabled defaults to true, set to false first so reset triggers change

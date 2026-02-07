@@ -111,7 +111,7 @@ describe('ConversationController', () => {
   describe('Queue Management', () => {
     describe('Creating new conversation', () => {
       it('should clear queued message on new conversation', async () => {
-        deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null };
+        deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null, canvasContext: null };
         deps.state.isStreaming = false;
 
         await controller.createNew();
@@ -185,7 +185,7 @@ describe('ConversationController', () => {
     describe('Switching conversations', () => {
       it('should clear queued message on conversation switch', async () => {
         deps.state.currentConversationId = 'old-conv';
-        deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null };
+        deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null, canvasContext: null };
 
         await controller.switchTo('new-conv');
 

@@ -21,7 +21,7 @@ export interface ImageContentBlock {
   };
 }
 
-export type SDKContentBlock = TextContentBlock | ImageContentBlock;
+export type UserContentBlock = TextContentBlock | ImageContentBlock;
 
 /** Overflow: newest message is dropped with a warning. */
 export const MESSAGE_CHANNEL_CONFIG = {

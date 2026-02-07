@@ -14,7 +14,7 @@ const CURRENT_NOTE_SUFFIX_REGEX = /\n\n<current_note>\n[\s\S]*?<\/current_note>$
  * These tags are always preceded by \n\n separator.
  * Matches: current_note, editor_selection (with attributes), editor_cursor (with attributes), context_files
  */
-export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files)[\s>]/;
+export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files|canvas_selection)[\s>]/;
 
 export function formatCurrentNote(notePath: string): string {
   return `<current_note>\n${notePath}\n</current_note>`;
@@ -85,6 +85,7 @@ export function extractUserQuery(prompt: string): string {
     .replace(/<editor_selection[\s\S]*?<\/editor_selection>\s*/g, '')
     .replace(/<editor_cursor[\s\S]*?<\/editor_cursor>\s*/g, '')
     .replace(/<context_files>[\s\S]*?<\/context_files>\s*/g, '')
+    .replace(/<canvas_selection[\s\S]*?<\/canvas_selection>\s*/g, '')
     .trim();
 }
 

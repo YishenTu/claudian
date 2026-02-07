@@ -184,9 +184,7 @@ class AgentModal extends Modal {
         disallowedTools: parseList(disallowedToolsInput),
         model: (modelValue as AgentDefinition['model']) || 'inherit',
         source: 'vault',
-        filePath: (this.existingAgent && this.existingAgent.name === name)
-          ? this.existingAgent.filePath
-          : undefined,
+        filePath: this.existingAgent?.filePath,
         skills: parseList(skillsInput),
         permissionMode: this.existingAgent?.permissionMode,
         hooks: this.existingAgent?.hooks,

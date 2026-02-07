@@ -9,6 +9,7 @@ import type {
   ToolCallInfo,
   UsageInfo,
 } from '../../../core/types';
+import type { CanvasSelectionContext } from '../../../utils/canvas';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import type {
   ThinkingBlockState,
@@ -20,6 +21,7 @@ export interface QueuedMessage {
   content: string;
   images?: ImageAttachment[];
   editorContext: EditorSelectionContext | null;
+  canvasContext: CanvasSelectionContext | null;
 }
 
 /** Pending tool call waiting to be rendered (buffered until input is complete). */

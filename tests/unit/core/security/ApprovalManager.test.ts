@@ -25,8 +25,8 @@ describe('getActionPattern', () => {
     expect(getActionPattern('Edit', { file_path: '/test/edit.md' })).toBe('/test/edit.md');
   });
 
-  it('returns * when file_path is missing', () => {
-    expect(getActionPattern('Read', {})).toBe('*');
+  it('returns null when file_path is missing', () => {
+    expect(getActionPattern('Read', {})).toBeNull();
   });
 
   it('extracts notebook_path for NotebookEdit tool', () => {
@@ -37,12 +37,12 @@ describe('getActionPattern', () => {
     expect(getActionPattern('NotebookEdit', { file_path: '/test/notebook.ipynb' })).toBe('/test/notebook.ipynb');
   });
 
-  it('returns * for NotebookEdit when both paths are missing', () => {
-    expect(getActionPattern('NotebookEdit', {})).toBe('*');
+  it('returns null for NotebookEdit when both paths are missing', () => {
+    expect(getActionPattern('NotebookEdit', {})).toBeNull();
   });
 
-  it('returns * when file_path is empty string', () => {
-    expect(getActionPattern('Read', { file_path: '' })).toBe('*');
+  it('returns null when file_path is empty string', () => {
+    expect(getActionPattern('Read', { file_path: '' })).toBeNull();
   });
 
   it('extracts pattern for Glob/Grep tools', () => {
@@ -144,6 +144,15 @@ describe('matchesRulePattern', () => {
     // matchesBashPrefix exact match: action === prefix
     expect(matchesRulePattern('Bash', 'npm', 'npm:*')).toBe(true);
   });
+
+  it('does not match when action pattern is null', () => {
+    expect(matchesRulePattern('Read', null, '/test/vault/')).toBe(false);
+    expect(matchesRulePattern('Read', null, '*')).toBe(false);
+  });
+
+  it('still matches when no rule pattern and action is null', () => {
+    expect(matchesRulePattern('Read', null, undefined)).toBe(true);
+  });
 });
 
 describe('buildPermissionUpdates', () => {
@@ -188,7 +197,7 @@ describe('buildPermissionUpdates', () => {
     }]);
   });
 
-  it('omits ruleContent for wildcard pattern', () => {
+  it('omits ruleContent when pattern is null (missing file_path)', () => {
     const updates = buildPermissionUpdates('Read', {}, 'allow');
     expect(updates).toEqual([{
       type: 'addRules',

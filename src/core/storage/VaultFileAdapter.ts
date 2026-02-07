@@ -8,6 +8,8 @@
 import type { App } from 'obsidian';
 
 export class VaultFileAdapter {
+  private writeQueue: Promise<void> = Promise.resolve();
+
   constructor(private app: App) {}
 
   async exists(path: string): Promise<boolean> {
@@ -25,12 +27,17 @@ export class VaultFileAdapter {
 
   async append(path: string, content: string): Promise<void> {
     await this.ensureParentFolder(path);
-    if (await this.exists(path)) {
-      const existing = await this.read(path);
-      await this.app.vault.adapter.write(path, existing + content);
-    } else {
-      await this.app.vault.adapter.write(path, content);
-    }
+    this.writeQueue = this.writeQueue.then(async () => {
+      if (await this.exists(path)) {
+        const existing = await this.read(path);
+        await this.app.vault.adapter.write(path, existing + content);
+      } else {
+        await this.app.vault.adapter.write(path, content);
+      }
+    }).catch(() => {
+      // prevent queue from getting stuck
+    });
+    await this.writeQueue;
   }
 
   async delete(path: string): Promise<void> {

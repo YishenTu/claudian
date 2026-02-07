@@ -11,6 +11,7 @@ import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDro
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import {
+  CanvasSelectionController,
   ConversationController,
   InputController,
   NavigationController,
@@ -98,6 +99,7 @@ export function createTab(options: TabCreateOptions): TabData {
     state,
     controllers: {
       selectionController: null,
+      canvasSelectionController: null,
       conversationController: null,
       streamController: null,
       inputController: null,
@@ -220,6 +222,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     navRowEl,
     contextRowEl,
     selectionIndicatorEl: null,
+    canvasIndicatorEl: null,
     scrollToBottomEl,
     eventCleanups: [],
   };
@@ -316,6 +319,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
       getExcludedTags: () => plugin.settings.excludedTags,
       onChipsChanged: () => {
         tab.controllers.selectionController?.updateContextRowVisibility();
+        tab.controllers.canvasSelectionController?.updateContextRowVisibility();
         autoResizeTextarea(dom.inputEl);
         tab.renderer?.scrollToBottomIfNeeded();
       },
@@ -333,6 +337,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
     {
       onImagesChanged: () => {
         tab.controllers.selectionController?.updateContextRowVisibility();
+        tab.controllers.canvasSelectionController?.updateContextRowVisibility();
         autoResizeTextarea(dom.inputEl);
         tab.renderer?.scrollToBottomIfNeeded();
       },
@@ -524,6 +529,10 @@ export function initializeTabUI(
   // Selection indicator - add to contextRowEl
   dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
+
+  // Canvas selection indicator
+  dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator' });
+  dom.canvasIndicatorEl.style.display = 'none';
 
   // Initialize slash commands with shared SDK commands callback and hidden commands
   initializeSlashCommands(
@@ -746,6 +755,15 @@ export function initializeTabControllers(
     () => autoResizeTextarea(dom.inputEl)
   );
 
+  // Canvas selection controller
+  tab.controllers.canvasSelectionController = new CanvasSelectionController(
+    plugin.app,
+    dom.canvasIndicatorEl!,
+    dom.inputEl,
+    dom.contextRowEl,
+    () => autoResizeTextarea(dom.inputEl)
+  );
+
   // Stream controller
   tab.controllers.streamController = new StreamController({
     plugin,
@@ -816,6 +834,7 @@ export function initializeTabControllers(
     renderer: tab.renderer,
     streamController: tab.controllers.streamController,
     selectionController: tab.controllers.selectionController,
+    canvasSelectionController: tab.controllers.canvasSelectionController,
     conversationController: tab.controllers.conversationController,
     getInputEl: () => dom.inputEl,
     getInputContainerEl: () => dom.inputContainerEl,
@@ -1034,6 +1053,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 export function activateTab(tab: TabData): void {
   tab.dom.contentEl.style.display = 'flex';
   tab.controllers.selectionController?.start();
+  tab.controllers.canvasSelectionController?.start();
   // Refresh scroll-to-bottom button visibility (dimensions now available after display)
   tab.dom.updateScrollVisibility?.();
 }
@@ -1044,6 +1064,7 @@ export function activateTab(tab: TabData): void {
 export function deactivateTab(tab: TabData): void {
   tab.dom.contentEl.style.display = 'none';
   tab.controllers.selectionController?.stop();
+  tab.controllers.canvasSelectionController?.stop();
 }
 
 /**
@@ -1054,6 +1075,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   // Stop polling
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
+  tab.controllers.canvasSelectionController?.stop();
+  tab.controllers.canvasSelectionController?.clear();
 
   // Cleanup navigation controller
   tab.controllers.navigationController?.dispose();

@@ -15,6 +15,7 @@
  */
 
 import type { App, Plugin } from 'obsidian';
+import { Notice } from 'obsidian';
 
 import type {
   CCPermissions,
@@ -516,7 +517,7 @@ export class StorageService {
       data.tabManagerState = state;
       await this.plugin.saveData(data);
     } catch {
-      // Silently ignore persistence errors
+      new Notice('Failed to save tab layout');
     }
   }
 }

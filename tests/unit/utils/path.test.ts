@@ -376,9 +376,25 @@ describe('getPathAccessType', () => {
     expect(getPathAccessType(vaultPath, [], [], vaultPath)).toBe('vault');
   });
 
-  it('returns vault for ~/.claude path', () => {
-    const claudeDir = path.join(os.homedir(), '.claude', 'settings.json');
-    expect(getPathAccessType(claudeDir, [], [], vaultPath)).toBe('vault');
+  it('returns vault for ~/.claude safe subdirectory', () => {
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'settings.json'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'sessions', 'abc.jsonl'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'projects', 'test'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'commands', 'cmd.md'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'agents', 'agent.md'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'skills', 'skill'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'plans', 'plan.md'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'mcp.json'), [], [], vaultPath)).toBe('vault');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'claudian-settings.json'), [], [], vaultPath)).toBe('vault');
+  });
+
+  it('returns context (read-only) for unknown ~/.claude paths', () => {
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'credentials'), [], [], vaultPath)).toBe('context');
+    expect(getPathAccessType(path.join(os.homedir(), '.claude', 'secrets.json'), [], [], vaultPath)).toBe('context');
+  });
+
+  it('returns context for ~/.claude directory itself', () => {
+    expect(getPathAccessType(path.join(os.homedir(), '.claude'), [], [], vaultPath)).toBe('context');
   });
 
   it('returns context for path in context paths only', () => {

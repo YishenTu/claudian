@@ -12,30 +12,30 @@ import {
   TOOL_WRITE,
 } from '../tools/toolNames';
 
-export function getActionPattern(toolName: string, input: Record<string, unknown>): string {
+export function getActionPattern(toolName: string, input: Record<string, unknown>): string | null {
   switch (toolName) {
     case TOOL_BASH:
       return typeof input.command === 'string' ? input.command.trim() : '';
     case TOOL_READ:
     case TOOL_WRITE:
     case TOOL_EDIT:
-      return typeof input.file_path === 'string' && input.file_path ? input.file_path : '*';
+      return typeof input.file_path === 'string' && input.file_path ? input.file_path : null;
     case TOOL_NOTEBOOK_EDIT:
       if (typeof input.notebook_path === 'string' && input.notebook_path) {
         return input.notebook_path;
       }
-      return typeof input.file_path === 'string' && input.file_path ? input.file_path : '*';
+      return typeof input.file_path === 'string' && input.file_path ? input.file_path : null;
     case TOOL_GLOB:
-      return typeof input.pattern === 'string' && input.pattern ? input.pattern : '*';
+      return typeof input.pattern === 'string' && input.pattern ? input.pattern : null;
     case TOOL_GREP:
-      return typeof input.pattern === 'string' && input.pattern ? input.pattern : '*';
+      return typeof input.pattern === 'string' && input.pattern ? input.pattern : null;
     default:
       return JSON.stringify(input);
   }
 }
 
 export function getActionDescription(toolName: string, input: Record<string, unknown>): string {
-  const pattern = getActionPattern(toolName, input);
+  const pattern = getActionPattern(toolName, input) ?? '(unknown)';
   switch (toolName) {
     case TOOL_BASH:
       return `Run command: ${pattern}`;
@@ -61,11 +61,14 @@ export function getActionDescription(toolName: string, input: Record<string, unk
  */
 export function matchesRulePattern(
   toolName: string,
-  actionPattern: string,
+  actionPattern: string | null,
   rulePattern: string | undefined
 ): boolean {
-  // No pattern means match all
+  // No rule pattern means match all
   if (!rulePattern) return true;
+
+  // Null action pattern means we can't determine the action - don't match
+  if (actionPattern === null) return false;
 
   const normalizedAction = actionPattern.replace(/\\/g, '/');
   const normalizedRule = rulePattern.replace(/\\/g, '/');
@@ -178,7 +181,7 @@ export function buildPermissionUpdates(
   if (!hasRuleUpdate) {
     const pattern = getActionPattern(toolName, input);
     const ruleValue: { toolName: string; ruleContent?: string } = { toolName };
-    if (pattern && pattern !== '*' && !pattern.startsWith('{')) {
+    if (pattern && !pattern.startsWith('{')) {
       ruleValue.ruleContent = pattern;
     }
 

@@ -33,9 +33,9 @@ describe('BashPathValidator', () => {
       expect(tokens).toEqual(['echo', 'hello world']);
     });
 
-    it('handles backticked strings', () => {
+    it('handles backticked strings as command substitution (not quotes)', () => {
       const tokens = tokenizeBashCommand('echo `test`');
-      expect(tokens).toEqual(['echo', 'test']);
+      expect(tokens).toEqual(['echo', '`test`']);
     });
 
     it('handles mixed quotes and spaces', () => {
@@ -234,9 +234,33 @@ describe('BashPathValidator', () => {
       (input) => { expect(cleanPathToken(input)).toBeNull(); }
     );
 
-    it('handles mismatched quotes (does not strip)', () => {
-      expect(cleanPathToken("\"path'")).toBe("\"path'");
-      expect(cleanPathToken("'path\"")).toBe("'path\"");
+    it('strips unmatched leading single quote', () => {
+      expect(cleanPathToken("'/etc/passwd")).toBe('/etc/passwd');
+    });
+
+    it('strips unmatched leading double quote', () => {
+      expect(cleanPathToken('"/etc/passwd')).toBe('/etc/passwd');
+    });
+
+    it('strips unmatched leading backtick', () => {
+      expect(cleanPathToken('`/etc/passwd')).toBe('/etc/passwd');
+    });
+
+    it('strips unmatched trailing single quote', () => {
+      expect(cleanPathToken("/etc/passwd'")).toBe('/etc/passwd');
+    });
+
+    it('strips unmatched trailing double quote', () => {
+      expect(cleanPathToken('/etc/passwd"')).toBe('/etc/passwd');
+    });
+
+    it('strips unmatched trailing backtick', () => {
+      expect(cleanPathToken('/etc/passwd`')).toBe('/etc/passwd');
+    });
+
+    it('handles mismatched quotes by stripping both', () => {
+      expect(cleanPathToken("\"path/to'")).toBe("path/to");
+      expect(cleanPathToken("'path/to\"")).toBe("path/to");
     });
   });
 
@@ -649,6 +673,48 @@ describe('BashPathValidator', () => {
       const context = createMockPathContext({ '~/Desktop/file.txt': 'export' });
       const result = findBashCommandPathViolation('echo hello > ~/Desktop/file.txt', context);
       expect(result).toBeNull();
+    });
+
+    it('should detect path violation with unmatched single quote', () => {
+      const context = createMockPathContext({});
+      const result = findBashCommandPathViolation("cat '/etc/passwd", context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
+    });
+
+    it('should detect path violation with unmatched double quote', () => {
+      const context = createMockPathContext({});
+      const result = findBashCommandPathViolation('cat "/etc/passwd', context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
+    });
+
+    it('should detect path violation inside backtick subshell', () => {
+      const context = createMockPathContext({});
+      const result = findBashCommandPathViolation('echo `cat /etc/passwd`', context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
+    });
+
+    it('should detect path violation inside $() subshell', () => {
+      const context = createMockPathContext({});
+      const result = findBashCommandPathViolation('echo $(cat /etc/passwd)', context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
+    });
+
+    it('should allow backtick subshell with vault paths', () => {
+      const context = createMockPathContext({ '/vault/file.txt': 'vault' });
+      const result = findBashCommandPathViolation('echo `cat /vault/file.txt`', context);
+      expect(result).toBeNull();
+    });
+
+    it('should allow $() subshell with vault paths', () => {
+      const context = createMockPathContext({ '/vault/file.txt': 'vault' });
+      const result = findBashCommandPathViolation('echo $(cat /vault/file.txt)', context);
+      expect(result).toBeNull();
+    });
+
+    it('should detect path violation in nested $() subshell', () => {
+      const context = createMockPathContext({});
+      const result = findBashCommandPathViolation('echo $(echo $(cat /etc/passwd))', context);
+      expect(result).toEqual({ type: 'outside_vault', path: '/etc/passwd' });
     });
   });
 });

@@ -26,6 +26,7 @@ import type {
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
+import { Notice } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -77,7 +78,7 @@ import {
   isTurnCompleteMessage,
   type PersistentQueryConfig,
   type ResponseHandler,
-  type SDKContentBlock,
+  type UserContentBlock,
 } from './types';
 
 export type { ApprovalDecision };
@@ -145,6 +146,7 @@ export class ClaudianService {
   private queryAbortController: AbortController | null = null;
   private responseHandlers: ResponseHandler[] = [];
   private responseConsumerRunning = false;
+  private responseConsumerPromise: Promise<void> | null = null;
   private shuttingDown = false;
 
   // Tracked configuration for detecting changes that require restart
@@ -394,11 +396,19 @@ export class ClaudianService {
       }
     }
 
+    // Reset shuttingDown synchronously. The consumer loop sees shuttingDown=true
+    // on its next iteration check (line 549) and breaks. The messageChannel.close()
+    // above also terminates the for-await loop. Resetting here allows new queries
+    // to proceed immediately without waiting for consumer loop teardown.
+    this.shuttingDown = false;
+    this.notifyReadyStateChange();
+
     // Clear state
     this.persistentQuery = null;
     this.messageChannel = null;
     this.queryAbortController = null;
     this.responseConsumerRunning = false;
+    this.responseConsumerPromise = null;
     this.currentConfig = null;
     if (!preserveHandlers) {
       this.responseHandlers = [];
@@ -409,11 +419,6 @@ export class ClaudianService {
     // It's reset in queryViaPersistent after a successful message send,
     // or in resetSession/setSessionId when switching sessions.
     // Resetting it here would cause infinite restart loops on persistent errors.
-
-    // Reset shuttingDown flag so next query can start a new persistent query.
-    // This must be done after all cleanup to prevent race conditions with the consumer loop.
-    this.shuttingDown = false;
-    this.notifyReadyStateChange();
   }
 
   /**
@@ -530,7 +535,7 @@ export class ClaudianService {
     // Track which query this consumer is for, to detect if we were replaced
     const queryForThisConsumer = this.persistentQuery;
 
-    void (async () => {
+    this.responseConsumerPromise = (async () => {
       if (!this.persistentQuery) return;
 
       try {
@@ -1052,7 +1057,7 @@ export class ClaudianService {
       };
     }
 
-    const content: SDKContentBlock[] = [];
+    const content: UserContentBlock[] = [];
 
     for (const image of images) {
       content.push({
@@ -1116,7 +1121,7 @@ export class ClaudianService {
         await this.persistentQuery.setModel(resolved.model);
         this.currentConfig.model = selectedModel;
       } catch {
-        // Silently ignore model update errors
+        new Notice('Failed to update model');
       }
     }
 
@@ -1129,7 +1134,7 @@ export class ClaudianService {
           this.currentConfig.thinkingTokens = thinkingTokens;
         }
       } catch {
-        // Silently ignore thinking tokens update errors
+        new Notice('Failed to update thinking budget');
       }
     }
 
@@ -1142,7 +1147,7 @@ export class ClaudianService {
         await this.persistentQuery.setPermissionMode(sdkMode);
         this.currentConfig.permissionMode = permissionMode;
       } catch {
-        // Silently ignore permission mode update errors
+        new Notice('Failed to update permission mode');
       }
     }
 
@@ -1164,7 +1169,7 @@ export class ClaudianService {
         await this.persistentQuery.setMcpServers(serverConfigs);
         this.currentConfig.mcpServersKey = mcpServersKey;
       } catch {
-        // Silently ignore MCP servers update errors
+        new Notice('Failed to update MCP servers');
       }
     }
 
@@ -1214,7 +1219,7 @@ export class ClaudianService {
       return prompt;
     }
 
-    const content: SDKContentBlock[] = [];
+    const content: UserContentBlock[] = [];
 
     // Images before text (Claude recommendation for best quality)
     for (const image of images) {
@@ -1404,7 +1409,8 @@ export class ClaudianService {
         source: 'sdk' as const,
       }));
     } catch {
-      // Silently return empty array on error
+      // Empty array on error is intentional: callers (SlashCommandDropdown) keep
+      // sdkSkillsFetched=false on empty results, allowing automatic retry.
       return [];
     }
   }

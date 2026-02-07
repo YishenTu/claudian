@@ -24,7 +24,9 @@ export interface PathCheckContext {
  */
 export function tokenizeBashCommand(command: string): string[] {
   const tokens: string[] = [];
-  const tokenRegex = /(['"`])(.*?)\1|[^\s]+/g;
+  // Only handle single and double quotes as string delimiters.
+  // Backticks are command substitution, not quoting -- handled by subshell extraction.
+  const tokenRegex = /(['"])(.*?)\1|[^\s]+/g;
   let match: RegExpExecArray | null;
 
   while ((match = tokenRegex.exec(command)) !== null) {
@@ -106,13 +108,8 @@ export function cleanPathToken(raw: string): string | null {
   let token = raw.trim();
   if (!token) return null;
 
-  if (
-    (token.startsWith('"') && token.endsWith('"')) ||
-    (token.startsWith("'") && token.endsWith("'")) ||
-    (token.startsWith('`') && token.endsWith('`'))
-  ) {
-    token = token.slice(1, -1).trim();
-  }
+  token = stripQuoteChars(token);
+  if (!token) return null;
 
   // Trim common delimiters from shells / subshells.
   while (token.startsWith('(') || token.startsWith('[') || token.startsWith('{')) {
@@ -130,17 +127,32 @@ export function cleanPathToken(raw: string): string | null {
 
   if (!token) return null;
 
-  if (
-    (token.startsWith('"') && token.endsWith('"')) ||
-    (token.startsWith("'") && token.endsWith("'")) ||
-    (token.startsWith('`') && token.endsWith('`'))
-  ) {
-    token = token.slice(1, -1).trim();
-  }
-
+  token = stripQuoteChars(token);
   if (!token) return null;
+
   if (token === '.' || token === '/' || token === '\\' || token === '--') return null;
   return token;
+}
+
+const QUOTE_CHARS = new Set(["'", '"', '`']);
+
+function stripQuoteChars(token: string): string {
+  // Strip matched quotes first
+  if (
+    token.length >= 2 &&
+    QUOTE_CHARS.has(token[0]) &&
+    token[0] === token[token.length - 1]
+  ) {
+    return token.slice(1, -1).trim();
+  }
+  // Strip unmatched leading/trailing quote characters
+  while (token.length > 0 && QUOTE_CHARS.has(token[0])) {
+    token = token.slice(1);
+  }
+  while (token.length > 0 && QUOTE_CHARS.has(token[token.length - 1])) {
+    token = token.slice(0, -1);
+  }
+  return token.trim();
 }
 
 export function isPathLikeToken(token: string): boolean {
@@ -323,6 +335,42 @@ export function findBashPathViolationInSegment(
   return null;
 }
 
+/** Extract inner commands from command substitution patterns ($(...) and backticks) */
+function extractSubshellCommands(command: string): string[] {
+  const results: string[] = [];
+
+  // Extract $(...) content, handling nested parens
+  let i = 0;
+  while (i < command.length) {
+    if (command[i] === '$' && command[i + 1] === '(') {
+      let depth = 1;
+      const start = i + 2;
+      let j = start;
+      while (j < command.length && depth > 0) {
+        if (command[j] === '(') depth++;
+        else if (command[j] === ')') depth--;
+        j++;
+      }
+      if (depth === 0) {
+        results.push(command.slice(start, j - 1));
+      }
+      i = j;
+    } else {
+      i++;
+    }
+  }
+
+  // Extract backtick content (already handled by tokenizer, but we also check
+  // raw command for cases where backticks span the whole token)
+  const backtickRegex = /`([^`]+)`/g;
+  let match: RegExpExecArray | null;
+  while ((match = backtickRegex.exec(command)) !== null) {
+    results.push(match[1]);
+  }
+
+  return results;
+}
+
 /**
  * Find the first path violation in a bash command.
  * Main entry point for bash command validation.
@@ -336,6 +384,13 @@ export function findBashCommandPathViolation(
   context: PathCheckContext
 ): PathViolation | null {
   if (!command) return null;
+
+  // Recursively check subshell commands first
+  const subshellCommands = extractSubshellCommands(command);
+  for (const subCmd of subshellCommands) {
+    const violation = findBashCommandPathViolation(subCmd, context);
+    if (violation) return violation;
+  }
 
   const tokens = tokenizeBashCommand(command);
   const segments = splitBashTokensIntoSegments(tokens);

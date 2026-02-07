@@ -4,6 +4,7 @@ import { MarkdownView } from 'obsidian';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { type EditorSelectionContext, getEditorView } from '../../../utils/editor';
 import type { StoredSelection } from '../state/types';
+import { updateContextRowHasContent } from './contextRowVisibility';
 
 /** Polling interval for editor selection (ms). */
 const SELECTION_POLL_INTERVAL = 250;
@@ -132,12 +133,7 @@ export class SelectionController {
 
   updateContextRowVisibility(): void {
     if (!this.contextRowEl) return;
-    const hasSelection = this.storedSelection !== null;
-    const fileIndicator = this.contextRowEl.querySelector('.claudian-file-indicator') as HTMLElement | null;
-    const imagePreview = this.contextRowEl.querySelector('.claudian-image-preview') as HTMLElement | null;
-    const hasFileChips = fileIndicator?.style.display === 'flex';
-    const hasImageChips = imagePreview?.style.display === 'flex';
-    this.contextRowEl.classList.toggle('has-content', hasSelection || hasFileChips || hasImageChips);
+    updateContextRowHasContent(this.contextRowEl);
     this.onVisibilityChange?.();
   }
 

@@ -39,13 +39,21 @@ describe('escapeHtml', () => {
     expect(escapeHtml('a > b')).toBe('a &gt; b');
   });
 
-  it('escapes both angle brackets in HTML tags', () => {
-    expect(escapeHtml('<script>alert(1)</script>')).toBe(
-      '&lt;script&gt;alert(1)&lt;/script&gt;'
+  it('escapes & to &amp;', () => {
+    expect(escapeHtml('a & b')).toBe('a &amp; b');
+  });
+
+  it('escapes " to &quot;', () => {
+    expect(escapeHtml('a "b" c')).toBe('a &quot;b&quot; c');
+  });
+
+  it('escapes all special characters together', () => {
+    expect(escapeHtml('<script>alert("x&y")</script>')).toBe(
+      '&lt;script&gt;alert(&quot;x&amp;y&quot;)&lt;/script&gt;'
     );
   });
 
-  it('returns text unchanged when no angle brackets', () => {
+  it('returns text unchanged when no special characters', () => {
     expect(escapeHtml('Hello World')).toBe('Hello World');
   });
 
