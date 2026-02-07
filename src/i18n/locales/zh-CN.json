@@ -189,6 +189,10 @@
       "name": "加载用户 Claude 设置",
       "desc": "加载 ~/.claude/settings.json。启用后，用户的 Claude Code 权限规则可能绕过安全模式。"
     },
+    "useGlobalCcConfig": {
+      "name": "使用 Claude Code 全局配置",
+      "desc": "启用后，skills 和 MCP 服务器从 ~/.claude/ 加载（与 Claude Code CLI 共享）。禁用时从 vault 加载（每个 vault 独立）。默认禁用以保持向后兼容。"
+    },
     "enableBlocklist": {
       "name": "启用命令黑名单",
       "desc": "阻止潜在危险的 bash 命令"
