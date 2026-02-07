@@ -5,18 +5,13 @@ import { updateContextRowHasContent } from './contextRowVisibility';
 
 const CANVAS_POLL_INTERVAL = 250;
 
-interface StoredCanvasSelection {
-  canvasPath: string;
-  nodeIds: string[];
-}
-
 export class CanvasSelectionController {
   private app: App;
   private indicatorEl: HTMLElement;
   private inputEl: HTMLElement;
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
-  private storedSelection: StoredCanvasSelection | null = null;
+  private storedSelection: CanvasSelectionContext | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -45,14 +40,6 @@ export class CanvasSelectionController {
     }
     this.clear();
   }
-
-  dispose(): void {
-    this.stop();
-  }
-
-  // ============================================
-  // Canvas Selection Polling
-  // ============================================
 
   private poll(): void {
     const canvasView = this.getCanvasView();
@@ -98,10 +85,6 @@ export class CanvasSelectionController {
     return leaf ? (leaf.view as ItemView) : null;
   }
 
-  // ============================================
-  // Indicator
-  // ============================================
-
   private updateIndicator(): void {
     if (!this.indicatorEl) return;
 
@@ -123,10 +106,6 @@ export class CanvasSelectionController {
     this.onVisibilityChange?.();
   }
 
-  // ============================================
-  // Context Access
-  // ============================================
-
   getContext(): CanvasSelectionContext | null {
     if (!this.storedSelection) return null;
     return {
@@ -138,10 +117,6 @@ export class CanvasSelectionController {
   hasSelection(): boolean {
     return this.storedSelection !== null;
   }
-
-  // ============================================
-  // Clear
-  // ============================================
 
   clear(): void {
     this.storedSelection = null;
