@@ -79,7 +79,7 @@ describe('CanvasSelectionController', () => {
     expect(indicatorEl.style.display).toBe('block');
   });
 
-  it('shows singular "node" for single selection', () => {
+  it('shows node ID for single selection', () => {
     const singleNode = createMockCanvasNode('single1');
     canvasView.canvas.selection = new Set([singleNode]);
 
@@ -87,7 +87,7 @@ describe('CanvasSelectionController', () => {
     jest.advanceTimersByTime(250);
 
     expect(controller.getContext()?.nodeIds).toEqual(['single1']);
-    expect(indicatorEl.textContent).toBe('1 node selected');
+    expect(indicatorEl.textContent).toBe('node "single1" selected');
   });
 
   it('clears selection when no nodes selected and input not focused', () => {

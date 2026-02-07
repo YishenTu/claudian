@@ -99,9 +99,10 @@ export class CanvasSelectionController {
     if (!this.indicatorEl) return;
 
     if (this.storedSelection) {
-      const count = this.storedSelection.nodeIds.length;
-      const nodeText = count === 1 ? 'node' : 'nodes';
-      this.indicatorEl.textContent = `${count} ${nodeText} selected`;
+      const { nodeIds } = this.storedSelection;
+      this.indicatorEl.textContent = nodeIds.length === 1
+        ? `node "${nodeIds[0]}" selected`
+        : `${nodeIds.length} nodes selected`;
       this.indicatorEl.style.display = 'block';
     } else {
       this.indicatorEl.style.display = 'none';
