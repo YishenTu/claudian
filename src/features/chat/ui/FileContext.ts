@@ -51,6 +51,7 @@ export class FileContextManager {
 
     this.state = new FileContextState();
     this.fileCache = new MarkdownFileCache(this.app);
+    this.fileCache.initializeInBackground();
 
     this.chipsView = new FileChipsView(this.chipsContainerEl, {
       onRemoveAttachment: (filePath) => {

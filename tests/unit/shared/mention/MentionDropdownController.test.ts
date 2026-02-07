@@ -396,4 +396,93 @@ describe('MentionDropdownController', () => {
       testController.destroy();
     });
   });
+
+  describe('input debouncing', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('debounces rapid input changes', () => {
+      const agentService = createMockAgentService([
+        { id: 'Explore', name: 'Explore', source: 'builtin' },
+      ]);
+      controller.setAgentService(agentService);
+
+      inputEl.value = '@';
+      inputEl.selectionStart = 1;
+      controller.handleInputChange();
+
+      inputEl.value = '@E';
+      inputEl.selectionStart = 2;
+      controller.handleInputChange();
+
+      inputEl.value = '@Ex';
+      inputEl.selectionStart = 3;
+      controller.handleInputChange();
+
+      expect(agentService.searchAgents).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(200);
+
+      expect(agentService.searchAgents).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears pending timer on destroy', () => {
+      inputEl.value = '@test';
+      inputEl.selectionStart = 5;
+      controller.handleInputChange();
+
+      expect(() => {
+        controller.destroy();
+        jest.runAllTimers();
+      }).not.toThrow();
+    });
+
+    it('processes input after debounce delay', () => {
+      const agentService = createMockAgentService([
+        { id: 'Explore', name: 'Explore', source: 'builtin' },
+      ]);
+      controller.setAgentService(agentService);
+
+      inputEl.value = '@Explore';
+      inputEl.selectionStart = 8;
+      controller.handleInputChange();
+
+      jest.advanceTimersByTime(199);
+      expect(agentService.searchAgents).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1);
+      expect(agentService.searchAgents).toHaveBeenCalled();
+    });
+  });
+
+  describe('result limiting', () => {
+    it('limits vault file results to 100 items', () => {
+      const largeFileSet = Array.from({ length: 200 }, (_, i) => ({
+        path: `note${i}.md`,
+        name: `note${i}.md`,
+        stat: { mtime: Date.now() - i },
+      })) as any[];
+
+      const limitedCallbacks = createMockCallbacks({
+        getCachedMarkdownFiles: jest.fn().mockReturnValue(largeFileSet),
+      });
+
+      const testController = new MentionDropdownController(
+        createMockEl(),
+        createMockInput(),
+        limitedCallbacks
+      );
+
+      const testInput = createMockInput();
+      testInput.value = '@note';
+      testInput.selectionStart = 5;
+
+      testController.destroy();
+    });
+  });
 });

@@ -51,6 +51,7 @@ export class MentionDropdownController {
   private mcpManager: McpMentionProvider | null = null;
   private agentService: AgentMentionProvider | null = null;
   private fixed: boolean;
+  private debounceTimer: number | null = null;
 
   constructor(
     containerEl: HTMLElement,
@@ -107,6 +108,9 @@ export class MentionDropdownController {
   }
 
   destroy(): void {
+    if (this.debounceTimer !== null) {
+      window.clearTimeout(this.debounceTimer);
+    }
     this.dropdown.destroy();
   }
 
@@ -126,33 +130,39 @@ export class MentionDropdownController {
   }
 
   handleInputChange(): void {
-    const text = this.inputEl.value;
-    this.updateMcpMentionsFromText(text);
-
-    const cursorPos = this.inputEl.selectionStart || 0;
-    const textBeforeCursor = text.substring(0, cursorPos);
-    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
-
-    if (lastAtIndex === -1) {
-      this.hide();
-      return;
+    if (this.debounceTimer !== null) {
+      window.clearTimeout(this.debounceTimer);
     }
 
-    const charBeforeAt = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
-    if (!/\s/.test(charBeforeAt) && lastAtIndex !== 0) {
-      this.hide();
-      return;
-    }
+    this.debounceTimer = window.setTimeout(() => {
+      const text = this.inputEl.value;
+      this.updateMcpMentionsFromText(text);
 
-    const searchText = textBeforeCursor.substring(lastAtIndex + 1);
+      const cursorPos = this.inputEl.selectionStart || 0;
+      const textBeforeCursor = text.substring(0, cursorPos);
+      const lastAtIndex = textBeforeCursor.lastIndexOf('@');
 
-    if (/\s/.test(searchText)) {
-      this.hide();
-      return;
-    }
+      if (lastAtIndex === -1) {
+        this.hide();
+        return;
+      }
 
-    this.mentionStartIndex = lastAtIndex;
-    this.showMentionDropdown(searchText);
+      const charBeforeAt = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
+      if (!/\s/.test(charBeforeAt) && lastAtIndex !== 0) {
+        this.hide();
+        return;
+      }
+
+      const searchText = textBeforeCursor.substring(lastAtIndex + 1);
+
+      if (/\s/.test(searchText)) {
+        this.hide();
+        return;
+      }
+
+      this.mentionStartIndex = lastAtIndex;
+      this.showMentionDropdown(searchText);
+    }, 200);
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
@@ -366,7 +376,8 @@ export class MentionDropdownController {
         if (aNameMatch && !bNameMatch) return -1;
         if (!aNameMatch && bNameMatch) return 1;
         return b.stat.mtime - a.stat.mtime;
-      });
+      })
+      .slice(0, 100);
 
     for (const file of vaultFiles) {
       this.filteredMentionItems.push({
