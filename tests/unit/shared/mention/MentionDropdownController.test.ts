@@ -91,6 +91,7 @@ describe('MentionDropdownController', () => {
   let controller: MentionDropdownController;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     mockDropdownVisible = false;
     containerEl = createMockEl();
     inputEl = createMockInput();
@@ -100,6 +101,7 @@ describe('MentionDropdownController', () => {
 
   afterEach(() => {
     controller.destroy();
+    jest.useRealTimers();
   });
 
   describe('constructor', () => {
@@ -119,6 +121,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@';
       inputEl.selectionStart = 1;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalled();
     });
@@ -129,6 +132,7 @@ describe('MentionDropdownController', () => {
         inputEl.value = '@';
         inputEl.selectionStart = 1;
         controller.handleInputChange();
+        jest.advanceTimersByTime(200);
       }).not.toThrow();
     });
   });
@@ -143,6 +147,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@a';
       inputEl.selectionStart = 2;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       // searchAgents should be called with empty string to check if any agents exist
       expect(agentService.searchAgents).toHaveBeenCalledWith('');
@@ -157,6 +162,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@';
       inputEl.selectionStart = 1;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalled();
     });
@@ -168,6 +174,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@a';
       inputEl.selectionStart = 2;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       // searchAgents returns empty array, so no Agents folder shown
       expect(agentService.searchAgents).toHaveBeenCalled();
@@ -186,6 +193,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@Agents/';
       inputEl.selectionStart = 8;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalledWith('');
     });
@@ -201,6 +209,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@Agents/exp';
       inputEl.selectionStart = 11;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalledWith('exp');
     });
@@ -214,6 +223,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@agents/';
       inputEl.selectionStart = 8;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalledWith('');
     });
@@ -227,6 +237,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@AGENTS/test';
       inputEl.selectionStart = 12;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalledWith('test');
     });
@@ -240,6 +251,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@';
       inputEl.selectionStart = 1;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(mcpManager.getContextSavingServers).toHaveBeenCalled();
     });
@@ -258,6 +270,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@';
       inputEl.selectionStart = 1;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(mcpManager.getContextSavingServers).toHaveBeenCalled();
       expect(agentService.searchAgents).toHaveBeenCalled();
@@ -280,19 +293,22 @@ describe('MentionDropdownController', () => {
     it('hides dropdown when no @ in text', () => {
       inputEl.value = 'no at sign';
       inputEl.selectionStart = 10;
-      expect(() => controller.handleInputChange()).not.toThrow();
+      controller.handleInputChange();
+      expect(() => jest.advanceTimersByTime(200)).not.toThrow();
     });
 
     it('hides dropdown when @ is not at word boundary', () => {
       inputEl.value = 'test@example';
       inputEl.selectionStart = 12;
-      expect(() => controller.handleInputChange()).not.toThrow();
+      controller.handleInputChange();
+      expect(() => jest.advanceTimersByTime(200)).not.toThrow();
     });
 
     it('hides dropdown when space follows @mention', () => {
       inputEl.value = '@test ';
       inputEl.selectionStart = 6;
-      expect(() => controller.handleInputChange()).not.toThrow();
+      controller.handleInputChange();
+      expect(() => jest.advanceTimersByTime(200)).not.toThrow();
     });
 
     it('handles @ at start of line', () => {
@@ -304,6 +320,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = '@Explore';
       inputEl.selectionStart = 8;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalled();
     });
@@ -317,6 +334,7 @@ describe('MentionDropdownController', () => {
       inputEl.value = 'hello @Explore';
       inputEl.selectionStart = 14;
       controller.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       expect(agentService.searchAgents).toHaveBeenCalled();
     });
@@ -385,6 +403,7 @@ describe('MentionDropdownController', () => {
       testInput.value = '@Agents/';
       testInput.selectionStart = 8;
       testController.handleInputChange();
+      jest.advanceTimersByTime(200);
 
       // handleInputChange populates filteredMentionItems and calls dropdown.render(),
       // which sets mockDropdownVisible = true. Press Enter to select the first item.
@@ -398,14 +417,6 @@ describe('MentionDropdownController', () => {
   });
 
   describe('input debouncing', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('debounces rapid input changes', () => {
       const agentService = createMockAgentService([
         { id: 'Explore', name: 'Explore', source: 'builtin' },

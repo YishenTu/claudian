@@ -112,6 +112,7 @@ describe('FileContextManager', () => {
   let inputEl: HTMLTextAreaElement;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
     mockVaultPath = '/vault';
     mockScanPaths.mockReturnValue([]);
@@ -122,6 +123,10 @@ describe('FileContextManager', () => {
       selectionEnd: 0,
       focus: jest.fn(),
     } as unknown as HTMLTextAreaElement;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('tracks current note send state per session', () => {
@@ -253,6 +258,7 @@ describe('FileContextManager', () => {
     inputEl.selectionStart = 5;
     inputEl.selectionEnd = 5;
     manager.handleInputChange();
+    jest.advanceTimersByTime(200);
 
     const pathEl = findByClass(containerEl, 'claudian-mention-path');
     expect(pathEl?.textContent).toBe('clipping/file.md');
@@ -291,6 +297,7 @@ describe('FileContextManager', () => {
     inputEl.selectionStart = 13;
     inputEl.selectionEnd = 13;
     manager.handleInputChange();
+    jest.advanceTimersByTime(200);
 
     const nameEls = findAllByClass(containerEl, 'claudian-mention-name-context');
     expect(nameEls[0]?.textContent).toBe('src/app.md');

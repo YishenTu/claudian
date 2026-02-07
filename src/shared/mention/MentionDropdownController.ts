@@ -51,7 +51,7 @@ export class MentionDropdownController {
   private mcpManager: McpMentionProvider | null = null;
   private agentService: AgentMentionProvider | null = null;
   private fixed: boolean;
-  private debounceTimer: number | null = null;
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     containerEl: HTMLElement,
