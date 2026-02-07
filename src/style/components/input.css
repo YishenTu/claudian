@@ -49,7 +49,8 @@
 /* Selection indicator (shown when text is selected in editor) */
 /* Match file chip height (24px): chip has 16px remove button + 6px padding + 2px border */
 /* Indicator: 12px text + 10px padding (5+5) + 2px border = 24px */
-.claudian-selection-indicator {
+.claudian-selection-indicator,
+.claudian-canvas-indicator {
   color: #7abaff;
   font-size: 12px;
   line-height: 1;

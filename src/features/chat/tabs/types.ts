@@ -3,6 +3,7 @@ import type { Component, WorkspaceLeaf } from 'obsidian';
 import type { ClaudianService } from '../../../core/agent';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import type {
+  CanvasSelectionController,
   ConversationController,
   InputController,
   NavigationController,
@@ -100,6 +101,7 @@ export function generateTabId(): TabId {
  */
 export interface TabControllers {
   selectionController: SelectionController | null;
+  canvasSelectionController: CanvasSelectionController | null;
   conversationController: ConversationController | null;
   streamController: StreamController | null;
   inputController: InputController | null;
@@ -155,6 +157,7 @@ export interface TabDOMElements {
   contextRowEl: HTMLElement;
 
   selectionIndicatorEl: HTMLElement | null;
+  canvasIndicatorEl: HTMLElement | null;
 
   /** Scroll-to-bottom button (shown when user scrolls up). */
   scrollToBottomEl: HTMLElement | null;
