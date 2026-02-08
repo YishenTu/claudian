@@ -48,8 +48,11 @@ export class AgentVaultStorage {
         source: agent.source,
         filePath,
       });
-    } catch {
-      return null;
+    } catch (error) {
+      if (this.isFileNotFoundError(error)) {
+        return null;
+      }
+      throw error;
     }
   }
 
@@ -72,5 +75,27 @@ export class AgentVaultStorage {
       return normalized.slice(idx);
     }
     return `${AGENTS_PATH}/${agent.name}.md`;
+  }
+
+  private isFileNotFoundError(error: unknown): boolean {
+    if (!error) return false;
+
+    if (typeof error === 'string') {
+      return /enoent|not found|no such file/i.test(error);
+    }
+
+    if (typeof error === 'object') {
+      const maybeCode = (error as { code?: unknown }).code;
+      if (typeof maybeCode === 'string' && /enoent|not.?found/i.test(maybeCode)) {
+        return true;
+      }
+
+      const maybeMessage = (error as { message?: unknown }).message;
+      if (typeof maybeMessage === 'string' && /enoent|not found|no such file/i.test(maybeMessage)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

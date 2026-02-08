@@ -257,7 +257,7 @@ Be strict.`;
       expect(result!.model).toBe('sonnet');
     });
 
-    it('returns null when file cannot be read', async () => {
+    it('returns null when file is not found', async () => {
       mockAdapter.read.mockRejectedValue(new Error('not found'));
 
       const result = await storage.load({
@@ -269,6 +269,18 @@ Be strict.`;
       });
 
       expect(result).toBeNull();
+    });
+
+    it('throws when read fails with unexpected error', async () => {
+      mockAdapter.read.mockRejectedValue(new Error('permission denied'));
+
+      await expect(storage.load({
+        id: 'missing',
+        name: 'missing',
+        description: '',
+        prompt: '',
+        source: 'vault',
+      })).rejects.toThrow('permission denied');
     });
 
     it('returns null when file content is malformed', async () => {

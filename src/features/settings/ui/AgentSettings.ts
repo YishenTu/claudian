@@ -310,9 +310,19 @@ export class AgentSettings {
   }
 
   private async openAgentModal(existingAgent: AgentDefinition | null): Promise<void> {
-    const fresh = existingAgent
-      ? await this.plugin.storage.agents.load(existingAgent) ?? existingAgent
-      : null;
+    let fresh: AgentDefinition | null;
+    if (existingAgent) {
+      try {
+        fresh = await this.plugin.storage.agents.load(existingAgent) ?? existingAgent;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        new Notice(`Failed to load subagent "${existingAgent.name}": ${message}`);
+        return;
+      }
+    } else {
+      fresh = null;
+    }
+
     new AgentModal(
       this.plugin.app,
       this.plugin,
