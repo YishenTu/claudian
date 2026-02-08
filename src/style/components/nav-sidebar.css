@@ -1,8 +1,9 @@
 /* Navigation Sidebar */
 .claudian-nav-sidebar {
     position: absolute;
-    right: 20px;
-    bottom: 80px; /* Above input area/status panel */
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -13,8 +14,12 @@
 }
 
 .claudian-nav-sidebar.visible {
-    opacity: 1;
+    opacity: 0.15;
     pointer-events: auto;
+}
+
+.claudian-nav-sidebar.visible:hover {
+    opacity: 1;
 }
 
 .claudian-nav-btn {
