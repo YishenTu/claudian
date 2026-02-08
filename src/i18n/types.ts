@@ -28,6 +28,7 @@ export type TranslationKey =
   | 'common.enabled'
   | 'common.disabled'
   | 'common.platform'
+  | 'common.refresh'
   | 'common.rewind'
 
   // Chat - Rewind
@@ -137,6 +138,7 @@ export type TranslationKey =
   | 'settings.subagents.noAgents'
   | 'settings.subagents.deleteConfirm'
   | 'settings.subagents.saveFailed'
+  | 'settings.subagents.refreshFailed'
   | 'settings.subagents.deleteFailed'
   | 'settings.subagents.renameCleanupFailed'
   | 'settings.subagents.saved'

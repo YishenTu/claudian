@@ -18,6 +18,7 @@
     "enabled": "已啟用",
     "disabled": "已禁用",
     "platform": "平台",
+    "refresh": "重新整理",
     "rewind": "回退"
   },
   "chat": {
@@ -154,6 +155,7 @@
       "noAgents": "No subagents configured. Click + to create one.",
       "deleteConfirm": "Delete subagent \"{name}\"?",
       "saveFailed": "Failed to save subagent: {message}",
+      "refreshFailed": "重新整理子代理失敗：{message}",
       "deleteFailed": "Failed to delete subagent: {message}",
       "renameCleanupFailed": "Warning: could not remove old file for \"{name}\"",
       "saved": "Subagent \"{name}\" {action}",

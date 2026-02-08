@@ -36,6 +36,23 @@ export class AgentVaultStorage {
     return agents;
   }
 
+  async load(agent: AgentDefinition): Promise<AgentDefinition | null> {
+    const filePath = this.resolvePath(agent);
+    try {
+      const content = await this.adapter.read(filePath);
+      const parsed = parseAgentFile(content);
+      if (!parsed) return null;
+      const { frontmatter, body } = parsed;
+      return buildAgentFromFrontmatter(frontmatter, body, {
+        id: frontmatter.name,
+        source: agent.source,
+        filePath,
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async save(agent: AgentDefinition): Promise<void> {
     await this.adapter.write(this.resolvePath(agent), serializeAgent(agent));
   }
@@ -45,6 +62,15 @@ export class AgentVaultStorage {
   }
 
   private resolvePath(agent: AgentDefinition): string {
-    return agent.filePath ?? `${AGENTS_PATH}/${agent.name}.md`;
+    if (!agent.filePath) {
+      return `${AGENTS_PATH}/${agent.name}.md`;
+    }
+
+    const normalized = agent.filePath.replace(/\\/g, '/');
+    const idx = normalized.lastIndexOf(`${AGENTS_PATH}/`);
+    if (idx !== -1) {
+      return normalized.slice(idx);
+    }
+    return `${AGENTS_PATH}/${agent.name}.md`;
   }
 }

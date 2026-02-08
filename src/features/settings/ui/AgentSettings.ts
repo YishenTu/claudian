@@ -225,12 +225,19 @@ export class AgentSettings {
 
     const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
 
+    const refreshBtn = actionsEl.createEl('button', {
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': t('common.refresh') },
+    });
+    setIcon(refreshBtn, 'refresh-cw');
+    refreshBtn.addEventListener('click', () => { void this.refreshAgents(); });
+
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
       attr: { 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
-    addBtn.addEventListener('click', () => this.openAgentModal(null));
+    addBtn.addEventListener('click', () => { void this.openAgentModal(null); });
 
     const allAgents = this.plugin.agentManager.getAvailableAgents();
     const vaultAgents = allAgents.filter(a => a.source === 'vault');
@@ -270,7 +277,7 @@ export class AgentSettings {
       attr: { 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
-    editBtn.addEventListener('click', () => this.openAgentModal(agent));
+    editBtn.addEventListener('click', () => { void this.openAgentModal(agent); });
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
@@ -292,24 +299,39 @@ export class AgentSettings {
     });
   }
 
-  private openAgentModal(existingAgent: AgentDefinition | null): void {
+  private async refreshAgents(): Promise<void> {
+    try {
+      await this.plugin.agentManager.loadAgents();
+      this.render();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      new Notice(t('settings.subagents.refreshFailed', { message }));
+    }
+  }
+
+  private async openAgentModal(existingAgent: AgentDefinition | null): Promise<void> {
+    const fresh = existingAgent
+      ? await this.plugin.storage.agents.load(existingAgent) ?? existingAgent
+      : null;
     new AgentModal(
       this.plugin.app,
       this.plugin,
-      existingAgent,
-      (agent) => this.saveAgent(agent, existingAgent)
+      fresh,
+      (agent) => this.saveAgent(agent, fresh)
     ).open();
   }
 
   private async saveAgent(agent: AgentDefinition, existing: AgentDefinition | null): Promise<void> {
-    await this.plugin.storage.agents.save(agent);
-
     if (existing && existing.name !== agent.name) {
+      // Rename: save to new name-based path, then delete old file
+      await this.plugin.storage.agents.save({ ...agent, filePath: undefined });
       try {
         await this.plugin.storage.agents.delete(existing);
       } catch {
         new Notice(t('settings.subagents.renameCleanupFailed', { name: existing.name }));
       }
+    } else {
+      await this.plugin.storage.agents.save(agent);
     }
 
     try {

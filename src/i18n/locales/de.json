@@ -18,6 +18,7 @@
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
     "platform": "Plattform",
+    "refresh": "Aktualisieren",
     "rewind": "Zurückspulen"
   },
   "chat": {
@@ -154,6 +155,7 @@
       "noAgents": "No subagents configured. Click + to create one.",
       "deleteConfirm": "Delete subagent \"{name}\"?",
       "saveFailed": "Failed to save subagent: {message}",
+      "refreshFailed": "Subagents konnten nicht aktualisiert werden: {message}",
       "deleteFailed": "Failed to delete subagent: {message}",
       "renameCleanupFailed": "Warning: could not remove old file for \"{name}\"",
       "saved": "Subagent \"{name}\" {action}",

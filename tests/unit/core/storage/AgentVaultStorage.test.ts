@@ -209,5 +209,193 @@ Be strict.`;
 
       expect(mockAdapter.delete).toHaveBeenCalledWith('.claude/agents/code-reviewer.md');
     });
+
+    it('converts absolute filePath to vault-relative', async () => {
+      await storage.delete({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: 'Reviews code',
+        prompt: 'Review.',
+        source: 'vault',
+        filePath: '/Users/user/vault/.claude/agents/code-reviewer.md',
+      });
+
+      expect(mockAdapter.delete).toHaveBeenCalledWith('.claude/agents/code-reviewer.md');
+    });
+
+    it('converts Windows absolute filePath to vault-relative', async () => {
+      await storage.delete({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: 'Reviews code',
+        prompt: 'Review.',
+        source: 'vault',
+        filePath: 'C:\\Users\\user\\vault\\.claude\\agents\\custom-filename.md',
+      });
+
+      expect(mockAdapter.delete).toHaveBeenCalledWith('.claude/agents/custom-filename.md');
+    });
+  });
+
+  describe('load', () => {
+    it('reads and parses a single agent file', async () => {
+      mockAdapter.read.mockResolvedValue(validAgentMd);
+
+      const result = await storage.load({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: 'Reviews code',
+        prompt: '',
+        source: 'vault',
+        filePath: '.claude/agents/code-reviewer.md',
+      });
+
+      expect(mockAdapter.read).toHaveBeenCalledWith('.claude/agents/code-reviewer.md');
+      expect(result).not.toBeNull();
+      expect(result!.name).toBe('code-reviewer');
+      expect(result!.prompt).toBe('You are a code reviewer.');
+      expect(result!.model).toBe('sonnet');
+    });
+
+    it('returns null when file cannot be read', async () => {
+      mockAdapter.read.mockRejectedValue(new Error('not found'));
+
+      const result = await storage.load({
+        id: 'missing',
+        name: 'missing',
+        description: '',
+        prompt: '',
+        source: 'vault',
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when file content is malformed', async () => {
+      mockAdapter.read.mockResolvedValue('not valid frontmatter');
+
+      const result = await storage.load({
+        id: 'bad',
+        name: 'bad',
+        description: '',
+        prompt: '',
+        source: 'vault',
+        filePath: '.claude/agents/bad.md',
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('resolves absolute filePath before reading', async () => {
+      mockAdapter.read.mockResolvedValue(validAgentMd);
+
+      await storage.load({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: '',
+        prompt: '',
+        source: 'vault',
+        filePath: '/Users/user/vault/.claude/agents/code-reviewer.md',
+      });
+
+      expect(mockAdapter.read).toHaveBeenCalledWith('.claude/agents/code-reviewer.md');
+    });
+
+    it('resolves Windows absolute filePath before reading', async () => {
+      mockAdapter.read.mockResolvedValue(validAgentMd);
+
+      await storage.load({
+        id: 'code-reviewer',
+        name: 'code-reviewer',
+        description: '',
+        prompt: '',
+        source: 'vault',
+        filePath: 'C:\\Users\\user\\vault\\.claude\\agents\\custom-filename.md',
+      });
+
+      expect(mockAdapter.read).toHaveBeenCalledWith('.claude/agents/custom-filename.md');
+    });
+  });
+
+  describe('path normalization', () => {
+    it('saves using vault-relative path when filePath is absolute', async () => {
+      await storage.save({
+        id: 'my-agent',
+        name: 'my-agent',
+        description: 'My agent',
+        prompt: 'Do stuff.',
+        source: 'vault',
+        filePath: '/Users/user/vault/.claude/agents/my-agent.md',
+      });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        '.claude/agents/my-agent.md',
+        expect.any(String)
+      );
+    });
+
+    it('preserves vault-relative filePath as-is', async () => {
+      await storage.save({
+        id: 'my-agent',
+        name: 'my-agent',
+        description: 'My agent',
+        prompt: 'Do stuff.',
+        source: 'vault',
+        filePath: '.claude/agents/custom-name.md',
+      });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        '.claude/agents/custom-name.md',
+        expect.any(String)
+      );
+    });
+
+    it('normalizes backslashes in vault-relative filePath', async () => {
+      await storage.save({
+        id: 'my-agent',
+        name: 'my-agent',
+        description: 'My agent',
+        prompt: 'Do stuff.',
+        source: 'vault',
+        filePath: '.claude\\agents\\custom-name.md',
+      });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        '.claude/agents/custom-name.md',
+        expect.any(String)
+      );
+    });
+
+    it('saves using custom filename from Windows absolute path', async () => {
+      await storage.save({
+        id: 'my-agent',
+        name: 'my-agent',
+        description: 'My agent',
+        prompt: 'Do stuff.',
+        source: 'vault',
+        filePath: 'C:\\Users\\user\\vault\\.claude\\agents\\custom-name.md',
+      });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        '.claude/agents/custom-name.md',
+        expect.any(String)
+      );
+    });
+
+    it('falls back to name-based path when absolute path has no agents marker', async () => {
+      await storage.save({
+        id: 'my-agent',
+        name: 'my-agent',
+        description: 'My agent',
+        prompt: 'Do stuff.',
+        source: 'vault',
+        filePath: '/some/other/path/agent.md',
+      });
+
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        '.claude/agents/my-agent.md',
+        expect.any(String)
+      );
+    });
   });
 });
