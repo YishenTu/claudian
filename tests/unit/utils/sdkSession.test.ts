@@ -11,6 +11,7 @@ import {
   getSDKSessionPath,
   isValidSessionId,
   loadSDKSessionMessages,
+  loadSubagentFinalResult,
   loadSubagentToolCalls,
   parseSDKMessageToChat,
   readSDKSession,
@@ -327,6 +328,63 @@ describe('sdkSession', () => {
       );
 
       expect(toolCalls).toEqual([]);
+      expect(mockFsPromises.readFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('loadSubagentFinalResult', () => {
+    it('returns the latest assistant text from sidecar JSONL', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"First"}]}}',
+        '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Final answer"}]}}',
+      ].join('\n'));
+
+      const result = await loadSubagentFinalResult(
+        '/Users/test/vault',
+        'session-abc',
+        'a123'
+      );
+
+      expect(result).toBe('Final answer');
+      expect(mockFsPromises.readFile).toHaveBeenCalledWith(
+        '/Users/test/.claude/projects/-Users-test-vault/session-abc/subagents/agent-a123.jsonl',
+        'utf-8'
+      );
+    });
+
+    it('falls back to top-level result when assistant text is absent', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"progress","result":"Intermediate result"}',
+        '{"type":"result","result":"Final result text"}',
+      ].join('\n'));
+
+      const result = await loadSubagentFinalResult(
+        '/Users/test/vault',
+        'session-abc',
+        'a123'
+      );
+
+      expect(result).toBe('Final result text');
+    });
+
+    it('returns null when sidecar file is missing or agent id is invalid', async () => {
+      mockExistsSync.mockReturnValue(false);
+
+      const missing = await loadSubagentFinalResult(
+        '/Users/test/vault',
+        'session-abc',
+        'a123'
+      );
+      expect(missing).toBeNull();
+
+      const invalid = await loadSubagentFinalResult(
+        '/Users/test/vault',
+        'session-abc',
+        '../bad-agent'
+      );
+      expect(invalid).toBeNull();
       expect(mockFsPromises.readFile).not.toHaveBeenCalled();
     });
   });
@@ -1639,7 +1697,6 @@ describe('sdkSession', () => {
       expect(results.size).toBe(1);
       const entry = results.get('ae5eb9a')!;
       expect(entry.status).toBe('completed');
-      expect(entry.summary).toBe('Agent "Review code" completed');
       expect(entry.result).toContain('Found 3 issues');
       expect(entry.result).toContain('Race condition in fetchData.');
     });

@@ -18,6 +18,7 @@ import { TOOL_ASK_USER_QUESTION, TOOL_TASK } from '../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, SubagentInfo, ToolCallInfo } from '../core/types';
 import { extractContentBeforeXmlContext } from './context';
 import { extractDiffData } from './diff';
+import { extractFinalResultFromSubagentJsonl } from './subagentJsonl';
 
 export interface SDKSessionReadResult {
   messages: SDKNativeMessage[];
@@ -249,6 +250,25 @@ function buildToolCallsFromSubagentEvents(events: SubagentToolEvent[]): ToolCall
     .map(entry => entry.toolCall);
 }
 
+function getSubagentSidecarPath(
+  vaultPath: string,
+  sessionId: string,
+  agentId: string
+): string | null {
+  if (!isValidSessionId(sessionId) || !isValidAgentId(agentId)) {
+    return null;
+  }
+
+  const encodedVault = encodeVaultPathForSDK(vaultPath);
+  return path.join(
+    getSDKProjectsPath(),
+    encodedVault,
+    sessionId,
+    'subagents',
+    `agent-${agentId}.jsonl`
+  );
+}
+
 /**
  * Loads tool calls executed inside a subagent from SDK sidechain logs.
  *
@@ -260,18 +280,8 @@ export async function loadSubagentToolCalls(
   sessionId: string,
   agentId: string
 ): Promise<ToolCallInfo[]> {
-  if (!isValidSessionId(sessionId) || !isValidAgentId(agentId)) {
-    return [];
-  }
-
-  const encodedVault = encodeVaultPathForSDK(vaultPath);
-  const subagentFilePath = path.join(
-    getSDKProjectsPath(),
-    encodedVault,
-    sessionId,
-    'subagents',
-    `agent-${agentId}.jsonl`
-  );
+  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId);
+  if (!subagentFilePath) return [];
 
   try {
     if (!existsSync(subagentFilePath)) return [];
@@ -301,6 +311,27 @@ export async function loadSubagentToolCalls(
     return buildToolCallsFromSubagentEvents(events);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Loads the final textual result produced by a subagent from its sidecar JSONL.
+ * Prefers the latest assistant text block; falls back to a top-level result field.
+ */
+export async function loadSubagentFinalResult(
+  vaultPath: string,
+  sessionId: string,
+  agentId: string
+): Promise<string | null> {
+  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId);
+  if (!subagentFilePath) return null;
+
+  try {
+    if (!existsSync(subagentFilePath)) return null;
+    const content = await fs.readFile(subagentFilePath, 'utf-8');
+    return extractFinalResultFromSubagentJsonl(content);
+  } catch {
+    return null;
   }
 }
 
@@ -646,7 +677,6 @@ function collectStructuredPatchResults(sdkMessages: SDKNativeMessage[]): Map<str
 interface AsyncSubagentResult {
   result: string;
   status: string;
-  summary?: string;
 }
 
 /**
@@ -654,7 +684,7 @@ interface AsyncSubagentResult {
  *
  * The SDK stores a `queue-operation` entry with `operation: 'enqueue'` and a `content`
  * field containing `<task-notification>` XML when a background agent completes.
- * The XML includes `<task-id>`, `<status>`, `<summary>`, and `<result>` tags.
+ * The XML includes `<task-id>`, `<status>`, and `<result>` tags.
  *
  * @returns Map keyed by task-id (agentId) → full result + status
  */
@@ -674,12 +704,9 @@ export function collectAsyncSubagentResults(
     const result = extractXmlTag(sdkMsg.content, 'result');
     if (!taskId || !result) continue;
 
-    const summary = extractXmlTag(sdkMsg.content, 'summary') ?? undefined;
-
     results.set(taskId, {
       result,
       status: status ?? 'completed',
-      summary,
     });
   }
 

@@ -7,6 +7,7 @@ import type {
   SubagentMode,
   ToolCallInfo,
 } from '../../../core/types';
+import { extractFinalResultFromSubagentJsonl } from '../../../utils/subagentJsonl';
 import {
   addSubagentToolCall,
   type AsyncSubagentState,
@@ -284,10 +285,6 @@ export class SubagentManager {
   // Async Subagent Lifecycle
   // ============================================
 
-  public isAsyncTask(taskInput: Record<string, unknown>): boolean {
-    return taskInput.run_in_background === true;
-  }
-
   public handleTaskToolResult(
     taskToolId: string,
     result: string,
@@ -390,10 +387,6 @@ export class SubagentManager {
     return this.outputToolIdToAgentId.has(toolId);
   }
 
-  public getByAgentId(agentId: string): SubagentInfo | undefined {
-    return this.activeAsyncSubagents.get(agentId);
-  }
-
   public getByTaskId(taskToolId: string): SubagentInfo | undefined {
     const pending = this.pendingAsyncSubagents.get(taskToolId);
     if (pending) return pending;
@@ -404,10 +397,6 @@ export class SubagentManager {
     }
 
     return undefined;
-  }
-
-  public getAsyncDomState(taskToolId: string): AsyncSubagentState | undefined {
-    return this.asyncDomStates.get(taskToolId);
   }
 
   /**
@@ -467,20 +456,6 @@ export class SubagentManager {
     this.taskIdToAgentId.clear();
     this.outputToolIdToAgentId.clear();
     this.asyncDomStates.clear();
-  }
-
-  public getAllActive(): SubagentInfo[] {
-    return [
-      ...this.pendingAsyncSubagents.values(),
-      ...this.activeAsyncSubagents.values(),
-    ];
-  }
-
-  public hasActiveAsync(): boolean {
-    return (
-      this.pendingAsyncSubagents.size > 0 ||
-      this.activeAsyncSubagents.size > 0
-    );
   }
 
   // ============================================
@@ -1063,7 +1038,7 @@ export class SubagentManager {
   }
 
   private extractResultFromOutputJsonl(outputContent: string): string | null {
-    const inlineResult = this.extractAssistantResultFromJsonl(outputContent);
+    const inlineResult = extractFinalResultFromSubagentJsonl(outputContent);
     if (inlineResult) {
       return inlineResult;
     }
@@ -1078,50 +1053,7 @@ export class SubagentManager {
       return null;
     }
 
-    return this.extractAssistantResultFromJsonl(fullOutput);
-  }
-
-  private extractAssistantResultFromJsonl(content: string): string | null {
-    const lines = content
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && line.startsWith('{'));
-
-    let lastAssistantText: string | null = null;
-    let lastResultText: string | null = null;
-
-    for (const line of lines) {
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-
-      if (typeof parsed.result === 'string' && parsed.result.trim().length > 0) {
-        lastResultText = parsed.result.trim();
-      }
-
-      const message = parsed.message as Record<string, unknown> | undefined;
-      const role = message?.role;
-      const contentBlocks = message?.content;
-      if (!Array.isArray(contentBlocks)) continue;
-
-      for (const block of contentBlocks) {
-        if (
-          role === 'assistant' &&
-          block &&
-          typeof block === 'object' &&
-          block.type === 'text' &&
-          typeof block.text === 'string' &&
-          block.text.trim().length > 0
-        ) {
-          lastAssistantText = block.text.trim();
-        }
-      }
-    }
-
-    return lastAssistantText ?? lastResultText;
+    return extractFinalResultFromSubagentJsonl(fullOutput);
   }
 
   private extractFullOutputPath(content: string): string | null {

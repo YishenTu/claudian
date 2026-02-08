@@ -941,6 +941,67 @@ describe('ClaudianPlugin', () => {
       loadSpy.mockRestore();
     });
 
+    it('prefers richer SDK task result over stale cached subagent result', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-subagent-merge',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-merge',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-merge-1',
+                name: 'Task',
+                input: { description: 'Do sub task', run_in_background: true },
+                status: 'completed',
+                result: 'Full SDK result from queue-operation',
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-1', mode: 'async' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-merge-1': {
+            id: 'task-merge-1',
+            description: 'Recovered subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Short stale result',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-merge-1');
+
+      expect(loadSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'session-subagent-merge',
+        undefined
+      );
+      expect(taskTool?.result).toBe('Full SDK result from queue-operation');
+      expect(taskTool?.subagent?.result).toBe('Full SDK result from queue-operation');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('restores async subagent data and mode when Task tool exists but async block is missing', async () => {
       await plugin.onload();
 

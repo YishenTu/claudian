@@ -62,12 +62,6 @@ describe('SubagentManager', () => {
   // ============================================
 
   describe('async lifecycle', () => {
-    it('detects async task flag correctly', () => {
-      const { manager } = createManager();
-      expect(manager.isAsyncTask({ run_in_background: true })).toBe(true);
-      expect(manager.isAsyncTask({ run_in_background: false })).toBe(false);
-    });
-
     it('transitions from pending to running when agent_id is parsed', () => {
       const { manager, updates } = createManager();
       const parentEl = createMockEl();
@@ -77,7 +71,7 @@ describe('SubagentManager', () => {
 
       manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-123' }));
 
-      const running = manager.getByAgentId('agent-123');
+      const running = manager.getByTaskId('task-1');
       expect(running?.asyncStatus).toBe('running');
       expect(running?.agentId).toBe('agent-123');
       expect(updates[updates.length - 1].agentId).toBe('agent-123');
@@ -96,7 +90,7 @@ describe('SubagentManager', () => {
         { data: { agent_id: 'agent-structured-1' } }
       );
 
-      const running = manager.getByAgentId('agent-structured-1');
+      const running = manager.getByTaskId('task-structured');
       expect(running?.asyncStatus).toBe('running');
       expect(running?.agentId).toBe('agent-structured-1');
       expect(updates[updates.length - 1].agentId).toBe('agent-structured-1');
@@ -152,8 +146,7 @@ describe('SubagentManager', () => {
       );
 
       expect(stillRunning?.asyncStatus).toBe('running');
-      expect(manager.getByAgentId('agent-abc')?.asyncStatus).toBe('running');
-      expect(manager.hasActiveAsync()).toBe(true);
+      expect(manager.getByTaskId('task-running')?.asyncStatus).toBe('running');
     });
 
     it('ignores unrelated tool_result when async subagent is active', () => {
@@ -170,8 +163,7 @@ describe('SubagentManager', () => {
       );
 
       expect(unrelated).toBeUndefined();
-      expect(manager.getByAgentId('agent-standalone')?.asyncStatus).toBe('running');
-      expect(manager.hasActiveAsync()).toBe(true);
+      expect(manager.getByTaskId('task-standalone')?.asyncStatus).toBe('running');
     });
 
     it('finalizes to completed when AgentOutputTool succeeds and extracts result', () => {
@@ -202,8 +194,7 @@ describe('SubagentManager', () => {
       expect(completed?.asyncStatus).toBe('completed');
       expect(completed?.result).toBe('done!');
       expect(updates[updates.length - 1].asyncStatus).toBe('completed');
-      expect(manager.getByAgentId('agent-complete')).toBeUndefined();
-      expect(manager.hasActiveAsync()).toBe(false);
+      expect(manager.getByTaskId('task-complete')).toBeUndefined();
     });
 
     it('finalizes to error when AgentOutputTool result has isError=true', () => {
@@ -232,8 +223,7 @@ describe('SubagentManager', () => {
       expect(errored?.status).toBe('error');
       expect(errored?.result).toBe('agent crashed');
       expect(updates[updates.length - 1].asyncStatus).toBe('error');
-      expect(manager.getByAgentId('agent-err')).toBeUndefined();
-      expect(manager.hasActiveAsync()).toBe(false);
+      expect(manager.getByTaskId('task-err')).toBeUndefined();
     });
 
     it('marks pending and running async subagents as orphaned', () => {
@@ -251,7 +241,8 @@ describe('SubagentManager', () => {
         expect(subagent.asyncStatus).toBe('orphaned');
         expect(subagent.result).toContain('Conversation ended');
       });
-      expect(manager.hasActiveAsync()).toBe(false);
+      expect(manager.getByTaskId('pending-task')).toBeUndefined();
+      expect(manager.getByTaskId('running-task')).toBeUndefined();
     });
 
     it('ignores Task results for unknown tasks', () => {
@@ -338,7 +329,7 @@ describe('SubagentManager', () => {
       });
 
       // Manually mark completed to force invalid transition
-      const sub = manager.getByAgentId('agent-done')!;
+      const sub = manager.getByTaskId('task-done')!;
       sub.asyncStatus = 'completed';
 
       const res = manager.handleAgentOutputToolResult('output-any', '{"retrieval_status":"success"}', false);
@@ -835,8 +826,8 @@ Only this is the final result.
       manager.handleTaskToolUse('task-1', { description: 'Bg', run_in_background: true }, parentEl);
 
       manager.handleTaskToolResult('task-1', JSON.stringify({ agentId: 'camel' }));
-      expect(manager.getByAgentId('camel')).toBeDefined();
-      expect(manager.getByAgentId('camel')?.agentId).toBe('camel');
+      expect(manager.getByTaskId('task-1')).toBeDefined();
+      expect(manager.getByTaskId('task-1')?.agentId).toBe('camel');
     });
 
     it('parses nested data.agent_id from task result', () => {
@@ -845,7 +836,7 @@ Only this is the final result.
       manager.handleTaskToolUse('task-1', { description: 'Bg', run_in_background: true }, parentEl);
 
       manager.handleTaskToolResult('task-1', JSON.stringify({ data: { agent_id: 'nested' } }));
-      expect(manager.getByAgentId('nested')).toBeDefined();
+      expect(manager.getByTaskId('task-1')?.agentId).toBe('nested');
     });
 
     it('parses id field from task result', () => {
@@ -854,7 +845,7 @@ Only this is the final result.
       manager.handleTaskToolUse('task-1', { description: 'Bg', run_in_background: true }, parentEl);
 
       manager.handleTaskToolResult('task-1', JSON.stringify({ id: 'idfield' }));
-      expect(manager.getByAgentId('idfield')).toBeDefined();
+      expect(manager.getByTaskId('task-1')?.agentId).toBe('idfield');
     });
 
     it('parses unicode-escaped agent_id from task result', () => {
@@ -863,7 +854,7 @@ Only this is the final result.
       manager.handleTaskToolUse('task-1', { description: 'Bg', run_in_background: true }, parentEl);
 
       manager.handleTaskToolResult('task-1', '{"agent\\u005fid":"escaped"}');
-      expect(manager.getByAgentId('escaped')).toBeDefined();
+      expect(manager.getByTaskId('task-1')?.agentId).toBe('escaped');
     });
 
     it('parses nested unicode-escaped agent_id from task result', () => {
@@ -872,7 +863,7 @@ Only this is the final result.
       manager.handleTaskToolUse('task-1', { description: 'Bg', run_in_background: true }, parentEl);
 
       manager.handleTaskToolResult('task-1', '{"data": {"agent\\u005fid": "nested2"}}');
-      expect(manager.getByAgentId('nested2')).toBeDefined();
+      expect(manager.getByTaskId('task-1')?.agentId).toBe('nested2');
     });
 
     it('transitions to error when no recognizable agent ID in task result', () => {
@@ -1029,9 +1020,7 @@ Only this is the final result.
       // Update prompt via streaming input
       manager.handleTaskToolUse('task-1', { prompt: 'full prompt text' }, parentEl);
 
-      // Both DOM state info and canonical info should have updated prompt
-      const domState = manager.getAsyncDomState('task-1');
-      expect(domState?.info.prompt).toBe('full prompt text');
+      // Canonical info should have updated prompt
       expect(manager.getByTaskId('task-1')?.prompt).toBe('full prompt text');
     });
 
@@ -1398,8 +1387,8 @@ Only this is the final result.
       manager.handleTaskToolUse('task-async', { description: 'Background', run_in_background: true }, parentEl);
 
       manager.clear();
-      expect(manager.getAllActive()).toHaveLength(0);
-      expect(manager.hasActiveAsync()).toBe(false);
+      expect(manager.getByTaskId('task-async')).toBeUndefined();
+      expect(manager.isPendingAsyncTask('task-async')).toBe(false);
     });
 
     it('updates callback via setCallback', () => {

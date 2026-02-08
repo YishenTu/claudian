@@ -723,6 +723,17 @@ export default class ClaudianPlugin extends Plugin {
    */
   private applySubagentData(messages: ChatMessage[], subagentData: Record<string, SubagentInfo>): void {
     const attachedSubagentIds = new Set<string>();
+    const chooseRicherResult = (sdkResult?: string, cachedResult?: string): string | undefined => {
+      const sdkText = typeof sdkResult === 'string' ? sdkResult.trim() : '';
+      const cachedText = typeof cachedResult === 'string' ? cachedResult.trim() : '';
+
+      if (sdkText.length === 0 && cachedText.length === 0) return undefined;
+      if (sdkText.length === 0) return cachedResult;
+      if (cachedText.length === 0) return sdkResult;
+
+      return sdkText.length >= cachedText.length ? sdkResult : cachedResult;
+    };
+
     const ensureTaskToolCall = (
       msg: ChatMessage,
       subagentId: string,
@@ -755,8 +766,10 @@ export default class ClaudianPlugin extends Plugin {
       if (!taskToolCall.input.prompt) taskToolCall.input.prompt = subagent.prompt || '';
       if (subagent.mode === 'async') taskToolCall.input.run_in_background = true;
       taskToolCall.status = subagent.status;
-      if (subagent.result !== undefined) {
-        taskToolCall.result = subagent.result;
+      const mergedResult = chooseRicherResult(taskToolCall.result, subagent.result);
+      if (mergedResult !== undefined) {
+        taskToolCall.result = mergedResult;
+        subagent.result = mergedResult;
       }
       taskToolCall.subagent = subagent;
       return taskToolCall;

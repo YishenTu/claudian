@@ -7,7 +7,7 @@ import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
 import { getVaultPath } from '../../../utils/path';
-import { loadSubagentToolCalls } from '../../../utils/sdkSession';
+import { loadSubagentFinalResult, loadSubagentToolCalls } from '../../../utils/sdkSession';
 import { FLAVOR_TEXTS } from '../constants';
 import {
   appendThinkingContent,
@@ -40,6 +40,8 @@ export interface StreamControllerDeps {
 }
 
 export class StreamController {
+  private static readonly ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS = [200, 600, 1500] as const;
+
   private deps: StreamControllerDeps;
 
   constructor(deps: StreamControllerDeps) {
@@ -674,7 +676,6 @@ export class StreamController {
     if (!subagent) return;
     if (subagent.mode !== 'async') return;
     if (!subagent.agentId) return;
-    if (subagent.toolCalls?.length) return;
 
     const asyncStatus = subagent.asyncStatus ?? subagent.status;
     if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
@@ -685,19 +686,100 @@ export class StreamController {
     const vaultPath = getVaultPath(this.deps.plugin.app);
     if (!vaultPath) return;
 
-    const recoveredToolCalls = await loadSubagentToolCalls(
+    const { hasHydrated, finalResultHydrated } = await this.tryHydrateAsyncSubagent(
+      subagent,
       vaultPath,
       sessionId,
-      subagent.agentId
+      true
     );
-    if (recoveredToolCalls.length === 0) return;
 
-    subagent.toolCalls = recoveredToolCalls.map((toolCall) => ({
-      ...toolCall,
-      input: { ...toolCall.input },
-    }));
+    if (hasHydrated) {
+      this.deps.subagentManager.refreshAsyncSubagent(subagent);
+    }
 
-    this.deps.subagentManager.refreshAsyncSubagent(subagent);
+    if (!finalResultHydrated) {
+      this.scheduleAsyncSubagentResultRetry(subagent, vaultPath, sessionId, 0);
+    }
+  }
+
+  private async tryHydrateAsyncSubagent(
+    subagent: SubagentInfo,
+    vaultPath: string,
+    sessionId: string,
+    hydrateToolCalls: boolean
+  ): Promise<{ hasHydrated: boolean; finalResultHydrated: boolean }> {
+    let hasHydrated = false;
+    let finalResultHydrated = false;
+
+    if (hydrateToolCalls && !subagent.toolCalls?.length) {
+      const recoveredToolCalls = await loadSubagentToolCalls(
+        vaultPath,
+        sessionId,
+        subagent.agentId || ''
+      );
+      if (recoveredToolCalls.length > 0) {
+        subagent.toolCalls = recoveredToolCalls.map((toolCall) => ({
+          ...toolCall,
+          input: { ...toolCall.input },
+        }));
+        hasHydrated = true;
+      }
+    }
+
+    const recoveredFinalResult = await loadSubagentFinalResult(
+      vaultPath,
+      sessionId,
+      subagent.agentId || ''
+    );
+    if (recoveredFinalResult && recoveredFinalResult.trim().length > 0) {
+      finalResultHydrated = true;
+      if (recoveredFinalResult !== subagent.result) {
+        subagent.result = recoveredFinalResult;
+        hasHydrated = true;
+      }
+    }
+
+    return { hasHydrated, finalResultHydrated };
+  }
+
+  private scheduleAsyncSubagentResultRetry(
+    subagent: SubagentInfo,
+    vaultPath: string,
+    sessionId: string,
+    attempt: number
+  ): void {
+    if (!subagent.agentId) return;
+    if (attempt >= StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS.length) return;
+
+    const delay = StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
+    setTimeout(() => {
+      void this.retryAsyncSubagentResult(subagent, vaultPath, sessionId, attempt);
+    }, delay);
+  }
+
+  private async retryAsyncSubagentResult(
+    subagent: SubagentInfo,
+    vaultPath: string,
+    sessionId: string,
+    attempt: number
+  ): Promise<void> {
+    if (!subagent.agentId) return;
+    const asyncStatus = subagent.asyncStatus ?? subagent.status;
+    if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
+
+    const { hasHydrated, finalResultHydrated } = await this.tryHydrateAsyncSubagent(
+      subagent,
+      vaultPath,
+      sessionId,
+      false
+    );
+    if (hasHydrated) {
+      this.deps.subagentManager.refreshAsyncSubagent(subagent);
+    }
+
+    if (!finalResultHydrated) {
+      this.scheduleAsyncSubagentResultRetry(subagent, vaultPath, sessionId, attempt + 1);
+    }
   }
 
   /** Callback from SubagentManager when async state changes. Updates messages only (DOM handled by manager). */
