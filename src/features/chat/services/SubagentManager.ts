@@ -220,12 +220,14 @@ export class SubagentManager {
   public finalizeSyncSubagent(
     toolId: string,
     result: string,
-    isError: boolean
+    isError: boolean,
+    toolUseResult?: unknown
   ): SubagentInfo | null {
     const subagentState = this.syncSubagents.get(toolId);
     if (!subagentState) return null;
 
-    finalizeSubagentBlock(subagentState, result, isError);
+    const extractedResult = this.extractAgentResult(result, '', toolUseResult);
+    finalizeSubagentBlock(subagentState, extractedResult, isError);
     this.syncSubagents.delete(toolId);
 
     return subagentState.info;

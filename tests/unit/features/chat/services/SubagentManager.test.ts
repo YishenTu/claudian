@@ -1096,6 +1096,33 @@ Only this is the final result.
       expect(manager.getSyncSubagent('task-1')).toBeUndefined();
     });
 
+    it('extracts result from SDK toolUseResult.content for sync subagent', () => {
+      const { finalizeSubagentBlock } = jest.requireMock('@/features/chat/rendering');
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-sdk', { run_in_background: false }, parentEl);
+
+      const sdkToolUseResult = {
+        status: 'completed',
+        content: [
+          { type: 'text', text: 'Full sync subagent result with multiple lines.\n\nSecond paragraph.' },
+          { type: 'text', text: 'agentId: agent-sync\n<usage>total_tokens: 500</usage>' },
+        ],
+        agentId: 'agent-sync',
+      };
+
+      const info = manager.finalizeSyncSubagent('task-sdk', '{}', false, sdkToolUseResult);
+
+      expect(info).not.toBeNull();
+      // Verify the extracted result (first content block) was passed to the renderer
+      expect(finalizeSubagentBlock).toHaveBeenCalledWith(
+        expect.anything(),
+        'Full sync subagent result with multiple lines.\n\nSecond paragraph.',
+        false
+      );
+    });
+
     it('returns null when finalizing nonexistent subagent', () => {
       const { manager } = createManager();
 

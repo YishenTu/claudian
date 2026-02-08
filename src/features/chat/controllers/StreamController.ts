@@ -570,23 +570,25 @@ export class StreamController {
 
   /** Finalizes a sync subagent when its Task tool_result is received. */
   private finalizeSubagent(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown },
     msg: ChatMessage
   ): void {
     const isError = chunk.isError || false;
-    const finalized = this.deps.subagentManager.finalizeSyncSubagent(chunk.id, chunk.content, isError);
+    const finalized = this.deps.subagentManager.finalizeSyncSubagent(
+      chunk.id, chunk.content, isError, chunk.toolUseResult
+    );
+
+    const extractedResult = finalized?.result ?? chunk.content;
 
     const taskToolCall = this.ensureTaskToolCall(msg, chunk.id);
     taskToolCall.status = isError ? 'error' : 'completed';
-    taskToolCall.result = chunk.content;
+    taskToolCall.result = extractedResult;
     if (taskToolCall.subagent) {
       taskToolCall.subagent.status = isError ? 'error' : 'completed';
-      taskToolCall.subagent.result = chunk.content;
+      taskToolCall.subagent.result = extractedResult;
     }
 
     if (finalized) {
-      finalized.status = isError ? 'error' : 'completed';
-      finalized.result = chunk.content;
       this.applySubagentToTaskToolCall(taskToolCall, finalized);
     }
 

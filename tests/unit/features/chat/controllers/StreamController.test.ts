@@ -1415,7 +1415,8 @@ describe('StreamController - Text Content', () => {
       expect(deps.subagentManager.finalizeSyncSubagent).toHaveBeenCalledWith(
         'task-1',
         'Task completed successfully',
-        false
+        false,
+        undefined
       );
 
       expect(msg.toolCalls![0].status).toBe('completed');
