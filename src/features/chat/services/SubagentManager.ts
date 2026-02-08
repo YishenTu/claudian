@@ -100,11 +100,16 @@ export class SubagentManager {
       if (currentContentEl) {
         pending.parentEl = currentContentEl;
       }
-      const result = this.renderPendingTask(taskToolId, currentContentEl);
-      if (result) {
-        return result.mode === 'sync'
-          ? { action: 'created_sync', subagentState: result.subagentState }
-          : { action: 'created_async', info: result.info, domState: result.domState };
+
+      // Do not lock mode before run_in_background is explicitly known.
+      // Sync fallback is handled when child chunks/tool_result confirm sync.
+      if (this.resolveTaskMode(pending.toolCall.input)) {
+        const result = this.renderPendingTask(taskToolId, currentContentEl);
+        if (result) {
+          return result.mode === 'sync'
+            ? { action: 'created_sync', subagentState: result.subagentState }
+            : { action: 'created_async', info: result.info, domState: result.domState };
+        }
       }
       return { action: 'buffered' };
     }
@@ -122,8 +127,21 @@ export class SubagentManager {
       return { action: 'buffered' };
     }
 
+    const mode = this.resolveTaskMode(taskInput);
+    if (!mode) {
+      const toolCall: ToolCallInfo = {
+        id: taskToolId,
+        name: 'Task',
+        input: taskInput || {},
+        status: 'running',
+        isExpanded: false,
+      };
+      this.pendingTasks.set(taskToolId, { toolCall, parentEl: currentContentEl });
+      return { action: 'buffered' };
+    }
+
     this._spawnedThisStream++;
-    if (taskInput.run_in_background === true) {
+    if (mode === 'async') {
       return this.createAsyncTask(taskToolId, taskInput, currentContentEl);
     }
     return this.createSyncTask(taskToolId, taskInput, currentContentEl);
@@ -157,6 +175,52 @@ export class SubagentManager {
 
     try {
       if (input.run_in_background === true) {
+        const result = this.createAsyncTask(pending.toolCall.id, input, targetEl);
+        if (result.action === 'created_async') {
+          this._spawnedThisStream++;
+          return { mode: 'async', info: result.info, domState: result.domState };
+        }
+      } else {
+        const result = this.createSyncTask(pending.toolCall.id, input, targetEl);
+        if (result.action === 'created_sync') {
+          this._spawnedThisStream++;
+          return { mode: 'sync', subagentState: result.subagentState };
+        }
+      }
+    } catch {
+      // Non-fatal: task appears incomplete but doesn't crash the stream
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolves a pending Task when its own tool_result arrives.
+   * If mode is still unknown, infer async from task result shape (agent_id/agentId),
+   * otherwise fall back to sync so it never remains pending indefinitely.
+   */
+  public renderPendingTaskFromTaskResult(
+    toolId: string,
+    taskResult: string,
+    isError: boolean,
+    parentElOverride?: HTMLElement | null,
+    taskToolUseResult?: unknown
+  ): RenderPendingResult | null {
+    const pending = this.pendingTasks.get(toolId);
+    if (!pending) return null;
+
+    const input = pending.toolCall.input;
+    const targetEl = parentElOverride ?? pending.parentEl;
+    if (!targetEl) return null;
+
+    const explicitMode = this.resolveTaskMode(input);
+    const inferredMode = explicitMode
+      ?? this.inferModeFromTaskResult(taskResult, isError, taskToolUseResult);
+
+    this.pendingTasks.delete(toolId);
+
+    try {
+      if (inferredMode === 'async') {
         const result = this.createAsyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_async') {
           this._spawnedThisStream++;
@@ -224,7 +288,12 @@ export class SubagentManager {
     return taskInput.run_in_background === true;
   }
 
-  public handleTaskToolResult(taskToolId: string, result: string, isError?: boolean): void {
+  public handleTaskToolResult(
+    taskToolId: string,
+    result: string,
+    isError?: boolean,
+    toolUseResult?: unknown
+  ): void {
     const subagent = this.pendingAsyncSubagents.get(taskToolId);
     if (!subagent) return;
 
@@ -233,7 +302,7 @@ export class SubagentManager {
       return;
     }
 
-    const agentId = this.parseAgentId(result);
+    const agentId = this.extractAgentIdFromTaskToolUseResult(toolUseResult) ?? this.parseAgentId(result);
 
     if (!agentId) {
       const truncatedResult = result.length > 100 ? result.substring(0, 100) + '...' : result;
@@ -507,6 +576,135 @@ export class SubagentManager {
     }
   }
 
+  private resolveTaskMode(taskInput: Record<string, unknown>): 'sync' | 'async' | null {
+    if (!Object.prototype.hasOwnProperty.call(taskInput, 'run_in_background')) {
+      return null;
+    }
+    if (taskInput.run_in_background === true) {
+      return 'async';
+    }
+    if (taskInput.run_in_background === false) {
+      return 'sync';
+    }
+    return null;
+  }
+
+  private inferModeFromTaskResult(
+    taskResult: string,
+    isError: boolean,
+    taskToolUseResult?: unknown
+  ): 'sync' | 'async' {
+    if (isError) {
+      return 'sync';
+    }
+    if (this.hasAsyncMarkerInToolUseResult(taskToolUseResult)) {
+      return 'async';
+    }
+    // Use strict async markers only; avoid broad ID heuristics.
+    return this.parseAgentIdStrict(taskResult) ? 'async' : 'sync';
+  }
+
+  private parseAgentIdStrict(result: string): string | null {
+    const fromRaw = this.extractAgentIdFromString(result);
+    if (fromRaw) return fromRaw;
+
+    const payload = this.unwrapTextPayload(result);
+    const fromPayload = this.extractAgentIdFromString(payload);
+    if (fromPayload) return fromPayload;
+
+    try {
+      const parsed = JSON.parse(result);
+
+      if (Array.isArray(parsed)) {
+        for (const block of parsed) {
+          if (block && typeof block === 'object' && typeof (block as Record<string, unknown>).text === 'string') {
+            const fromText = this.extractAgentIdFromString((block as Record<string, unknown>).text as string);
+            if (fromText) return fromText;
+          }
+        }
+      }
+
+      const agentId = parsed.agent_id || parsed.agentId || parsed?.data?.agent_id;
+      if (typeof agentId === 'string' && agentId.length > 0) {
+        return agentId;
+      }
+    } catch {
+      // Not JSON
+    }
+
+    return null;
+  }
+
+  private extractAgentIdFromString(value: string): string | null {
+    const regexPatterns = [
+      /"agent_id"\s*:\s*"([^"]+)"/,
+      /"agentId"\s*:\s*"([^"]+)"/,
+      /agent_id[=:]\s*"?([a-zA-Z0-9_-]+)"?/i,
+      /agentId[=:]\s*"?([a-zA-Z0-9_-]+)"?/i,
+    ];
+
+    for (const pattern of regexPatterns) {
+      const match = value.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }
+
+  private hasAsyncMarkerInToolUseResult(taskToolUseResult?: unknown): boolean {
+    if (!taskToolUseResult || typeof taskToolUseResult !== 'object') {
+      return false;
+    }
+
+    const record = taskToolUseResult as Record<string, unknown>;
+    if (record.isAsync === true) {
+      return true;
+    }
+
+    const directAgentId = record.agentId ?? record.agent_id;
+    if (typeof directAgentId === 'string' && directAgentId.length > 0) {
+      return true;
+    }
+
+    const data = record.data;
+    if (data && typeof data === 'object') {
+      const nestedRecord = data as Record<string, unknown>;
+      const nestedAgentId = nestedRecord.agent_id ?? nestedRecord.agentId;
+      if (typeof nestedAgentId === 'string' && nestedAgentId.length > 0) {
+        return true;
+      }
+    }
+
+    if (typeof record.status === 'string' && record.status.toLowerCase() === 'async_launched') {
+      return true;
+    }
+
+    if (typeof record.outputFile === 'string' && record.outputFile.length > 0) {
+      return true;
+    }
+
+    if (Array.isArray(record.content)) {
+      for (const block of record.content) {
+        if (block && typeof block === 'object') {
+          const text = (block as Record<string, unknown>).text;
+          if (typeof text === 'string' && this.extractAgentIdFromString(text)) {
+            return true;
+          }
+        } else if (typeof block === 'string' && this.extractAgentIdFromString(block)) {
+          return true;
+        }
+      }
+    }
+
+    if (typeof record.content === 'string' && this.extractAgentIdFromString(record.content)) {
+      return true;
+    }
+
+    return false;
+  }
+
   // ============================================
   // Private: Async DOM State Updates
   // ============================================
@@ -755,6 +953,50 @@ export class SubagentManager {
       }
     } catch {
       // Not JSON
+    }
+
+    return null;
+  }
+
+  private extractAgentIdFromTaskToolUseResult(toolUseResult: unknown): string | null {
+    if (!toolUseResult || typeof toolUseResult !== 'object') {
+      return null;
+    }
+
+    const record = toolUseResult as Record<string, unknown>;
+    const directAgentId = record.agent_id ?? record.agentId;
+    if (typeof directAgentId === 'string' && directAgentId.length > 0) {
+      return directAgentId;
+    }
+
+    const data = record.data;
+    if (data && typeof data === 'object') {
+      const nested = data as Record<string, unknown>;
+      const nestedAgentId = nested.agent_id ?? nested.agentId;
+      if (typeof nestedAgentId === 'string' && nestedAgentId.length > 0) {
+        return nestedAgentId;
+      }
+    }
+
+    if (Array.isArray(record.content)) {
+      for (const block of record.content) {
+        if (typeof block === 'string') {
+          const extracted = this.extractAgentIdFromString(block);
+          if (extracted) return extracted;
+          continue;
+        }
+        if (!block || typeof block !== 'object') {
+          continue;
+        }
+        const blockRecord = block as Record<string, unknown>;
+        if (typeof blockRecord.text === 'string') {
+          const extracted = this.extractAgentIdFromString(blockRecord.text);
+          if (extracted) return extracted;
+        }
+      }
+    } else if (typeof record.content === 'string') {
+      const extracted = this.extractAgentIdFromString(record.content);
+      if (extracted) return extracted;
     }
 
     return null;

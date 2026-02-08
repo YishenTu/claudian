@@ -94,6 +94,7 @@ function createMockDeps(): StreamControllerDeps {
       refreshAsyncSubagent: jest.fn(),
       hasPendingTask: jest.fn().mockReturnValue(false),
       renderPendingTask: jest.fn().mockReturnValue(null),
+      renderPendingTaskFromTaskResult: jest.fn().mockReturnValue(null),
       getSyncSubagent: jest.fn().mockReturnValue(undefined),
       addSyncToolCall: jest.fn(),
       updateSyncToolResult: jest.fn(),
@@ -1173,16 +1174,106 @@ describe('StreamController - Text Content', () => {
 
       // Configure manager: pending task exists but render returns null
       (deps.subagentManager.hasPendingTask as jest.Mock).mockReturnValueOnce(true);
-      (deps.subagentManager.renderPendingTask as jest.Mock).mockReturnValueOnce(null);
+      (deps.subagentManager.renderPendingTaskFromTaskResult as jest.Mock).mockReturnValueOnce(null);
 
-      // Tool result arrives - renderPendingTask returns null but shouldn't crash
+      // Tool result arrives - pending resolver returns null but stream should continue
       await controller.handleStreamChunk(
         { type: 'tool_result', id: 'task-1', content: 'Task completed' },
         msg
       );
 
       // Should not throw - manager handled errors internally
-      expect(deps.subagentManager.renderPendingTask).toHaveBeenCalledWith('task-1', deps.state.currentContentEl);
+      expect(deps.subagentManager.renderPendingTaskFromTaskResult).toHaveBeenCalledWith(
+        'task-1',
+        'Task completed',
+        false,
+        deps.state.currentContentEl,
+        undefined
+      );
+    });
+
+    it('should resolve pending Task as async via tool_result and continue async lifecycle', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something' } },
+        msg
+      );
+
+      (deps.subagentManager.hasPendingTask as jest.Mock).mockReturnValueOnce(true);
+      (deps.subagentManager.renderPendingTaskFromTaskResult as jest.Mock).mockReturnValueOnce({
+        mode: 'async',
+        info: {
+          id: 'task-1',
+          description: 'Do something',
+          prompt: 'Do something',
+          mode: 'async',
+          isExpanded: false,
+          status: 'running',
+          toolCalls: [],
+          asyncStatus: 'pending',
+        },
+      });
+      (deps.subagentManager.isPendingAsyncTask as jest.Mock).mockReturnValueOnce(true);
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'task-1', content: '{"agent_id":"agent-1"}' },
+        msg
+      );
+
+      expect(deps.subagentManager.renderPendingTaskFromTaskResult).toHaveBeenCalledWith(
+        'task-1',
+        '{"agent_id":"agent-1"}',
+        false,
+        deps.state.currentContentEl,
+        undefined
+      );
+      expect(deps.subagentManager.handleTaskToolResult).toHaveBeenCalledWith(
+        'task-1',
+        '{"agent_id":"agent-1"}',
+        undefined,
+        undefined
+      );
+      expect(msg.contentBlocks).toContainEqual({
+        type: 'subagent',
+        subagentId: 'task-1',
+        mode: 'async',
+      });
+      expect(msg.toolCalls).toContainEqual(
+        expect.objectContaining({
+          id: 'task-1',
+          name: TOOL_TASK,
+          subagent: expect.objectContaining({ mode: 'async' }),
+        })
+      );
+    });
+
+    it('should pass task toolUseResult into pending Task resolver', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something' } },
+        msg
+      );
+
+      const toolUseResult = { isAsync: true, status: 'async_launched', agentId: 'agent-1' };
+      (deps.subagentManager.hasPendingTask as jest.Mock).mockReturnValueOnce(true);
+      (deps.subagentManager.renderPendingTaskFromTaskResult as jest.Mock).mockReturnValueOnce(null);
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'task-1', content: 'Launching...', toolUseResult } as any,
+        msg
+      );
+
+      expect(deps.subagentManager.renderPendingTaskFromTaskResult).toHaveBeenCalledWith(
+        'task-1',
+        'Launching...',
+        false,
+        deps.state.currentContentEl,
+        toolUseResult
+      );
     });
   });
 
@@ -1442,11 +1533,31 @@ describe('StreamController - Text Content', () => {
       expect(deps.subagentManager.handleTaskToolResult).toHaveBeenCalledWith(
         'task-1',
         'Task started in background',
+        undefined,
         undefined
       );
 
       expect(updateToolCallResult).not.toHaveBeenCalled();
       expect(msg.toolCalls).toEqual([]);
+    });
+
+    it('passes structured toolUseResult through to async Task result handler', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+      (deps.subagentManager.isPendingAsyncTask as jest.Mock).mockReturnValueOnce(true);
+
+      const structured = { data: { agent_id: 'agent-from-structured' } };
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'task-1', content: 'Task started', toolUseResult: structured } as any,
+        msg
+      );
+
+      expect(deps.subagentManager.handleTaskToolResult).toHaveBeenCalledWith(
+        'task-1',
+        'Task started',
+        undefined,
+        structured
+      );
     });
   });
 

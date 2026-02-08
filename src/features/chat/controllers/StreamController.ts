@@ -312,9 +312,9 @@ export class StreamController {
   ): Promise<void> {
     const { state, subagentManager } = this.deps;
 
-    // Check if Task is still pending - render as sync before processing result
+    // Resolve pending Task before processing result.
     if (subagentManager.hasPendingTask(chunk.id)) {
-      this.renderPendingTaskViaManager(chunk.id, msg);
+      this.renderPendingTaskFromTaskResultViaManager(chunk, msg);
     }
 
     // Check if it's a sync subagent result
@@ -496,6 +496,27 @@ export class StreamController {
     }
   }
 
+  /** Resolves a pending Task when its own tool_result arrives. */
+  private renderPendingTaskFromTaskResultViaManager(
+    chunk: { id: string; content: string; isError?: boolean; toolUseResult?: unknown },
+    msg: ChatMessage
+  ): void {
+    const result = this.deps.subagentManager.renderPendingTaskFromTaskResult(
+      chunk.id,
+      chunk.content,
+      chunk.isError || false,
+      this.deps.state.currentContentEl,
+      chunk.toolUseResult
+    );
+    if (!result) return;
+
+    if (result.mode === 'sync') {
+      this.recordSubagentInMessage(msg, result.subagentState.info, chunk.id);
+    } else {
+      this.recordSubagentInMessage(msg, result.info, chunk.id, 'async');
+    }
+  }
+
   private recordSubagentInMessage(
     msg: ChatMessage,
     info: SubagentInfo,
@@ -619,14 +640,14 @@ export class StreamController {
   }
 
   private handleAsyncTaskToolResult(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean }
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown }
   ): boolean {
     const { subagentManager } = this.deps;
     if (!subagentManager.isPendingAsyncTask(chunk.id)) {
       return false;
     }
 
-    subagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError);
+    subagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError, chunk.toolUseResult);
     return true;
   }
 
