@@ -709,7 +709,7 @@ ${inlineOutput}
       const { manager } = createManager();
       setupLinkedAgentOutput(manager, 'task-1', 'agent-untrusted-output', 'out-1');
 
-      const fullOutputFile = join(process.cwd(), '.context', 'agent-untrusted.output');
+      const fullOutputFile = join(process.cwd(), 'agent-untrusted.output');
       const fullOutput = [
         JSON.stringify({
           type: 'assistant',
