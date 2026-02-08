@@ -7,6 +7,8 @@ import { ChatState } from '@/features/chat/state/ChatState';
 
 jest.mock('@/core/tools', () => {
   return {
+    extractResolvedAnswers: jest.fn().mockReturnValue(undefined),
+    extractResolvedAnswersFromResultText: jest.fn().mockReturnValue(undefined),
     parseTodoInput: jest.fn(),
   };
 });
@@ -30,7 +32,8 @@ jest.mock('@/features/chat/rendering', () => {
     finalizeSubagentBlock: jest.fn(),
     finalizeThinkingBlock: jest.fn().mockReturnValue(0),
     finalizeWriteEditBlock: jest.fn(),
-    getToolLabel: jest.fn().mockReturnValue('Tool'),
+    getToolName: jest.fn().mockReturnValue('Read'),
+    getToolSummary: jest.fn().mockReturnValue('file.md'),
     isBlockedToolResult: jest.fn().mockReturnValue(false),
     markAsyncSubagentOrphaned: jest.fn(),
     renderToolCall: jest.fn(),
@@ -40,6 +43,14 @@ jest.mock('@/features/chat/rendering', () => {
     updateWriteEditWithDiff: jest.fn(),
   };
 });
+
+jest.mock('@/utils/path', () => ({
+  getVaultPath: jest.fn().mockReturnValue('/test/vault'),
+}));
+
+jest.mock('@/utils/sdkSession', () => ({
+  loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
+}));
 
 function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
@@ -80,6 +91,7 @@ function createMockDeps(): StreamControllerDeps {
       handleAgentOutputToolUse: jest.fn(),
       handleTaskToolUse: jest.fn().mockReturnValue({ action: 'buffered' }),
       handleTaskToolResult: jest.fn(),
+      refreshAsyncSubagent: jest.fn(),
       hasPendingTask: jest.fn().mockReturnValue(false),
       renderPendingTask: jest.fn().mockReturnValue(null),
       getSyncSubagent: jest.fn().mockReturnValue(undefined),
@@ -369,8 +381,13 @@ describe('StreamController - Text Content', () => {
 
       expect(msg.contentBlocks).toHaveLength(1);
       expect(msg.contentBlocks![0]).toEqual({ type: 'subagent', subagentId: 'task-1' });
-      expect(msg.subagents).toHaveLength(1);
-      expect(msg.subagents![0].id).toBe('task-1');
+      expect(msg.toolCalls).toContainEqual(
+        expect.objectContaining({
+          id: 'task-1',
+          name: TOOL_TASK,
+          subagent: expect.objectContaining({ id: 'task-1' }),
+        })
+      );
     });
 
     it('should render TodoWrite inline and update panel', async () => {
@@ -948,7 +965,16 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      expect(msg.subagents).toHaveLength(1);
+      expect(msg.toolCalls).toContainEqual(
+        expect.objectContaining({
+          id: 'task-1',
+          name: TOOL_TASK,
+          subagent: expect.objectContaining({
+            id: 'task-1',
+            mode: 'async',
+          }),
+        })
+      );
       expect(msg.contentBlocks).toContainEqual({ type: 'subagent', subagentId: 'task-1', mode: 'async' });
     });
 
@@ -965,7 +991,12 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      expect(msg.subagents).toBeUndefined();
+      expect(msg.toolCalls).toContainEqual(
+        expect.objectContaining({
+          id: 'task-1',
+          name: TOOL_TASK,
+        })
+      );
       expect(msg.contentBlocks).toEqual([]);
     });
   });
@@ -978,13 +1009,21 @@ describe('StreamController - Text Content', () => {
         role: 'assistant',
         content: '',
         timestamp: Date.now(),
-        subagents: [{ id: 'task-1', description: 'test', status: 'running', toolCalls: [] }],
+        toolCalls: [{
+          id: 'task-1',
+          name: TOOL_TASK,
+          input: { description: 'test' },
+          status: 'running',
+          subagent: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
+        }],
       }] as any;
 
       controller.onAsyncSubagentStateChange(subagent);
 
-      expect(deps.state.messages[0].subagents![0].status).toBe('completed');
-      expect(deps.state.messages[0].subagents![0].result).toBe('done');
+      const taskTool = deps.state.messages[0].toolCalls![0];
+      expect(taskTool.status).toBe('completed');
+      expect(taskTool.subagent?.status).toBe('completed');
+      expect(taskTool.subagent?.result).toBe('done');
     });
 
     it('should not crash when subagent not found in messages', () => {
@@ -994,7 +1033,12 @@ describe('StreamController - Text Content', () => {
         role: 'assistant',
         content: '',
         timestamp: Date.now(),
-        subagents: [{ id: 'task-1', description: 'test', status: 'running', toolCalls: [] }],
+        toolCalls: [{
+          id: 'task-1',
+          name: TOOL_TASK,
+          input: { description: 'test' },
+          status: 'running',
+        }],
       }] as any;
 
       expect(() => controller.onAsyncSubagentStateChange(subagent)).not.toThrow();
@@ -1082,9 +1126,14 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      // Message should have subagent added
-      expect(msg.subagents).toHaveLength(1);
-      expect(msg.subagents![0].id).toBe('task-1');
+      // Task toolCall should carry linked subagent
+      expect(msg.toolCalls).toContainEqual(
+        expect.objectContaining({
+          id: 'task-1',
+          name: TOOL_TASK,
+          subagent: expect.objectContaining({ id: 'task-1' }),
+        })
+      );
       expect(deps.subagentManager.renderPendingTask).toHaveBeenCalledWith('task-1', deps.state.currentContentEl);
     });
 
@@ -1233,22 +1282,68 @@ describe('StreamController - Text Content', () => {
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce({});
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'agent-out-1', content: 'agent result' },
+        { type: 'tool_result', id: 'agent-out-1', content: 'agent result', toolUseResult: { foo: 'bar' } as any },
         msg
       );
 
       expect(deps.subagentManager.handleAgentOutputToolResult).toHaveBeenCalledWith(
         'agent-out-1',
         'agent result',
-        false
+        false,
+        { foo: 'bar' }
       );
       expect(updateToolCallResult).not.toHaveBeenCalled();
     });
+
+    it('hydrates async subagent tool calls from sidecar during streaming completion', async () => {
+      const { loadSubagentToolCalls } = jest.requireMock('@/utils/sdkSession');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      const completedSubagent = {
+        id: 'task-1',
+        description: 'Background task',
+        prompt: 'Do work',
+        mode: 'async',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        asyncStatus: 'completed',
+        agentId: 'agent-1',
+        result: 'Done',
+      };
+
+      (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
+      (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      loadSubagentToolCalls.mockResolvedValueOnce([
+        {
+          id: 'read-1',
+          name: 'Read',
+          input: { file_path: 'notes.md' },
+          status: 'completed',
+          result: 'content',
+          isExpanded: false,
+        },
+      ]);
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'agent-out-1', content: 'agent result' },
+        msg
+      );
+
+      expect(loadSubagentToolCalls).toHaveBeenCalledWith(
+        '/test/vault',
+        'session-1',
+        'agent-1'
+      );
+      expect(completedSubagent.toolCalls).toHaveLength(1);
+      expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
+    });
   });
 
-  describe('Tool label update on input re-dispatch', () => {
-    it('second tool_use with same id updates existing tool input and label', async () => {
-      const { getToolLabel } = jest.requireMock('@/features/chat/rendering');
+  describe('Tool header update on input re-dispatch', () => {
+    it('second tool_use with same id updates existing tool input and header', async () => {
+      const { getToolName, getToolSummary } = jest.requireMock('@/features/chat/rendering');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1261,16 +1356,19 @@ describe('StreamController - Text Content', () => {
       // Flush the tool so it transitions from pending to rendered
       await controller.handleStreamChunk({ type: 'done' }, msg);
 
-      // Manually set up a rendered tool element with a label child
+      // Manually set up a rendered tool element with name + summary children
       // (the mock renderToolCall doesn't actually populate toolCallElements)
       const toolEl = createMockEl();
-      const labelChild = toolEl.createDiv({ cls: 'claudian-tool-label' });
-      labelChild.setText('Read: test.md');
+      const nameChild = toolEl.createDiv({ cls: 'claudian-tool-name' });
+      nameChild.setText('Read');
+      const summaryChild = toolEl.createDiv({ cls: 'claudian-tool-summary' });
+      summaryChild.setText('test.md');
       deps.state.toolCallElements.set('read-1', toolEl);
 
-      getToolLabel.mockReturnValueOnce('Read: updated.md');
+      getToolName.mockReturnValueOnce('Read');
+      getToolSummary.mockReturnValueOnce('updated.md');
 
-      // Second tool_use with same id - should update input and label
+      // Second tool_use with same id - should update input and header
       await controller.handleStreamChunk(
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'updated.md' } },
         msg
@@ -1280,20 +1378,28 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls![0].input).toEqual(
         expect.objectContaining({ file_path: 'updated.md' })
       );
-      // getToolLabel should have been called with updated input
-      expect(getToolLabel).toHaveBeenCalledWith('Read', expect.objectContaining({ file_path: 'updated.md' }));
-      // Label text should be updated
-      expect(labelChild.textContent).toBe('Read: updated.md');
+      // getToolName/getToolSummary should have been called with updated input
+      expect(getToolName).toHaveBeenCalledWith('Read', expect.objectContaining({ file_path: 'updated.md' }));
+      expect(getToolSummary).toHaveBeenCalledWith('Read', expect.objectContaining({ file_path: 'updated.md' }));
+      // Header texts should be updated
+      expect(nameChild.textContent).toBe('Read');
+      expect(summaryChild.textContent).toBe('updated.md');
     });
   });
 
   describe('Sync subagent finalization', () => {
-    it('tool_result for a sync subagent calls finalizeSyncSubagent and updates message subagents', async () => {
+    it('tool_result for a sync subagent calls finalizeSyncSubagent and updates Task toolCall', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
-      msg.subagents = [
-        { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [], isExpanded: false },
+      msg.toolCalls = [
+        {
+          id: 'task-1',
+          name: TOOL_TASK,
+          input: { description: 'Do something' },
+          status: 'running',
+          subagent: { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [], isExpanded: false },
+        } as any,
       ];
 
       // getSyncSubagent returns a subagent state (indicating this is a sync subagent)
@@ -1312,8 +1418,10 @@ describe('StreamController - Text Content', () => {
         false
       );
 
-      expect(msg.subagents![0].status).toBe('completed');
-      expect(msg.subagents![0].result).toBe('Task completed successfully');
+      expect(msg.toolCalls![0].status).toBe('completed');
+      expect(msg.toolCalls![0].result).toBe('Task completed successfully');
+      expect(msg.toolCalls![0].subagent?.status).toBe('completed');
+      expect(msg.toolCalls![0].subagent?.result).toBe('Task completed successfully');
     });
   });
 
@@ -1525,6 +1633,29 @@ describe('StreamController - Plan Mode', () => {
   });
 
   describe('blocked detection bypass', () => {
+    it('should hydrate AskUserQuestion resolvedAnswers from result text fallback', async () => {
+      const coreTools = jest.requireMock('@/core/tools');
+      (coreTools.extractResolvedAnswers as jest.Mock).mockReturnValueOnce(undefined);
+      (coreTools.extractResolvedAnswersFromResultText as jest.Mock).mockReturnValueOnce({
+        'Color?': 'Blue',
+      });
+
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'ask-1',
+        name: 'AskUserQuestion',
+        input: { questions: [{ question: 'Color?' }] },
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'ask-1', content: '"Color?"="Blue"' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].resolvedAnswers).toEqual({ 'Color?': 'Blue' });
+    });
+
     it('should not mark AskUserQuestion as blocked even when result looks blocked', async () => {
       const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
       (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);

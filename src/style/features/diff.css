@@ -36,15 +36,23 @@
   height: 16px;
 }
 
-.claudian-write-edit-label {
-  flex: 1;
-  min-width: 0;
+/* Two-part header: name (fixed) + summary (flexible) */
+.claudian-write-edit-name {
   font-size: 13px;
   font-weight: 400;
   color: var(--text-normal);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.claudian-write-edit-summary {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .claudian-write-edit-stats {

@@ -9,6 +9,7 @@ import {
   getSDKProjectsPath,
   getSDKSessionPath,
   isValidSessionId,
+  loadSubagentToolCalls,
   loadSDKSessionMessages,
   parseSDKMessageToChat,
   readSDKSession,
@@ -269,6 +270,63 @@ describe('sdkSession', () => {
 
       expect(result.messages).toEqual([]);
       expect(result.error).toBe('Read error');
+    });
+  });
+
+  describe('loadSubagentToolCalls', () => {
+    it('loads tool calls from subagent sidechain JSONL', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"assistant","timestamp":"2024-01-15T10:00:00Z","message":{"content":[{"type":"tool_use","id":"sub-tool-1","name":"Bash","input":{"command":"ls"}}]}}',
+        '{"type":"user","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"sub-tool-1","content":"ok","is_error":false}]}}',
+      ].join('\n'));
+
+      const toolCalls = await loadSubagentToolCalls(
+        '/Users/test/vault',
+        'session-abc',
+        'a123'
+      );
+
+      expect(mockFsPromises.readFile).toHaveBeenCalledWith(
+        '/Users/test/.claude/projects/-Users-test-vault/session-abc/subagents/agent-a123.jsonl',
+        'utf-8'
+      );
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0]).toEqual(
+        expect.objectContaining({
+          id: 'sub-tool-1',
+          name: 'Bash',
+          input: { command: 'ls' },
+          status: 'completed',
+          result: 'ok',
+        })
+      );
+    });
+
+    it('filters out entries that only have tool_result but no tool_use', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue(
+        '{"type":"user","timestamp":"2024-01-15T10:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"missing","content":"done"}]}}'
+      );
+
+      const toolCalls = await loadSubagentToolCalls(
+        '/Users/test/vault',
+        'session-abc',
+        'a123'
+      );
+
+      expect(toolCalls).toEqual([]);
+    });
+
+    it('returns empty when agent id is invalid', async () => {
+      const toolCalls = await loadSubagentToolCalls(
+        '/Users/test/vault',
+        'session-abc',
+        '../bad-agent'
+      );
+
+      expect(toolCalls).toEqual([]);
+      expect(mockFsPromises.readFile).not.toHaveBeenCalled();
     });
   });
 
@@ -751,6 +809,20 @@ describe('sdkSession', () => {
       expect(result.messages[1].toolCalls![0].status).toBe('completed');
       expect(result.messages[1].content).toContain('Let me search');
       expect(result.messages[1].content).toContain('I found 10 results about cats.');
+    });
+
+    it('hydrates AskUserQuestion answers from result text when toolUseResult has no answers', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"ask-1","name":"AskUserQuestion","input":{"questions":[{"question":"Color?","options":["Blue","Red"]}]}}]}}',
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:02:00Z","toolUseResult":{},"message":{"content":[{"type":"tool_result","tool_use_id":"ask-1","content":"\\"Color?\\"=\\"Blue\\""}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-ask-result-fallback');
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].toolCalls).toHaveLength(1);
+      expect(result.messages[0].toolCalls?.[0].resolvedAnswers).toEqual({ 'Color?': 'Blue' });
     });
 
     it('skips user messages that are tool results', async () => {

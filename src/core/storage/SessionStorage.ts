@@ -20,6 +20,7 @@ import type {
   SubagentInfo,
   UsageInfo,
 } from '../types';
+import { TOOL_TASK } from '../tools/toolNames';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to sessions folder relative to vault root. */
@@ -405,16 +406,19 @@ export class SessionStorage {
 
   /**
    * Extracts subagentData from messages for persistence.
-   * Collects subagent info from all assistant messages.
+   * Collects subagent info from Task tool calls.
    */
   private extractSubagentData(messages: ChatMessage[]): Record<string, SubagentInfo> {
     const result: Record<string, SubagentInfo> = {};
 
     for (const msg of messages) {
-      if (msg.role !== 'assistant' || !msg.subagents) continue;
+      if (msg.role !== 'assistant') continue;
 
-      for (const subagent of msg.subagents) {
-        result[subagent.id] = subagent;
+      if (msg.toolCalls) {
+        for (const toolCall of msg.toolCalls) {
+          if (toolCall.name !== TOOL_TASK || !toolCall.subagent) continue;
+          result[toolCall.subagent.id] = toolCall.subagent;
+        }
       }
     }
 

@@ -1,11 +1,13 @@
 import type { ClaudianService } from '../../../core/agent';
-import { extractResolvedAnswers, parseTodoInput } from '../../../core/tools';
+import { extractResolvedAnswers, extractResolvedAnswersFromResultText, parseTodoInput } from '../../../core/tools';
 import { isWriteEditTool, skipsBlockedDetection, TOOL_AGENT_OUTPUT, TOOL_ASK_USER_QUESTION, TOOL_TASK, TOOL_TODO_WRITE, TOOL_WRITE } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
+import { getVaultPath } from '../../../utils/path';
+import { loadSubagentToolCalls } from '../../../utils/sdkSession';
 import { FLAVOR_TEXTS } from '../constants';
 import {
   appendThinkingContent,
@@ -13,7 +15,8 @@ import {
   createWriteEditBlock,
   finalizeThinkingBlock,
   finalizeWriteEditBlock,
-  getToolLabel,
+  getToolName,
+  getToolSummary,
   isBlockedToolResult,
   renderToolCall,
   updateToolCallResult,
@@ -100,7 +103,7 @@ export class StreamController {
       }
 
       case 'tool_result': {
-        this.handleToolResult(chunk, msg);
+        await this.handleToolResult(chunk, msg);
         break;
       }
 
@@ -200,13 +203,18 @@ export class StreamController {
           this.capturePlanFilePath(existingToolCall.input);
         }
 
-        // If already rendered, update the label
+        // If already rendered, update the header name + summary
         const toolEl = state.toolCallElements.get(chunk.id);
         if (toolEl) {
-          const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement | null
-            ?? toolEl.querySelector('.claudian-write-edit-label') as HTMLElement | null;
-          if (labelEl) {
-            labelEl.setText(getToolLabel(existingToolCall.name, existingToolCall.input));
+          const nameEl = toolEl.querySelector('.claudian-tool-name') as HTMLElement | null
+            ?? toolEl.querySelector('.claudian-write-edit-name') as HTMLElement | null;
+          if (nameEl) {
+            nameEl.setText(getToolName(existingToolCall.name, existingToolCall.input));
+          }
+          const summaryEl = toolEl.querySelector('.claudian-tool-summary') as HTMLElement | null
+            ?? toolEl.querySelector('.claudian-write-edit-summary') as HTMLElement | null;
+          if (summaryEl) {
+            summaryEl.setText(getToolSummary(existingToolCall.name, existingToolCall.input));
           }
         }
         // If still pending, the updated input is already in the toolCall object
@@ -298,10 +306,10 @@ export class StreamController {
     state.pendingTools.delete(toolId);
   }
 
-  private handleToolResult(
+  private async handleToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult },
     msg: ChatMessage
-  ): void {
+  ): Promise<void> {
     const { state, subagentManager } = this.deps;
 
     // Check if Task is still pending - render as sync before processing result
@@ -323,7 +331,7 @@ export class StreamController {
     }
 
     // Check if it's an agent output result
-    if (this.handleAgentOutputToolResult(chunk)) {
+    if (await this.handleAgentOutputToolResult(chunk)) {
       this.showThinkingIndicator();
       return;
     }
@@ -350,8 +358,10 @@ export class StreamController {
       }
       existingToolCall.result = chunk.content;
 
-      if (existingToolCall.name === TOOL_ASK_USER_QUESTION && chunk.toolUseResult) {
-        const answers = extractResolvedAnswers(chunk.toolUseResult);
+      if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
+        const answers =
+          extractResolvedAnswers(chunk.toolUseResult) ??
+          extractResolvedAnswersFromResultText(chunk.content);
         if (answers) existingToolCall.resolvedAnswers = answers;
       }
 
@@ -453,6 +463,7 @@ export class StreamController {
     msg: ChatMessage
   ): void {
     const { state, subagentManager } = this.deps;
+    this.ensureTaskToolCall(msg, chunk.id, chunk.input);
 
     const result = subagentManager.handleTaskToolUse(chunk.id, chunk.input, state.currentContentEl);
 
@@ -491,13 +502,21 @@ export class StreamController {
     toolId: string,
     mode?: 'async'
   ): void {
-    msg.subagents = msg.subagents || [];
-    msg.subagents.push(info);
+    const taskToolCall = this.ensureTaskToolCall(msg, toolId);
+    this.applySubagentToTaskToolCall(taskToolCall, info);
+
     msg.contentBlocks = msg.contentBlocks || [];
-    msg.contentBlocks.push(mode
-      ? { type: 'subagent', subagentId: toolId, mode }
-      : { type: 'subagent', subagentId: toolId }
+    const existingBlock = msg.contentBlocks.find(
+      block => block.type === 'subagent' && block.subagentId === toolId
     );
+    if (existingBlock && mode && existingBlock.type === 'subagent') {
+      existingBlock.mode = mode;
+    } else if (!existingBlock) {
+      msg.contentBlocks.push(mode
+        ? { type: 'subagent', subagentId: toolId, mode }
+        : { type: 'subagent', subagentId: toolId }
+      );
+    }
   }
 
   private async handleSubagentChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
@@ -555,12 +574,20 @@ export class StreamController {
     msg: ChatMessage
   ): void {
     const isError = chunk.isError || false;
-    this.deps.subagentManager.finalizeSyncSubagent(chunk.id, chunk.content, isError);
+    const finalized = this.deps.subagentManager.finalizeSyncSubagent(chunk.id, chunk.content, isError);
 
-    const subagentInfo = msg.subagents?.find(s => s.id === chunk.id);
-    if (subagentInfo) {
-      subagentInfo.status = isError ? 'error' : 'completed';
-      subagentInfo.result = chunk.content;
+    const taskToolCall = this.ensureTaskToolCall(msg, chunk.id);
+    taskToolCall.status = isError ? 'error' : 'completed';
+    taskToolCall.result = chunk.content;
+    if (taskToolCall.subagent) {
+      taskToolCall.subagent.status = isError ? 'error' : 'completed';
+      taskToolCall.subagent.result = chunk.content;
+    }
+
+    if (finalized) {
+      finalized.status = isError ? 'error' : 'completed';
+      finalized.result = chunk.content;
+      this.applySubagentToTaskToolCall(taskToolCall, finalized);
     }
 
     this.showThinkingIndicator();
@@ -602,19 +629,52 @@ export class StreamController {
   }
 
   /** Handles TaskOutput result to finalize async subagent. */
-  private handleAgentOutputToolResult(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean }
-  ): boolean {
+  private async handleAgentOutputToolResult(
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown }
+  ): Promise<boolean> {
     const { subagentManager } = this.deps;
     const isLinked = subagentManager.isLinkedAgentOutputTool(chunk.id);
 
     const handled = subagentManager.handleAgentOutputToolResult(
       chunk.id,
       chunk.content,
-      chunk.isError || false
+      chunk.isError || false,
+      chunk.toolUseResult
     );
 
+    await this.hydrateAsyncSubagentToolCalls(handled);
+
     return isLinked || handled !== undefined;
+  }
+
+  private async hydrateAsyncSubagentToolCalls(subagent: SubagentInfo | undefined): Promise<void> {
+    if (!subagent) return;
+    if (subagent.mode !== 'async') return;
+    if (!subagent.agentId) return;
+    if ((subagent.toolCalls?.length ?? 0) > 0) return;
+
+    const asyncStatus = subagent.asyncStatus ?? subagent.status;
+    if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
+
+    const sessionId = this.deps.getAgentService?.()?.getSessionId();
+    if (!sessionId) return;
+
+    const vaultPath = getVaultPath(this.deps.plugin.app);
+    if (!vaultPath) return;
+
+    const recoveredToolCalls = await loadSubagentToolCalls(
+      vaultPath,
+      sessionId,
+      subagent.agentId
+    );
+    if (recoveredToolCalls.length === 0) return;
+
+    subagent.toolCalls = recoveredToolCalls.map((toolCall) => ({
+      ...toolCall,
+      input: { ...(toolCall.input || {}) },
+    }));
+
+    this.deps.subagentManager.refreshAsyncSubagent(subagent);
   }
 
   /** Callback from SubagentManager when async state changes. Updates messages only (DOM handled by manager). */
@@ -627,14 +687,69 @@ export class StreamController {
     const { state } = this.deps;
     for (let i = state.messages.length - 1; i >= 0; i--) {
       const msg = state.messages[i];
-      if (msg.role === 'assistant' && msg.subagents) {
-        const idx = msg.subagents.findIndex(s => s.id === subagent.id);
-        if (idx !== -1) {
-          msg.subagents[idx] = subagent;
-          return;
-        }
+      if (msg.role !== 'assistant') continue;
+      if (this.linkTaskToolCallToSubagent(msg, subagent)) {
+        return;
       }
     }
+  }
+
+  private ensureTaskToolCall(
+    msg: ChatMessage,
+    toolId: string,
+    input?: Record<string, unknown>
+  ): ToolCallInfo {
+    msg.toolCalls = msg.toolCalls || [];
+    const existing = msg.toolCalls.find(
+      tc => tc.id === toolId && tc.name === TOOL_TASK
+    );
+    if (existing) {
+      if (input && Object.keys(input).length > 0) {
+        existing.input = { ...existing.input, ...input };
+      }
+      return existing;
+    }
+
+    const taskToolCall: ToolCallInfo = {
+      id: toolId,
+      name: TOOL_TASK,
+      input: input ? { ...input } : {},
+      status: 'running',
+      isExpanded: false,
+    };
+    msg.toolCalls.push(taskToolCall);
+    return taskToolCall;
+  }
+
+  private applySubagentToTaskToolCall(taskToolCall: ToolCallInfo, subagent: SubagentInfo): void {
+    taskToolCall.subagent = subagent;
+
+    if (subagent.status === 'completed') {
+      taskToolCall.status = 'completed';
+      if (subagent.result !== undefined) {
+        taskToolCall.result = subagent.result;
+      }
+      return;
+    }
+
+    if (subagent.status === 'error') {
+      taskToolCall.status = 'error';
+      if (subagent.result !== undefined) {
+        taskToolCall.result = subagent.result;
+      }
+      return;
+    }
+
+    taskToolCall.status = 'running';
+  }
+
+  private linkTaskToolCallToSubagent(msg: ChatMessage, subagent: SubagentInfo): boolean {
+    const taskToolCall = msg.toolCalls?.find(
+      tc => tc.id === subagent.id && tc.name === TOOL_TASK
+    );
+    if (!taskToolCall) return false;
+    this.applySubagentToTaskToolCall(taskToolCall, subagent);
+    return true;
   }
 
   // ============================================

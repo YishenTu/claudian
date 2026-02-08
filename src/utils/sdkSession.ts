@@ -13,7 +13,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-import { extractResolvedAnswers } from '../core/tools';
+import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../core/tools';
 import { TOOL_ASK_USER_QUESTION } from '../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, ToolCallInfo } from '../core/types';
 import { extractContentBeforeXmlContext } from './context';
@@ -83,6 +83,221 @@ export function encodeVaultPathForSDK(vaultPath: string): string {
 
 export function getSDKProjectsPath(): string {
   return path.join(os.homedir(), '.claude', 'projects');
+}
+
+/** Validates a subagent agent ID to prevent path traversal attacks. */
+function isValidAgentId(agentId: string): boolean {
+  if (!agentId || agentId.length === 0 || agentId.length > 128) {
+    return false;
+  }
+  if (agentId.includes('..') || agentId.includes('/') || agentId.includes('\\')) {
+    return false;
+  }
+  return /^[a-zA-Z0-9_-]+$/.test(agentId);
+}
+
+type SubagentToolEvent =
+  | {
+      type: 'tool_use';
+      toolUseId: string;
+      toolName: string;
+      toolInput: Record<string, unknown>;
+      timestamp: number;
+    }
+  | {
+      type: 'tool_result';
+      toolUseId: string;
+      content: string;
+      isError: boolean;
+      timestamp: number;
+    };
+
+function parseTimestampMs(raw: unknown): number {
+  if (typeof raw !== 'string') return Date.now();
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+}
+
+function parseSubagentEvents(entry: unknown): SubagentToolEvent[] {
+  if (!entry || typeof entry !== 'object') return [];
+
+  const record = entry as {
+    timestamp?: unknown;
+    message?: { content?: unknown };
+  };
+  const content = record.message?.content;
+  if (!Array.isArray(content)) return [];
+
+  const timestamp = parseTimestampMs(record.timestamp);
+  const events: SubagentToolEvent[] = [];
+
+  for (const blockRaw of content) {
+    if (!blockRaw || typeof blockRaw !== 'object') continue;
+
+    const block = blockRaw as {
+      type?: unknown;
+      id?: unknown;
+      name?: unknown;
+      input?: unknown;
+      tool_use_id?: unknown;
+      content?: unknown;
+      is_error?: unknown;
+    };
+
+    if (block.type === 'tool_use') {
+      if (typeof block.id !== 'string' || typeof block.name !== 'string') continue;
+      events.push({
+        type: 'tool_use',
+        toolUseId: block.id,
+        toolName: block.name,
+        toolInput:
+          block.input && typeof block.input === 'object'
+            ? (block.input as Record<string, unknown>)
+            : {},
+        timestamp,
+      });
+      continue;
+    }
+
+    if (block.type === 'tool_result') {
+      if (typeof block.tool_use_id !== 'string') continue;
+      const contentText =
+        typeof block.content === 'string'
+          ? block.content
+          : block.content === undefined
+            ? ''
+            : JSON.stringify(block.content);
+      events.push({
+        type: 'tool_result',
+        toolUseId: block.tool_use_id,
+        content: contentText,
+        isError: block.is_error === true,
+        timestamp,
+      });
+    }
+  }
+
+  return events;
+}
+
+function buildToolCallsFromSubagentEvents(events: SubagentToolEvent[]): ToolCallInfo[] {
+  const toolsById = new Map<
+    string,
+    {
+      toolCall: ToolCallInfo;
+      hasToolUse: boolean;
+      hasToolResult: boolean;
+      timestamp: number;
+    }
+  >();
+
+  for (const event of events) {
+    const existing = toolsById.get(event.toolUseId);
+
+    if (event.type === 'tool_use') {
+      if (!existing) {
+        toolsById.set(event.toolUseId, {
+          toolCall: {
+            id: event.toolUseId,
+            name: event.toolName,
+            input: { ...event.toolInput },
+            status: 'running',
+            isExpanded: false,
+          },
+          hasToolUse: true,
+          hasToolResult: false,
+          timestamp: event.timestamp,
+        });
+      } else {
+        existing.toolCall.name = event.toolName;
+        existing.toolCall.input = { ...event.toolInput };
+        existing.hasToolUse = true;
+        existing.timestamp = event.timestamp;
+      }
+      continue;
+    }
+
+    if (!existing) {
+      toolsById.set(event.toolUseId, {
+        toolCall: {
+          id: event.toolUseId,
+          name: 'Unknown',
+          input: {},
+          status: event.isError ? 'error' : 'completed',
+          result: event.content,
+          isExpanded: false,
+        },
+        hasToolUse: false,
+        hasToolResult: true,
+        timestamp: event.timestamp,
+      });
+      continue;
+    }
+
+    existing.toolCall.status = event.isError ? 'error' : 'completed';
+    existing.toolCall.result = event.content;
+    existing.hasToolResult = true;
+  }
+
+  return Array.from(toolsById.values())
+    .filter(entry => entry.hasToolUse)
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map(entry => entry.toolCall);
+}
+
+/**
+ * Loads tool calls executed inside a subagent from SDK sidechain logs.
+ *
+ * File location:
+ * ~/.claude/projects/{encoded-vault}/{sessionId}/subagents/agent-{agentId}.jsonl
+ */
+export async function loadSubagentToolCalls(
+  vaultPath: string,
+  sessionId: string,
+  agentId: string
+): Promise<ToolCallInfo[]> {
+  if (!isValidSessionId(sessionId) || !isValidAgentId(agentId)) {
+    return [];
+  }
+
+  const encodedVault = encodeVaultPathForSDK(vaultPath);
+  const subagentFilePath = path.join(
+    getSDKProjectsPath(),
+    encodedVault,
+    sessionId,
+    'subagents',
+    `agent-${agentId}.jsonl`
+  );
+
+  try {
+    if (!existsSync(subagentFilePath)) return [];
+
+    const content = await fs.readFile(subagentFilePath, 'utf-8');
+    const lines = content.split('\n').filter(line => line.trim());
+    const events: SubagentToolEvent[] = [];
+    const seen = new Set<string>();
+
+    for (const line of lines) {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      for (const event of parseSubagentEvents(raw)) {
+        const key = `${event.type}:${event.toolUseId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        events.push(event);
+      }
+    }
+
+    if (events.length === 0) return [];
+    return buildToolCallsFromSubagentEvents(events);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -691,10 +906,21 @@ export async function loadSDKSessionMessages(
           toolCall.diffData = extractDiffData(toolUseResult, toolCall);
         }
         if (toolCall.name === TOOL_ASK_USER_QUESTION) {
-          const answers = extractResolvedAnswers(toolUseResult);
+          const answers =
+            extractResolvedAnswers(toolUseResult) ??
+            extractResolvedAnswersFromResultText(toolCall.result);
           if (answers) toolCall.resolvedAnswers = answers;
         }
       }
+    }
+  }
+
+  for (const msg of chatMessages) {
+    if (msg.role !== 'assistant' || !msg.toolCalls) continue;
+    for (const toolCall of msg.toolCalls) {
+      if (toolCall.name !== TOOL_ASK_USER_QUESTION || toolCall.resolvedAnswers) continue;
+      const answers = extractResolvedAnswersFromResultText(toolCall.result);
+      if (answers) toolCall.resolvedAnswers = answers;
     }
   }
 

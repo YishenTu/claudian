@@ -1,6 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import type { TodoItem } from '../../../core/tools';
+import { extractResolvedAnswersFromResultText, type TodoItem } from '../../../core/tools';
 import { getToolIcon, MCP_ICON_MARKER } from '../../../core/tools/toolIcons';
 import {
   TOOL_ASK_USER_QUESTION,
@@ -32,6 +32,70 @@ export function setToolIcon(el: HTMLElement, name: string) {
   }
 }
 
+/** Returns the display name for a tool (e.g., "Read", "Bash", "Tasks (2/3)"). */
+export function getToolName(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case TOOL_TODO_WRITE: {
+      const todos = input.todos as Array<{ status: string }> | undefined;
+      if (todos && Array.isArray(todos)) {
+        const completed = todos.filter(t => t.status === 'completed').length;
+        return `Tasks (${completed}/${todos.length})`;
+      }
+      return 'Tasks';
+    }
+    case TOOL_ENTER_PLAN_MODE:
+      return 'Entering plan mode';
+    case TOOL_EXIT_PLAN_MODE:
+      return 'Plan complete';
+    default:
+      return name;
+  }
+}
+
+/** Returns a contextual summary for the tool header (e.g., filename, command, pattern). */
+export function getToolSummary(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case TOOL_READ:
+    case TOOL_WRITE:
+    case TOOL_EDIT: {
+      const filePath = (input.file_path as string) || '';
+      return fileNameOnly(filePath);
+    }
+    case TOOL_BASH: {
+      const cmd = (input.command as string) || '';
+      return truncateText(cmd, 60);
+    }
+    case TOOL_GLOB:
+    case TOOL_GREP:
+      return (input.pattern as string) || '';
+    case TOOL_WEB_SEARCH:
+      return truncateText((input.query as string) || '', 60);
+    case TOOL_WEB_FETCH:
+      return truncateText((input.url as string) || '', 60);
+    case TOOL_LS:
+      return fileNameOnly((input.path as string) || '.');
+    case TOOL_SKILL:
+      return (input.skill as string) || '';
+    case TOOL_TODO_WRITE: {
+      const todos = (input.todos ?? []) as Array<{ status: string; activeForm?: string }>;
+      if (todos.length === 0) return '';
+      const completed = todos.filter(t => t.status === 'completed').length;
+      const inProgress = todos.find(t => t.status === 'in_progress');
+      if (inProgress?.activeForm) return `${inProgress.activeForm} ${completed}/${todos.length}`;
+      return `${completed}/${todos.length}`;
+    }
+    case TOOL_ASK_USER_QUESTION: {
+      return '';
+    }
+    default:
+      return '';
+  }
+}
+
+/**
+ * Combined label for backward compatibility (SubagentRenderer, StreamController, ARIA).
+ * Returns "ToolName: summary" format.
+ */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_READ:
@@ -79,13 +143,23 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
   }
 }
 
+function fileNameOnly(filePath: string): string {
+  if (!filePath) return '';
+  const normalized = filePath.replace(/\\/g, '/');
+  return normalized.split('/').pop() ?? normalized;
+}
+
 function shortenPath(filePath: string | undefined): string {
   if (!filePath) return '';
-  // Normalize path separators for cross-platform support
   const normalized = filePath.replace(/\\/g, '/');
   const parts = normalized.split('/');
   if (parts.length <= 3) return normalized;
   return '.../' + parts.slice(-2).join('/');
+}
+
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
 }
 
 export function formatToolInput(name: string, input: Record<string, unknown>): string {
@@ -108,39 +182,160 @@ export function formatToolInput(name: string, input: Record<string, unknown>): s
   }
 }
 
+// ============================================
+// Expanded Content Renderers (tool-specific)
+// ============================================
+
 interface WebSearchLink {
   title: string;
   url: string;
 }
 
-function parseWebSearchResult(result: string): WebSearchLink[] | null {
-  const linksMatch = result.match(/Links:\s*(\[[\s\S]*\])/);
+function parseWebSearchResult(result: string): { links: WebSearchLink[]; summary: string } | null {
+  const linksMatch = result.match(/Links:\s*(\[[\s\S]*?\])(?:\n|$)/);
   if (!linksMatch) return null;
 
   try {
-    const links = JSON.parse(linksMatch[1]) as WebSearchLink[];
-    if (!Array.isArray(links) || links.length === 0) return null;
-    return links;
+    const parsed = JSON.parse(linksMatch[1]) as WebSearchLink[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+
+    const linksEndIndex = result.indexOf(linksMatch[0]) + linksMatch[0].length;
+    const summary = result.slice(linksEndIndex).trim();
+    return { links: parsed.filter(l => l.title && l.url), summary };
   } catch {
     return null;
   }
 }
 
+function renderWebSearchExpanded(container: HTMLElement, result: string): void {
+  const parsed = parseWebSearchResult(result);
+  if (!parsed || parsed.links.length === 0) {
+    renderLinesExpanded(container, result, 20);
+    return;
+  }
+
+  const linksEl = container.createDiv({ cls: 'claudian-tool-lines' });
+  for (const link of parsed.links) {
+    const linkEl = linksEl.createEl('a', { cls: 'claudian-tool-link' });
+    linkEl.setAttribute('href', link.url);
+    linkEl.setAttribute('target', '_blank');
+    linkEl.setAttribute('rel', 'noopener noreferrer');
+
+    const iconEl = linkEl.createSpan({ cls: 'claudian-tool-link-icon' });
+    setIcon(iconEl, 'external-link');
+
+    linkEl.createSpan({ cls: 'claudian-tool-link-title', text: link.title });
+  }
+
+  if (parsed.summary) {
+    const summaryEl = container.createDiv({ cls: 'claudian-tool-web-summary' });
+    summaryEl.setText(parsed.summary.length > 800 ? parsed.summary.slice(0, 800) + '...' : parsed.summary);
+  }
+}
+
+function renderFileSearchExpanded(container: HTMLElement, result: string): void {
+  const lines = result.split(/\r?\n/).filter(line => line.trim());
+  if (lines.length === 0) {
+    container.createDiv({ cls: 'claudian-tool-empty', text: 'No matches found' });
+    return;
+  }
+  renderLinesExpanded(container, result, 15, true);
+}
+
+function renderLinesExpanded(
+  container: HTMLElement,
+  result: string,
+  maxLines: number,
+  hoverable = false
+): void {
+  const lines = result.split(/\r?\n/);
+  const truncated = lines.length > maxLines;
+  const displayLines = truncated ? lines.slice(0, maxLines) : lines;
+
+  const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
+  for (const line of displayLines) {
+    const stripped = line.replace(/^\s*\d+→/, '');
+    const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line' });
+    if (hoverable) lineEl.addClass('hoverable');
+    lineEl.setText(stripped || ' ');
+  }
+
+  if (truncated) {
+    linesEl.createDiv({
+      cls: 'claudian-tool-truncated',
+      text: `... ${lines.length - maxLines} more lines`,
+    });
+  }
+}
+
+function renderWebFetchExpanded(container: HTMLElement, result: string): void {
+  const maxChars = 500;
+  const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
+  const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line' });
+  lineEl.style.whiteSpace = 'pre-wrap';
+  lineEl.style.wordBreak = 'break-word';
+
+  if (result.length > maxChars) {
+    lineEl.setText(result.slice(0, maxChars));
+    linesEl.createDiv({
+      cls: 'claudian-tool-truncated',
+      text: `... ${result.length - maxChars} more characters`,
+    });
+  } else {
+    lineEl.setText(result);
+  }
+}
+
+/** Render expanded tool content based on tool type. */
+export function renderExpandedContent(container: HTMLElement, toolName: string, result: string | undefined): void {
+  if (!result) {
+    container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
+    return;
+  }
+
+  switch (toolName) {
+    case TOOL_BASH:
+      renderLinesExpanded(container, result, 20);
+      break;
+    case TOOL_READ:
+      renderLinesExpanded(container, result, 15);
+      break;
+    case TOOL_GLOB:
+    case TOOL_GREP:
+    case TOOL_LS:
+      renderFileSearchExpanded(container, result);
+      break;
+    case TOOL_WEB_SEARCH:
+      renderWebSearchExpanded(container, result);
+      break;
+    case TOOL_WEB_FETCH:
+      renderWebFetchExpanded(container, result);
+      break;
+    default:
+      renderLinesExpanded(container, result, 20);
+      break;
+  }
+}
+
+// ============================================
+// Legacy collapsed-preview renderers (kept for backward compat)
+// ============================================
+
 export function renderWebSearchResult(container: HTMLElement, result: string, maxItems = 3): boolean {
-  const links = parseWebSearchResult(result);
-  if (!links) return false;
+  const parsed = parseWebSearchResult(result);
+  if (!parsed || parsed.links.length === 0) return false;
 
   container.empty();
 
-  const displayItems = links.slice(0, maxItems);
+  const displayItems = parsed.links.slice(0, maxItems);
   displayItems.forEach(link => {
     const item = container.createSpan({ cls: 'claudian-tool-result-bullet' });
     item.setText(`• ${link.title}`);
   });
 
-  if (links.length > maxItems) {
+  if (parsed.links.length > maxItems) {
     const more = container.createSpan({ cls: 'claudian-tool-result-item' });
-    more.setText(`${links.length - maxItems} more results`);
+    more.setText(`${parsed.links.length - maxItems} more results`);
   }
 
   return true;
@@ -152,6 +347,10 @@ export function renderReadResult(container: HTMLElement, result: string): void {
   const item = container.createSpan({ cls: 'claudian-tool-result-item' });
   item.setText(`${lines.length} lines read`);
 }
+
+// ============================================
+// Todo helpers
+// ============================================
 
 function getTodos(input: Record<string, unknown>): TodoItem[] | undefined {
   const todos = input.todos;
@@ -196,54 +395,6 @@ function setToolStatus(statusEl: HTMLElement, status: ToolCallInfo['status']): v
   resetStatusElement(statusEl, `status-${status}`, `Status: ${status}`);
   const icon = STATUS_ICONS[status];
   if (icon) setIcon(statusEl, icon);
-}
-
-function renderToolResultContent(
-  container: HTMLElement,
-  toolName: string,
-  result: string | undefined
-): void {
-  if (!result) {
-    container.setText('No result');
-    return;
-  }
-  if (toolName === TOOL_WEB_SEARCH) {
-    if (!renderWebSearchResult(container, result, 3)) {
-      renderResultLines(container, result, 3);
-    }
-  } else if (toolName === TOOL_READ) {
-    renderReadResult(container, result);
-  } else {
-    renderResultLines(container, result, 3);
-  }
-}
-
-function createCurrentTaskPreview(
-  header: HTMLElement,
-  input: Record<string, unknown>
-): HTMLElement {
-  const currentTaskEl = header.createSpan({ cls: 'claudian-tool-current' });
-  const currentTask = getCurrentTask(input);
-  if (currentTask) {
-    currentTaskEl.setText(currentTask.activeForm);
-  }
-  return currentTaskEl;
-}
-
-function createTodoToggleHandler(
-  currentTaskEl: HTMLElement | null,
-  statusEl: HTMLElement | null,
-  onExpandChange?: (expanded: boolean) => void
-): (expanded: boolean) => void {
-  return (expanded: boolean) => {
-    if (onExpandChange) onExpandChange(expanded);
-    if (currentTaskEl) {
-      currentTaskEl.style.display = expanded ? 'none' : '';
-    }
-    if (statusEl) {
-      statusEl.style.display = expanded ? 'none' : '';
-    }
-  };
 }
 
 export function renderTodoWriteResult(
@@ -306,10 +457,16 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
   return false;
 }
 
+// ============================================
+// Element Structure
+// ============================================
+
 interface ToolElementStructure {
   toolEl: HTMLElement;
   header: HTMLElement;
-  labelEl: HTMLElement;
+  iconEl: HTMLElement;
+  nameEl: HTMLElement;
+  summaryEl: HTMLElement;
   statusEl: HTMLElement;
   content: HTMLElement;
   currentTaskEl: HTMLElement | null;
@@ -324,25 +481,27 @@ function createToolElementStructure(
   const header = toolEl.createDiv({ cls: 'claudian-tool-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  // aria-label is set dynamically by setupCollapsible based on expand state
 
   const iconEl = header.createSpan({ cls: 'claudian-tool-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
   setToolIcon(iconEl, toolCall.name);
 
-  const labelEl = header.createSpan({ cls: 'claudian-tool-label' });
-  labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
+  // Two-part header: name + summary
+  const nameEl = header.createSpan({ cls: 'claudian-tool-name' });
+  nameEl.setText(getToolName(toolCall.name, toolCall.input));
+
+  const summaryEl = header.createSpan({ cls: 'claudian-tool-summary' });
+  summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
 
   const currentTaskEl = toolCall.name === TOOL_TODO_WRITE
     ? createCurrentTaskPreview(header, toolCall.input)
     : null;
 
-  // Caller sets the status after creation
   const statusEl = header.createSpan({ cls: 'claudian-tool-status' });
 
   const content = toolEl.createDiv({ cls: 'claudian-tool-content' });
 
-  return { toolEl, header, labelEl, statusEl, content, currentTaskEl };
+  return { toolEl, header, iconEl, nameEl, summaryEl, statusEl, content, currentTaskEl };
 }
 
 function formatAnswer(raw: unknown): string {
@@ -351,11 +510,23 @@ function formatAnswer(raw: unknown): string {
   return '';
 }
 
-function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallInfo): void {
+function resolveAskUserAnswers(toolCall: ToolCallInfo): Record<string, unknown> | undefined {
+  if (toolCall.resolvedAnswers) return toolCall.resolvedAnswers as Record<string, unknown>;
+
+  const parsed = extractResolvedAnswersFromResultText(toolCall.result);
+  if (parsed) {
+    toolCall.resolvedAnswers = parsed;
+    return parsed;
+  }
+
+  return undefined;
+}
+
+function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallInfo): boolean {
   container.empty();
   const questions = toolCall.input.questions as Array<{ question: string }> | undefined;
-  const answers = toolCall.resolvedAnswers as Record<string, unknown> | undefined;
-  if (!questions || !Array.isArray(questions) || !answers) return;
+  const answers = resolveAskUserAnswers(toolCall);
+  if (!questions || !Array.isArray(questions) || !answers) return false;
 
   const reviewEl = container.createDiv({ cls: 'claudian-ask-review' });
   for (const q of questions) {
@@ -369,6 +540,46 @@ function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallI
       cls: answer ? 'claudian-ask-review-a-text' : 'claudian-ask-review-empty',
     });
   }
+
+  return true;
+}
+
+function renderAskUserQuestionFallback(container: HTMLElement, toolCall: ToolCallInfo, initialText?: string): void {
+  contentFallback(container, initialText || toolCall.result || 'Waiting for answer...');
+}
+
+function contentFallback(container: HTMLElement, text: string): void {
+  const resultRow = container.createDiv({ cls: 'claudian-tool-result-row' });
+  const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
+  resultText.setText(text);
+}
+
+function createCurrentTaskPreview(
+  header: HTMLElement,
+  input: Record<string, unknown>
+): HTMLElement {
+  const currentTaskEl = header.createSpan({ cls: 'claudian-tool-current' });
+  const currentTask = getCurrentTask(input);
+  if (currentTask) {
+    currentTaskEl.setText(currentTask.activeForm);
+  }
+  return currentTaskEl;
+}
+
+function createTodoToggleHandler(
+  currentTaskEl: HTMLElement | null,
+  statusEl: HTMLElement | null,
+  onExpandChange?: (expanded: boolean) => void
+): (expanded: boolean) => void {
+  return (expanded: boolean) => {
+    if (onExpandChange) onExpandChange(expanded);
+    if (currentTaskEl) {
+      currentTaskEl.style.display = expanded ? 'none' : '';
+    }
+    if (statusEl) {
+      statusEl.style.display = expanded ? 'none' : '';
+    }
+  };
 }
 
 function renderToolContent(
@@ -381,23 +592,21 @@ function renderToolContent(
     renderTodoWriteResult(content, toolCall.input);
   } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
     content.addClass('claudian-tool-content-ask');
-    if (initialText || !toolCall.resolvedAnswers) {
-      const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
-      const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
-      resultText.setText('Waiting for answer...');
-    } else {
-      renderAskUserQuestionResult(content, toolCall);
-    }
-  } else {
-    const resultRow = content.createDiv({ cls: 'claudian-tool-result-row' });
-    const resultText = resultRow.createSpan({ cls: 'claudian-tool-result-text' });
     if (initialText) {
-      resultText.setText(initialText);
-    } else {
-      renderToolResultContent(resultText, toolCall.name, toolCall.result);
+      renderAskUserQuestionFallback(content, toolCall, 'Waiting for answer...');
+    } else if (!renderAskUserQuestionResult(content, toolCall)) {
+      renderAskUserQuestionFallback(content, toolCall);
     }
+  } else if (initialText) {
+    contentFallback(content, initialText);
+  } else {
+    renderExpandedContent(content, toolCall.name, toolCall.result);
   }
 }
+
+// ============================================
+// Public API
+// ============================================
 
 /** For streaming — collapsed by default, registered in map for later updates. */
 export function renderToolCall(
@@ -447,9 +656,15 @@ export function updateToolCallResult(
     if (content) {
       renderTodoWriteResult(content, toolCall.input);
     }
-    const labelEl = toolEl.querySelector('.claudian-tool-label') as HTMLElement;
-    if (labelEl) {
-      labelEl.setText(getToolLabel(toolCall.name, toolCall.input));
+    // Update name (has count)
+    const nameEl = toolEl.querySelector('.claudian-tool-name') as HTMLElement;
+    if (nameEl) {
+      nameEl.setText(getToolName(toolCall.name, toolCall.input));
+    }
+    // Update summary (active task)
+    const summaryEl = toolEl.querySelector('.claudian-tool-summary') as HTMLElement;
+    if (summaryEl) {
+      summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
     }
     const currentTaskEl = toolEl.querySelector('.claudian-tool-current') as HTMLElement;
     if (currentTaskEl) {
@@ -468,14 +683,18 @@ export function updateToolCallResult(
     const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
     if (content) {
       content.addClass('claudian-tool-content-ask');
-      renderAskUserQuestionResult(content, toolCall);
+      if (!renderAskUserQuestionResult(content, toolCall)) {
+        renderAskUserQuestionFallback(content, toolCall);
+      }
     }
     return;
   }
 
-  const resultText = toolEl.querySelector('.claudian-tool-result-text') as HTMLElement;
-  if (resultText) {
-    renderToolResultContent(resultText, toolCall.name, toolCall.result);
+  // Replace expanded content with tool-specific rendering
+  const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
+  if (content) {
+    content.empty();
+    renderExpandedContent(content, toolCall.name, toolCall.result);
   }
 }
 

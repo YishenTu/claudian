@@ -76,12 +76,145 @@
   color: var(--color-red);
 }
 
-/* Subagent content - border style (like thinking block) */
 .claudian-subagent-content {
   padding: 4px 0;
   padding-inline-start: 16px;
   margin-inline-start: 7px;
   border-inline-start: 2px solid var(--background-modifier-border);
+}
+
+.claudian-subagent-section {
+  margin: 2px 0 6px;
+}
+
+.claudian-subagent-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.claudian-subagent-section-header:hover {
+  color: var(--text-normal);
+}
+
+.claudian-subagent-section-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-subagent-section-body {
+  padding-inline-start: 6px;
+}
+
+.claudian-subagent-prompt-text,
+.claudian-subagent-result-output {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.claudian-subagent-result-output {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.claudian-subagent-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claudian-subagent-tool-item {
+  display: block;
+}
+
+.claudian-subagent-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 2px 0;
+}
+
+.claudian-subagent-tool-header:hover {
+  opacity: 0.85;
+}
+
+.claudian-subagent-tool-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-accent);
+  flex-shrink: 0;
+}
+
+.claudian-subagent-tool-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.claudian-subagent-tool-name {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.claudian-subagent-tool-summary {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-subagent-tool-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.claudian-subagent-tool-status svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-subagent-tool-status.status-running {
+  color: var(--text-accent);
+}
+
+.claudian-subagent-tool-status.status-completed {
+  color: var(--color-green);
+}
+
+.claudian-subagent-tool-status.status-error,
+.claudian-subagent-tool-status.status-blocked {
+  color: var(--color-red);
+}
+
+.claudian-subagent-tool-content {
+  padding: 2px 0 2px 16px;
+}
+
+.claudian-subagent-tool-empty {
+  color: var(--text-faint);
+  font-style: italic;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  padding: 2px 0;
 }
 
 .claudian-subagent-bullet {
@@ -90,12 +223,6 @@
   font-size: 12px;
   line-height: 1.4;
   margin-inline-end: 4px;
-}
-
-.claudian-subagent-tool-item {
-  display: flex;
-  flex-direction: column;
-  padding: 2px 0;
 }
 
 .claudian-subagent-tool-row {

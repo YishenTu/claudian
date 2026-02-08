@@ -30,6 +30,8 @@ export {
 export {
   formatToolInput,
   getToolLabel,
+  getToolName,
+  getToolSummary,
   isBlockedToolResult,
   renderStoredToolCall,
   renderToolCall,

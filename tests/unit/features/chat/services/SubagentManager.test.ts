@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 
@@ -538,6 +542,180 @@ describe('SubagentManager', () => {
       });
       const result = manager.handleAgentOutputToolResult('out-1', payloadObject, false);
       expect(result?.result).toContain('completed');
+    });
+
+    it('extracts only final assistant result from XML output payload', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'a6ac482', 'out-1');
+
+      const outputLines = [
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'I will search first.' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'Grep', input: { pattern: 'martini' } }],
+          },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Final answer: 24 matches across 6 files.' }],
+          },
+        }),
+      ].join('\n');
+
+      const xmlPayload = `<retrieval_status>success</retrieval_status>
+<task_id>a6ac482</task_id>
+<status>completed</status>
+<output>
+${outputLines}
+</output>`;
+
+      const result = manager.handleAgentOutputToolResult('out-1', xmlPayload, false);
+      expect(result?.result).toBe('Final answer: 24 matches across 6 files.');
+    });
+
+    it('extracts final assistant result from structured toolUseResult.task.result', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'agent-structured', 'out-1');
+
+      const outputLines = [
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Intermediate step' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Final summary from structured result.' }],
+          },
+        }),
+      ].join('\n');
+
+      const structuredToolUseResult = {
+        retrieval_status: 'success',
+        task: {
+          task_id: 'agent-structured',
+          status: 'completed',
+          result: outputLines,
+          output: outputLines,
+        },
+      };
+
+      const result = manager.handleAgentOutputToolResult(
+        'out-1',
+        '{"retrieval_status":"success"}',
+        false,
+        structuredToolUseResult
+      );
+      expect(result?.result).toBe('Final summary from structured result.');
+    });
+
+    it('extracts full result from SDK toolUseResult.content array', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'agent-sdk-content', 'out-1');
+
+      const fullResult = 'This is the full multi-line result.\n\nLine 2 of the result.\nLine 3 with details.';
+      const sdkToolUseResult = {
+        status: 'completed',
+        content: [
+          { type: 'text', text: fullResult },
+        ],
+        agentId: 'agent-sdk-content',
+        prompt: 'Do something',
+        totalDurationMs: 5000,
+        totalTokens: 1000,
+        totalToolUseCount: 5,
+      };
+
+      const result = manager.handleAgentOutputToolResult(
+        'out-1',
+        '{}',
+        false,
+        sdkToolUseResult
+      );
+      expect(result?.result).toBe(fullResult);
+    });
+
+    it('extracts result from SDK content array with multiple text blocks', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'agent-multi', 'out-1');
+
+      const sdkToolUseResult = {
+        status: 'completed',
+        content: [
+          { type: 'text', text: 'Main result text here.' },
+          { type: 'text', text: 'agentId: agent-multi\n<usage>total_tokens: 100</usage>' },
+        ],
+        agentId: 'agent-multi',
+      };
+
+      const result = manager.handleAgentOutputToolResult(
+        'out-1',
+        '{}',
+        false,
+        sdkToolUseResult
+      );
+      // Should return the first text block (actual result), not the metadata block
+      expect(result?.result).toBe('Main result text here.');
+    });
+
+    it('reads full output file when inline output is truncated', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'agent-full-output', 'out-1');
+
+      const tempDir = mkdtempSync(join(tmpdir(), 'subagent-output-'));
+      const fullOutputFile = join(tempDir, 'agent.output');
+      const fullOutput = [
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Recovered final answer from full output file.' }],
+          },
+        }),
+      ].join('\n');
+      writeFileSync(fullOutputFile, fullOutput, 'utf-8');
+
+      const inlineOutput = `[Truncated. Full output: ${fullOutputFile}]`;
+      const xmlPayload = `<retrieval_status>success</retrieval_status>
+<task_id>agent-full-output</task_id>
+<status>completed</status>
+<output>
+${inlineOutput}
+</output>`;
+
+      try {
+        const result = manager.handleAgentOutputToolResult('out-1', xmlPayload, false);
+        expect(result?.result).toBe('Recovered final answer from full output file.');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('extracts direct result tag when present', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'agent-x', 'out-1');
+
+      const taggedPayload = `<status>completed</status>
+<result>
+Only this is the final result.
+</result>`;
+
+      const result = manager.handleAgentOutputToolResult('out-1', taggedPayload, false);
+      expect(result?.result).toBe('Only this is the final result.');
     });
 
     it('falls back to first agent when agentId is missing from agents map', () => {

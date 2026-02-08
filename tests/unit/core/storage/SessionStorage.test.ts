@@ -959,7 +959,7 @@ describe('SessionStorage', () => {
   });
 
   describe('toSessionMetadata - extractSubagentData', () => {
-    it('extracts subagent data from assistant messages', () => {
+    it('extracts subagent data from Task toolCalls', () => {
       const conversation: Conversation = {
         id: 'conv-subagent',
         title: 'Subagent Test',
@@ -973,14 +973,21 @@ describe('SessionStorage', () => {
             role: 'assistant',
             content: 'Working...',
             timestamp: 1700000200,
-            subagents: [
+            toolCalls: [
               {
-                id: 'sa-1',
-                description: 'Test subagent',
-                isExpanded: false,
-                status: 'completed' as const,
-                toolCalls: [],
+                id: 'task-1',
+                name: 'Task',
+                input: { description: 'Test subagent' },
+                status: 'completed',
                 result: 'Done',
+                subagent: {
+                  id: 'task-1',
+                  description: 'Test subagent',
+                  isExpanded: false,
+                  status: 'completed' as const,
+                  toolCalls: [],
+                  result: 'Done',
+                },
               },
             ],
           },
@@ -990,8 +997,8 @@ describe('SessionStorage', () => {
       const metadata = storage.toSessionMetadata(conversation);
 
       expect(metadata.subagentData).toBeDefined();
-      expect(metadata.subagentData!['sa-1']).toEqual(expect.objectContaining({
-        id: 'sa-1',
+      expect(metadata.subagentData!['task-1']).toEqual(expect.objectContaining({
+        id: 'task-1',
         description: 'Test subagent',
         status: 'completed',
       }));
@@ -1007,6 +1014,37 @@ describe('SessionStorage', () => {
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
           { id: 'msg-2', role: 'assistant', content: 'Hi!', timestamp: 1700000200 },
+        ],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+
+      expect(metadata.subagentData).toBeUndefined();
+    });
+
+    it('ignores Task toolCalls without linked subagent', () => {
+      const conversation: Conversation = {
+        id: 'conv-task-subagent',
+        title: 'Task Subagent Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: 'sdk-session',
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'assistant',
+            content: '',
+            timestamp: 1700000200,
+            toolCalls: [
+              {
+                id: 'task-1',
+                name: 'Task',
+                input: { description: 'Background task', run_in_background: true },
+                status: 'completed',
+                result: 'Task running',
+              } as any,
+            ],
+          },
         ],
       };
 

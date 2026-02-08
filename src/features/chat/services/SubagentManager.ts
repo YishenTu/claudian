@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'fs';
+
 import type {
   SubagentInfo,
   SubagentMode,
@@ -280,7 +282,8 @@ export class SubagentManager {
   public handleAgentOutputToolResult(
     toolId: string,
     result: string,
-    isError: boolean
+    isError: boolean,
+    toolUseResult?: unknown
   ): SubagentInfo | undefined {
     let agentId = this.outputToolIdToAgentId.get(toolId);
     let subagent = agentId ? this.activeAsyncSubagents.get(agentId) : undefined;
@@ -310,7 +313,7 @@ export class SubagentManager {
       return subagent;
     }
 
-    const extractedResult = this.extractAgentResult(result, agentId ?? '');
+    const extractedResult = this.extractAgentResult(result, agentId ?? '', toolUseResult);
 
     subagent.asyncStatus = isError ? 'error' : 'completed';
     subagent.status = isError ? 'error' : 'completed';
@@ -351,6 +354,15 @@ export class SubagentManager {
 
   public getAsyncDomState(taskToolId: string): AsyncSubagentState | undefined {
     return this.asyncDomStates.get(taskToolId);
+  }
+
+  /**
+   * Re-renders an async subagent after data-only updates (for example,
+   * hydrating tool calls from SDK sidecar files) without changing lifecycle state.
+   */
+  public refreshAsyncSubagent(subagent: SubagentInfo): void {
+    this.updateAsyncDomState(subagent);
+    this.onStateChange(subagent);
   }
 
   // ============================================
@@ -503,6 +515,10 @@ export class SubagentManager {
     const prompt = (newInput.prompt as string) || '';
     if (prompt) {
       info.prompt = prompt;
+      const promptEl = wrapperEl.querySelector('.claudian-subagent-prompt-text') as HTMLElement | null;
+      if (promptEl) {
+        promptEl.setText(prompt);
+      }
     }
   }
 
@@ -597,16 +613,31 @@ export class SubagentManager {
     return false;
   }
 
-  private extractAgentResult(result: string, agentId: string): string {
+  private extractAgentResult(result: string, agentId: string, toolUseResult?: unknown): string {
+    const structuredResult = this.extractResultFromToolUseResult(toolUseResult);
+    if (structuredResult) {
+      return structuredResult;
+    }
+
     const payload = this.unwrapTextPayload(result);
 
     try {
       const parsed = JSON.parse(payload);
 
+      const taskResult = this.extractResultFromTaskObject(parsed.task);
+      if (taskResult) {
+        return taskResult;
+      }
+
       if (parsed.agents && agentId && parsed.agents[agentId]) {
         const agentData = parsed.agents[agentId];
-        if (agentData.result) {
-          return agentData.result;
+        const parsedResult = this.extractResultFromCandidateString(agentData?.result);
+        if (parsedResult) {
+          return parsedResult;
+        }
+        const parsedOutput = this.extractResultFromCandidateString(agentData?.output);
+        if (parsedOutput) {
+          return parsedOutput;
         }
         return JSON.stringify(agentData, null, 2);
       }
@@ -615,18 +646,119 @@ export class SubagentManager {
         const agentIds = Object.keys(parsed.agents);
         if (agentIds.length > 0) {
           const firstAgent = parsed.agents[agentIds[0]];
-          if (firstAgent.result) {
-            return firstAgent.result;
+          const parsedResult = this.extractResultFromCandidateString(firstAgent?.result);
+          if (parsedResult) {
+            return parsedResult;
+          }
+          const parsedOutput = this.extractResultFromCandidateString(firstAgent?.output);
+          if (parsedOutput) {
+            return parsedOutput;
           }
           return JSON.stringify(firstAgent, null, 2);
         }
+      }
+
+      const parsedResult = this.extractResultFromCandidateString(parsed.result);
+      if (parsedResult) {
+        return parsedResult;
+      }
+
+      const parsedOutput = this.extractResultFromCandidateString(parsed.output);
+      if (parsedOutput) {
+        return parsedOutput;
       }
 
     } catch {
       // Not JSON, return as-is
     }
 
+    const taggedResult = this.extractResultFromTaggedPayload(payload);
+    if (taggedResult) {
+      return taggedResult;
+    }
+
     return payload;
+  }
+
+  private extractResultFromToolUseResult(toolUseResult: unknown): string | null {
+    if (!toolUseResult || typeof toolUseResult !== 'object') {
+      return null;
+    }
+
+    const record = toolUseResult as Record<string, unknown>;
+
+    const fromTask = this.extractResultFromTaskObject(record.task);
+    if (fromTask) {
+      return fromTask;
+    }
+
+    const directResult = this.extractResultFromCandidateString(record.result);
+    if (directResult) {
+      return directResult;
+    }
+
+    const directOutput = this.extractResultFromCandidateString(record.output);
+    if (directOutput) {
+      return directOutput;
+    }
+
+    // SDK subagent format: { status, content: [{type:"text",text:"..."}], agentId, ... }
+    if (Array.isArray(record.content)) {
+      const textBlocks = (record.content as Array<Record<string, unknown>>)
+        .filter((b) => b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string')
+        .map((b) => (b.text as string).trim())
+        .filter((t) => t.length > 0);
+
+      // First block is the actual result; subsequent blocks are metadata (agentId, usage)
+      if (textBlocks.length > 0) {
+        return textBlocks[0];
+      }
+    }
+
+    return null;
+  }
+
+  private extractResultFromTaskObject(task: unknown): string | null {
+    if (!task || typeof task !== 'object') {
+      return null;
+    }
+
+    const taskRecord = task as Record<string, unknown>;
+
+    const taskResult = this.extractResultFromCandidateString(taskRecord.result);
+    if (taskResult) {
+      return taskResult;
+    }
+
+    const taskOutput = this.extractResultFromCandidateString(taskRecord.output);
+    if (taskOutput) {
+      return taskOutput;
+    }
+
+    return null;
+  }
+
+  private extractResultFromCandidateString(candidate: unknown): string | null {
+    if (typeof candidate !== 'string') {
+      return null;
+    }
+
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const taggedResult = this.extractResultFromTaggedPayload(trimmed);
+    if (taggedResult) {
+      return taggedResult;
+    }
+
+    const jsonlResult = this.extractResultFromOutputJsonl(trimmed);
+    if (jsonlResult) {
+      return jsonlResult;
+    }
+
+    return trimmed;
   }
 
   private parseAgentId(result: string): string | null {
@@ -695,6 +827,118 @@ export class SubagentManager {
       // Not JSON or not an envelope
     }
     return raw;
+  }
+
+  private extractResultFromTaggedPayload(payload: string): string | null {
+    const directResult = this.extractTagContent(payload, 'result');
+    if (directResult) return directResult;
+
+    const outputContent = this.extractTagContent(payload, 'output');
+    if (!outputContent) return null;
+
+    const extractedFromJsonl = this.extractResultFromOutputJsonl(outputContent);
+    if (extractedFromJsonl) return extractedFromJsonl;
+
+    const nestedResult = this.extractTagContent(outputContent, 'result');
+    if (nestedResult) return nestedResult;
+
+    const trimmed = outputContent.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private extractTagContent(payload: string, tagName: string): string | null {
+    const tagRegex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*</${tagName}>`, 'i');
+    const match = payload.match(tagRegex);
+    if (!match || !match[1]) return null;
+    const content = match[1].trim();
+    return content.length > 0 ? content : null;
+  }
+
+  private extractResultFromOutputJsonl(outputContent: string): string | null {
+    const inlineResult = this.extractAssistantResultFromJsonl(outputContent);
+    if (inlineResult) {
+      return inlineResult;
+    }
+
+    const fullOutputPath = this.extractFullOutputPath(outputContent);
+    if (!fullOutputPath) {
+      return null;
+    }
+
+    const fullOutput = this.readFullOutputFile(fullOutputPath);
+    if (!fullOutput) {
+      return null;
+    }
+
+    return this.extractAssistantResultFromJsonl(fullOutput);
+  }
+
+  private extractAssistantResultFromJsonl(content: string): string | null {
+    const lines = content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && line.startsWith('{'));
+
+    let lastAssistantText: string | null = null;
+    let lastResultText: string | null = null;
+
+    for (const line of lines) {
+      let parsed: any;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      if (typeof parsed?.result === 'string' && parsed.result.trim().length > 0) {
+        lastResultText = parsed.result.trim();
+      }
+
+      const message = parsed?.message;
+      const role = message?.role;
+      const contentBlocks = message?.content;
+      if (!Array.isArray(contentBlocks)) continue;
+
+      for (const block of contentBlocks) {
+        if (
+          role === 'assistant' &&
+          block &&
+          typeof block === 'object' &&
+          block.type === 'text' &&
+          typeof block.text === 'string' &&
+          block.text.trim().length > 0
+        ) {
+          lastAssistantText = block.text.trim();
+        }
+      }
+    }
+
+    return lastAssistantText ?? lastResultText;
+  }
+
+  private extractFullOutputPath(content: string): string | null {
+    const truncatedPattern = /\[Truncated\.\s*Full output:\s*([^\]\n]+)\]/i;
+    const match = content.match(truncatedPattern);
+    if (!match || !match[1]) {
+      return null;
+    }
+
+    const outputPath = match[1].trim();
+    return outputPath.length > 0 ? outputPath : null;
+  }
+
+  private readFullOutputFile(fullOutputPath: string): string | null {
+    try {
+      if (!existsSync(fullOutputPath)) {
+        return null;
+      }
+
+      const fileContent = readFileSync(fullOutputPath, 'utf-8');
+      const trimmed = fileContent.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    } catch {
+      return null;
+    }
   }
 
   private extractAgentIdFromInput(input: Record<string, unknown>): string | null {

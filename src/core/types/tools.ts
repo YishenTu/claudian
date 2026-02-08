@@ -38,6 +38,8 @@ export interface ToolCallInfo {
   isExpanded?: boolean;
   diffData?: ToolDiffData;
   resolvedAnswers?: AskUserAnswers;
+  /** Linked Task subagent data (dylan-reed style: tool invocation owns subagent state). */
+  subagent?: SubagentInfo;
 }
 
 export type ExitPlanModeDecision =

@@ -303,6 +303,20 @@ describe('MessageRenderer', () => {
         { id: 'todo', name: 'TodoWrite', input: { items: [] } } as any,
         { id: 'edit', name: 'Edit', input: { file_path: 'notes/test.md' } } as any,
         { id: 'read', name: 'Read', input: { file_path: 'notes/test.md' } } as any,
+        {
+          id: 'sub-1',
+          name: TOOL_TASK,
+          input: { description: 'Async subagent' },
+          status: 'running',
+          subagent: { id: 'sub-1', mode: 'async', status: 'running', toolCalls: [], isExpanded: false },
+        } as any,
+        {
+          id: 'sub-2',
+          name: TOOL_TASK,
+          input: { description: 'Sync subagent' },
+          status: 'running',
+          subagent: { id: 'sub-2', mode: 'sync', status: 'running', toolCalls: [], isExpanded: false },
+        } as any,
       ],
       contentBlocks: [
         { type: 'thinking', content: 'thinking', durationSeconds: 2 } as any,
@@ -312,10 +326,6 @@ describe('MessageRenderer', () => {
         { type: 'tool_use', toolId: 'read' } as any,
         { type: 'subagent', subagentId: 'sub-1', mode: 'async' } as any,
         { type: 'subagent', subagentId: 'sub-2' } as any,
-      ],
-      subagents: [
-        { id: 'sub-1', mode: 'async' } as any,
-        { id: 'sub-2', mode: 'sync' } as any,
       ],
     };
 
@@ -458,6 +468,35 @@ describe('MessageRenderer', () => {
     expect(renderStoredToolCall).toHaveBeenCalled();
   });
 
+  it('renders unreferenced tool calls when contentBlocks miss tool_use blocks', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    const renderContentSpy = jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    (renderStoredToolCall as jest.Mock).mockClear();
+
+    const msg: ChatMessage = {
+      id: 'm-unreferenced-tool',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        { id: 'read-1', name: 'Read', input: { file_path: 'a.md' }, status: 'completed' } as any,
+      ],
+      contentBlocks: [
+        { type: 'text', content: 'Only text block persisted' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'Only text block persisted');
+    expect(renderStoredToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'read-1', name: 'Read' })
+    );
+  });
+
   it('renders Task tool calls as subagents for backward compatibility', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
@@ -494,6 +533,54 @@ describe('MessageRenderer', () => {
         result: 'All passed',
       })
     );
+  });
+
+  it('renders Task tool as async subagent when linked subagent mode is async', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+
+    (renderStoredAsyncSubagent as jest.Mock).mockClear();
+    (renderStoredSubagent as jest.Mock).mockClear();
+
+    const msg: ChatMessage = {
+      id: 'm-task-async',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        {
+          id: 'task-async-1',
+          name: TOOL_TASK,
+          input: { description: 'Background task', run_in_background: true },
+          status: 'completed',
+          result: 'Task running',
+          subagent: {
+            id: 'task-async-1',
+            description: 'Background task',
+            mode: 'async',
+            asyncStatus: 'running',
+            status: 'running',
+            toolCalls: [],
+            isExpanded: false,
+          },
+        } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'task-async-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredAsyncSubagent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        id: 'task-async-1',
+        mode: 'async',
+        asyncStatus: 'running',
+      })
+    );
+    expect(renderStoredSubagent).not.toHaveBeenCalled();
   });
 
   // ============================================

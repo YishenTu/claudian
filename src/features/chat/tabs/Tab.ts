@@ -784,6 +784,14 @@ export function initializeTabControllers(
       // Update messages (DOM already updated by manager)
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
 
+      // Persist async subagent state so reload can restore async renderer/status.
+      // During active stream, regular end-of-turn save will capture latest state.
+      if (!tab.state.isStreaming && tab.state.currentConversationId) {
+        void tab.controllers.conversationController?.save(false).catch(() => {
+          // Best-effort persistence; avoid surfacing background-save failures here.
+        });
+      }
+
       // Update status panel (hidden by default - inline is shown first)
       if (subagent.mode === 'async' && ui.statusPanel) {
         ui.statusPanel.updateSubagent({

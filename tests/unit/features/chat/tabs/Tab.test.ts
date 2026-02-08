@@ -1007,6 +1007,68 @@ describe('Tab - Controller Initialization', () => {
       // The subagent manager should have its callback set
       expect(tab.services.subagentManager).toBeDefined();
     });
+
+    it('persists async subagent state changes when not streaming', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      tab.state.currentConversationId = 'conv-1';
+      tab.state.isStreaming = false;
+
+      const setCallback = tab.services.subagentManager.setCallback as jest.Mock;
+      const callback = setCallback.mock.calls[0][0] as (subagent: any) => void;
+
+      callback({
+        id: 'task-1',
+        description: 'Background task',
+        mode: 'async',
+        asyncStatus: 'completed',
+        status: 'completed',
+        prompt: 'do work',
+        result: 'done',
+        toolCalls: [],
+        isExpanded: false,
+      });
+
+      // Wait one microtask so Promise chain from save(false) can run.
+      await Promise.resolve();
+
+      expect(mockStreamController.onAsyncSubagentStateChange).toHaveBeenCalled();
+      expect(mockConversationController.save).toHaveBeenCalledWith(false);
+    });
+
+    it('does not persist async subagent state while main stream is active', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      tab.state.currentConversationId = 'conv-1';
+      tab.state.isStreaming = true;
+
+      const setCallback = tab.services.subagentManager.setCallback as jest.Mock;
+      const callback = setCallback.mock.calls[0][0] as (subagent: any) => void;
+
+      callback({
+        id: 'task-1',
+        description: 'Background task',
+        mode: 'async',
+        asyncStatus: 'running',
+        status: 'running',
+        toolCalls: [],
+        isExpanded: false,
+      });
+
+      await Promise.resolve();
+
+      expect(mockConversationController.save).not.toHaveBeenCalled();
+    });
   });
 });
 

@@ -7,6 +7,8 @@ import {
   formatToolInput,
   getCurrentTask,
   getToolLabel,
+  getToolName,
+  getToolSummary,
   isBlockedToolResult,
   renderReadResult,
   renderResultLines,
@@ -102,6 +104,22 @@ describe('ToolCallRenderer', () => {
 
       expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'x');
     });
+
+    it('renders AskUserQuestion answers from result text when resolvedAnswers is missing', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'AskUserQuestion',
+        status: 'completed',
+        input: { questions: [{ question: 'Color?' }] },
+        result: '"Color?"="Blue"',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const answerEls = toolEl.querySelectorAll('.claudian-ask-review-a-text');
+
+      expect(answerEls).toHaveLength(1);
+      expect(answerEls[0].textContent).toBe('Blue');
+    });
   });
 
   describe('updateToolCallResult', () => {
@@ -119,6 +137,25 @@ describe('ToolCallRenderer', () => {
 
       const statusEl = toolEl.querySelector('.claudian-tool-status');
       expect(statusEl?.hasClass('status-completed')).toBe(true);
+    });
+
+    it('shows raw AskUserQuestion result when answers cannot be parsed', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        id: 'ask-1',
+        name: 'AskUserQuestion',
+        input: { questions: [{ question: 'Color?' }] },
+      });
+      const toolCallElements = new Map<string, HTMLElement>();
+
+      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements);
+      toolCall.status = 'completed';
+      toolCall.result = 'Answer submitted successfully.';
+
+      updateToolCallResult('ask-1', toolCall, toolCallElements);
+
+      const resultText = toolEl.querySelector('.claudian-tool-result-text');
+      expect(resultText?.textContent).toBe('Answer submitted successfully.');
     });
   });
 
@@ -223,6 +260,97 @@ describe('ToolCallRenderer', () => {
 
     it('should return raw name for unknown tools', () => {
       expect(getToolLabel('CustomTool', {})).toBe('CustomTool');
+    });
+  });
+
+  describe('getToolName', () => {
+    it('should return tool name for standard tools', () => {
+      expect(getToolName('Read', {})).toBe('Read');
+      expect(getToolName('Write', {})).toBe('Write');
+      expect(getToolName('Bash', {})).toBe('Bash');
+      expect(getToolName('Glob', {})).toBe('Glob');
+    });
+
+    it('should return Tasks with count for TodoWrite', () => {
+      const todos = [
+        { status: 'completed' },
+        { status: 'completed' },
+        { status: 'pending' },
+      ];
+      expect(getToolName('TodoWrite', { todos })).toBe('Tasks (2/3)');
+    });
+
+    it('should return Tasks without count when no todos', () => {
+      expect(getToolName('TodoWrite', {})).toBe('Tasks');
+    });
+
+    it('should return plan mode labels', () => {
+      expect(getToolName('EnterPlanMode', {})).toBe('Entering plan mode');
+      expect(getToolName('ExitPlanMode', {})).toBe('Plan complete');
+    });
+  });
+
+  describe('getToolSummary', () => {
+    it('should return filename-only for file tools', () => {
+      expect(getToolSummary('Read', { file_path: '/a/b/c/file.ts' })).toBe('file.ts');
+      expect(getToolSummary('Write', { file_path: '/src/index.ts' })).toBe('index.ts');
+      expect(getToolSummary('Edit', { file_path: 'simple.md' })).toBe('simple.md');
+    });
+
+    it('should return empty for file tools with no path', () => {
+      expect(getToolSummary('Read', {})).toBe('');
+    });
+
+    it('should return command for Bash', () => {
+      expect(getToolSummary('Bash', { command: 'npm test' })).toBe('npm test');
+    });
+
+    it('should truncate long Bash commands', () => {
+      const longCmd = 'a'.repeat(70);
+      expect(getToolSummary('Bash', { command: longCmd })).toBe('a'.repeat(60) + '...');
+    });
+
+    it('should return pattern for Glob/Grep', () => {
+      expect(getToolSummary('Glob', { pattern: '**/*.ts' })).toBe('**/*.ts');
+      expect(getToolSummary('Grep', { pattern: 'TODO' })).toBe('TODO');
+    });
+
+    it('should return query for WebSearch', () => {
+      expect(getToolSummary('WebSearch', { query: 'test query' })).toBe('test query');
+    });
+
+    it('should return url for WebFetch', () => {
+      expect(getToolSummary('WebFetch', { url: 'https://x.com' })).toBe('https://x.com');
+    });
+
+    it('should return filename for LS', () => {
+      expect(getToolSummary('LS', { path: '/src/components' })).toBe('components');
+    });
+
+    it('should return skill name for Skill', () => {
+      expect(getToolSummary('Skill', { skill: 'commit' })).toBe('commit');
+    });
+
+    it('should return activeForm with progress for TodoWrite with in-progress task', () => {
+      const todos = [
+        { status: 'completed', activeForm: 'Done' },
+        { status: 'in_progress', activeForm: 'Working on it' },
+      ];
+      expect(getToolSummary('TodoWrite', { todos })).toBe('Working on it 1/2');
+    });
+
+    it('should return progress for TodoWrite without in-progress task', () => {
+      const todos = [{ status: 'completed', activeForm: 'Done' }];
+      expect(getToolSummary('TodoWrite', { todos })).toBe('1/1');
+    });
+
+    it('should return empty for AskUserQuestion', () => {
+      expect(getToolSummary('AskUserQuestion', { questions: [{ question: 'Q1' }] })).toBe('');
+      expect(getToolSummary('AskUserQuestion', { questions: [{ question: 'Q1' }, { question: 'Q2' }] })).toBe('');
+    });
+
+    it('should return empty for unknown tools', () => {
+      expect(getToolSummary('CustomTool', {})).toBe('');
     });
   });
 

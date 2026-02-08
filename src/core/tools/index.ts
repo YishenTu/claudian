@@ -4,7 +4,11 @@ export {
   type TodoItem,
 } from './todo';
 export { getToolIcon, MCP_ICON_MARKER } from './toolIcons';
-export { extractResolvedAnswers, getPathFromToolInput } from './toolInput';
+export {
+  extractResolvedAnswers,
+  extractResolvedAnswersFromResultText,
+  getPathFromToolInput,
+} from './toolInput';
 export {
   BASH_TOOLS,
   type BashToolName,

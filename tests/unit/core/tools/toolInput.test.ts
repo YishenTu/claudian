@@ -1,4 +1,8 @@
-import { extractResolvedAnswers, getPathFromToolInput } from '@/core/tools/toolInput';
+import {
+  extractResolvedAnswers,
+  extractResolvedAnswersFromResultText,
+  getPathFromToolInput,
+} from '@/core/tools/toolInput';
 
 describe('extractResolvedAnswers', () => {
   it('returns undefined when result is not an object', () => {
@@ -20,6 +24,33 @@ describe('extractResolvedAnswers', () => {
   it('returns answers when valid', () => {
     const answers = { foo: 'bar', baz: 1 };
     expect(extractResolvedAnswers({ answers })).toBe(answers);
+  });
+});
+
+describe('extractResolvedAnswersFromResultText', () => {
+  it('returns undefined for non-string or empty values', () => {
+    expect(extractResolvedAnswersFromResultText(undefined)).toBeUndefined();
+    expect(extractResolvedAnswersFromResultText(null)).toBeUndefined();
+    expect(extractResolvedAnswersFromResultText(123)).toBeUndefined();
+    expect(extractResolvedAnswersFromResultText('   ')).toBeUndefined();
+  });
+
+  it('extracts answers from quoted key-value pairs', () => {
+    expect(extractResolvedAnswersFromResultText('"Color?"="Blue" "Size?"="M"')).toEqual({
+      'Color?': 'Blue',
+      'Size?': 'M',
+    });
+  });
+
+  it('extracts answers from JSON object text', () => {
+    expect(extractResolvedAnswersFromResultText('{"Color?":"Blue","Fast?":true}')).toEqual({
+      'Color?': 'Blue',
+      'Fast?': 'true',
+    });
+  });
+
+  it('returns undefined when text cannot be parsed', () => {
+    expect(extractResolvedAnswersFromResultText('No parsed answers here')).toBeUndefined();
   });
 });
 

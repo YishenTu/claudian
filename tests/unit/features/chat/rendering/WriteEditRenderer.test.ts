@@ -43,7 +43,8 @@ describe('WriteEditRenderer', () => {
 
       expect(state.wrapperEl).toBeDefined();
       expect(state.headerEl).toBeDefined();
-      expect(state.labelEl).toBeDefined();
+      expect(state.nameEl).toBeDefined();
+      expect(state.summaryEl).toBeDefined();
       expect(state.statsEl).toBeDefined();
       expect(state.statusEl).toBeDefined();
       expect(state.contentEl).toBeDefined();
@@ -59,7 +60,7 @@ describe('WriteEditRenderer', () => {
       expect(state.wrapperEl.dataset.toolId).toBe('my-tool-id');
     });
 
-    it('should display tool name and file path in label', () => {
+    it('should display tool name and filename in two-part header', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({
         name: 'Edit',
@@ -68,8 +69,8 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      expect(state.labelEl.textContent).toContain('Edit');
-      expect(state.labelEl.textContent).toContain('notes/test.md');
+      expect(state.nameEl.textContent).toBe('Edit');
+      expect(state.summaryEl.textContent).toBe('test.md');
     });
 
     it('should show spinner status while running', () => {
@@ -81,7 +82,7 @@ describe('WriteEditRenderer', () => {
       expect(state.statusEl.hasClass('status-running')).toBe(true);
     });
 
-    it('should shorten long file paths', () => {
+    it('should show filename only in summary', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({
         input: { file_path: '/very/long/path/to/some/deeply/nested/file.md' },
@@ -89,10 +90,8 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      // Should be shortened, not the full path
-      expect(state.labelEl.textContent.length).toBeLessThan(
-        'Write: /very/long/path/to/some/deeply/nested/file.md'.length + 10
-      );
+      // Summary should show just the filename
+      expect(state.summaryEl.textContent).toBe('file.md');
     });
 
     it('should handle missing file_path gracefully', () => {
@@ -101,7 +100,7 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      expect(state.labelEl.textContent).toContain('file');
+      expect(state.summaryEl.textContent).toBe('file');
     });
   });
 
@@ -297,8 +296,8 @@ describe('WriteEditRenderer', () => {
 
   });
 
-  describe('path shortening', () => {
-    it('should not shorten short paths', () => {
+  describe('filename extraction', () => {
+    it('should extract filename from path', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({
         input: { file_path: 'notes/test.md' },
@@ -306,10 +305,10 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      expect(state.labelEl.textContent).toContain('notes/test.md');
+      expect(state.summaryEl.textContent).toBe('test.md');
     });
 
-    it('should shorten very long paths', () => {
+    it('should extract filename from long path', () => {
       const parentEl = createMockEl();
       const longPath = 'src/components/features/auth/modals/confirmation/ConfirmationDialog.tsx';
       const toolCall = createToolCall({
@@ -318,10 +317,7 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      // Should contain ellipsis
-      expect(state.labelEl.textContent).toContain('...');
-      // Should contain filename
-      expect(state.labelEl.textContent).toContain('ConfirmationDialog.tsx');
+      expect(state.summaryEl.textContent).toBe('ConfirmationDialog.tsx');
     });
 
     it('should handle paths with only filename', () => {
@@ -332,7 +328,7 @@ describe('WriteEditRenderer', () => {
 
       const state = createWriteEditBlock(parentEl, toolCall);
 
-      expect(state.labelEl.textContent).toContain('README.md');
+      expect(state.summaryEl.textContent).toBe('README.md');
     });
   });
 

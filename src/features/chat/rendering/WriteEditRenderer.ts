@@ -10,12 +10,19 @@ export interface WriteEditState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
   headerEl: HTMLElement;
-  labelEl: HTMLElement;
+  nameEl: HTMLElement;
+  summaryEl: HTMLElement;
   statsEl: HTMLElement;
   statusEl: HTMLElement;
   toolCall: ToolCallInfo;
   isExpanded: boolean;
   diffLines?: DiffLine[];
+}
+
+function fileNameOnly(filePath: string): string {
+  if (!filePath) return 'file';
+  const normalized = filePath.replace(/\\/g, '/');
+  return normalized.split('/').pop() ?? 'file';
 }
 
 function shortenPath(filePath: string, maxLength = 40): string {
@@ -76,9 +83,11 @@ export function createWriteEditBlock(
   iconEl.setAttribute('aria-hidden', 'true');
   setIcon(iconEl, getToolIcon(toolName));
 
-  // Label: "Write: filename.md" or "Edit: filename.md"
-  const labelEl = headerEl.createDiv({ cls: 'claudian-write-edit-label' });
-  labelEl.setText(`${toolName}: ${shortenPath(filePath)}`);
+  // Two-part header: name + filename summary
+  const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
+  nameEl.setText(toolName);
+  const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
+  summaryEl.setText(fileNameOnly(filePath));
 
   // Stats (will be updated when diff is ready): "+15 -20"
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
@@ -101,7 +110,8 @@ export function createWriteEditBlock(
     wrapperEl,
     contentEl,
     headerEl,
-    labelEl,
+    nameEl,
+    summaryEl,
     statsEl,
     statusEl,
     toolCall,
@@ -186,9 +196,11 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   iconEl.setAttribute('aria-hidden', 'true');
   setIcon(iconEl, getToolIcon(toolName));
 
-  // Label
-  const labelEl = headerEl.createDiv({ cls: 'claudian-write-edit-label' });
-  labelEl.setText(`${toolName}: ${shortenPath(filePath)}`);
+  // Two-part header: name + filename summary
+  const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
+  nameEl.setText(toolName);
+  const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
+  summaryEl.setText(fileNameOnly(filePath));
 
   // Stats (from stored pre-computed diffData)
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });

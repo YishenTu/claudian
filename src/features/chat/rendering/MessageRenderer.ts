@@ -2,7 +2,7 @@ import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
-import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
@@ -204,6 +204,7 @@ export class MessageRenderer {
    */
   private renderAssistantContent(msg: ChatMessage, contentEl: HTMLElement): void {
     if (msg.contentBlocks && msg.contentBlocks.length > 0) {
+      const renderedToolIds = new Set<string>();
       for (const block of msg.contentBlocks) {
         if (block.type === 'thinking') {
           renderStoredThinkingBlock(
@@ -224,20 +225,28 @@ export class MessageRenderer {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
             this.renderToolCall(contentEl, toolCall);
+            renderedToolIds.add(toolCall.id);
           }
         } else if (block.type === 'compact_boundary') {
           const boundaryEl = contentEl.createDiv({ cls: 'claudian-compact-boundary' });
           boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
         } else if (block.type === 'subagent') {
-          const subagent = msg.subagents?.find(s => s.id === block.subagentId);
-          if (subagent) {
-            const mode = block.mode || subagent.mode || 'sync';
-            if (mode === 'async') {
-              renderStoredAsyncSubagent(contentEl, subagent);
-            } else {
-              renderStoredSubagent(contentEl, subagent);
-            }
-          }
+          const taskToolCall = msg.toolCalls?.find(
+            tc => tc.id === block.subagentId && tc.name === TOOL_TASK
+          );
+          if (!taskToolCall) continue;
+
+          this.renderTaskSubagent(contentEl, taskToolCall, block.mode);
+          renderedToolIds.add(taskToolCall.id);
+        }
+      }
+
+      // Defensive fallback: preserve tool visibility when contentBlocks/toolCalls drift on reload.
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const toolCall of msg.toolCalls) {
+          if (renderedToolIds.has(toolCall.id)) continue;
+          this.renderToolCall(contentEl, toolCall);
+          renderedToolIds.add(toolCall.id);
         }
       }
     } else {
@@ -278,30 +287,97 @@ export class MessageRenderer {
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
     } else if (toolCall.name === TOOL_TASK) {
-      // Backward compatibility: render Task tools as subagents
-      let status: 'completed' | 'error' | 'running';
-      switch (toolCall.status) {
-        case 'completed':
-          status = 'completed';
-          break;
-        case 'error':
-          status = 'error';
-          break;
-        default:
-          status = 'running';
+      this.renderTaskSubagent(contentEl, toolCall);
+    } else {
+      renderStoredToolCall(contentEl, toolCall);
+    }
+  }
+
+  private renderTaskSubagent(
+    contentEl: HTMLElement,
+    toolCall: ToolCallInfo,
+    modeHint?: 'sync' | 'async'
+  ): void {
+    const subagentInfo = this.resolveTaskSubagent(toolCall, modeHint);
+    if (subagentInfo.mode === 'async') {
+      renderStoredAsyncSubagent(contentEl, subagentInfo);
+      return;
+    }
+    renderStoredSubagent(contentEl, subagentInfo);
+  }
+
+  private resolveTaskSubagent(toolCall: ToolCallInfo, modeHint?: 'sync' | 'async'): SubagentInfo {
+    if (toolCall.subagent) {
+      if (!modeHint || toolCall.subagent.mode === modeHint || !toolCall.subagent.mode) {
+        return toolCall.subagent;
       }
-      const subagentInfo = {
+      return {
+        ...toolCall.subagent,
+        mode: modeHint,
+      };
+    }
+
+    const description = (toolCall.input?.description as string) || 'Subagent task';
+    const prompt = (toolCall.input?.prompt as string) || '';
+    const mode = modeHint ?? (toolCall.input?.run_in_background === true ? 'async' : 'sync');
+
+    if (mode !== 'async') {
+      return {
         id: toolCall.id,
-        description: (toolCall.input?.description as string) || 'Subagent task',
-        status,
+        description,
+        prompt,
+        status: this.mapToolStatusToSubagentStatus(toolCall.status),
         toolCalls: [],
         isExpanded: false,
         result: toolCall.result,
       };
-      renderStoredSubagent(contentEl, subagentInfo);
-    } else {
-      renderStoredToolCall(contentEl, toolCall);
     }
+
+    const asyncStatus = this.inferAsyncStatusFromTaskTool(toolCall);
+    return {
+      id: toolCall.id,
+      description,
+      prompt,
+      mode: 'async',
+      status: asyncStatus === 'completed' ? 'completed' : asyncStatus === 'error' ? 'error' : 'running',
+      asyncStatus,
+      toolCalls: [],
+      isExpanded: false,
+      result: toolCall.result,
+    };
+  }
+
+  private mapToolStatusToSubagentStatus(
+    status: ToolCallInfo['status']
+  ): 'completed' | 'error' | 'running' {
+    switch (status) {
+      case 'completed':
+        return 'completed';
+      case 'error':
+      case 'blocked':
+        return 'error';
+      default:
+        return 'running';
+    }
+  }
+
+  private inferAsyncStatusFromTaskTool(toolCall: ToolCallInfo): 'running' | 'completed' | 'error' {
+    if (toolCall.status === 'error' || toolCall.status === 'blocked') return 'error';
+    if (toolCall.status === 'running') return 'running';
+
+    const lowerResult = (toolCall.result || '').toLowerCase();
+    if (
+      lowerResult.includes('not_ready') ||
+      lowerResult.includes('not ready') ||
+      lowerResult.includes('"status":"running"') ||
+      lowerResult.includes('"status":"pending"') ||
+      lowerResult.includes('"retrieval_status":"running"') ||
+      lowerResult.includes('"retrieval_status":"not_ready"')
+    ) {
+      return 'running';
+    }
+
+    return 'completed';
   }
 
   // ============================================

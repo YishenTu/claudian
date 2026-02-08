@@ -47,7 +47,6 @@ export interface ChatMessage {
   displayContent?: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
-  subagents?: SubagentInfo[];
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];

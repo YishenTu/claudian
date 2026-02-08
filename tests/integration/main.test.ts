@@ -862,4 +862,299 @@ describe('ClaudianPlugin', () => {
     });
   });
 
+  describe('loadSdkMessagesForConversation - subagent recovery', () => {
+    it('restores subagent data when Task tool exists but subagent content block is missing', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-subagent-recovery',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-1',
+                name: 'Task',
+                input: { description: 'Do sub task' },
+                status: 'completed',
+                result: 'Task completed',
+              } as any,
+            ],
+            // Simulate partial persisted blocks that lost the task tool block.
+            contentBlocks: [{ type: 'text', content: 'Done' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-1': {
+            id: 'task-1',
+            description: 'Recovered subagent',
+            status: 'completed',
+            result: 'Recovered result',
+            toolCalls: [
+              {
+                id: 'sub-tool-1',
+                name: 'Read',
+                input: { file_path: 'README.md' },
+                status: 'completed',
+                result: 'content',
+              } as any,
+            ],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      expect(loadSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'session-subagent-recovery',
+        undefined
+      );
+      expect(loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-1')).toEqual(
+        expect.objectContaining({
+          subagent: expect.objectContaining({
+            id: 'task-1',
+            description: 'Recovered subagent',
+            result: 'Recovered result',
+          }),
+        })
+      );
+      expect(loaded?.messages[0].contentBlocks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'subagent', subagentId: 'task-1' }),
+        ])
+      );
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('restores async subagent data and mode when Task tool exists but async block is missing', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-subagent-recovery',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-async-1',
+                name: 'Task',
+                input: { description: 'Do background task', run_in_background: true },
+                status: 'completed',
+                result: 'Task started',
+              } as any,
+            ],
+            contentBlocks: [{ type: 'text', content: 'Started' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-async-1': {
+            id: 'task-async-1',
+            description: 'Recovered async subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered async result',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const block = loaded?.messages[0].contentBlocks?.find(
+        (b: any) => b.type === 'subagent' && b.subagentId === 'task-async-1'
+      ) as any;
+
+      expect(loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-1')).toEqual(
+        expect.objectContaining({
+          id: 'task-async-1',
+          subagent: expect.objectContaining({
+            id: 'task-async-1',
+            mode: 'async',
+            asyncStatus: 'completed',
+          }),
+        })
+      );
+      expect(block).toEqual(
+        expect.objectContaining({ type: 'subagent', subagentId: 'task-async-1', mode: 'async' })
+      );
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('hydrates async subagent tool calls from SDK subagent files on reload', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-subagent-tools',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-async-tools',
+                name: 'Task',
+                input: { description: 'Do background task', run_in_background: true },
+                status: 'completed',
+                result: 'Task started',
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-tools', mode: 'async' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-async-tools': {
+            id: 'task-async-tools',
+            description: 'Recovered async subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered async result',
+            agentId: 'agent-a123',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+      const loadSubagentToolsSpy = jest.spyOn(sdkSession, 'loadSubagentToolCalls').mockResolvedValue([
+        {
+          id: 'sub-tool-1',
+          name: 'Bash',
+          input: { command: 'ls' },
+          status: 'completed',
+          result: 'ok',
+          isExpanded: false,
+        } as any,
+      ]);
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-tools');
+
+      expect(loadSubagentToolsSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'session-async-subagent-tools',
+        'agent-a123'
+      );
+      expect(taskTool?.subagent?.toolCalls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'sub-tool-1',
+            name: 'Bash',
+            result: 'ok',
+          }),
+        ])
+      );
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+      loadSubagentToolsSpy.mockRestore();
+    });
+
+    it('keeps async subagent renderer visible when task block and task tool call are both missing', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-subagent-fallback',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: 'Background work started',
+            timestamp: 1000,
+            contentBlocks: [{ type: 'text', content: 'Background work started' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-async-orphan': {
+            id: 'task-async-orphan',
+            description: 'Recovered async orphan subagent',
+            mode: 'async',
+            asyncStatus: 'running',
+            status: 'running',
+            result: 'Running in background',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const assistant = loaded?.messages.find(m => m.id === 'assistant-1');
+      const block = assistant?.contentBlocks?.find(
+        (b: any) => b.type === 'subagent' && b.subagentId === 'task-async-orphan'
+      ) as any;
+
+      expect(assistant?.toolCalls?.find((tc: any) => tc.id === 'task-async-orphan')).toEqual(
+        expect.objectContaining({
+          id: 'task-async-orphan',
+          name: 'Task',
+          subagent: expect.objectContaining({
+            id: 'task-async-orphan',
+            mode: 'async',
+            asyncStatus: 'running',
+          }),
+        })
+      );
+      expect(block).toEqual(
+        expect.objectContaining({
+          type: 'subagent',
+          subagentId: 'task-async-orphan',
+          mode: 'async',
+        })
+      );
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+  });
+
 });
