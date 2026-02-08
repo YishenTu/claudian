@@ -407,6 +407,21 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t('settings.useGlobalCcConfig.name'))
+      .setDesc(t('settings.useGlobalCcConfig.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.useGlobalCcConfig ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.useGlobalCcConfig = value;
+            this.plugin.storage.updateGlobalConfig(value);
+            await this.plugin.saveSettings();
+            // Reload slash commands to apply new config source
+            await this.plugin.loadAllSlashCommands();
+          })
+      );
+
+    new Setting(containerEl)
       .setName(t('settings.enableBlocklist.name'))
       .setDesc(t('settings.enableBlocklist.desc'))
       .addToggle((toggle) =>

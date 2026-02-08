@@ -114,9 +114,9 @@ export class StorageService {
   readonly ccSettings: CCSettingsStorage;
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly commands: SlashCommandStorage;
-  readonly skills: SkillStorage;
+  skills: SkillStorage;
   readonly sessions: SessionStorage;
-  readonly mcp: McpStorage;
+  mcp: McpStorage;
   readonly agents: AgentVaultStorage;
 
   private adapter: VaultFileAdapter;
@@ -130,9 +130,10 @@ export class StorageService {
     this.ccSettings = new CCSettingsStorage(this.adapter);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
-    this.skills = new SkillStorage(this.adapter);
+    // Initialize with default (vault-only), will be updated after settings load
+    this.skills = new SkillStorage(this.adapter, { preferGlobal: false });
     this.sessions = new SessionStorage(this.adapter);
-    this.mcp = new McpStorage(this.adapter);
+    this.mcp = new McpStorage(this.adapter, { preferGlobal: false });
     this.agents = new AgentVaultStorage(this.adapter);
   }
 
@@ -143,7 +144,19 @@ export class StorageService {
     const cc = await this.ccSettings.load();
     const claudian = await this.claudianSettings.load();
 
+    // Update skills and MCP storage based on loaded settings
+    this.updateGlobalConfig(claudian.useGlobalCcConfig ?? false);
+
     return { cc, claudian };
+  }
+
+  /**
+   * Update global config preference for skills and MCP servers.
+   * Call this when the useGlobalCcConfig setting changes.
+   */
+  updateGlobalConfig(useGlobal: boolean): void {
+    this.skills = new SkillStorage(this.adapter, { preferGlobal: useGlobal });
+    this.mcp = new McpStorage(this.adapter, { preferGlobal: useGlobal });
   }
 
   private async runMigrations(): Promise<void> {

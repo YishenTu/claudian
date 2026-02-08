@@ -191,6 +191,10 @@
       "name": "Load user Claude settings",
       "desc": "Load ~/.claude/settings.json. When enabled, user's Claude Code permission rules may bypass Safe mode."
     },
+    "useGlobalCcConfig": {
+      "name": "Use global Claude Code config",
+      "desc": "When enabled, skills and MCP servers are loaded from ~/.claude/ (shared with Claude Code CLI). When disabled, they are loaded from the vault (isolated per vault). Default is disabled for backward compatibility."
+    },
     "enableBlocklist": {
       "name": "Enable command blocklist",
       "desc": "Block potentially dangerous bash commands"
