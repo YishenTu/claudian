@@ -661,24 +661,6 @@ describe('addSubagentToolCall', () => {
 
     expect(state.info.toolCalls).toHaveLength(2);
     expect(state.countEl.textContent).toBe('2 tool uses');
-    // currentResultEl should be cleared when new tool is added
-    expect(state.currentResultEl).toBeNull();
-  });
-
-  it('sets currentToolEl with tool id dataset', () => {
-    const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
-
-    const toolCall: ToolCallInfo = {
-      id: 'tool-abc',
-      name: 'Read',
-      input: { file_path: 'test.md' },
-      status: 'running',
-      isExpanded: false,
-    };
-    addSubagentToolCall(state, toolCall);
-
-    expect(state.currentToolEl).not.toBeNull();
-    expect((state.currentToolEl as any).dataset.toolId).toBe('tool-abc');
   });
 });
 
@@ -712,7 +694,7 @@ describe('updateSubagentToolResult', () => {
     expect(state.info.toolCalls[0].status).toBe('completed');
   });
 
-  it('creates result element when tool has result', () => {
+  it('does not update tool call for non-matching tool ID', () => {
     const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
 
     const toolCall: ToolCallInfo = {
@@ -724,56 +706,9 @@ describe('updateSubagentToolResult', () => {
     };
     addSubagentToolCall(state, toolCall);
 
-    const updatedToolCall: ToolCallInfo = {
-      ...toolCall,
-      status: 'completed',
-      result: 'File contents',
-    };
-    updateSubagentToolResult(state, 'tool-1', updatedToolCall);
-
-    expect(state.currentResultEl).not.toBeNull();
-  });
-
-  it('updates existing result element on subsequent calls', () => {
-    const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
-
-    const toolCall: ToolCallInfo = {
-      id: 'tool-1',
-      name: 'Read',
-      input: { file_path: 'test.md' },
-      status: 'running',
-      isExpanded: false,
-    };
-    addSubagentToolCall(state, toolCall);
-
-    // First result
-    updateSubagentToolResult(state, 'tool-1', { ...toolCall, status: 'completed', result: 'First result' });
-    const firstResultEl = state.currentResultEl;
-
-    // Update result
-    updateSubagentToolResult(state, 'tool-1', { ...toolCall, status: 'completed', result: 'Updated result' });
-
-    // Should reuse the same result element
-    expect(state.currentResultEl).toBe(firstResultEl);
-  });
-
-  it('ignores update for non-matching tool ID', () => {
-    const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
-
-    const toolCall: ToolCallInfo = {
-      id: 'tool-1',
-      name: 'Read',
-      input: { file_path: 'test.md' },
-      status: 'running',
-      isExpanded: false,
-    };
-    addSubagentToolCall(state, toolCall);
-
-    // Update with different ID - should not crash
     updateSubagentToolResult(state, 'tool-999', { ...toolCall, id: 'tool-999', status: 'completed' });
 
-    // State should remain unchanged for the rendered tool
-    expect(state.currentResultEl).toBeNull();
+    expect(state.info.toolCalls[0].status).toBe('running');
   });
 });
 
@@ -823,8 +758,6 @@ describe('finalizeSubagentBlock', () => {
 
     finalizeSubagentBlock(state, 'Done', false);
 
-    expect(state.currentToolEl).not.toBeNull();
-    expect(state.currentResultEl).not.toBeNull();
     const doneText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
     expect(doneText).toBe('Done');
   });

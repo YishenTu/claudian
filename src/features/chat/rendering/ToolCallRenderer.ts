@@ -23,7 +23,7 @@ import { MCP_ICON_SVG } from '../../../shared/icons';
 import { setupCollapsible } from './collapsible';
 import { renderTodoItems } from './todoUtils';
 
-export function setToolIcon(el: HTMLElement, name: string) {
+export function setToolIcon(el: HTMLElement, name: string): void {
   const icon = getToolIcon(name);
   if (icon === MCP_ICON_MARKER) {
     el.innerHTML = MCP_ICON_SVG;
@@ -81,7 +81,7 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
   }
 }
 
-/** Backward-compat label for SubagentRenderer, StreamController, and ARIA. */
+/** Combined name+summary for ARIA labels (collapsible regions need a single descriptive phrase). */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_READ:
@@ -383,7 +383,6 @@ function createToolElementStructure(
   const summaryEl = header.createSpan({ cls: 'claudian-tool-summary' });
   summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
 
-  // For TodoWrite: [icon] Tasks [3/13] [current task]
   const currentTaskEl = toolCall.name === TOOL_TODO_WRITE
     ? createCurrentTaskPreview(header, toolCall.input)
     : null;

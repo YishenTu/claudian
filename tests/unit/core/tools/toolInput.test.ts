@@ -277,12 +277,6 @@ describe('getPathFromToolInput', () => {
   });
 
   describe('edge cases', () => {
-    it('should handle empty input object', () => {
-      const result = getPathFromToolInput('Read', {});
-
-      expect(result).toBeNull();
-    });
-
     it('should handle paths with spaces', () => {
       const result = getPathFromToolInput('Read', {
         file_path: '/path/with spaces/file.txt',

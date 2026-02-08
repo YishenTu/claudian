@@ -27,7 +27,6 @@
   height: 16px;
 }
 
-/* Two-part header: tool name (fixed) + summary (flexible) */
 .claudian-tool-name {
   font-family: var(--font-monospace);
   font-size: 13px;

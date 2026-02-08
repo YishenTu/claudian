@@ -308,7 +308,7 @@ export class MessageRenderer {
 
   private resolveTaskSubagent(toolCall: ToolCallInfo, modeHint?: 'sync' | 'async'): SubagentInfo {
     if (toolCall.subagent) {
-      if (!modeHint || toolCall.subagent.mode === modeHint || !toolCall.subagent.mode) {
+      if (!modeHint || toolCall.subagent.mode === modeHint) {
         return toolCall.subagent;
       }
       return {
@@ -339,7 +339,7 @@ export class MessageRenderer {
       description,
       prompt,
       mode: 'async',
-      status: asyncStatus === 'completed' ? 'completed' : asyncStatus === 'error' ? 'error' : 'running',
+      status: asyncStatus,
       asyncStatus,
       toolCalls: [],
       isExpanded: false,

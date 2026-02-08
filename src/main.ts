@@ -751,12 +751,9 @@ export default class ClaudianPlugin extends Plugin {
         return taskToolCall;
       }
 
-      taskToolCall.input = {
-        ...taskToolCall.input,
-        ...(taskToolCall.input.description ? {} : { description: subagent.description }),
-        ...(taskToolCall.input.prompt ? {} : { prompt: subagent.prompt || '' }),
-        ...(subagent.mode === 'async' ? { run_in_background: true } : {}),
-      };
+      if (!taskToolCall.input.description) taskToolCall.input.description = subagent.description;
+      if (!taskToolCall.input.prompt) taskToolCall.input.prompt = subagent.prompt || '';
+      if (subagent.mode === 'async') taskToolCall.input.run_in_background = true;
       taskToolCall.status = subagent.status;
       if (subagent.result !== undefined) {
         taskToolCall.result = subagent.result;

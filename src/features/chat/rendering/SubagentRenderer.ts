@@ -38,8 +38,6 @@ export interface SubagentState {
   resultBodyEl: HTMLElement | null;
   toolElements: Map<string, SubagentToolView>;
   info: SubagentInfo;
-  currentToolEl: HTMLElement | null;
-  currentResultEl: HTMLElement | null;
 }
 
 const SUBAGENT_TOOL_STATUS_ICONS: Partial<Record<ToolCallInfo['status'], string>> = {
@@ -187,7 +185,6 @@ function setResultText(state: SubagentState, text: string): void {
   section.bodyEl.empty();
   const resultEl = section.bodyEl.createDiv({ cls: 'claudian-subagent-result-output' });
   resultEl.setText(text);
-  state.currentResultEl = section.bodyEl;
 }
 
 function hydrateSyncSubagentStateFromStored(state: SubagentState, subagent: SubagentInfo): void {
@@ -282,8 +279,6 @@ export function createSubagentBlock(
     resultBodyEl: null,
     toolElements: new Map<string, SubagentToolView>(),
     info,
-    currentToolEl: null,
-    currentResultEl: null,
   };
 
   updateSyncHeaderAria(state);
@@ -301,9 +296,6 @@ export function addSubagentToolCall(
 
   const toolView = createSubagentToolView(state.toolsContainerEl, toolCall);
   state.toolElements.set(toolCall.id, toolView);
-
-  state.currentToolEl = toolView.wrapperEl;
-  state.currentResultEl = toolCall.result ? toolView.contentEl : null;
 
   updateSyncHeaderAria(state);
 }
@@ -324,8 +316,6 @@ export function updateSubagentToolResult(
   }
 
   updateSubagentToolView(toolView, toolCall);
-  state.currentToolEl = toolView.wrapperEl;
-  state.currentResultEl = toolCall.result ? toolView.contentEl : null;
 }
 
 export function finalizeSubagentBlock(
@@ -344,14 +334,10 @@ export function finalizeSubagentBlock(
   state.statusEl.empty();
   if (state.info.status === 'completed') {
     setIcon(state.statusEl, 'check');
-  } else {
-    setIcon(state.statusEl, 'x');
-  }
-
-  if (state.info.status === 'completed') {
     state.wrapperEl.removeClass('error');
     state.wrapperEl.addClass('done');
   } else {
+    setIcon(state.statusEl, 'x');
     state.wrapperEl.removeClass('done');
     state.wrapperEl.addClass('error');
   }

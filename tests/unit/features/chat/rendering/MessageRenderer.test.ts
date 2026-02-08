@@ -583,6 +583,50 @@ describe('MessageRenderer', () => {
     expect(renderStoredSubagent).not.toHaveBeenCalled();
   });
 
+  it('uses subagent block mode hint when linked subagent mode is missing', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+
+    (renderStoredAsyncSubagent as jest.Mock).mockClear();
+    (renderStoredSubagent as jest.Mock).mockClear();
+
+    const msg: ChatMessage = {
+      id: 'm-task-mode-hint',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        {
+          id: 'task-hint-1',
+          name: TOOL_TASK,
+          input: { description: 'Background task from block hint' },
+          status: 'running',
+          subagent: {
+            id: 'task-hint-1',
+            description: 'Background task from block hint',
+            status: 'running',
+            toolCalls: [],
+            isExpanded: false,
+          },
+        } as any,
+      ],
+      contentBlocks: [
+        { type: 'subagent', subagentId: 'task-hint-1', mode: 'async' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredAsyncSubagent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        id: 'task-hint-1',
+        mode: 'async',
+      })
+    );
+    expect(renderStoredSubagent).not.toHaveBeenCalled();
+  });
+
   // ============================================
   // TaskOutput skipping
   // ============================================

@@ -78,17 +78,14 @@ export function createWriteEditBlock(
   iconEl.setAttribute('aria-hidden', 'true');
   setIcon(iconEl, getToolIcon(toolName));
 
-  // Two-part header: name + filename summary
   const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
   summaryEl.setText(fileNameOnly(filePath) || 'file');
 
-  // Stats (will be updated when diff is ready): "+15 -20"
+  // Populated when diff is computed
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
-  // Empty initially, populated when diff is computed
 
-  // Status indicator (empty while running, icon on completion/error)
   const statusEl = headerEl.createDiv({ cls: 'claudian-write-edit-status status-running' });
   statusEl.setAttribute('aria-label', 'Status: running');
 
@@ -191,13 +188,11 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   iconEl.setAttribute('aria-hidden', 'true');
   setIcon(iconEl, getToolIcon(toolName));
 
-  // Two-part header: name + filename summary
   const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
   summaryEl.setText(fileNameOnly(filePath) || 'file');
 
-  // Stats (from stored pre-computed diffData)
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
   if (toolCall.diffData) {
     renderDiffStats(statsEl, toolCall.diffData.stats);

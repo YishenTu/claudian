@@ -705,6 +705,38 @@ ${inlineOutput}
       }
     });
 
+    it('ignores truncated full output files outside trusted temp roots', () => {
+      const { manager } = createManager();
+      setupLinkedAgentOutput(manager, 'task-1', 'agent-untrusted-output', 'out-1');
+
+      const fullOutputFile = join(process.cwd(), '.context', 'agent-untrusted.output');
+      const fullOutput = [
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Should not be loaded from untrusted path.' }],
+          },
+        }),
+      ].join('\n');
+      writeFileSync(fullOutputFile, fullOutput, 'utf-8');
+
+      const inlineOutput = `[Truncated. Full output: ${fullOutputFile}]`;
+      const xmlPayload = `<retrieval_status>success</retrieval_status>
+<task_id>agent-untrusted-output</task_id>
+<status>completed</status>
+<output>
+${inlineOutput}
+</output>`;
+
+      try {
+        const result = manager.handleAgentOutputToolResult('out-1', xmlPayload, false);
+        expect(result?.result).toBe(inlineOutput);
+      } finally {
+        rmSync(fullOutputFile, { force: true });
+      }
+    });
+
     it('extracts direct result tag when present', () => {
       const { manager } = createManager();
       setupLinkedAgentOutput(manager, 'task-1', 'agent-x', 'out-1');
@@ -855,7 +887,7 @@ Only this is the final result.
       expect((result as any).info.asyncStatus).toBe('pending');
     });
 
-    it('buffers task when run_in_background is unknown', () => {
+    it('treats missing run_in_background as sync task', () => {
       const { manager } = createManager();
       const parentEl = createMockEl();
 
@@ -865,8 +897,8 @@ Only this is the final result.
         parentEl
       );
 
-      expect(result.action).toBe('buffered');
-      expect(manager.hasPendingTask('task-unknown')).toBe(true);
+      expect(result.action).toBe('created_sync');
+      expect(manager.hasPendingTask('task-unknown')).toBe(false);
     });
 
     it('returns label_updated for already rendered sync subagent', () => {
@@ -924,18 +956,20 @@ Only this is the final result.
       expect(manager.getByTaskId('task-1')?.prompt).toBe('full prompt text');
     });
 
-    it('merges input for buffered task and renders when run_in_background known', () => {
+    it('merges buffered input and renders once content element becomes available', () => {
       const { manager } = createManager();
       const parentEl = createMockEl();
 
-      // First chunk - unknown
-      manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
+      // First chunk without content target must be buffered.
+      manager.handleTaskToolUse('task-1', { description: 'Initial description' }, null);
       expect(manager.hasPendingTask('task-1')).toBe(true);
 
-      // Second chunk with run_in_background
-      const result = manager.handleTaskToolUse('task-1', { run_in_background: false }, parentEl);
+      // Second chunk arrives with a content target and additional input.
+      const result = manager.handleTaskToolUse('task-1', { prompt: 'latest prompt' }, parentEl);
 
       expect(result.action).toBe('created_sync');
+      expect((result as any).subagentState.info.description).toBe('Initial description');
+      expect((result as any).subagentState.info.prompt).toBe('latest prompt');
       expect(manager.hasPendingTask('task-1')).toBe(false);
     });
 
@@ -974,9 +1008,9 @@ Only this is the final result.
       const { manager } = createManager();
       const parentEl = createMockEl();
 
-      manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
+      manager.handleTaskToolUse('task-1', { prompt: 'test' }, null);
 
-      const result = manager.renderPendingTask('task-1');
+      const result = manager.renderPendingTask('task-1', parentEl);
       expect(result).not.toBeNull();
       expect(result?.mode).toBe('sync');
       expect(manager.hasPendingTask('task-1')).toBe(false);
@@ -1017,7 +1051,7 @@ Only this is the final result.
       const { manager } = createManager();
       const parentEl = createMockEl();
 
-      manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
+      manager.handleTaskToolUse('task-1', { prompt: 'test' }, null);
       expect(manager.subagentsSpawnedThisStream).toBe(0);
 
       const result = manager.renderPendingTask('task-1', parentEl);
@@ -1167,7 +1201,7 @@ Only this is the final result.
       const parentEl = createMockEl();
 
       manager.handleTaskToolUse('task-sync', { run_in_background: false }, parentEl);
-      manager.handleTaskToolUse('task-pending', { prompt: 'test' }, parentEl);
+      manager.handleTaskToolUse('task-pending', { prompt: 'test' }, null);
 
       expect(manager.getSyncSubagent('task-sync')).toBeDefined();
       expect(manager.hasPendingTask('task-pending')).toBe(true);

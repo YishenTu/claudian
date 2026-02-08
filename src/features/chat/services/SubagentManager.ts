@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, realpathSync } from 'fs';
+import { tmpdir } from 'os';
+import { isAbsolute, sep } from 'path';
 
 import type {
   SubagentInfo,
@@ -32,6 +34,9 @@ export type RenderPendingResult =
   | { mode: 'async'; info: SubagentInfo; domState: AsyncSubagentState };
 
 export class SubagentManager {
+  private static readonly TRUSTED_OUTPUT_EXT = '.output';
+  private static readonly TRUSTED_TMP_ROOTS = SubagentManager.resolveTrustedTmpRoots();
+
   private syncSubagents: Map<string, SubagentState> = new Map();
   private pendingTasks: Map<string, PendingToolCall> = new Map();
   private _spawnedThisStream = 0;
@@ -95,14 +100,11 @@ export class SubagentManager {
       if (currentContentEl) {
         pending.parentEl = currentContentEl;
       }
-      const runInBackground = pending.toolCall.input.run_in_background;
-      if (runInBackground !== undefined) {
-        const result = this.renderPendingTask(taskToolId, currentContentEl);
-        if (result) {
-          return result.mode === 'sync'
-            ? { action: 'created_sync', subagentState: result.subagentState }
-            : { action: 'created_async', info: result.info, domState: result.domState };
-        }
+      const result = this.renderPendingTask(taskToolId, currentContentEl);
+      if (result) {
+        return result.mode === 'sync'
+          ? { action: 'created_sync', subagentState: result.subagentState }
+          : { action: 'created_async', info: result.info, domState: result.domState };
       }
       return { action: 'buffered' };
     }
@@ -120,30 +122,11 @@ export class SubagentManager {
       return { action: 'buffered' };
     }
 
-    // New Task — check if run_in_background is known
-    const runInBackground = taskInput?.run_in_background;
-    if (runInBackground !== undefined) {
-      this._spawnedThisStream++;
-      if (runInBackground === true) {
-        return this.createAsyncTask(taskToolId, taskInput, currentContentEl);
-      } else {
-        return this.createSyncTask(taskToolId, taskInput, currentContentEl);
-      }
+    this._spawnedThisStream++;
+    if (taskInput.run_in_background === true) {
+      return this.createAsyncTask(taskToolId, taskInput, currentContentEl);
     }
-
-    // Unknown — buffer until confirmed by child chunk or result
-    const toolCall: ToolCallInfo = {
-      id: taskToolId,
-      name: 'Task',
-      input: taskInput || {},
-      status: 'running',
-      isExpanded: false,
-    };
-    this.pendingTasks.set(taskToolId, {
-      toolCall,
-      parentEl: currentContentEl,
-    });
-    return { action: 'buffered' };
+    return this.createSyncTask(taskToolId, taskInput, currentContentEl);
   }
 
   // ============================================
@@ -581,8 +564,8 @@ export class SubagentManager {
       }
 
       if (hasAgents) {
-        const agentStatuses = Object.values(parsed.agents as Record<string, any>)
-          .map((a: any) => (a && typeof a.status === 'string') ? a.status.toLowerCase() : '');
+        const agentStatuses = Object.values(parsed.agents as Record<string, unknown>)
+          .map((a) => (a && typeof a === 'object' && 'status' in a && typeof (a as Record<string, unknown>).status === 'string') ? ((a as Record<string, unknown>).status as string).toLowerCase() : '');
         const anyRunning = agentStatuses.some(s =>
           s === 'running' || s === 'pending' || s === 'not_ready'
         );
@@ -907,6 +890,10 @@ export class SubagentManager {
 
   private readFullOutputFile(fullOutputPath: string): string | null {
     try {
+      if (!this.isTrustedOutputPath(fullOutputPath)) {
+        return null;
+      }
+
       if (!existsSync(fullOutputPath)) {
         return null;
       }
@@ -922,5 +909,39 @@ export class SubagentManager {
   private extractAgentIdFromInput(input: Record<string, unknown>): string | null {
     const agentId = (input.task_id as string) || (input.agentId as string) || (input.agent_id as string);
     return agentId || null;
+  }
+
+  private static resolveTrustedTmpRoots(): string[] {
+    const roots = new Set<string>();
+    const candidates = [tmpdir(), '/tmp', '/private/tmp'];
+    for (const candidate of candidates) {
+      try {
+        roots.add(realpathSync(candidate));
+      } catch {
+        // Ignore unavailable temp roots.
+      }
+    }
+    return Array.from(roots);
+  }
+
+  private isTrustedOutputPath(fullOutputPath: string): boolean {
+    if (!isAbsolute(fullOutputPath)) {
+      return false;
+    }
+
+    if (!fullOutputPath.toLowerCase().endsWith(SubagentManager.TRUSTED_OUTPUT_EXT)) {
+      return false;
+    }
+
+    let resolvedPath: string;
+    try {
+      resolvedPath = realpathSync(fullOutputPath);
+    } catch {
+      return false;
+    }
+
+    return SubagentManager.TRUSTED_TMP_ROOTS.some((root) =>
+      resolvedPath === root || resolvedPath.startsWith(`${root}${sep}`)
+    );
   }
 }

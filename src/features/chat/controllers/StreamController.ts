@@ -653,7 +653,7 @@ export class StreamController {
     if (!subagent) return;
     if (subagent.mode !== 'async') return;
     if (!subagent.agentId) return;
-    if ((subagent.toolCalls?.length ?? 0) > 0) return;
+    if (subagent.toolCalls?.length) return;
 
     const asyncStatus = subagent.asyncStatus ?? subagent.status;
     if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
@@ -725,9 +725,9 @@ export class StreamController {
 
   private applySubagentToTaskToolCall(taskToolCall: ToolCallInfo, subagent: SubagentInfo): void {
     taskToolCall.subagent = subagent;
-    taskToolCall.status = subagent.status === 'completed' ? 'completed'
-      : subagent.status === 'error' ? 'error'
-      : 'running';
+    if (subagent.status === 'completed') taskToolCall.status = 'completed';
+    else if (subagent.status === 'error') taskToolCall.status = 'error';
+    else taskToolCall.status = 'running';
     if (subagent.result !== undefined) {
       taskToolCall.result = subagent.result;
     }
