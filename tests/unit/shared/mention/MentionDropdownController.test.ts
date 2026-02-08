@@ -489,9 +489,7 @@ describe('MentionDropdownController', () => {
         limitedCallbacks
       );
 
-      const testInput = createMockInput();
-      testInput.value = '@note';
-      testInput.selectionStart = 5;
+      expect(testController).toBeDefined();
 
       testController.destroy();
     });

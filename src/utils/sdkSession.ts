@@ -87,7 +87,7 @@ export function getSDKProjectsPath(): string {
 
 /** Validates a subagent agent ID to prevent path traversal attacks. */
 function isValidAgentId(agentId: string): boolean {
-  if (!agentId || agentId.length === 0 || agentId.length > 128) {
+  if (!agentId || agentId.length > 128) {
     return false;
   }
   if (agentId.includes('..') || agentId.includes('/') || agentId.includes('\\')) {

@@ -3,21 +3,14 @@ import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
 import {
-  areAllTodosCompleted,
-  formatToolInput,
-  getCurrentTask,
   getToolLabel,
   getToolName,
   getToolSummary,
   isBlockedToolResult,
-  renderReadResult,
-  renderResultLines,
   renderStoredToolCall,
   renderTodoWriteResult,
   renderToolCall,
-  renderWebSearchResult,
   setToolIcon,
-  truncateResult,
   updateToolCallResult,
 } from '@/features/chat/rendering/ToolCallRenderer';
 
@@ -277,10 +270,7 @@ describe('ToolCallRenderer', () => {
         { status: 'completed' },
         { status: 'pending' },
       ];
-      expect(getToolName('TodoWrite', { todos })).toBe('Tasks (2/3)');
-    });
-
-    it('should return Tasks without count when no todos', () => {
+      expect(getToolName('TodoWrite', { todos })).toBe('Tasks 2/3');
       expect(getToolName('TodoWrite', {})).toBe('Tasks');
     });
 
@@ -331,17 +321,13 @@ describe('ToolCallRenderer', () => {
       expect(getToolSummary('Skill', { skill: 'commit' })).toBe('commit');
     });
 
-    it('should return activeForm with progress for TodoWrite with in-progress task', () => {
+    it('should return empty for TodoWrite', () => {
       const todos = [
         { status: 'completed', activeForm: 'Done' },
         { status: 'in_progress', activeForm: 'Working on it' },
       ];
-      expect(getToolSummary('TodoWrite', { todos })).toBe('Working on it 1/2');
-    });
-
-    it('should return progress for TodoWrite without in-progress task', () => {
-      const todos = [{ status: 'completed', activeForm: 'Done' }];
-      expect(getToolSummary('TodoWrite', { todos })).toBe('1/1');
+      expect(getToolSummary('TodoWrite', { todos })).toBe('');
+      expect(getToolSummary('TodoWrite', {})).toBe('');
     });
 
     it('should return empty for AskUserQuestion', () => {
@@ -351,82 +337,6 @@ describe('ToolCallRenderer', () => {
 
     it('should return empty for unknown tools', () => {
       expect(getToolSummary('CustomTool', {})).toBe('');
-    });
-  });
-
-  describe('formatToolInput', () => {
-    it('should return file_path for Read/Write/Edit', () => {
-      expect(formatToolInput('Read', { file_path: '/test.ts' })).toBe('/test.ts');
-      expect(formatToolInput('Write', { file_path: '/out.ts' })).toBe('/out.ts');
-      expect(formatToolInput('Edit', { file_path: '/edit.ts' })).toBe('/edit.ts');
-    });
-
-    it('should return command for Bash', () => {
-      expect(formatToolInput('Bash', { command: 'ls -la' })).toBe('ls -la');
-    });
-
-    it('should return pattern for Glob/Grep', () => {
-      expect(formatToolInput('Glob', { pattern: '*.ts' })).toBe('*.ts');
-      expect(formatToolInput('Grep', { pattern: 'TODO' })).toBe('TODO');
-    });
-
-    it('should return query for WebSearch', () => {
-      expect(formatToolInput('WebSearch', { query: 'test' })).toBe('test');
-    });
-
-    it('should return url for WebFetch', () => {
-      expect(formatToolInput('WebFetch', { url: 'https://example.com' })).toBe('https://example.com');
-    });
-
-    it('should return JSON for unknown tools', () => {
-      const input = { key: 'value' };
-      expect(formatToolInput('Unknown', input)).toBe(JSON.stringify(input, null, 2));
-    });
-
-    it('should fallback to JSON when expected field is missing', () => {
-      const input = { other: 'data' };
-      expect(formatToolInput('Bash', input)).toBe(JSON.stringify(input, null, 2));
-    });
-  });
-
-  describe('renderResultLines', () => {
-    it('should render up to maxLines lines', () => {
-      const container = createMockEl();
-      renderResultLines(container as unknown as HTMLElement, 'line1\nline2\nline3\nline4\nline5', 3);
-      // 3 lines + 1 "more" indicator
-      expect(container._children.length).toBe(4);
-      expect(container._children[3].textContent).toBe('2 more lines');
-    });
-
-    it('should strip line number prefixes', () => {
-      const container = createMockEl();
-      renderResultLines(container as unknown as HTMLElement, '  1\u2192const x = 1;', 3);
-      expect(container._children[0].textContent).toBe('const x = 1;');
-    });
-
-    it('should render all lines when within limit', () => {
-      const container = createMockEl();
-      renderResultLines(container as unknown as HTMLElement, 'a\nb', 5);
-      expect(container._children.length).toBe(2);
-    });
-  });
-
-  describe('truncateResult', () => {
-    it('should truncate by length', () => {
-      const long = 'x'.repeat(3000);
-      const result = truncateResult(long, 20, 2000);
-      expect(result.length).toBeLessThanOrEqual(2001); // 2000 chars + possible newline content
-    });
-
-    it('should truncate by line count', () => {
-      const lines = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
-      const result = truncateResult(lines, 5, 100000);
-      expect(result).toContain('more lines');
-    });
-
-    it('should return original when within limits', () => {
-      const short = 'hello\nworld';
-      expect(truncateResult(short)).toBe(short);
     });
   });
 
@@ -449,108 +359,6 @@ describe('ToolCallRenderer', () => {
 
     it('should return false for normal results', () => {
       expect(isBlockedToolResult('File content here')).toBe(false);
-    });
-  });
-
-  describe('renderWebSearchResult', () => {
-    it('should render links from web search result', () => {
-      const container = createMockEl();
-      const result = 'Links: [{"title":"Result 1","url":"https://example.com"},{"title":"Result 2","url":"https://test.com"}]';
-      const rendered = renderWebSearchResult(container as unknown as HTMLElement, result, 3);
-      expect(rendered).toBe(true);
-      expect(container._children.length).toBe(2);
-    });
-
-    it('should show "more results" when exceeding maxItems', () => {
-      const container = createMockEl();
-      const links = Array.from({ length: 5 }, (_, i) => ({ title: `R${i}`, url: `https://${i}.com` }));
-      const result = `Links: ${JSON.stringify(links)}`;
-      renderWebSearchResult(container as unknown as HTMLElement, result, 2);
-      expect(container._children.length).toBe(3); // 2 items + 1 "more"
-      expect(container._children[2].textContent).toBe('3 more results');
-    });
-
-    it('should return false for non-web-search results', () => {
-      const container = createMockEl();
-      expect(renderWebSearchResult(container as unknown as HTMLElement, 'plain text')).toBe(false);
-    });
-
-    it('should return false for empty links array', () => {
-      const container = createMockEl();
-      expect(renderWebSearchResult(container as unknown as HTMLElement, 'Links: []')).toBe(false);
-    });
-
-    it('should return false for malformed JSON', () => {
-      const container = createMockEl();
-      expect(renderWebSearchResult(container as unknown as HTMLElement, 'Links: not-json')).toBe(false);
-    });
-  });
-
-  describe('renderReadResult', () => {
-    it('should show line count', () => {
-      const container = createMockEl();
-      renderReadResult(container as unknown as HTMLElement, 'line1\nline2\nline3');
-      expect(container._children[0].textContent).toBe('3 lines read');
-    });
-
-    it('should filter empty lines', () => {
-      const container = createMockEl();
-      renderReadResult(container as unknown as HTMLElement, 'line1\n\n\nline2');
-      expect(container._children[0].textContent).toBe('2 lines read');
-    });
-  });
-
-  describe('getCurrentTask', () => {
-    it('should return in_progress todo', () => {
-      const input = {
-        todos: [
-          { status: 'completed', content: 'done', activeForm: 'Done' },
-          { status: 'in_progress', content: 'working', activeForm: 'Working on it' },
-        ],
-      };
-      expect(getCurrentTask(input)?.activeForm).toBe('Working on it');
-    });
-
-    it('should return undefined when no in_progress todo', () => {
-      expect(getCurrentTask({ todos: [{ status: 'completed', content: 'a', activeForm: 'A' }] })).toBeUndefined();
-    });
-
-    it('should return undefined when no todos', () => {
-      expect(getCurrentTask({})).toBeUndefined();
-    });
-
-    it('should return undefined for non-array todos', () => {
-      expect(getCurrentTask({ todos: 'not an array' })).toBeUndefined();
-    });
-  });
-
-  describe('areAllTodosCompleted', () => {
-    it('should return true when all completed', () => {
-      const input = {
-        todos: [
-          { status: 'completed', content: 'a', activeForm: 'A' },
-          { status: 'completed', content: 'b', activeForm: 'B' },
-        ],
-      };
-      expect(areAllTodosCompleted(input)).toBe(true);
-    });
-
-    it('should return false when some not completed', () => {
-      const input = {
-        todos: [
-          { status: 'completed', content: 'a', activeForm: 'A' },
-          { status: 'pending', content: 'b', activeForm: 'B' },
-        ],
-      };
-      expect(areAllTodosCompleted(input)).toBe(false);
-    });
-
-    it('should return false when empty', () => {
-      expect(areAllTodosCompleted({ todos: [] })).toBe(false);
-    });
-
-    it('should return false when no todos', () => {
-      expect(areAllTodosCompleted({})).toBe(false);
     });
   });
 

@@ -689,31 +689,18 @@ export class SubagentManager {
 
     const record = toolUseResult as Record<string, unknown>;
 
-    const fromTask = this.extractResultFromTaskObject(record.task);
-    if (fromTask) {
-      return fromTask;
-    }
-
-    const directResult = this.extractResultFromCandidateString(record.result);
-    if (directResult) {
-      return directResult;
-    }
-
-    const directOutput = this.extractResultFromCandidateString(record.output);
-    if (directOutput) {
-      return directOutput;
-    }
+    const result = this.extractResultFromTaskObject(record.task)
+      ?? this.extractResultFromCandidateString(record.result)
+      ?? this.extractResultFromCandidateString(record.output);
+    if (result) return result;
 
     // SDK subagent format: { status, content: [{type:"text",text:"..."}], agentId, ... }
     if (Array.isArray(record.content)) {
-      const textBlocks = (record.content as Array<Record<string, unknown>>)
-        .filter((b) => b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string')
-        .map((b) => (b.text as string).trim())
-        .filter((t) => t.length > 0);
-
-      // First block is the actual result; subsequent blocks are metadata (agentId, usage)
-      if (textBlocks.length > 0) {
-        return textBlocks[0];
+      const firstText = (record.content as Array<Record<string, unknown>>)
+        .find((b) => b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string');
+      if (firstText) {
+        const text = (firstText.text as string).trim();
+        if (text.length > 0) return text;
       }
     }
 
@@ -724,20 +711,9 @@ export class SubagentManager {
     if (!task || typeof task !== 'object') {
       return null;
     }
-
     const taskRecord = task as Record<string, unknown>;
-
-    const taskResult = this.extractResultFromCandidateString(taskRecord.result);
-    if (taskResult) {
-      return taskResult;
-    }
-
-    const taskOutput = this.extractResultFromCandidateString(taskRecord.output);
-    if (taskOutput) {
-      return taskOutput;
-    }
-
-    return null;
+    return this.extractResultFromCandidateString(taskRecord.result)
+      ?? this.extractResultFromCandidateString(taskRecord.output);
   }
 
   private extractResultFromCandidateString(candidate: unknown): string | null {
@@ -885,18 +861,18 @@ export class SubagentManager {
     let lastResultText: string | null = null;
 
     for (const line of lines) {
-      let parsed: any;
+      let parsed: Record<string, unknown>;
       try {
-        parsed = JSON.parse(line);
+        parsed = JSON.parse(line) as Record<string, unknown>;
       } catch {
         continue;
       }
 
-      if (typeof parsed?.result === 'string' && parsed.result.trim().length > 0) {
+      if (typeof parsed.result === 'string' && parsed.result.trim().length > 0) {
         lastResultText = parsed.result.trim();
       }
 
-      const message = parsed?.message;
+      const message = parsed.message as Record<string, unknown> | undefined;
       const role = message?.role;
       const contentBlocks = message?.content;
       if (!Array.isArray(contentBlocks)) continue;

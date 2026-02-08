@@ -5,6 +5,7 @@ import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
 import type { DiffLine, DiffStats } from '../../../core/types/diff';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent } from './DiffRenderer';
+import { fileNameOnly } from './ToolCallRenderer';
 
 export interface WriteEditState {
   wrapperEl: HTMLElement;
@@ -17,12 +18,6 @@ export interface WriteEditState {
   toolCall: ToolCallInfo;
   isExpanded: boolean;
   diffLines?: DiffLine[];
-}
-
-function fileNameOnly(filePath: string): string {
-  if (!filePath) return 'file';
-  const normalized = filePath.replace(/\\/g, '/');
-  return normalized.split('/').pop() ?? 'file';
 }
 
 function shortenPath(filePath: string, maxLength = 40): string {
@@ -87,7 +82,7 @@ export function createWriteEditBlock(
   const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
-  summaryEl.setText(fileNameOnly(filePath));
+  summaryEl.setText(fileNameOnly(filePath) || 'file');
 
   // Stats (will be updated when diff is ready): "+15 -20"
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
@@ -200,7 +195,7 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
   const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
-  summaryEl.setText(fileNameOnly(filePath));
+  summaryEl.setText(fileNameOnly(filePath) || 'file');
 
   // Stats (from stored pre-computed diffData)
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });

@@ -326,7 +326,7 @@ describe('Async Subagent Renderer', () => {
     const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Background job' });
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.countEl.textContent).toBe('0 tool uses');
+    expect(state.countEl.textContent).toBe('');
     expect(state.statusTextEl.textContent).toBe('Initializing');
     expect((state.wrapperEl as any).getClasses()).toEqual(expect.arrayContaining(['async', 'pending']));
   });

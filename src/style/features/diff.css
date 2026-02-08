@@ -38,6 +38,7 @@
 
 /* Two-part header: name (fixed) + summary (flexible) */
 .claudian-write-edit-name {
+  font-family: var(--font-monospace);
   font-size: 13px;
   font-weight: 400;
   color: var(--text-normal);
@@ -46,6 +47,7 @@
 }
 
 .claudian-write-edit-summary {
+  font-family: var(--font-monospace);
   font-size: 13px;
   color: var(--text-muted);
   white-space: nowrap;

@@ -32,14 +32,13 @@ export function setToolIcon(el: HTMLElement, name: string) {
   }
 }
 
-/** Returns the display name for a tool (e.g., "Read", "Bash", "Tasks (2/3)"). */
 export function getToolName(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_TODO_WRITE: {
       const todos = input.todos as Array<{ status: string }> | undefined;
-      if (todos && Array.isArray(todos)) {
+      if (todos && Array.isArray(todos) && todos.length > 0) {
         const completed = todos.filter(t => t.status === 'completed').length;
-        return `Tasks (${completed}/${todos.length})`;
+        return `Tasks ${completed}/${todos.length}`;
       }
       return 'Tasks';
     }
@@ -52,7 +51,6 @@ export function getToolName(name: string, input: Record<string, unknown>): strin
   }
 }
 
-/** Returns a contextual summary for the tool header (e.g., filename, command, pattern). */
 export function getToolSummary(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_READ:
@@ -76,26 +74,14 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
       return fileNameOnly((input.path as string) || '.');
     case TOOL_SKILL:
       return (input.skill as string) || '';
-    case TOOL_TODO_WRITE: {
-      const todos = (input.todos ?? []) as Array<{ status: string; activeForm?: string }>;
-      if (todos.length === 0) return '';
-      const completed = todos.filter(t => t.status === 'completed').length;
-      const inProgress = todos.find(t => t.status === 'in_progress');
-      if (inProgress?.activeForm) return `${inProgress.activeForm} ${completed}/${todos.length}`;
-      return `${completed}/${todos.length}`;
-    }
-    case TOOL_ASK_USER_QUESTION: {
+    case TOOL_TODO_WRITE:
       return '';
-    }
     default:
       return '';
   }
 }
 
-/**
- * Combined label for backward compatibility (SubagentRenderer, StreamController, ARIA).
- * Returns "ToolName: summary" format.
- */
+/** Backward-compat label for SubagentRenderer, StreamController, and ARIA. */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_READ:
@@ -143,7 +129,7 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
   }
 }
 
-function fileNameOnly(filePath: string): string {
+export function fileNameOnly(filePath: string): string {
   if (!filePath) return '';
   const normalized = filePath.replace(/\\/g, '/');
   return normalized.split('/').pop() ?? normalized;
@@ -161,30 +147,6 @@ function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
 }
-
-export function formatToolInput(name: string, input: Record<string, unknown>): string {
-  switch (name) {
-    case TOOL_READ:
-    case TOOL_WRITE:
-    case TOOL_EDIT:
-      return input.file_path as string || JSON.stringify(input, null, 2);
-    case TOOL_BASH:
-      return (input.command as string) || JSON.stringify(input, null, 2);
-    case TOOL_GLOB:
-    case TOOL_GREP:
-      return (input.pattern as string) || JSON.stringify(input, null, 2);
-    case TOOL_WEB_SEARCH:
-      return (input.query as string) || JSON.stringify(input, null, 2);
-    case TOOL_WEB_FETCH:
-      return (input.url as string) || JSON.stringify(input, null, 2);
-    default:
-      return JSON.stringify(input, null, 2);
-  }
-}
-
-// ============================================
-// Expanded Content Renderers (tool-specific)
-// ============================================
 
 interface WebSearchLink {
   title: string;
@@ -286,7 +248,6 @@ function renderWebFetchExpanded(container: HTMLElement, result: string): void {
   }
 }
 
-/** Render expanded tool content based on tool type. */
 export function renderExpandedContent(container: HTMLElement, toolName: string, result: string | undefined): void {
   if (!result) {
     container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
@@ -317,54 +278,19 @@ export function renderExpandedContent(container: HTMLElement, toolName: string, 
   }
 }
 
-// ============================================
-// Legacy collapsed-preview renderers (kept for backward compat)
-// ============================================
-
-export function renderWebSearchResult(container: HTMLElement, result: string, maxItems = 3): boolean {
-  const parsed = parseWebSearchResult(result);
-  if (!parsed || parsed.links.length === 0) return false;
-
-  container.empty();
-
-  const displayItems = parsed.links.slice(0, maxItems);
-  displayItems.forEach(link => {
-    const item = container.createSpan({ cls: 'claudian-tool-result-bullet' });
-    item.setText(`• ${link.title}`);
-  });
-
-  if (parsed.links.length > maxItems) {
-    const more = container.createSpan({ cls: 'claudian-tool-result-item' });
-    more.setText(`${parsed.links.length - maxItems} more results`);
-  }
-
-  return true;
-}
-
-export function renderReadResult(container: HTMLElement, result: string): void {
-  container.empty();
-  const lines = result.split(/\r?\n/).filter(line => line.trim() !== '');
-  const item = container.createSpan({ cls: 'claudian-tool-result-item' });
-  item.setText(`${lines.length} lines read`);
-}
-
-// ============================================
-// Todo helpers
-// ============================================
-
 function getTodos(input: Record<string, unknown>): TodoItem[] | undefined {
   const todos = input.todos;
   if (!todos || !Array.isArray(todos)) return undefined;
   return todos as TodoItem[];
 }
 
-export function getCurrentTask(input: Record<string, unknown>): TodoItem | undefined {
+function getCurrentTask(input: Record<string, unknown>): TodoItem | undefined {
   const todos = getTodos(input);
   if (!todos) return undefined;
   return todos.find(t => t.status === 'in_progress');
 }
 
-export function areAllTodosCompleted(input: Record<string, unknown>): boolean {
+function areAllTodosCompleted(input: Record<string, unknown>): boolean {
   const todos = getTodos(input);
   if (!todos || todos.length === 0) return false;
   return todos.every(t => t.status === 'completed');
@@ -415,37 +341,6 @@ export function renderTodoWriteResult(
   renderTodoItems(container, todos);
 }
 
-/** Strips line number prefixes (e.g., "  1→"). */
-export function renderResultLines(container: HTMLElement, result: string, maxLines = 3): void {
-  container.empty();
-
-  const lines = result.split(/\r?\n/);
-  const displayLines = lines.slice(0, maxLines);
-
-  displayLines.forEach(line => {
-    const stripped = line.replace(/^\s*\d+→/, '');
-    const item = container.createSpan({ cls: 'claudian-tool-result-item' });
-    item.setText(stripped);
-  });
-
-  if (lines.length > maxLines) {
-    const more = container.createSpan({ cls: 'claudian-tool-result-item' });
-    more.setText(`${lines.length - maxLines} more lines`);
-  }
-}
-
-export function truncateResult(result: string, maxLines = 20, maxLength = 2000): string {
-  if (result.length > maxLength) {
-    result = result.substring(0, maxLength);
-  }
-  const lines = result.split(/\r?\n/);
-  if (lines.length > maxLines) {
-    const moreLines = lines.length - maxLines;
-    return lines.slice(0, maxLines).join('\n') + `\n${moreLines} more lines`;
-  }
-  return result;
-}
-
 export function isBlockedToolResult(content: string, isError?: boolean): boolean {
   const lower = content.toLowerCase();
   if (lower.includes('blocked by blocklist')) return true;
@@ -456,10 +351,6 @@ export function isBlockedToolResult(content: string, isError?: boolean): boolean
   if (isError && lower.includes('deny')) return true;
   return false;
 }
-
-// ============================================
-// Element Structure
-// ============================================
 
 interface ToolElementStructure {
   toolEl: HTMLElement;
@@ -486,13 +377,13 @@ function createToolElementStructure(
   iconEl.setAttribute('aria-hidden', 'true');
   setToolIcon(iconEl, toolCall.name);
 
-  // Two-part header: name + summary
   const nameEl = header.createSpan({ cls: 'claudian-tool-name' });
   nameEl.setText(getToolName(toolCall.name, toolCall.input));
 
   const summaryEl = header.createSpan({ cls: 'claudian-tool-summary' });
   summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
 
+  // For TodoWrite: [icon] Tasks [3/13] [current task]
   const currentTaskEl = toolCall.name === TOOL_TODO_WRITE
     ? createCurrentTaskPreview(header, toolCall.input)
     : null;
@@ -529,13 +420,14 @@ function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallI
   if (!questions || !Array.isArray(questions) || !answers) return false;
 
   const reviewEl = container.createDiv({ cls: 'claudian-ask-review' });
-  for (const q of questions) {
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
     const answer = formatAnswer(answers[q.question]);
-    const qLine = reviewEl.createDiv({ cls: 'claudian-ask-review-q' });
-    qLine.createSpan({ text: q.question, cls: 'claudian-ask-review-q-text' });
-    const aLine = reviewEl.createDiv({ cls: 'claudian-ask-review-a' });
-    aLine.createSpan({ text: '\u2192 ', cls: 'claudian-ask-review-arrow' });
-    aLine.createSpan({
+    const pairEl = reviewEl.createDiv({ cls: 'claudian-ask-review-pair' });
+    pairEl.createDiv({ text: `${i + 1}.`, cls: 'claudian-ask-review-num' });
+    const bodyEl = pairEl.createDiv({ cls: 'claudian-ask-review-body' });
+    bodyEl.createDiv({ text: q.question, cls: 'claudian-ask-review-q-text' });
+    bodyEl.createDiv({
       text: answer || 'Not answered',
       cls: answer ? 'claudian-ask-review-a-text' : 'claudian-ask-review-empty',
     });
@@ -604,11 +496,6 @@ function renderToolContent(
   }
 }
 
-// ============================================
-// Public API
-// ============================================
-
-/** For streaming — collapsed by default, registered in map for later updates. */
 export function renderToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
@@ -656,15 +543,9 @@ export function updateToolCallResult(
     if (content) {
       renderTodoWriteResult(content, toolCall.input);
     }
-    // Update name (has count)
     const nameEl = toolEl.querySelector('.claudian-tool-name') as HTMLElement;
     if (nameEl) {
       nameEl.setText(getToolName(toolCall.name, toolCall.input));
-    }
-    // Update summary (active task)
-    const summaryEl = toolEl.querySelector('.claudian-tool-summary') as HTMLElement;
-    if (summaryEl) {
-      summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
     }
     const currentTaskEl = toolEl.querySelector('.claudian-tool-current') as HTMLElement;
     if (currentTaskEl) {
@@ -690,7 +571,6 @@ export function updateToolCallResult(
     return;
   }
 
-  // Replace expanded content with tool-specific rendering
   const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
   if (content) {
     content.empty();

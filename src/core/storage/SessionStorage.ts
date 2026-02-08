@@ -12,6 +12,7 @@
  * ```
  */
 
+import { TOOL_TASK } from '../tools/toolNames';
 import type {
   ChatMessage,
   Conversation,
@@ -20,7 +21,6 @@ import type {
   SubagentInfo,
   UsageInfo,
 } from '../types';
-import { TOOL_TASK } from '../tools/toolNames';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to sessions folder relative to vault root. */

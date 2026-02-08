@@ -316,18 +316,15 @@ export class InlineAskUserQuestion {
       const q = this.questions[idx];
       const answerText = this.getAnswerText(idx);
 
-      const qLine = reviewEl.createDiv({ cls: 'claudian-ask-review-q' });
-      qLine.createSpan({ text: '\u25CF ', cls: 'claudian-ask-review-bullet' });
-      qLine.createSpan({ text: q.question, cls: 'claudian-ask-review-q-text' });
-      qLine.addEventListener('click', () => this.switchTab(idx));
-
-      const aLine = reviewEl.createDiv({ cls: 'claudian-ask-review-a' });
-      aLine.createSpan({ text: '  \u2192 ', cls: 'claudian-ask-review-arrow' });
-      aLine.createSpan({
+      const pairEl = reviewEl.createDiv({ cls: 'claudian-ask-review-pair' });
+      pairEl.createDiv({ text: `${idx + 1}.`, cls: 'claudian-ask-review-num' });
+      const bodyEl = pairEl.createDiv({ cls: 'claudian-ask-review-body' });
+      bodyEl.createDiv({ text: q.question, cls: 'claudian-ask-review-q-text' });
+      bodyEl.createDiv({
         text: answerText || 'Not answered',
         cls: answerText ? 'claudian-ask-review-a-text' : 'claudian-ask-review-empty',
       });
-      aLine.addEventListener('click', () => this.switchTab(idx));
+      pairEl.addEventListener('click', () => this.switchTab(idx));
     }
 
     this.contentArea.createDiv({

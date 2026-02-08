@@ -217,58 +217,6 @@
   padding: 2px 0;
 }
 
-.claudian-subagent-bullet {
-  color: var(--text-faint);
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1.4;
-  margin-inline-end: 4px;
-}
-
-.claudian-subagent-tool-row {
-  display: flex;
-  align-items: flex-start;
-}
-
-.claudian-subagent-tool-text {
-  font-family: var(--font-monospace);
-  font-size: 12px;
-  line-height: 1.4;
-  flex: 1;
-  color: var(--text-muted);
-}
-
-.claudian-subagent-tool-result {
-  display: flex;
-  align-items: baseline;
-  padding: 2px 0 0;
-  padding-inline-start: 8px;
-}
-
-.claudian-subagent-result-text {
-  font-family: var(--font-monospace);
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.4;
-  flex: 1;
-  white-space: pre-wrap;
-  overflow: hidden;
-  max-height: 2.8em;
-}
-
-.claudian-subagent-done {
-  display: flex;
-  align-items: flex-start;
-  padding: 2px 0;
-}
-
-.claudian-subagent-done-text {
-  font-family: var(--font-monospace);
-  font-size: 12px;
-  color: var(--text-faint);
-  font-weight: 500;
-}
-
 .claudian-subagent-status-text {
   font-size: 11px;
   font-family: var(--font-monospace);

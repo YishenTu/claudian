@@ -61,19 +61,6 @@ function truncateDescription(description: string, maxLength = 40): string {
   return description.substring(0, maxLength) + '...';
 }
 
-function createStatusRow(
-  parentEl: HTMLElement,
-  text: string,
-  options?: { rowClass?: string; textClass?: string }
-): HTMLElement {
-  const rowEl = parentEl.createDiv({ cls: 'claudian-subagent-done' });
-  if (options?.rowClass) rowEl.addClass(options.rowClass);
-  const textEl = rowEl.createDiv({ cls: 'claudian-subagent-done-text' });
-  if (options?.textClass) textEl.addClass(options.textClass);
-  textEl.setText(text);
-  return rowEl;
-}
-
 function createSection(parentEl: HTMLElement, title: string, bodyClass?: string): SubagentSection {
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-section' });
 
@@ -89,7 +76,6 @@ function createSection(parentEl: HTMLElement, title: string, bodyClass?: string)
 
   const state = { isExpanded: false };
   setupCollapsible(wrapperEl, headerEl, bodyEl, state, {
-    initiallyExpanded: false,
     baseAriaLabel: title,
   });
 
@@ -217,7 +203,7 @@ function hydrateSyncSubagentStateFromStored(state: SubagentState, subagent: Suba
   for (const originalToolCall of subagent.toolCalls) {
     const toolCall: ToolCallInfo = {
       ...originalToolCall,
-      input: { ...(originalToolCall.input || {}) },
+      input: { ...originalToolCall.input },
     };
     addSubagentToolCall(state, toolCall);
     if (toolCall.status !== 'running' || toolCall.result) {
@@ -438,12 +424,16 @@ function getAsyncStatusAriaLabel(asyncStatus: string | undefined): string {
 
 function updateAsyncLabel(state: AsyncSubagentState): void {
   state.labelEl.setText(truncateDescription(state.info.description));
-  state.countEl.setText(`${state.info.toolCalls.length} tool uses`);
+
+  const isFinished = state.info.asyncStatus === 'completed' || state.info.asyncStatus === 'error' || state.info.asyncStatus === 'orphaned';
+  const countText = isFinished ? `${state.info.toolCalls.length} tool uses` : '';
+  state.countEl.setText(countText);
 
   const statusLabel = getAsyncStatusAriaLabel(state.info.asyncStatus);
+  const ariaCount = isFinished ? `${state.info.toolCalls.length} tool uses - ` : '';
   state.headerEl.setAttribute(
     'aria-label',
-    `Background task: ${truncateDescription(state.info.description)} - ${state.info.toolCalls.length} tool uses - ${statusLabel} - click to expand`
+    `Background task: ${truncateDescription(state.info.description)} - ${ariaCount}${statusLabel} - click to expand`
   );
 }
 
@@ -462,7 +452,7 @@ function renderAsyncContentLikeSync(
   for (const originalToolCall of subagent.toolCalls) {
     const toolCall: ToolCallInfo = {
       ...originalToolCall,
-      input: { ...(originalToolCall.input || {}) },
+      input: { ...originalToolCall.input },
     };
     createSubagentToolView(toolsContainerEl, toolCall);
   }
@@ -516,7 +506,7 @@ export function createAsyncSubagentBlock(
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
   headerEl.setAttribute('aria-expanded', 'false');
-  headerEl.setAttribute('aria-label', `Background task: ${description} - 0 tool uses - Initializing - click to expand`);
+  headerEl.setAttribute('aria-label', `Background task: ${description} - Initializing - click to expand`);
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
   iconEl.setAttribute('aria-hidden', 'true');
@@ -526,7 +516,6 @@ export function createAsyncSubagentBlock(
   labelEl.setText(truncateDescription(description));
 
   const countEl = headerEl.createDiv({ cls: 'claudian-subagent-count' });
-  countEl.setText('0 tool uses');
 
   const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
   statusTextEl.setText('Initializing');
@@ -644,9 +633,11 @@ export function renderStoredAsyncSubagent(
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
   headerEl.setAttribute('aria-expanded', 'false');
+  const isFinished = displayStatus === 'completed' || displayStatus === 'error' || displayStatus === 'orphaned';
+  const ariaCount = isFinished ? `${subagent.toolCalls.length} tool uses - ` : '';
   headerEl.setAttribute(
     'aria-label',
-    `Background task: ${subagent.description} - ${subagent.toolCalls.length} tool uses - ${statusAriaLabel} - click to expand`
+    `Background task: ${subagent.description} - ${ariaCount}${statusAriaLabel} - click to expand`
   );
 
   const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
@@ -657,7 +648,9 @@ export function renderStoredAsyncSubagent(
   labelEl.setText(truncateDescription(subagent.description));
 
   const countEl = headerEl.createDiv({ cls: 'claudian-subagent-count' });
-  countEl.setText(`${subagent.toolCalls.length} tool uses`);
+  if (isFinished) {
+    countEl.setText(`${subagent.toolCalls.length} tool uses`);
+  }
 
   const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
   statusTextEl.setText(statusText);

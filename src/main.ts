@@ -709,7 +709,7 @@ export default class ClaudianPlugin extends Plugin {
 
         subagent.toolCalls = recoveredToolCalls.map(toolCall => ({
           ...toolCall,
-          input: { ...(toolCall.input || {}) },
+          input: { ...toolCall.input },
         }));
         break;
       }
@@ -723,11 +723,6 @@ export default class ClaudianPlugin extends Plugin {
    */
   private applySubagentData(messages: ChatMessage[], subagentData: Record<string, SubagentInfo>): void {
     const attachedSubagentIds = new Set<string>();
-    const normalizeTaskStatus = (subagent: SubagentInfo): 'running' | 'completed' | 'error' => {
-      if (subagent.status === 'completed') return 'completed';
-      if (subagent.status === 'error') return 'error';
-      return 'running';
-    };
     const ensureTaskToolCall = (
       msg: ChatMessage,
       subagentId: string,
@@ -747,7 +742,7 @@ export default class ClaudianPlugin extends Plugin {
             prompt: subagent.prompt || '',
             ...(subagent.mode === 'async' ? { run_in_background: true } : {}),
           },
-          status: normalizeTaskStatus(subagent),
+          status: subagent.status,
           result: subagent.result,
           isExpanded: false,
           subagent,
@@ -762,7 +757,7 @@ export default class ClaudianPlugin extends Plugin {
         ...(taskToolCall.input.prompt ? {} : { prompt: subagent.prompt || '' }),
         ...(subagent.mode === 'async' ? { run_in_background: true } : {}),
       };
-      taskToolCall.status = normalizeTaskStatus(subagent);
+      taskToolCall.status = subagent.status;
       if (subagent.result !== undefined) {
         taskToolCall.result = subagent.result;
       }

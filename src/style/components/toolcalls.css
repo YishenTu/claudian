@@ -48,6 +48,10 @@
   min-width: 0;
 }
 
+.claudian-tool-summary:empty {
+  display: none;
+}
+
 /* Legacy: StatusPanel bash entries still use claudian-tool-label */
 .claudian-tool-label {
   font-family: var(--font-monospace);
@@ -60,19 +64,21 @@
 }
 
 .claudian-tool-current {
-  flex: 1;
   font-family: var(--font-monospace);
   font-size: 13px;
   color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.claudian-tool-current:empty {
+  display: none;
 }
 
 .claudian-tool-status {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .claudian-tool-status svg {
@@ -224,14 +230,3 @@
   margin-bottom: 0;
 }
 
-/* Bulleted items (WebSearch) - hanging indent for wrapped lines */
-.claudian-tool-result-bullet {
-  display: block;
-  padding-inline-start: 0.8em;
-  text-indent: -0.8em;
-  margin-bottom: 2px;
-}
-
-.claudian-tool-result-bullet:last-child {
-  margin-bottom: 0;
-}

@@ -673,7 +673,7 @@ export class StreamController {
 
     subagent.toolCalls = recoveredToolCalls.map((toolCall) => ({
       ...toolCall,
-      input: { ...(toolCall.input || {}) },
+      input: { ...toolCall.input },
     }));
 
     this.deps.subagentManager.refreshAsyncSubagent(subagent);
@@ -725,24 +725,12 @@ export class StreamController {
 
   private applySubagentToTaskToolCall(taskToolCall: ToolCallInfo, subagent: SubagentInfo): void {
     taskToolCall.subagent = subagent;
-
-    if (subagent.status === 'completed') {
-      taskToolCall.status = 'completed';
-      if (subagent.result !== undefined) {
-        taskToolCall.result = subagent.result;
-      }
-      return;
+    taskToolCall.status = subagent.status === 'completed' ? 'completed'
+      : subagent.status === 'error' ? 'error'
+      : 'running';
+    if (subagent.result !== undefined) {
+      taskToolCall.result = subagent.result;
     }
-
-    if (subagent.status === 'error') {
-      taskToolCall.status = 'error';
-      if (subagent.result !== undefined) {
-        taskToolCall.result = subagent.result;
-      }
-      return;
-    }
-
-    taskToolCall.status = 'running';
   }
 
   private linkTaskToolCallToSubagent(msg: ChatMessage, subagent: SubagentInfo): boolean {
