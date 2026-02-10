@@ -7,6 +7,7 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
+import { getClaudeHomeDirName, setClaudeHomeDirName } from '../../utils/claudePaths';
 import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
@@ -601,6 +602,49 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     const hostnameKey = getHostnameKey();
+
+    // Claude Home Directory Name setting
+    new Setting(containerEl)
+      .setName(t('settings.claudeHomeDirName.name'))
+      .setDesc(t('settings.claudeHomeDirName.desc'))
+      .addText((text) => {
+        text
+          .setPlaceholder('.claude')
+          .setValue(getClaudeHomeDirName())
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+
+            // Validate: must start with '.', no path separators
+            if (trimmed && (!trimmed.startsWith('.') || trimmed.includes('/') || trimmed.includes('\\'))) {
+              claudeHomeDirValidationEl.setText(t('settings.claudeHomeDirName.validation'));
+              claudeHomeDirValidationEl.style.display = 'block';
+              return;
+            }
+
+            claudeHomeDirValidationEl.style.display = 'none';
+            const dirName = trimmed || '.claude';
+            setClaudeHomeDirName(dirName);
+
+            // Persist to data.json (independent of .claude/ directory)
+            const pluginData = (await this.plugin.loadData()) || {};
+            if (dirName === '.claude') {
+              delete pluginData.claudeHomeDirName;
+            } else {
+              pluginData.claudeHomeDirName = dirName;
+            }
+            await this.plugin.saveData(pluginData);
+
+            new Notice(t('settings.claudeHomeDirName.restartNotice'));
+          });
+        text.inputEl.addClass('claudian-settings-claude-home-input');
+      });
+
+    const claudeHomeDirValidationEl = containerEl.createDiv({ cls: 'claudian-claude-home-validation' });
+    claudeHomeDirValidationEl.style.color = 'var(--text-error)';
+    claudeHomeDirValidationEl.style.fontSize = '0.85em';
+    claudeHomeDirValidationEl.style.marginTop = '-0.5em';
+    claudeHomeDirValidationEl.style.marginBottom = '0.5em';
+    claudeHomeDirValidationEl.style.display = 'none';
 
     const platformDesc = process.platform === 'win32'
       ? t('settings.cliPath.descWindows')

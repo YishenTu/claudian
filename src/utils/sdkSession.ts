@@ -10,12 +10,12 @@
 
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../core/tools';
 import { TOOL_ASK_USER_QUESTION, TOOL_TASK } from '../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, SubagentInfo, ToolCallInfo } from '../core/types';
+import { getGlobalClaudePath } from './claudePaths';
 import { extractContentBeforeXmlContext } from './context';
 import { extractDiffData } from './diff';
 import { isCompactionCanceledStderr, isInterruptSignalText } from './interrupt';
@@ -88,7 +88,7 @@ export function encodeVaultPathForSDK(vaultPath: string): string {
 }
 
 export function getSDKProjectsPath(): string {
-  return path.join(os.homedir(), '.claude', 'projects');
+  return getGlobalClaudePath('projects');
 }
 
 /** Validates a subagent agent ID to prevent path traversal attacks. */

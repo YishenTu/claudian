@@ -12,6 +12,7 @@
  * ```
  */
 
+import { getVaultClaudePath } from '../../utils/claudePaths';
 import { TOOL_TASK } from '../tools/toolNames';
 import type {
   ChatMessage,
@@ -24,6 +25,11 @@ import type {
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to sessions folder relative to vault root. */
+export function getSessionsPath(): string {
+  return getVaultClaudePath('sessions');
+}
+
+/** @deprecated Use getSessionsPath() instead */
 export const SESSIONS_PATH = '.claude/sessions';
 
 /** Metadata record stored as first line of JSONL. */
@@ -83,7 +89,7 @@ export class SessionStorage {
     const metas: ConversationMeta[] = [];
 
     try {
-      const files = await this.adapter.listFiles(SESSIONS_PATH);
+      const files = await this.adapter.listFiles(getSessionsPath());
 
       for (const filePath of files) {
         if (!filePath.endsWith('.jsonl')) continue;
@@ -112,7 +118,7 @@ export class SessionStorage {
     let failedCount = 0;
 
     try {
-      const files = await this.adapter.listFiles(SESSIONS_PATH);
+      const files = await this.adapter.listFiles(getSessionsPath());
 
       for (const filePath of files) {
         if (!filePath.endsWith('.jsonl')) continue;
@@ -139,12 +145,12 @@ export class SessionStorage {
   }
 
   async hasSessions(): Promise<boolean> {
-    const files = await this.adapter.listFiles(SESSIONS_PATH);
+    const files = await this.adapter.listFiles(getSessionsPath());
     return files.some(f => f.endsWith('.jsonl'));
   }
 
   getFilePath(id: string): string {
-    return `${SESSIONS_PATH}/${id}.jsonl`;
+    return `${getSessionsPath()}/${id}.jsonl`;
   }
 
   private async loadMetaOnly(filePath: string): Promise<ConversationMeta | null> {
@@ -268,14 +274,14 @@ export class SessionStorage {
    * Native sessions have only id.meta.json or no files yet (SDK stores messages).
    */
   async isNativeSession(id: string): Promise<boolean> {
-    const legacyPath = `${SESSIONS_PATH}/${id}.jsonl`;
+    const legacyPath = `${getSessionsPath()}/${id}.jsonl`;
     const legacyExists = await this.adapter.exists(legacyPath);
     // Native if no legacy JSONL exists (new conversation or meta-only)
     return !legacyExists;
   }
 
   getMetadataPath(id: string): string {
-    return `${SESSIONS_PATH}/${id}.meta.json`;
+    return `${getSessionsPath()}/${id}.meta.json`;
   }
 
   async saveMetadata(metadata: SessionMetadata): Promise<void> {
@@ -309,7 +315,7 @@ export class SessionStorage {
     const metas: SessionMetadata[] = [];
 
     try {
-      const files = await this.adapter.listFiles(SESSIONS_PATH);
+      const files = await this.adapter.listFiles(getSessionsPath());
 
       const metaFiles = files.filter(f => f.endsWith('.meta.json'));
 
@@ -319,7 +325,7 @@ export class SessionStorage {
         const id = fileName.replace('.meta.json', '');
 
         // Check if this is truly native (no legacy .jsonl exists)
-        const legacyPath = `${SESSIONS_PATH}/${id}.jsonl`;
+        const legacyPath = `${getSessionsPath()}/${id}.jsonl`;
         const legacyExists = await this.adapter.exists(legacyPath);
 
         if (legacyExists) {

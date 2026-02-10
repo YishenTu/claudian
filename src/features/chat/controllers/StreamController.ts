@@ -4,6 +4,7 @@ import { isWriteEditTool, skipsBlockedDetection, TOOL_AGENT_OUTPUT, TOOL_ASK_USE
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
+import { getClaudeHomeDirName } from '../../../utils/claudePaths';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
 import { getVaultPath } from '../../../utils/path';
@@ -264,7 +265,7 @@ export class StreamController {
 
   private capturePlanFilePath(input: Record<string, unknown>): void {
     const filePath = input.file_path as string | undefined;
-    if (filePath && filePath.replace(/\\/g, '/').includes('/.claude/plans/')) {
+    if (filePath && filePath.replace(/\\/g, '/').includes(`/${getClaudeHomeDirName()}/plans/`)) {
       this.deps.state.planFilePath = filePath;
     }
   }
