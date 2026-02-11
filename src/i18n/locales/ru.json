@@ -269,6 +269,12 @@
       "name": "Открывать в основной области редактора",
       "desc": "Открывать панель чата в виде основной вкладки в центральной области редактора вместо правой боковой панели"
     },
+    "claudeHomeDirName": {
+      "name": "Claude home directory name",
+      "desc": "Name of the Claude configuration directory (e.g., '.claude' or '.claude-internal'). Controls both the global home (~/.claude/) and vault-level config directory. Requires restart to take effect.",
+      "validation": "Must start with '.' and contain no path separators",
+      "restartNotice": "Claude home directory changed. Restart Obsidian to apply."
+    },
     "cliPath": {
       "name": "Путь к CLI Claude",
       "desc": "Пользовательский путь к Claude Code CLI. Оставьте пустым для автоматического определения.",

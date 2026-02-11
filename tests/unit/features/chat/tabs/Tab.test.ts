@@ -103,6 +103,7 @@ const createMockModelSelector = () => ({
   updateDisplay: jest.fn(),
   renderOptions: jest.fn(),
   setReady: jest.fn(),
+  refreshSdkModels: jest.fn().mockResolvedValue(undefined),
 });
 
 const createMockClaudianService = (overrides?: {

@@ -269,6 +269,12 @@
       "name": "在主编辑器区域打开",
       "desc": "在中央编辑器区域以主标签页形式打开聊天面板，而不是在右侧边栏"
     },
+    "claudeHomeDirName": {
+      "name": "Claude 主目录名称",
+      "desc": "Claude 配置目录名称（如 '.claude' 或 '.claude-internal'）。同时控制全局主目录（~/.claude/）和 Vault 内配置目录。需要重启生效。",
+      "validation": "必须以 '.' 开头，且不能包含路径分隔符",
+      "restartNotice": "Claude 主目录已更改。请重启 Obsidian 以生效。"
+    },
     "cliPath": {
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",

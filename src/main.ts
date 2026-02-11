@@ -33,6 +33,7 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
 import { ClaudeCliResolver } from './utils/claudeCli';
+import { setClaudeHomeDirName } from './utils/claudePaths';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
@@ -59,6 +60,12 @@ export default class ClaudianPlugin extends Plugin {
   private runtimeEnvironmentVariables = '';
 
   async onload() {
+    // Bootstrap: load claudeHomeDirName from data.json BEFORE loading settings,
+    // because settings are stored under the claude home directory.
+    const data = await this.loadData();
+    const claudeHomeDirName = data?.claudeHomeDirName || '.claude';
+    setClaudeHomeDirName(claudeHomeDirName);
+
     await this.loadSettings();
 
     this.cliResolver = new ClaudeCliResolver();

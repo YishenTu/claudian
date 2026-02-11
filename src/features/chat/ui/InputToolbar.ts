@@ -31,6 +31,7 @@ export interface ToolbarCallbacks {
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
+  getSdkModels?: () => Promise<{ value: string; label: string; description: string }[]>;
 }
 
 export class ModelSelector {
@@ -39,6 +40,8 @@ export class ModelSelector {
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
   private isReady = false;
+  private cachedSdkModels: { value: string; label: string; description: string }[] = [];
+  private sdkModelsFetched = false;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -47,6 +50,12 @@ export class ModelSelector {
   }
 
   private getAvailableModels() {
+    // Priority 1: SDK models (when service is ready and models fetched)
+    if (this.sdkModelsFetched && this.cachedSdkModels.length > 0) {
+      return this.cachedSdkModels;
+    }
+
+    // Priority 2: Env-var models / Priority 3: DEFAULT_CLAUDE_MODELS
     let models: { value: string; label: string; description: string }[] = [];
 
     if (this.callbacks.getEnvironmentVariables) {
@@ -102,6 +111,21 @@ export class ModelSelector {
   setReady(ready: boolean) {
     this.isReady = ready;
     this.buttonEl?.toggleClass('ready', ready);
+  }
+
+  async refreshSdkModels(): Promise<void> {
+    if (!this.callbacks.getSdkModels) return;
+    try {
+      const models = await this.callbacks.getSdkModels();
+      if (models.length > 0) {
+        this.cachedSdkModels = models;
+        this.sdkModelsFetched = true;
+        this.updateDisplay();
+        this.renderOptions();
+      }
+    } catch {
+      // Keep previous state on error
+    }
   }
 
   renderOptions() {

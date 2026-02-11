@@ -9,6 +9,8 @@ import type { App } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 
+import { getGlobalClaudeHome, getGlobalClaudePath } from './claudePaths';
+
 // ============================================
 // Vault Path
 // ============================================
@@ -306,7 +308,7 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   // because it requires shell: true and breaks SDK stdio streaming.
   if (isWindows) {
     const exePaths: string[] = [
-      path.join(homeDir, '.claude', 'local', 'claude.exe'),
+      getGlobalClaudePath('local', 'claude.exe'),
       path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
       path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
       path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
@@ -329,7 +331,7 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   }
 
   const commonPaths: string[] = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
+    getGlobalClaudePath('local', 'claude'),
     path.join(homeDir, '.local', 'bin', 'claude'),
     path.join(homeDir, '.volta', 'bin', 'claude'),
     path.join(homeDir, '.asdf', 'shims', 'claude'),
@@ -617,7 +619,7 @@ export function getPathAccessType(
   }
 
   // Allow access to specific safe subdirectories under ~/.claude/
-  const claudeDir = normalizePathForComparison(resolveRealPath(path.join(os.homedir(), '.claude')));
+  const claudeDir = normalizePathForComparison(resolveRealPath(getGlobalClaudeHome()));
   if (resolvedCandidate === claudeDir || resolvedCandidate.startsWith(claudeDir + '/')) {
     const safeSubdirs = ['sessions', 'projects', 'commands', 'agents', 'skills', 'plans'];
     const safeFiles = ['mcp.json', 'settings.json', 'settings.local.json', 'claudian-settings.json'];

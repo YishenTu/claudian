@@ -15,11 +15,17 @@
  * - State (merged from data.json)
  */
 
+import { getVaultClaudePath } from '../../utils/claudePaths';
 import type { ClaudeModel, ClaudianSettings, PlatformBlockedCommands } from '../types';
 import { DEFAULT_SETTINGS, getDefaultBlockedCommands } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to Claudian settings file relative to vault root. */
+export function getClaudianSettingsPath(): string {
+  return getVaultClaudePath('claudian-settings.json');
+}
+
+/** @deprecated Use getClaudianSettingsPath() instead */
 export const CLAUDIAN_SETTINGS_PATH = '.claude/claudian-settings.json';
 
 /** Fields that are loaded separately (slash commands from .claude/commands/). */
@@ -84,11 +90,12 @@ export class ClaudianSettingsStorage {
   * Throws if file exists but cannot be read or parsed.
   */
   async load(): Promise<StoredClaudianSettings> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+    const settingsPath = getClaudianSettingsPath();
+    if (!(await this.adapter.exists(settingsPath))) {
       return this.getDefaults();
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(settingsPath);
     const stored = JSON.parse(content) as Record<string, unknown>;
     const { activeConversationId: _activeConversationId, ...storedWithoutLegacy } = stored;
 
@@ -107,11 +114,11 @@ export class ClaudianSettingsStorage {
 
   async save(settings: StoredClaudianSettings): Promise<void> {
     const content = JSON.stringify(settings, null, 2);
-    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
+    await this.adapter.write(getClaudianSettingsPath(), content);
   }
 
   async exists(): Promise<boolean> {
-    return this.adapter.exists(CLAUDIAN_SETTINGS_PATH);
+    return this.adapter.exists(getClaudianSettingsPath());
   }
 
   async update(updates: Partial<StoredClaudianSettings>): Promise<void> {
@@ -124,11 +131,12 @@ export class ClaudianSettingsStorage {
    * Used only for one-time migration to tabManagerState.
    */
   async getLegacyActiveConversationId(): Promise<string | null> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+    const settingsPath = getClaudianSettingsPath();
+    if (!(await this.adapter.exists(settingsPath))) {
       return null;
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(settingsPath);
     const stored = JSON.parse(content) as Record<string, unknown>;
     const value = stored.activeConversationId;
 
@@ -143,11 +151,12 @@ export class ClaudianSettingsStorage {
    * Remove legacy activeConversationId from claudian-settings.json.
    */
   async clearLegacyActiveConversationId(): Promise<void> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+    const settingsPath = getClaudianSettingsPath();
+    if (!(await this.adapter.exists(settingsPath))) {
       return;
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(settingsPath);
     const stored = JSON.parse(content) as Record<string, unknown>;
 
     if (!('activeConversationId' in stored)) {
@@ -156,7 +165,7 @@ export class ClaudianSettingsStorage {
 
     delete stored.activeConversationId;
     const nextContent = JSON.stringify(stored, null, 2);
-    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, nextContent);
+    await this.adapter.write(getClaudianSettingsPath(), nextContent);
   }
 
   async setLastModel(model: ClaudeModel, isCustom: boolean): Promise<void> {

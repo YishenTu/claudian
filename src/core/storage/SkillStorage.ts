@@ -1,7 +1,13 @@
+import { getVaultClaudePath } from '../../utils/claudePaths';
 import { parsedToSlashCommand, parseSlashCommandContent, serializeCommand } from '../../utils/slashCommand';
 import type { SlashCommand } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
+export function getSkillsPath(): string {
+  return getVaultClaudePath('skills');
+}
+
+/** @deprecated Use getSkillsPath() instead */
 export const SKILLS_PATH = '.claude/skills';
 
 export class SkillStorage {
@@ -11,11 +17,11 @@ export class SkillStorage {
     const skills: SlashCommand[] = [];
 
     try {
-      const folders = await this.adapter.listFolders(SKILLS_PATH);
+      const folders = await this.adapter.listFolders(getSkillsPath());
 
       for (const folder of folders) {
         const skillName = folder.split('/').pop()!;
-        const skillPath = `${SKILLS_PATH}/${skillName}/SKILL.md`;
+        const skillPath = `${getSkillsPath()}/${skillName}/SKILL.md`;
 
         try {
           if (!(await this.adapter.exists(skillPath))) continue;
@@ -41,7 +47,7 @@ export class SkillStorage {
 
   async save(skill: SlashCommand): Promise<void> {
     const name = skill.name;
-    const dirPath = `${SKILLS_PATH}/${name}`;
+    const dirPath = `${getSkillsPath()}/${name}`;
     const filePath = `${dirPath}/SKILL.md`;
 
     await this.adapter.ensureFolder(dirPath);
@@ -50,7 +56,7 @@ export class SkillStorage {
 
   async delete(skillId: string): Promise<void> {
     const name = skillId.replace(/^skill-/, '');
-    const dirPath = `${SKILLS_PATH}/${name}`;
+    const dirPath = `${getSkillsPath()}/${name}`;
     const filePath = `${dirPath}/SKILL.md`;
     await this.adapter.delete(filePath);
     await this.adapter.deleteFolder(dirPath);

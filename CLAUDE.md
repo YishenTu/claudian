@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## Project Overview
 
 Claudian - An Obsidian plugin that embeds Claude Code as a sidebar chat interface. The vault directory becomes Claude's working directory, giving it full agentic capabilities: file read/write, bash commands, and multi-step workflows.
@@ -14,9 +16,16 @@ npm run lint       # Lint code
 npm run lint:fix   # Lint and auto-fix
 npm run test       # Run tests
 npm run test:watch # Run tests in watch mode
+
+# Run a single test file
+npm run test -- --selectProjects unit --testPathPattern 'path/to/test'
 ```
 
 ## Architecture
+
+Entry point: `src/main.ts` → `ClaudianPlugin` (Obsidian `Plugin` subclass). Registers the sidebar view, settings tab, commands (open view, inline edit, tab management).
+
+Key external dependencies: `@anthropic-ai/claude-agent-sdk` (Claude Agent SDK — all LLM interaction), `@modelcontextprotocol/sdk` (MCP server connections).
 
 | Layer | Purpose | Details |
 |-------|---------|---------|
@@ -24,9 +33,9 @@ npm run test:watch # Run tests in watch mode
 | **features/chat** | Main sidebar interface | See [`src/features/chat/CLAUDE.md`](src/features/chat/CLAUDE.md) |
 | **features/inline-edit** | Inline edit modal | `InlineEditService`, read-only tools |
 | **features/settings** | Settings tab | UI components for all settings |
-| **shared** | Reusable UI | Dropdowns, instruction modal, fork target modal, @-mention, icons |
+| **shared** | Reusable UI | Dropdowns, modals, @-mention, icons |
 | **i18n** | Internationalization | 10 locales |
-| **utils** | Utility functions | date, path, env, editor, session, markdown, diff, context, sdkSession, frontmatter, slashCommand, mcp, claudeCli, externalContext, externalContextScanner, fileLink, imageEmbed, inlineEdit |
+| **utils** | Stateless utility functions | One file per concern (e.g., `env.ts`, `sdkSession.ts`, `diff.ts`) |
 | **style** | Modular CSS | See [`src/style/CLAUDE.md`](src/style/CLAUDE.md) |
 
 ## Tests
@@ -37,7 +46,7 @@ npm run test -- --selectProjects integration # Run integration tests
 npm run test:coverage -- --selectProjects unit # Unit coverage
 ```
 
-Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`.
+Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`. Path aliases: `@/` → `src/`, `@test/` → `tests/`.
 
 ## Storage
 

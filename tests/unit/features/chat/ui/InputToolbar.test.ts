@@ -144,6 +144,82 @@ describe('ModelSelector', () => {
     const label = parentEl.querySelector('.claudian-model-label');
     expect(label?.textContent).toBeDefined();
   });
+
+  it('should use SDK models when fetched', async () => {
+    const sdkModels = [
+      { value: 'claude-sonnet-4-5', label: 'Claude 4.5 Sonnet', description: 'Fast' },
+      { value: 'claude-opus-4-6', label: 'Opus 4.6', description: 'Powerful' },
+    ];
+    const freshParent = createMockEl();
+    const cbWithSdk = createMockCallbacks({ getSdkModels: jest.fn().mockResolvedValue(sdkModels) });
+
+    const sel = new ModelSelector(freshParent, cbWithSdk);
+    await sel.refreshSdkModels();
+
+    // Should display SDK models, not defaults
+    const dropdown = freshParent.querySelector('.claudian-model-dropdown');
+    const options = dropdown?.children || [];
+    expect(options.length).toBe(2);
+    // Reversed order: Opus 4.6, Claude 4.5 Sonnet
+    expect(options[0]?.children[0]?.textContent).toBe('Opus 4.6');
+    expect(options[1]?.children[0]?.textContent).toBe('Claude 4.5 Sonnet');
+  });
+
+  it('should prioritize SDK models over env-var models', async () => {
+    const sdkModels = [
+      { value: 'sdk-model', label: 'SDK Model', description: 'From SDK' },
+    ];
+    const freshParent = createMockEl();
+    const cbWithSdk = createMockCallbacks({
+      getEnvironmentVariables: jest.fn().mockReturnValue('ANTHROPIC_MODEL=custom-model'),
+      getSdkModels: jest.fn().mockResolvedValue(sdkModels),
+    });
+
+    const sel = new ModelSelector(freshParent, cbWithSdk);
+    await sel.refreshSdkModels();
+
+    const dropdown = freshParent.querySelector('.claudian-model-dropdown');
+    const options = dropdown?.children || [];
+    expect(options.length).toBe(1);
+    expect(options[0]?.children[0]?.textContent).toBe('SDK Model');
+  });
+
+  it('should fall back to defaults when SDK returns empty', async () => {
+    const freshParent = createMockEl();
+    const cbWithSdk = createMockCallbacks({ getSdkModels: jest.fn().mockResolvedValue([]) });
+
+    const sel = new ModelSelector(freshParent, cbWithSdk);
+    await sel.refreshSdkModels();
+
+    // Should still show defaults
+    const dropdown = freshParent.querySelector('.claudian-model-dropdown');
+    const options = dropdown?.children || [];
+    expect(options.length).toBe(3); // haiku, sonnet, opus
+  });
+
+  it('should keep previous state on SDK error', async () => {
+    const freshParent = createMockEl();
+    const cbWithSdk = createMockCallbacks({ getSdkModels: jest.fn().mockRejectedValue(new Error('Network error')) });
+
+    const sel = new ModelSelector(freshParent, cbWithSdk);
+    await sel.refreshSdkModels();
+
+    // Should still show defaults
+    const dropdown = freshParent.querySelector('.claudian-model-dropdown');
+    const options = dropdown?.children || [];
+    expect(options.length).toBe(3); // haiku, sonnet, opus
+  });
+
+  it('should not attempt refresh when getSdkModels callback is not provided', async () => {
+    const freshParent = createMockEl();
+    const sel = new ModelSelector(freshParent, callbacks);
+    await sel.refreshSdkModels();
+
+    // Should still show defaults
+    const dropdown = freshParent.querySelector('.claudian-model-dropdown');
+    const options = dropdown?.children || [];
+    expect(options.length).toBe(3);
+  });
 });
 
 describe('ThinkingBudgetSelector', () => {

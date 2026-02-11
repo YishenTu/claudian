@@ -7,15 +7,20 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
+import { getGlobalClaudePath, getVaultClaudePath } from '../../utils/claudePaths';
 import type { PluginManager } from '../plugins';
 import type { AgentDefinition } from '../types';
 import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
 
-const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents');
-const VAULT_AGENTS_DIR = '.claude/agents';
+function getGlobalAgentsDir(): string {
+  return getGlobalClaudePath('agents');
+}
+
+function getVaultAgentsDir(): string {
+  return getVaultClaudePath('agents');
+}
 const PLUGIN_AGENTS_DIR = 'agents';
 
 // Fallback built-in agent names for before the init message arrives.
@@ -112,11 +117,11 @@ export class AgentManager {
   }
 
   private async loadVaultAgents(): Promise<void> {
-    await this.loadAgentsFromDirectory(path.join(this.vaultPath, VAULT_AGENTS_DIR), 'vault');
+    await this.loadAgentsFromDirectory(path.join(this.vaultPath, getVaultAgentsDir()), 'vault');
   }
 
   private async loadGlobalAgents(): Promise<void> {
-    await this.loadAgentsFromDirectory(GLOBAL_AGENTS_DIR, 'global');
+    await this.loadAgentsFromDirectory(getGlobalAgentsDir(), 'global');
   }
 
   private async loadAgentsFromDirectory(

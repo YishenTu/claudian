@@ -14,6 +14,7 @@
 import type {
   CanUseTool,
   McpServerConfig,
+  ModelInfo,
   Options,
   PermissionMode as SDKPermissionMode,
   PermissionResult,
@@ -1411,6 +1412,23 @@ export class ClaudianService {
     } catch {
       // Empty array on error is intentional: callers (SlashCommandDropdown) keep
       // sdkSkillsFetched=false on empty results, allowing automatic retry.
+      return [];
+    }
+  }
+
+  async getSupportedModels(): Promise<{ value: string; label: string; description: string }[]> {
+    if (!this.persistentQuery) {
+      return [];
+    }
+
+    try {
+      const sdkModels: ModelInfo[] = await this.persistentQuery.supportedModels();
+      return sdkModels.map((m) => ({
+        value: m.value,
+        label: m.displayName,
+        description: m.description,
+      }));
+    } catch {
       return [];
     }
   }

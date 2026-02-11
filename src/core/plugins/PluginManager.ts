@@ -7,14 +7,19 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
+import { getGlobalClaudePath, getVaultClaudePath } from '../../utils/claudePaths';
 import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
 import type { ClaudianPlugin, InstalledPluginEntry, InstalledPluginsFile, PluginScope } from '../types';
 
-const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
-const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+function getInstalledPluginsPath(): string {
+  return getGlobalClaudePath('plugins', 'installed_plugins.json');
+}
+
+function getGlobalSettingsPath(): string {
+  return getGlobalClaudePath('settings.json');
+}
 
 interface SettingsFile {
   enabledPlugins?: Record<string, boolean>;
@@ -79,8 +84,8 @@ export class PluginManager {
   }
 
   async loadPlugins(): Promise<void> {
-    const installedPlugins = readJsonFile<InstalledPluginsFile>(INSTALLED_PLUGINS_PATH);
-    const globalSettings = readJsonFile<SettingsFile>(GLOBAL_SETTINGS_PATH);
+    const installedPlugins = readJsonFile<InstalledPluginsFile>(getInstalledPluginsPath());
+    const globalSettings = readJsonFile<SettingsFile>(getGlobalSettingsPath());
     const projectSettings = await this.loadProjectSettings();
 
     const globalEnabled = globalSettings?.enabledPlugins ?? {};
@@ -120,7 +125,7 @@ export class PluginManager {
   }
 
   private async loadProjectSettings(): Promise<SettingsFile | null> {
-    const projectSettingsPath = path.join(this.vaultPath, '.claude', 'settings.json');
+    const projectSettingsPath = path.join(this.vaultPath, getVaultClaudePath('settings.json'));
     return readJsonFile(projectSettingsPath);
   }
 

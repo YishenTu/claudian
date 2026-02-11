@@ -1,7 +1,13 @@
+import { getVaultClaudePath } from '../../utils/claudePaths';
 import { parsedToSlashCommand, parseSlashCommandContent, serializeCommand } from '../../utils/slashCommand';
 import type { SlashCommand } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
+export function getCommandsPath(): string {
+  return getVaultClaudePath('commands');
+}
+
+/** @deprecated Use getCommandsPath() instead */
 export const COMMANDS_PATH = '.claude/commands';
 
 export class SlashCommandStorage {
@@ -11,7 +17,7 @@ export class SlashCommandStorage {
     const commands: SlashCommand[] = [];
 
     try {
-      const files = await this.adapter.listFilesRecursive(COMMANDS_PATH);
+      const files = await this.adapter.listFilesRecursive(getCommandsPath());
 
       for (const filePath of files) {
         if (!filePath.endsWith('.md')) continue;
@@ -58,7 +64,7 @@ export class SlashCommandStorage {
 
   getFilePath(command: SlashCommand): string {
     const safeName = command.name.replace(/[^a-zA-Z0-9_/-]/g, '-');
-    return `${COMMANDS_PATH}/${safeName}.md`;
+    return `${getCommandsPath()}/${safeName}.md`;
   }
 
   private parseFile(content: string, filePath: string): SlashCommand {
@@ -77,7 +83,7 @@ export class SlashCommandStorage {
     //   a--b.md  -> cmd-a-_-_b
     //   a/b-c.md -> cmd-a--b-_c
     const relativePath = filePath
-      .replace(`${COMMANDS_PATH}/`, '')
+      .replace(`${getCommandsPath()}/`, '')
       .replace(/\.md$/, '');
     const escaped = relativePath
       .replace(/-/g, '-_')   // Escape dashes first
@@ -87,7 +93,7 @@ export class SlashCommandStorage {
 
   private filePathToName(filePath: string): string {
     return filePath
-      .replace(`${COMMANDS_PATH}/`, '')
+      .replace(`${getCommandsPath()}/`, '')
       .replace(/\.md$/, '');
   }
 }

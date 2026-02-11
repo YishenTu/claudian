@@ -269,6 +269,12 @@
       "name": "메인 편집기 영역에서 열기",
       "desc": "채팅 패널을 오른쪽 사이드바가 아닌 중앙 편집기 영역의 메인 탭으로 엽니다"
     },
+    "claudeHomeDirName": {
+      "name": "Claude home directory name",
+      "desc": "Name of the Claude configuration directory (e.g., '.claude' or '.claude-internal'). Controls both the global home (~/.claude/) and vault-level config directory. Requires restart to take effect.",
+      "validation": "Must start with '.' and contain no path separators",
+      "restartNotice": "Claude home directory changed. Restart Obsidian to apply."
+    },
     "cliPath": {
       "name": "Claude CLI 경로",
       "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",

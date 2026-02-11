@@ -1,6 +1,7 @@
 import * as nodePath from 'path';
 
 import type { ExitPlanModeDecision } from '../../../core/types/tools';
+import { getClaudeHomeDirName } from '../../../utils/claudePaths';
 import type { RenderContentFn } from './MessageRenderer';
 
 const HINTS_TEXT = 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Esc to cancel';
@@ -138,7 +139,7 @@ export class InlineExitPlanMode {
     if (!planFilePath) return null;
 
     const resolved = nodePath.resolve(planFilePath).replace(/\\/g, '/');
-    if (!resolved.includes('/.claude/plans/')) {
+    if (!resolved.includes(`/${getClaudeHomeDirName()}/plans/`)) {
       this.planReadError = 'path outside allowed plan directory';
       return null;
     }
