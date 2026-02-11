@@ -489,8 +489,8 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Document-level escape to cancel streaming
-    this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
+    // View-scoped escape to cancel streaming (only when Claudian has focus)
+    this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.isComposing) {
         const activeTab = this.tabManager?.getActiveTab();
         if (activeTab?.state.isStreaming) {
