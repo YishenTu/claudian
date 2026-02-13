@@ -420,6 +420,8 @@ export class InputController {
           statusPanel.clearTerminalSubagents();
         }
 
+        this.syncScrollToBottomAfterRenderUpdates();
+
         // approve-new-session: the tool_result chunk is dropped because cancelRequested
         // was set before the stream loop could process it — manually set the result so
         // the saved conversation renders correctly when revisited
@@ -616,6 +618,20 @@ export class InputController {
     this.restoreQueuedMessageToInput();
     this.getAgentService()?.cancel();
     streamController.hideThinkingIndicator();
+  }
+
+  private syncScrollToBottomAfterRenderUpdates(): void {
+    const { plugin, state } = this.deps;
+    if (!(plugin.settings.enableAutoScroll ?? true)) return;
+    if (!state.autoScrollEnabled) return;
+
+    requestAnimationFrame(() => {
+      if (!(this.deps.plugin.settings.enableAutoScroll ?? true)) return;
+      if (!this.deps.state.autoScrollEnabled) return;
+
+      const messagesEl = this.deps.getMessagesEl();
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    });
   }
 
   // ============================================

@@ -1359,6 +1359,36 @@ describe('InputController - Message Queue', () => {
 
       jest.spyOn(performance, 'now').mockRestore();
     });
+
+    it('should sync to the true bottom after response completion UI updates', async () => {
+      const messagesEl = createMockEl();
+      messagesEl.scrollTop = 120;
+      messagesEl.scrollHeight = 640;
+      messagesEl.clientHeight = 400;
+
+      deps = createSendableDeps({
+        getMessagesEl: () => messagesEl as any,
+      });
+
+      let callCount = 0;
+      jest.spyOn(performance, 'now').mockImplementation(() => {
+        callCount++;
+        return callCount <= 1 ? 1000 : 6000;
+      });
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'test message';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(messagesEl.scrollTop).toBe(messagesEl.scrollHeight);
+      jest.spyOn(performance, 'now').mockRestore();
+    });
   });
 
   describe('External context in query', () => {
