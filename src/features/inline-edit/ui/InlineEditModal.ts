@@ -1,5 +1,5 @@
-import type { App, Editor} from 'obsidian';
-import { MarkdownView, Notice } from 'obsidian';
+import type { App, Editor, MarkdownView } from 'obsidian';
+import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
