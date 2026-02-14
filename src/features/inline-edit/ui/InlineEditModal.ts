@@ -199,6 +199,8 @@ export class InlineEditModal {
   constructor(
     private app: App,
     private plugin: ClaudianPlugin,
+    private editor: Editor,
+    private view: MarkdownView,
     private editContext: InlineEditContext,
     private notePath: string
   ) {}
@@ -209,12 +211,21 @@ export class InlineEditModal {
       return { decision: 'reject' };
     }
 
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view) return { decision: 'reject' };
+    // Use the editor/view provided by Obsidian's editorCallback.
+    // This avoids timing issues during leaf/view transitions (e.g., navigating via Search in the same tab).
+    let editor = this.editor;
+    let editorView = getEditorView(editor);
 
-    const editor = view.editor;
-    const editorView = getEditorView(editor);
-    if (!editorView) return { decision: 'reject' };
+    // Fallback: in rare cases Obsidian may re-initialize the editor between callback and modal open.
+    if (!editorView) {
+      editor = this.view.editor;
+      editorView = getEditorView(editor);
+    }
+
+    if (!editorView) {
+      new Notice('Inline edit unavailable: could not access the active editor. Try reopening the note.');
+      return { decision: 'reject' };
+    }
 
     return new Promise((resolve) => {
       this.controller = new InlineEditController(

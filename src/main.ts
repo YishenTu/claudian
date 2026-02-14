@@ -114,7 +114,7 @@ export default class ClaudianPlugin extends Plugin {
           editContext = { mode: 'cursor', cursorContext };
         }
 
-        const modal = new InlineEditModal(this.app, this, editContext, notePath);
+        const modal = new InlineEditModal(this.app, this, editor, view, editContext, notePath);
         const result = await modal.openAndWait();
 
         if (result.decision === 'accept' && result.editedText !== undefined) {
