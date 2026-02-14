@@ -511,12 +511,13 @@ export class ClaudianView extends ItemView {
       this.plugin.app.vault.on('modify', markDirty)
     );
 
-    // File open event
+    // File open event — locked while streaming, released after
     this.registerEvent(
       this.plugin.app.workspace.on('file-open', (file) => {
-        if (file) {
-          this.tabManager?.getActiveTab()?.ui.fileContextManager?.handleFileOpen(file);
-        }
+        if (!file) return;
+        const tab = this.tabManager?.getActiveTab();
+        if (tab?.state.isStreaming) return;
+        tab?.ui.fileContextManager?.handleFileOpen(file);
       })
     );
 
