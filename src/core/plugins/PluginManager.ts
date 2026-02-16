@@ -93,7 +93,8 @@ export class PluginManager {
       for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
         if (!entries || entries.length === 0) continue;
 
-        const entry = selectInstalledPluginEntry(entries, normalizedVaultPath);
+        const entriesArray = Array.isArray(entries) ? entries : [entries];
+        const entry = selectInstalledPluginEntry(entriesArray, normalizedVaultPath);
         if (!entry) continue;
 
         const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';
