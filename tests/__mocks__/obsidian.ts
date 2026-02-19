@@ -330,3 +330,14 @@ export class TFile {
     this.extension = this.name.split('.').pop() || '';
   }
 }
+
+export class TFolder {
+  path: string;
+  name: string;
+  children: any[] = [];
+
+  constructor(path: string = '') {
+    this.path = path;
+    this.name = path.split('/').pop() || '';
+  }
+}

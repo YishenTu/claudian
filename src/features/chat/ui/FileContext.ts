@@ -7,6 +7,7 @@ import { MentionDropdownController } from '../../../shared/mention/MentionDropdo
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import { FileContextState } from './file-context/state/FileContextState';
 import { MarkdownFileCache } from './file-context/state/MarkdownFileCache';
+import { VaultFolderCache } from './file-context/state/VaultFolderCache';
 import { FileChipsView } from './file-context/view/FileChipsView';
 
 export interface FileContextCallbacks {
@@ -25,6 +26,7 @@ export class FileContextManager {
   private inputEl: HTMLTextAreaElement;
   private state: FileContextState;
   private fileCache: MarkdownFileCache;
+  private folderCache: VaultFolderCache;
   private chipsView: FileChipsView;
   private mentionDropdown: MentionDropdownController;
   private deleteEventRef: EventRef | null = null;
@@ -52,6 +54,8 @@ export class FileContextManager {
     this.state = new FileContextState();
     this.fileCache = new MarkdownFileCache(this.app);
     this.fileCache.initializeInBackground();
+    this.folderCache = new VaultFolderCache(this.app);
+    this.folderCache.initializeInBackground();
 
     this.chipsView = new FileChipsView(this.chipsContainerEl, {
       onRemoveAttachment: (filePath) => {
@@ -88,6 +92,8 @@ export class FileContextManager {
         setMentionedMcpServers: (mentions) => this.state.setMentionedMcpServers(mentions),
         addMentionedMcpServer: (name) => this.state.addMentionedMcpServer(name),
         getExternalContexts: () => this.callbacks.getExternalContexts?.() || [],
+        getCachedVaultFolders: () =>
+          this.folderCache.getFolders().map(folder => ({ name: folder.name, path: folder.path })),
         getCachedMarkdownFiles: () => this.fileCache.getFiles(),
         normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
       }
@@ -183,8 +189,12 @@ export class FileContextManager {
     }
   }
 
-  markFilesCacheDirty() {
+  markFileCacheDirty() {
     this.fileCache.markDirty();
+  }
+
+  markFolderCacheDirty() {
+    this.folderCache.markDirty();
   }
 
   /** Handles input changes to detect @ mentions. */

@@ -7,6 +7,12 @@ export interface FileMentionItem {
   file: TFile;
 }
 
+export interface FolderMentionItem {
+  type: 'folder';
+  name: string;
+  path: string;
+}
+
 export interface McpServerMentionItem {
   type: 'mcp-server';
   name: string;
@@ -55,6 +61,7 @@ export interface AgentMentionProvider {
 
 export type MentionItem =
   | FileMentionItem
+  | FolderMentionItem
   | McpServerMentionItem
   | ContextFileMentionItem
   | ContextFolderMentionItem

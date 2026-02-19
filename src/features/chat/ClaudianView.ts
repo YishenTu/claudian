@@ -501,14 +501,17 @@ export class ClaudianView extends ItemView {
     });
 
     // Vault events - forward to active tab's file context manager
-    const markDirty = (): void => {
-      this.tabManager?.getActiveTab()?.ui.fileContextManager?.markFilesCacheDirty();
+    const markCacheDirty = (includesFolders: boolean): void => {
+      const mgr = this.tabManager?.getActiveTab()?.ui.fileContextManager;
+      if (!mgr) return;
+      mgr.markFileCacheDirty();
+      if (includesFolders) mgr.markFolderCacheDirty();
     };
     this.eventRefs.push(
-      this.plugin.app.vault.on('create', markDirty),
-      this.plugin.app.vault.on('delete', markDirty),
-      this.plugin.app.vault.on('rename', markDirty),
-      this.plugin.app.vault.on('modify', markDirty)
+      this.plugin.app.vault.on('create', () => markCacheDirty(true)),
+      this.plugin.app.vault.on('delete', () => markCacheDirty(true)),
+      this.plugin.app.vault.on('rename', () => markCacheDirty(true)),
+      this.plugin.app.vault.on('modify', () => markCacheDirty(false))
     );
 
     // File open event

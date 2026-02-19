@@ -79,6 +79,7 @@ function createMockApp(options: {
       on: jest.fn(() => ({ id: 'event-ref' })),
       offref: jest.fn(),
       getAbstractFileByPath: jest.fn((filePath: string) => fileMap.get(filePath) || null),
+      getAllLoadedFiles: jest.fn(() => Array.from(fileMap.values())),
       getMarkdownFiles: jest.fn(() => Array.from(fileMap.values())),
     },
     workspace: {
@@ -580,13 +581,22 @@ describe('FileContextManager', () => {
     });
   });
 
-  describe('markFilesCacheDirty', () => {
-    it('should not throw when called', () => {
+  describe('cache dirty marking', () => {
+    it('should not throw when marking file cache dirty', () => {
       const app = createMockApp();
       const manager = new FileContextManager(
         app, containerEl as any, inputEl, createMockCallbacks()
       );
-      expect(() => manager.markFilesCacheDirty()).not.toThrow();
+      expect(() => manager.markFileCacheDirty()).not.toThrow();
+      manager.destroy();
+    });
+
+    it('should not throw when marking folder cache dirty', () => {
+      const app = createMockApp();
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+      expect(() => manager.markFolderCacheDirty()).not.toThrow();
       manager.destroy();
     });
   });

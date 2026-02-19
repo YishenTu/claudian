@@ -29,6 +29,7 @@ export interface MentionDropdownCallbacks {
   setMentionedMcpServers: (mentions: Set<string>) => boolean;
   addMentionedMcpServer: (name: string) => void;
   getExternalContexts: () => string[];
+  getCachedVaultFolders: () => Array<{ name: string; path: string }>;
   getCachedMarkdownFiles: () => TFile[];
   normalizePathForVault: (path: string | undefined | null) => string | null;
 }
@@ -361,7 +362,30 @@ export class MentionDropdownController {
       }
     }
 
-    const firstVaultFileIndex = this.filteredMentionItems.length;
+    const firstVaultItemIndex = this.filteredMentionItems.length;
+
+    const vaultFolders = this.callbacks.getCachedVaultFolders()
+      .filter(folder => {
+        const pathLower = folder.path.toLowerCase();
+        const nameLower = folder.name.toLowerCase();
+        return pathLower.includes(searchLower) || nameLower.includes(searchLower);
+      })
+      .sort((a, b) => {
+        const aNameMatch = a.name.toLowerCase().startsWith(searchLower);
+        const bNameMatch = b.name.toLowerCase().startsWith(searchLower);
+        if (aNameMatch && !bNameMatch) return -1;
+        if (!aNameMatch && bNameMatch) return 1;
+        return a.path.localeCompare(b.path);
+      })
+      .slice(0, 50);
+
+    for (const folder of vaultFolders) {
+      this.filteredMentionItems.push({
+        type: 'folder',
+        name: folder.name,
+        path: folder.path,
+      });
+    }
 
     const allFiles = this.callbacks.getCachedMarkdownFiles();
     const vaultFiles = allFiles
@@ -388,8 +412,8 @@ export class MentionDropdownController {
       });
     }
 
-    if (vaultFiles.length > 0) {
-      this.selectedMentionIndex = firstVaultFileIndex;
+    if (vaultFolders.length > 0 || vaultFiles.length > 0) {
+      this.selectedMentionIndex = firstVaultItemIndex;
     } else {
       this.selectedMentionIndex = 0;
     }
@@ -404,6 +428,7 @@ export class MentionDropdownController {
       emptyText: 'No matches',
       getItemClass: (item) => {
         if (item.type === 'mcp-server') return 'mcp-server';
+        if (item.type === 'folder') return 'vault-folder';
         if (item.type === 'agent') return 'agent';
         if (item.type === 'agent-folder') return 'agent-folder';
         if (item.type === 'context-file') return 'context-file';
@@ -414,6 +439,8 @@ export class MentionDropdownController {
         const iconEl = itemEl.createSpan({ cls: 'claudian-mention-icon' });
         if (item.type === 'mcp-server') {
           iconEl.innerHTML = MCP_ICON_SVG;
+        } else if (item.type === 'folder') {
+          setIcon(iconEl, 'folder');
         } else if (item.type === 'agent' || item.type === 'agent-folder') {
           setIcon(iconEl, 'bot');
         } else if (item.type === 'context-file') {
@@ -559,6 +586,11 @@ export class MentionDropdownController {
       }
 
       const replacement = `${displayName} `;
+      this.inputEl.value = beforeAt + replacement + afterCursor;
+      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+    } else if (selectedItem.type === 'folder') {
+      const normalizedPath = this.callbacks.normalizePathForVault(selectedItem.path);
+      const replacement = `@${normalizedPath ?? selectedItem.path}/ `;
       this.inputEl.value = beforeAt + replacement + afterCursor;
       this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
     } else {

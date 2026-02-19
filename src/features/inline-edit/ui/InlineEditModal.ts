@@ -8,6 +8,7 @@ import { MentionDropdownController } from '../../../shared/mention/MentionDropdo
 import { type CursorContext, getEditorView } from '../../../utils/editor';
 import { escapeHtml, normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
+import { VaultFolderCache } from '../../chat/ui/file-context/state/VaultFolderCache';
 import { type InlineEditMode, InlineEditService } from '../InlineEditService';
 
 export type InlineEditContext =
@@ -263,6 +264,7 @@ class InlineEditController {
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
   private attachedFiles: Set<string> = new Set();
+  private folderCache: VaultFolderCache | null = null;
 
   constructor(
     private app: App,
@@ -414,7 +416,7 @@ class InlineEditController {
       }
     );
 
-    // No cache needed: short-lived modal
+    this.folderCache = new VaultFolderCache(this.app);
     this.mentionDropdown = new MentionDropdownController(
       document.body,
       this.inputEl,
@@ -425,6 +427,8 @@ class InlineEditController {
         setMentionedMcpServers: () => false,
         addMentionedMcpServer: () => {},
         getExternalContexts: () => [],
+        getCachedVaultFolders: () =>
+          this.folderCache?.getFolders().map(f => ({ name: f.name, path: f.path })) ?? [],
         getCachedMarkdownFiles: () => {
           try {
             return this.app.vault.getMarkdownFiles();
@@ -636,6 +640,7 @@ class InlineEditController {
     this.mentionDropdown?.destroy();
     this.mentionDropdown = null;
     this.attachedFiles.clear();
+    this.folderCache = null;
 
     if (activeController === this) {
       activeController = null;

@@ -55,10 +55,20 @@ function createMockCallbacks(overrides: Partial<MentionDropdownCallbacks> = {}):
     setMentionedMcpServers: jest.fn().mockReturnValue(false),
     addMentionedMcpServer: jest.fn((name: string) => mentionedServers.add(name)),
     getExternalContexts: jest.fn().mockReturnValue([]),
+    getCachedVaultFolders: jest.fn().mockReturnValue([]),
     getCachedMarkdownFiles: jest.fn().mockReturnValue([]),
     normalizePathForVault: jest.fn((path: string | undefined | null) => path ?? null),
     ...overrides,
   };
+}
+
+function getLatestDropdownRenderOptions(): any {
+  const { SelectableDropdown } = jest.requireMock('@/shared/components/SelectableDropdown');
+  const dropdownCtor = SelectableDropdown as jest.Mock;
+  const dropdownInstance = dropdownCtor.mock.results[dropdownCtor.mock.results.length - 1]?.value;
+  const renderMock = dropdownInstance?.render as jest.Mock | undefined;
+  const renderCalls = renderMock?.mock.calls ?? [];
+  return renderCalls[renderCalls.length - 1]?.[0];
 }
 
 function createMockMcpService(servers: Array<{ name: string }> = []): McpMentionProvider {
@@ -93,6 +103,8 @@ describe('MentionDropdownController', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockDropdownVisible = false;
+    const { SelectableDropdown } = jest.requireMock('@/shared/components/SelectableDropdown');
+    (SelectableDropdown as jest.Mock).mockClear();
     containerEl = createMockEl();
     inputEl = createMockInput();
     callbacks = createMockCallbacks();
@@ -492,6 +504,112 @@ describe('MentionDropdownController', () => {
       expect(testController).toBeDefined();
 
       testController.destroy();
+    });
+  });
+
+  describe('vault folder mentions', () => {
+    it('limits vault folder results to 50 items', () => {
+      const largeFolderSet = Array.from({ length: 80 }, (_, i) => ({
+        name: `folder${i}`,
+        path: `src/folder${i}`,
+      }));
+      const localCallbacks = createMockCallbacks({
+        getCachedVaultFolders: jest.fn().mockReturnValue(largeFolderSet),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@folder';
+      localInput.selectionStart = 7;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      const folderItems = renderOptions.items.filter((item: any) => item.type === 'folder');
+      expect(folderItems).toHaveLength(50);
+
+      localController.destroy();
+    });
+
+    it('prioritizes name starts-with matches then sorts by path', () => {
+      const localCallbacks = createMockCallbacks({
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: 'helpers', path: 'lib/src-utils' },
+          { name: 'src-core', path: 'src-core' },
+          { name: 'src-app', path: 'src-app' },
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@src';
+      localInput.selectionStart = 4;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      const folderItems = renderOptions.items.filter((item: any) => item.type === 'folder');
+      expect(folderItems.map((item: any) => item.path)).toEqual([
+        'src-app',
+        'src-core',
+        'lib/src-utils',
+      ]);
+
+      localController.destroy();
+    });
+
+    it('defaults selection to first vault item when special items exist', () => {
+      const localCallbacks = createMockCallbacks({
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: 'src', path: 'src' },
+        ]),
+        getCachedMarkdownFiles: jest.fn().mockReturnValue([
+          {
+            path: 'note.md',
+            name: 'note.md',
+            stat: { mtime: Date.now() },
+          } as any,
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+      localController.setMcpManager(createMockMcpService([{ name: 'filesystem' }]));
+
+      localInput.value = '@';
+      localInput.selectionStart = 1;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      expect(renderOptions.selectedIndex).toBe(1);
+
+      localController.destroy();
+    });
+
+    it('inserts folder mention as plain text and does not attach file context', () => {
+      const onAttachFile = jest.fn();
+      const localCallbacks = createMockCallbacks({
+        onAttachFile,
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: 'src', path: 'src' },
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@src';
+      localInput.selectionStart = 4;
+      localInput.selectionEnd = 4;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const enterEvent = { key: 'Enter', preventDefault: jest.fn(), isComposing: false } as any;
+      localController.handleKeydown(enterEvent);
+
+      expect(localInput.value).toBe('@src/ ');
+      expect(onAttachFile).not.toHaveBeenCalled();
+
+      localController.destroy();
     });
   });
 });

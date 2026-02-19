@@ -87,6 +87,10 @@
   color: var(--interactive-accent);
 }
 
+.claudian-mention-item.vault-folder .claudian-mention-icon {
+  color: var(--text-muted);
+}
+
 .claudian-mention-text {
   display: flex;
   flex-direction: column;
