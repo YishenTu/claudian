@@ -18,6 +18,8 @@ describe('VaultFolderCache', () => {
   it('excludes root and hidden folders', () => {
     const loadedFiles = [
       createFolder(''),
+      createFolder('/'),
+      createFolder('//'),
       createFolder('.obsidian'),
       createFolder('src/.private'),
       createFolder('src'),
@@ -86,6 +88,56 @@ describe('VaultFolderCache', () => {
 
     const folders = cache.getFolders().map(folder => folder.path);
     expect(folders).toEqual(['src']);
+    expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns stale folders if reload fails', () => {
+    const getAllLoadedFiles = jest
+      .fn()
+      .mockReturnValueOnce([createFolder('src')])
+      .mockImplementation(() => {
+        throw new Error('Vault error');
+      });
+    const app = {
+      vault: { getAllLoadedFiles },
+    } as any;
+    const cache = new VaultFolderCache(app);
+
+    expect(cache.getFolders().map(folder => folder.path)).toEqual(['src']);
+
+    cache.markDirty();
+    expect(cache.getFolders().map(folder => folder.path)).toEqual(['src']);
+    expect(getAllLoadedFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not reload repeatedly when vault has no visible folders', () => {
+    const getAllLoadedFiles = jest.fn(() => []);
+    const app = {
+      vault: { getAllLoadedFiles },
+    } as any;
+    const cache = new VaultFolderCache(app);
+
+    expect(cache.getFolders()).toEqual([]);
+    expect(cache.getFolders()).toEqual([]);
+
+    expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks background initialization as attempted after failure', () => {
+    jest.useFakeTimers();
+    const getAllLoadedFiles = jest.fn(() => {
+      throw new Error('Vault error');
+    });
+    const app = {
+      vault: { getAllLoadedFiles },
+    } as any;
+    const cache = new VaultFolderCache(app);
+
+    cache.initializeInBackground();
+    jest.runOnlyPendingTimers();
+    cache.initializeInBackground();
+    jest.runOnlyPendingTimers();
+
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
   });
 });

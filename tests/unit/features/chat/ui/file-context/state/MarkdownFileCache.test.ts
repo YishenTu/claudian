@@ -52,6 +52,33 @@ describe('MarkdownFileCache', () => {
 
       expect(files1).toBe(files2);
     });
+
+    it('should return stale files if reload fails', () => {
+      const getMarkdownFiles = jest
+        .fn()
+        .mockReturnValueOnce(mockFiles)
+        .mockImplementation(() => {
+          throw new Error('Vault error');
+        });
+      mockApp.vault.getMarkdownFiles = getMarkdownFiles as any;
+      const cache = new MarkdownFileCache(mockApp);
+
+      expect(cache.getFiles()).toEqual(mockFiles);
+
+      cache.markDirty();
+      expect(cache.getFiles()).toEqual(mockFiles);
+      expect(getMarkdownFiles).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not reload repeatedly when vault has no markdown files', () => {
+      mockApp.vault.getMarkdownFiles = jest.fn().mockReturnValue([]);
+      const cache = new MarkdownFileCache(mockApp);
+
+      expect(cache.getFiles()).toEqual([]);
+      expect(cache.getFiles()).toEqual([]);
+
+      expect(mockApp.vault.getMarkdownFiles).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('initializeInBackground', () => {
@@ -94,6 +121,21 @@ describe('MarkdownFileCache', () => {
       cache.initializeInBackground();
 
       expect(() => jest.runAllTimers()).not.toThrow();
+    });
+
+    it('should mark initialization attempted even if loading fails', () => {
+      mockApp.vault.getMarkdownFiles = jest.fn(() => {
+        throw new Error('Vault error');
+      });
+
+      const cache = new MarkdownFileCache(mockApp);
+      cache.initializeInBackground();
+      jest.runOnlyPendingTimers();
+
+      cache.initializeInBackground();
+      jest.runOnlyPendingTimers();
+
+      expect(mockApp.vault.getMarkdownFiles).toHaveBeenCalledTimes(1);
     });
 
     it('should make cache available after initialization', () => {

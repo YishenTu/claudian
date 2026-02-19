@@ -611,5 +611,112 @@ describe('MentionDropdownController', () => {
 
       localController.destroy();
     });
+
+    it('renders vault folder text in @path/ format', () => {
+      const localCallbacks = createMockCallbacks({
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: 'src', path: 'src' },
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@src';
+      localInput.selectionStart = 4;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      const folderItem = renderOptions.items.find((item: any) => item.type === 'folder');
+      expect(folderItem).toBeDefined();
+
+      const itemEl = createMockEl();
+      renderOptions.renderItem(folderItem, itemEl);
+
+      const nameEl = itemEl.querySelector('.claudian-mention-name-folder');
+      expect(nameEl?.textContent).toBe('@src/');
+
+      localController.destroy();
+    });
+
+    it('still shows vault folder matches when slash search overlaps external context', () => {
+      const { externalContextScanner } = jest.requireMock('@/utils/externalContextScanner');
+      (externalContextScanner.scanPaths as jest.Mock).mockReturnValue([]);
+
+      const localCallbacks = createMockCallbacks({
+        getExternalContexts: jest.fn().mockReturnValue(['/external/src']),
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: 'components', path: 'src/components' },
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@src/';
+      localInput.selectionStart = 5;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      const folderItems = renderOptions.items.filter((item: any) => item.type === 'folder');
+      expect(folderItems.map((item: any) => item.path)).toContain('src/components');
+
+      localController.destroy();
+    });
+
+    it('filters out slash-only root folder paths', () => {
+      const localCallbacks = createMockCallbacks({
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: '/', path: '/' },
+          { name: 'src', path: 'src' },
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@';
+      localInput.selectionStart = 1;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      const folderItems = renderOptions.items.filter((item: any) => item.type === 'folder');
+      expect(folderItems.map((item: any) => item.path)).toEqual(['src']);
+
+      localController.destroy();
+    });
+
+    it('applies the same path-based ranking across files and folders', () => {
+      const localCallbacks = createMockCallbacks({
+        getCachedVaultFolders: jest.fn().mockReturnValue([
+          { name: 'alpha', path: 'alpha' },
+        ]),
+        getCachedMarkdownFiles: jest.fn().mockReturnValue([
+          {
+            path: 'zeta.md',
+            name: 'zeta.md',
+            stat: { mtime: Date.now() },
+          } as any,
+        ]),
+      });
+      const localInput = createMockInput();
+      const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
+
+      localInput.value = '@';
+      localInput.selectionStart = 1;
+      localController.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      const vaultItems = renderOptions.items.filter(
+        (item: any) => item.type === 'file' || item.type === 'folder'
+      );
+      expect(vaultItems.map((item: any) => ({ type: item.type, path: item.path }))).toEqual([
+        { type: 'folder', path: 'alpha' },
+        { type: 'file', path: 'zeta.md' },
+      ]);
+
+      localController.destroy();
+    });
   });
 });

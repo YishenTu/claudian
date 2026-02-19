@@ -15,13 +15,7 @@ export class MarkdownFileCache {
     if (this.isInitialized) return;
 
     setTimeout(() => {
-      try {
-        this.cachedFiles = this.app.vault.getMarkdownFiles();
-        this.dirty = false;
-        this.isInitialized = true;
-      } catch {
-        // Initialization is best-effort
-      }
+      this.tryRefreshFiles();
     }, 0);
   }
 
@@ -30,11 +24,23 @@ export class MarkdownFileCache {
   }
 
   getFiles(): TFile[] {
-    if (this.dirty || this.cachedFiles.length === 0) {
-      this.cachedFiles = this.app.vault.getMarkdownFiles();
-      this.dirty = false;
-      this.isInitialized = true;
+    if (this.dirty || !this.isInitialized) {
+      this.tryRefreshFiles();
     }
     return this.cachedFiles;
+  }
+
+  private tryRefreshFiles(): void {
+    try {
+      this.cachedFiles = this.app.vault.getMarkdownFiles();
+      this.dirty = false;
+    } catch {
+      // Keep stale cache on failure. If data exists, avoid retrying each call.
+      if (this.cachedFiles.length > 0) {
+        this.dirty = false;
+      }
+    } finally {
+      this.isInitialized = true;
+    }
   }
 }

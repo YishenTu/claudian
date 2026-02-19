@@ -133,12 +133,12 @@
 
 /* Context folder filter items in @-mention dropdown */
 .claudian-mention-item.context-folder .claudian-mention-icon {
-  color: var(--claudian-brand);
+  color: var(--text-muted);
 }
 
 .claudian-mention-name-folder {
-  color: var(--claudian-brand);
-  font-weight: 600;
+  color: var(--text-normal);
+  font-weight: 500;
 }
 
 .claudian-mention-name-context {

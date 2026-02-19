@@ -1,6 +1,7 @@
 import { createMockEl, type MockElement } from '@test/helpers/mockElement';
 import { TFile } from 'obsidian';
 
+import { VaultFolderCache } from '@/features/chat/ui/file-context/state/VaultFolderCache';
 import type { FileContextCallbacks } from '@/features/chat/ui/FileContext';
 import { FileContextManager } from '@/features/chat/ui/FileContext';
 import type { ExternalContextFile } from '@/utils/externalContextScanner';
@@ -272,6 +273,33 @@ describe('FileContextManager', () => {
     expect(attached.has('clipping/file.md')).toBe(true);
 
     manager.destroy();
+  });
+
+  it('wires getCachedVaultFolders through VaultFolderCache.getFolders', () => {
+    const folder = { name: 'src', path: 'src' } as any;
+    const getFoldersSpy = jest
+      .spyOn(VaultFolderCache.prototype, 'getFolders')
+      .mockReturnValue([folder]);
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks()
+    );
+
+    inputEl.value = '@src';
+    inputEl.selectionStart = 4;
+    inputEl.selectionEnd = 4;
+    manager.handleInputChange();
+    jest.advanceTimersByTime(200);
+
+    expect(getFoldersSpy).toHaveBeenCalled();
+    const folderLabel = findByClass(containerEl, 'claudian-mention-name-folder');
+    expect(folderLabel?.textContent).toBe('@src/');
+
+    manager.destroy();
+    getFoldersSpy.mockRestore();
   });
 
   it('filters context files and attaches absolute path', () => {

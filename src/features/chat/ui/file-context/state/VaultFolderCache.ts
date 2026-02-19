@@ -2,8 +2,11 @@ import type { App } from 'obsidian';
 import { TFolder } from 'obsidian';
 
 function isVisibleFolder(folder: TFolder): boolean {
-  if (!folder.path) return false;
-  return !folder.path.split('/').some(segment => segment.startsWith('.'));
+  const normalizedPath = folder.path
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '');
+  if (!normalizedPath) return false;
+  return !normalizedPath.split('/').some(segment => segment.startsWith('.'));
 }
 
 export class VaultFolderCache {
@@ -20,13 +23,7 @@ export class VaultFolderCache {
     if (this.isInitialized) return;
 
     setTimeout(() => {
-      try {
-        this.cachedFolders = this.loadFolders();
-        this.dirty = false;
-        this.isInitialized = true;
-      } catch {
-        // Initialization is best-effort
-      }
+      this.tryRefreshFolders();
     }, 0);
   }
 
@@ -35,12 +32,25 @@ export class VaultFolderCache {
   }
 
   getFolders(): TFolder[] {
-    if (this.dirty || this.cachedFolders.length === 0) {
-      this.cachedFolders = this.loadFolders();
-      this.dirty = false;
-      this.isInitialized = true;
+    if (this.dirty || !this.isInitialized) {
+      this.tryRefreshFolders();
     }
     return this.cachedFolders;
+  }
+
+  private tryRefreshFolders(): void {
+    try {
+      this.cachedFolders = this.loadFolders();
+      this.dirty = false;
+    } catch {
+      // Keep stale cache on failure. If we already have data, avoid retrying on every call.
+      if (this.cachedFolders.length > 0) {
+        this.dirty = false;
+      }
+    } finally {
+      // Mark attempted even if it fails so initializeInBackground runs at most once.
+      this.isInitialized = true;
+    }
   }
 
   private loadFolders(): TFolder[] {
