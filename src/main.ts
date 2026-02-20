@@ -188,6 +188,31 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
+    // Switch to tab 1-9 commands
+    for (let n = 1; n <= 9; n++) {
+      this.addCommand({
+        id: `switch-to-tab-${n}`,
+        name: `Switch to tab ${n}`,
+        checkCallback: (checking: boolean) => {
+          const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+          if (!leaf) return false;
+
+          const view = leaf.view as ClaudianView;
+          const tabManager = view.getTabManager();
+          if (!tabManager) return false;
+
+          const tabs = tabManager.getAllTabs();
+          if (n > tabs.length) return false;
+
+          if (!checking) {
+            const targetTab = tabs[n - 1];
+            tabManager.switchToTab(targetTab.id);
+          }
+          return true;
+        },
+      });
+    }
+
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
