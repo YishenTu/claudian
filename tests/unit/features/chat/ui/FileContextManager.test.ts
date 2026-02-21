@@ -405,8 +405,8 @@ describe('FileContextManager', () => {
       manager.destroy();
     });
 
-    it('should not update current note when session is started', () => {
-      const app = createMockApp({ files: ['notes/a.md'] });
+    it('should update current note focus indicator when session is started', () => {
+      const app = createMockApp({ files: ['notes/a.md', 'notes/b.md'] });
       const manager = new FileContextManager(
         app, containerEl as any, inputEl, createMockCallbacks()
       );
@@ -416,8 +416,24 @@ describe('FileContextManager', () => {
 
       const fileB = createMockTFile('notes/b.md');
       manager.handleFileOpen(fileB);
-      // Should NOT update because session is started
-      expect(manager.getCurrentNotePath()).toBe('notes/a.md');
+      // Focus indicator should follow active file even during session
+      expect(manager.getCurrentNotePath()).toBe('notes/b.md');
+      manager.destroy();
+    });
+
+    it('should not clear attachments when switching files after session starts', () => {
+      const app = createMockApp({ files: ['notes/a.md', 'notes/b.md'] });
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      manager.setCurrentNote('notes/a.md');
+      manager.startSession();
+
+      const fileB = createMockTFile('notes/b.md');
+      manager.handleFileOpen(fileB);
+      // Original attachment (a.md) should remain — don't clear during active session
+      expect(manager.getAttachedFiles().has('notes/a.md')).toBe(true);
       manager.destroy();
     });
 

@@ -177,16 +177,23 @@ export class FileContextManager {
     const normalizedPath = this.normalizePathForVault(file.path);
     if (!normalizedPath) return;
 
+    const isExcluded = this.hasExcludedTag(file);
+
     if (!this.state.isSessionStarted()) {
+      // Before session: replace all attachments with the new file
       this.state.clearAttachments();
-      if (!this.hasExcludedTag(file)) {
+      if (!isExcluded) {
         this.currentNotePath = normalizedPath;
         this.state.attachFile(normalizedPath);
       } else {
         this.currentNotePath = null;
       }
-      this.refreshCurrentNoteChip();
+    } else {
+      // During active session: update focus indicator without clearing attachments
+      this.currentNotePath = isExcluded ? null : normalizedPath;
     }
+
+    this.refreshCurrentNoteChip();
   }
 
   markFileCacheDirty() {
