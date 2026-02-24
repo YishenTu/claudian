@@ -139,7 +139,11 @@ export class StorageService {
 
   async initialize(): Promise<CombinedSettings> {
     await this.ensureDirectories();
-    await this.runMigrations();
+    try {
+      await this.runMigrations();
+    } catch {
+      // Migration failures are non-fatal; settings load will fall back to defaults
+    }
 
     const cc = await this.ccSettings.load();
     const claudian = await this.claudianSettings.load();
@@ -253,10 +257,11 @@ export class StorageService {
     // Save Claudian settings FIRST (before stripping from settings.json)
     await this.claudianSettings.save(claudianFields as StoredClaudianSettings);
 
-    // Verify Claudian settings were saved
+    // Verify Claudian settings were saved — abort migration gracefully if not
     const savedClaudian = await this.claudianSettings.load();
     if (!savedClaudian || savedClaudian.userName === undefined) {
-      throw new Error('Failed to verify claudian-settings.json was saved correctly');
+      new Notice('Settings migration incomplete. Will retry on next launch.');
+      return;
     }
 
     // Handle permissions: convert legacy format OR preserve existing CC format
