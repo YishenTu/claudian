@@ -73,6 +73,7 @@ export class InputController {
   private pendingAskInline: InlineAskUserQuestion | null = null;
   private pendingExitPlanModeInline: InlineExitPlanMode | null = null;
   private activeResumeDropdown: ResumeSessionDropdown | null = null;
+  private inputContainerHideDepth = 0;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -820,8 +821,7 @@ export class InputController {
     config?: InlineAskQuestionConfig,
   ): Promise<Record<string, string> | null> {
     this.deps.streamController.hideThinkingIndicator();
-    const previousDisplay = inputContainerEl.style.display;
-    inputContainerEl.style.display = 'none';
+    this.hideInputContainer(inputContainerEl);
 
     return new Promise<Record<string, string> | null>((resolve, reject) => {
       const inline = new InlineAskUserQuestion(
@@ -829,7 +829,7 @@ export class InputController {
         input,
         (result: Record<string, string> | null) => {
           setPending(null);
-          inputContainerEl.style.display = previousDisplay;
+          this.restoreInputContainer(inputContainerEl);
           resolve(result);
         },
         signal,
@@ -840,7 +840,7 @@ export class InputController {
         inline.render();
       } catch (err) {
         setPending(null);
-        inputContainerEl.style.display = previousDisplay;
+        this.restoreInputContainer(inputContainerEl);
         reject(err);
       }
     });
@@ -858,7 +858,7 @@ export class InputController {
     }
 
     streamController.hideThinkingIndicator();
-    inputContainerEl.style.display = 'none';
+    this.hideInputContainer(inputContainerEl);
 
     const enrichedInput = state.planFilePath
       ? { ...input, planFilePath: state.planFilePath }
@@ -873,7 +873,7 @@ export class InputController {
         enrichedInput,
         (decision: ExitPlanModeDecision | null) => {
           this.pendingExitPlanModeInline = null;
-          inputContainerEl.style.display = '';
+          this.restoreInputContainer(inputContainerEl);
           resolve(decision);
         },
         signal,
@@ -884,7 +884,7 @@ export class InputController {
         inline.render();
       } catch (err) {
         this.pendingExitPlanModeInline = null;
-        inputContainerEl.style.display = '';
+        this.restoreInputContainer(inputContainerEl);
         reject(err);
       }
     });
@@ -902,6 +902,27 @@ export class InputController {
     if (this.pendingExitPlanModeInline) {
       this.pendingExitPlanModeInline.destroy();
       this.pendingExitPlanModeInline = null;
+    }
+    this.resetInputContainerVisibility();
+  }
+
+  private hideInputContainer(inputContainerEl: HTMLElement): void {
+    this.inputContainerHideDepth++;
+    inputContainerEl.style.display = 'none';
+  }
+
+  private restoreInputContainer(inputContainerEl: HTMLElement): void {
+    if (this.inputContainerHideDepth <= 0) return;
+    this.inputContainerHideDepth--;
+    if (this.inputContainerHideDepth === 0) {
+      inputContainerEl.style.display = '';
+    }
+  }
+
+  private resetInputContainerVisibility(): void {
+    if (this.inputContainerHideDepth > 0) {
+      this.inputContainerHideDepth = 0;
+      this.deps.getInputContainerEl().style.display = '';
     }
   }
 
