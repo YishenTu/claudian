@@ -1,5 +1,24 @@
-import { SKILLS_PATH,SkillStorage } from '@/core/storage/SkillStorage';
+import * as fs from 'fs';
+
+import { GLOBAL_SKILLS_DIR, SKILLS_PATH, SkillStorage } from '@/core/storage/SkillStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+
+jest.mock('fs');
+const fsMock = fs as jest.Mocked<typeof fs>;
+
+// Helper to build a dirent-like object
+function makeDirent(name: string, isDir: boolean): fs.Dirent {
+  return {
+    name,
+    isDirectory: () => isDir,
+    isFile: () => !isDir,
+    isBlockDevice: () => false,
+    isCharacterDevice: () => false,
+    isFIFO: () => false,
+    isSocket: () => false,
+    isSymbolicLink: () => false,
+  } as unknown as fs.Dirent;
+}
 
 function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter {
   const mockAdapter = {
@@ -36,8 +55,21 @@ function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter
 }
 
 describe('SkillStorage', () => {
+  beforeEach(() => {
+    // Clear call counts and reset default implementations between tests
+    jest.clearAllMocks();
+    // Default: global skills dir does not exist (isolates legacy tests)
+    fsMock.existsSync.mockReturnValue(false);
+    (fsMock.readdirSync as jest.Mock).mockReturnValue([]);
+  });
+
   it('exports SKILLS_PATH', () => {
     expect(SKILLS_PATH).toBe('.claude/skills');
+  });
+
+  it('exports GLOBAL_SKILLS_DIR', () => {
+    expect(GLOBAL_SKILLS_DIR).toContain('.claude');
+    expect(GLOBAL_SKILLS_DIR).toContain('skills');
   });
 
   describe('loadAll', () => {
@@ -270,6 +302,105 @@ Prompt`,
 
       expect(adapter.delete).toHaveBeenCalledWith('.claude/skills/target/SKILL.md');
       expect(adapter.deleteFolder).toHaveBeenCalledWith('.claude/skills/target');
+    });
+  });
+
+  describe('global skills', () => {
+    it('loads a global skill when the directory exists', async () => {
+      const adapter = createMockAdapter({});
+      const skillContent = `---
+description: Global skill
+---
+Global prompt`;
+
+      fsMock.existsSync.mockImplementation((p) => {
+        const s = String(p);
+        return s === GLOBAL_SKILLS_DIR || s.endsWith('SKILL.md');
+      });
+      (fsMock.readdirSync as jest.Mock).mockReturnValue([
+        makeDirent('my-global-skill', true),
+      ]);
+      fsMock.readFileSync.mockReturnValue(skillContent as any);
+
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toHaveLength(1);
+      expect(skills[0].id).toBe('skill-global-my-global-skill');
+      expect(skills[0].name).toBe('my-global-skill');
+      expect(skills[0].description).toBe('Global skill');
+      expect(skills[0].source).toBe('user');
+    });
+
+    it('vault skill takes precedence over global skill with the same name', async () => {
+      const adapter = createMockAdapter({
+        '.claude/skills/shared/SKILL.md': `---
+description: Vault version
+---
+Vault prompt`,
+      });
+
+      fsMock.existsSync.mockImplementation((p) => {
+        const s = String(p);
+        return s === GLOBAL_SKILLS_DIR || s.endsWith('SKILL.md');
+      });
+      (fsMock.readdirSync as jest.Mock).mockReturnValue([
+        makeDirent('shared', true),
+      ]);
+      fsMock.readFileSync.mockReturnValue(`---
+description: Global version
+---
+Global prompt` as any);
+
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toHaveLength(1);
+      expect(skills[0].id).toBe('skill-shared');        // vault id, not global
+      expect(skills[0].description).toBe('Vault version');
+    });
+
+    it('does not fail when global skills directory does not exist', async () => {
+      const adapter = createMockAdapter({});
+      fsMock.existsSync.mockReturnValue(false);
+
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toEqual([]);
+      expect(fsMock.readdirSync).not.toHaveBeenCalled();
+    });
+
+    it('skips a global subdir that has no SKILL.md', async () => {
+      const adapter = createMockAdapter({});
+
+      fsMock.existsSync.mockImplementation((p) => {
+        const s = String(p);
+        // Dir exists, but SKILL.md does not
+        return s === GLOBAL_SKILLS_DIR;
+      });
+      (fsMock.readdirSync as jest.Mock).mockReturnValue([
+        makeDirent('no-skill-here', true),
+      ]);
+
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toHaveLength(0);
+    });
+
+    it('skips files (non-directories) inside global skills dir', async () => {
+      const adapter = createMockAdapter({});
+
+      fsMock.existsSync.mockReturnValue(true);
+      (fsMock.readdirSync as jest.Mock).mockReturnValue([
+        makeDirent('some-file.md', false),
+      ]);
+
+      const storage = new SkillStorage(adapter);
+      const skills = await storage.loadAll();
+
+      expect(skills).toHaveLength(0);
     });
   });
 });

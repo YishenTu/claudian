@@ -5,9 +5,9 @@ export {
   ClaudianSettingsStorage,
   type StoredClaudianSettings,
 } from './ClaudianSettingsStorage';
-export { MCP_CONFIG_PATH, McpStorage } from './McpStorage';
+export { GLOBAL_MCP_SETTINGS_PATH, MCP_CONFIG_PATH, McpStorage } from './McpStorage';
 export { SESSIONS_PATH, SessionStorage } from './SessionStorage';
-export { SKILLS_PATH, SkillStorage } from './SkillStorage';
+export { GLOBAL_SKILLS_DIR, SKILLS_PATH, SkillStorage } from './SkillStorage';
 export { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 export {
   CLAUDE_PATH,

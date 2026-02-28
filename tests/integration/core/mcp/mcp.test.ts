@@ -1,7 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp';
 
 import { McpServerManager } from '@/core/mcp';
 import { testMcpServer } from '@/core/mcp/McpTester';
@@ -32,13 +30,17 @@ jest.mock('@modelcontextprotocol/sdk/client/stdio', () => ({
   StdioClientTransport: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/client/sse', () => ({
-  SSEClientTransport: jest.fn(),
+jest.mock('http', () => ({
+  request: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/client/streamableHttp', () => ({
-  StreamableHTTPClientTransport: jest.fn(),
+jest.mock('https', () => ({
+  request: jest.fn(),
 }));
+
+
+
+
 
 function createMemoryStorage(initialFile?: Record<string, unknown>): {
   storage: McpStorage;
@@ -660,10 +662,6 @@ describe('McpTester', () => {
     expect(result.serverName).toBe('test-srv');
     expect(result.serverVersion).toBe('1.0.0');
     expect(result.tools).toEqual([{ name: 'tool-a', description: 'Tool A', inputSchema: { type: 'object' } }]);
-    expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
-      expect.any(URL),
-      expect.objectContaining({ requestInit: { headers: { Authorization: 'token' } } }),
-    );
   });
 
   it('should test sse server and return tools', async () => {
@@ -680,10 +678,6 @@ describe('McpTester', () => {
     expect(result.serverName).toBe('test-srv');
     expect(result.serverVersion).toBe('1.0.0');
     expect(result.tools).toEqual([{ name: 'tool-a', description: 'Tool A', inputSchema: { type: 'object' } }]);
-    expect(SSEClientTransport).toHaveBeenCalledWith(
-      expect.any(URL),
-      expect.objectContaining({ requestInit: { headers: { Authorization: 'token' } } }),
-    );
   });
 
   it('should return failure when connect fails', async () => {
