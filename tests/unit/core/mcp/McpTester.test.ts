@@ -1,7 +1,7 @@
 import { testMcpServer } from '@/core/mcp/McpTester';
 import type { ClaudianMcpServer } from '@/core/types';
 
-// Mock the MCP SDK client
+// Mock the MCP SDK transports and client
 jest.mock('@modelcontextprotocol/sdk/client', () => ({
   Client: jest.fn().mockImplementation(() => ({
     connect: jest.fn(),
@@ -16,8 +16,16 @@ jest.mock('@modelcontextprotocol/sdk/client', () => ({
   })),
 }));
 
+jest.mock('@modelcontextprotocol/sdk/client/sse', () => ({
+  SSEClientTransport: jest.fn(),
+}));
+
 jest.mock('@modelcontextprotocol/sdk/client/stdio', () => ({
   StdioClientTransport: jest.fn(),
+}));
+
+jest.mock('@modelcontextprotocol/sdk/client/streamableHttp', () => ({
+  StreamableHTTPClientTransport: jest.fn(),
 }));
 
 jest.mock('@/utils/env', () => ({
@@ -30,15 +38,6 @@ jest.mock('@/utils/mcp', () => ({
     const parts = cmd.split(' ');
     return { cmd: parts[0] || '', args: parts.slice(1) };
   }),
-}));
-
-// Mock http/https to prevent real network requests from the NodeHttpTransport
-jest.mock('http', () => ({
-  request: jest.fn(),
-}));
-
-jest.mock('https', () => ({
-  request: jest.fn(),
 }));
 
 describe('testMcpServer', () => {
@@ -87,38 +86,32 @@ describe('testMcpServer', () => {
 
   describe('sse server', () => {
     it('should connect to an SSE server', async () => {
+      const { SSEClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/sse');
       const server: ClaudianMcpServer = {
         name: 'sse-test',
-        config: { type: 'sse' as const, url: 'http://example.com/sse' },
+        config: { type: 'sse' as const, url: 'https://example.com/sse' },
         enabled: true,
         contextSaving: false,
       };
 
       const result = await testMcpServer(server);
 
-      // Client is mocked, so connect succeeds without making real HTTP requests
       expect(result.success).toBe(true);
       expect(result.tools).toHaveLength(2);
+      expect(SSEClientTransport).toHaveBeenCalledWith(
+        expect.any(URL),
+        expect.objectContaining({
+          fetch: expect.any(Function),
+        }),
+      );
     });
   });
 
   describe('http server', () => {
     it('should connect to an HTTP server', async () => {
+      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
       const server: ClaudianMcpServer = {
         name: 'http-test',
-        config: { type: 'http' as const, url: 'http://example.com/api' },
-        enabled: true,
-        contextSaving: false,
-      };
-
-      const result = await testMcpServer(server);
-
-      expect(result.success).toBe(true);
-    });
-
-    it('should connect to an HTTPS server', async () => {
-      const server: ClaudianMcpServer = {
-        name: 'https-test',
         config: { type: 'http' as const, url: 'https://example.com/api' },
         enabled: true,
         contextSaving: false,
@@ -127,14 +120,21 @@ describe('testMcpServer', () => {
       const result = await testMcpServer(server);
 
       expect(result.success).toBe(true);
+      expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+        expect.any(URL),
+        expect.objectContaining({
+          fetch: expect.any(Function),
+        }),
+      );
     });
 
     it('should pass headers when configured', async () => {
+      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
       const server: ClaudianMcpServer = {
         name: 'http-auth',
         config: {
           type: 'http' as const,
-          url: 'http://example.com/api',
+          url: 'https://example.com/api',
           headers: { Authorization: 'Bearer token' },
         },
         enabled: true,
@@ -143,16 +143,27 @@ describe('testMcpServer', () => {
 
       const result = await testMcpServer(server);
 
-      // Transport is created with headers; Client is mocked so connect succeeds
       expect(result.success).toBe(true);
+      expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+        expect.any(URL),
+        expect.objectContaining({
+          fetch: expect.any(Function),
+          requestInit: { headers: { Authorization: 'Bearer token' } },
+        }),
+      );
     });
   });
 
   describe('error handling', () => {
-    it('should return error for invalid URL', async () => {
+    it('should return error when transport creation fails', async () => {
+      const { SSEClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/sse');
+      SSEClientTransport.mockImplementationOnce(() => {
+        throw new Error('Transport init failed');
+      });
+
       const server: ClaudianMcpServer = {
-        name: 'bad-url',
-        config: { type: 'http' as const, url: 'not-a-valid-url' },
+        name: 'bad-sse',
+        config: { type: 'sse' as const, url: 'https://example.com/sse' },
         enabled: true,
         contextSaving: false,
       };
@@ -160,8 +171,27 @@ describe('testMcpServer', () => {
       const result = await testMcpServer(server);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      expect(result.error).toBe('Transport init failed');
       expect(result.tools).toEqual([]);
+    });
+
+    it('should return generic error for non-Error transport failures', async () => {
+      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
+      StreamableHTTPClientTransport.mockImplementationOnce(() => {
+        throw 'string error'; // eslint-disable-line no-throw-literal
+      });
+
+      const server: ClaudianMcpServer = {
+        name: 'bad-http',
+        config: { type: 'http' as const, url: 'https://example.com' },
+        enabled: true,
+        contextSaving: false,
+      };
+
+      const result = await testMcpServer(server);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid server configuration');
     });
 
     it('should return error when connection fails', async () => {
