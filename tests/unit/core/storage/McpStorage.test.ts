@@ -1,5 +1,10 @@
-import { McpStorage } from '@/core/storage';
+import * as fs from 'fs';
+
+import { GLOBAL_MCP_SETTINGS_PATH, McpStorage } from '@/core/storage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+
+jest.mock('fs');
+const fsMock = fs as jest.Mocked<typeof fs>;
 
 /** Mock adapter with exposed store for test assertions. */
 type MockAdapter = VaultFileAdapter & { _store: Record<string, string> };
@@ -25,6 +30,12 @@ function createMockAdapter(files: Record<string, string> = {}): MockAdapter {
 }
 
 describe('McpStorage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Default: ~/.claude/settings.json does not exist
+    fsMock.existsSync.mockReturnValue(false);
+  });
+
   describe('load', () => {
     it('returns empty array when file does not exist', async () => {
       const adapter = createMockAdapter();
@@ -613,6 +624,94 @@ describe('McpStorage', () => {
       const text = '  \n  ' + JSON.stringify({ command: 'node' }) + '  \n';
       const result = McpStorage.tryParseClipboardConfig(text);
       expect(result).not.toBeNull();
+    });
+  });
+  describe('global MCP servers', () => {
+    it('loads global servers from ~/.claude/settings.json', async () => {
+      const settings = JSON.stringify({
+        mcpServers: {
+          'global-srv': { command: 'global-cmd' },
+        },
+      });
+      fsMock.existsSync.mockReturnValue(true);
+      fsMock.readFileSync.mockReturnValue(settings as any);
+
+      const adapter = createMockAdapter({});
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers).toHaveLength(1);
+      expect(servers[0].name).toBe('global-srv');
+      expect(servers[0].enabled).toBe(true);
+      expect(servers[0].contextSaving).toBe(true); // DEFAULT_MCP_SERVER default
+    });
+
+    it('vault server wins over global server with the same name', async () => {
+      const vaultConfig = {
+        mcpServers: { shared: { command: 'vault-cmd' } },
+      };
+      const globalSettings = JSON.stringify({
+        mcpServers: { shared: { command: 'global-cmd' } },
+      });
+      fsMock.existsSync.mockReturnValue(true);
+      fsMock.readFileSync.mockReturnValue(globalSettings as any);
+
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(vaultConfig),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers).toHaveLength(1);
+      expect((servers[0].config as { command: string }).command).toBe('vault-cmd');
+    });
+
+    it('does not fail when ~/.claude/settings.json does not exist', async () => {
+      fsMock.existsSync.mockReturnValue(false);
+
+      const adapter = createMockAdapter({});
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers).toEqual([]);
+      expect(fsMock.readFileSync).not.toHaveBeenCalled();
+    });
+
+    it('handles missing mcpServers field in settings.json gracefully', async () => {
+      fsMock.existsSync.mockReturnValue(true);
+      fsMock.readFileSync.mockReturnValue(JSON.stringify({ permissions: {} }) as any);
+
+      const adapter = createMockAdapter({});
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers).toEqual([]);
+    });
+
+    it('merges global and vault servers when names differ', async () => {
+      const vaultConfig = {
+        mcpServers: { 'vault-only': { command: 'vault-cmd' } },
+      };
+      const globalSettings = JSON.stringify({
+        mcpServers: { 'global-only': { command: 'global-cmd' } },
+      });
+      fsMock.existsSync.mockReturnValue(true);
+      fsMock.readFileSync.mockReturnValue(globalSettings as any);
+
+      const adapter = createMockAdapter({
+        '.claude/mcp.json': JSON.stringify(vaultConfig),
+      });
+      const storage = new McpStorage(adapter);
+      const servers = await storage.load();
+
+      expect(servers).toHaveLength(2);
+      const names = servers.map(s => s.name).sort();
+      expect(names).toEqual(['global-only', 'vault-only']);
+    });
+
+    it('exports GLOBAL_MCP_SETTINGS_PATH pointing to ~/.claude/settings.json', () => {
+      expect(GLOBAL_MCP_SETTINGS_PATH).toContain('.claude');
+      expect(GLOBAL_MCP_SETTINGS_PATH).toContain('settings.json');
     });
   });
 });

@@ -3,6 +3,8 @@
  *
  * MCP server configurations are stored in Claude Code-compatible format
  * with optional Claudian-specific metadata in _claudian field.
+ * Also loads read-only servers from the user-level ~/.claude/settings.json
+ * (vault servers take precedence on name collision).
  *
  * File format:
  * {
@@ -17,6 +19,10 @@
  * }
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
 import type {
   ClaudianMcpConfigFile,
   ClaudianMcpServer,
@@ -29,49 +35,93 @@ import type { VaultFileAdapter } from './VaultFileAdapter';
 /** Path to MCP config file relative to vault root. */
 export const MCP_CONFIG_PATH = '.claude/mcp.json';
 
+/** Absolute path to the user-level Claude Code settings file containing global MCP servers. */
+export const GLOBAL_MCP_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+
 export class McpStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  constructor(private adapter: VaultFileAdapter) { }
 
   async load(): Promise<ClaudianMcpServer[]> {
+    let vaultServers: ClaudianMcpServer[] = [];
+
     try {
       if (!(await this.adapter.exists(MCP_CONFIG_PATH))) {
-        return [];
-      }
+        // Fall through to global loading below
+      } else {
+        const content = await this.adapter.read(MCP_CONFIG_PATH);
+        const file = JSON.parse(content) as ClaudianMcpConfigFile;
 
-      const content = await this.adapter.read(MCP_CONFIG_PATH);
-      const file = JSON.parse(content) as ClaudianMcpConfigFile;
+        if (file.mcpServers && typeof file.mcpServers === 'object') {
+          const claudianMeta = file._claudian?.servers ?? {};
 
-      if (!file.mcpServers || typeof file.mcpServers !== 'object') {
-        return [];
-      }
+          for (const [name, config] of Object.entries(file.mcpServers)) {
+            if (!isValidMcpServerConfig(config)) {
+              continue;
+            }
 
-      const claudianMeta = file._claudian?.servers ?? {};
-      const servers: ClaudianMcpServer[] = [];
+            const meta = claudianMeta[name] ?? {};
+            const disabledTools = Array.isArray(meta.disabledTools)
+              ? meta.disabledTools.filter((tool) => typeof tool === 'string')
+              : undefined;
+            const normalizedDisabledTools =
+              disabledTools && disabledTools.length > 0 ? disabledTools : undefined;
 
-      for (const [name, config] of Object.entries(file.mcpServers)) {
-        if (!isValidMcpServerConfig(config)) {
-          continue;
+            vaultServers.push({
+              name,
+              config,
+              enabled: meta.enabled ?? DEFAULT_MCP_SERVER.enabled,
+              contextSaving: meta.contextSaving ?? DEFAULT_MCP_SERVER.contextSaving,
+              disabledTools: normalizedDisabledTools,
+              description: meta.description,
+            });
+          }
         }
+      }
+    } catch {
+      // Non-critical: return whatever vault servers could be loaded
+    }
 
-        const meta = claudianMeta[name] ?? {};
-        const disabledTools = Array.isArray(meta.disabledTools)
-          ? meta.disabledTools.filter((tool) => typeof tool === 'string')
-          : undefined;
-        const normalizedDisabledTools =
-          disabledTools && disabledTools.length > 0 ? disabledTools : undefined;
+    // Append global servers outside the vault try/catch (vault wins on name collision)
+    const vaultNames = new Set(vaultServers.map(s => s.name));
+    for (const globalServer of this.loadGlobal()) {
+      if (!vaultNames.has(globalServer.name)) {
+        vaultServers.push(globalServer);
+      }
+    }
 
-        servers.push({
+    return vaultServers;
+  }
+
+
+  /**
+   * Load MCP servers from the user-level ~/.claude/settings.json.
+   * These are read-only from Claudian's perspective (CC owns the file).
+   */
+  private loadGlobal(): ClaudianMcpServer[] {
+    try {
+      if (!fs.existsSync(GLOBAL_MCP_SETTINGS_PATH)) return [];
+
+      const content = fs.readFileSync(GLOBAL_MCP_SETTINGS_PATH, 'utf-8');
+      const settings = JSON.parse(content) as Record<string, unknown>;
+
+      const mcpServers = settings.mcpServers;
+      if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) {
+        return [];
+      }
+
+      const result: ClaudianMcpServer[] = [];
+      for (const [name, config] of Object.entries(mcpServers as Record<string, unknown>)) {
+        if (!isValidMcpServerConfig(config)) continue;
+        result.push({
           name,
-          config,
-          enabled: meta.enabled ?? DEFAULT_MCP_SERVER.enabled,
-          contextSaving: meta.contextSaving ?? DEFAULT_MCP_SERVER.contextSaving,
-          disabledTools: normalizedDisabledTools,
-          description: meta.description,
+          config: config as McpServerConfig,
+          enabled: DEFAULT_MCP_SERVER.enabled,
+          contextSaving: DEFAULT_MCP_SERVER.contextSaving,
         });
       }
-
-      return servers;
+      return result;
     } catch {
+      // Non-critical: global settings file may be absent or malformed
       return [];
     }
   }
