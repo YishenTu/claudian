@@ -1,8 +1,7 @@
-import * as http from 'http';
-import * as https from 'https';
-
 import { Client } from '@modelcontextprotocol/sdk/client';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
+import * as http from 'http';
+import * as https from 'https';
 
 import { getEnhancedPath } from '../../utils/env';
 import { parseCommand } from '../../utils/mcp';

@@ -1,5 +1,3 @@
-import { EventEmitter } from 'events';
-
 import { Client } from '@modelcontextprotocol/sdk/client';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 
@@ -40,38 +38,9 @@ jest.mock('https', () => ({
   request: jest.fn(),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const mockHttp = require('http') as { request: jest.Mock };
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const mockHttps = require('https') as { request: jest.Mock };
 
-function createMockResponse(statusCode: number, body: string, headers: Record<string, string> = {}): EventEmitter {
-  const res = new EventEmitter() as EventEmitter & { statusCode: number; headers: Record<string, string> };
-  res.statusCode = statusCode;
-  res.headers = { 'content-type': 'application/json', ...headers };
-  process.nextTick(() => {
-    res.emit('data', Buffer.from(body));
-    res.emit('end');
-  });
-  return res;
-}
 
-function createMockRequest(): EventEmitter & { write: jest.Mock; end: jest.Mock } {
-  const req = new EventEmitter() as EventEmitter & { write: jest.Mock; end: jest.Mock };
-  req.write = jest.fn();
-  req.end = jest.fn();
-  return req;
-}
 
-function setupHttpMock(mod: { request: jest.Mock }, statusCode = 200, body = '', headers: Record<string, string> = {}) {
-  const req = createMockRequest();
-  mod.request.mockImplementation((_url: unknown, _opts: unknown, cb: (res: unknown) => void) => {
-    const res = createMockResponse(statusCode, body, headers);
-    cb(res);
-    return req;
-  });
-  return req;
-}
 
 function createMemoryStorage(initialFile?: Record<string, unknown>): {
   storage: McpStorage;
