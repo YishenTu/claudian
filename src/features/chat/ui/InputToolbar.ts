@@ -1,23 +1,32 @@
-import { Notice, setIcon } from 'obsidian';
-import * as path from 'path';
-import { t } from '../../../i18n';
+import { Notice, setIcon } from "obsidian";
+import * as path from "path";
+import { t } from "../../../i18n";
 
-import type { McpServerManager } from '../../../core/mcp';
+import type { McpServerManager } from "../../../core/mcp";
 import type {
   ClaudeModel,
   ClaudianMcpServer,
   PermissionMode,
   ThinkingBudget,
-  UsageInfo
-} from '../../../core/types';
+  UsageInfo,
+} from "../../../core/types";
+import { DEFAULT_CLAUDE_MODELS, THINKING_BUDGETS } from "../../../core/types";
+import { CHECK_ICON_SVG, MCP_ICON_SVG } from "../../../shared/icons";
 import {
-  DEFAULT_CLAUDE_MODELS,
-  THINKING_BUDGETS
-} from '../../../core/types';
-import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../../shared/icons';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../../utils/env';
-import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
-import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
+  getModelsFromEnvironment,
+  parseEnvironmentVariables,
+} from "../../../utils/env";
+import {
+  filterValidPaths,
+  findConflictingPath,
+  isDuplicatePath,
+  isValidDirectoryPath,
+  validateDirectoryPath,
+} from "../../../utils/externalContext";
+import {
+  expandHomePath,
+  normalizePathForFilesystem,
+} from "../../../utils/path";
 
 export interface ToolbarSettings {
   model: ClaudeModel;
@@ -43,7 +52,7 @@ export class ModelSelector {
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
-    this.container = parentEl.createDiv({ cls: 'claudian-model-selector' });
+    this.container = parentEl.createDiv({ cls: "claudian-model-selector" });
     this.render();
   }
 
@@ -67,8 +76,8 @@ export class ModelSelector {
     // When 1M context is enabled, update sonnet label to show "(1M)"
     const settings = this.callbacks.getSettings();
     if (settings.show1MModel) {
-      models = models.map(m =>
-        m.value === 'sonnet' ? { ...m, label: 'Sonnet (1M)' } : m
+      models = models.map((m) =>
+        m.value === "sonnet" ? { ...m, label: "Sonnet (1M)" } : m,
       );
     }
 
@@ -78,11 +87,13 @@ export class ModelSelector {
   private render() {
     this.container.empty();
 
-    this.buttonEl = this.container.createDiv({ cls: 'claudian-model-btn' });
+    this.buttonEl = this.container.createDiv({ cls: "claudian-model-btn" });
     this.setReady(this.isReady);
     this.updateDisplay();
 
-    this.dropdownEl = this.container.createDiv({ cls: 'claudian-model-dropdown' });
+    this.dropdownEl = this.container.createDiv({
+      cls: "claudian-model-dropdown",
+    });
     this.renderOptions();
   }
 
@@ -90,19 +101,19 @@ export class ModelSelector {
     if (!this.buttonEl) return;
     const currentModel = this.callbacks.getSettings().model;
     const models = this.getAvailableModels();
-    const modelInfo = models.find(m => m.value === currentModel);
+    const modelInfo = models.find((m) => m.value === currentModel);
 
     const displayModel = modelInfo || models[0];
 
     this.buttonEl.empty();
 
-    const labelEl = this.buttonEl.createSpan({ cls: 'claudian-model-label' });
-    labelEl.setText(displayModel?.label || 'Unknown');
+    const labelEl = this.buttonEl.createSpan({ cls: "claudian-model-label" });
+    labelEl.setText(displayModel?.label || "Unknown");
   }
 
   setReady(ready: boolean) {
     this.isReady = ready;
-    this.buttonEl?.toggleClass('ready', ready);
+    this.buttonEl?.toggleClass("ready", ready);
   }
 
   renderOptions() {
@@ -113,17 +124,19 @@ export class ModelSelector {
     const models = this.getAvailableModels();
 
     for (const model of [...models].reverse()) {
-      const option = this.dropdownEl.createDiv({ cls: 'claudian-model-option' });
+      const option = this.dropdownEl.createDiv({
+        cls: "claudian-model-option",
+      });
       if (model.value === currentModel) {
-        option.addClass('selected');
+        option.addClass("selected");
       }
 
       option.createSpan({ text: model.label });
       if (model.description) {
-        option.setAttribute('title', model.description);
+        option.setAttribute("title", model.description);
       }
 
-      option.addEventListener('click', async (e) => {
+      option.addEventListener("click", async (e) => {
         e.stopPropagation();
         await this.callbacks.onModelChange(model.value);
         this.updateDisplay();
@@ -140,17 +153,19 @@ export class ThinkingBudgetSelector {
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
-    this.container = parentEl.createDiv({ cls: 'claudian-thinking-selector' });
+    this.container = parentEl.createDiv({ cls: "claudian-thinking-selector" });
     this.render();
   }
 
   private render() {
     this.container.empty();
 
-    const labelEl = this.container.createSpan({ cls: 'claudian-thinking-label-text' });
-    labelEl.setText(t('chat.thinkingBudget.label'));
+    const labelEl = this.container.createSpan({
+      cls: "claudian-thinking-label-text",
+    });
+    labelEl.setText(t("chat.thinkingBudget.label"));
 
-    this.gearsEl = this.container.createDiv({ cls: 'claudian-thinking-gears' });
+    this.gearsEl = this.container.createDiv({ cls: "claudian-thinking-gears" });
     this.renderGears();
   }
 
@@ -159,23 +174,34 @@ export class ThinkingBudgetSelector {
     this.gearsEl.empty();
 
     const currentBudget = this.callbacks.getSettings().thinkingBudget;
-    const currentBudgetInfo = THINKING_BUDGETS.find(b => b.value === currentBudget);
+    const currentBudgetInfo = THINKING_BUDGETS.find(
+      (b) => b.value === currentBudget,
+    );
 
-    const currentEl = this.gearsEl.createDiv({ cls: 'claudian-thinking-current' });
-    currentEl.setText(currentBudgetInfo?.label || 'Off');
+    const currentEl = this.gearsEl.createDiv({
+      cls: "claudian-thinking-current",
+    });
+    currentEl.setText(currentBudgetInfo?.label || "Off");
 
-    const optionsEl = this.gearsEl.createDiv({ cls: 'claudian-thinking-options' });
+    const optionsEl = this.gearsEl.createDiv({
+      cls: "claudian-thinking-options",
+    });
 
     for (const budget of [...THINKING_BUDGETS].reverse()) {
-      const gearEl = optionsEl.createDiv({ cls: 'claudian-thinking-gear' });
+      const gearEl = optionsEl.createDiv({ cls: "claudian-thinking-gear" });
       gearEl.setText(budget.label);
-      gearEl.setAttribute('title', budget.tokens > 0 ? `${budget.tokens.toLocaleString()} tokens` : 'Disabled');
+      gearEl.setAttribute(
+        "title",
+        budget.tokens > 0
+          ? `${budget.tokens.toLocaleString()} tokens`
+          : "Disabled",
+      );
 
       if (budget.value === currentBudget) {
-        gearEl.addClass('selected');
+        gearEl.addClass("selected");
       }
 
-      gearEl.addEventListener('click', async (e) => {
+      gearEl.addEventListener("click", async (e) => {
         e.stopPropagation();
         await this.callbacks.onThinkingBudgetChange(budget.value);
         this.updateDisplay();
@@ -196,19 +222,21 @@ export class PermissionToggle {
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
-    this.container = parentEl.createDiv({ cls: 'claudian-permission-toggle' });
+    this.container = parentEl.createDiv({ cls: "claudian-permission-toggle" });
     this.render();
   }
 
   private render() {
     this.container.empty();
 
-    this.labelEl = this.container.createSpan({ cls: 'claudian-permission-label' });
-    this.toggleEl = this.container.createDiv({ cls: 'claudian-toggle-switch' });
+    this.labelEl = this.container.createSpan({
+      cls: "claudian-permission-label",
+    });
+    this.toggleEl = this.container.createDiv({ cls: "claudian-toggle-switch" });
 
     this.updateDisplay();
 
-    this.toggleEl.addEventListener('click', () => this.toggle());
+    this.toggleEl.addEventListener("click", () => this.toggle());
   }
 
   updateDisplay() {
@@ -216,26 +244,26 @@ export class PermissionToggle {
 
     const mode = this.callbacks.getSettings().permissionMode;
 
-    if (mode === 'plan') {
-      this.toggleEl.style.display = 'none';
-      this.labelEl.setText('PLAN');
-      this.labelEl.addClass('plan-active');
+    if (mode === "plan") {
+      this.toggleEl.style.display = "none";
+      this.labelEl.setText("PLAN");
+      this.labelEl.addClass("plan-active");
     } else {
-      this.toggleEl.style.display = '';
-      this.labelEl.removeClass('plan-active');
-      if (mode === 'yolo') {
-        this.toggleEl.addClass('active');
-        this.labelEl.setText(t('chat.yolo'));
+      this.toggleEl.style.display = "";
+      this.labelEl.removeClass("plan-active");
+      if (mode === "yolo") {
+        this.toggleEl.addClass("active");
+        this.labelEl.setText(t("chat.yolo"));
       } else {
-        this.toggleEl.removeClass('active');
-        this.labelEl.setText('安全');
+        this.toggleEl.removeClass("active");
+        this.labelEl.setText("安全");
       }
     }
   }
 
   private async toggle() {
     const current = this.callbacks.getSettings().permissionMode;
-    const newMode: PermissionMode = current === 'yolo' ? 'normal' : 'yolo';
+    const newMode: PermissionMode = current === "yolo" ? "normal" : "yolo";
     await this.callbacks.onPermissionModeChange(newMode);
     this.updateDisplay();
   }
@@ -261,11 +289,14 @@ export class ExternalContextSelector {
   /** Paths that persist across all sessions (stored in settings). */
   private persistentPaths: Set<string> = new Set();
   private onChangeCallback: ((paths: string[]) => void) | null = null;
-  private onPersistenceChangeCallback: ((paths: string[]) => void) | null = null;
+  private onPersistenceChangeCallback: ((paths: string[]) => void) | null =
+    null;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
-    this.container = parentEl.createDiv({ cls: 'claudian-external-context-selector' });
+    this.container = parentEl.createDiv({
+      cls: "claudian-external-context-selector",
+    });
     this.render();
   }
 
@@ -288,7 +319,7 @@ export class ExternalContextSelector {
   setPersistentPaths(paths: string[]): void {
     // Validate paths - remove non-existent directories
     const validPaths = filterValidPaths(paths);
-    const invalidPaths = paths.filter(p => !validPaths.includes(p));
+    const invalidPaths = paths.filter((p) => !validPaths.includes(p));
 
     this.persistentPaths = new Set(validPaths);
     // Merge persistent paths into external context paths
@@ -298,8 +329,14 @@ export class ExternalContextSelector {
 
     // If invalid paths were removed, notify user and save updated list
     if (invalidPaths.length > 0) {
-      const pathNames = invalidPaths.map(p => this.shortenPath(p)).join(', ');
-      new Notice(`Removed ${invalidPaths.length} invalid external context path(s): ${pathNames}`, 5000);
+      const pathNames = invalidPaths.map((p) => this.shortenPath(p)).join(", ");
+      new Notice(
+        t("chat.externalContextSelector.removedInvalidPaths", {
+          count: invalidPaths.length,
+          paths: pathNames,
+        }),
+        5000,
+      );
       this.onPersistenceChangeCallback?.([...this.persistentPaths]);
     }
   }
@@ -310,7 +347,12 @@ export class ExternalContextSelector {
     } else {
       // Validate path still exists before persisting
       if (!isValidDirectoryPath(path)) {
-        new Notice(`Cannot persist "${this.shortenPath(path)}" - directory no longer exists`, 4000);
+        new Notice(
+          t("chat.externalContextSelector.invalidPath", {
+            path: this.shortenPath(path),
+          }),
+          4000,
+        );
         return;
       }
       this.persistentPaths.add(path);
@@ -343,7 +385,9 @@ export class ExternalContextSelector {
    * Exposed for testing the remove button behavior.
    */
   removePath(pathStr: string): void {
-    this.externalContextPaths = this.externalContextPaths.filter(p => p !== pathStr);
+    this.externalContextPaths = this.externalContextPaths.filter(
+      (p) => p !== pathStr,
+    );
     // Also remove from persistent paths if it was persistent
     if (this.persistentPaths.has(pathStr)) {
       this.persistentPaths.delete(pathStr);
@@ -363,13 +407,18 @@ export class ExternalContextSelector {
   addExternalContext(pathInput: string): AddExternalContextResult {
     const trimmed = pathInput?.trim();
     if (!trimmed) {
-      return { success: false, error: 'No path provided. Usage: /add-dir /absolute/path' };
+      return {
+        success: false,
+        error: "No path provided. Usage: /add-dir /absolute/path",
+      };
     }
 
     // Strip surrounding quotes if present (e.g., "/path/with spaces")
     let cleanPath = trimmed;
-    if ((cleanPath.startsWith('"') && cleanPath.endsWith('"')) ||
-        (cleanPath.startsWith("'") && cleanPath.endsWith("'"))) {
+    if (
+      (cleanPath.startsWith('"') && cleanPath.endsWith('"')) ||
+      (cleanPath.startsWith("'") && cleanPath.endsWith("'"))
+    ) {
       cleanPath = cleanPath.slice(1, -1);
     }
 
@@ -378,7 +427,10 @@ export class ExternalContextSelector {
     const normalizedPath = normalizePathForFilesystem(expandedPath);
 
     if (!path.isAbsolute(normalizedPath)) {
-      return { success: false, error: 'Path must be absolute. Usage: /add-dir /absolute/path' };
+      return {
+        success: false,
+        error: "Path must be absolute. Usage: /add-dir /absolute/path",
+      };
     }
 
     // Validate path exists and is a directory with specific error messages
@@ -389,13 +441,22 @@ export class ExternalContextSelector {
 
     // Check for duplicate (normalized comparison for cross-platform support)
     if (isDuplicatePath(normalizedPath, this.externalContextPaths)) {
-      return { success: false, error: 'This folder is already added as an external context.' };
+      return {
+        success: false,
+        error: "This folder is already added as an external context.",
+      };
     }
 
     // Check for nested/overlapping paths
-    const conflict = findConflictingPath(normalizedPath, this.externalContextPaths);
+    const conflict = findConflictingPath(
+      normalizedPath,
+      this.externalContextPaths,
+    );
     if (conflict) {
-      return { success: false, error: this.formatConflictMessage(normalizedPath, conflict) };
+      return {
+        success: false,
+        error: this.formatConflictMessage(normalizedPath, conflict),
+      };
     }
 
     // Add the path
@@ -427,22 +488,30 @@ export class ExternalContextSelector {
   private render() {
     this.container.empty();
 
-    const iconWrapper = this.container.createDiv({ cls: 'claudian-external-context-icon-wrapper' });
+    const iconWrapper = this.container.createDiv({
+      cls: "claudian-external-context-icon-wrapper",
+    });
 
-    this.iconEl = iconWrapper.createDiv({ cls: 'claudian-external-context-icon' });
-    setIcon(this.iconEl, 'folder');
+    this.iconEl = iconWrapper.createDiv({
+      cls: "claudian-external-context-icon",
+    });
+    setIcon(this.iconEl, "folder");
 
-    this.badgeEl = iconWrapper.createDiv({ cls: 'claudian-external-context-badge' });
+    this.badgeEl = iconWrapper.createDiv({
+      cls: "claudian-external-context-badge",
+    });
 
     this.updateDisplay();
 
     // Click to open native folder picker
-    iconWrapper.addEventListener('click', (e) => {
+    iconWrapper.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openFolderPicker();
     });
 
-    this.dropdownEl = this.container.createDiv({ cls: 'claudian-external-context-dropdown' });
+    this.dropdownEl = this.container.createDiv({
+      cls: "claudian-external-context-dropdown",
+    });
     this.renderDropdown();
   }
 
@@ -450,10 +519,10 @@ export class ExternalContextSelector {
     try {
       // Access Electron's dialog through remote
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { remote } = require('electron');
+      const { remote } = require("electron");
       const result = await remote.dialog.showOpenDialog({
-        properties: ['openDirectory'],
-        title: 'Select External Context',
+        properties: ["openDirectory"],
+        title: "Select External Context",
       });
 
       if (!result.canceled && result.filePaths.length > 0) {
@@ -461,32 +530,46 @@ export class ExternalContextSelector {
 
         // Check for duplicate (normalized comparison for cross-platform support)
         if (isDuplicatePath(selectedPath, this.externalContextPaths)) {
-          new Notice('This folder is already added as an external context.', 3000);
+          new Notice(
+            t("chat.externalContextSelector.duplicatePath", {
+              path: this.shortenPath(selectedPath),
+            }),
+            3000,
+          );
           return;
         }
 
         // Check for nested/overlapping paths
-        const conflict = findConflictingPath(selectedPath, this.externalContextPaths);
+        const conflict = findConflictingPath(
+          selectedPath,
+          this.externalContextPaths,
+        );
         if (conflict) {
           new Notice(this.formatConflictMessage(selectedPath, conflict), 5000);
           return;
         }
 
-        this.externalContextPaths = [...this.externalContextPaths, selectedPath];
+        this.externalContextPaths = [
+          ...this.externalContextPaths,
+          selectedPath,
+        ];
         this.onChangeCallback?.(this.externalContextPaths);
         this.updateDisplay();
         this.renderDropdown();
       }
     } catch {
-      new Notice('Unable to open folder picker.', 5000);
+      new Notice(t("chat.externalContextSelector.folderPickerError"), 5000);
     }
   }
 
   /** Formats a conflict error message for display. */
-  private formatConflictMessage(newPath: string, conflict: { path: string; type: 'parent' | 'child' }): string {
+  private formatConflictMessage(
+    newPath: string,
+    conflict: { path: string; type: "parent" | "child" },
+  ): string {
     const shortNew = this.shortenPath(newPath);
     const shortExisting = this.shortenPath(conflict.path);
-    return conflict.type === 'parent'
+    return conflict.type === "parent"
       ? `Cannot add "${shortNew}" - it's inside existing path "${shortExisting}"`
       : `Cannot add "${shortNew}" - it contains existing path "${shortExisting}"`;
   }
@@ -497,42 +580,66 @@ export class ExternalContextSelector {
     this.dropdownEl.empty();
 
     // Header
-    const headerEl = this.dropdownEl.createDiv({ cls: 'claudian-external-context-header' });
-    headerEl.setText('External Contexts');
+    const headerEl = this.dropdownEl.createDiv({
+      cls: "claudian-external-context-header",
+    });
+    headerEl.setText("External Contexts");
 
     // Path list
-    const listEl = this.dropdownEl.createDiv({ cls: 'claudian-external-context-list' });
+    const listEl = this.dropdownEl.createDiv({
+      cls: "claudian-external-context-list",
+    });
 
     if (this.externalContextPaths.length === 0) {
-      const emptyEl = listEl.createDiv({ cls: 'claudian-external-context-empty' });
-      emptyEl.setText('Click folder icon to add');
+      const emptyEl = listEl.createDiv({
+        cls: "claudian-external-context-empty",
+      });
+      emptyEl.setText(t("chat.externalContextSelector.emptyState"));
     } else {
       for (const pathStr of this.externalContextPaths) {
-        const itemEl = listEl.createDiv({ cls: 'claudian-external-context-item' });
+        const itemEl = listEl.createDiv({
+          cls: "claudian-external-context-item",
+        });
 
-        const pathTextEl = itemEl.createSpan({ cls: 'claudian-external-context-text' });
+        const pathTextEl = itemEl.createSpan({
+          cls: "claudian-external-context-text",
+        });
         // Show shortened path for display
         const displayPath = this.shortenPath(pathStr);
-        pathTextEl.setText(displayPath);
-        pathTextEl.setAttribute('title', pathStr);
+        pathTextEl.setText(
+          t("chat.externalContextSelector.path", { path: displayPath }),
+        );
+        pathTextEl.setAttribute("title", pathStr);
 
         // Lock toggle button
         const isPersistent = this.persistentPaths.has(pathStr);
-        const lockBtn = itemEl.createSpan({ cls: 'claudian-external-context-lock' });
+        const lockBtn = itemEl.createSpan({
+          cls: "claudian-external-context-lock",
+        });
         if (isPersistent) {
-          lockBtn.addClass('locked');
+          lockBtn.addClass("locked");
         }
-        setIcon(lockBtn, isPersistent ? 'lock' : 'unlock');
-        lockBtn.setAttribute('title', isPersistent ? 'Persistent (click to make session-only)' : 'Session-only (click to persist)');
-        lockBtn.addEventListener('click', (e) => {
+        setIcon(lockBtn, isPersistent ? "lock" : "unlock");
+        lockBtn.setAttribute(
+          "title",
+          isPersistent
+            ? t("chat.externalContextSelector.persistentTooltip")
+            : t("chat.externalContextSelector.sessionOnlyTooltip"),
+        );
+        lockBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           this.togglePersistence(pathStr);
         });
 
-        const removeBtn = itemEl.createSpan({ cls: 'claudian-external-context-remove' });
-        setIcon(removeBtn, 'x');
-        removeBtn.setAttribute('title', 'Remove path');
-        removeBtn.addEventListener('click', (e) => {
+        const removeBtn = itemEl.createSpan({
+          cls: "claudian-external-context-remove",
+        });
+        setIcon(removeBtn, "x");
+        removeBtn.setAttribute(
+          "title",
+          t("chat.externalContextSelector.removePath"),
+        );
+        removeBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           this.removePath(pathStr);
         });
@@ -544,21 +651,23 @@ export class ExternalContextSelector {
   private shortenPath(fullPath: string): string {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const os = require('os');
+      const os = require("os");
       const homeDir = os.homedir();
-      const normalize = (value: string) => value.replace(/\\/g, '/');
+      const normalize = (value: string) => value.replace(/\\/g, "/");
       const normalizedFull = normalize(fullPath);
       const normalizedHome = normalize(homeDir);
-      const compareFull = process.platform === 'win32'
-        ? normalizedFull.toLowerCase()
-        : normalizedFull;
-      const compareHome = process.platform === 'win32'
-        ? normalizedHome.toLowerCase()
-        : normalizedHome;
+      const compareFull =
+        process.platform === "win32"
+          ? normalizedFull.toLowerCase()
+          : normalizedFull;
+      const compareHome =
+        process.platform === "win32"
+          ? normalizedHome.toLowerCase()
+          : normalizedHome;
       if (compareFull.startsWith(compareHome)) {
         // Use normalized path length and normalize the result for consistent display
         const remainder = normalizedFull.slice(normalizedHome.length);
-        return '~' + remainder;
+        return "~" + remainder;
       }
     } catch {
       // Fall through to return full path
@@ -572,20 +681,23 @@ export class ExternalContextSelector {
     const count = this.externalContextPaths.length;
 
     if (count > 0) {
-      this.iconEl.addClass('active');
-      this.iconEl.setAttribute('title', `${count} external context${count > 1 ? 's' : ''} (click to add more)`);
+      this.iconEl.addClass("active");
+      this.iconEl.setAttribute(
+        "title",
+        t("chat.externalContextSelector.addMore", { count }),
+      );
 
       // Show badge only when more than 1 path
       if (count > 1) {
         this.badgeEl.setText(String(count));
-        this.badgeEl.addClass('visible');
+        this.badgeEl.addClass("visible");
       } else {
-        this.badgeEl.removeClass('visible');
+        this.badgeEl.removeClass("visible");
       }
     } else {
-      this.iconEl.removeClass('active');
-      this.iconEl.setAttribute('title', 'Add external contexts (click)');
-      this.badgeEl.removeClass('visible');
+      this.iconEl.removeClass("active");
+      this.iconEl.setAttribute("title", t("chat.externalContextSelector.add"));
+      this.badgeEl.removeClass("visible");
     }
   }
 }
@@ -600,7 +712,7 @@ export class McpServerSelector {
   private onChangeCallback: ((enabled: Set<string>) => void) | null = null;
 
   constructor(parentEl: HTMLElement) {
-    this.container = parentEl.createDiv({ cls: 'claudian-mcp-selector' });
+    this.container = parentEl.createDiv({ cls: "claudian-mcp-selector" });
     this.render();
   }
 
@@ -648,7 +760,12 @@ export class McpServerSelector {
 
   private pruneEnabledServers(): void {
     if (!this.mcpManager) return;
-    const activeNames = new Set(this.mcpManager.getServers().filter((s) => s.enabled).map((s) => s.name));
+    const activeNames = new Set(
+      this.mcpManager
+        .getServers()
+        .filter((s) => s.enabled)
+        .map((s) => s.name),
+    );
     let changed = false;
     for (const name of this.enabledServers) {
       if (!activeNames.has(name)) {
@@ -664,20 +781,26 @@ export class McpServerSelector {
   private render() {
     this.container.empty();
 
-    const iconWrapper = this.container.createDiv({ cls: 'claudian-mcp-selector-icon-wrapper' });
+    const iconWrapper = this.container.createDiv({
+      cls: "claudian-mcp-selector-icon-wrapper",
+    });
 
-    this.iconEl = iconWrapper.createDiv({ cls: 'claudian-mcp-selector-icon' });
+    this.iconEl = iconWrapper.createDiv({ cls: "claudian-mcp-selector-icon" });
     this.iconEl.innerHTML = MCP_ICON_SVG;
 
-    this.badgeEl = iconWrapper.createDiv({ cls: 'claudian-mcp-selector-badge' });
+    this.badgeEl = iconWrapper.createDiv({
+      cls: "claudian-mcp-selector-badge",
+    });
 
     this.updateDisplay();
 
-    this.dropdownEl = this.container.createDiv({ cls: 'claudian-mcp-selector-dropdown' });
+    this.dropdownEl = this.container.createDiv({
+      cls: "claudian-mcp-selector-dropdown",
+    });
     this.renderDropdown();
 
     // Re-render dropdown content on hover (CSS handles visibility)
-    this.container.addEventListener('mouseenter', () => {
+    this.container.addEventListener("mouseenter", () => {
       this.renderDropdown();
     });
   }
@@ -688,18 +811,26 @@ export class McpServerSelector {
     this.dropdownEl.empty();
 
     // Header
-    const headerEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-header' });
-    headerEl.setText('MCP Servers');
+    const headerEl = this.dropdownEl.createDiv({
+      cls: "claudian-mcp-selector-header",
+    });
+    headerEl.setText("MCP Servers");
 
     // Server list
-    const listEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-list' });
+    const listEl = this.dropdownEl.createDiv({
+      cls: "claudian-mcp-selector-list",
+    });
 
     const allServers = this.mcpManager?.getServers() || [];
-    const servers = allServers.filter(s => s.enabled);
+    const servers = allServers.filter((s) => s.enabled);
 
     if (servers.length === 0) {
-      const emptyEl = listEl.createDiv({ cls: 'claudian-mcp-selector-empty' });
-      emptyEl.setText(allServers.length === 0 ? 'No MCP servers configured' : 'All MCP servers disabled');
+      const emptyEl = listEl.createDiv({ cls: "claudian-mcp-selector-empty" });
+      emptyEl.setText(
+        allServers.length === 0
+          ? "No MCP servers configured"
+          : "All MCP servers disabled",
+      );
       return;
     }
 
@@ -709,35 +840,40 @@ export class McpServerSelector {
   }
 
   private renderServerItem(listEl: HTMLElement, server: ClaudianMcpServer) {
-    const itemEl = listEl.createDiv({ cls: 'claudian-mcp-selector-item' });
+    const itemEl = listEl.createDiv({ cls: "claudian-mcp-selector-item" });
     itemEl.dataset.serverName = server.name;
 
     const isEnabled = this.enabledServers.has(server.name);
     if (isEnabled) {
-      itemEl.addClass('enabled');
+      itemEl.addClass("enabled");
     }
 
     // Checkbox
-    const checkEl = itemEl.createDiv({ cls: 'claudian-mcp-selector-check' });
+    const checkEl = itemEl.createDiv({ cls: "claudian-mcp-selector-check" });
     if (isEnabled) {
       checkEl.innerHTML = CHECK_ICON_SVG;
     }
 
     // Info
-    const infoEl = itemEl.createDiv({ cls: 'claudian-mcp-selector-item-info' });
+    const infoEl = itemEl.createDiv({ cls: "claudian-mcp-selector-item-info" });
 
-    const nameEl = infoEl.createSpan({ cls: 'claudian-mcp-selector-item-name' });
+    const nameEl = infoEl.createSpan({
+      cls: "claudian-mcp-selector-item-name",
+    });
     nameEl.setText(server.name);
 
     // Badges
     if (server.contextSaving) {
-      const csEl = infoEl.createSpan({ cls: 'claudian-mcp-selector-cs-badge' });
-      csEl.setText('@');
-      csEl.setAttribute('title', 'Context-saving: can also enable via @' + server.name);
+      const csEl = infoEl.createSpan({ cls: "claudian-mcp-selector-cs-badge" });
+      csEl.setText("@");
+      csEl.setAttribute(
+        "title",
+        "Context-saving: can also enable via @" + server.name,
+      );
     }
 
     // Click to toggle (use mousedown for more reliable capture)
-    itemEl.addEventListener('mousedown', (e) => {
+    itemEl.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.toggleServer(server.name, itemEl);
@@ -753,14 +889,16 @@ export class McpServerSelector {
 
     // Update item visually in-place (immediate feedback)
     const isEnabled = this.enabledServers.has(name);
-    const checkEl = itemEl.querySelector('.claudian-mcp-selector-check') as HTMLElement | null;
+    const checkEl = itemEl.querySelector(
+      ".claudian-mcp-selector-check",
+    ) as HTMLElement | null;
 
     if (isEnabled) {
-      itemEl.addClass('enabled');
+      itemEl.addClass("enabled");
       if (checkEl) checkEl.innerHTML = CHECK_ICON_SVG;
     } else {
-      itemEl.removeClass('enabled');
-      if (checkEl) checkEl.innerHTML = '';
+      itemEl.removeClass("enabled");
+      if (checkEl) checkEl.innerHTML = "";
     }
 
     this.updateDisplay();
@@ -776,26 +914,29 @@ export class McpServerSelector {
 
     // Show/hide container based on whether there are servers
     if (!hasServers) {
-      this.container.style.display = 'none';
+      this.container.style.display = "none";
       return;
     }
-    this.container.style.display = '';
+    this.container.style.display = "";
 
     if (count > 0) {
-      this.iconEl.addClass('active');
-      this.iconEl.setAttribute('title', `${count} MCP server${count > 1 ? 's' : ''} enabled (click to manage)`);
+      this.iconEl.addClass("active");
+      this.iconEl.setAttribute(
+        "title",
+        `${count} MCP server${count > 1 ? "s" : ""} enabled (click to manage)`,
+      );
 
       // Show badge only when more than 1
       if (count > 1) {
         this.badgeEl.setText(String(count));
-        this.badgeEl.addClass('visible');
+        this.badgeEl.addClass("visible");
       } else {
-        this.badgeEl.removeClass('visible');
+        this.badgeEl.removeClass("visible");
       }
     } else {
-      this.iconEl.removeClass('active');
-      this.iconEl.setAttribute('title', 'MCP servers (click to enable)');
-      this.badgeEl.removeClass('visible');
+      this.iconEl.removeClass("active");
+      this.iconEl.setAttribute("title", "MCP servers (click to enable)");
+      this.badgeEl.removeClass("visible");
     }
   }
 }
@@ -807,10 +948,10 @@ export class ContextUsageMeter {
   private circumference: number = 0;
 
   constructor(parentEl: HTMLElement) {
-    this.container = parentEl.createDiv({ cls: 'claudian-context-meter' });
+    this.container = parentEl.createDiv({ cls: "claudian-context-meter" });
     this.render();
     // Initially hidden
-    this.container.style.display = 'none';
+    this.container.style.display = "none";
   }
 
   private render() {
@@ -834,7 +975,9 @@ export class ContextUsageMeter {
     const x2 = cx + radius * Math.cos(endRad);
     const y2 = cy + radius * Math.sin(endRad);
 
-    const gaugeEl = this.container.createDiv({ cls: 'claudian-context-meter-gauge' });
+    const gaugeEl = this.container.createDiv({
+      cls: "claudian-context-meter-gauge",
+    });
     gaugeEl.innerHTML = `
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
         <path class="claudian-meter-bg"
@@ -846,20 +989,24 @@ export class ContextUsageMeter {
           stroke-dasharray="${this.circumference}" stroke-dashoffset="${this.circumference}"/>
       </svg>
     `;
-    this.fillPath = gaugeEl.querySelector('.claudian-meter-fill');
+    this.fillPath = gaugeEl.querySelector(".claudian-meter-fill");
 
-    this.percentEl = this.container.createSpan({ cls: 'claudian-context-meter-percent' });
+    this.percentEl = this.container.createSpan({
+      cls: "claudian-context-meter-percent",
+    });
   }
 
   update(usage: UsageInfo | null): void {
     if (!usage || usage.contextTokens <= 0) {
-      this.container.style.display = 'none';
+      this.container.style.display = "none";
       return;
     }
-    this.container.style.display = 'flex';
+    this.container.style.display = "flex";
     const fillLength = (usage.percentage / 100) * this.circumference;
     if (this.fillPath) {
-      this.fillPath.style.strokeDashoffset = String(this.circumference - fillLength);
+      this.fillPath.style.strokeDashoffset = String(
+        this.circumference - fillLength,
+      );
     }
 
     if (this.percentEl) {
@@ -868,17 +1015,17 @@ export class ContextUsageMeter {
 
     // Toggle warning class for > 80%
     if (usage.percentage > 80) {
-      this.container.addClass('warning');
+      this.container.addClass("warning");
     } else {
-      this.container.removeClass('warning');
+      this.container.removeClass("warning");
     }
 
     // Set tooltip with detailed usage
     let tooltip = `${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
     if (usage.percentage > 80) {
-      tooltip += ' (Approaching limit, run `/compact` to continue)';
+      tooltip += " (Approaching limit, run `/compact` to continue)";
     }
-    this.container.setAttribute('data-tooltip', tooltip);
+    this.container.setAttribute("data-tooltip", tooltip);
   }
 
   private formatTokens(tokens: number): string {
@@ -891,7 +1038,7 @@ export class ContextUsageMeter {
 
 export function createInputToolbar(
   parentEl: HTMLElement,
-  callbacks: ToolbarCallbacks
+  callbacks: ToolbarCallbacks,
 ): {
   modelSelector: ModelSelector;
   thinkingBudgetSelector: ThinkingBudgetSelector;
@@ -901,11 +1048,24 @@ export function createInputToolbar(
   permissionToggle: PermissionToggle;
 } {
   const modelSelector = new ModelSelector(parentEl, callbacks);
-  const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
+  const thinkingBudgetSelector = new ThinkingBudgetSelector(
+    parentEl,
+    callbacks,
+  );
   const contextUsageMeter = new ContextUsageMeter(parentEl);
-  const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
+  const externalContextSelector = new ExternalContextSelector(
+    parentEl,
+    callbacks,
+  );
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
 
-  return { modelSelector, thinkingBudgetSelector, contextUsageMeter, externalContextSelector, mcpServerSelector, permissionToggle };
+  return {
+    modelSelector,
+    thinkingBudgetSelector,
+    contextUsageMeter,
+    externalContextSelector,
+    mcpServerSelector,
+    permissionToggle,
+  };
 }

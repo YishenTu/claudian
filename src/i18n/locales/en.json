@@ -181,13 +181,15 @@
       "desc": "Hide specific slash commands from the dropdown. Useful for hiding Claude Code commands that are not relevant to Claudian. Enter command names without the leading slash, one per line.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP Servers",
-      "desc": "Configure Model Context Protocol servers to extend Claude's capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate."
-    },
     "plugins": {
       "name": "Claude Code Plugins",
-      "desc": "Enable or disable Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault."
+      "desc": "Enable or disable Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault.",
+      "emptyState": "No Claude Code plugins found. Enable plugins via the Claude CLI."
+    },
+    "mcpServers": {
+      "name": "MCP Servers",
+      "desc": "Configure Model Context Protocol servers to extend Claude's capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate.",
+      "emptyState": "No MCP servers configured. Click \"Add\" to add one."
     },
     "subagents": {
       "name": "Subagents",

@@ -362,9 +362,7 @@ export class SlashCommandSettings {
       const emptyEl = this.containerEl.createDiv({
         cls: "claudian-sp-empty-state",
       });
-      emptyEl.setText(
-        "No commands or skills configured. Click + to create one.",
-      );
+      emptyEl.setText(t("settings.slashCommands.emptyState"));
       return;
     }
 

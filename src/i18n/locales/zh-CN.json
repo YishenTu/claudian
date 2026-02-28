@@ -181,13 +181,15 @@
       "desc": "从下拉菜单中隐藏特定的斜杠命令。适用于隐藏与 Claudian 无关的 Claude Code 命令。每行输入一个命令名称，无需前导斜杠。",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP 服务器",
-      "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"
-    },
     "plugins": {
       "name": "Claude Code 插件",
-      "desc": "启用或禁用从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储。"
+      "desc": "启用或禁用从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储。",
+      "emptyState": "未找到 Claude Code 插件。通过 Claude CLI 启用插件。"
+    },
+    "mcpServers": {
+      "name": "MCP 服务器",
+      "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。",
+      "emptyState": "未配置 MCP 服务器。点击 \"添加\" 添加一个。"
     },
     "subagents": {
       "name": "子代理",
