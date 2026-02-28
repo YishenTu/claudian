@@ -22,6 +22,40 @@
     "rewind": "巻き戻し"
   },
   "chat": {
+    "thinkingBudget": {
+      "label": "Thinking:",
+      "off": "Off",
+      "low": "Low",
+      "medium": "Med",
+      "high": "High",
+      "ultra": "Ultra"
+    },
+    "greetings": {
+      "happySunday": "Happy Sunday",
+      "sundaySession": "Sunday session?",
+      "welcomeWeekend": "Welcome to the weekend",
+      "happyMonday": "Happy Monday",
+      "backAtIt": "Back at it",
+      "happyTuesday": "Happy Tuesday",
+      "happyWednesday": "Happy Wednesday",
+      "happyThursday": "Happy Thursday",
+      "happyFriday": "Happy Friday",
+      "fridayFeeling": "That Friday feeling",
+      "happySaturday": "Happy Saturday",
+      "goodMorning": "Good morning",
+      "coffeeTime": "Coffee and Claudian time?",
+      "goodAfternoon": "Good afternoon",
+      "heyThere": "Hey there",
+      "howsItGoing": "How's it going",
+      "goodEvening": "Good evening",
+      "evening": "Evening",
+      "howWasYourDay": "How was your day",
+      "nightOwl": "Hello, night owl",
+      "howAreYou": "Hi, how are you?",
+      "welcomeBack": "Welcome back",
+      "whatsNew": "What's new",
+      "youAreRight": "You are absolutely right!"
+    },
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更が元に戻されます。手動またはbashで編集されたファイルには影響しません。",
       "confirmButton": "巻き戻す",

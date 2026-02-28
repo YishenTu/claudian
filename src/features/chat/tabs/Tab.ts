@@ -197,7 +197,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
     attr: {
-      placeholder: 'How can I help you today?',
+      placeholder: t('chat.placeholder'),
       rows: '3',
       dir: 'auto',
     },

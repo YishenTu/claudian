@@ -22,6 +22,45 @@
     "rewind": "Rewind"
   },
   "chat": {
+    "thinkingBudget": {
+      "label": "Thinking:",
+      "off": "Off",
+      "low": "Low",
+      "medium": "Med",
+      "high": "High",
+      "ultra": "Ultra"
+    },
+    "placeholder": "How can I help you today?",
+    "yolo": "YOLO",
+    "newTab": "New tab",
+    "newConversation": "New conversation",
+    "chatHistory": "Chat history",
+    "greetings": {
+      "happySunday": "Happy Sunday",
+      "sundaySession": "Sunday session?",
+      "welcomeWeekend": "Welcome to the weekend",
+      "happyMonday": "Happy Monday",
+      "backAtIt": "Back at it",
+      "happyTuesday": "Happy Tuesday",
+      "happyWednesday": "Happy Wednesday",
+      "happyThursday": "Happy Thursday",
+      "happyFriday": "Happy Friday",
+      "fridayFeeling": "That Friday feeling",
+      "happySaturday": "Happy Saturday",
+      "goodMorning": "Good morning",
+      "coffeeTime": "Coffee and Claudian time?",
+      "goodAfternoon": "Good afternoon",
+      "heyThere": "Hey there",
+      "howsItGoing": "How's it going",
+      "goodEvening": "Good evening",
+      "evening": "Evening",
+      "howWasYourDay": "How was your day",
+      "nightOwl": "Hello, night owl",
+      "howAreYou": "Hi, how are you?",
+      "welcomeBack": "Welcome back",
+      "whatsNew": "What's new",
+      "youAreRight": "You are absolutely right!"
+    },
     "rewind": {
       "confirmMessage": "Rewind to this point? File changes after this message will be reverted. Rewinding does not affect files edited manually or via bash.",
       "confirmButton": "Rewind",
@@ -134,7 +173,8 @@
     },
     "slashCommands": {
       "name": "Commands and Skills",
-      "desc": "Define custom commands and skills triggered by /name."
+      "desc": "Define custom commands and skills triggered by /name.",
+      "emptyState": "No commands or skills configured. Click + to create one."
     },
     "hiddenSlashCommands": {
       "name": "Hidden Commands",

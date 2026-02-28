@@ -22,6 +22,40 @@
     "rewind": "回退"
   },
   "chat": {
+    "thinkingBudget": {
+      "label": "思考:",
+      "off": "關",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "ultra": "超高"
+    },
+    "greetings": {
+      "happySunday": "週日快樂",
+      "sundaySession": "週日會話？",
+      "welcomeWeekend": "歡迎來到周末",
+      "happyMonday": "週一快樂",
+      "backAtIt": "回到正軌",
+      "happyTuesday": "週二快樂",
+      "happyWednesday": "週三快樂",
+      "happyThursday": "週四快樂",
+      "happyFriday": "週五快樂",
+      "fridayFeeling": "週五的感覺",
+      "happySaturday": "週六快樂",
+      "goodMorning": "早上好",
+      "coffeeTime": "咖啡和 Claudian 時間？",
+      "goodAfternoon": "下午好",
+      "heyThere": "你好",
+      "howsItGoing": "最近怎麼樣",
+      "goodEvening": "晚上好",
+      "evening": "晚上好",
+      "howWasYourDay": "你今天過得怎麼樣",
+      "nightOwl": "你好，夜貓子",
+      "howAreYou": "嗨，你好嗎？",
+      "welcomeBack": "歡迎回來",
+      "whatsNew": "有什麼新鮮事嗎",
+      "youAreRight": "你說得完全對！"
+    },
     "rewind": {
       "confirmMessage": "回退到此處？此訊息之後的檔案變更將被還原。回退不會影響手動或透過 bash 編輯的檔案。",
       "confirmButton": "回退",

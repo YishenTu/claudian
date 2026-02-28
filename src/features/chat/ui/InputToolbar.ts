@@ -1,5 +1,6 @@
 import { Notice, setIcon } from 'obsidian';
 import * as path from 'path';
+import { t } from '../../../i18n';
 
 import type { McpServerManager } from '../../../core/mcp';
 import type {
@@ -147,7 +148,7 @@ export class ThinkingBudgetSelector {
     this.container.empty();
 
     const labelEl = this.container.createSpan({ cls: 'claudian-thinking-label-text' });
-    labelEl.setText('Thinking:');
+    labelEl.setText(t('chat.thinkingBudget.label'));
 
     this.gearsEl = this.container.createDiv({ cls: 'claudian-thinking-gears' });
     this.renderGears();
@@ -224,10 +225,10 @@ export class PermissionToggle {
       this.labelEl.removeClass('plan-active');
       if (mode === 'yolo') {
         this.toggleEl.addClass('active');
-        this.labelEl.setText('YOLO');
+        this.labelEl.setText(t('chat.yolo'));
       } else {
         this.toggleEl.removeClass('active');
-        this.labelEl.setText('Safe');
+        this.labelEl.setText('安全');
       }
     }
   }
