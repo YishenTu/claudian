@@ -9,7 +9,7 @@ export {
 export { getMcpConfigPath,MCP_CONFIG_PATH, McpStorage } from './McpStorage';
 export { getSessionsPath,SESSIONS_PATH, SessionStorage } from './SessionStorage';
 export { getSkillsPath,SKILLS_PATH, SkillStorage } from './SkillStorage';
-export { COMMANDS_PATH, getCommandsPath,SlashCommandStorage } from './SlashCommandStorage';
+export { getCommandsPath, SlashCommandStorage } from './SlashCommandStorage';
 export {
   CLAUDE_PATH,
   type CombinedSettings,

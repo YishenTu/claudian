@@ -3,7 +3,16 @@ import * as path from 'path';
 
 let _dirName = '.claude';
 
+/** Returns true if the given directory name is valid for use as a Claude home directory. */
+export function isValidClaudeHomeDirName(dirName: string): boolean {
+  if (!dirName || dirName === '.' || dirName === '..') return false;
+  if (!dirName.startsWith('.')) return false;
+  if (dirName.includes('/') || dirName.includes('\\')) return false;
+  return true;
+}
+
 export function setClaudeHomeDirName(dirName: string): void {
+  if (!isValidClaudeHomeDirName(dirName)) return;
   _dirName = dirName;
 }
 

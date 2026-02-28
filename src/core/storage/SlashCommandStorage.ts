@@ -7,9 +7,6 @@ export function getCommandsPath(): string {
   return getVaultClaudePath('commands');
 }
 
-/** @deprecated Use getCommandsPath() instead */
-export const COMMANDS_PATH = '.claude/commands';
-
 export class SlashCommandStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
@@ -49,7 +46,7 @@ export class SlashCommandStorage {
   }
 
   async delete(commandId: string): Promise<void> {
-    const files = await this.adapter.listFilesRecursive(COMMANDS_PATH);
+    const files = await this.adapter.listFilesRecursive(getCommandsPath());
 
     for (const filePath of files) {
       if (!filePath.endsWith('.md')) continue;

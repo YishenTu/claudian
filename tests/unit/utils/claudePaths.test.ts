@@ -7,6 +7,7 @@ import {
   getGlobalClaudePath,
   getVaultClaudeDir,
   getVaultClaudePath,
+  isValidClaudeHomeDirName,
   setClaudeHomeDirName,
 } from '@/utils/claudePaths';
 
@@ -14,6 +15,33 @@ describe('claudePaths', () => {
   afterEach(() => {
     // Reset to default after each test
     setClaudeHomeDirName('.claude');
+  });
+
+  describe('isValidClaudeHomeDirName', () => {
+    it('accepts valid dir names', () => {
+      expect(isValidClaudeHomeDirName('.claude')).toBe(true);
+      expect(isValidClaudeHomeDirName('.claude-internal')).toBe(true);
+      expect(isValidClaudeHomeDirName('.my-config')).toBe(true);
+    });
+
+    it('rejects empty string', () => {
+      expect(isValidClaudeHomeDirName('')).toBe(false);
+    });
+
+    it('rejects "." and ".."', () => {
+      expect(isValidClaudeHomeDirName('.')).toBe(false);
+      expect(isValidClaudeHomeDirName('..')).toBe(false);
+    });
+
+    it('rejects names without leading dot', () => {
+      expect(isValidClaudeHomeDirName('claude')).toBe(false);
+      expect(isValidClaudeHomeDirName('config')).toBe(false);
+    });
+
+    it('rejects names with path separators', () => {
+      expect(isValidClaudeHomeDirName('.claude/foo')).toBe(false);
+      expect(isValidClaudeHomeDirName('.claude\\foo')).toBe(false);
+    });
   });
 
   describe('setClaudeHomeDirName / getClaudeHomeDirName', () => {
@@ -24,6 +52,24 @@ describe('claudePaths', () => {
     it('can be set to a custom value', () => {
       setClaudeHomeDirName('.claude-internal');
       expect(getClaudeHomeDirName()).toBe('.claude-internal');
+    });
+
+    it('rejects invalid values and keeps current', () => {
+      setClaudeHomeDirName('.custom');
+      setClaudeHomeDirName('');
+      expect(getClaudeHomeDirName()).toBe('.custom');
+
+      setClaudeHomeDirName('.');
+      expect(getClaudeHomeDirName()).toBe('.custom');
+
+      setClaudeHomeDirName('..');
+      expect(getClaudeHomeDirName()).toBe('.custom');
+
+      setClaudeHomeDirName('no-dot');
+      expect(getClaudeHomeDirName()).toBe('.custom');
+
+      setClaudeHomeDirName('.has/slash');
+      expect(getClaudeHomeDirName()).toBe('.custom');
     });
   });
 

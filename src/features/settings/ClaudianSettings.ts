@@ -7,7 +7,7 @@ import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { getClaudeHomeDirName, setClaudeHomeDirName } from '../../utils/claudePaths';
+import { getClaudeHomeDirName, isValidClaudeHomeDirName } from '../../utils/claudePaths';
 import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
@@ -614,8 +614,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             const trimmed = value.trim();
 
-            // Validate: must start with '.', no path separators
-            if (trimmed && (!trimmed.startsWith('.') || trimmed.includes('/') || trimmed.includes('\\'))) {
+            // Validate: reuse the shared validator (rejects empty-after-default, '.', '..', separators, non-dot-prefixed)
+            if (trimmed && !isValidClaudeHomeDirName(trimmed)) {
               claudeHomeDirValidationEl.setText(t('settings.claudeHomeDirName.validation'));
               claudeHomeDirValidationEl.style.display = 'block';
               return;
@@ -623,9 +623,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
             claudeHomeDirValidationEl.style.display = 'none';
             const dirName = trimmed || '.claude';
-            setClaudeHomeDirName(dirName);
 
-            // Persist to data.json (independent of .claude/ directory)
+            // Only persist to data.json — do NOT call setClaudeHomeDirName() here.
+            // The global path resolution must not change mid-session; a restart is required.
             const pluginData = (await this.plugin.loadData()) || {};
             if (dirName === '.claude') {
               delete pluginData.claudeHomeDirName;
