@@ -5,7 +5,7 @@ import type { AgentManager } from '../../../core/agents';
 import type { McpServerManager } from '../../../core/mcp';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import {
-  buildExternalContextLookup,
+  createExternalContextLookupGetter,
   isMentionStart,
   resolveExternalMentionAtIndex,
 } from '../../../utils/contextMentionResolver';
@@ -340,16 +340,9 @@ export class FileContextManager {
 
     const contextEntries = buildExternalContextDisplayEntries(externalContexts)
       .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
-    if (contextEntries.length === 0) return text;
-
-    const lookupCache = new Map<string, Map<string, string>>();
-    const getContextLookup = (contextRoot: string): Map<string, string> => {
-      const cached = lookupCache.get(contextRoot);
-      if (cached) return cached;
-      const lookup = buildExternalContextLookup(externalContextScanner.scanPaths([contextRoot]));
-      lookupCache.set(contextRoot, lookup);
-      return lookup;
-    };
+    const getContextLookup = createExternalContextLookupGetter(
+      contextRoot => externalContextScanner.scanPaths([contextRoot])
+    );
 
     let replaced = false;
     let cursor = 0;
@@ -362,7 +355,7 @@ export class FileContextManager {
       if (!resolved) continue;
 
       chunks.push(text.slice(cursor, index));
-      chunks.push(`${resolved.absolutePath}${resolved.trailingPunctuation}`);
+      chunks.push(`${resolved.resolvedPath}${resolved.trailingPunctuation}`);
       cursor = resolved.endIndex;
       index = resolved.endIndex - 1;
       replaced = true;

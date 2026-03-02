@@ -1,4 +1,4 @@
-import type { App, Editor, MarkdownView } from 'obsidian';
+import type { App, Editor, MarkdownView, TFile } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../../main';
@@ -6,7 +6,7 @@ import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import {
-  buildExternalContextLookup,
+  createExternalContextLookupGetter,
   findBestMentionLookupMatch,
   isMentionStart,
   normalizeForPlatformLookup,
@@ -276,6 +276,7 @@ class InlineEditController {
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
   private folderCache: VaultFolderCache | null = null;
+  private hasShownMarkdownFilesError = false;
 
   constructor(
     private app: App,
@@ -439,16 +440,10 @@ class InlineEditController {
         getMentionedMcpServers: () => new Set(),
         setMentionedMcpServers: () => false,
         addMentionedMcpServer: () => {},
-        getExternalContexts: () => this.getExternalContexts(),
+        getExternalContexts: this.getExternalContexts,
         getCachedVaultFolders: () =>
           this.folderCache?.getFolders().map(f => ({ name: f.name, path: f.path })) ?? [],
-        getCachedMarkdownFiles: () => {
-          try {
-            return this.app.vault.getMarkdownFiles();
-          } catch {
-            return [];
-          }
-        },
+        getCachedMarkdownFiles: () => this.getMarkdownFilesSafely(),
         normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
       },
       { fixed: true }
@@ -698,12 +693,7 @@ class InlineEditController {
   private resolveContextFilesFromMessage(message: string): string[] {
     if (!message.includes('@')) return [];
 
-    let markdownFiles: Array<{ path: string }> = [];
-    try {
-      markdownFiles = this.app.vault.getMarkdownFiles();
-    } catch {
-      markdownFiles = [];
-    }
+    const markdownFiles = this.getMarkdownFilesSafely();
 
     const pathLookup = new Map<string, string>();
     for (const file of markdownFiles) {
@@ -718,14 +708,9 @@ class InlineEditController {
     const resolved = new Set<string>();
     const externalEntries = buildExternalContextDisplayEntries(this.getExternalContexts())
       .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
-    const externalLookupCache = new Map<string, Map<string, string>>();
-    const getExternalLookup = (contextRoot: string): Map<string, string> => {
-      const cached = externalLookupCache.get(contextRoot);
-      if (cached) return cached;
-      const lookup = buildExternalContextLookup(externalContextScanner.scanPaths([contextRoot]));
-      externalLookupCache.set(contextRoot, lookup);
-      return lookup;
-    };
+    const getExternalLookup = createExternalContextLookupGetter(
+      contextRoot => externalContextScanner.scanPaths([contextRoot])
+    );
 
     for (let index = 0; index < message.length; index++) {
       if (!isMentionStart(message, index)) continue;
@@ -734,7 +719,7 @@ class InlineEditController {
         message, index, externalEntries, getExternalLookup
       );
       if (externalMatch) {
-        resolved.add(externalMatch.absolutePath);
+        resolved.add(externalMatch.resolvedPath);
         index = externalMatch.endIndex - 1;
         continue;
       }
@@ -749,6 +734,18 @@ class InlineEditController {
     }
 
     return [...resolved];
+  }
+
+  private getMarkdownFilesSafely(): TFile[] {
+    try {
+      return this.app.vault.getMarkdownFiles();
+    } catch {
+      if (!this.hasShownMarkdownFilesError) {
+        this.hasShownMarkdownFilesError = true;
+        new Notice('Failed to load vault markdown files. Vault @-mentions may be unavailable.');
+      }
+      return [];
+    }
   }
 
 }

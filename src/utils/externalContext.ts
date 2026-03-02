@@ -58,7 +58,6 @@ export function getFolderName(p: string): string {
 
 export interface ExternalContextDisplayEntry {
   contextRoot: string;
-  folderName: string;
   displayName: string;
   displayNameLower: string;
 }
@@ -100,7 +99,6 @@ export function buildExternalContextDisplayEntries(
 
     return {
       contextRoot,
-      folderName,
       displayName,
       displayNameLower: displayName.toLowerCase(),
     };

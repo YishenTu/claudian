@@ -7,12 +7,6 @@ export interface MentionLookupMatch {
   trailingPunctuation: string;
 }
 
-export interface ExternalMentionMatch {
-  absolutePath: string;
-  trailingPunctuation: string;
-  endIndex: number;
-}
-
 const TRAILING_PUNCTUATION_REGEX = /[),.!?:;]+$/;
 const BOUNDARY_PUNCTUATION = new Set([',', ')', '!', '?', ':', ';']);
 
@@ -77,9 +71,9 @@ export function resolveExternalMentionAtIndex(
   mentionStart: number,
   contextEntries: ExternalContextDisplayEntry[],
   getContextLookup: (contextRoot: string) => Map<string, string>
-): ExternalMentionMatch | null {
+): MentionLookupMatch | null {
   const mentionBodyStart = mentionStart + 1;
-  let bestMatch: ExternalMentionMatch | null = null;
+  let bestMatch: MentionLookupMatch | null = null;
 
   for (const entry of contextEntries) {
     const displayNameEnd = mentionBodyStart + entry.displayName.length;
@@ -102,11 +96,7 @@ export function resolveExternalMentionAtIndex(
     if (!match) continue;
 
     if (!bestMatch || match.endIndex > bestMatch.endIndex) {
-      bestMatch = {
-        absolutePath: match.resolvedPath,
-        trailingPunctuation: match.trailingPunctuation,
-        endIndex: match.endIndex,
-      };
+      bestMatch = match;
     }
   }
 
@@ -146,4 +136,19 @@ export function findBestMentionLookupMatch(
   }
 
   return null;
+}
+
+export function createExternalContextLookupGetter(
+  getContextFiles: (contextRoot: string) => ExternalContextFile[]
+): (contextRoot: string) => Map<string, string> {
+  const lookupCache = new Map<string, Map<string, string>>();
+
+  return (contextRoot: string): Map<string, string> => {
+    const cached = lookupCache.get(contextRoot);
+    if (cached) return cached;
+
+    const lookup = buildExternalContextLookup(getContextFiles(contextRoot));
+    lookupCache.set(contextRoot, lookup);
+    return lookup;
+  };
 }

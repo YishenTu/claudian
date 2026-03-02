@@ -171,6 +171,143 @@ describe('InlineEditModal - openAndWait', () => {
     }
   });
 
+  it('shows a single notice and degrades gracefully when getMarkdownFiles throws', async () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = {
+      body: createMockEl('body'),
+      createElement: (tagName: string) => createMockEl(tagName),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    try {
+      const app = {
+        vault: {
+          adapter: { basePath: '/vault' },
+          getMarkdownFiles: jest.fn().mockImplementation(() => {
+            throw new Error('vault unavailable');
+          }),
+          getAllLoadedFiles: jest.fn().mockReturnValue([]),
+        },
+        workspace: {
+          getActiveViewOfType: jest.fn(),
+        },
+      } as any;
+      const plugin = {
+        settings: {
+          hiddenSlashCommands: [],
+        },
+        getSdkCommands: jest.fn().mockReturnValue([]),
+      } as any;
+      const editor = {} as any;
+      const view = { editor } as any;
+
+      let widgetRef: any = null;
+      const dispatch = jest.fn((transaction: any) => {
+        const effects = Array.isArray(transaction?.effects)
+          ? transaction.effects
+          : transaction?.effects
+            ? [transaction.effects]
+            : [];
+        for (const effect of effects) {
+          const widget = effect?.value?.widget;
+          if (widget && typeof widget.createInputDOM === 'function') {
+            widgetRef = widget;
+            widget.createInputDOM();
+          }
+        }
+      });
+      const editorView = {
+        state: {
+          doc: {
+            line: jest.fn(() => ({ from: 0 })),
+            lineAt: jest.fn(() => ({ from: 0, number: 1 })),
+          },
+        },
+        dispatch,
+        dom: {
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+        },
+      } as any;
+
+      const getEditorViewSpy = jest
+        .spyOn(editorUtils, 'getEditorView')
+        .mockReturnValue(editorView);
+
+      const { externalContextScanner } = jest.requireMock('@/utils/externalContextScanner');
+      (externalContextScanner.scanPaths as jest.Mock).mockImplementation((paths: string[]) => {
+        if (paths[0] === '/external') {
+          return [
+            {
+              path: '/external/src/app.md',
+              name: 'app.md',
+              relativePath: 'src/app.md',
+              contextRoot: '/external',
+              mtime: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+
+      const editContext: InlineEditContext = {
+        mode: 'cursor',
+        cursorContext: {
+          beforeCursor: '',
+          afterCursor: '',
+          isInbetween: true,
+          line: 0,
+          column: 0,
+        },
+      };
+
+      const modal = new InlineEditModal(
+        app,
+        plugin,
+        editor,
+        view,
+        editContext,
+        'note.md',
+        () => ['/external']
+      );
+      const resultPromise = modal.openAndWait();
+
+      const callbacks = mentionDropdownCtor.mock.calls[0]?.[2];
+      expect(callbacks.getCachedMarkdownFiles()).toEqual([]);
+      expect(callbacks.getCachedMarkdownFiles()).toEqual([]);
+
+      const editTextMock = jest.fn().mockResolvedValue({
+        success: true,
+        clarification: 'Need more detail',
+      });
+      widgetRef.inlineEditService = {
+        editText: editTextMock,
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+        resetConversation: jest.fn(),
+      };
+
+      widgetRef.inputEl.value = 'Please check @external/src/app.md.';
+      await widgetRef.generate();
+
+      expect(editTextMock).toHaveBeenCalledTimes(1);
+      expect(editTextMock.mock.calls[0][0].contextFiles).toEqual(['/external/src/app.md']);
+
+      const noticeMock = Notice as unknown as jest.Mock;
+      expect(noticeMock).toHaveBeenCalledTimes(1);
+      expect(noticeMock).toHaveBeenCalledWith(
+        'Failed to load vault markdown files. Vault @-mentions may be unavailable.'
+      );
+
+      widgetRef.reject();
+      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
+      getEditorViewSpy.mockRestore();
+    } finally {
+      (global as any).document = originalDocument;
+    }
+  });
+
   it('parses @mentions into contextFiles at send time without dropdown attachment state', async () => {
     const originalDocument = (global as any).document;
     (global as any).document = {
