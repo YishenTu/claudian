@@ -97,18 +97,41 @@ describe('SelectionController', () => {
     expect(showSelectionHighlight).toHaveBeenCalledWith(editorView, 0, 4);
   });
 
-  it('clears selection when selection is removed and input is not focused', () => {
+  it('clears selection only after a grace window when input is not focused', () => {
     controller.start();
     jest.advanceTimersByTime(250);
 
     editor.getSelection.mockReturnValue('');
     (global as any).document.activeElement = null;
 
-    jest.advanceTimersByTime(250);
+    // No-selection state persists, but should remain available during grace period.
+    jest.advanceTimersByTime(1250);
+    expect(controller.hasSelection()).toBe(true);
+
+    // After grace expires, selection should be cleared.
+    jest.advanceTimersByTime(750);
 
     expect(controller.hasSelection()).toBe(false);
     expect(indicatorEl.style.display).toBe('none');
     expect(hideSelectionHighlight).toHaveBeenCalledWith(editorView);
+  });
+
+  it('preserves selection when input focus arrives after a slow editor blur handoff', () => {
+    controller.start();
+    jest.advanceTimersByTime(250);
+
+    editor.getSelection.mockReturnValue('');
+    (global as any).document.activeElement = null;
+
+    // Simulate delayed focus handoff under UI load.
+    jest.advanceTimersByTime(1250);
+    expect(controller.hasSelection()).toBe(true);
+
+    (global as any).document.activeElement = inputEl;
+    jest.advanceTimersByTime(250);
+
+    expect(controller.hasSelection()).toBe(true);
+    expect(hideSelectionHighlight).not.toHaveBeenCalled();
   });
 
   it('keeps context row visible when canvas selection indicator is visible', () => {

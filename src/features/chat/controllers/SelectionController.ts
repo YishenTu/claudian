@@ -8,6 +8,8 @@ import { updateContextRowHasContent } from './contextRowVisibility';
 
 /** Polling interval for editor selection (ms). */
 const SELECTION_POLL_INTERVAL = 250;
+/** Grace period before clearing selection after editor blur (ms). */
+const SELECTION_CLEAR_GRACE_MS = 1500;
 
 export class SelectionController {
   private app: App;
@@ -16,6 +18,7 @@ export class SelectionController {
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
+  private selectionClearGraceUntil: number | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -64,6 +67,7 @@ export class SelectionController {
     const selectedText = editor.getSelection();
 
     if (selectedText.trim()) {
+      this.selectionClearGraceUntil = null;
       // Get selection range
       const fromPos = editor.getCursor('from');
       const toPos = editor.getCursor('to');
@@ -90,13 +94,22 @@ export class SelectionController {
         this.storedSelection = { notePath, selectedText, lineCount, startLine, from, to, editorView };
         this.updateIndicator();
       }
-    } else if (document.activeElement !== this.inputEl) {
-      // No selection AND input not focused = user cleared selection in editor
+    } else if (this.storedSelection) {
+      if (document.activeElement === this.inputEl) {
+        this.selectionClearGraceUntil = null;
+        return;
+      }
+
+      // Editor may briefly report no selection during focus transitions; use a grace period.
+      const now = Date.now();
+      this.selectionClearGraceUntil ??= now + SELECTION_CLEAR_GRACE_MS;
+      if (now < this.selectionClearGraceUntil) return;
+
+      this.selectionClearGraceUntil = null;
       this.clearHighlight();
       this.storedSelection = null;
       this.updateIndicator();
     }
-    // If no selection but input IS focused, keep storedSelection (user clicked input)
   }
 
   // ============================================
@@ -161,6 +174,7 @@ export class SelectionController {
   // ============================================
 
   clear(): void {
+    this.selectionClearGraceUntil = null;
     this.clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
