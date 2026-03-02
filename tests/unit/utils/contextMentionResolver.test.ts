@@ -1,5 +1,6 @@
 import {
   buildExternalContextLookup,
+  createExternalContextLookupGetter,
   findBestMentionLookupMatch,
   isMentionStart,
   normalizeForPlatformLookup,
@@ -86,6 +87,87 @@ describe('contextMentionResolver', () => {
       const lookup = buildExternalContextLookup(files);
       expect(lookup.size).toBe(1);
       expect(lookup.get(normalizeForPlatformLookup('src/file.md'))).toBe('/external/src/file.md');
+    });
+  });
+
+  describe('createExternalContextLookupGetter', () => {
+    it('calls getContextFiles on first access for a context root', () => {
+      const filesByRoot: Record<string, ExternalContextFile[]> = {
+        '/external-a': [
+          {
+            path: '/external-a/src/a.md',
+            name: 'a.md',
+            relativePath: 'src/a.md',
+            contextRoot: '/external-a',
+            mtime: 1,
+          },
+        ],
+      };
+      const getContextFiles = jest.fn((contextRoot: string) => filesByRoot[contextRoot] ?? []);
+      const getLookup = createExternalContextLookupGetter(getContextFiles);
+
+      const lookup = getLookup('/external-a');
+
+      expect(getContextFiles).toHaveBeenCalledTimes(1);
+      expect(getContextFiles).toHaveBeenCalledWith('/external-a');
+      expect(lookup.get(normalizeForPlatformLookup('src/a.md'))).toBe('/external-a/src/a.md');
+    });
+
+    it('reuses cached lookup and skips rescanning for the same root', () => {
+      const filesByRoot: Record<string, ExternalContextFile[]> = {
+        '/external-a': [
+          {
+            path: '/external-a/src/a.md',
+            name: 'a.md',
+            relativePath: 'src/a.md',
+            contextRoot: '/external-a',
+            mtime: 1,
+          },
+        ],
+      };
+      const getContextFiles = jest.fn((contextRoot: string) => filesByRoot[contextRoot] ?? []);
+      const getLookup = createExternalContextLookupGetter(getContextFiles);
+
+      const firstLookup = getLookup('/external-a');
+      const secondLookup = getLookup('/external-a');
+
+      expect(getContextFiles).toHaveBeenCalledTimes(1);
+      expect(secondLookup).toBe(firstLookup);
+    });
+
+    it('creates independent cached lookups for distinct roots', () => {
+      const filesByRoot: Record<string, ExternalContextFile[]> = {
+        '/external-a': [
+          {
+            path: '/external-a/src/a.md',
+            name: 'a.md',
+            relativePath: 'src/a.md',
+            contextRoot: '/external-a',
+            mtime: 1,
+          },
+        ],
+        '/external-b': [
+          {
+            path: '/external-b/src/b.md',
+            name: 'b.md',
+            relativePath: 'src/b.md',
+            contextRoot: '/external-b',
+            mtime: 2,
+          },
+        ],
+      };
+      const getContextFiles = jest.fn((contextRoot: string) => filesByRoot[contextRoot] ?? []);
+      const getLookup = createExternalContextLookupGetter(getContextFiles);
+
+      const firstLookup = getLookup('/external-a');
+      const secondLookup = getLookup('/external-b');
+
+      expect(getContextFiles).toHaveBeenCalledTimes(2);
+      expect(getContextFiles).toHaveBeenNthCalledWith(1, '/external-a');
+      expect(getContextFiles).toHaveBeenNthCalledWith(2, '/external-b');
+      expect(firstLookup).not.toBe(secondLookup);
+      expect(firstLookup.get(normalizeForPlatformLookup('src/a.md'))).toBe('/external-a/src/a.md');
+      expect(secondLookup.get(normalizeForPlatformLookup('src/b.md'))).toBe('/external-b/src/b.md');
     });
   });
 
