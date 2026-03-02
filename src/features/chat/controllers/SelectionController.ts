@@ -8,8 +8,8 @@ import { updateContextRowHasContent } from './contextRowVisibility';
 
 /** Polling interval for editor selection (ms). */
 const SELECTION_POLL_INTERVAL = 250;
-/** Grace period before clearing selection after editor blur (ms). */
-const SELECTION_CLEAR_GRACE_MS = 1500;
+/** Grace period for editor blur when handing focus to chat input (ms). */
+const INPUT_HANDOFF_GRACE_MS = 1500;
 
 export class SelectionController {
   private app: App;
@@ -18,8 +18,12 @@ export class SelectionController {
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
-  private selectionClearGraceUntil: number | null = null;
+  private inputHandoffGraceUntil: number | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly inputPointerDownHandler = () => {
+    if (!this.storedSelection) return;
+    this.inputHandoffGraceUntil = Date.now() + INPUT_HANDOFF_GRACE_MS;
+  };
 
   constructor(
     app: App,
@@ -37,6 +41,7 @@ export class SelectionController {
 
   start(): void {
     if (this.pollInterval) return;
+    this.inputEl.addEventListener('pointerdown', this.inputPointerDownHandler);
     this.pollInterval = setInterval(() => this.poll(), SELECTION_POLL_INTERVAL);
   }
 
@@ -45,6 +50,7 @@ export class SelectionController {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    this.inputEl.removeEventListener('pointerdown', this.inputPointerDownHandler);
     this.clear();
   }
 
@@ -67,7 +73,7 @@ export class SelectionController {
     const selectedText = editor.getSelection();
 
     if (selectedText.trim()) {
-      this.selectionClearGraceUntil = null;
+      this.inputHandoffGraceUntil = null;
       // Get selection range
       const fromPos = editor.getCursor('from');
       const toPos = editor.getCursor('to');
@@ -96,16 +102,17 @@ export class SelectionController {
       }
     } else if (this.storedSelection) {
       if (document.activeElement === this.inputEl) {
-        this.selectionClearGraceUntil = null;
+        this.inputHandoffGraceUntil = null;
         return;
       }
 
-      // Editor may briefly report no selection during focus transitions; use a grace period.
+      // Apply grace only when there was explicit intent to focus the chat input.
       const now = Date.now();
-      this.selectionClearGraceUntil ??= now + SELECTION_CLEAR_GRACE_MS;
-      if (now < this.selectionClearGraceUntil) return;
+      if (this.inputHandoffGraceUntil !== null && now <= this.inputHandoffGraceUntil) {
+        return;
+      }
 
-      this.selectionClearGraceUntil = null;
+      this.inputHandoffGraceUntil = null;
       this.clearHighlight();
       this.storedSelection = null;
       this.updateIndicator();
@@ -174,7 +181,7 @@ export class SelectionController {
   // ============================================
 
   clear(): void {
-    this.selectionClearGraceUntil = null;
+    this.inputHandoffGraceUntil = null;
     this.clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
