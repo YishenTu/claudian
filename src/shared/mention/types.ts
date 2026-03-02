@@ -67,23 +67,3 @@ export type MentionItem =
   | ContextFolderMentionItem
   | AgentMentionItem
   | AgentFolderMentionItem;
-
-export interface ExternalContextEntry {
-  contextRoot: string;
-  folderName: string;
-  displayName: string;
-  displayNameLower: string;
-}
-
-export function createExternalContextEntry(
-  contextRoot: string,
-  folderName: string,
-  displayName: string
-): ExternalContextEntry {
-  return {
-    contextRoot,
-    folderName,
-    displayName,
-    displayNameLower: displayName.toLowerCase(),
-  };
-}

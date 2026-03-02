@@ -344,6 +344,130 @@ describe('FileContextManager', () => {
     manager.destroy();
   });
 
+  it('transforms pasted external context mention to absolute path without dropdown selection', () => {
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks({ externalContexts: ['/external'] })
+    );
+
+    const contextFiles: ExternalContextFile[] = [
+      {
+        path: '/external/src/app.md',
+        name: 'app.md',
+        relativePath: 'src/app.md',
+        contextRoot: '/external',
+        mtime: 1000,
+      },
+    ];
+    mockScanPaths.mockReturnValue(contextFiles);
+
+    const transformed = manager.transformContextMentions('Please review @external/src/app.md before merging.');
+    expect(transformed).toBe('Please review /external/src/app.md before merging.');
+
+    manager.destroy();
+  });
+
+  it('transforms pasted external context mention with spaces in path', () => {
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks({ externalContexts: ['/external'] })
+    );
+
+    const contextFiles: ExternalContextFile[] = [
+      {
+        path: '/external/src/my file.md',
+        name: 'my file.md',
+        relativePath: 'src/my file.md',
+        contextRoot: '/external',
+        mtime: 1000,
+      },
+    ];
+    mockScanPaths.mockReturnValue(contextFiles);
+
+    const transformed = manager.transformContextMentions('Please review @external/src/my file.md before merging.');
+    expect(transformed).toBe('Please review /external/src/my file.md before merging.');
+
+    manager.destroy();
+  });
+
+  it('keeps trailing punctuation when transforming pasted external context mention', () => {
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks({ externalContexts: ['/external'] })
+    );
+
+    const contextFiles: ExternalContextFile[] = [
+      {
+        path: '/external/src/app.md',
+        name: 'app.md',
+        relativePath: 'src/app.md',
+        contextRoot: '/external',
+        mtime: 1000,
+      },
+    ];
+    mockScanPaths.mockReturnValue(contextFiles);
+
+    const transformed = manager.transformContextMentions('Check @external/src/app.md, then continue.');
+    expect(transformed).toBe('Check /external/src/app.md, then continue.');
+
+    manager.destroy();
+  });
+
+  it('resolves pasted mention using disambiguated external context display name', () => {
+    const app = createMockApp();
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks({
+        externalContexts: ['/work/a/external', '/work/b/external'],
+      })
+    );
+
+    mockScanPaths.mockImplementation((paths: string[]) => {
+      const contextRoot = paths[0];
+      if (contextRoot === '/work/a/external') {
+        return [
+          {
+            path: '/work/a/external/src/app.md',
+            name: 'app.md',
+            relativePath: 'src/app.md',
+            contextRoot: '/work/a/external',
+            mtime: 1000,
+          },
+        ];
+      }
+
+      if (contextRoot === '/work/b/external') {
+        return [
+          {
+            path: '/work/b/external/src/app.md',
+            name: 'app.md',
+            relativePath: 'src/app.md',
+            contextRoot: '/work/b/external',
+            mtime: 1000,
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    const transformed = manager.transformContextMentions('Use @a/external/src/app.md from workspace A');
+    expect(transformed).toBe('Use /work/a/external/src/app.md from workspace A');
+
+    manager.destroy();
+  });
+
   describe('session lifecycle', () => {
     it('should report session not started initially', () => {
       const app = createMockApp();

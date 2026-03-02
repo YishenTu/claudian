@@ -5,7 +5,17 @@ import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import {
+  buildExternalContextLookup,
+  findBestMentionLookupMatch,
+  isMentionStart,
+  normalizeForPlatformLookup,
+  normalizeMentionPath,
+  resolveExternalMentionAtIndex,
+} from '../../../utils/contextMentionResolver';
 import { type CursorContext, getEditorView } from '../../../utils/editor';
+import { buildExternalContextDisplayEntries } from '../../../utils/externalContext';
+import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { escapeHtml, normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import { VaultFolderCache } from '../../chat/ui/file-context/state/VaultFolderCache';
@@ -203,7 +213,8 @@ export class InlineEditModal {
     private editor: Editor,
     private view: MarkdownView,
     private editContext: InlineEditContext,
-    private notePath: string
+    private notePath: string,
+    private getExternalContexts: () => string[] = () => []
   ) {}
 
   async openAndWait(): Promise<{ decision: InlineEditDecision; editedText?: string }> {
@@ -236,6 +247,7 @@ export class InlineEditModal {
         editor,
         this.editContext,
         this.notePath,
+        this.getExternalContexts,
         resolve
       );
       activeController = this.controller;
@@ -263,7 +275,6 @@ class InlineEditController {
   private isConversing = false;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
-  private attachedFiles: Set<string> = new Set();
   private folderCache: VaultFolderCache | null = null;
 
   constructor(
@@ -273,6 +284,7 @@ class InlineEditController {
     private editor: Editor,
     editContext: InlineEditContext,
     private notePath: string,
+    private getExternalContexts: () => string[],
     private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void
   ) {
     this.inlineEditService = new InlineEditService(plugin);
@@ -421,12 +433,13 @@ class InlineEditController {
       document.body,
       this.inputEl,
       {
-        onAttachFile: (filePath) => this.attachedFiles.add(filePath),
+        // Inline-edit resolves @mentions at send time from input text.
+        onAttachFile: () => {},
         onMcpMentionChange: () => {},
         getMentionedMcpServers: () => new Set(),
         setMentionedMcpServers: () => false,
         addMentionedMcpServer: () => {},
-        getExternalContexts: () => [],
+        getExternalContexts: () => this.getExternalContexts(),
         getCachedVaultFolders: () =>
           this.folderCache?.getFolders().map(f => ({ name: f.name, path: f.path })) ?? [],
         getCachedMarkdownFiles: () => {
@@ -460,9 +473,7 @@ class InlineEditController {
     this.inputEl.disabled = true;
     this.spinnerEl.style.display = 'block';
 
-    // Get files @-mentioned this turn, then clear for next turn
-    const contextFiles = Array.from(this.attachedFiles);
-    this.attachedFiles.clear();
+    const contextFiles = this.resolveContextFilesFromMessage(userMessage);
 
     let result;
     if (this.isConversing) {
@@ -639,7 +650,6 @@ class InlineEditController {
 
     this.mentionDropdown?.destroy();
     this.mentionDropdown = null;
-    this.attachedFiles.clear();
     this.folderCache = null;
 
     if (activeController === this) {
@@ -683,6 +693,62 @@ class InlineEditController {
       new Notice('Failed to attach file: invalid path');
       return null;
     }
+  }
+
+  private resolveContextFilesFromMessage(message: string): string[] {
+    if (!message.includes('@')) return [];
+
+    let markdownFiles: Array<{ path: string }> = [];
+    try {
+      markdownFiles = this.app.vault.getMarkdownFiles();
+    } catch {
+      markdownFiles = [];
+    }
+
+    const pathLookup = new Map<string, string>();
+    for (const file of markdownFiles) {
+      const normalized = this.normalizePathForVault(file.path);
+      if (!normalized) continue;
+      const lookupKey = normalizeForPlatformLookup(normalizeMentionPath(normalized));
+      if (!pathLookup.has(lookupKey)) {
+        pathLookup.set(lookupKey, normalized);
+      }
+    }
+
+    const resolved = new Set<string>();
+    const externalEntries = buildExternalContextDisplayEntries(this.getExternalContexts())
+      .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
+    const externalLookupCache = new Map<string, Map<string, string>>();
+    const getExternalLookup = (contextRoot: string): Map<string, string> => {
+      const cached = externalLookupCache.get(contextRoot);
+      if (cached) return cached;
+      const lookup = buildExternalContextLookup(externalContextScanner.scanPaths([contextRoot]));
+      externalLookupCache.set(contextRoot, lookup);
+      return lookup;
+    };
+
+    for (let index = 0; index < message.length; index++) {
+      if (!isMentionStart(message, index)) continue;
+
+      const externalMatch = resolveExternalMentionAtIndex(
+        message, index, externalEntries, getExternalLookup
+      );
+      if (externalMatch) {
+        resolved.add(externalMatch.absolutePath);
+        index = externalMatch.endIndex - 1;
+        continue;
+      }
+
+      const vaultMatch = findBestMentionLookupMatch(
+        message, index + 1, pathLookup, normalizeMentionPath, normalizeForPlatformLookup
+      );
+      if (vaultMatch) {
+        resolved.add(vaultMatch.resolvedPath);
+        index = vaultMatch.endIndex - 1;
+      }
+    }
+
+    return [...resolved];
   }
 
 }

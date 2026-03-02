@@ -48,7 +48,6 @@ function createMockCallbacks(overrides: Partial<MentionDropdownCallbacks> = {}):
   const mentionedServers = new Set<string>();
   return {
     onAttachFile: jest.fn(),
-    onAttachContextFile: jest.fn(),
     onMcpMentionChange: jest.fn(),
     onAgentMentionSelect: jest.fn(),
     getMentionedMcpServers: jest.fn().mockReturnValue(mentionedServers),

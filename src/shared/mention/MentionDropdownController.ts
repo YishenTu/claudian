@@ -1,15 +1,13 @@
 import type { TFile } from 'obsidian';
 import { setIcon } from 'obsidian';
 
-import { getFolderName, normalizePathForComparison } from '../../utils/externalContext';
+import { buildExternalContextDisplayEntries } from '../../utils/externalContext';
 import { type ExternalContextFile, externalContextScanner } from '../../utils/externalContextScanner';
 import { extractMcpMentions } from '../../utils/mcp';
 import { SelectableDropdown } from '../components/SelectableDropdown';
 import { MCP_ICON_SVG } from '../icons';
 import {
   type AgentMentionProvider,
-  createExternalContextEntry,
-  type ExternalContextEntry,
   type FolderMentionItem,
   type MentionItem,
 } from './types';
@@ -22,8 +20,6 @@ export interface MentionDropdownOptions {
 
 export interface MentionDropdownCallbacks {
   onAttachFile: (path: string) => void;
-  /** Attach context file with display name to absolute path mapping. */
-  onAttachContextFile?: (displayName: string, absolutePath: string) => void;
   onMcpMentionChange?: (servers: Set<string>) => void;
   onAgentMentionSelect?: (agentId: string) => void;
   getMentionedMcpServers: () => Set<string>;
@@ -202,49 +198,13 @@ export class MentionDropdownController {
     return false;
   }
 
-  private buildExternalContextEntries(externalContexts: string[]): ExternalContextEntry[] {
-    const counts = new Map<string, number>();
-    const normalizedPaths = new Map<string, string>();
-
-    for (const contextPath of externalContexts) {
-      const normalized = normalizePathForComparison(contextPath);
-      normalizedPaths.set(contextPath, normalized);
-      const folderName = getFolderName(normalized);
-      counts.set(folderName, (counts.get(folderName) ?? 0) + 1);
-    }
-
-    return externalContexts.map(contextRoot => {
-      const normalized = normalizedPaths.get(contextRoot) ?? normalizePathForComparison(contextRoot);
-      const folderName = getFolderName(contextRoot);
-      const needsDisambiguation = (counts.get(folderName) ?? 0) > 1;
-      const displayName = this.getContextDisplayName(normalized, folderName, needsDisambiguation);
-      return createExternalContextEntry(contextRoot, folderName, displayName);
-    });
-  }
-
-  private getContextDisplayName(
-    normalizedPath: string,
-    folderName: string,
-    needsDisambiguation: boolean
-  ): string {
-    if (!needsDisambiguation) return folderName;
-
-    const segments = normalizedPath.split('/').filter(Boolean);
-    if (segments.length < 2) return folderName;
-
-    const parent = segments[segments.length - 2];
-    if (!parent) return folderName;
-
-    return `${parent}/${folderName}`;
-  }
-
   private showMentionDropdown(searchText: string): void {
     const searchLower = searchText.toLowerCase();
     this.filteredMentionItems = [];
     this.filteredContextFiles = [];
 
     const externalContexts = this.callbacks.getExternalContexts() || [];
-    const contextEntries = this.buildExternalContextEntries(externalContexts);
+    const contextEntries = buildExternalContextDisplayEntries(externalContexts);
 
     const isFilterSearch = searchText.includes('/');
     let fileSearchText = searchLower;
@@ -590,17 +550,13 @@ export class MentionDropdownController {
       this.handleInputChange();
       return;
     } else if (selectedItem.type === 'context-file') {
-      // Display friendly name, but store mapping for later transformation to absolute path
+      // Display friendly name in input; absolute path resolution happens at send time.
       const displayName = selectedItem.folderName
         ? `@${selectedItem.folderName}/${selectedItem.name}`
         : `@${selectedItem.name}`;
 
       if (selectedItem.absolutePath) {
-        if (this.callbacks.onAttachContextFile) {
-          this.callbacks.onAttachContextFile(displayName, selectedItem.absolutePath);
-        } else {
-          this.callbacks.onAttachFile(selectedItem.absolutePath);
-        }
+        this.callbacks.onAttachFile(selectedItem.absolutePath);
       }
 
       const replacement = `${displayName} `;
