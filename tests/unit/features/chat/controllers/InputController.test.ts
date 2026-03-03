@@ -212,6 +212,7 @@ describe('InputController - Message Queue', () => {
         content: 'queued message',
         images: undefined,
         editorContext: null,
+        browserContext: null,
         canvasContext: null,
         hidden: undefined,
       });
@@ -232,6 +233,7 @@ describe('InputController - Message Queue', () => {
         content: 'queued with images',
         images: mockImages,
         editorContext: null,
+        browserContext: null,
         canvasContext: null,
         hidden: undefined,
       });
@@ -468,6 +470,34 @@ describe('InputController - Message Queue', () => {
       const queryOptions = queryCall[3];
       expect(queryOptions.mcpMentions).toBe(mcpMentions);
       expect(queryOptions.enabledMcpServers).toBe(enabledServers);
+    });
+
+    it('should append browser selection context when available', async () => {
+      const mockAgentService = createMockAgentService();
+      const localDeps = createSendableDeps({
+        browserSelectionController: {
+          getContext: jest.fn().mockReturnValue({
+            source: 'surfing-view',
+            selectedText: 'selected from browser',
+            title: 'Surfing',
+          }),
+        } as any,
+        getAgentService: () => mockAgentService as any,
+      });
+      const localController = new InputController(localDeps);
+
+      mockAgentService.query.mockImplementation((prompt: string) => {
+        expect(prompt).toContain('<browser_selection source="surfing-view" title="Surfing">');
+        expect(prompt).toContain('selected from browser');
+        return createMockStream([{ type: 'done' }]);
+      });
+
+      const localInput = localDeps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      localInput.value = 'Summarize this';
+
+      await localController.sendMessage();
+
+      expect(mockAgentService.query).toHaveBeenCalled();
     });
   });
 

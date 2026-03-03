@@ -21,7 +21,7 @@
 .claudian-context-row {
   display: none;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   flex-shrink: 0;
   padding: 6px 10px 0 10px;
   gap: 8px;
@@ -62,6 +62,32 @@
   border-radius: 4px;
   margin-inline-start: auto;
   flex-shrink: 0;
+  order: 4;
+}
+
+.claudian-browser-selection-indicator {
+  min-width: 0;
+  max-width: min(100%, clamp(220px, 64vw, 560px));
+  margin-inline-start: 0;
+  flex-shrink: 1;
+  cursor: default;
+  pointer-events: auto;
+  order: 2;
+}
+
+.claudian-browser-chip-name {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.claudian-browser-chip-remove {
+  flex-shrink: 0;
+}
+
+.claudian-browser-selection-indicator:hover {
+  border-color: var(--background-modifier-border-hover);
+  background: var(--background-modifier-hover);
+  box-shadow: none;
 }
 
 .claudian-input {
@@ -194,4 +220,10 @@
 /* Monospace input while in bash mode */
 .claudian-input-wrapper.claudian-input-bang-bash-mode .claudian-input {
   font-family: var(--font-monospace);
+}
+
+@media (max-width: 640px) {
+  .claudian-browser-selection-indicator {
+    max-width: 100%;
+  }
 }

@@ -71,11 +71,16 @@ path/to/note.md
 <editor_selection path="path/to/note.md" lines="10-15">
 selected text content
 </editor_selection>
+
+<browser_selection source="surfing-view" title="LeetCode" url="https://leetcode.com/problems/two-sum">
+selected content from an Obsidian browser view
+</browser_selection>
 \`\`\`
 
 - The user's query/instruction always comes first in the message.
 - \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context.
 - \`<editor_selection>\`: Text currently selected in the editor, with file path and line numbers.
+- \`<browser_selection>\`: Text selected in an Obsidian browser/web view (for example Surfing), including optional source/title/url metadata.
 - \`@filename.md\`: Files mentioned with @ in the query. Read these files when referenced.
 
 ## Obsidian Context
@@ -206,7 +211,7 @@ Use proactively for any task meeting these criteria to keep progress visible.
 
 Reusable capability modules. Use the \`Skill\` tool to invoke them when their description matches the user's need.
 
-## Editor Selection
+## Selection Context
 
 User messages may include an \`<editor_selection>\` tag showing text the user selected:
 
@@ -215,6 +220,14 @@ User messages may include an \`<editor_selection>\` tag showing text the user se
 selected text here
 possibly multiple lines
 </editor_selection>
+\`\`\`
+
+User messages may also include a \`<browser_selection>\` tag when selection comes from an Obsidian browser view:
+
+\`\`\`xml
+<browser_selection source="surfing-view" title="LeetCode" url="https://leetcode.com/problems/two-sum">
+selected webpage content
+</browser_selection>
 \`\`\`
 
 **When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
