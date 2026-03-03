@@ -6,7 +6,7 @@ export function updateContextRowHasContent(contextRowEl: HTMLElement): void {
   const imagePreview = contextRowEl.querySelector('.claudian-image-preview') as HTMLElement | null;
 
   const hasEditorSelection = editorIndicator?.style.display === 'block';
-  const hasBrowserSelection = browserIndicator?.style.display !== 'none';
+  const hasBrowserSelection = browserIndicator !== null && browserIndicator.style.display === 'block';
   const hasCanvasSelection = canvasIndicator?.style.display === 'block';
   const hasFileChips = fileIndicator?.style.display === 'flex';
   const hasImageChips = imagePreview?.style.display === 'flex';

@@ -1,10 +1,10 @@
 import type { App, ItemView } from 'obsidian';
-import { setIcon } from 'obsidian';
 
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import { updateContextRowHasContent } from './contextRowVisibility';
 
 const BROWSER_SELECTION_POLL_INTERVAL = 250;
+const BROWSER_SELECTION_LOG_PREFIX = '[Claudian][BrowserSelection]';
 
 type BrowserLikeWebview = HTMLElement & {
   executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>;
@@ -19,7 +19,6 @@ export class BrowserSelectionController {
   private storedSelection: BrowserSelectionContext | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private pollInFlight = false;
-  private textEl: HTMLSpanElement;
 
   constructor(
     app: App,
@@ -33,7 +32,6 @@ export class BrowserSelectionController {
     this.inputEl = inputEl;
     this.contextRowEl = contextRowEl;
     this.onVisibilityChange = onVisibilityChange ?? null;
-    this.textEl = this.initializeChip();
   }
 
   start(): void {
@@ -71,6 +69,8 @@ export class BrowserSelectionController {
       } else {
         this.clearWhenInputIsNotFocused();
       }
+    } catch (error) {
+      this.debugLog('Polling failed', error);
     } finally {
       this.pollInFlight = false;
     }
@@ -151,8 +151,8 @@ export class BrowserSelectionController {
 
         const frameSelection = this.extractSelectionFromDocument(frameDoc, frameDoc.body);
         if (frameSelection) return frameSelection;
-      } catch {
-        // Ignore inaccessible iframe contexts (cross-origin restrictions).
+      } catch (error) {
+        this.debugLog('Failed to read iframe selection', error);
       }
     }
     return null;
@@ -170,8 +170,8 @@ export class BrowserSelectionController {
         if (typeof result === 'string' && result.trim()) {
           return result.trim();
         }
-      } catch {
-        // Ignore inaccessible webview contexts.
+      } catch (error) {
+        this.debugLog('Failed to read webview selection', error);
       }
     }
     return null;
@@ -189,9 +189,9 @@ export class BrowserSelectionController {
     containerEl: HTMLElement,
     selectedText: string
   ): BrowserSelectionContext {
-    const source = viewType || 'browser';
     const title = this.extractViewTitle(view);
     const url = this.extractViewUrl(view, containerEl);
+    const source = this.buildSourceMetadata(viewType, url);
 
     return {
       source,
@@ -233,6 +233,14 @@ export class BrowserSelectionController {
     return undefined;
   }
 
+  private buildSourceMetadata(viewType: string, url?: string): string {
+    if (url?.trim()) {
+      return `browser:${url.trim()}`;
+    }
+    const fallback = viewType.trim() || 'unknown';
+    return `browser:${fallback}`;
+  }
+
   private isSameSelection(
     left: BrowserSelectionContext | null,
     right: BrowserSelectionContext | null
@@ -256,50 +264,41 @@ export class BrowserSelectionController {
     if (!this.indicatorEl) return;
 
     if (this.storedSelection) {
-      const sourceLabel = this.storedSelection.title || this.storedSelection.source;
       const charCount = this.storedSelection.selectedText.length;
-      const summary = `${sourceLabel}: ${charCount} chars selected`;
-      this.textEl.textContent = summary;
-      this.textEl.setAttribute('title', this.buildChipTitle(summary));
-      this.indicatorEl.style.display = '';
+      const charLabel = charCount === 1 ? 'char' : 'chars';
+      const metadata = `source=${this.storedSelection.source}`;
+      this.indicatorEl.textContent = `${charCount} ${charLabel} selected - ${metadata}`;
+      this.indicatorEl.setAttribute('title', this.buildIndicatorTitle(metadata));
+      this.indicatorEl.style.display = 'block';
     } else {
       this.indicatorEl.style.display = 'none';
-      this.textEl.textContent = '';
-      this.textEl.removeAttribute('title');
+      this.indicatorEl.textContent = '';
+      this.indicatorEl.removeAttribute('title');
     }
     this.updateContextRowVisibility();
   }
 
-  private initializeChip(): HTMLSpanElement {
-    this.indicatorEl.addClass('claudian-file-chip');
-    this.indicatorEl.addClass('claudian-browser-selection-indicator');
-    this.indicatorEl.replaceChildren();
-
-    const doc = this.indicatorEl.ownerDocument;
-    const iconEl = doc.createElement('span');
-    iconEl.className = 'claudian-file-chip-icon claudian-browser-chip-icon';
-    setIcon(iconEl, 'globe');
-
-    const textEl = doc.createElement('span');
-    textEl.className = 'claudian-file-chip-name claudian-browser-chip-name';
-
-    const removeEl = doc.createElement('span');
-    removeEl.className = 'claudian-file-chip-remove claudian-browser-chip-remove';
-    removeEl.textContent = '\u00D7';
-    removeEl.setAttribute('aria-label', 'Remove browser selection context');
-    removeEl.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.clear();
-    });
-
-    this.indicatorEl.append(iconEl, textEl, removeEl);
-    return textEl;
+  private buildIndicatorTitle(metadata: string): string {
+    const lines = [metadata];
+    if (this.storedSelection?.title?.trim()) {
+      lines.push(`title=${this.storedSelection.title.trim()}`);
+    }
+    if (this.storedSelection?.url?.trim()) {
+      lines.push(this.storedSelection.url.trim());
+    }
+    return lines.join('\n');
   }
 
-  private buildChipTitle(summary: string): string {
-    if (!this.storedSelection?.url) return summary;
-    return `${summary}\n${this.storedSelection.url}`;
+  private debugLog(message: string, error?: unknown): void {
+    if (error instanceof Error) {
+      console.debug(`${BROWSER_SELECTION_LOG_PREFIX} ${message}: ${error.message}`);
+      return;
+    }
+    if (error !== undefined) {
+      console.debug(`${BROWSER_SELECTION_LOG_PREFIX} ${message}`, error);
+      return;
+    }
+    console.debug(`${BROWSER_SELECTION_LOG_PREFIX} ${message}`);
   }
 
   updateContextRowVisibility(): void {

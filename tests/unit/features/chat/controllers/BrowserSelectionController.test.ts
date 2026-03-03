@@ -3,12 +3,9 @@
 import { BrowserSelectionController } from '@/features/chat/controllers/BrowserSelectionController';
 
 function createMockIndicator() {
-  const indicatorEl = document.createElement('div') as HTMLElement & { addClass?: (...classes: string[]) => void };
+  const indicatorEl = document.createElement('div');
   indicatorEl.style.display = 'none';
-  indicatorEl.addClass = (...classes: string[]) => {
-    indicatorEl.classList.add(...classes);
-  };
-  return indicatorEl as any;
+  return indicatorEl;
 }
 
 function createMockContextRow(browserIndicator: HTMLElement) {
@@ -93,14 +90,14 @@ describe('BrowserSelectionController', () => {
     await flushMicrotasks();
 
     expect(controller.getContext()).toEqual({
-      source: 'surfing-view',
+      source: 'browser:https://example.com',
       selectedText: 'selected web snippet',
       title: 'Surfing',
       url: 'https://example.com',
     });
-    expect(indicatorEl.style.display).not.toBe('none');
-    const textEl = indicatorEl.querySelector('.claudian-browser-chip-name');
-    expect(textEl?.textContent).toContain('chars selected');
+    expect(indicatorEl.style.display).toBe('block');
+    expect(indicatorEl.textContent).toContain('chars selected');
+    expect(indicatorEl.textContent).toContain('source=browser:https://example.com');
   });
 
   it('clears selection when text is deselected and input is not focused', async () => {
@@ -131,16 +128,30 @@ describe('BrowserSelectionController', () => {
     expect(controller.hasSelection()).toBe(true);
   });
 
-  it('clears selection when remove button is clicked', async () => {
+  it('clears selection when clear is called', async () => {
     controller.start();
     jest.advanceTimersByTime(250);
     await flushMicrotasks();
     expect(controller.hasSelection()).toBe(true);
 
-    const removeEl = indicatorEl.querySelector('.claudian-browser-chip-remove') as HTMLElement;
-    removeEl.click();
+    controller.clear();
 
     expect(controller.hasSelection()).toBe(false);
     expect(indicatorEl.style.display).toBe('none');
+  });
+
+  it('handles polling errors without unhandled rejection', async () => {
+    const pollSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    const extractSpy = jest.spyOn(controller as any, 'extractSelectedText')
+      .mockRejectedValueOnce(new Error('poll failed'));
+
+    controller.start();
+    jest.advanceTimersByTime(250);
+    await flushMicrotasks();
+
+    expect(extractSpy).toHaveBeenCalled();
+    expect(pollSpy).toHaveBeenCalled();
+
+    pollSpy.mockRestore();
   });
 });

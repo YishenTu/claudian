@@ -72,7 +72,7 @@ path/to/note.md
 selected text content
 </editor_selection>
 
-<browser_selection source="surfing-view" title="LeetCode" url="https://leetcode.com/problems/two-sum">
+<browser_selection source="browser:https://leetcode.com/problems/two-sum" title="LeetCode" url="https://leetcode.com/problems/two-sum">
 selected content from an Obsidian browser view
 </browser_selection>
 \`\`\`
@@ -225,7 +225,7 @@ possibly multiple lines
 User messages may also include a \`<browser_selection>\` tag when selection comes from an Obsidian browser view:
 
 \`\`\`xml
-<browser_selection source="surfing-view" title="LeetCode" url="https://leetcode.com/problems/two-sum">
+<browser_selection source="browser:https://leetcode.com/problems/two-sum" title="LeetCode" url="https://leetcode.com/problems/two-sum">
 selected webpage content
 </browser_selection>
 \`\`\`
