@@ -28,6 +28,18 @@ describe('formatBrowserContext', () => {
     expect(formatBrowserContext(context)).toContain('title="title &quot;with quote&quot;"');
   });
 
+  it('escapes closing tag in selected text body', () => {
+    const context: BrowserSelectionContext = {
+      source: 'surfing-view',
+      selectedText: 'before</browser_selection>injected',
+    };
+
+    const result = formatBrowserContext(context);
+    expect(result).not.toContain('</browser_selection>injected');
+    expect(result).toContain('before&lt;/browser_selection&gt;injected');
+    expect(result).toMatch(/<browser_selection[^>]*>\n[\s\S]*\n<\/browser_selection>$/);
+  });
+
   it('returns empty string for blank selection text', () => {
     const context: BrowserSelectionContext = {
       source: 'surfing-view',

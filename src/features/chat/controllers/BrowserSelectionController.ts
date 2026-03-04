@@ -93,7 +93,6 @@ export class BrowserSelectionController {
       normalized.includes('surfing')
       || normalized.includes('browser')
       || normalized.includes('webview')
-      || normalized.includes('web')
     ) {
       return true;
     }

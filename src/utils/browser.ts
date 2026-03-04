@@ -29,11 +29,15 @@ function buildAttributeList(context: BrowserSelectionContext): string {
   return attrs.join(' ');
 }
 
+function escapeXmlBody(text: string): string {
+  return text.replace(/<\/browser_selection>/gi, '&lt;/browser_selection&gt;');
+}
+
 export function formatBrowserContext(context: BrowserSelectionContext): string {
   const selectedText = context.selectedText.trim();
   if (!selectedText) return '';
   const attrs = buildAttributeList(context);
-  return `<browser_selection ${attrs}>\n${selectedText}\n</browser_selection>`;
+  return `<browser_selection ${attrs}>\n${escapeXmlBody(selectedText)}\n</browser_selection>`;
 }
 
 export function appendBrowserContext(prompt: string, context: BrowserSelectionContext): string {
