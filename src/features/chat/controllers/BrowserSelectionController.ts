@@ -129,12 +129,10 @@ export class BrowserSelectionController {
     const activeEl = doc.activeElement;
     if (!activeEl || !scopeEl.contains(activeEl)) return null;
 
-    if (activeEl instanceof HTMLTextAreaElement) {
-      return this.extractRangeText(activeEl.value, activeEl.selectionStart, activeEl.selectionEnd);
-    }
-
-    if (activeEl instanceof HTMLInputElement) {
-      return this.extractRangeText(activeEl.value, activeEl.selectionStart, activeEl.selectionEnd);
+    if (activeEl instanceof HTMLTextAreaElement || activeEl instanceof HTMLInputElement) {
+      const { value, selectionStart, selectionEnd } = activeEl;
+      if (typeof selectionStart !== 'number' || typeof selectionEnd !== 'number' || selectionStart === selectionEnd) return null;
+      return value.slice(selectionStart, selectionEnd).trim() || null;
     }
 
     return null;
@@ -175,12 +173,6 @@ export class BrowserSelectionController {
     return null;
   }
 
-  private extractRangeText(value: string, start: number | null, end: number | null): string | null {
-    if (typeof start !== 'number' || typeof end !== 'number' || start === end) return null;
-    const selectedText = value.slice(start, end).trim();
-    return selectedText || null;
-  }
-
   private buildContext(
     view: ItemView,
     viewType: string,
@@ -189,7 +181,7 @@ export class BrowserSelectionController {
   ): BrowserSelectionContext {
     const title = this.extractViewTitle(view);
     const url = this.extractViewUrl(view, containerEl);
-    const source = this.buildSourceMetadata(viewType, url);
+    const source = url ? `browser:${url}` : `browser:${viewType || 'unknown'}`;
 
     return {
       source,
@@ -229,14 +221,6 @@ export class BrowserSelectionController {
     }
 
     return undefined;
-  }
-
-  private buildSourceMetadata(viewType: string, url?: string): string {
-    if (url?.trim()) {
-      return `browser:${url.trim()}`;
-    }
-    const fallback = viewType.trim() || 'unknown';
-    return `browser:${fallback}`;
   }
 
   private isSameSelection(
@@ -281,11 +265,11 @@ export class BrowserSelectionController {
     const charCount = this.storedSelection.selectedText.length;
     const charLabel = charCount === 1 ? 'char' : 'chars';
     const lines = [`${charCount} ${charLabel} selected`, `source=${this.storedSelection.source}`];
-    if (this.storedSelection.title?.trim()) {
-      lines.push(`title=${this.storedSelection.title.trim()}`);
+    if (this.storedSelection.title) {
+      lines.push(`title=${this.storedSelection.title}`);
     }
-    if (this.storedSelection.url?.trim()) {
-      lines.push(this.storedSelection.url.trim());
+    if (this.storedSelection.url) {
+      lines.push(this.storedSelection.url);
     }
     return lines.join('\n');
   }
@@ -297,13 +281,7 @@ export class BrowserSelectionController {
   }
 
   getContext(): BrowserSelectionContext | null {
-    if (!this.storedSelection) return null;
-    return {
-      source: this.storedSelection.source,
-      selectedText: this.storedSelection.selectedText,
-      title: this.storedSelection.title,
-      url: this.storedSelection.url,
-    };
+    return this.storedSelection;
   }
 
   hasSelection(): boolean {
