@@ -289,6 +289,67 @@ function getNpmCliJsPaths(): string[] {
   return cliJsPaths;
 }
 
+/**
+ * Resolves an nvm alias to a version string by following the alias chain.
+ * e.g., "default" → "lts/*" → "lts/jod" → "v22.18.0" → "22"
+ */
+function resolveNvmAlias(nvmDir: string, alias: string, depth = 0): string | null {
+  if (depth > 5) return null;
+
+  // If it looks like a version already (e.g., "v22.18.0" or "22"), return it
+  if (/^\d/.test(alias) || alias.startsWith('v')) return alias;
+
+  try {
+    const aliasFile = path.join(nvmDir, 'alias', ...alias.split('/'));
+    const target = fs.readFileSync(aliasFile, 'utf8').trim();
+    if (!target) return null;
+    return resolveNvmAlias(nvmDir, target, depth + 1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the bin directory for nvm's default Node version from the filesystem.
+ * GUI apps don't have NVM_BIN set, so we read ~/.nvm/alias/default and match
+ * against installed versions in ~/.nvm/versions/node/.
+ */
+export function resolveNvmDefaultBin(home: string): string | null {
+  const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
+
+  try {
+    const alias = fs.readFileSync(path.join(nvmDir, 'alias', 'default'), 'utf8').trim();
+    if (!alias) return null;
+
+    const resolved = resolveNvmAlias(nvmDir, alias);
+    if (!resolved) return null;
+
+    // Strip leading 'v' for matching (e.g., "v22.18.0" → "22.18.0", "22" stays "22")
+    const version = resolved.replace(/^v/, '');
+
+    const versionsDir = path.join(nvmDir, 'versions', 'node');
+    const entries = fs.readdirSync(versionsDir);
+
+    // Match version against installed versions (e.g., "22" matches "v22.18.0")
+    const matched = entries
+      .filter(entry => entry.startsWith('v'))
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      .find(entry => {
+        const entryVersion = entry.slice(1); // strip 'v'
+        return entryVersion === version || entryVersion.startsWith(version + '.');
+      });
+
+    if (matched) {
+      const binDir = path.join(versionsDir, matched, 'bin');
+      if (fs.existsSync(binDir)) return binDir;
+    }
+  } catch {
+    // Expected when nvm is not installed
+  }
+
+  return null;
+}
+
 export function findClaudeCLIPath(pathValue?: string): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
@@ -343,6 +404,12 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   const npmPrefix = getNpmGlobalPrefix();
   if (npmPrefix) {
     commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
+  }
+
+  // NVM: resolve default version bin when NVM_BIN env var is not available (GUI apps)
+  const nvmBin = resolveNvmDefaultBin(homeDir);
+  if (nvmBin) {
+    commonPaths.push(path.join(nvmBin, 'claude'));
   }
 
   for (const p of commonPaths) {

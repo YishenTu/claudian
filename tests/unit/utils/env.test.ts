@@ -294,6 +294,113 @@ describe('getEnhancedPath', () => {
       expect(result).toContain('/home/user/.nvm/versions/node/v20/bin');
       delete process.env.NVM_BIN;
     });
+
+    describe('nvm fallback when NVM_BIN is not set (Unix)', () => {
+      if (isWindows) return;
+
+      let savedNvmBin: string | undefined;
+      let savedNvmDir: string | undefined;
+      let savedHome: string | undefined;
+
+      beforeEach(() => {
+        savedNvmBin = process.env.NVM_BIN;
+        savedNvmDir = process.env.NVM_DIR;
+        savedHome = process.env.HOME;
+        delete process.env.NVM_BIN;
+        delete process.env.NVM_DIR;
+        process.env.HOME = '/fake/home';
+      });
+
+      afterEach(() => {
+        jest.restoreAllMocks();
+        if (savedNvmBin !== undefined) process.env.NVM_BIN = savedNvmBin;
+        else delete process.env.NVM_BIN;
+        if (savedNvmDir !== undefined) process.env.NVM_DIR = savedNvmDir;
+        else delete process.env.NVM_DIR;
+        if (savedHome !== undefined) process.env.HOME = savedHome;
+        else delete process.env.HOME;
+      });
+
+      function mockNvm(opts: {
+        nvmDir: string;
+        aliasFiles: Record<string, string>;
+        versions: string[];
+        existingBinDirs?: string[];
+      }) {
+        const { nvmDir, aliasFiles, versions, existingBinDirs } = opts;
+        const binDirs = existingBinDirs ?? versions.map(v => path.join(nvmDir, 'versions', 'node', v, 'bin'));
+
+        jest.spyOn(fs, 'existsSync').mockImplementation(p => binDirs.includes(String(p)));
+        jest.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
+          const s = String(p);
+          for (const [aliasPath, value] of Object.entries(aliasFiles)) {
+            if (s === aliasPath) return value;
+          }
+          throw new Error('not found');
+        }) as typeof fs.readFileSync);
+        jest.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
+          if (String(p) === path.join(nvmDir, 'versions', 'node')) return versions;
+          return [];
+        }) as typeof fs.readdirSync);
+        jest.spyOn(fs, 'statSync').mockImplementation(
+          () => ({ isFile: () => true, isDirectory: () => true }) as fs.Stats
+        );
+      }
+
+      it('resolves default version from alias file', () => {
+        const nvmDir = '/fake/home/.nvm';
+        const versionBin = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
+        mockNvm({
+          nvmDir,
+          aliasFiles: { [path.join(nvmDir, 'alias', 'default')]: '22' },
+          versions: ['v22.18.0'],
+        });
+
+        expect(getEnhancedPath()).toContain(versionBin);
+      });
+
+      it('respects NVM_DIR env var', () => {
+        process.env.NVM_DIR = '/custom/nvm';
+        const versionBin = '/custom/nvm/versions/node/v20.10.0/bin';
+        mockNvm({
+          nvmDir: '/custom/nvm',
+          aliasFiles: { '/custom/nvm/alias/default': '20' },
+          versions: ['v20.10.0'],
+        });
+
+        expect(getEnhancedPath()).toContain(versionBin);
+      });
+
+      it('picks highest matching version when multiple match', () => {
+        const nvmDir = '/fake/home/.nvm';
+        const expectedBin = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
+        mockNvm({
+          nvmDir,
+          aliasFiles: { [path.join(nvmDir, 'alias', 'default')]: '22' },
+          versions: ['v22.5.0', 'v22.18.0', 'v20.10.0'],
+        });
+
+        const result = getEnhancedPath();
+        expect(result).toContain(expectedBin);
+        expect(result).not.toContain('v22.5.0');
+      });
+
+      it('follows alias chains (lts/* → lts/jod → version)', () => {
+        const nvmDir = '/fake/home/.nvm';
+        const versionBin = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
+        mockNvm({
+          nvmDir,
+          aliasFiles: {
+            [path.join(nvmDir, 'alias', 'default')]: 'lts/*',
+            [path.join(nvmDir, 'alias', 'lts', '*')]: 'lts/jod',
+            [path.join(nvmDir, 'alias', 'lts', 'jod')]: 'v22.18.0',
+          },
+          versions: ['v22.18.0', 'v20.10.0'],
+        });
+
+        expect(getEnhancedPath()).toContain(versionBin);
+      });
+    });
   });
 
   describe('CLI path parameter for Node.js detection', () => {
