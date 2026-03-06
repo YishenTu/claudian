@@ -18,6 +18,7 @@ import {
   TOOL_SKILL,
   TOOL_TASK,
   TOOL_TODO_WRITE,
+  TOOL_TOOL_SEARCH,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
@@ -44,6 +45,7 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_AGENT_OUTPUT]: 'bot',
   [TOOL_ASK_USER_QUESTION]: 'help-circle',
   [TOOL_SKILL]: 'zap',
+  [TOOL_TOOL_SEARCH]: 'search-check',
   [TOOL_ENTER_PLAN_MODE]: 'map',
   [TOOL_EXIT_PLAN_MODE]: 'check-circle',
 };

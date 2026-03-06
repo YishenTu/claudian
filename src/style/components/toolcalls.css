@@ -145,6 +145,31 @@
   font-size: 12px;
 }
 
+/* ToolSearch expanded: icon + tool name rows */
+.claudian-tool-search-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.claudian-tool-search-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+}
+
+.claudian-tool-search-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* Web search links */
 .claudian-tool-link {
   display: flex;

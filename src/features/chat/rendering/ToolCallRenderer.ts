@@ -14,6 +14,7 @@ import {
   TOOL_READ,
   TOOL_SKILL,
   TOOL_TODO_WRITE,
+  TOOL_TOOL_SEARCH,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
@@ -74,6 +75,8 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
       return fileNameOnly((input.path as string) || '.');
     case TOOL_SKILL:
       return (input.skill as string) || '';
+    case TOOL_TOOL_SEARCH:
+      return truncateText(parseToolSearchQuery(input.query as string | undefined), 60);
     case TOOL_TODO_WRITE:
       return '';
     default:
@@ -120,6 +123,10 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       const skillName = (input.skill as string) || 'skill';
       return `Skill: ${skillName}`;
     }
+    case TOOL_TOOL_SEARCH: {
+      const tools = parseToolSearchQuery(input.query as string | undefined);
+      return `ToolSearch: ${tools || 'tools'}`;
+    }
     case TOOL_ENTER_PLAN_MODE:
       return 'Entering plan mode';
     case TOOL_EXIT_PLAN_MODE:
@@ -146,6 +153,13 @@ function shortenPath(filePath: string | undefined): string {
 function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
+}
+
+function parseToolSearchQuery(query: string | undefined): string {
+  if (!query) return '';
+  const selectPrefix = 'select:';
+  const body = query.startsWith(selectPrefix) ? query.slice(selectPrefix.length) : query;
+  return body.split(',').map(s => s.trim()).filter(Boolean).join(', ');
 }
 
 interface WebSearchLink {
@@ -230,6 +244,32 @@ function renderLinesExpanded(
   }
 }
 
+function renderToolSearchExpanded(container: HTMLElement, result: string): void {
+  let toolNames: string[] = [];
+  try {
+    const parsed = JSON.parse(result) as Array<{ type: string; tool_name: string }>;
+    if (Array.isArray(parsed)) {
+      toolNames = parsed
+        .filter(item => item.type === 'tool_reference' && item.tool_name)
+        .map(item => item.tool_name);
+    }
+  } catch {
+    // Fall back to showing raw result
+  }
+
+  if (toolNames.length === 0) {
+    renderLinesExpanded(container, result, 20);
+    return;
+  }
+
+  for (const name of toolNames) {
+    const lineEl = container.createDiv({ cls: 'claudian-tool-search-item' });
+    const iconEl = lineEl.createSpan({ cls: 'claudian-tool-search-icon' });
+    setToolIcon(iconEl, name);
+    lineEl.createSpan({ text: name });
+  }
+}
+
 function renderWebFetchExpanded(container: HTMLElement, result: string): void {
   const maxChars = 500;
   const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
@@ -271,6 +311,9 @@ export function renderExpandedContent(container: HTMLElement, toolName: string, 
       break;
     case TOOL_WEB_FETCH:
       renderWebFetchExpanded(container, result);
+      break;
+    case TOOL_TOOL_SEARCH:
+      renderToolSearchExpanded(container, result);
       break;
     default:
       renderLinesExpanded(container, result, 20);

@@ -251,6 +251,14 @@ describe('ToolCallRenderer', () => {
       expect(getToolLabel('Skill', {})).toBe('Skill: skill');
     });
 
+    it('should label ToolSearch with tool names', () => {
+      expect(getToolLabel('ToolSearch', { query: 'select:Read,Glob' })).toBe('ToolSearch: Read, Glob');
+    });
+
+    it('should label ToolSearch with fallback for missing query', () => {
+      expect(getToolLabel('ToolSearch', {})).toBe('ToolSearch: tools');
+    });
+
     it('should return raw name for unknown tools', () => {
       expect(getToolLabel('CustomTool', {})).toBe('CustomTool');
     });
@@ -278,6 +286,7 @@ describe('ToolCallRenderer', () => {
       expect(getToolName('EnterPlanMode', {})).toBe('Entering plan mode');
       expect(getToolName('ExitPlanMode', {})).toBe('Plan complete');
     });
+
   });
 
   describe('getToolSummary', () => {
@@ -333,6 +342,15 @@ describe('ToolCallRenderer', () => {
     it('should return empty for AskUserQuestion', () => {
       expect(getToolSummary('AskUserQuestion', { questions: [{ question: 'Q1' }] })).toBe('');
       expect(getToolSummary('AskUserQuestion', { questions: [{ question: 'Q1' }, { question: 'Q2' }] })).toBe('');
+    });
+
+    it('should return parsed tool names for ToolSearch', () => {
+      expect(getToolSummary('ToolSearch', { query: 'select:Read,Glob' })).toBe('Read, Glob');
+      expect(getToolSummary('ToolSearch', { query: 'select:Bash' })).toBe('Bash');
+    });
+
+    it('should return empty for ToolSearch with missing query', () => {
+      expect(getToolSummary('ToolSearch', {})).toBe('');
     });
 
     it('should return empty for unknown tools', () => {

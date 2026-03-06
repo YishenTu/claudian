@@ -33,6 +33,7 @@ import {
   TOOL_SKILL,
   TOOL_TASK,
   TOOL_TODO_WRITE,
+  TOOL_TOOL_SEARCH,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
@@ -60,6 +61,7 @@ describe('Tool Constants', () => {
     expect(TOOL_TODO_WRITE).toBe('TodoWrite');
     expect(TOOL_WEB_FETCH).toBe('WebFetch');
     expect(TOOL_WEB_SEARCH).toBe('WebSearch');
+    expect(TOOL_TOOL_SEARCH).toBe('ToolSearch');
     expect(TOOL_WRITE).toBe('Write');
   });
 });

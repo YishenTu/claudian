@@ -15,6 +15,7 @@ export const TOOL_READ_MCP_RESOURCE = 'ReadMcpResource' as const;
 export const TOOL_SKILL = 'Skill' as const;
 export const TOOL_TASK = 'Task' as const;
 export const TOOL_TODO_WRITE = 'TodoWrite' as const;
+export const TOOL_TOOL_SEARCH = 'ToolSearch' as const;
 export const TOOL_WEB_FETCH = 'WebFetch' as const;
 export const TOOL_WEB_SEARCH = 'WebSearch' as const;
 export const TOOL_WRITE = 'Write' as const;
