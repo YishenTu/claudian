@@ -400,6 +400,25 @@ describe('getEnhancedPath', () => {
 
         expect(getEnhancedPath()).toContain(versionBin);
       });
+
+      it.each(['node', 'stable'])(
+        'resolves built-in %s alias to the highest installed version',
+        builtInAlias => {
+          const nvmDir = '/fake/home/.nvm';
+          const expectedBin = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
+          mockNvm({
+            nvmDir,
+            aliasFiles: {
+              [path.join(nvmDir, 'alias', 'default')]: builtInAlias,
+            },
+            versions: ['v20.10.0', 'v22.18.0'],
+          });
+
+          const result = getEnhancedPath();
+          expect(result).toContain(expectedBin);
+          expect(result).not.toContain('v20.10.0');
+        }
+      );
     });
   });
 
