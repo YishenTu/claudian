@@ -7,6 +7,7 @@
  */
 
 import * as fs from 'fs';
+import { Notice } from 'obsidian';
 import * as path from 'path';
 
 import { getGlobalClaudePath, getVaultClaudePath } from '../../utils/claudePaths';
@@ -98,7 +99,11 @@ export class PluginManager {
       for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
         if (!entries || entries.length === 0) continue;
 
-        const entry = selectInstalledPluginEntry(entries, normalizedVaultPath);
+        const entriesArray = Array.isArray(entries) ? entries : [entries];
+        if (!Array.isArray(entries)) {
+          new Notice(`Claudian: plugin "${pluginId}" has malformed entry in installed_plugins.json (expected array, got ${typeof entries})`);
+        }
+        const entry = selectInstalledPluginEntry(entriesArray, normalizedVaultPath);
         if (!entry) continue;
 
         const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';

@@ -9,10 +9,12 @@ import {
   isFileTool,
   isMcpTool,
   isReadOnlyTool,
+  isSubagentToolName,
   isWriteEditTool,
   MCP_TOOLS,
   READ_ONLY_TOOLS,
   skipsBlockedDetection,
+  SUBAGENT_TOOL_NAMES,
   // Constants
   TOOL_AGENT_OUTPUT,
   TOOL_ASK_USER_QUESTION,
@@ -31,8 +33,10 @@ import {
   TOOL_READ,
   TOOL_READ_MCP_RESOURCE,
   TOOL_SKILL,
+  TOOL_SUBAGENT_LEGACY,
   TOOL_TASK,
   TOOL_TODO_WRITE,
+  TOOL_TOOL_SEARCH,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
@@ -56,11 +60,34 @@ describe('Tool Constants', () => {
     expect(TOOL_READ).toBe('Read');
     expect(TOOL_READ_MCP_RESOURCE).toBe('ReadMcpResource');
     expect(TOOL_SKILL).toBe('Skill');
-    expect(TOOL_TASK).toBe('Task');
+    expect(TOOL_TASK).toBe('Agent');
+    expect(TOOL_SUBAGENT_LEGACY).toBe('Task');
     expect(TOOL_TODO_WRITE).toBe('TodoWrite');
     expect(TOOL_WEB_FETCH).toBe('WebFetch');
     expect(TOOL_WEB_SEARCH).toBe('WebSearch');
+    expect(TOOL_TOOL_SEARCH).toBe('ToolSearch');
     expect(TOOL_WRITE).toBe('Write');
+  });
+});
+
+describe('SUBAGENT_TOOL_NAMES', () => {
+  it('should include both canonical and legacy subagent tool names', () => {
+    expect(SUBAGENT_TOOL_NAMES).toEqual(['Agent', 'Task']);
+  });
+});
+
+describe('isSubagentToolName', () => {
+  it('should return true for Agent', () => {
+    expect(isSubagentToolName('Agent')).toBe(true);
+  });
+
+  it('should return true for legacy Task', () => {
+    expect(isSubagentToolName('Task')).toBe(true);
+  });
+
+  it('should return false for non-subagent tools', () => {
+    expect(isSubagentToolName('TaskOutput')).toBe(false);
+    expect(isSubagentToolName('TodoWrite')).toBe(false);
   });
 });
 

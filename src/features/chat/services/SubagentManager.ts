@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { isAbsolute, sep } from 'path';
 
+import { TOOL_TASK } from '../../../core/tools/toolNames';
 import type {
   SubagentInfo,
   SubagentMode,
@@ -59,11 +60,11 @@ export class SubagentManager {
   }
 
   // ============================================
-  // Unified Task Entry Point
+  // Unified Subagent Entry Point
   // ============================================
 
   /**
-   * Handles a Task tool_use chunk with minimal buffering to determine sync vs async.
+   * Handles an Agent tool_use chunk with minimal buffering to determine sync vs async.
    * Returns a typed result so StreamController can update messages accordingly.
    */
   public handleTaskToolUse(
@@ -119,7 +120,7 @@ export class SubagentManager {
     if (!currentContentEl) {
       const toolCall: ToolCallInfo = {
         id: taskToolId,
-        name: 'Task',
+        name: TOOL_TASK,
         input: taskInput || {},
         status: 'running',
         isExpanded: false,
@@ -132,7 +133,7 @@ export class SubagentManager {
     if (!mode) {
       const toolCall: ToolCallInfo = {
         id: taskToolId,
-        name: 'Task',
+        name: TOOL_TASK,
         input: taskInput || {},
         status: 'running',
         isExpanded: false,

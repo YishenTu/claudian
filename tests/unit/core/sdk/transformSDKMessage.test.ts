@@ -1,28 +1,36 @@
+import { buildSDKMessage } from '@test/helpers/sdkMessages';
+
 import { transformSDKMessage } from '@/core/sdk/transformSDKMessage';
-import type { SDKMessage } from '@/core/types';
+
+const msg = buildSDKMessage;
 
 describe('transformSDKMessage', () => {
   describe('system messages', () => {
     it('yields session_init event for init subtype with session_id', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'system',
         subtype: 'init',
         session_id: 'test-session-123',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'session_init', sessionId: 'test-session-123', permissionMode: undefined },
+        {
+          type: 'session_init',
+          sessionId: 'test-session-123',
+          agents: undefined,
+          permissionMode: 'default',
+        },
       ]);
     });
 
     it('yields nothing for system messages without init subtype', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'system',
         subtype: 'status',
         session_id: 'test-session',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -30,10 +38,10 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields compact_boundary event for compact_boundary subtype', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'system',
         subtype: 'compact_boundary',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -42,26 +50,15 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
-    it('yields nothing for init messages without session_id', () => {
-      const message: SDKMessage = {
-        type: 'system',
-        subtype: 'init',
-      };
-
-      const results = [...transformSDKMessage(message)];
-
-      expect(results).toEqual([]);
-    });
-
     it('captures agents from init message', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'system',
         subtype: 'init',
         session_id: 'test-session-456',
         agents: ['Explore', 'Plan', 'custom-agent'],
         skills: ['commit', 'review-pr'],
         slash_commands: ['clear', 'add-dir'],
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -70,17 +67,17 @@ describe('transformSDKMessage', () => {
         type: 'session_init',
         sessionId: 'test-session-456',
         agents: ['Explore', 'Plan', 'custom-agent'],
-        permissionMode: undefined,
+        permissionMode: 'default',
       });
     });
 
     it('captures permissionMode from init message', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'system',
         subtype: 'init',
         session_id: 'test-session-789',
         permissionMode: 'plan',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -95,14 +92,14 @@ describe('transformSDKMessage', () => {
 
   describe('assistant messages', () => {
     it('yields text content block', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
             { type: 'text', text: 'Hello, world!' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -112,14 +109,14 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields thinking content block', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
             { type: 'thinking', thinking: 'Let me think about this...' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -129,7 +126,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields tool_use content block with all fields', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
@@ -141,7 +138,7 @@ describe('transformSDKMessage', () => {
             },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -157,14 +154,14 @@ describe('transformSDKMessage', () => {
     });
 
     it('generates fallback id for tool_use without id', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
             { type: 'tool_use', name: 'Bash' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -176,7 +173,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('handles multiple content blocks', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
@@ -185,7 +182,7 @@ describe('transformSDKMessage', () => {
             { type: 'tool_use', id: 'tool-1', name: 'Read', input: {} },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -196,7 +193,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('preserves parent_tool_use_id for subagent context', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: 'parent-tool-abc',
         message: {
@@ -204,7 +201,7 @@ describe('transformSDKMessage', () => {
             { type: 'text', text: 'Subagent response' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -214,10 +211,10 @@ describe('transformSDKMessage', () => {
     });
 
     it('handles empty content array', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: { content: [] },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -225,10 +222,10 @@ describe('transformSDKMessage', () => {
     });
 
     it('handles missing message.content', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {},
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -236,7 +233,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('skips empty text blocks', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
@@ -244,7 +241,7 @@ describe('transformSDKMessage', () => {
             { type: 'text', text: 'Valid text' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -254,7 +251,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('skips "(no content)" placeholder text blocks', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
@@ -262,7 +259,7 @@ describe('transformSDKMessage', () => {
             { type: 'tool_use', id: 'tool-1', name: 'Skill', input: { skill: 'md2docx' } },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -272,7 +269,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('skips empty thinking blocks', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         message: {
           content: [
@@ -280,7 +277,7 @@ describe('transformSDKMessage', () => {
             { type: 'thinking', thinking: 'Valid thinking' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -288,17 +285,36 @@ describe('transformSDKMessage', () => {
         { type: 'thinking', content: 'Valid thinking', parentToolUseId: null },
       ]);
     });
+
+    it('yields error event for assistant message with error field', () => {
+      const message = msg({
+        type: 'assistant',
+        error: 'rate_limit',
+        message: {
+          content: [
+            { type: 'text', text: 'Partial response' },
+          ],
+        },
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        { type: 'error', content: 'rate_limit' },
+        { type: 'text', content: 'Partial response', parentToolUseId: null },
+      ]);
+    });
   });
 
   describe('user messages', () => {
     it('yields blocked event for blocked tool calls', () => {
-      const message = {
-        type: 'user' as const,
+      const message = msg({
+        type: 'user',
         _blocked: true,
         _blockReason: 'Command blocked: rm -rf /',
-      };
+      });
 
-      const results = [...transformSDKMessage(message as SDKMessage)];
+      const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
         { type: 'blocked', content: 'Command blocked: rm -rf /' },
@@ -306,11 +322,11 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields tool_result for tool_use_result with parent_tool_use_id', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
         parent_tool_use_id: 'tool-123',
         tool_use_result: 'File contents here',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -327,11 +343,11 @@ describe('transformSDKMessage', () => {
     });
 
     it('stringifies non-string tool_use_result', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
         parent_tool_use_id: 'tool-123',
         tool_use_result: { status: 'success', data: [1, 2, 3] },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -341,7 +357,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields tool_result from message.content blocks', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
         message: {
           content: [
@@ -353,7 +369,7 @@ describe('transformSDKMessage', () => {
             },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -369,7 +385,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('handles tool_result with is_error flag', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
         message: {
           content: [
@@ -381,7 +397,7 @@ describe('transformSDKMessage', () => {
             },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -397,7 +413,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('stringifies non-string content in tool_result blocks', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
         message: {
           content: [
@@ -408,7 +424,7 @@ describe('transformSDKMessage', () => {
             },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -417,7 +433,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('uses parent_tool_use_id as fallback for tool_result id', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
         parent_tool_use_id: 'fallback-id',
         message: {
@@ -425,7 +441,7 @@ describe('transformSDKMessage', () => {
             { type: 'tool_result', content: 'Some result' },
           ],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -434,9 +450,9 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields nothing for user messages without tool results', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'user',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -446,7 +462,7 @@ describe('transformSDKMessage', () => {
 
   describe('stream_event messages', () => {
     it('yields tool_use for content_block_start with tool_use', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_start',
@@ -457,7 +473,7 @@ describe('transformSDKMessage', () => {
             input: { file_path: '/test.ts' },
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -473,7 +489,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('generates fallback id for content_block_start without id', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_start',
@@ -482,7 +498,7 @@ describe('transformSDKMessage', () => {
             name: 'Glob',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -491,7 +507,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields thinking for content_block_start with thinking', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_start',
@@ -500,7 +516,7 @@ describe('transformSDKMessage', () => {
             thinking: 'Initial thinking...',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -510,7 +526,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields text for content_block_start with text', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_start',
@@ -519,7 +535,7 @@ describe('transformSDKMessage', () => {
             text: 'Starting response...',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -529,7 +545,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields thinking for thinking_delta', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_delta',
@@ -538,7 +554,7 @@ describe('transformSDKMessage', () => {
             thinking: 'More thinking...',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -548,7 +564,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields text for text_delta', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_delta',
@@ -557,7 +573,7 @@ describe('transformSDKMessage', () => {
             text: ' additional text',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -567,7 +583,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields nothing for empty thinking in content_block_start', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_start',
@@ -576,7 +592,7 @@ describe('transformSDKMessage', () => {
             thinking: '',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -584,7 +600,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields nothing for empty text in content_block_start', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_start',
@@ -593,7 +609,7 @@ describe('transformSDKMessage', () => {
             text: '',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -601,7 +617,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields nothing for empty thinking_delta', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_delta',
@@ -610,7 +626,7 @@ describe('transformSDKMessage', () => {
             thinking: '',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -618,7 +634,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('yields nothing for empty text_delta', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         event: {
           type: 'content_block_delta',
@@ -627,7 +643,7 @@ describe('transformSDKMessage', () => {
             text: '',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -635,7 +651,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('preserves parent_tool_use_id in stream events', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
         parent_tool_use_id: 'subagent-parent',
         event: {
@@ -645,7 +661,7 @@ describe('transformSDKMessage', () => {
             text: 'Subagent stream text',
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -655,9 +671,9 @@ describe('transformSDKMessage', () => {
     });
 
     it('handles missing event property', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'stream_event',
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
@@ -666,30 +682,46 @@ describe('transformSDKMessage', () => {
   });
 
   describe('result messages', () => {
-    it('yields nothing for result messages (usage extracted from assistant messages now)', () => {
-      // Usage is now extracted from assistant messages for accuracy.
-      // Result message usage is aggregated across main + subagents, causing inaccurate spikes.
-      const message: SDKMessage = {
+    it('yields nothing for successful result messages (usage extracted from assistant messages now)', () => {
+      const message = msg({
         type: 'result',
-        model: 'claude-sonnet-4-5-20250514',
         modelUsage: {
           'claude-sonnet-4-5-20250514': {
             inputTokens: 1000,
             cacheCreationInputTokens: 500,
             cacheReadInputTokens: 200,
+            outputTokens: 300,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 200000,
+            maxOutputTokens: 8192,
           },
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([]);
     });
+
+    it('yields error for failed result messages', () => {
+      const message = msg({
+        type: 'result',
+        subtype: 'error_max_turns',
+        errors: ['Hit maximum turn limit'],
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        { type: 'error', content: 'Hit maximum turn limit' },
+      ]);
+    });
   });
 
   describe('assistant message usage extraction', () => {
     it('yields usage info from main agent assistant message', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: null, // Main agent
         message: {
@@ -700,12 +732,11 @@ describe('transformSDKMessage', () => {
             cache_creation_input_tokens: 300,
             cache_read_input_tokens: 200,
           },
-        } as any,
-      };
+        },
+      });
 
       const results = [...transformSDKMessage(message, { intendedModel: 'sonnet' })];
 
-      // Should have text chunk + usage chunk
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(1);
 
@@ -719,7 +750,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('skips usage extraction for subagent messages', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: 'subagent-task-123', // Subagent
         message: {
@@ -730,18 +761,17 @@ describe('transformSDKMessage', () => {
             cache_creation_input_tokens: 500,
             cache_read_input_tokens: 100,
           },
-        } as any,
-      };
+        },
+      });
 
       const results = [...transformSDKMessage(message)];
 
-      // Should only have text chunk, no usage (subagent messages filtered)
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(0);
     });
 
     it('uses 1M context window when is1MEnabled is true for sonnet', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: null,
         message: {
@@ -752,8 +782,8 @@ describe('transformSDKMessage', () => {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
           },
-        } as any,
-      };
+        },
+      });
 
       const results = [...transformSDKMessage(message, { intendedModel: 'sonnet', is1MEnabled: true })];
 
@@ -766,7 +796,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('uses custom context limits when provided', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: null,
         message: {
@@ -777,8 +807,8 @@ describe('transformSDKMessage', () => {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
           },
-        } as any,
-      };
+        },
+      });
 
       const results = [...transformSDKMessage(message, {
         intendedModel: 'custom-model',
@@ -794,7 +824,7 @@ describe('transformSDKMessage', () => {
     });
 
     it('prioritizes custom context limits over 1M setting', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: null,
         message: {
@@ -805,8 +835,8 @@ describe('transformSDKMessage', () => {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
           },
-        } as any,
-      };
+        },
+      });
 
       const results = [...transformSDKMessage(message, {
         intendedModel: 'sonnet',
@@ -823,30 +853,29 @@ describe('transformSDKMessage', () => {
     });
 
     it('handles missing usage field gracefully', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: null,
         message: {
           content: [{ type: 'text', text: 'Hello' }],
         },
-      };
+      });
 
       const results = [...transformSDKMessage(message)];
 
-      // Should only have text chunk, no usage
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(0);
     });
 
     it('handles missing token fields with defaults', () => {
-      const message: SDKMessage = {
+      const message = msg({
         type: 'assistant',
         parent_tool_use_id: null,
         message: {
           content: [{ type: 'text', text: 'Hello' }],
           usage: {}, // Empty usage object
-        } as any,
-      };
+        },
+      });
 
       const results = [...transformSDKMessage(message, { intendedModel: 'sonnet' })];
 
@@ -862,23 +891,52 @@ describe('transformSDKMessage', () => {
   });
 
   describe('error messages', () => {
-    it('yields error event with error content', () => {
-      const message: SDKMessage = {
-        type: 'error',
-        error: 'Something went wrong',
-      };
+    it('yields error event from assistant message with error field', () => {
+      const message = msg({
+        type: 'assistant',
+        error: 'unknown',
+        message: { content: [] },
+      });
 
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'error', content: 'Something went wrong' },
+        { type: 'error', content: 'unknown' },
       ]);
     });
 
-    it('yields nothing for error message without error field', () => {
-      const message: SDKMessage = {
-        type: 'error',
-      };
+    it('yields nothing for assistant message without error field', () => {
+      const message = msg({
+        type: 'assistant',
+        message: { content: [] },
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe('unhandled message types', () => {
+    it('yields nothing for tool_progress messages', () => {
+      const message = msg({
+        type: 'tool_progress',
+        tool_use_id: 'tool-1',
+        tool_name: 'Bash',
+        elapsed_time_seconds: 5,
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([]);
+    });
+
+    it('yields nothing for auth_status messages', () => {
+      const message = msg({
+        type: 'auth_status',
+        isAuthenticating: true,
+        output: [],
+      });
 
       const results = [...transformSDKMessage(message)];
 

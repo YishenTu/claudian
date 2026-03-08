@@ -21,7 +21,7 @@
 .claudian-context-row {
   display: none;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   flex-shrink: 0;
   padding: 6px 10px 0 10px;
   gap: 8px;
@@ -50,6 +50,7 @@
 /* Match file chip height (24px): chip has 16px remove button + 6px padding + 2px border */
 /* Indicator: 12px text + 10px padding (5+5) + 2px border = 24px */
 .claudian-selection-indicator,
+.claudian-browser-selection-indicator,
 .claudian-canvas-indicator {
   color: #7abaff;
   font-size: 12px;
@@ -62,6 +63,10 @@
   border-radius: 4px;
   margin-inline-start: auto;
   flex-shrink: 0;
+  order: 4;
+  max-width: min(100%, clamp(220px, 64vw, 560px));
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .claudian-input {

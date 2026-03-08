@@ -11,6 +11,7 @@ import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDro
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import {
+  BrowserSelectionController,
   CanvasSelectionController,
   ConversationController,
   InputController,
@@ -100,6 +101,7 @@ export function createTab(options: TabCreateOptions): TabData {
     state,
     controllers: {
       selectionController: null,
+      browserSelectionController: null,
       canvasSelectionController: null,
       conversationController: null,
       streamController: null,
@@ -214,6 +216,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     navRowEl,
     contextRowEl,
     selectionIndicatorEl: null,
+    browserIndicatorEl: null,
     canvasIndicatorEl: null,
     eventCleanups: [],
   };
@@ -313,6 +316,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
       getExcludedTags: () => plugin.settings.excludedTags,
       onChipsChanged: () => {
         tab.controllers.selectionController?.updateContextRowVisibility();
+        tab.controllers.browserSelectionController?.updateContextRowVisibility();
         tab.controllers.canvasSelectionController?.updateContextRowVisibility();
         autoResizeTextarea(dom.inputEl);
         tab.renderer?.scrollToBottomIfNeeded();
@@ -331,6 +335,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
     {
       onImagesChanged: () => {
         tab.controllers.selectionController?.updateContextRowVisibility();
+        tab.controllers.browserSelectionController?.updateContextRowVisibility();
         tab.controllers.canvasSelectionController?.updateContextRowVisibility();
         autoResizeTextarea(dom.inputEl);
         tab.renderer?.scrollToBottomIfNeeded();
@@ -525,6 +530,10 @@ export function initializeTabUI(
   // Selection indicator - add to contextRowEl
   dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
+
+  // Browser selection indicator
+  dom.browserIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-browser-selection-indicator' });
+  dom.browserIndicatorEl.style.display = 'none';
 
   // Canvas selection indicator
   dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator' });
@@ -743,6 +752,15 @@ export function initializeTabControllers(
     () => autoResizeTextarea(dom.inputEl)
   );
 
+  // Browser selection controller
+  tab.controllers.browserSelectionController = new BrowserSelectionController(
+    plugin.app,
+    dom.browserIndicatorEl!,
+    dom.inputEl,
+    dom.contextRowEl,
+    () => autoResizeTextarea(dom.inputEl)
+  );
+
   // Canvas selection controller
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
     plugin.app,
@@ -829,6 +847,7 @@ export function initializeTabControllers(
     renderer: tab.renderer,
     streamController: tab.controllers.streamController,
     selectionController: tab.controllers.selectionController,
+    browserSelectionController: tab.controllers.browserSelectionController,
     canvasSelectionController: tab.controllers.canvasSelectionController,
     conversationController: tab.controllers.conversationController,
     getInputEl: () => dom.inputEl,
@@ -1034,6 +1053,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 export function activateTab(tab: TabData): void {
   tab.dom.contentEl.style.display = 'flex';
   tab.controllers.selectionController?.start();
+  tab.controllers.browserSelectionController?.start();
   tab.controllers.canvasSelectionController?.start();
   // Refresh navigation sidebar visibility (dimensions now available after display)
   tab.ui.navigationSidebar?.updateVisibility();
@@ -1045,6 +1065,7 @@ export function activateTab(tab: TabData): void {
 export function deactivateTab(tab: TabData): void {
   tab.dom.contentEl.style.display = 'none';
   tab.controllers.selectionController?.stop();
+  tab.controllers.browserSelectionController?.stop();
   tab.controllers.canvasSelectionController?.stop();
 }
 
@@ -1056,6 +1077,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   // Stop polling
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
+  tab.controllers.browserSelectionController?.stop();
+  tab.controllers.browserSelectionController?.clear();
   tab.controllers.canvasSelectionController?.stop();
   tab.controllers.canvasSelectionController?.clear();
 

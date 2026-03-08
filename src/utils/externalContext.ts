@@ -56,6 +56,55 @@ export function getFolderName(p: string): string {
   return segments[segments.length - 1] || normalized;
 }
 
+export interface ExternalContextDisplayEntry {
+  contextRoot: string;
+  displayName: string;
+  displayNameLower: string;
+}
+
+function getContextDisplayName(
+  normalizedPath: string,
+  folderName: string,
+  needsDisambiguation: boolean
+): string {
+  if (!needsDisambiguation) return folderName;
+
+  const segments = normalizedPath.split('/').filter(Boolean);
+  if (segments.length < 2) return folderName;
+
+  const parent = segments[segments.length - 2];
+  if (!parent) return folderName;
+
+  return `${parent}/${folderName}`;
+}
+
+export function buildExternalContextDisplayEntries(
+  externalContexts: string[]
+): ExternalContextDisplayEntry[] {
+  const counts = new Map<string, number>();
+  const normalizedPaths = new Map<string, string>();
+
+  for (const contextPath of externalContexts) {
+    const normalized = normalizePathForComparison(contextPath);
+    normalizedPaths.set(contextPath, normalized);
+    const folderName = getFolderName(normalized);
+    counts.set(folderName, (counts.get(folderName) ?? 0) + 1);
+  }
+
+  return externalContexts.map(contextRoot => {
+    const normalized = normalizedPaths.get(contextRoot) ?? normalizePathForComparison(contextRoot);
+    const folderName = getFolderName(contextRoot);
+    const needsDisambiguation = (counts.get(folderName) ?? 0) > 1;
+    const displayName = getContextDisplayName(normalized, folderName, needsDisambiguation);
+
+    return {
+      contextRoot,
+      displayName,
+      displayNameLower: displayName.toLowerCase(),
+    };
+  });
+}
+
 export interface DirectoryValidationResult {
   valid: boolean;
   error?: string;

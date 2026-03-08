@@ -350,8 +350,11 @@ export class AgentSettings {
       // Non-critical: agent list will refresh on next settings open
     }
     this.render();
-    const action = existing ? 'updated' : 'created';
-    new Notice(t('settings.subagents.saved', { name: agent.name, action }));
+    new Notice(
+      existing
+        ? t('settings.subagents.updated', { name: agent.name })
+        : t('settings.subagents.created', { name: agent.name })
+    );
   }
 
   private async deleteAgent(agent: AgentDefinition): Promise<void> {

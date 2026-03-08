@@ -45,23 +45,23 @@
       "unavailableStreaming": "Não é possível bifurcar durante a transmissão",
       "unavailableNoUuid": "Não é possível bifurcar: identificadores de mensagem ausentes",
       "unavailableNoResponse": "Não é possível bifurcar: nenhuma resposta para bifurcar",
-      "errorMessageNotFound": "Message not found",
-      "errorNoSession": "No session ID available",
-      "errorNoActiveTab": "No active tab",
+      "errorMessageNotFound": "Mensagem não encontrada",
+      "errorNoSession": "Nenhum ID de sessão disponível",
+      "errorNoActiveTab": "Nenhuma aba ativa",
       "commandNoMessages": "Não é possível bifurcar: não há mensagens na conversa",
       "commandNoAssistantUuid": "Não é possível bifurcar: não há resposta do assistente com identificadores"
     },
     "bangBash": {
-      "placeholder": "> Run a bash command...",
-      "commandPanel": "Command panel",
-      "copyAriaLabel": "Copy latest command output",
-      "clearAriaLabel": "Clear bash output",
+      "placeholder": "> Executar um comando bash...",
+      "commandPanel": "Painel de comandos",
+      "copyAriaLabel": "Copiar a saída do comando mais recente",
+      "clearAriaLabel": "Limpar a saída do bash",
       "commandLabel": "{command}",
-      "statusLabel": "Status: {status}",
-      "collapseOutput": "Collapse command output",
-      "expandOutput": "Expand command output",
-      "running": "Running...",
-      "copyFailed": "Failed to copy to clipboard"
+      "statusLabel": "Estado: {status}",
+      "collapseOutput": "Recolher a saída do comando",
+      "expandOutput": "Expandir a saída do comando",
+      "running": "Executando...",
+      "copyFailed": "Falha ao copiar para a área de transferência"
     }
   },
   "settings": {
@@ -90,7 +90,7 @@
     "titleModel": {
       "name": "Modelo de geração de título",
       "desc": "Modelo usado para gerar automaticamente títulos de conversa.",
-      "auto": "Auto (Haiku)"
+      "auto": "Automático (Haiku)"
     },
     "navMappings": {
       "name": "Mapeamentos de navegação estilo Vim",
@@ -150,40 +150,41 @@
       "desc": "Ative ou desative plugins do Claude Code descobertos em ~/.claude/plugins. Plugins ativados são armazenados por cofre."
     },
     "subagents": {
-      "name": "Subagents",
-      "desc": "Configure custom subagents that Claude can delegate to.",
-      "noAgents": "No subagents configured. Click + to create one.",
-      "deleteConfirm": "Delete subagent \"{name}\"?",
-      "saveFailed": "Failed to save subagent: {message}",
+      "name": "Subagentes",
+      "desc": "Configure subagentes personalizados para os quais Claude pode delegar.",
+      "noAgents": "Nenhum subagente configurado. Clique em + para criar um.",
+      "deleteConfirm": "Excluir o subagente \"{name}\"?",
+      "saveFailed": "Falha ao salvar o subagente: {message}",
       "refreshFailed": "Falha ao atualizar subagentes: {message}",
-      "deleteFailed": "Failed to delete subagent: {message}",
-      "renameCleanupFailed": "Warning: could not remove old file for \"{name}\"",
-      "saved": "Subagent \"{name}\" {action}",
-      "deleted": "Subagent \"{name}\" deleted",
-      "duplicateName": "An agent named \"{name}\" already exists",
-      "descriptionRequired": "Description is required",
-      "promptRequired": "System prompt is required",
+      "deleteFailed": "Falha ao excluir o subagente: {message}",
+      "renameCleanupFailed": "Aviso: não foi possível remover o arquivo antigo de \"{name}\"",
+      "created": "Subagente \"{name}\" criado",
+      "updated": "Subagente \"{name}\" atualizado",
+      "deleted": "Subagente \"{name}\" excluído",
+      "duplicateName": "Já existe um agente chamado \"{name}\"",
+      "descriptionRequired": "A descrição é obrigatória",
+      "promptRequired": "O prompt do sistema é obrigatório",
       "modal": {
-        "titleEdit": "Edit Subagent",
-        "titleAdd": "Add Subagent",
-        "name": "Name",
-        "nameDesc": "Lowercase letters, numbers, and hyphens only",
+        "titleEdit": "Editar subagente",
+        "titleAdd": "Adicionar subagente",
+        "name": "Nome",
+        "nameDesc": "Use apenas letras minúsculas, números e hífens",
         "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Brief description of this agent",
-        "descriptionPlaceholder": "Reviews code for bugs and style",
-        "advancedOptions": "Advanced options",
-        "model": "Model",
-        "modelDesc": "Model override for this agent",
-        "tools": "Tools",
-        "toolsDesc": "Comma-separated list of allowed tools (empty = all)",
-        "disallowedTools": "Disallowed tools",
-        "disallowedToolsDesc": "Comma-separated list of tools to disallow",
-        "skills": "Skills",
-        "skillsDesc": "Comma-separated list of skills",
-        "prompt": "System prompt",
-        "promptDesc": "Instructions for the agent",
-        "promptPlaceholder": "You are a code reviewer. Analyze the given code for..."
+        "description": "Descrição",
+        "descriptionDesc": "Breve descrição deste agente",
+        "descriptionPlaceholder": "Revisa código em busca de bugs e estilo",
+        "advancedOptions": "Opções avançadas",
+        "model": "Modelo",
+        "modelDesc": "Substituir o modelo deste agente",
+        "tools": "Ferramentas",
+        "toolsDesc": "Lista de ferramentas permitidas separadas por vírgula (vazio = todas)",
+        "disallowedTools": "Ferramentas não permitidas",
+        "disallowedToolsDesc": "Lista de ferramentas a desativar separadas por vírgula",
+        "skills": "Habilidades",
+        "skillsDesc": "Lista de habilidades separadas por vírgula",
+        "prompt": "Prompt do sistema",
+        "promptDesc": "Instruções para o agente",
+        "promptPlaceholder": "Você é um revisor de código. Analise o código fornecido para..."
       }
     },
     "safety": "Segurança",
@@ -244,10 +245,10 @@
       "desc": "Permitir que o Claude interaja com o Chrome através da extensão claude-in-chrome. Requer que a extensão esteja instalada. Requer reinício de sessão."
     },
     "enableBangBash": {
-      "name": "Enable bash mode (!)",
-      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process.",
+      "name": "Ativar modo bash (!)",
+      "desc": "Digite ! com a entrada vazia para entrar no modo bash. Executa comandos diretamente via Node.js child_process. Requer reabrir a visualização.",
       "validation": {
-        "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
+        "noNode": "Node.js não encontrado no PATH. Instale o Node.js ou verifique a configuração do PATH."
       }
     },
     "maxTabs": {

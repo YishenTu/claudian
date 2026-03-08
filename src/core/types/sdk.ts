@@ -1,87 +1,18 @@
-/**
- * Claude Agent SDK type definitions.
- */
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
-/** SDK content block structure. */
-export interface SDKContentBlock {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking';
-  text?: string;
-  thinking?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  tool_use_id?: string;
-  content?: string | unknown;
-  is_error?: boolean;
+export type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
+/** Runtime-only extension for blocked user messages (hook denials). */
+export type BlockedUserMessage = SDKUserMessage & {
+  _blocked: true;
+  _blockReason: string;
+};
+
+export function isBlockedMessage(message: { type: string }): message is BlockedUserMessage {
+  return (
+    message.type === 'user' &&
+    '_blocked' in message &&
+    (message as Record<string, unknown>)._blocked === true &&
+    '_blockReason' in message
+  );
 }
-
-/** SDK message content wrapper. */
-export interface SDKMessageContent {
-  content?: SDKContentBlock[];
-}
-
-/** SDK stream event structure. */
-export interface SDKStreamEvent {
-  type: 'content_block_start' | 'content_block_delta';
-  index?: number;
-  content_block?: SDKContentBlock;
-  delta?: {
-    type: 'text_delta' | 'thinking_delta';
-    text?: string;
-    thinking?: string;
-  };
-}
-
-/** Model usage information from SDK. */
-export interface ModelUsageInfo {
-  inputTokens?: number;
-  cacheCreationInputTokens?: number;
-  cacheReadInputTokens?: number;
-}
-
-/** SDK message structure from the Claude Agent SDK (non-result messages). */
-export interface SDKNonResultMessage {
-  type: 'system' | 'assistant' | 'user' | 'stream_event' | 'error' | 'tool_progress' | 'auth_status';
-  subtype?: 'init' | 'compact_boundary' | 'status' | 'hook_response' | string;
-  uuid?: string;
-  session_id?: string;
-  message?: SDKMessageContent;
-  tool_use_result?: string | unknown;
-  parent_tool_use_id?: string | null;
-  event?: SDKStreamEvent;
-  error?: string;
-  tool_use_id?: string;
-  tool_name?: string;
-  elapsed_time_seconds?: number;
-  isAuthenticating?: boolean;
-  _blocked?: boolean;
-  _blockReason?: string;
-  output?: string | string[];
-  /** Usage info by model name. */
-  modelUsage?: Record<string, ModelUsageInfo>;
-  /** Model name for the message. */
-  model?: string;
-  /** Agent names from init message. */
-  agents?: string[];
-  /** Skill names from init message. */
-  skills?: string[];
-  /** Slash command names from init message. */
-  slash_commands?: string[];
-  /** Permission mode from init message (e.g., 'default', 'plan', 'bypassPermissions'). */
-  permissionMode?: string;
-}
-
-/** SDK result message structure (does not include parent_tool_use_id). */
-export interface SDKResultMessage {
-  type: 'result';
-  subtype?: string;
-  uuid?: string;
-  session_id?: string;
-  /** Usage info by model name. */
-  modelUsage?: Record<string, ModelUsageInfo>;
-  /** Model name for the message. */
-  model?: string;
-}
-
-/** SDK message structure from the Claude Agent SDK. */
-export type SDKMessage = SDKNonResultMessage | SDKResultMessage;

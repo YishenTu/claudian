@@ -1158,7 +1158,7 @@ describe('ClaudianService', () => {
     });
 
     it('should signal turn complete on result message', async () => {
-      const message = { type: 'result', result: 'completed' };
+      const message = { type: 'result', subtype: 'success', result: 'completed' };
 
       await (service as any).routeMessage(message);
 
@@ -1166,13 +1166,14 @@ describe('ClaudianService', () => {
       expect(onDone).toHaveBeenCalled();
     });
 
-    it('should signal turn complete on error message', async () => {
-      const message = { type: 'error', message: 'Something went wrong' };
+    it('should yield error event from assistant message with error field', async () => {
+      const message = { type: 'assistant', error: 'rate_limit', message: { content: [] } };
 
       await (service as any).routeMessage(message);
 
-      expect((service as any).messageChannel.onTurnComplete).toHaveBeenCalled();
-      expect(onDone).toHaveBeenCalled();
+      expect(onChunk).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'error', content: 'rate_limit' }),
+      );
     });
 
     it('should add sessionId to usage chunks', async () => {

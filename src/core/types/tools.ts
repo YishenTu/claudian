@@ -62,7 +62,7 @@ export type AsyncSubagentStatus =
   | 'error'
   | 'orphaned';
 
-/** Subagent (Task tool) tracking for sync and async modes. */
+/** Subagent (Agent tool, legacy Task) tracking for sync and async modes. */
 export interface SubagentInfo {
   id: string;
   description: string;

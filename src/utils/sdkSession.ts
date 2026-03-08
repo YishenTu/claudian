@@ -13,7 +13,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../core/tools';
-import { TOOL_ASK_USER_QUESTION, TOOL_TASK } from '../core/tools/toolNames';
+import { isSubagentToolName, TOOL_ASK_USER_QUESTION } from '../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, SubagentInfo, ToolCallInfo } from '../core/types';
 import { getGlobalClaudePath } from './claudePaths';
 import { extractContentBeforeXmlContext } from './context';
@@ -920,7 +920,7 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
  * @returns Result object with messages, skipped line count, and any error
  */
 /**
- * Extracts the agentId from a Task tool's toolUseResult (async launch shape).
+ * Extracts the agentId from an Agent tool's toolUseResult (async launch shape).
  * The SDK stores `{ isAsync: true, agentId: '...' }` on the tool result.
  */
 function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null {
@@ -945,7 +945,7 @@ function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null 
 }
 
 /**
- * Builds a SubagentInfo for an async Task tool call from stored data.
+ * Builds a SubagentInfo for an async Agent tool call from stored data.
  * Uses the toolUseResult (launch shape → agentId) and queue-operation results (full result).
  */
 function buildAsyncSubagentInfo(
@@ -1066,14 +1066,14 @@ export async function loadSDKSessionMessages(
     }
   }
 
-  // Build SubagentInfo for async Task tool calls from toolUseResult + queue-operation data
+  // Build SubagentInfo for async Agent tool calls from toolUseResult + queue-operation data
   if (toolUseResults.size > 0 || asyncSubagentResults.size > 0) {
     const sidecarLoads: Array<{ subagent: SubagentInfo; promise: Promise<ToolCallInfo[]> }> = [];
 
     for (const msg of chatMessages) {
       if (msg.role !== 'assistant' || !msg.toolCalls) continue;
       for (const toolCall of msg.toolCalls) {
-        if (toolCall.name !== TOOL_TASK) continue;
+        if (!isSubagentToolName(toolCall.name)) continue;
         if (toolCall.subagent) continue;
         if (toolCall.input?.run_in_background !== true) continue;
 

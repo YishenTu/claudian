@@ -1,5 +1,6 @@
 import * as os from 'os';
 
+import { TOOL_SUBAGENT } from '@/core/tools';
 import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/utils/sdkSession';
 
@@ -1197,7 +1198,7 @@ describe('ClaudianPlugin', () => {
       expect(assistant?.toolCalls?.find((tc: any) => tc.id === 'task-async-orphan')).toEqual(
         expect.objectContaining({
           id: 'task-async-orphan',
-          name: 'Task',
+          name: TOOL_SUBAGENT,
           subagent: expect.objectContaining({
             id: 'task-async-orphan',
             mode: 'async',

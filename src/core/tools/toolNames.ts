@@ -13,8 +13,12 @@ export const TOOL_NOTEBOOK_EDIT = 'NotebookEdit' as const;
 export const TOOL_READ = 'Read' as const;
 export const TOOL_READ_MCP_RESOURCE = 'ReadMcpResource' as const;
 export const TOOL_SKILL = 'Skill' as const;
-export const TOOL_TASK = 'Task' as const;
+export const TOOL_SUBAGENT = 'Agent' as const;
+export const TOOL_SUBAGENT_LEGACY = 'Task' as const;
+// Kept as an alias while the internal codebase is still named around "Task".
+export const TOOL_TASK = TOOL_SUBAGENT;
 export const TOOL_TODO_WRITE = 'TodoWrite' as const;
+export const TOOL_TOOL_SEARCH = 'ToolSearch' as const;
 export const TOOL_WEB_FETCH = 'WebFetch' as const;
 export const TOOL_WEB_SEARCH = 'WebSearch' as const;
 export const TOOL_WRITE = 'Write' as const;
@@ -30,8 +34,18 @@ export const TOOLS_SKIP_BLOCKED_DETECTION = [
   TOOL_ASK_USER_QUESTION,
 ] as const;
 
+export const SUBAGENT_TOOL_NAMES = [
+  TOOL_SUBAGENT,
+  TOOL_SUBAGENT_LEGACY,
+] as const;
+export type SubagentToolName = (typeof SUBAGENT_TOOL_NAMES)[number];
+
 export function skipsBlockedDetection(name: string): boolean {
   return (TOOLS_SKIP_BLOCKED_DETECTION as readonly string[]).includes(name);
+}
+
+export function isSubagentToolName(name: string): name is SubagentToolName {
+  return (SUBAGENT_TOOL_NAMES as readonly string[]).includes(name);
 }
 
 export const EDIT_TOOLS = [TOOL_WRITE, TOOL_EDIT, TOOL_NOTEBOOK_EDIT] as const;

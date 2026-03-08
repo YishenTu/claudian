@@ -7,6 +7,7 @@ import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../
 import type ClaudianPlugin from '../../../main';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
+import { appendBrowserContext, type BrowserSelectionContext } from '../../../utils/browser';
 import { appendCanvasContext, type CanvasSelectionContext } from '../../../utils/canvas';
 import { appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
@@ -23,6 +24,7 @@ import type { TitleGenerationService } from '../services/TitleGenerationService'
 import type { ChatState } from '../state/ChatState';
 import type { QueryOptions } from '../state/types';
 import type { AddExternalContextResult, FileContextManager, ImageContextManager, InstructionModeManager, McpServerSelector, StatusPanel } from '../ui';
+import type { BrowserSelectionController } from './BrowserSelectionController';
 import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
@@ -40,6 +42,7 @@ export interface InputControllerDeps {
   renderer: MessageRenderer;
   streamController: StreamController;
   selectionController: SelectionController;
+  browserSelectionController?: BrowserSelectionController;
   canvasSelectionController: CanvasSelectionController;
   conversationController: ConversationController;
   getInputEl: () => HTMLTextAreaElement;
@@ -99,10 +102,20 @@ export class InputController {
 
   async sendMessage(options?: {
     editorContextOverride?: EditorSelectionContext | null;
+    browserContextOverride?: BrowserSelectionContext | null;
     canvasContextOverride?: CanvasSelectionContext | null;
     content?: string;
   }): Promise<void> {
-    const { plugin, state, renderer, streamController, selectionController, canvasSelectionController, conversationController } = this.deps;
+    const {
+      plugin,
+      state,
+      renderer,
+      streamController,
+      selectionController,
+      browserSelectionController,
+      canvasSelectionController,
+      conversationController
+    } = this.deps;
 
     // During conversation creation/switching, don't send - input is preserved so user can retry
     if (state.isCreatingConversation || state.isSwitchingConversation) return;
@@ -137,6 +150,7 @@ export class InputController {
     if (state.isStreaming) {
       const images = hasImages ? [...(imageContextManager?.getAttachedImages() || [])] : undefined;
       const editorContext = selectionController.getContext();
+      const browserContext = browserSelectionController?.getContext() ?? null;
       const canvasContext = canvasSelectionController.getContext();
       // Append to existing queued message if any
       if (state.queuedMessage) {
@@ -145,12 +159,14 @@ export class InputController {
           state.queuedMessage.images = [...(state.queuedMessage.images || []), ...images];
         }
         state.queuedMessage.editorContext = editorContext;
+        state.queuedMessage.browserContext = browserContext;
         state.queuedMessage.canvasContext = canvasContext;
       } else {
         state.queuedMessage = {
           content,
           images,
           editorContext,
+          browserContext,
           canvasContext,
         };
       }
@@ -203,6 +219,10 @@ export class InputController {
     const editorContext = editorContextOverride !== undefined
       ? editorContextOverride
       : selectionController.getContext();
+    const browserContextOverride = options?.browserContextOverride;
+    const browserContext = browserContextOverride !== undefined
+      ? browserContextOverride
+      : (browserSelectionController?.getContext() ?? null);
 
     const externalContextPaths = externalContextSelector?.getExternalContexts();
     const isCompact = /^\/compact(\s|$)/i.test(content);
@@ -222,6 +242,11 @@ export class InputController {
       // Append editor context if available
       if (editorContext) {
         promptToSend = appendEditorContext(promptToSend, editorContext);
+      }
+
+      // Append browser selection context if available
+      if (browserContext) {
+        promptToSend = appendBrowserContext(promptToSend, browserContext);
       }
 
       // Append canvas selection context if available
@@ -514,7 +539,7 @@ export class InputController {
     const { state } = this.deps;
     if (!state.queuedMessage) return;
 
-    const { content, images, editorContext, canvasContext } = state.queuedMessage;
+    const { content, images, editorContext, browserContext, canvasContext } = state.queuedMessage;
     state.queuedMessage = null;
     this.updateQueueIndicator();
 
@@ -524,7 +549,14 @@ export class InputController {
       this.deps.getImageContextManager()?.setImages(images);
     }
 
-    setTimeout(() => this.sendMessage({ editorContextOverride: editorContext, canvasContextOverride: canvasContext }), 0);
+    setTimeout(
+      () => this.sendMessage({
+        editorContextOverride: editorContext,
+        browserContextOverride: browserContext ?? null,
+        canvasContextOverride: canvasContext,
+      }),
+      0
+    );
   }
 
   // ============================================

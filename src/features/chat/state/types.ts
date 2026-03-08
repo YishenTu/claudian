@@ -9,6 +9,7 @@ import type {
   ToolCallInfo,
   UsageInfo,
 } from '../../../core/types';
+import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import type {
@@ -21,6 +22,7 @@ export interface QueuedMessage {
   content: string;
   images?: ImageAttachment[];
   editorContext: EditorSelectionContext | null;
+  browserContext?: BrowserSelectionContext | null;
   canvasContext: CanvasSelectionContext | null;
 }
 

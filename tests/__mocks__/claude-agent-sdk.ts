@@ -103,7 +103,7 @@ export type PermissionResult =
 const mockMessages = [
   { type: 'system', subtype: 'init', session_id: 'test-session-123' },
   { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello, I am Claude!' }] } },
-  { type: 'result', result: 'completed' },
+  { type: 'result', subtype: 'success', result: 'completed' },
 ];
 
 let customMockMessages: any[] | null = null;
@@ -200,7 +200,7 @@ function getMessagesForPrompt(): any[] {
   const baseMessages = customMockMessages || mockMessages;
   const messages = [...baseMessages];
   if (appendResultMessage && !messages.some((msg) => msg.type === 'result')) {
-    messages.push({ type: 'result' });
+    messages.push({ type: 'result', subtype: 'success' });
   }
   return messages;
 }

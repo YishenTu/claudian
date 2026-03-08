@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { parsePathEntries } from './path';
+import { parsePathEntries, resolveNvmDefaultBin } from './path';
 
 const isWindows = process.platform === 'win32';
 const PATH_SEPARATOR = isWindows ? ';' : ':';
@@ -147,10 +147,15 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(home, '.asdf', 'bin'));
       paths.push(path.join(home, '.fnm'));
 
-      // NVM: use NVM_BIN if set, otherwise skip (NVM_BIN points to actual bin)
+      // NVM: use NVM_BIN if set, otherwise resolve default version from filesystem
       const nvmBin = process.env.NVM_BIN;
       if (nvmBin) {
         paths.push(nvmBin);
+      } else {
+        const nvmDefault = resolveNvmDefaultBin(home);
+        if (nvmDefault) {
+          paths.push(nvmDefault);
+        }
       }
     }
 

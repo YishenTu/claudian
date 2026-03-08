@@ -64,7 +64,6 @@ import type {
   StreamChunk,
 } from '../types';
 import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
-import type { SDKNonResultMessage } from '../types/sdk';
 import { MessageChannel } from './MessageChannel';
 import {
   type ColdStartQueryContext,
@@ -683,8 +682,8 @@ export class ClaudianService {
       }
     }
 
-    if (message.type === 'assistant' && (message as SDKNonResultMessage).uuid && handler) {
-      handler.onChunk({ type: 'sdk_assistant_uuid', uuid: (message as SDKNonResultMessage).uuid! });
+    if (message.type === 'assistant' && message.uuid && handler) {
+      handler.onChunk({ type: 'sdk_assistant_uuid', uuid: message.uuid });
     }
 
     // Check for turn completion

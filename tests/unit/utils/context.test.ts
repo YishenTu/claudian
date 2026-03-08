@@ -99,6 +99,11 @@ describe('XML_CONTEXT_PATTERN', () => {
     expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
   });
 
+  it('matches browser_selection tag', () => {
+    const text = 'Query\n\n<browser_selection source="surfing-view">\nselected web content\n</browser_selection>';
+    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
+  });
+
   it('does not match without double newline separator', () => {
     const text = 'Query\n<current_note>\ntest.md\n</current_note>';
     expect(XML_CONTEXT_PATTERN.test(text)).toBe(false);
@@ -152,6 +157,11 @@ describe('extractContentBeforeXmlContext', () => {
     it('handles multiple context tags - extracts before first one', () => {
       const prompt = 'Query\n\n<current_note>\ntest.md\n</current_note>\n\n<editor_selection path="x">\ny\n</editor_selection>';
       expect(extractContentBeforeXmlContext(prompt)).toBe('Query');
+    });
+
+    it('extracts content before browser_selection tag', () => {
+      const prompt = 'Summarize this\n\n<browser_selection source="surfing-view">\nselected web content\n</browser_selection>';
+      expect(extractContentBeforeXmlContext(prompt)).toBe('Summarize this');
     });
 
     it('trims whitespace from extracted content', () => {
@@ -213,6 +223,11 @@ describe('extractUserQuery', () => {
 
     it('strips canvas_selection tags', () => {
       const prompt = 'Query <canvas_selection path="x.canvas">node1</canvas_selection> end';
+      expect(extractUserQuery(prompt)).toBe('Query end');
+    });
+
+    it('strips browser_selection tags', () => {
+      const prompt = 'Query <browser_selection source="surfing-view">selection</browser_selection> end';
       expect(extractUserQuery(prompt)).toBe('Query end');
     });
 

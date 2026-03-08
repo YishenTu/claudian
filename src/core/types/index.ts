@@ -30,13 +30,7 @@ export {
 } from './models';
 
 // SDK types
-export {
-  type ModelUsageInfo,
-  type SDKContentBlock,
-  type SDKMessage,
-  type SDKMessageContent,
-  type SDKStreamEvent,
-} from './sdk';
+export { type SDKMessage } from './sdk';
 
 // Settings types
 export {

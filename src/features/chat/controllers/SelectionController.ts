@@ -8,6 +8,8 @@ import { updateContextRowHasContent } from './contextRowVisibility';
 
 /** Polling interval for editor selection (ms). */
 const SELECTION_POLL_INTERVAL = 250;
+/** Grace period for editor blur when handing focus to chat input (ms). */
+const INPUT_HANDOFF_GRACE_MS = 1500;
 
 export class SelectionController {
   private app: App;
@@ -16,7 +18,12 @@ export class SelectionController {
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
+  private inputHandoffGraceUntil: number | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly inputPointerDownHandler = () => {
+    if (!this.storedSelection) return;
+    this.inputHandoffGraceUntil = Date.now() + INPUT_HANDOFF_GRACE_MS;
+  };
 
   constructor(
     app: App,
@@ -34,6 +41,7 @@ export class SelectionController {
 
   start(): void {
     if (this.pollInterval) return;
+    this.inputEl.addEventListener('pointerdown', this.inputPointerDownHandler);
     this.pollInterval = setInterval(() => this.poll(), SELECTION_POLL_INTERVAL);
   }
 
@@ -42,6 +50,7 @@ export class SelectionController {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    this.inputEl.removeEventListener('pointerdown', this.inputPointerDownHandler);
     this.clear();
   }
 
@@ -55,15 +64,22 @@ export class SelectionController {
 
   private poll(): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view) return;
+    if (!view) {
+      this.clearWhenMarkdownIsNotActive();
+      return;
+    }
 
     const editor = view.editor;
     const editorView = getEditorView(editor);
-    if (!editorView) return;
+    if (!editorView) {
+      this.clearWhenMarkdownIsNotActive();
+      return;
+    }
 
     const selectedText = editor.getSelection();
 
     if (selectedText.trim()) {
+      this.inputHandoffGraceUntil = null;
       // Get selection range
       const fromPos = editor.getCursor('from');
       const toPos = editor.getCursor('to');
@@ -90,13 +106,33 @@ export class SelectionController {
         this.storedSelection = { notePath, selectedText, lineCount, startLine, from, to, editorView };
         this.updateIndicator();
       }
-    } else if (document.activeElement !== this.inputEl) {
-      // No selection AND input not focused = user cleared selection in editor
+    } else if (this.storedSelection) {
+      if (document.activeElement === this.inputEl) {
+        this.inputHandoffGraceUntil = null;
+        return;
+      }
+
+      // Apply grace only when there was explicit intent to focus the chat input.
+      const now = Date.now();
+      if (this.inputHandoffGraceUntil !== null && now <= this.inputHandoffGraceUntil) {
+        return;
+      }
+
+      this.inputHandoffGraceUntil = null;
       this.clearHighlight();
       this.storedSelection = null;
       this.updateIndicator();
     }
-    // If no selection but input IS focused, keep storedSelection (user clicked input)
+  }
+
+  private clearWhenMarkdownIsNotActive(): void {
+    if (!this.storedSelection) return;
+    if (document.activeElement === this.inputEl) return;
+
+    this.inputHandoffGraceUntil = null;
+    this.clearHighlight();
+    this.storedSelection = null;
+    this.updateIndicator();
   }
 
   // ============================================
@@ -161,6 +197,7 @@ export class SelectionController {
   // ============================================
 
   clear(): void {
+    this.inputHandoffGraceUntil = null;
     this.clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();

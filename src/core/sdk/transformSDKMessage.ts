@@ -1,20 +1,8 @@
-/**
- * SDK Message Transformer
- *
- * Transforms Claude Agent SDK messages into StreamChunks for the UI.
- * Extracted from ClaudianService for better testability and separation of concerns.
- *
- * SDK Message Types:
- * - 'system' - init, status, etc.
- * - 'assistant' - assistant response with content blocks (text, tool_use, thinking)
- * - 'user' - user messages, includes tool_use_result for tool outputs
- * - 'stream_event' - streaming deltas
- * - 'result' - final result
- * - 'error' - error messages
- */
+import type { SDKMessage, SDKResultError } from '@anthropic-ai/claude-agent-sdk';
 
-import type { SDKMessage, SDKToolUseResult, UsageInfo } from '../types';
+import type { SDKToolUseResult, UsageInfo } from '../types';
 import { getContextWindowSize } from '../types';
+import { isBlockedMessage } from '../types/sdk';
 import type { TransformEvent } from './types';
 
 export interface TransformOptions {
@@ -26,6 +14,16 @@ export interface TransformOptions {
   customContextLimits?: Record<string, number>;
 }
 
+interface MessageUsage {
+  input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+function isResultError(message: { type: 'result'; subtype: string }): message is SDKResultError {
+  return !!message.subtype && message.subtype !== 'success';
+}
+
 /**
  * Transform SDK message to StreamChunk format.
  * One SDK message can yield multiple chunks (e.g., text + tool_use blocks).
@@ -34,11 +32,6 @@ export function* transformSDKMessage(
   message: SDKMessage,
   options?: TransformOptions
 ): Generator<TransformEvent> {
-  // null = main agent, non-null = subagent context
-  const parentToolUseId = message.type === 'result'
-    ? null
-    : message.parent_tool_use_id ?? null;
-
   switch (message.type) {
     case 'system':
       if (message.subtype === 'init' && message.session_id) {
@@ -54,6 +47,13 @@ export function* transformSDKMessage(
       break;
 
     case 'assistant': {
+      const parentToolUseId = message.parent_tool_use_id ?? null;
+
+      // Errors on assistant messages (e.g. rate_limit, billing_error)
+      if (message.error) {
+        yield { type: 'error', content: message.error };
+      }
+
       if (message.message?.content && Array.isArray(message.message.content)) {
         for (const block of message.message.content) {
           if (block.type === 'thinking' && block.thinking) {
@@ -74,14 +74,8 @@ export function* transformSDKMessage(
 
       // Extract usage from main agent assistant messages only (not subagent)
       // This gives accurate per-turn context usage without subagent token pollution
-      const apiMessage = message.message as { usage?: {
-        input_tokens?: number;
-        output_tokens?: number;
-        cache_creation_input_tokens?: number;
-        cache_read_input_tokens?: number;
-      } };
-      if (parentToolUseId === null && apiMessage?.usage) {
-        const usage = apiMessage.usage;
+      const usage = (message.message as { usage?: MessageUsage } | undefined)?.usage;
+      if (parentToolUseId === null && usage) {
         const inputTokens = usage.input_tokens ?? 0;
         const cacheCreationInputTokens = usage.cache_creation_input_tokens ?? 0;
         const cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
@@ -105,9 +99,11 @@ export function* transformSDKMessage(
       break;
     }
 
-    case 'user':
+    case 'user': {
+      const parentToolUseId = message.parent_tool_use_id ?? null;
+
       // Check for blocked tool calls (from hook denials)
-      if (message._blocked && message._blockReason) {
+      if (isBlockedMessage(message)) {
         yield {
           type: 'blocked',
           content: message._blockReason,
@@ -145,8 +141,10 @@ export function* transformSDKMessage(
         }
       }
       break;
+    }
 
     case 'stream_event': {
+      const parentToolUseId = message.parent_tool_use_id ?? null;
       const event = message.event;
       if (event?.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
         yield {
@@ -175,14 +173,19 @@ export function* transformSDKMessage(
     }
 
     case 'result':
+      if (isResultError(message)) {
+        const content = message.errors.filter((e) => e.trim().length > 0).join('\n');
+        yield {
+          type: 'error',
+          content: content || `Result error: ${message.subtype}`,
+        };
+      }
+
       // Usage is now extracted from assistant messages for accuracy (excludes subagent tokens)
       // Result message usage is aggregated across main + subagents, causing inaccurate spikes
       break;
 
-    case 'error':
-      if (message.error) {
-        yield { type: 'error', content: message.error };
-      }
+    default:
       break;
   }
 }

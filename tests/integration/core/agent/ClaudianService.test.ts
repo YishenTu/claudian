@@ -23,6 +23,8 @@ jest.mock('@/core/types', () => {
 });
 
 // Now import after all mocks are set up
+import { buildResultErrorMessage } from '@test/helpers/sdkMessages';
+
 import { ClaudianService } from '@/core/agent/ClaudianService';
 import { createVaultRestrictionHook } from '@/core/hooks/SecurityHooks';
 import { transformSDKMessage } from '@/core/sdk';
@@ -605,12 +607,13 @@ describe('ClaudianService', () => {
       expect(toolResultChunk?.id).toBe('read-tool-1');
     });
 
-    it('should transform error messages', async () => {
+    it('should transform assistant error messages', async () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         {
-          type: 'error',
+          type: 'assistant',
           error: 'Something went wrong',
+          message: { content: [] },
         },
       ]);
 
@@ -754,18 +757,36 @@ describe('ClaudianService', () => {
   });
 
   describe('persistent query error handling', () => {
-    it('completes turn when SDK emits error without result', async () => {
+    it('yields error from assistant message with error field', async () => {
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
-        { type: 'error', error: 'Fatal error' },
-      ], { appendResult: false });
+        { type: 'assistant', error: 'server_error', message: { content: [] } },
+      ]);
 
       const chunks: any[] = [];
       for await (const chunk of service.query('trigger error')) {
         chunks.push(chunk);
       }
 
-      expect(chunks.some((c) => c.type === 'error' && c.content === 'Fatal error')).toBe(true);
+      expect(chunks.some((c) => c.type === 'error' && c.content === 'server_error')).toBe(true);
+      expect(chunks.some((c) => c.type === 'done')).toBe(true);
+    });
+
+    it('yields error from failed result messages', async () => {
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        buildResultErrorMessage({
+          subtype: 'error_max_turns',
+          errors: ['Max turns reached'],
+        }),
+      ]);
+
+      const chunks: any[] = [];
+      for await (const chunk of service.query('trigger max turns')) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks.some((c) => c.type === 'error' && c.content === 'Max turns reached')).toBe(true);
       expect(chunks.some((c) => c.type === 'done')).toBe(true);
     });
 

@@ -132,17 +132,8 @@ export const DISABLED_BUILTIN_SUBAGENTS = [
   'Task(statusline-setup)',
 ] as const;
 
-/**
- * Check if an SDK message signals turn completion.
- * - 'result' is the normal completion signal
- * - 'error' may also complete the turn when SDK emits an error without result
- *
- * Note: We cast to string because TypeScript's SDK types may not include 'error'
- * but it can occur at runtime.
- */
 export function isTurnCompleteMessage(message: SDKMessage): boolean {
-  const messageType = message.type as string;
-  return messageType === 'result' || messageType === 'error';
+  return message.type === 'result';
 }
 
 export function computeSystemPromptKey(settings: SystemPromptSettings): string {

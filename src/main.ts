@@ -15,7 +15,7 @@ import { AgentManager } from './core/agents';
 import { McpServerManager } from './core/mcp';
 import { PluginManager } from './core/plugins';
 import { StorageService } from './core/storage';
-import { TOOL_TASK } from './core/tools/toolNames';
+import { isSubagentToolName, TOOL_TASK } from './core/tools/toolNames';
 import type {
   ChatMessage,
   ClaudianSettings,
@@ -156,7 +156,15 @@ export default class ClaudianPlugin extends Plugin {
           editContext = { mode: 'cursor', cursorContext };
         }
 
-        const modal = new InlineEditModal(this.app, this, editor, view, editContext, notePath);
+        const modal = new InlineEditModal(
+          this.app,
+          this,
+          editor,
+          view,
+          editContext,
+          notePath,
+          () => this.getView()?.getActiveTab()?.ui.externalContextSelector?.getExternalContexts() ?? []
+        );
         const result = await modal.openAndWait();
 
         if (result.decision === 'accept' && result.editedText !== undefined) {
@@ -719,7 +727,7 @@ export default class ClaudianPlugin extends Plugin {
       ...afterCutoff,
     ]).sort((a, b) => a.timestamp - b.timestamp);
 
-    // Apply cached subagentData to loaded messages (for Task tool count and status)
+    // Apply cached subagentData to loaded messages (for Agent tool count and status)
     if (conversation.subagentData) {
       await this.enrichAsyncSubagentToolCalls(
         conversation.subagentData,
@@ -771,8 +779,8 @@ export default class ClaudianPlugin extends Plugin {
 
   /**
    * Applies cached subagentData to messages.
-   * Restores subagent info so Task tools can show tool count and status.
-   * Also updates contentBlocks to properly identify Task tools as subagents.
+   * Restores subagent info so Agent tools can show tool count and status.
+   * Also updates contentBlocks to properly identify Agent tools as subagents.
    */
   private applySubagentData(messages: ChatMessage[], subagentData: Record<string, SubagentInfo>): void {
     const attachedSubagentIds = new Set<string>();
@@ -794,7 +802,7 @@ export default class ClaudianPlugin extends Plugin {
     ) => {
       msg.toolCalls = msg.toolCalls || [];
       let taskToolCall = msg.toolCalls.find(
-        tc => tc.id === subagentId && tc.name === TOOL_TASK
+        tc => tc.id === subagentId && isSubagentToolName(tc.name)
       );
 
       if (!taskToolCall) {

@@ -1,7 +1,7 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
-import { isWriteEditTool, TOOL_AGENT_OUTPUT, TOOL_TASK } from '../../../core/tools/toolNames';
+import { isSubagentToolName, isWriteEditTool, TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
@@ -240,7 +240,7 @@ export class MessageRenderer {
           boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
         } else if (block.type === 'subagent') {
           const taskToolCall = msg.toolCalls?.find(
-            tc => tc.id === block.subagentId && tc.name === TOOL_TASK
+            tc => tc.id === block.subagentId && isSubagentToolName(tc.name)
           );
           if (!taskToolCall) continue;
 
@@ -284,7 +284,7 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders a tool call with special handling for Write/Edit and Task (subagent).
+   * Renders a tool call with special handling for Write/Edit and Agent (subagent).
    * TaskOutput is hidden as it's an internal tool for async subagent communication.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
@@ -294,7 +294,7 @@ export class MessageRenderer {
     }
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
-    } else if (toolCall.name === TOOL_TASK) {
+    } else if (isSubagentToolName(toolCall.name)) {
       this.renderTaskSubagent(contentEl, toolCall);
     } else {
       renderStoredToolCall(contentEl, toolCall);

@@ -416,7 +416,24 @@ describe('SecurityHooks', () => {
         expect(context.getPathAccessType).not.toHaveBeenCalled();
       });
 
-      it('allows Task tool without path checking', async () => {
+      it('allows Agent tool without path checking', async () => {
+        const context: VaultRestrictionContext = {
+          getPathAccessType: jest.fn(),
+        };
+
+        const hook = createVaultRestrictionHook(context);
+
+        const result = await hook.hooks[0](
+          createHookInput('Agent', { prompt: 'analyze codebase', subagent_type: 'Explore' }),
+          'tool-1',
+          { signal: new AbortController().signal }
+        );
+
+        expect(result).toEqual({ continue: true });
+        expect(context.getPathAccessType).not.toHaveBeenCalled();
+      });
+
+      it('allows legacy Task tool without path checking', async () => {
         const context: VaultRestrictionContext = {
           getPathAccessType: jest.fn(),
         };

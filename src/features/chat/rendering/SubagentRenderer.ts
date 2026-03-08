@@ -462,7 +462,7 @@ function renderAsyncContentLikeSync(
 }
 
 /**
- * Create an async subagent block for a background Task tool call.
+ * Create an async subagent block for a background Agent tool call.
  * Expandable to show the task prompt. Collapsed by default.
  */
 export function createAsyncSubagentBlock(

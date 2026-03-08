@@ -42,7 +42,6 @@ describe('FileContextState', () => {
       state.startSession();
       state.markCurrentNoteSent();
       state.attachFile('file1.md');
-      state.attachContextFile('ctx/file.ts', '/abs/ctx/file.ts');
       state.addMentionedMcpServer('server1');
 
       state.resetForNewConversation();
@@ -57,7 +56,6 @@ describe('FileContextState', () => {
   describe('resetForLoadedConversation', () => {
     it('should set state based on whether conversation has messages', () => {
       state.attachFile('file1.md');
-      state.attachContextFile('ctx/file.ts', '/abs/ctx/file.ts');
       state.addMentionedMcpServer('server1');
 
       state.resetForLoadedConversation(true);
@@ -106,46 +104,8 @@ describe('FileContextState', () => {
 
     it('should clear all attachments', () => {
       state.attachFile('a.md');
-      state.attachContextFile('ctx/b.ts', '/abs/b.ts');
       state.clearAttachments();
       expect(state.getAttachedFiles().size).toBe(0);
-    });
-  });
-
-  describe('context file attachments', () => {
-    it('should attach a context file with path mapping', () => {
-      state.attachContextFile('ctx/file.ts', '/absolute/path/file.ts');
-      expect(state.getAttachedFiles().has('/absolute/path/file.ts')).toBe(true);
-    });
-
-    it('should transform context mentions in text', () => {
-      state.attachContextFile('ctx/file.ts', '/absolute/path/file.ts');
-      const result = state.transformContextMentions('Look at ctx/file.ts for details');
-      expect(result).toBe('Look at /absolute/path/file.ts for details');
-    });
-
-    it('should replace multiple occurrences of the same mention', () => {
-      state.attachContextFile('ctx/a.ts', '/abs/a.ts');
-      const result = state.transformContextMentions('ctx/a.ts and ctx/a.ts');
-      expect(result).toBe('/abs/a.ts and /abs/a.ts');
-    });
-
-    it('should handle multiple different context files', () => {
-      state.attachContextFile('ctx/a.ts', '/abs/a.ts');
-      state.attachContextFile('ctx/b.ts', '/abs/b.ts');
-      const result = state.transformContextMentions('ctx/a.ts and ctx/b.ts');
-      expect(result).toBe('/abs/a.ts and /abs/b.ts');
-    });
-
-    it('should return text unchanged when no context files', () => {
-      const text = 'no mentions here';
-      expect(state.transformContextMentions(text)).toBe(text);
-    });
-
-    it('should handle regex special characters in display names', () => {
-      state.attachContextFile('file (1).ts', '/abs/file (1).ts');
-      const result = state.transformContextMentions('See file (1).ts');
-      expect(result).toBe('See /abs/file (1).ts');
     });
   });
 

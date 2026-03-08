@@ -12,6 +12,13 @@ jest.mock('os', () => ({
 // Mock fs module
 jest.mock('fs');
 
+// Mock obsidian
+jest.mock('obsidian', () => ({
+  Notice: jest.fn(),
+}));
+
+import { Notice } from 'obsidian';
+
 import { PluginManager } from '@/core/plugins/PluginManager';
 
 const mockFs = fs as jest.Mocked<typeof fs>;
@@ -703,6 +710,42 @@ describe('PluginManager', () => {
       await manager.loadPlugins();
 
       expect(manager.hasPlugins()).toBe(false);
+    });
+  });
+
+  describe('non-array plugin entries normalization', () => {
+    it('loads plugin when entries is a single object instead of array', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'solo-plugin@marketplace': {
+            scope: 'user',
+            installPath: '/path/to/solo-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      const manager = new PluginManager(vaultPath, ccSettings);
+
+      await manager.loadPlugins();
+
+      const plugins = manager.getPlugins();
+      expect(plugins.length).toBe(1);
+      expect(plugins[0].id).toBe('solo-plugin@marketplace');
+      expect(plugins[0].installPath).toBe('/path/to/solo-plugin');
+      expect(plugins[0].enabled).toBe(true);
+      expect(Notice).toHaveBeenCalledWith(
+        expect.stringContaining('solo-plugin@marketplace'),
+      );
     });
   });
 

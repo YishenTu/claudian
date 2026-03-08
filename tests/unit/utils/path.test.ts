@@ -541,6 +541,82 @@ describe('findClaudeCLIPath', () => {
     const result = findClaudeCLIPath('/some/path');
     expect(result).toBeNull();
   });
+
+  it('finds claude via nvm default version when NVM_BIN is not set (Unix)', () => {
+    if (isWindows) return;
+
+    const savedNvmBin = process.env.NVM_BIN;
+    const savedNvmDir = process.env.NVM_DIR;
+    delete process.env.NVM_BIN;
+    delete process.env.NVM_DIR;
+
+    const nvmDir = '/fake/home/.nvm';
+    const claudePath = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin', 'claude');
+    const binDir = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
+
+    jest.spyOn(os, 'homedir').mockReturnValue('/fake/home');
+    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
+      const s = String(p);
+      return s === claudePath || s === binDir;
+    });
+    jest.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
+      if (String(p) === path.join(nvmDir, 'alias', 'default')) return '22';
+      throw new Error('not found');
+    }) as typeof fs.readFileSync);
+    jest.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
+      if (String(p) === path.join(nvmDir, 'versions', 'node')) return ['v22.18.0'];
+      return [];
+    }) as typeof fs.readdirSync);
+    jest.spyOn(fs, 'statSync').mockImplementation(
+      () => ({ isFile: () => true }) as fs.Stats
+    );
+
+    const result = findClaudeCLIPath();
+    expect(result).toBe(claudePath);
+
+    if (savedNvmBin !== undefined) process.env.NVM_BIN = savedNvmBin;
+    else delete process.env.NVM_BIN;
+    if (savedNvmDir !== undefined) process.env.NVM_DIR = savedNvmDir;
+    else delete process.env.NVM_DIR;
+  });
+
+  it('finds claude via built-in nvm node alias when NVM_BIN is not set (Unix)', () => {
+    if (isWindows) return;
+
+    const savedNvmBin = process.env.NVM_BIN;
+    const savedNvmDir = process.env.NVM_DIR;
+    delete process.env.NVM_BIN;
+    delete process.env.NVM_DIR;
+
+    const nvmDir = '/fake/home/.nvm';
+    const claudePath = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin', 'claude');
+    const binDir = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
+
+    jest.spyOn(os, 'homedir').mockReturnValue('/fake/home');
+    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
+      const s = String(p);
+      return s === claudePath || s === binDir;
+    });
+    jest.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
+      if (String(p) === path.join(nvmDir, 'alias', 'default')) return 'node';
+      throw new Error('not found');
+    }) as typeof fs.readFileSync);
+    jest.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
+      if (String(p) === path.join(nvmDir, 'versions', 'node')) return ['v20.10.0', 'v22.18.0'];
+      return [];
+    }) as typeof fs.readdirSync);
+    jest.spyOn(fs, 'statSync').mockImplementation(
+      () => ({ isFile: () => true }) as fs.Stats
+    );
+
+    const result = findClaudeCLIPath();
+    expect(result).toBe(claudePath);
+
+    if (savedNvmBin !== undefined) process.env.NVM_BIN = savedNvmBin;
+    else delete process.env.NVM_BIN;
+    if (savedNvmDir !== undefined) process.env.NVM_DIR = savedNvmDir;
+    else delete process.env.NVM_DIR;
+  });
 });
 
 describe('expandHomePath - Windows environment variable formats', () => {
