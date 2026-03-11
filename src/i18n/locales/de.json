@@ -65,10 +65,10 @@
     }
   },
   "settings": {
-    "title": "Claudian Einstellungen",
+    "title": "Geminian Einstellungen",
     "customization": "Anpassung",
     "userName": {
-      "name": "Wie soll Claudian dich nennen?",
+      "name": "Wie soll Geminian dich nennen?",
       "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"
     },
     "excludedTags": {
@@ -77,7 +77,7 @@
     },
     "mediaFolder": {
       "name": "Medienordner",
-      "desc": "Ordner mit Anhängen/Bildern. Wenn Notizen ![[image.jpg]] verwenden, sucht Claude hier. Leer lassen für Vault-Stammverzeichnis."
+      "desc": "Ordner mit Anhängen/Bildern. Wenn Notizen ![[image.jpg]] verwenden, sucht Gemini hier. Leer lassen für Vault-Stammverzeichnis."
     },
     "systemPrompt": {
       "name": "Benutzerdefinierter System-Prompt",
@@ -138,20 +138,20 @@
     },
     "hiddenSlashCommands": {
       "name": "Ausgeblendete Befehle",
-      "desc": "Bestimmte Schrägstrich-Befehle aus dem Dropdown ausblenden. Nützlich, um Claude Code-Befehle auszublenden, die für Claudian nicht relevant sind. Gib Befehlsnamen ohne führenden Schrägstrich ein, einen pro Zeile.",
+      "desc": "Bestimmte Schrägstrich-Befehle aus dem Dropdown ausblenden. Nützlich, um Gemini CLI-Befehle auszublenden, die für Geminian nicht relevant sind. Gib Befehlsnamen ohne führenden Schrägstrich ein, einen pro Zeile.",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
       "name": "MCP-Server",
-      "desc": "Konfiguriere Model Context Protocol Server, um Claude mit externen Tools und Datenquellen zu erweitern. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
+      "desc": "Konfiguriere Model Context Protocol Server, um Gemini mit externen Tools und Datenquellen zu erweitern. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
     },
     "plugins": {
-      "name": "Claude Code-Plugins",
-      "desc": "Aktiviere oder deaktiviere Claude Code Plugins aus ~/.claude/plugins. Aktivierte Plugins werden pro Vault gespeichert."
+      "name": "Gemini CLI-Plugins",
+      "desc": "Aktiviere oder deaktiviere Gemini CLI Plugins aus ~/.gemini/plugins. Aktivierte Plugins werden pro Vault gespeichert."
     },
     "subagents": {
       "name": "Sub-Agenten",
-      "desc": "Konfiguriere benutzerdefinierte Sub-Agenten, an die Claude delegieren kann.",
+      "desc": "Konfiguriere benutzerdefinierte Sub-Agenten, an die Gemini delegieren kann.",
       "noAgents": "Keine Sub-Agenten konfiguriert. Klicke auf +, um einen zu erstellen.",
       "deleteConfirm": "Sub-Agent \"{name}\" löschen?",
       "saveFailed": "Sub-Agent konnte nicht gespeichert werden: {message}",
@@ -189,8 +189,8 @@
     },
     "safety": "Sicherheit",
     "loadUserSettings": {
-      "name": "Benutzer-Claude-Einstellungen laden",
-      "desc": "Lädt ~/.claude/settings.json. Wenn aktiviert, können Benutzer-Claude-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
+      "name": "Benutzer-Gemini-Einstellungen laden",
+      "desc": "Lädt ~/.gemini/settings.json. Wenn aktiviert, können Benutzer-Gemini-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
     "enableBlocklist": {
       "name": "Befehlsblockliste aktivieren",
@@ -209,7 +209,7 @@
     "environment": "Umgebung",
     "customVariables": {
       "name": "Benutzerdefinierte Variablen",
-      "desc": "Umgebungsvariablen für Claude SDK (KEY=VALUE-Format, eine pro Zeile). Export-Präfix unterstützt."
+      "desc": "Umgebungsvariablen für Gemini SDK (KEY=VALUE-Format, eine pro Zeile). Export-Präfix unterstützt."
     },
     "envSnippets": {
       "name": "Snippets",
@@ -240,10 +240,6 @@
       "name": "Sonnet mit 1M-Kontextfenster aktivieren",
       "desc": "Standard-Sonnet durch Sonnet (1M) in der Modellauswahl ersetzen. Gleiche Preise unter 200k Token. Erfordert Max-Abonnement."
     },
-    "enableChrome": {
-      "name": "Chrome-Erweiterung aktivieren",
-      "desc": "Erlaubt Claude die Interaktion mit Chrome über die claude-in-chrome-Erweiterung. Die Erweiterung muss installiert sein. Erfordert Neustart der Sitzung."
-    },
     "enableBangBash": {
       "name": "Bash-Modus (!) aktivieren",
       "desc": "Gib ! in ein leeres Eingabefeld ein, um den Bash-Modus zu starten. Führt Befehle direkt über Node.js child_process aus. Die Ansicht muss neu geöffnet werden.",
@@ -253,7 +249,7 @@
     },
     "maxTabs": {
       "name": "Maximale Chat-Tabs",
-      "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",
+      "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Gemini-Sitzung.",
       "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen."
     },
     "tabBarPosition": {
@@ -264,17 +260,17 @@
     },
     "enableAutoScroll": {
       "name": "Automatisches Scrollen während Streaming",
-      "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."
+      "desc": "Automatisch nach unten scrollen, während Gemini Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."
     },
     "openInMainTab": {
       "name": "Im Haupteditorbereich öffnen",
       "desc": "Chat-Panel als Haupttab im zentralen Editorbereich statt in der rechten Seitenleiste öffnen"
     },
     "cliPath": {
-      "name": "Claude CLI-Pfad",
-      "desc": "Benutzerdefinierter Pfad zum Claude Code CLI. Leer lassen für automatische Erkennung.",
-      "descWindows": "Für den nativen Installer verwenden Sie claude.exe. Für npm/pnpm/yarn oder andere Paketmanager-Installationen verwenden Sie den cli.js-Pfad (nicht claude.cmd).",
-      "descUnix": "Fügen Sie die Ausgabe von \"which claude\" ein — funktioniert sowohl für native als auch npm/pnpm/yarn-Installationen.",
+      "name": "Gemini CLI-Pfad",
+      "desc": "Benutzerdefinierter Pfad zum Gemini CLI CLI. Leer lassen für automatische Erkennung.",
+      "descWindows": "Für den nativen Installer verwenden Sie gemini.exe. Für npm/pnpm/yarn oder andere Paketmanager-Installationen verwenden Sie den cli.js-Pfad (nicht gemini.cmd).",
+      "descUnix": "Fügen Sie die Ausgabe von \"which gemini\" ein — funktioniert sowohl für native als auch npm/pnpm/yarn-Installationen.",
       "validation": {
         "notExist": "Pfad existiert nicht",
         "isDirectory": "Pfad ist ein Verzeichnis, keine Datei"

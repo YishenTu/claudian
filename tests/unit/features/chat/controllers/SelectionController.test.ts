@@ -32,10 +32,10 @@ function createMockInput() {
 
 function createMockContextRow() {
   const elements: Record<string, any> = {
-    '.claudian-selection-indicator': { style: { display: 'none' } },
-    '.claudian-canvas-indicator': { style: { display: 'none' } },
-    '.claudian-file-indicator': null,
-    '.claudian-image-preview': null,
+    '.geminian-selection-indicator': { style: { display: 'none' } },
+    '.geminian-canvas-indicator': { style: { display: 'none' } },
+    '.geminian-file-indicator': null,
+    '.geminian-image-preview': null,
   };
 
   return {
@@ -179,7 +179,7 @@ describe('SelectionController', () => {
   it('keeps context row visible when canvas selection indicator is visible', () => {
     const canvasIndicator = { style: { display: 'block' } };
     contextRowEl.querySelector.mockImplementation((selector: string) => {
-      if (selector === '.claudian-canvas-indicator') return canvasIndicator;
+      if (selector === '.geminian-canvas-indicator') return canvasIndicator;
       return null;
     });
 

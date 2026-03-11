@@ -1,5 +1,5 @@
 import { testMcpServer } from '@/core/mcp/McpTester';
-import type { ClaudianMcpServer } from '@/core/types';
+import type { GeminianMcpServer } from '@/core/types';
 
 // Mock the MCP SDK transports and client
 jest.mock('@modelcontextprotocol/sdk/client', () => ({
@@ -47,7 +47,7 @@ describe('testMcpServer', () => {
 
   describe('stdio server', () => {
     it('should connect and return tools for a valid stdio server', async () => {
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'test',
         config: { command: 'node server.js', args: ['--port', '3000'] },
         enabled: true,
@@ -69,7 +69,7 @@ describe('testMcpServer', () => {
       const { parseCommand } = jest.requireMock('@/utils/mcp');
       parseCommand.mockReturnValueOnce({ cmd: '', args: [] });
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'empty',
         config: { command: '' },
         enabled: true,
@@ -87,7 +87,7 @@ describe('testMcpServer', () => {
   describe('sse server', () => {
     it('should connect to an SSE server', async () => {
       const { SSEClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/sse');
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'sse-test',
         config: { type: 'sse' as const, url: 'https://example.com/sse' },
         enabled: true,
@@ -110,7 +110,7 @@ describe('testMcpServer', () => {
   describe('http server', () => {
     it('should connect to an HTTP server', async () => {
       const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'http-test',
         config: { type: 'http' as const, url: 'https://example.com/api' },
         enabled: true,
@@ -130,7 +130,7 @@ describe('testMcpServer', () => {
 
     it('should pass headers when configured', async () => {
       const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'http-auth',
         config: {
           type: 'http' as const,
@@ -161,7 +161,7 @@ describe('testMcpServer', () => {
         throw new Error('Transport init failed');
       });
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'bad-sse',
         config: { type: 'sse' as const, url: 'https://example.com/sse' },
         enabled: true,
@@ -181,7 +181,7 @@ describe('testMcpServer', () => {
         throw 'string error'; // eslint-disable-line no-throw-literal
       });
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'bad-http',
         config: { type: 'http' as const, url: 'https://example.com' },
         enabled: true,
@@ -201,7 +201,7 @@ describe('testMcpServer', () => {
         close: jest.fn(),
       }));
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'refused',
         config: { command: 'node server.js' },
         enabled: true,
@@ -221,7 +221,7 @@ describe('testMcpServer', () => {
         close: jest.fn(),
       }));
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'weird-error',
         config: { command: 'node server.js' },
         enabled: true,
@@ -243,7 +243,7 @@ describe('testMcpServer', () => {
         close: jest.fn(),
       }));
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'partial',
         config: { command: 'node server.js' },
         enabled: true,
@@ -266,7 +266,7 @@ describe('testMcpServer', () => {
         close: jest.fn().mockRejectedValue(new Error('close failed')),
       }));
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'close-fail',
         config: { command: 'node server.js' },
         enabled: true,

@@ -46,7 +46,7 @@ export class InlineAskUserQuestion {
     this.resolveCallback = resolve;
     this.signal = signal;
     this.config = {
-      title: config?.title ?? 'Claude has a question',
+      title: config?.title ?? 'Gemini has a question',
       headerEl: config?.headerEl,
       showCustomInput: config?.showCustomInput ?? true,
       immediateSelect: config?.immediateSelect ?? false,
@@ -55,9 +55,9 @@ export class InlineAskUserQuestion {
   }
 
   render(): void {
-    this.rootEl = this.containerEl.createDiv({ cls: 'claudian-ask-question-inline' });
+    this.rootEl = this.containerEl.createDiv({ cls: 'geminian-ask-question-inline' });
 
-    const titleEl = this.rootEl.createDiv({ cls: 'claudian-ask-inline-title' });
+    const titleEl = this.rootEl.createDiv({ cls: 'geminian-ask-inline-title' });
     titleEl.setText(this.config.title);
 
     if (this.config.headerEl) {
@@ -81,10 +81,10 @@ export class InlineAskUserQuestion {
     }
 
     if (!this.config.immediateSelect) {
-      this.tabBar = this.rootEl.createDiv({ cls: 'claudian-ask-tab-bar' });
+      this.tabBar = this.rootEl.createDiv({ cls: 'geminian-ask-tab-bar' });
       this.renderTabBar();
     }
-    this.contentArea = this.rootEl.createDiv({ cls: 'claudian-ask-content' });
+    this.contentArea = this.rootEl.createDiv({ cls: 'geminian-ask-content' });
     this.renderTabContent();
 
     this.rootEl.setAttribute('tabindex', '0');
@@ -160,9 +160,9 @@ export class InlineAskUserQuestion {
 
     for (let idx = 0; idx < this.questions.length; idx++) {
       const answered = this.isQuestionAnswered(idx);
-      const tab = this.tabBar.createSpan({ cls: 'claudian-ask-tab' });
-      tab.createSpan({ text: this.questions[idx].header, cls: 'claudian-ask-tab-label' });
-      tab.createSpan({ text: answered ? ' \u2713' : '', cls: 'claudian-ask-tab-tick' });
+      const tab = this.tabBar.createSpan({ cls: 'geminian-ask-tab' });
+      tab.createSpan({ text: this.questions[idx].header, cls: 'geminian-ask-tab-label' });
+      tab.createSpan({ text: answered ? ' \u2713' : '', cls: 'geminian-ask-tab-tick' });
       tab.setAttribute('title', this.questions[idx].question);
 
       if (idx === this.activeTabIndex) tab.addClass('is-active');
@@ -172,9 +172,9 @@ export class InlineAskUserQuestion {
     }
 
     const allAnswered = this.questions.every((_, i) => this.isQuestionAnswered(i));
-    const submitTab = this.tabBar.createSpan({ cls: 'claudian-ask-tab' });
-    submitTab.createSpan({ text: allAnswered ? '\u2713 ' : '', cls: 'claudian-ask-tab-submit-check' });
-    submitTab.createSpan({ text: 'Submit', cls: 'claudian-ask-tab-label' });
+    const submitTab = this.tabBar.createSpan({ cls: 'geminian-ask-tab' });
+    submitTab.createSpan({ text: allAnswered ? '\u2713 ' : '', cls: 'geminian-ask-tab-submit-check' });
+    submitTab.createSpan({ text: 'Submit', cls: 'geminian-ask-tab-label' });
     if (this.activeTabIndex === this.questions.length) submitTab.addClass('is-active');
     submitTab.addEventListener('click', () => this.switchTab(this.questions.length));
     this.tabElements.push(submitTab);
@@ -215,37 +215,37 @@ export class InlineAskUserQuestion {
 
     this.contentArea.createDiv({
       text: q.question,
-      cls: 'claudian-ask-question-text',
+      cls: 'geminian-ask-question-text',
     });
 
-    const listEl = this.contentArea.createDiv({ cls: 'claudian-ask-list' });
+    const listEl = this.contentArea.createDiv({ cls: 'geminian-ask-list' });
 
     for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
       const option = q.options[optIdx];
       const isFocused = optIdx === this.focusedItemIndex;
       const isSelected = selected.has(option.label);
 
-      const row = listEl.createDiv({ cls: 'claudian-ask-item' });
+      const row = listEl.createDiv({ cls: 'geminian-ask-item' });
       if (isFocused) row.addClass('is-focused');
       if (isSelected) row.addClass('is-selected');
 
-      row.createSpan({ text: isFocused ? '\u203A' : '\u00A0', cls: 'claudian-ask-cursor' });
-      row.createSpan({ text: `${optIdx + 1}. `, cls: 'claudian-ask-item-num' });
+      row.createSpan({ text: isFocused ? '\u203A' : '\u00A0', cls: 'geminian-ask-cursor' });
+      row.createSpan({ text: `${optIdx + 1}. `, cls: 'geminian-ask-item-num' });
 
       if (isMulti) {
         this.renderMultiSelectCheckbox(row, isSelected);
       }
 
-      const labelBlock = row.createDiv({ cls: 'claudian-ask-item-content' });
-      const labelRow = labelBlock.createDiv({ cls: 'claudian-ask-label-row' });
-      labelRow.createSpan({ text: option.label, cls: 'claudian-ask-item-label' });
+      const labelBlock = row.createDiv({ cls: 'geminian-ask-item-content' });
+      const labelRow = labelBlock.createDiv({ cls: 'geminian-ask-label-row' });
+      labelRow.createSpan({ text: option.label, cls: 'geminian-ask-item-label' });
 
       if (!isMulti && isSelected) {
-        labelRow.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });
+        labelRow.createSpan({ text: ' \u2713', cls: 'geminian-ask-check-mark' });
       }
 
       if (option.description) {
-        labelBlock.createDiv({ text: option.description, cls: 'claudian-ask-item-desc' });
+        labelBlock.createDiv({ text: option.description, cls: 'geminian-ask-item-desc' });
       }
 
       row.addEventListener('click', () => {
@@ -263,11 +263,11 @@ export class InlineAskUserQuestion {
       const customText = this.customInputs.get(idx) ?? '';
       const hasCustomText = customText.trim().length > 0;
 
-      const customRow = listEl.createDiv({ cls: 'claudian-ask-item claudian-ask-custom-item' });
+      const customRow = listEl.createDiv({ cls: 'geminian-ask-item geminian-ask-custom-item' });
       if (customFocused) customRow.addClass('is-focused');
 
-      customRow.createSpan({ text: customFocused ? '\u203A' : '\u00A0', cls: 'claudian-ask-cursor' });
-      customRow.createSpan({ text: `${customIdx + 1}. `, cls: 'claudian-ask-item-num' });
+      customRow.createSpan({ text: customFocused ? '\u203A' : '\u00A0', cls: 'geminian-ask-cursor' });
+      customRow.createSpan({ text: `${customIdx + 1}. `, cls: 'geminian-ask-item-num' });
 
       if (isMulti) {
         this.renderMultiSelectCheckbox(customRow, hasCustomText);
@@ -275,7 +275,7 @@ export class InlineAskUserQuestion {
 
       const inputEl = customRow.createEl('input', {
         type: 'text',
-        cls: 'claudian-ask-custom-text',
+        cls: 'geminian-ask-custom-text',
         placeholder: 'Type something.',
         value: customText,
       });
@@ -300,47 +300,47 @@ export class InlineAskUserQuestion {
 
     this.contentArea.createDiv({
       text: this.config.immediateSelect ? HINTS_TEXT_IMMEDIATE : HINTS_TEXT,
-      cls: 'claudian-ask-hints',
+      cls: 'geminian-ask-hints',
     });
   }
 
   private renderSubmitTab(): void {
     this.contentArea.createDiv({
       text: 'Review your answers',
-      cls: 'claudian-ask-review-title',
+      cls: 'geminian-ask-review-title',
     });
 
-    const reviewEl = this.contentArea.createDiv({ cls: 'claudian-ask-review' });
+    const reviewEl = this.contentArea.createDiv({ cls: 'geminian-ask-review' });
 
     for (let idx = 0; idx < this.questions.length; idx++) {
       const q = this.questions[idx];
       const answerText = this.getAnswerText(idx);
 
-      const pairEl = reviewEl.createDiv({ cls: 'claudian-ask-review-pair' });
-      pairEl.createDiv({ text: `${idx + 1}.`, cls: 'claudian-ask-review-num' });
-      const bodyEl = pairEl.createDiv({ cls: 'claudian-ask-review-body' });
-      bodyEl.createDiv({ text: q.question, cls: 'claudian-ask-review-q-text' });
+      const pairEl = reviewEl.createDiv({ cls: 'geminian-ask-review-pair' });
+      pairEl.createDiv({ text: `${idx + 1}.`, cls: 'geminian-ask-review-num' });
+      const bodyEl = pairEl.createDiv({ cls: 'geminian-ask-review-body' });
+      bodyEl.createDiv({ text: q.question, cls: 'geminian-ask-review-q-text' });
       bodyEl.createDiv({
         text: answerText || 'Not answered',
-        cls: answerText ? 'claudian-ask-review-a-text' : 'claudian-ask-review-empty',
+        cls: answerText ? 'geminian-ask-review-a-text' : 'geminian-ask-review-empty',
       });
       pairEl.addEventListener('click', () => this.switchTab(idx));
     }
 
     this.contentArea.createDiv({
       text: 'Ready to submit your answers?',
-      cls: 'claudian-ask-review-prompt',
+      cls: 'geminian-ask-review-prompt',
     });
 
-    const actionsEl = this.contentArea.createDiv({ cls: 'claudian-ask-list' });
+    const actionsEl = this.contentArea.createDiv({ cls: 'geminian-ask-list' });
     const allAnswered = this.questions.every((_, i) => this.isQuestionAnswered(i));
 
-    const submitRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
+    const submitRow = actionsEl.createDiv({ cls: 'geminian-ask-item' });
     if (this.focusedItemIndex === 0) submitRow.addClass('is-focused');
     if (!allAnswered) submitRow.addClass('is-disabled');
-    submitRow.createSpan({ text: this.focusedItemIndex === 0 ? '\u203A' : '\u00A0', cls: 'claudian-ask-cursor' });
-    submitRow.createSpan({ text: '1. ', cls: 'claudian-ask-item-num' });
-    submitRow.createSpan({ text: 'Submit answers', cls: 'claudian-ask-item-label' });
+    submitRow.createSpan({ text: this.focusedItemIndex === 0 ? '\u203A' : '\u00A0', cls: 'geminian-ask-cursor' });
+    submitRow.createSpan({ text: '1. ', cls: 'geminian-ask-item-num' });
+    submitRow.createSpan({ text: 'Submit answers', cls: 'geminian-ask-item-label' });
     submitRow.addEventListener('click', () => {
       this.focusedItemIndex = 0;
       this.updateFocusIndicator();
@@ -348,11 +348,11 @@ export class InlineAskUserQuestion {
     });
     this.currentItems.push(submitRow);
 
-    const cancelRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
+    const cancelRow = actionsEl.createDiv({ cls: 'geminian-ask-item' });
     if (this.focusedItemIndex === 1) cancelRow.addClass('is-focused');
-    cancelRow.createSpan({ text: this.focusedItemIndex === 1 ? '\u203A' : '\u00A0', cls: 'claudian-ask-cursor' });
-    cancelRow.createSpan({ text: '2. ', cls: 'claudian-ask-item-num' });
-    cancelRow.createSpan({ text: 'Cancel', cls: 'claudian-ask-item-label' });
+    cancelRow.createSpan({ text: this.focusedItemIndex === 1 ? '\u203A' : '\u00A0', cls: 'geminian-ask-cursor' });
+    cancelRow.createSpan({ text: '2. ', cls: 'geminian-ask-item-num' });
+    cancelRow.createSpan({ text: 'Cancel', cls: 'geminian-ask-item-label' });
     cancelRow.addEventListener('click', () => {
       this.focusedItemIndex = 1;
       this.handleResolve(null);
@@ -361,7 +361,7 @@ export class InlineAskUserQuestion {
 
     this.contentArea.createDiv({
       text: HINTS_TEXT,
-      cls: 'claudian-ask-hints',
+      cls: 'geminian-ask-hints',
     });
   }
 
@@ -410,7 +410,7 @@ export class InlineAskUserQuestion {
   private renderMultiSelectCheckbox(parent: HTMLElement, checked: boolean): void {
     parent.createSpan({
       text: checked ? '[\u2713] ' : '[ ] ',
-      cls: `claudian-ask-check${checked ? ' is-checked' : ''}`,
+      cls: `geminian-ask-check${checked ? ' is-checked' : ''}`,
     });
   }
 
@@ -426,16 +426,16 @@ export class InlineAskUserQuestion {
       item.toggleClass('is-selected', isSelected);
 
       if (isMulti) {
-        const checkSpan = item.querySelector('.claudian-ask-check') as HTMLElement | null;
+        const checkSpan = item.querySelector('.geminian-ask-check') as HTMLElement | null;
         if (checkSpan) {
           checkSpan.textContent = isSelected ? '[\u2713] ' : '[ ] ';
           checkSpan.toggleClass('is-checked', isSelected);
         }
       } else {
-        const labelRow = item.querySelector('.claudian-ask-label-row') as HTMLElement | null;
-        const existingMark = item.querySelector('.claudian-ask-check-mark');
+        const labelRow = item.querySelector('.geminian-ask-label-row') as HTMLElement | null;
+        const existingMark = item.querySelector('.geminian-ask-check-mark');
         if (isSelected && !existingMark && labelRow) {
-          labelRow.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });
+          labelRow.createSpan({ text: ' \u2713', cls: 'geminian-ask-check-mark' });
         } else if (!isSelected && existingMark) {
           existingMark.remove();
         }
@@ -446,14 +446,14 @@ export class InlineAskUserQuestion {
   private updateFocusIndicator(): void {
     for (let i = 0; i < this.currentItems.length; i++) {
       const item = this.currentItems[i];
-      const cursor = item.querySelector('.claudian-ask-cursor');
+      const cursor = item.querySelector('.geminian-ask-cursor');
       if (i === this.focusedItemIndex) {
         item.addClass('is-focused');
         if (cursor) cursor.textContent = '\u203A';
         item.scrollIntoView({ block: 'nearest' });
 
-        if (item.hasClass('claudian-ask-custom-item')) {
-          const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
+        if (item.hasClass('geminian-ask-custom-item')) {
+          const input = item.querySelector('.geminian-ask-custom-text') as HTMLInputElement;
           if (input) {
             input.focus();
             this.isInputFocused = true;
@@ -463,8 +463,8 @@ export class InlineAskUserQuestion {
         item.removeClass('is-focused');
         if (cursor) cursor.textContent = '\u00A0';
 
-        if (item.hasClass('claudian-ask-custom-item')) {
-          const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
+        if (item.hasClass('geminian-ask-custom-item')) {
+          const input = item.querySelector('.geminian-ask-custom-text') as HTMLInputElement;
           if (input && document.activeElement === input) {
             input.blur();
             this.isInputFocused = false;
@@ -477,14 +477,14 @@ export class InlineAskUserQuestion {
   private updateTabIndicators(): void {
     for (let idx = 0; idx < this.questions.length; idx++) {
       const tab = this.tabElements[idx];
-      const tick = tab.querySelector('.claudian-ask-tab-tick');
+      const tick = tab.querySelector('.geminian-ask-tab-tick');
       const answered = this.isQuestionAnswered(idx);
       tab.toggleClass('is-answered', answered);
       if (tick) tick.textContent = answered ? ' \u2713' : '';
     }
     const submitTab = this.tabElements[this.questions.length];
     if (submitTab) {
-      const submitCheck = submitTab.querySelector('.claudian-ask-tab-submit-check');
+      const submitCheck = submitTab.querySelector('.geminian-ask-tab-submit-check');
       const allAnswered = this.questions.every((_, i) => this.isQuestionAnswered(i));
       if (submitCheck) submitCheck.textContent = allAnswered ? '\u2713 ' : '';
     }
@@ -602,7 +602,7 @@ export class InlineAskUserQuestion {
         } else if (this.config.showCustomInput) {
           this.isInputFocused = true;
           const input = this.contentArea.querySelector(
-            '.claudian-ask-custom-text',
+            '.geminian-ask-custom-text',
           ) as HTMLInputElement;
           input?.focus();
         }

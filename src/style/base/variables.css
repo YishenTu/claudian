@@ -1,8 +1,8 @@
 /* Brand & semantic color tokens */
-.claudian-container {
-  --claudian-brand: #D97757;
-  --claudian-brand-rgb: 217, 119, 87;
-  --claudian-error: #dc3545;
-  --claudian-error-rgb: 220, 53, 69;
-  --claudian-compact: #5bc0de;
+.geminian-container {
+  --geminian-brand: #D97757;
+  --geminian-brand-rgb: 217, 119, 87;
+  --geminian-error: #dc3545;
+  --geminian-error-rgb: 220, 53, 69;
+  --geminian-compact: #5bc0de;
 }

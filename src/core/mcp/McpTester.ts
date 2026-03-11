@@ -7,7 +7,7 @@ import * as https from 'https';
 
 import { getEnhancedPath } from '../../utils/env';
 import { parseCommand } from '../../utils/mcp';
-import type { ClaudianMcpServer } from '../types';
+import type { GeminianMcpServer } from '../types';
 import { getMcpServerType } from '../types';
 
 export interface McpTool {
@@ -202,7 +202,7 @@ async function getRequestBody(body: BodyInit | null | undefined): Promise<Buffer
 
 const nodeFetch = createNodeFetch();
 
-export async function testMcpServer(server: ClaudianMcpServer): Promise<McpTestResult> {
+export async function testMcpServer(server: GeminianMcpServer): Promise<McpTestResult> {
   const type = getMcpServerType(server.config);
 
   let transport;
@@ -238,7 +238,7 @@ export async function testMcpServer(server: ClaudianMcpServer): Promise<McpTestR
     };
   }
 
-  const client = new Client({ name: 'claudian-tester', version: '1.0.0' });
+  const client = new Client({ name: 'geminian-tester', version: '1.0.0' });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
 

@@ -1,8 +1,8 @@
 /**
- * PluginManager - Discover and manage Claude Code plugins.
+ * ExtensionManager - Discover and manage Gemini CLI extensions.
  *
- * Plugins are discovered from two sources:
- * - installed_plugins.json: install paths for scanning agents
+ * Extensions are discovered from two sources:
+ * - installed_extensions.json: install paths for scanning agents
  * - settings.json: enabled state (project overrides global)
  */
 
@@ -11,14 +11,14 @@ import { Notice } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
-import type { ClaudianPlugin, InstalledPluginEntry, InstalledPluginsFile, PluginScope } from '../types';
+import type { GeminiCLISettingsStorage } from '../storage/CCSettingsStorage';
+import type { ExtensionScope,GeminianExtension, InstalledExtensionEntry, InstalledExtensionsFile } from '../types';
 
-const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
-const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+const INSTALLED_EXTENSIONS_PATH = path.join(os.homedir(), '.gemini', 'extensions', 'installed_extensions.json');
+const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.gemini', 'settings.json');
 
 interface SettingsFile {
-  enabledPlugins?: Record<string, boolean>;
+  enabledExtensions?: Record<string, boolean>;
 }
 
 function readJsonFile<T>(filePath: string): T | null {
@@ -46,10 +46,10 @@ function normalizePathForComparison(p: string): string {
   return path.resolve(p);
 }
 
-function selectInstalledPluginEntry(
-  entries: InstalledPluginEntry[],
+function selectInstalledExtensionEntry(
+  entries: InstalledExtensionEntry[],
   normalizedVaultPath: string
-): InstalledPluginEntry | null {
+): InstalledExtensionEntry | null {
   for (const entry of entries) {
     if (entry.scope !== 'project') continue;
     if (!entry.projectPath) continue;
@@ -61,54 +61,53 @@ function selectInstalledPluginEntry(
   return entries.find(e => e.scope === 'user') ?? null;
 }
 
-function extractPluginName(pluginId: string): string {
-  const atIndex = pluginId.indexOf('@');
+function extractExtensionName(extensionId: string): string {
+  const atIndex = extensionId.indexOf('@');
   if (atIndex > 0) {
-    return pluginId.substring(0, atIndex);
+    return extensionId.substring(0, atIndex);
   }
-  return pluginId;
+  return extensionId;
 }
 
 export class PluginManager {
-  private ccSettingsStorage: CCSettingsStorage;
+  private geminiCliSettingsStorage: GeminiCLISettingsStorage;
   private vaultPath: string;
-  private plugins: ClaudianPlugin[] = [];
+  private extensions: GeminianExtension[] = [];
 
-  constructor(vaultPath: string, ccSettingsStorage: CCSettingsStorage) {
+  constructor(vaultPath: string, geminiCliSettingsStorage: GeminiCLISettingsStorage) {
     this.vaultPath = vaultPath;
-    this.ccSettingsStorage = ccSettingsStorage;
+    this.geminiCliSettingsStorage = geminiCliSettingsStorage;
   }
 
-  async loadPlugins(): Promise<void> {
-    const installedPlugins = readJsonFile<InstalledPluginsFile>(INSTALLED_PLUGINS_PATH);
+  async loadExtensions(): Promise<void> {
+    const installedExtensions = readJsonFile<InstalledExtensionsFile>(INSTALLED_EXTENSIONS_PATH);
     const globalSettings = readJsonFile<SettingsFile>(GLOBAL_SETTINGS_PATH);
     const projectSettings = await this.loadProjectSettings();
 
-    const globalEnabled = globalSettings?.enabledPlugins ?? {};
-    const projectEnabled = projectSettings?.enabledPlugins ?? {};
+    const globalEnabled = globalSettings?.enabledExtensions ?? {};
+    const projectEnabled = projectSettings?.enabledExtensions ?? {};
 
-    const plugins: ClaudianPlugin[] = [];
+    const extensions: GeminianExtension[] = [];
     const normalizedVaultPath = normalizePathForComparison(this.vaultPath);
 
-    if (installedPlugins?.plugins) {
-      for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
+    if (installedExtensions?.extensions) {
+      for (const [extensionId, entries] of Object.entries(installedExtensions.extensions)) {
         if (!entries || entries.length === 0) continue;
 
         const entriesArray = Array.isArray(entries) ? entries : [entries];
         if (!Array.isArray(entries)) {
-          new Notice(`Claudian: plugin "${pluginId}" has malformed entry in installed_plugins.json (expected array, got ${typeof entries})`);
+          new Notice(`Geminian: extension "${extensionId}" has malformed entry in installed_extensions.json (expected array, got ${typeof entries})`);
         }
-        const entry = selectInstalledPluginEntry(entriesArray, normalizedVaultPath);
+        const entry = selectInstalledExtensionEntry(entriesArray, normalizedVaultPath);
         if (!entry) continue;
 
-        const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';
+        const scope: ExtensionScope = entry.scope === 'project' ? 'project' : 'user';
 
-        // Project setting takes precedence, then global, then default enabled
-        const enabled = projectEnabled[pluginId] ?? globalEnabled[pluginId] ?? true;
+        const enabled = projectEnabled[extensionId] ?? globalEnabled[extensionId] ?? true;
 
-        plugins.push({
-          id: pluginId,
-          name: extractPluginName(pluginId),
+        extensions.push({
+          id: extensionId,
+          name: extractExtensionName(extensionId),
           enabled,
           scope,
           installPath: entry.installPath,
@@ -116,7 +115,7 @@ export class PluginManager {
       }
     }
 
-    this.plugins = plugins.sort((a, b) => {
+    this.extensions = extensions.sort((a, b) => {
       if (a.scope !== b.scope) {
         return a.scope === 'project' ? -1 : 1;
       }
@@ -125,69 +124,87 @@ export class PluginManager {
   }
 
   private async loadProjectSettings(): Promise<SettingsFile | null> {
-    const projectSettingsPath = path.join(this.vaultPath, '.claude', 'settings.json');
+    const projectSettingsPath = path.join(this.vaultPath, '.gemini', 'settings.json');
     return readJsonFile(projectSettingsPath);
   }
 
-  getPlugins(): ClaudianPlugin[] {
-    return [...this.plugins];
+  getExtensions(): GeminianExtension[] {
+    return [...this.extensions];
   }
 
-  hasPlugins(): boolean {
-    return this.plugins.length > 0;
+  hasExtensions(): boolean {
+    return this.extensions.length > 0;
   }
 
-  hasEnabledPlugins(): boolean {
-    return this.plugins.some((p) => p.enabled);
+  hasEnabledExtensions(): boolean {
+    return this.extensions.some((e) => e.enabled);
   }
 
   getEnabledCount(): number {
-    return this.plugins.filter((p) => p.enabled).length;
+    return this.extensions.filter((e) => e.enabled).length;
   }
 
   /** Used to detect changes that require restarting the persistent query. */
-  getPluginsKey(): string {
-    const enabledPlugins = this.plugins
-      .filter((p) => p.enabled)
+  getExtensionsKey(): string {
+    const enabledExtensions = this.extensions
+      .filter((e) => e.enabled)
       .sort((a, b) => a.id.localeCompare(b.id));
 
-    if (enabledPlugins.length === 0) {
+    if (enabledExtensions.length === 0) {
       return '';
     }
 
-    return enabledPlugins.map((p) => `${p.id}:${p.installPath}`).join('|');
+    return enabledExtensions.map((e) => `${e.id}:${e.installPath}`).join('|');
   }
 
-  /** Writes to project .claude/settings.json so CLI respects the state. */
-  async togglePlugin(pluginId: string): Promise<void> {
-    const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (!plugin) {
+  /** Writes to project .gemini/settings.json so CLI respects the state. */
+  async toggleExtension(extensionId: string): Promise<void> {
+    const extension = this.extensions.find((e) => e.id === extensionId);
+    if (!extension) {
       return;
     }
 
-    const newEnabled = !plugin.enabled;
-    plugin.enabled = newEnabled;
+    const newEnabled = !extension.enabled;
+    extension.enabled = newEnabled;
 
-    await this.ccSettingsStorage.setPluginEnabled(pluginId, newEnabled);
+    await this.geminiCliSettingsStorage.setExtensionEnabled(extensionId, newEnabled);
   }
 
-  async enablePlugin(pluginId: string): Promise<void> {
-    const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (!plugin || plugin.enabled) {
+  async enableExtension(extensionId: string): Promise<void> {
+    const extension = this.extensions.find((e) => e.id === extensionId);
+    if (!extension || extension.enabled) {
       return;
     }
 
-    plugin.enabled = true;
-    await this.ccSettingsStorage.setPluginEnabled(pluginId, true);
+    extension.enabled = true;
+    await this.geminiCliSettingsStorage.setExtensionEnabled(extensionId, true);
   }
 
-  async disablePlugin(pluginId: string): Promise<void> {
-    const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (!plugin || !plugin.enabled) {
+  async disableExtension(extensionId: string): Promise<void> {
+    const extension = this.extensions.find((e) => e.id === extensionId);
+    if (!extension || !extension.enabled) {
       return;
     }
 
-    plugin.enabled = false;
-    await this.ccSettingsStorage.setPluginEnabled(pluginId, false);
+    extension.enabled = false;
+    await this.geminiCliSettingsStorage.setExtensionEnabled(extensionId, false);
   }
+
+  // Backwards-compatible aliases
+  /** @deprecated Use loadExtensions() */
+  async loadPlugins(): Promise<void> { return this.loadExtensions(); }
+  /** @deprecated Use getExtensions() */
+  getPlugins(): GeminianExtension[] { return this.getExtensions(); }
+  /** @deprecated Use hasExtensions() */
+  hasPlugins(): boolean { return this.hasExtensions(); }
+  /** @deprecated Use hasEnabledExtensions() */
+  hasEnabledPlugins(): boolean { return this.hasEnabledExtensions(); }
+  /** @deprecated Use getExtensionsKey() */
+  getPluginsKey(): string { return this.getExtensionsKey(); }
+  /** @deprecated Use toggleExtension() */
+  async togglePlugin(id: string): Promise<void> { return this.toggleExtension(id); }
+  /** @deprecated Use enableExtension() */
+  async enablePlugin(id: string): Promise<void> { return this.enableExtension(id); }
+  /** @deprecated Use disableExtension() */
+  async disablePlugin(id: string): Promise<void> { return this.disableExtension(id); }
 }

@@ -1,9 +1,9 @@
 /* Model selector */
-.claudian-model-selector {
+.geminian-model-selector {
   position: relative;
 }
 
-.claudian-model-btn {
+.geminian-model-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -15,25 +15,25 @@
   transition: color 0.2s ease;
 }
 
-.claudian-model-btn.ready {
-  color: var(--claudian-brand);
+.geminian-model-btn.ready {
+  color: var(--geminian-brand);
 }
 
-.claudian-model-label {
+.geminian-model-label {
   font-weight: 500;
 }
 
-.claudian-model-chevron {
+.geminian-model-chevron {
   display: flex;
   align-items: center;
 }
 
-.claudian-model-chevron svg {
+.geminian-model-chevron svg {
   width: 12px;
   height: 12px;
 }
 
-.claudian-model-dropdown {
+.geminian-model-dropdown {
   position: absolute;
   bottom: 100%;
   left: 0;
@@ -53,12 +53,12 @@
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.claudian-model-selector:hover .claudian-model-dropdown {
+.geminian-model-selector:hover .geminian-model-dropdown {
   opacity: 1;
   visibility: visible;
 }
 
-.claudian-model-option {
+.geminian-model-option {
   padding: 4px 8px;
   cursor: pointer;
   font-size: 12px;
@@ -68,13 +68,13 @@
   white-space: nowrap;
 }
 
-.claudian-model-option:hover {
+.geminian-model-option:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-model-option.selected {
-  background: rgba(var(--claudian-brand-rgb), 0.15);
-  color: var(--claudian-brand);
+.geminian-model-option.selected {
+  background: rgba(var(--geminian-brand-rgb), 0.15);
+  color: var(--geminian-brand);
   font-weight: 500;
 }

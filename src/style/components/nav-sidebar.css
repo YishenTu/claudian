@@ -1,5 +1,5 @@
 /* Navigation Sidebar */
-.claudian-nav-sidebar {
+.geminian-nav-sidebar {
     position: absolute;
     right: 2px;
     top: 50%;
@@ -13,16 +13,16 @@
     transition: opacity 0.2s ease;
 }
 
-.claudian-nav-sidebar.visible {
+.geminian-nav-sidebar.visible {
     opacity: 0.15;
     pointer-events: auto;
 }
 
-.claudian-nav-sidebar.visible:hover {
+.geminian-nav-sidebar.visible:hover {
     opacity: 1;
 }
 
-.claudian-nav-btn {
+.geminian-nav-btn {
     width: 32px;
     height: 32px;
     border-radius: 16px;
@@ -37,22 +37,22 @@
     transition: all 0.2s ease;
 }
 
-.claudian-nav-btn:hover {
+.geminian-nav-btn:hover {
     background: var(--background-secondary);
     color: var(--text-normal);
     transform: scale(1.05);
 }
 
-.claudian-nav-btn svg {
+.geminian-nav-btn svg {
     width: 18px;
     height: 18px;
 }
 
 /* Specific button spacing/grouping if needed */
-.claudian-nav-btn-top {
+.geminian-nav-btn-top {
     margin-bottom: 4px;
 }
 
-.claudian-nav-btn-bottom {
+.geminian-nav-btn-bottom {
     margin-top: 4px;
 }

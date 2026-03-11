@@ -1,6 +1,6 @@
 import {
-  CLAUDIAN_SETTINGS_PATH,
-  ClaudianSettingsStorage,
+  GEMINIAN_SETTINGS_PATH as CLAUDIAN_SETTINGS_PATH,
+  GeminianSettingsStorage,
   normalizeBlockedCommands,
 } from '@/core/storage/ClaudianSettingsStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -12,8 +12,8 @@ const mockAdapter = {
   write: jest.fn(),
 } as unknown as jest.Mocked<VaultFileAdapter>;
 
-describe('ClaudianSettingsStorage', () => {
-  let storage: ClaudianSettingsStorage;
+describe('GeminianSettingsStorage', () => {
+  let storage: GeminianSettingsStorage;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -21,7 +21,7 @@ describe('ClaudianSettingsStorage', () => {
     mockAdapter.exists.mockResolvedValue(false);
     mockAdapter.read.mockResolvedValue('{}');
     mockAdapter.write.mockResolvedValue(undefined);
-    storage = new ClaudianSettingsStorage(mockAdapter);
+    storage = new GeminianSettingsStorage(mockAdapter);
   });
 
   describe('load', () => {
@@ -66,10 +66,10 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.blockedCommands.windows).toContain('custom-win-cmd');
     });
 
-    it('should normalize claudeCliPathsByHost from loaded data', async () => {
+    it('should normalize geminiCliPathsByHost from loaded data', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        claudeCliPathsByHost: {
+        geminiCliPathsByHost: {
           'host-a': '/custom/path-a',
           'host-b': '/custom/path-b',
         },
@@ -77,19 +77,19 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect(result.claudeCliPathsByHost['host-a']).toBe('/custom/path-a');
-      expect(result.claudeCliPathsByHost['host-b']).toBe('/custom/path-b');
+      expect(result.geminiCliPathsByHost['host-a']).toBe('/custom/path-a');
+      expect(result.geminiCliPathsByHost['host-b']).toBe('/custom/path-b');
     });
 
-    it('should preserve legacy claudeCliPath field', async () => {
+    it('should preserve legacy geminiCliPath field', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        claudeCliPath: '/legacy/path',
+        geminiCliPath: '/legacy/path',
       }));
 
       const result = await storage.load();
 
-      expect(result.claudeCliPath).toBe('/legacy/path');
+      expect(result.geminiCliPath).toBe('/legacy/path');
     });
 
     it('should throw on JSON parse error', async () => {
@@ -249,7 +249,7 @@ describe('ClaudianSettingsStorage', () => {
   });
 
   describe('setLastModel', () => {
-    it('should update lastClaudeModel for non-custom models', async () => {
+    it('should update lastGeminiModel for non-custom models', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({}));
 
@@ -257,7 +257,7 @@ describe('ClaudianSettingsStorage', () => {
 
       const writeCall = mockAdapter.write.mock.calls[0];
       const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.lastClaudeModel).toBe('claude-sonnet-4-5');
+      expect(writtenContent.lastGeminiModel).toBe('claude-sonnet-4-5');
       // lastCustomModel keeps its default value (empty string)
     });
 
@@ -270,7 +270,7 @@ describe('ClaudianSettingsStorage', () => {
       const writeCall = mockAdapter.write.mock.calls[0];
       const writtenContent = JSON.parse(writeCall[1]);
       expect(writtenContent.lastCustomModel).toBe('custom-model-id');
-      // lastClaudeModel keeps its default value
+      // lastGeminiModel keeps its default value
     });
   });
 

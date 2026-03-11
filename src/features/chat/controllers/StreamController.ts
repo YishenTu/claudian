@@ -1,4 +1,4 @@
-import type { ClaudianService } from '../../../core/agent';
+import type { GeminianService } from '../../../core/agent';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText, parseTodoInput } from '../../../core/tools';
 import {
   isSubagentToolName,
@@ -12,7 +12,7 @@ import {
 } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
-import type ClaudianPlugin from '../../../main';
+import type GeminianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
 import { getVaultPath } from '../../../utils/path';
@@ -37,7 +37,7 @@ import type { ChatState } from '../state/ChatState';
 import type { FileContextManager } from '../ui';
 
 export interface StreamControllerDeps {
-  plugin: ClaudianPlugin;
+  plugin: GeminianPlugin;
   state: ChatState;
   renderer: MessageRenderer;
   subagentManager: SubagentManager;
@@ -45,7 +45,7 @@ export interface StreamControllerDeps {
   getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
-  getAgentService?: () => ClaudianService | null;
+  getAgentService?: () => GeminianService | null;
 }
 
 export class StreamController {
@@ -217,13 +217,13 @@ export class StreamController {
         // If already rendered, update the header name + summary
         const toolEl = state.toolCallElements.get(chunk.id);
         if (toolEl) {
-          const nameEl = toolEl.querySelector('.claudian-tool-name') as HTMLElement | null
-            ?? toolEl.querySelector('.claudian-write-edit-name') as HTMLElement | null;
+          const nameEl = toolEl.querySelector('.geminian-tool-name') as HTMLElement | null
+            ?? toolEl.querySelector('.geminian-write-edit-name') as HTMLElement | null;
           if (nameEl) {
             nameEl.setText(getToolName(existingToolCall.name, existingToolCall.input));
           }
-          const summaryEl = toolEl.querySelector('.claudian-tool-summary') as HTMLElement | null
-            ?? toolEl.querySelector('.claudian-write-edit-summary') as HTMLElement | null;
+          const summaryEl = toolEl.querySelector('.geminian-tool-summary') as HTMLElement | null
+            ?? toolEl.querySelector('.geminian-write-edit-summary') as HTMLElement | null;
           if (summaryEl) {
             summaryEl.setText(getToolSummary(existingToolCall.name, existingToolCall.input));
           }
@@ -405,7 +405,7 @@ export class StreamController {
     this.hideThinkingIndicator();
 
     if (!state.currentTextEl) {
-      state.currentTextEl = state.currentContentEl.createDiv({ cls: 'claudian-text-block' });
+      state.currentTextEl = state.currentContentEl.createDiv({ cls: 'geminian-text-block' });
       state.currentTextContent = '';
     }
 
@@ -898,14 +898,14 @@ export class StreamController {
       if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
 
       const cls = overrideCls
-        ? `claudian-thinking ${overrideCls}`
-        : 'claudian-thinking';
+        ? `geminian-thinking ${overrideCls}`
+        : 'geminian-thinking';
       state.thinkingEl = state.currentContentEl.createDiv({ cls });
       const text = overrideText || FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
       state.thinkingEl.createSpan({ text });
 
       // Create timer span with initial value
-      const timerSpan = state.thinkingEl.createSpan({ cls: 'claudian-thinking-hint' });
+      const timerSpan = state.thinkingEl.createSpan({ cls: 'geminian-thinking-hint' });
       const updateTimer = () => {
         if (!state.responseStartTime) return;
         // Check if element is still connected to DOM (prevents orphaned interval updates)
@@ -928,7 +928,7 @@ export class StreamController {
       state.flavorTimerInterval = setInterval(updateTimer, 1000);
 
       // Queue indicator line (initially hidden)
-      state.queueIndicatorEl = state.thinkingEl.createDiv({ cls: 'claudian-queue-indicator' });
+      state.queueIndicatorEl = state.thinkingEl.createDiv({ cls: 'geminian-queue-indicator' });
       this.deps.updateQueueIndicator();
     }, StreamController.THINKING_INDICATOR_DELAY);
   }
@@ -961,8 +961,8 @@ export class StreamController {
     const { state } = this.deps;
     if (!state.currentContentEl) return;
     this.hideThinkingIndicator();
-    const el = state.currentContentEl.createDiv({ cls: 'claudian-compact-boundary' });
-    el.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
+    const el = state.currentContentEl.createDiv({ cls: 'geminian-compact-boundary' });
+    el.createSpan({ cls: 'geminian-compact-boundary-label', text: 'Conversation compacted' });
   }
 
   // ============================================

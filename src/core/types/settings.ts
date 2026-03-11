@@ -3,7 +3,7 @@
  */
 
 import type { Locale } from '../../i18n/types';
-import type { ClaudeModel, ThinkingBudget } from './models';
+import type { GeminiModel, ThinkingBudget } from './models';
 
 const UNIX_BLOCKED_COMMANDS = [
   'rm -rf',
@@ -83,7 +83,7 @@ export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): s
 }
 
 /**
- * Platform-specific Claude CLI paths.
+ * Platform-specific Gemini CLI paths.
  * @deprecated Use HostnameCliPaths instead. Kept for migration from older versions.
  */
 export interface PlatformCliPaths {
@@ -150,10 +150,10 @@ export function createPermissionRule(rule: string): PermissionRule {
 }
 
 /**
- * CC-compatible permissions object.
- * Stored in .claude/settings.json for interoperability with Claude Code CLI.
+ * Gemini CLI-compatible permissions object.
+ * Stored in .claude/settings.json for interoperability with Gemini CLI.
  */
-export interface CCPermissions {
+export interface GeminiPermissions {
   /** Rules that auto-approve tool actions */
   allow?: PermissionRule[];
   /** Rules that auto-deny tool actions (highest persistent priority) */
@@ -167,14 +167,14 @@ export interface CCPermissions {
 }
 
 /**
- * CC-compatible settings stored in .claude/settings.json.
- * These settings are shared with Claude Code CLI.
+ * Gemini CLI-compatible settings stored in .claude/settings.json.
+ * These settings are shared with Gemini CLI.
  */
-export interface CCSettings {
+export interface GeminiCLISettings {
   /** JSON Schema reference */
   $schema?: string;
-  /** Tool permissions (CC format) */
-  permissions?: CCPermissions;
+  /** Tool permissions (Gemini CLI format) */
+  permissions?: GeminiPermissions;
   /** Model override */
   model?: string;
   /** Environment variables (object format) */
@@ -183,9 +183,9 @@ export interface CCSettings {
   enableAllProjectMcpServers?: boolean;
   enabledMcpjsonServers?: string[];
   disabledMcpjsonServers?: string[];
-  /** Plugin enabled state (CC format: { "plugin-id": true/false }) */
-  enabledPlugins?: Record<string, boolean>;
-  /** Allow additional properties for CC compatibility */
+  /** Extension enabled state ({ "extension-id": true/false }) */
+  enabledExtensions?: Record<string, boolean>;
+  /** Allow additional properties for Gemini CLI compatibility */
   [key: string]: unknown;
 }
 
@@ -201,14 +201,14 @@ export interface EnvSnippet {
 /** Source of a slash command. */
 export type SlashCommandSource = 'builtin' | 'user' | 'plugin' | 'sdk';
 
-/** Slash command configuration with Claude Code compatibility. */
+/** Slash command configuration with Gemini CLI compatibility. */
 export interface SlashCommand {
   id: string;
   name: string;                // Command name used after / (e.g., "review-code")
   description?: string;        // Optional description shown in dropdown
   argumentHint?: string;       // Placeholder text for arguments (e.g., "[file] [focus]")
   allowedTools?: string[];     // Restrict tools when command is used
-  model?: ClaudeModel;         // Override model for this command
+  model?: GeminiModel;         // Override model for this command
   content: string;             // Prompt template with placeholders
   source?: SlashCommandSource; // Origin of the command (builtin, user, plugin, sdk)
   // Skill fields (from .claude/skills/ definitions)
@@ -230,25 +230,23 @@ export interface KeyboardNavigationSettings {
 export type TabBarPosition = 'input' | 'header';
 
 /**
- * Claudian-specific settings stored in .claude/claudian-settings.json.
- * These settings are NOT shared with Claude Code CLI.
+ * Geminian-specific settings stored in .claude/geminian-settings.json.
+ * These settings are NOT shared with Gemini CLI.
  */
-export interface ClaudianSettings {
+export interface GeminianSettings {
   // User preferences
   userName: string;
 
-  // Security (Claudian-specific, CC uses permissions.deny instead)
+  // Security (Geminian-specific, Gemini CLI uses permissions.deny instead)
   enableBlocklist: boolean;
   blockedCommands: PlatformBlockedCommands;
   permissionMode: PermissionMode;
 
-  // Model & thinking (Claudian uses enum, CC uses full model ID string)
-  model: ClaudeModel;
+  // Model & thinking (Geminian uses enum, Gemini CLI uses full model ID string)
+  model: GeminiModel;
   thinkingBudget: ThinkingBudget;
   enableAutoTitleGeneration: boolean;
-  titleGenerationModel: string;  // Model for auto title generation (empty = auto)
-  show1MModel: boolean;  // Show Sonnet (1M) in model selector (requires Max subscription)
-  enableChrome: boolean;  // Enable Chrome extension support (passes --chrome flag)
+  titleGenerationModel: string;  // Model for auto title generation (empty = auto Gemini model)
   enableBangBash: boolean;  // Enable ! bash mode for direct command execution
 
   // Content settings
@@ -258,14 +256,14 @@ export interface ClaudianSettings {
   allowedExportPaths: string[];
   persistentExternalContextPaths: string[];  // Paths that persist across all sessions
 
-  // Environment (string format, CC uses object format in settings.json)
+  // Environment (string format, Gemini CLI uses object format in settings.json)
   environmentVariables: string;
   envSnippets: EnvSnippet[];
   /**
    * Custom context window limits for models configured via environment variables.
-   * Keys are model IDs (from ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_*_MODEL env vars).
+   * Keys are model IDs (from GEMINI_MODEL or similar env vars).
    * Values are token counts in range [1000, 10000000].
-   * Empty object means all models use default context limits (200k or 1M for Sonnet).
+   * Empty object means all models use default context limits (1M).
    */
   customContextLimits: Record<string, number>;
 
@@ -276,13 +274,13 @@ export interface ClaudianSettings {
   locale: Locale;  // UI language setting
 
   // CLI paths
-  claudeCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
-  claudeCliPathsByHost: HostnameCliPaths;  // Per-device paths keyed by hostname (preferred)
-  loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
+  geminiCliPath: string;  // Legacy: single CLI path (for backwards compatibility)
+  geminiCliPathsByHost: HostnameCliPaths;  // Per-device paths keyed by hostname (preferred)
+  loadUserGeminiSettings: boolean;  // Load ~/.gemini/settings.json (may override permissions)
 
   // State (merged from data.json)
-  lastClaudeModel?: ClaudeModel;
-  lastCustomModel?: ClaudeModel;
+  lastGeminiModel?: GeminiModel;
+  lastCustomModel?: GeminiModel;
   lastEnvHash?: string;
 
   // Slash commands (loaded separately from .claude/commands/)
@@ -298,8 +296,8 @@ export interface ClaudianSettings {
   hiddenSlashCommands: string[];  // Command names to hide from dropdown (user preference)
 }
 
-/** Default Claudian-specific settings. */
-export const DEFAULT_SETTINGS: ClaudianSettings = {
+/** Default Geminian-specific settings. */
+export const DEFAULT_SETTINGS: GeminianSettings = {
   // User preferences
   userName: '',
 
@@ -309,12 +307,10 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   permissionMode: 'yolo',
 
   // Model & thinking
-  model: 'haiku',
+  model: 'auto',
   thinkingBudget: 'off',
   enableAutoTitleGeneration: true,
-  titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  show1MModel: false,  // Hidden by default
-  enableChrome: false,  // Disabled by default
+  titleGenerationModel: '',  // Empty = auto (uses fastest available Gemini model)
   enableBangBash: false,  // Disabled by default
 
   // Content settings
@@ -340,11 +336,11 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   locale: 'en',  // Default to English
 
   // CLI paths
-  claudeCliPath: '',  // Legacy field (empty = not migrated)
-  claudeCliPathsByHost: {},  // Per-device paths keyed by hostname
-  loadUserClaudeSettings: true,  // Default on for compatibility
+  geminiCliPath: '',  // Legacy field (empty = not migrated)
+  geminiCliPathsByHost: {},  // Per-device paths keyed by hostname
+  loadUserGeminiSettings: true,  // Default on for compatibility
 
-  lastClaudeModel: 'haiku',
+  lastGeminiModel: 'auto',
   lastCustomModel: '',
   lastEnvHash: '',
 
@@ -361,9 +357,8 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   hiddenSlashCommands: [],  // No commands hidden by default
 };
 
-/** Default CC-compatible settings. */
-export const DEFAULT_CC_SETTINGS: CCSettings = {
-  $schema: 'https://json.schemastore.org/claude-code-settings.json',
+/** Default Gemini CLI-compatible settings. */
+export const DEFAULT_GEMINI_CLI_SETTINGS: GeminiCLISettings = {
   permissions: {
     allow: [],
     deny: [],
@@ -371,8 +366,8 @@ export const DEFAULT_CC_SETTINGS: CCSettings = {
   },
 };
 
-/** Default CC permissions. */
-export const DEFAULT_CC_PERMISSIONS: CCPermissions = {
+/** Default Gemini permissions. */
+export const DEFAULT_GEMINI_PERMISSIONS: GeminiPermissions = {
   allow: [],
   deny: [],
   ask: [],
@@ -410,7 +405,7 @@ export function legacyPermissionToCCRule(legacy: LegacyPermission): PermissionRu
  */
 export function legacyPermissionsToCCPermissions(
   legacyPermissions: LegacyPermission[]
-): CCPermissions {
+): GeminiPermissions {
   const allow: PermissionRule[] = [];
 
   for (const perm of legacyPermissions) {

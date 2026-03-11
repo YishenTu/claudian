@@ -1,5 +1,5 @@
 /**
- * Claudian - File Link Utilities
+ * Geminian - File Link Utilities
  *
  * Detects Obsidian wikilinks [[path/to/file]] in rendered content and makes
  * them clickable to open the file in Obsidian.
@@ -94,7 +94,7 @@ function createWikilink(
   displayText: string
 ): HTMLElement {
   const link = document.createElement('a');
-  link.className = 'claudian-file-link internal-link';
+  link.className = 'geminian-file-link internal-link';
   link.textContent = displayText;
   link.setAttribute('data-href', linkTarget);
   link.setAttribute('href', linkTarget);
@@ -104,7 +104,7 @@ function createWikilink(
 /**
  * Registers a delegated click handler for file links on a container.
  * Should be called once on the messages container.
- * Handles both our custom .claudian-file-link and Obsidian's .internal-link.
+ * Handles both our custom .geminian-file-link and Obsidian's .internal-link.
  */
 export function registerFileLinkHandler(
   app: App,
@@ -114,7 +114,7 @@ export function registerFileLinkHandler(
   component.registerDomEvent(container, 'click', (event: MouseEvent) => {
     const target = event.target as HTMLElement;
     // Handle both our links and Obsidian's internal links
-    const link = target.closest('.claudian-file-link, .internal-link') as HTMLAnchorElement;
+    const link = target.closest('.geminian-file-link, .internal-link') as HTMLAnchorElement;
 
     if (link) {
       event.preventDefault();
@@ -199,7 +199,7 @@ export function processFileLinks(app: App, container: HTMLElement): void {
           return NodeFilter.FILTER_REJECT;
         }
 
-        if (parent.closest('pre, code, a, .claudian-file-link, .internal-link')) {
+        if (parent.closest('pre, code, a, .geminian-file-link, .internal-link')) {
           return NodeFilter.FILTER_REJECT;
         }
 

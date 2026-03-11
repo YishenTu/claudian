@@ -1,9 +1,15 @@
-import type { QueryOptionsContext } from '@/core/agent/QueryOptionsBuilder';
+import * as fs from 'fs';
+
+import type { GeminiCliArgs,QueryOptionsContext } from '@/core/agent/QueryOptionsBuilder';
 import { QueryOptionsBuilder } from '@/core/agent/QueryOptionsBuilder';
 import type { PersistentQueryConfig } from '@/core/agent/types';
-import type { ClaudianSettings } from '@/core/types';
+import type { GeminianSettings } from '@/core/types';
 
-// Create a mock MCP server manager
+jest.mock('fs', () => ({
+  mkdirSync: jest.fn(),
+  writeFileSync: jest.fn(),
+}));
+
 function createMockMcpManager() {
   return {
     loadServers: jest.fn().mockResolvedValue(undefined),
@@ -16,7 +22,6 @@ function createMockMcpManager() {
   } as any;
 }
 
-// Create a mock plugin manager
 function createMockPluginManager() {
   return {
     setEnabledPluginIds: jest.fn(),
@@ -33,21 +38,19 @@ function createMockPluginManager() {
   } as any;
 }
 
-// Create a mock settings object
-function createMockSettings(overrides: Partial<ClaudianSettings> = {}): ClaudianSettings {
+function createMockSettings(overrides: Partial<GeminianSettings> = {}): GeminianSettings {
   return {
     enableBlocklist: true,
     blockedCommands: {
       unix: ['rm -rf'],
       windows: ['Remove-Item -Recurse -Force'],
     },
-    permissions: [],
     permissionMode: 'yolo',
     allowedExportPaths: [],
-    loadUserClaudeSettings: false,
+    loadUserGeminiSettings: false,
     mediaFolder: '',
     systemPrompt: '',
-    model: 'claude-sonnet-4-5',
+    model: 'auto',
     thinkingBudget: 'off',
     titleGenerationModel: '',
     excludedTags: [],
@@ -59,18 +62,16 @@ function createMockSettings(overrides: Partial<ClaudianSettings> = {}): Claudian
       scrollDownKey: 'j',
       focusInputKey: 'i',
     },
-    claudeCliPath: '',
-    show1MModel: false,
-    enableChrome: false,
+    geminiCliPath: '',
     ...overrides,
-  } as ClaudianSettings;
+  } as GeminianSettings;
 }
 
 function createMockPersistentQueryConfig(
   overrides: Partial<PersistentQueryConfig> = {}
 ): PersistentQueryConfig {
   return {
-    model: 'sonnet',
+    model: 'auto',
     thinkingTokens: null,
     permissionMode: 'yolo',
     systemPromptKey: 'key1',
@@ -80,14 +81,11 @@ function createMockPersistentQueryConfig(
     externalContextPaths: [],
     allowedExportPaths: [],
     settingSources: 'project',
-    claudeCliPath: '/mock/claude',
-    show1MModel: false,
-    enableChrome: false,
+    geminiCliPath: '/mock/claude',
     ...overrides,
   };
 }
 
-// Create a base context for tests
 function createMockContext(overrides: Partial<QueryOptionsContext> = {}): QueryOptionsContext {
   return {
     vaultPath: '/test/vault',
@@ -125,9 +123,9 @@ describe('QueryOptionsBuilder', () => {
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
-    it('returns true when claudeCliPath changes', () => {
+    it('returns true when geminiCliPath changes', () => {
       const currentConfig = createMockPersistentQueryConfig();
-      const newConfig = { ...currentConfig, claudeCliPath: '/new/claude' };
+      const newConfig = { ...currentConfig, geminiCliPath: '/new/claude' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
@@ -151,32 +149,8 @@ describe('QueryOptionsBuilder', () => {
 
     it('returns false when only model changes (dynamic update)', () => {
       const currentConfig = createMockPersistentQueryConfig();
-      const newConfig = { ...currentConfig, model: 'claude-opus-4-5' };
+      const newConfig = { ...currentConfig, model: 'pro' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(false);
-    });
-
-    it('returns true when show1MModel changes from false to true', () => {
-      const currentConfig = createMockPersistentQueryConfig();
-      const newConfig = { ...currentConfig, show1MModel: true };
-      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
-    });
-
-    it('returns true when show1MModel changes from true to false', () => {
-      const currentConfig = createMockPersistentQueryConfig({ show1MModel: true });
-      const newConfig = { ...currentConfig, show1MModel: false };
-      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
-    });
-
-    it('returns true when enableChrome changes from false to true', () => {
-      const currentConfig = createMockPersistentQueryConfig();
-      const newConfig = { ...currentConfig, enableChrome: true };
-      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
-    });
-
-    it('returns true when enableChrome changes from true to false', () => {
-      const currentConfig = createMockPersistentQueryConfig({ enableChrome: true });
-      const newConfig = { ...currentConfig, enableChrome: false };
-      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when externalContextPaths changes', () => {
@@ -210,11 +184,11 @@ describe('QueryOptionsBuilder', () => {
       const ctx = createMockContext();
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
-      expect(config.model).toBe('claude-sonnet-4-5');
+      expect(config.model).toBe('auto');
       expect(config.thinkingTokens).toBeNull();
       expect(config.permissionMode).toBe('yolo');
       expect(config.settingSources).toBe('project');
-      expect(config.claudeCliPath).toBe('/mock/claude');
+      expect(config.geminiCliPath).toBe('/mock/claude');
     });
 
     it('includes thinking tokens when budget is set', () => {
@@ -226,18 +200,9 @@ describe('QueryOptionsBuilder', () => {
       expect(config.thinkingTokens).toBe(16000);
     });
 
-    it('includes enableChrome from settings', () => {
+    it('sets settingSources to user,project when loadUserGeminiSettings is true', () => {
       const ctx = createMockContext({
-        settings: createMockSettings({ enableChrome: true }),
-      });
-      const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
-
-      expect(config.enableChrome).toBe(true);
-    });
-
-    it('sets settingSources to user,project when loadUserClaudeSettings is true', () => {
-      const ctx = createMockContext({
-        settings: createMockSettings({ loadUserClaudeSettings: true }),
+        settings: createMockSettings({ loadUserGeminiSettings: true }),
       });
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
@@ -245,306 +210,208 @@ describe('QueryOptionsBuilder', () => {
     });
   });
 
-  describe('buildPersistentQueryOptions', () => {
-    it('sets yolo mode options correctly', () => {
+  describe('buildPersistentCliArgs', () => {
+    it('sets yolo mode approval arg correctly', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.permissionMode).toBe('bypassPermissions');
-      expect(options.allowDangerouslySkipPermissions).toBe(true);
+      expect(result.args).toContain('--approval-mode');
+      expect(result.args[result.args.indexOf('--approval-mode') + 1]).toBe('yolo');
     });
 
-    it('includes canUseTool in yolo mode when provided', () => {
-      const canUseTool = jest.fn();
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        canUseTool,
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.permissionMode).toBe('bypassPermissions');
-      expect(options.canUseTool).toBe(canUseTool);
-    });
-
-    it('sets normal mode options correctly', () => {
-      const canUseTool = jest.fn();
+    it('sets normal mode approval arg correctly', () => {
       const ctx = {
         ...createMockContext({
           settings: createMockSettings({ permissionMode: 'normal' }),
         }),
         abortController: new AbortController(),
         hooks: {},
-        canUseTool,
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.permissionMode).toBe('acceptEdits');
-      // Always true to enable dynamic switching to bypassPermissions without restart
-      expect(options.allowDangerouslySkipPermissions).toBe(true);
-      expect(options.canUseTool).toBe(canUseTool);
+      expect(result.args).toContain('--approval-mode');
+      expect(result.args[result.args.indexOf('--approval-mode') + 1]).toBe('auto_edit');
     });
 
-    it('sets plan mode options correctly', () => {
-      const canUseTool = jest.fn();
+    it('sets plan mode approval arg correctly', () => {
       const ctx = {
         ...createMockContext({
-          settings: createMockSettings({ permissionMode: 'plan' as any }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-        canUseTool,
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.permissionMode).toBe('plan');
-      expect(options.allowDangerouslySkipPermissions).toBe(true);
-      expect(options.canUseTool).toBe(canUseTool);
-    });
-
-    it('sets thinking tokens for high budget', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ thinkingBudget: 'high' }),
+          settings: createMockSettings({ permissionMode: 'plan' }),
         }),
         abortController: new AbortController(),
         hooks: {},
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.maxThinkingTokens).toBe(16000);
+      expect(result.args).toContain('--approval-mode');
+      expect(result.args[result.args.indexOf('--approval-mode') + 1]).toBe('plan');
     });
 
-    it('sets resume session ID when provided', () => {
+    it('includes model in args', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ model: 'pro' }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
+
+      expect(result.args).toContain('--model');
+      expect(result.args[result.args.indexOf('--model') + 1]).toBe('pro');
+    });
+
+    it('includes resume session ID when provided', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
         resume: { sessionId: 'session-123' },
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.resume).toBe('session-123');
+      expect(result.args).toContain('--resume');
+      expect(result.args[result.args.indexOf('--resume') + 1]).toBe('session-123');
     });
 
-    it('does not set betas when show1MModel is disabled', () => {
+    it('does not include resume when not provided', () => {
       const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet', show1MModel: false }),
-        }),
+        ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeUndefined();
+      expect(result.args).not.toContain('--resume');
     });
 
-    it('sets betas for non-1M model when show1MModel is enabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet', show1MModel: true }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeDefined();
-      expect(options.betas).toContain('context-1m-2025-08-07');
-    });
-
-    it('sets extraArgs with chrome flag when enableChrome is enabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ enableChrome: true }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.extraArgs).toBeDefined();
-      expect(options.extraArgs).toEqual({ chrome: null });
-    });
-
-    it('does not set extraArgs when enableChrome is disabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ enableChrome: false }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.extraArgs).toBeUndefined();
-    });
-
-    it('sets additionalDirectories when externalContextPaths provided', () => {
+    it('includes externalContextPaths as --include-directories', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
         externalContextPaths: ['/external/path1', '/external/path2'],
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.additionalDirectories).toEqual(['/external/path1', '/external/path2']);
+      expect(result.args).toContain('--include-directories');
+      expect(result.args[result.args.indexOf('--include-directories') + 1]).toBe('/external/path1,/external/path2');
     });
 
-    it('does not set additionalDirectories when externalContextPaths is empty', () => {
+    it('does not include --include-directories when externalContextPaths is empty', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
         externalContextPaths: [],
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.additionalDirectories).toBeUndefined();
+      expect(result.args).not.toContain('--include-directories');
     });
 
-    it('always enables file checkpointing', () => {
+    it('returns correct cwd and cliPath', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.enableFileCheckpointing).toBe(true);
+      expect(result.cwd).toBe('/test/vault');
+      expect(result.cliPath).toBe('/mock/claude');
     });
 
-    it('sets resumeSessionAt when provided in resume', () => {
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        resume: { sessionId: 'session-123', sessionAt: 'asst-uuid-456' },
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.resumeSessionAt).toBe('asst-uuid-456');
-    });
-
-    it('does not set resumeSessionAt when resume has no sessionAt', () => {
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        resume: { sessionId: 'session-123' },
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.resumeSessionAt).toBeUndefined();
-    });
-
-    it('sets forkSession when resume.fork is true', () => {
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        resume: { sessionId: 'session-123', fork: true },
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.forkSession).toBe(true);
-    });
-
-    it('does not set forkSession when resume has no fork', () => {
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        resume: { sessionId: 'session-123' },
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.forkSession).toBeUndefined();
-    });
-
-    it('sets both forkSession and resumeSessionAt when fork resumes at specific point', () => {
-      const ctx = {
-        ...createMockContext(),
-        abortController: new AbortController(),
-        hooks: {},
-        resume: { sessionId: 'session-123', sessionAt: 'asst-uuid-456', fork: true },
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.resume).toBe('session-123');
-      expect(options.resumeSessionAt).toBe('asst-uuid-456');
-      expect(options.forkSession).toBe(true);
-    });
-
-    it('does not set resume options when no resume provided', () => {
+    it('writes system prompt file and sets GEMINI_SYSTEM_MD in env', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
       };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.resume).toBeUndefined();
-      expect(options.resumeSessionAt).toBeUndefined();
-      expect(options.forkSession).toBeUndefined();
+      expect(fs.mkdirSync).toHaveBeenCalled();
+      expect(fs.writeFileSync).toHaveBeenCalled();
+      expect(result.env.GEMINI_SYSTEM_MD).toBeDefined();
+      expect(result.systemPrompt).toBeDefined();
     });
 
-    it('does not pass plugins or agents via SDK options (SDK auto-discovers from settings)', () => {
-      const ctx = createMockContext();
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions({
-        ...ctx, abortController: new AbortController(), hooks: {},
-      });
-
-      expect(options.plugins).toBeUndefined();
-      expect(options.agents).toBeUndefined();
-    });
-  });
-
-  describe('buildColdStartQueryOptions', () => {
-    it('includes MCP servers when available', () => {
-      const mcpManager = createMockMcpManager();
-      mcpManager.getActiveServers.mockReturnValue({
-        'test-server': { command: 'test', args: [] },
-      });
-
-      const ctx = {
-        ...createMockContext({ mcpManager }),
-        abortController: new AbortController(),
-        hooks: {},
-        mcpMentions: new Set(['test-server']),
-        hasEditorContext: false,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.mcpServers).toBeDefined();
-      expect(options.mcpServers?.['test-server']).toBeDefined();
-    });
-
-    it('uses model override when provided', () => {
+    it('includes custom env in result', () => {
       const ctx = {
         ...createMockContext({
-          settings: createMockSettings({ model: 'claude-sonnet-4-5' }),
+          customEnv: { MY_VAR: 'test' },
         }),
         abortController: new AbortController(),
         hooks: {},
-        modelOverride: 'claude-opus-4-5',
-        hasEditorContext: false,
       };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
 
-      expect(options.model).toBe('claude-opus-4-5');
+      expect(result.env.MY_VAR).toBe('test');
     });
 
-    it('applies tool restriction when allowedTools is provided', () => {
+    it('always includes --output-format stream-json', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildPersistentCliArgs(ctx);
+
+      expect(result.args).toContain('--output-format');
+      expect(result.args[result.args.indexOf('--output-format') + 1]).toBe('stream-json');
+    });
+  });
+
+  describe('buildColdStartCliArgs', () => {
+    it('uses model override when provided', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ model: 'auto' }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+        modelOverride: 'pro',
+        hasEditorContext: false,
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
+
+      expect(result.args).toContain('--model');
+      expect(result.args[result.args.indexOf('--model') + 1]).toBe('pro');
+    });
+
+    it('uses settings model when no override provided', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ model: 'flash' }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
+
+      expect(result.args).toContain('--model');
+      expect(result.args[result.args.indexOf('--model') + 1]).toBe('flash');
+    });
+
+    it('includes prompt in args', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'test prompt');
+
+      expect(result.args).toContain('--prompt');
+      expect(result.args[result.args.indexOf('--prompt') + 1]).toBe('test prompt');
+    });
+
+    it('includes allowedTools as --allowed-tools', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
@@ -552,72 +419,25 @@ describe('QueryOptionsBuilder', () => {
         allowedTools: ['Read', 'Grep'],
         hasEditorContext: false,
       };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
 
-      expect(options.tools).toEqual(['Read', 'Grep']);
+      expect(result.args).toContain('--allowed-tools');
+      expect(result.args[result.args.indexOf('--allowed-tools') + 1]).toBe('Read,Grep');
     });
 
-    it('sets betas when show1MModel is enabled', () => {
+    it('does not include --allowed-tools when not provided', () => {
       const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet', show1MModel: true }),
-        }),
+        ...createMockContext(),
         abortController: new AbortController(),
         hooks: {},
         hasEditorContext: false,
       };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
 
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeDefined();
-      expect(options.betas).toContain('context-1m-2025-08-07');
+      expect(result.args).not.toContain('--allowed-tools');
     });
 
-    it('does not set betas when show1MModel is disabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet' }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-        hasEditorContext: false,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeUndefined();
-    });
-
-    it('sets extraArgs with chrome flag when enableChrome is enabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ enableChrome: true }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-        hasEditorContext: false,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.extraArgs).toBeDefined();
-      expect(options.extraArgs).toEqual({ chrome: null });
-    });
-
-    it('does not set extraArgs when enableChrome is disabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ enableChrome: false }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-        hasEditorContext: false,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.extraArgs).toBeUndefined();
-    });
-
-    it('sets additionalDirectories when externalContextPaths provided', () => {
+    it('includes externalContextPaths as --include-directories', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
@@ -625,12 +445,13 @@ describe('QueryOptionsBuilder', () => {
         hasEditorContext: false,
         externalContextPaths: ['/external/path'],
       };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
 
-      expect(options.additionalDirectories).toEqual(['/external/path']);
+      expect(result.args).toContain('--include-directories');
+      expect(result.args[result.args.indexOf('--include-directories') + 1]).toBe('/external/path');
     });
 
-    it('does not set additionalDirectories when externalContextPaths is empty', () => {
+    it('does not include --include-directories when externalContextPaths is empty', () => {
       const ctx = {
         ...createMockContext(),
         abortController: new AbortController(),
@@ -638,27 +459,64 @@ describe('QueryOptionsBuilder', () => {
         hasEditorContext: false,
         externalContextPaths: [],
       };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
 
-      expect(options.additionalDirectories).toBeUndefined();
+      expect(result.args).not.toContain('--include-directories');
     });
 
-    it('does not pass plugins via SDK options (CLI auto-discovers)', () => {
-      const ctx = createMockContext();
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions({
-        ...ctx, abortController: new AbortController(), hooks: {}, hasEditorContext: false,
-      });
+    it('includes session resume when sessionId provided', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+        sessionId: 'session-abc',
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
 
-      expect(options.plugins).toBeUndefined();
+      expect(result.args).toContain('--resume');
+      expect(result.args[result.args.indexOf('--resume') + 1]).toBe('session-abc');
     });
 
-    it('does not pass agents via SDK options (SDK auto-discovers from settings)', () => {
-      const ctx = createMockContext();
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions({
-        ...ctx, abortController: new AbortController(), hooks: {}, hasEditorContext: false,
-      });
+    it('returns correct cwd and cliPath', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
 
-      expect(options.agents).toBeUndefined();
+      expect(result.cwd).toBe('/test/vault');
+      expect(result.cliPath).toBe('/mock/claude');
+    });
+
+    it('writes system prompt file and sets GEMINI_SYSTEM_MD in env', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
+
+      expect(fs.mkdirSync).toHaveBeenCalled();
+      expect(fs.writeFileSync).toHaveBeenCalled();
+      expect(result.env.GEMINI_SYSTEM_MD).toBeDefined();
+      expect(result.systemPrompt).toBeDefined();
+    });
+
+    it('always includes --output-format stream-json', () => {
+      const ctx = {
+        ...createMockContext(),
+        abortController: new AbortController(),
+        hooks: {},
+        hasEditorContext: false,
+      };
+      const result: GeminiCliArgs = QueryOptionsBuilder.buildColdStartCliArgs(ctx, 'hello');
+
+      expect(result.args).toContain('--output-format');
+      expect(result.args[result.args.indexOf('--output-format') + 1]).toBe('stream-json');
     });
   });
 });

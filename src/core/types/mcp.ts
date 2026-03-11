@@ -1,7 +1,7 @@
 /**
- * Claudian - MCP (Model Context Protocol) type definitions
+ * Geminian - MCP (Model Context Protocol) type definitions
  *
- * Types for configuring and managing MCP servers that extend Claude's capabilities.
+ * Types for configuring and managing MCP servers that extend Gemini's capabilities.
  */
 
 /** Stdio server configuration (local command-line programs). */
@@ -35,8 +35,8 @@ export type McpServerConfig =
 /** Server type identifier. */
 export type McpServerType = 'stdio' | 'sse' | 'http';
 
-/** Extended server configuration with Claudian-specific options. */
-export interface ClaudianMcpServer {
+/** Extended server configuration with Geminian-specific options. */
+export interface GeminianMcpServer {
   /** Unique server name (key in mcpServers record). */
   name: string;
   config: McpServerConfig;
@@ -48,15 +48,15 @@ export interface ClaudianMcpServer {
   description?: string;
 }
 
-/** MCP configuration file format (Claude Code compatible). */
+/** MCP configuration file format (Gemini CLI compatible). */
 export interface McpConfigFile {
   mcpServers: Record<string, McpServerConfig>;
 }
 
-/** Extended config file with Claudian metadata. */
-export interface ClaudianMcpConfigFile extends McpConfigFile {
-  _claudian?: {
-    /** Per-server Claudian-specific settings. */
+/** Extended config file with Geminian metadata. */
+export interface GeminianMcpConfigFile extends McpConfigFile {
+  _geminian?: {
+    /** Per-server Geminian-specific settings. */
     servers: Record<
       string,
       {
@@ -95,7 +95,7 @@ export function isValidMcpServerConfig(obj: unknown): obj is McpServerConfig {
   return false;
 }
 
-export const DEFAULT_MCP_SERVER: Omit<ClaudianMcpServer, 'name' | 'config'> = {
+export const DEFAULT_MCP_SERVER: Omit<GeminianMcpServer, 'name' | 'config'> = {
   enabled: true,
   contextSaving: true,
 };

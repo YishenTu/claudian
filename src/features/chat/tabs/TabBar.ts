@@ -27,7 +27,7 @@ export class TabBar {
 
   /** Builds the tab bar UI. */
   private build(): void {
-    this.containerEl.addClass('claudian-tab-badges');
+    this.containerEl.addClass('geminian-tab-badges');
   }
 
   /**
@@ -47,17 +47,17 @@ export class TabBar {
   /** Renders a single tab badge. */
   private renderBadge(item: TabBarItem): void {
     // Determine state class (priority: active > attention > streaming > idle)
-    let stateClass = 'claudian-tab-badge-idle';
+    let stateClass = 'geminian-tab-badge-idle';
     if (item.isActive) {
-      stateClass = 'claudian-tab-badge-active';
+      stateClass = 'geminian-tab-badge-active';
     } else if (item.needsAttention) {
-      stateClass = 'claudian-tab-badge-attention';
+      stateClass = 'geminian-tab-badge-attention';
     } else if (item.isStreaming) {
-      stateClass = 'claudian-tab-badge-streaming';
+      stateClass = 'geminian-tab-badge-streaming';
     }
 
     const badgeEl = this.containerEl.createDiv({
-      cls: `claudian-tab-badge ${stateClass}`,
+      cls: `geminian-tab-badge ${stateClass}`,
       text: String(item.index),
     });
 
@@ -82,6 +82,6 @@ export class TabBar {
   /** Destroys the tab bar. */
   destroy(): void {
     this.containerEl.empty();
-    this.containerEl.removeClass('claudian-tab-badges');
+    this.containerEl.removeClass('geminian-tab-badges');
   }
 }

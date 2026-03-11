@@ -4,7 +4,6 @@
  * PreToolUse hooks for enforcing blocklist and vault restriction.
  */
 
-import type { HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
 import type { PathAccessType } from '../../utils/path';
@@ -14,6 +13,29 @@ import { isCommandBlocked } from '../security/BlocklistChecker';
 import { getPathFromToolInput } from '../tools/toolInput';
 import { isEditTool, isFileTool, TOOL_BASH } from '../tools/toolNames';
 import { getBashToolBlockedCommands, type PlatformBlockedCommands } from '../types';
+
+/** Hook result returned from PreToolUse hooks. */
+export interface HookResult {
+  continue: boolean;
+  hookSpecificOutput?: {
+    hookEventName: 'PreToolUse';
+    permissionDecision: 'deny' | 'allow';
+    permissionDecisionReason: string;
+  };
+}
+
+/** Hook function signature for PreToolUse hooks. */
+export type HookCallback = (
+  hookInput: { tool_name: string; tool_input: Record<string, unknown> },
+  toolUseId?: string,
+  options?: unknown
+) => Promise<HookResult>;
+
+/** Matcher for PreToolUse hooks (Gemini CLI compatible). */
+export interface HookCallbackMatcher {
+  matcher?: string;
+  hooks: HookCallback[];
+}
 
 export interface BlocklistContext {
   blockedCommands: PlatformBlockedCommands;
@@ -32,11 +54,7 @@ export function createBlocklistHook(getContext: () => BlocklistContext): HookCal
     matcher: TOOL_BASH,
     hooks: [
       async (hookInput) => {
-        const input = hookInput as {
-          tool_name: string;
-          tool_input: { command?: string };
-        };
-        const command = input.tool_input?.command || '';
+        const command = hookInput.tool_input?.command as string || '';
         const context = getContext();
 
         const bashToolCommands = getBashToolBlockedCommands(context.blockedCommands);
@@ -65,16 +83,10 @@ export function createVaultRestrictionHook(context: VaultRestrictionContext): Ho
   return {
     hooks: [
       async (hookInput) => {
-        const input = hookInput as {
-          tool_name: string;
-          tool_input: Record<string, unknown>;
-        };
+        const toolName = hookInput.tool_name;
 
-        const toolName = input.tool_name;
-
-        // Bash: inspect command for paths that escape the vault
         if (toolName === TOOL_BASH) {
-          const command = (input.tool_input?.command as string) || '';
+          const command = (hookInput.tool_input?.command as string) || '';
           const pathCheckContext: PathCheckContext = {
             getPathAccessType: (p) => context.getPathAccessType(p),
           };
@@ -100,17 +112,15 @@ export function createVaultRestrictionHook(context: VaultRestrictionContext): Ho
           return { continue: true };
         }
 
-        const filePath = getPathFromToolInput(toolName, input.tool_input);
+        const filePath = getPathFromToolInput(toolName, hookInput.tool_input);
 
         if (filePath) {
           const accessType = context.getPathAccessType(filePath);
 
-          // Allow full access to vault, readwrite, and context paths
           if (accessType === 'vault' || accessType === 'readwrite' || accessType === 'context') {
             return { continue: true };
           }
 
-          // Export paths are write-only
           if (isEditTool(toolName) && accessType === 'export') {
             return { continue: true };
           }

@@ -1,12 +1,12 @@
 /* External Context Selector */
-.claudian-external-context-selector {
+.geminian-external-context-selector {
   position: relative;
   display: flex;
   align-items: center;
   margin-left: 8px;
 }
 
-.claudian-external-context-icon-wrapper {
+.geminian-external-context-icon-wrapper {
   position: relative;
   display: flex;
   align-items: center;
@@ -14,7 +14,7 @@
   cursor: pointer;
 }
 
-.claudian-external-context-icon {
+.geminian-external-context-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,37 +24,37 @@
   transition: color 0.15s ease;
 }
 
-.claudian-external-context-icon-wrapper:hover .claudian-external-context-icon {
+.geminian-external-context-icon-wrapper:hover .geminian-external-context-icon {
   color: var(--text-normal);
 }
 
-.claudian-external-context-icon.active {
-  color: var(--claudian-brand);
+.geminian-external-context-icon.active {
+  color: var(--geminian-brand);
   animation: external-context-glow 2s ease-in-out infinite;
 }
 
-.claudian-external-context-icon svg {
+.geminian-external-context-icon svg {
   width: 16px;
   height: 16px;
 }
 
-.claudian-external-context-badge {
+.geminian-external-context-badge {
   position: absolute;
   top: 0;
   right: 0;
   font-size: 9px;
   font-weight: 600;
-  color: var(--claudian-brand);
+  color: var(--geminian-brand);
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
 }
 
-.claudian-external-context-badge.visible {
+.geminian-external-context-badge.visible {
   opacity: 1;
 }
 
-.claudian-external-context-dropdown {
+.geminian-external-context-dropdown {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -72,12 +72,12 @@
   z-index: 100;
 }
 
-.claudian-external-context-selector:hover .claudian-external-context-dropdown {
+.geminian-external-context-selector:hover .geminian-external-context-dropdown {
   opacity: 1;
   visibility: visible;
 }
 
-.claudian-external-context-header {
+.geminian-external-context-header {
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -85,12 +85,12 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.claudian-external-context-list {
+.geminian-external-context-list {
   max-height: 200px;
   overflow-y: auto;
 }
 
-.claudian-external-context-empty {
+.geminian-external-context-empty {
   padding: 16px 12px;
   text-align: center;
   color: var(--text-muted);
@@ -98,7 +98,7 @@
   font-style: italic;
 }
 
-.claudian-external-context-item {
+.geminian-external-context-item {
   display: flex;
   align-items: center;
   padding: 8px 12px;
@@ -106,11 +106,11 @@
   border-bottom: 1px solid var(--background-modifier-border-focus);
 }
 
-.claudian-external-context-item:last-child {
+.geminian-external-context-item:last-child {
   border-bottom: none;
 }
 
-.claudian-external-context-text {
+.geminian-external-context-text {
   flex: 1;
   font-size: 12px;
   font-family: var(--font-monospace);
@@ -120,7 +120,7 @@
   white-space: nowrap;
 }
 
-.claudian-external-context-lock {
+.geminian-external-context-lock {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -133,26 +133,26 @@
   transition: all 0.15s ease;
 }
 
-.claudian-external-context-lock:hover {
+.geminian-external-context-lock:hover {
   background: var(--background-modifier-hover);
   opacity: 0.8;
 }
 
-.claudian-external-context-lock.locked {
-  color: var(--claudian-brand);
+.geminian-external-context-lock.locked {
+  color: var(--geminian-brand);
   opacity: 0.9;
 }
 
-.claudian-external-context-lock.locked:hover {
+.geminian-external-context-lock.locked:hover {
   opacity: 1;
 }
 
-.claudian-external-context-lock svg {
+.geminian-external-context-lock svg {
   width: 12px;
   height: 12px;
 }
 
-.claudian-external-context-remove {
+.geminian-external-context-remove {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -165,13 +165,13 @@
   transition: all 0.15s ease;
 }
 
-.claudian-external-context-remove:hover {
-  background: rgba(var(--claudian-error-rgb), 0.15);
-  color: var(--claudian-error);
+.geminian-external-context-remove:hover {
+  background: rgba(var(--geminian-error-rgb), 0.15);
+  color: var(--geminian-error);
   opacity: 1;
 }
 
-.claudian-external-context-remove svg {
+.geminian-external-context-remove svg {
   width: 14px;
   height: 14px;
 }

@@ -1,9 +1,9 @@
 /**
  * Agent load order (earlier sources take precedence for duplicate IDs):
- * 0. Built-in agents: dynamically provided via SDK init message
- * 1. Plugin agents: {installPath}/agents/*.md (namespaced as plugin-name:agent-name)
- * 2. Vault agents: {vaultPath}/.claude/agents/*.md
- * 3. Global agents: ~/.claude/agents/*.md
+ * 0. Built-in agents: dynamically provided via CLI init message
+ * 1. Extension agents: {installPath}/agents/*.md (namespaced as extension-name:agent-name)
+ * 2. Vault agents: {vaultPath}/.gemini/agents/*.md
+ * 3. Global agents: ~/.gemini/agents/*.md
  */
 
 import * as fs from 'fs';
@@ -14,9 +14,9 @@ import type { PluginManager } from '../plugins';
 import type { AgentDefinition } from '../types';
 import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
 
-const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.claude', 'agents');
-const VAULT_AGENTS_DIR = '.claude/agents';
-const PLUGIN_AGENTS_DIR = 'agents';
+const GLOBAL_AGENTS_DIR = path.join(os.homedir(), '.gemini', 'agents');
+const VAULT_AGENTS_DIR = '.gemini/agents';
+const EXTENSION_AGENTS_DIR = 'agents';
 
 // Fallback built-in agent names for before the init message arrives.
 const FALLBACK_BUILTIN_AGENT_NAMES = ['Explore', 'Plan', 'Bash', 'general-purpose'];
@@ -101,7 +101,7 @@ export class AgentManager {
     for (const plugin of this.pluginManager.getPlugins()) {
       if (!plugin.enabled) continue;
 
-      const agentsDir = path.join(plugin.installPath, PLUGIN_AGENTS_DIR);
+      const agentsDir = path.join(plugin.installPath, EXTENSION_AGENTS_DIR);
       if (!fs.existsSync(agentsDir)) continue;
 
       for (const filePath of this.listMarkdownFiles(agentsDir)) {

@@ -18,11 +18,11 @@
 @keyframes external-context-glow {
   0%,
   100% {
-    filter: drop-shadow(0 0 2px rgba(var(--claudian-brand-rgb), 0.4));
+    filter: drop-shadow(0 0 2px rgba(var(--geminian-brand-rgb), 0.4));
   }
 
   50% {
-    filter: drop-shadow(0 0 6px rgba(var(--claudian-brand-rgb), 0.8));
+    filter: drop-shadow(0 0 6px rgba(var(--geminian-brand-rgb), 0.8));
   }
 }
 
@@ -37,7 +37,7 @@
   }
 }
 
-@keyframes claudian-spin {
+@keyframes geminian-spin {
   to {
     transform: rotate(360deg);
   }

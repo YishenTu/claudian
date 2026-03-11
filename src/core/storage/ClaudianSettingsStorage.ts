@@ -1,8 +1,8 @@
 /**
- * ClaudianSettingsStorage - Handles claudian-settings.json read/write.
+ * GeminianSettingsStorage - Handles geminian-settings.json read/write.
  *
- * Manages the .claude/claudian-settings.json file for Claudian-specific settings.
- * These settings are NOT shared with Claude Code CLI.
+ * Manages the .gemini/geminian-settings.json file for Geminian-specific settings.
+ * These settings are NOT shared with Gemini CLI.
  *
  * Includes:
  * - User preferences (userName)
@@ -15,18 +15,18 @@
  * - State (merged from data.json)
  */
 
-import type { ClaudeModel, ClaudianSettings, PlatformBlockedCommands } from '../types';
+import type { GeminianSettings, GeminiModel, PlatformBlockedCommands } from '../types';
 import { DEFAULT_SETTINGS, getDefaultBlockedCommands } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
-/** Path to Claudian settings file relative to vault root. */
-export const CLAUDIAN_SETTINGS_PATH = '.claude/claudian-settings.json';
+/** Path to Geminian settings file relative to vault root. */
+export const GEMINIAN_SETTINGS_PATH = '.gemini/geminian-settings.json';
 
-/** Fields that are loaded separately (slash commands from .claude/commands/). */
+/** Fields that are loaded separately (slash commands from .gemini/commands/). */
 type SeparatelyLoadedFields = 'slashCommands';
 
-/** Settings stored in .claude/claudian-settings.json. */
-export type StoredClaudianSettings = Omit<ClaudianSettings, SeparatelyLoadedFields>;
+/** Settings stored in .gemini/geminian-settings.json. */
+export type StoredGeminianSettings = Omit<GeminianSettings, SeparatelyLoadedFields>;
 
 function normalizeCommandList(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) {
@@ -75,60 +75,60 @@ function normalizeHostnameCliPaths(value: unknown): Record<string, string> {
   return result;
 }
 
-export class ClaudianSettingsStorage {
+export class GeminianSettingsStorage {
   constructor(private adapter: VaultFileAdapter) { }
 
   /**
-  * Load Claudian settings from .claude/claudian-settings.json.
+  * Load Geminian settings from .gemini/geminian-settings.json.
   * Returns default settings if file doesn't exist.
   * Throws if file exists but cannot be read or parsed.
   */
-  async load(): Promise<StoredClaudianSettings> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+  async load(): Promise<StoredGeminianSettings> {
+    if (!(await this.adapter.exists(GEMINIAN_SETTINGS_PATH))) {
       return this.getDefaults();
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(GEMINIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
     const { activeConversationId: _activeConversationId, ...storedWithoutLegacy } = stored;
 
     const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
-    const hostnameCliPaths = normalizeHostnameCliPaths(stored.claudeCliPathsByHost);
-    const legacyCliPath = typeof stored.claudeCliPath === 'string' ? stored.claudeCliPath : '';
+    const hostnameCliPaths = normalizeHostnameCliPaths(stored.geminiCliPathsByHost);
+    const legacyCliPath = typeof stored.geminiCliPath === 'string' ? stored.geminiCliPath : '';
 
     return {
       ...this.getDefaults(),
       ...storedWithoutLegacy,
       blockedCommands,
-      claudeCliPath: legacyCliPath,
-      claudeCliPathsByHost: hostnameCliPaths,
-    } as StoredClaudianSettings;
+      geminiCliPath: legacyCliPath,
+      geminiCliPathsByHost: hostnameCliPaths,
+    } as StoredGeminianSettings;
   }
 
-  async save(settings: StoredClaudianSettings): Promise<void> {
+  async save(settings: StoredGeminianSettings): Promise<void> {
     const content = JSON.stringify(settings, null, 2);
-    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
+    await this.adapter.write(GEMINIAN_SETTINGS_PATH, content);
   }
 
   async exists(): Promise<boolean> {
-    return this.adapter.exists(CLAUDIAN_SETTINGS_PATH);
+    return this.adapter.exists(GEMINIAN_SETTINGS_PATH);
   }
 
-  async update(updates: Partial<StoredClaudianSettings>): Promise<void> {
+  async update(updates: Partial<StoredGeminianSettings>): Promise<void> {
     const current = await this.load();
     await this.save({ ...current, ...updates });
   }
 
   /**
-   * Read legacy activeConversationId from claudian-settings.json, if present.
+   * Read legacy activeConversationId from geminian-settings.json, if present.
    * Used only for one-time migration to tabManagerState.
    */
   async getLegacyActiveConversationId(): Promise<string | null> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+    if (!(await this.adapter.exists(GEMINIAN_SETTINGS_PATH))) {
       return null;
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(GEMINIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
     const value = stored.activeConversationId;
 
@@ -140,14 +140,14 @@ export class ClaudianSettingsStorage {
   }
 
   /**
-   * Remove legacy activeConversationId from claudian-settings.json.
+   * Remove legacy activeConversationId from geminian-settings.json.
    */
   async clearLegacyActiveConversationId(): Promise<void> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+    if (!(await this.adapter.exists(GEMINIAN_SETTINGS_PATH))) {
       return;
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(GEMINIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
 
     if (!('activeConversationId' in stored)) {
@@ -156,14 +156,14 @@ export class ClaudianSettingsStorage {
 
     delete stored.activeConversationId;
     const nextContent = JSON.stringify(stored, null, 2);
-    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, nextContent);
+    await this.adapter.write(GEMINIAN_SETTINGS_PATH, nextContent);
   }
 
-  async setLastModel(model: ClaudeModel, isCustom: boolean): Promise<void> {
+  async setLastModel(model: GeminiModel, isCustom: boolean): Promise<void> {
     if (isCustom) {
       await this.update({ lastCustomModel: model });
     } else {
-      await this.update({ lastClaudeModel: model });
+      await this.update({ lastGeminiModel: model });
     }
   }
 
@@ -174,7 +174,7 @@ export class ClaudianSettingsStorage {
   /**
    * Get default settings (excluding separately loaded fields).
    */
-  private getDefaults(): StoredClaudianSettings {
+  private getDefaults(): StoredGeminianSettings {
     const {
       slashCommands: _,
       ...defaults

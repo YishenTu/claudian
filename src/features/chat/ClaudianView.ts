@@ -1,14 +1,14 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Notice, setIcon } from 'obsidian';
 
-import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
-import type ClaudianPlugin from '../../main';
+import { VIEW_TYPE_GEMINIAN } from '../../core/types';
+import type GeminianPlugin from '../../main';
 import { LOGO_SVG } from './constants';
 import { TabBar, TabManager, updatePlanModeUI } from './tabs';
 import type { TabData, TabId } from './tabs/types';
 
-export class ClaudianView extends ItemView {
-  private plugin: ClaudianPlugin;
+export class GeminianView extends ItemView {
+  private plugin: GeminianPlugin;
 
   // Tab management
   private tabManager: TabManager | null = null;
@@ -38,12 +38,12 @@ export class ClaudianView extends ItemView {
   // Debouncing for tab state persistence
   private pendingPersist: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
+  constructor(leaf: WorkspaceLeaf, plugin: GeminianPlugin) {
     super(leaf);
     this.plugin = plugin;
 
     // Hover Editor compatibility: Define load as an instance method that can't be
-    // overwritten by prototype patching. Hover Editor patches ClaudianView.prototype.load
+    // overwritten by prototype patching. Hover Editor patches GeminianView.prototype.load
     // after our class is defined, but instance methods take precedence over prototype methods.
     const originalLoad = Object.getPrototypeOf(this).load.bind(this);
     Object.defineProperty(this, 'load', {
@@ -66,11 +66,11 @@ export class ClaudianView extends ItemView {
   }
 
   getViewType(): string {
-    return VIEW_TYPE_CLAUDIAN;
+    return VIEW_TYPE_GEMINIAN;
   }
 
   getDisplayText(): string {
-    return 'Claudian';
+    return 'Geminian';
   }
 
   getIcon(): string {
@@ -114,17 +114,17 @@ export class ClaudianView extends ItemView {
 
     this.viewContainerEl = container;
     this.viewContainerEl.empty();
-    this.viewContainerEl.addClass('claudian-container');
+    this.viewContainerEl.addClass('geminian-container');
 
     // Build header (logo only, tab bar and actions moved to nav row)
-    const header = this.viewContainerEl.createDiv({ cls: 'claudian-header' });
+    const header = this.viewContainerEl.createDiv({ cls: 'geminian-header' });
     this.buildHeader(header);
 
     // Build nav row content (tab badges + header actions)
     this.navRowContent = this.buildNavRowContent();
 
     // Tab content container (TabManager will populate this)
-    this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
+    this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'geminian-tab-content-container' });
 
     // Initialize TabManager
     this.tabManager = new TabManager(
@@ -200,10 +200,10 @@ export class ClaudianView extends ItemView {
     this.headerEl = header;
 
     // Title slot container (logo + title or tabs)
-    this.titleSlotEl = header.createDiv({ cls: 'claudian-title-slot' });
+    this.titleSlotEl = header.createDiv({ cls: 'geminian-title-slot' });
 
     // Logo (hidden when 2+ tabs)
-    this.logoEl = this.titleSlotEl.createSpan({ cls: 'claudian-logo' });
+    this.logoEl = this.titleSlotEl.createSpan({ cls: 'geminian-logo' });
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', LOGO_SVG.viewBox);
     svg.setAttribute('width', LOGO_SVG.width);
@@ -216,10 +216,10 @@ export class ClaudianView extends ItemView {
     this.logoEl.appendChild(svg);
 
     // Title text (hidden in header mode when 2+ tabs)
-    this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
+    this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Geminian', cls: 'geminian-title-text' });
 
     // Header actions container (for header mode - initially hidden)
-    this.headerActionsEl = header.createDiv({ cls: 'claudian-header-actions claudian-header-actions-slot' });
+    this.headerActionsEl = header.createDiv({ cls: 'geminian-header-actions geminian-header-actions-slot' });
     this.headerActionsEl.style.display = 'none';
   }
 
@@ -233,7 +233,7 @@ export class ClaudianView extends ItemView {
 
     // Tab badges (left side in nav row, or in title slot for header mode)
     this.tabBarContainerEl = document.createElement('div');
-    this.tabBarContainerEl.className = 'claudian-tab-bar-container';
+    this.tabBarContainerEl.className = 'geminian-tab-bar-container';
     this.tabBar = new TabBar(this.tabBarContainerEl, {
       onTabClick: (tabId) => this.handleTabClick(tabId),
       onTabClose: (tabId) => this.handleTabClose(tabId),
@@ -243,10 +243,10 @@ export class ClaudianView extends ItemView {
 
     // Header actions (right side)
     this.headerActionsContent = document.createElement('div');
-    this.headerActionsContent.className = 'claudian-header-actions';
+    this.headerActionsContent.className = 'geminian-header-actions';
 
     // New tab button (plus icon)
-    const newTabBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn claudian-new-tab-btn' });
+    const newTabBtn = this.headerActionsContent.createDiv({ cls: 'geminian-header-btn geminian-new-tab-btn' });
     setIcon(newTabBtn, 'square-plus');
     newTabBtn.setAttribute('aria-label', 'New tab');
     newTabBtn.addEventListener('click', async () => {
@@ -254,7 +254,7 @@ export class ClaudianView extends ItemView {
     });
 
     // New conversation button (square-pen icon - new conversation in current tab)
-    const newBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn' });
+    const newBtn = this.headerActionsContent.createDiv({ cls: 'geminian-header-btn' });
     setIcon(newBtn, 'square-pen');
     newBtn.setAttribute('aria-label', 'New conversation');
     newBtn.addEventListener('click', async () => {
@@ -263,12 +263,12 @@ export class ClaudianView extends ItemView {
     });
 
     // History dropdown
-    const historyContainer = this.headerActionsContent.createDiv({ cls: 'claudian-history-container' });
-    const historyBtn = historyContainer.createDiv({ cls: 'claudian-header-btn' });
+    const historyContainer = this.headerActionsContent.createDiv({ cls: 'geminian-history-container' });
+    const historyBtn = historyContainer.createDiv({ cls: 'geminian-header-btn' });
     setIcon(historyBtn, 'history');
     historyBtn.setAttribute('aria-label', 'Chat history');
 
-    this.historyDropdown = historyContainer.createDiv({ cls: 'claudian-history-menu' });
+    this.historyDropdown = historyContainer.createDiv({ cls: 'geminian-history-menu' });
 
     historyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -329,7 +329,7 @@ export class ClaudianView extends ItemView {
     const isHeaderMode = this.plugin.settings.tabBarPosition === 'header';
 
     // Update container class for CSS styling
-    this.viewContainerEl.toggleClass('claudian-container--header-mode', isHeaderMode);
+    this.viewContainerEl.toggleClass('geminian-container--header-mode', isHeaderMode);
 
     // Move nav content to appropriate location
     this.updateNavRowLocation();
@@ -489,7 +489,7 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // View-scoped escape to cancel streaming (only when Claudian has focus)
+    // View-scoped escape to cancel streaming (only when Geminian has focus)
     this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.isComposing) {
         const activeTab = this.tabManager?.getActiveTab();

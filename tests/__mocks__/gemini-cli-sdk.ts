@@ -1,4 +1,4 @@
-// Mock for @anthropic-ai/claude-agent-sdk
+// Mock for Gemini CLI SDK (used by tests that mock SDK behavior)
 
 export interface HookCallbackMatcher {
   matcher?: string;
@@ -36,14 +36,14 @@ export interface Options {
   allowedTools?: string[];
   disallowedTools?: string[];
   abortController?: AbortController;
-  pathToClaudeCodeExecutable?: string;
+  pathToGeminiCliExecutable?: string;
   resume?: string;
   maxThinkingTokens?: number;
   canUseTool?: CanUseTool;
   systemPrompt?: string | { content: string; cacheControl?: { type: string } };
   mcpServers?: Record<string, unknown>;
   settingSources?: ('user' | 'project' | 'local')[];
-  spawnClaudeCodeProcess?: (options: SpawnOptions) => SpawnedProcess;
+  spawnGeminiCodeProcess?: (options: SpawnOptions) => SpawnedProcess;
   hooks?: {
     PreToolUse?: HookCallbackMatcher[];
   };
@@ -102,7 +102,7 @@ export type PermissionResult =
 // Default mock messages for testing
 const mockMessages = [
   { type: 'system', subtype: 'init', session_id: 'test-session-123' },
-  { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello, I am Claude!' }] } },
+  { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello, I am Gemini!' }] } },
   { type: 'result', subtype: 'success', result: 'completed' },
 ];
 

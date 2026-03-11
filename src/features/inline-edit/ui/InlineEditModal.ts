@@ -4,7 +4,7 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Editor, MarkdownView, TFile } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import type ClaudianPlugin from '../../../main';
+import type GeminianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
@@ -56,20 +56,20 @@ class DiffWidget extends WidgetType {
   }
   toDOM(): HTMLElement {
     const span = document.createElement('span');
-    span.className = 'claudian-inline-diff-replace';
+    span.className = 'geminian-inline-diff-replace';
     span.innerHTML = this.diffHtml;
 
     const btns = document.createElement('span');
-    btns.className = 'claudian-inline-diff-buttons';
+    btns.className = 'geminian-inline-diff-buttons';
 
     const rejectBtn = document.createElement('button');
-    rejectBtn.className = 'claudian-inline-diff-btn reject';
+    rejectBtn.className = 'geminian-inline-diff-btn reject';
     rejectBtn.textContent = '✕';
     rejectBtn.title = 'Reject (Esc)';
     rejectBtn.onclick = () => this.controller.reject();
 
     const acceptBtn = document.createElement('button');
-    acceptBtn.className = 'claudian-inline-diff-btn accept';
+    acceptBtn.className = 'geminian-inline-diff-btn accept';
     acceptBtn.textContent = '✓';
     acceptBtn.title = 'Accept (Enter)';
     acceptBtn.onclick = () => this.controller.accept();
@@ -190,8 +190,8 @@ function diffToHtml(ops: DiffOp[]): string {
   return ops.map(op => {
     const escaped = escapeHtml(op.text);
     switch (op.type) {
-      case 'delete': return `<span class="claudian-diff-del">${escaped}</span>`;
-      case 'insert': return `<span class="claudian-diff-ins">${escaped}</span>`;
+      case 'delete': return `<span class="geminian-diff-del">${escaped}</span>`;
+      case 'insert': return `<span class="geminian-diff-ins">${escaped}</span>`;
       default: return escaped;
     }
   }).join('');
@@ -204,7 +204,7 @@ export class InlineEditModal {
 
   constructor(
     private app: App,
-    private plugin: ClaudianPlugin,
+    private plugin: GeminianPlugin,
     private editor: Editor,
     private view: MarkdownView,
     private editContext: InlineEditContext,
@@ -275,7 +275,7 @@ class InlineEditController {
 
   constructor(
     private app: App,
-    private plugin: ClaudianPlugin,
+    private plugin: GeminianPlugin,
     private editorView: EditorView,
     private editor: Editor,
     editContext: InlineEditContext,
@@ -386,27 +386,27 @@ class InlineEditController {
 
   createInputDOM(): HTMLElement {
     const container = document.createElement('div');
-    container.className = 'claudian-inline-input-container';
+    container.className = 'geminian-inline-input-container';
     this.containerEl = container;
 
     this.agentReplyEl = document.createElement('div');
-    this.agentReplyEl.className = 'claudian-inline-agent-reply';
+    this.agentReplyEl.className = 'geminian-inline-agent-reply';
     this.agentReplyEl.style.display = 'none';
     container.appendChild(this.agentReplyEl);
 
     const inputWrap = document.createElement('div');
-    inputWrap.className = 'claudian-inline-input-wrap';
+    inputWrap.className = 'geminian-inline-input-wrap';
     container.appendChild(inputWrap);
 
     this.inputEl = document.createElement('input');
     this.inputEl.type = 'text';
-    this.inputEl.className = 'claudian-inline-input';
+    this.inputEl.className = 'geminian-inline-input';
     this.inputEl.placeholder = this.mode === 'cursor' ? 'Insert instructions...' : 'Edit instructions...';
     this.inputEl.spellcheck = false;
     inputWrap.appendChild(this.inputEl);
 
     this.spinnerEl = document.createElement('div');
-    this.spinnerEl.className = 'claudian-inline-spinner';
+    this.spinnerEl.className = 'geminian-inline-spinner';
     this.spinnerEl.style.display = 'none';
     inputWrap.appendChild(this.spinnerEl);
 
@@ -571,7 +571,7 @@ class InlineEditController {
     this.insertedText = trimmedText;
 
     const escaped = escapeHtml(trimmedText);
-    const diffHtml = `<span class="claudian-diff-ins">${escaped}</span>`;
+    const diffHtml = `<span class="geminian-diff-ins">${escaped}</span>`;
 
     this.editorView.dispatch({
       effects: showInsertion.of({

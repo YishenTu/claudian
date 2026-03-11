@@ -17,13 +17,13 @@ export function renderTodoItems(
   container.empty();
 
   for (const todo of todos) {
-    const item = container.createDiv({ cls: `claudian-todo-item claudian-todo-${todo.status}` });
+    const item = container.createDiv({ cls: `geminian-todo-item geminian-todo-${todo.status}` });
 
-    const icon = item.createSpan({ cls: 'claudian-todo-status-icon' });
+    const icon = item.createSpan({ cls: 'geminian-todo-status-icon' });
     icon.setAttribute('aria-hidden', 'true');
     setIcon(icon, getTodoStatusIcon(todo.status));
 
-    const text = item.createSpan({ cls: 'claudian-todo-text' });
+    const text = item.createSpan({ cls: 'geminian-todo-text' });
     text.setText(getTodoDisplayText(todo));
   }
 }

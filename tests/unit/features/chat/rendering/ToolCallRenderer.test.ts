@@ -108,7 +108,7 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
-      const answerEls = toolEl.querySelectorAll('.claudian-ask-review-a-text');
+      const answerEls = toolEl.querySelectorAll('.geminian-ask-review-a-text');
 
       expect(answerEls).toHaveLength(1);
       expect(answerEls[0].textContent).toBe('Blue');
@@ -128,7 +128,7 @@ describe('ToolCallRenderer', () => {
       toolCall.result = 'Success';
       updateToolCallResult('tool-1', toolCall, toolCallElements);
 
-      const statusEl = toolEl.querySelector('.claudian-tool-status');
+      const statusEl = toolEl.querySelector('.geminian-tool-status');
       expect(statusEl?.hasClass('status-completed')).toBe(true);
     });
 
@@ -147,7 +147,7 @@ describe('ToolCallRenderer', () => {
 
       updateToolCallResult('ask-1', toolCall, toolCallElements);
 
-      const resultText = toolEl.querySelector('.claudian-tool-result-text');
+      const resultText = toolEl.querySelector('.geminian-tool-result-text');
       expect(resultText?.textContent).toBe('Answer submitted successfully.');
     });
   });
@@ -390,8 +390,8 @@ describe('ToolCallRenderer', () => {
         ],
       };
       renderTodoWriteResult(container as unknown as HTMLElement, input);
-      expect(container.hasClass('claudian-todo-panel-content')).toBe(true);
-      expect(container.hasClass('claudian-todo-list-container')).toBe(true);
+      expect(container.hasClass('geminian-todo-panel-content')).toBe(true);
+      expect(container.hasClass('geminian-todo-list-container')).toBe(true);
     });
 
     it('should show fallback text when no todos array', () => {
@@ -431,7 +431,7 @@ describe('ToolCallRenderer', () => {
       };
       updateToolCallResult('todo-1', toolCall, toolCallElements);
 
-      const statusEl = parentEl.querySelector('.claudian-tool-status');
+      const statusEl = parentEl.querySelector('.geminian-tool-status');
       expect(statusEl?.hasClass('status-completed')).toBe(true);
     });
 

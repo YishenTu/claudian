@@ -1,12 +1,12 @@
-/* Slash Command Settings — unique rules only (shared layout in base.css .claudian-sp-*) */
+/* Slash Command Settings — unique rules only (shared layout in base.css .geminian-sp-*) */
 
-.claudian-slash-item-hint {
+.geminian-slash-item-hint {
   font-size: 12px;
   color: var(--text-muted);
   font-style: italic;
 }
 
-.claudian-slash-item-badge {
+.geminian-slash-item-badge {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--background-modifier-border);

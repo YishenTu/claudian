@@ -1,9 +1,9 @@
 import {
-  CLAUDIAN_ONLY_FIELDS,
   convertEnvObjectToString,
   DEPRECATED_FIELDS,
+  GEMINIAN_ONLY_FIELDS as CLAUDIAN_ONLY_FIELDS,
   mergeEnvironmentVariables,
-  MIGRATABLE_CLAUDIAN_FIELDS,
+  MIGRATABLE_GEMINIAN_FIELDS as MIGRATABLE_CLAUDIAN_FIELDS,
 } from '@/core/storage/migrationConstants';
 
 describe('migrationConstants', () => {
@@ -44,9 +44,9 @@ describe('migrationConstants', () => {
     });
 
     it('contains all expected CLI path fields', () => {
-      expect(CLAUDIAN_ONLY_FIELDS.has('claudeCliPath')).toBe(true);
-      expect(CLAUDIAN_ONLY_FIELDS.has('claudeCliPaths')).toBe(true);
-      expect(CLAUDIAN_ONLY_FIELDS.has('loadUserClaudeSettings')).toBe(true);
+      expect(CLAUDIAN_ONLY_FIELDS.has('geminiCliPath')).toBe(true);
+      expect(CLAUDIAN_ONLY_FIELDS.has('geminiCliPaths')).toBe(true);
+      expect(CLAUDIAN_ONLY_FIELDS.has('loadUserGeminiSettings')).toBe(true);
     });
 
     it('contains deprecated fields', () => {
@@ -423,16 +423,16 @@ NEW_FEATURE=true`;
       expect(merged).not.toContain('API_KEY=old');
     });
 
-    it('handles real-world Claude Code environment migration', () => {
+    it('handles real-world Gemini CLI environment migration', () => {
       const ccEnv = {
         ANTHROPIC_API_KEY: 'sk-ant-api-key',
         DEFAULT_MODEL: 'claude-sonnet-4-5',
         THINKING_BUDGET: '20000',
       };
-      const claudianEnv = 'CLAUDE_CLI_PATH=/usr/local/bin/claude\nENABLE_FEATURE=true';
+      const geminianEnv = 'CLAUDE_CLI_PATH=/usr/local/bin/claude\nENABLE_FEATURE=true';
 
       const ccEnvStr = convertEnvObjectToString(ccEnv);
-      const merged = mergeEnvironmentVariables(ccEnvStr, claudianEnv);
+      const merged = mergeEnvironmentVariables(ccEnvStr, geminianEnv);
 
       expect(merged).toContain('ANTHROPIC_API_KEY=sk-ant-api-key');
       expect(merged).toContain('DEFAULT_MODEL=claude-sonnet-4-5');

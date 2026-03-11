@@ -1,5 +1,5 @@
 /**
- * Claudian - Path Utilities
+ * Geminian - Path Utilities
  *
  * Path resolution, validation, and access control for vault operations.
  */
@@ -105,7 +105,7 @@ export function expandHomePath(p: string): string {
 }
 
 // ============================================
-// Claude CLI Detection
+// Gemini CLI Detection
 // ============================================
 
 function stripSurroundingQuotes(value: string): string {
@@ -172,7 +172,7 @@ function isExistingFile(filePath: string): boolean {
 }
 
 function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | null {
-  const directCandidate = path.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+  const directCandidate = path.join(entry, 'node_modules', '@google', 'gemini-cli', 'gemini.js');
   if (isExistingFile(directCandidate)) {
     return directCandidate;
   }
@@ -181,8 +181,8 @@ function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | 
   if (baseName === 'bin') {
     const prefix = path.dirname(entry);
     const candidate = isWindows
-      ? path.join(prefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      : path.join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+      ? path.join(prefix, 'node_modules', '@google', 'gemini-cli', 'gemini.js')
+      : path.join(prefix, 'lib', 'node_modules', '@google', 'gemini-cli', 'gemini.js');
     if (isExistingFile(candidate)) {
       return candidate;
     }
@@ -201,7 +201,7 @@ function resolveCliJsFromPathEntries(entries: string[], isWindows: boolean): str
   return null;
 }
 
-function resolveClaudeFromPathEntries(
+function resolveGeminiFromPathEntries(
   entries: string[],
   isWindows: boolean
 ): string | null {
@@ -210,11 +210,11 @@ function resolveClaudeFromPathEntries(
   }
 
   if (!isWindows) {
-    const unixCandidate = findFirstExistingPath(entries, ['claude']);
+    const unixCandidate = findFirstExistingPath(entries, ['gemini']);
     return unixCandidate;
   }
 
-  const exeCandidate = findFirstExistingPath(entries, ['claude.exe', 'claude']);
+  const exeCandidate = findFirstExistingPath(entries, ['gemini.exe', 'gemini']);
   if (exeCandidate) {
     return exeCandidate;
   }
@@ -251,13 +251,13 @@ function getNpmCliJsPaths(): string[] {
 
   if (isWindows) {
     cliJsPaths.push(
-      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@google', 'gemini-cli', 'gemini.js')
     );
 
     const npmPrefix = getNpmGlobalPrefix();
     if (npmPrefix) {
       cliJsPaths.push(
-        path.join(npmPrefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+        path.join(npmPrefix, 'node_modules', '@google', 'gemini-cli', 'gemini.js')
       );
     }
 
@@ -265,23 +265,23 @@ function getNpmCliJsPaths(): string[] {
     const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
     cliJsPaths.push(
-      path.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      path.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      path.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@google', 'gemini-cli', 'gemini.js'),
+      path.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@google', 'gemini-cli', 'gemini.js')
     );
 
     cliJsPaths.push(
-      path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@google', 'gemini-cli', 'gemini.js')
     );
   } else {
     cliJsPaths.push(
-      path.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-      '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'
+      path.join(homeDir, '.npm-global', 'lib', 'node_modules', '@google', 'gemini-cli', 'gemini.js'),
+      '/usr/local/lib/node_modules/@google/gemini-cli/gemini.js',
+      '/usr/lib/node_modules/@google/gemini-cli/gemini.js'
     );
 
     if (process.env.npm_config_prefix) {
       cliJsPaths.push(
-        path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+        path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@google', 'gemini-cli', 'gemini.js')
       );
     }
   }
@@ -361,14 +361,14 @@ export function resolveNvmDefaultBin(home: string): string | null {
   return null;
 }
 
-export function findClaudeCLIPath(pathValue?: string): string | null {
+export function findGeminiCLIPath(pathValue?: string): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
 
   const customEntries = dedupePaths(parsePathEntries(pathValue));
 
   if (customEntries.length > 0) {
-    const customResolution = resolveClaudeFromPathEntries(customEntries, isWindows);
+    const customResolution = resolveGeminiFromPathEntries(customEntries, isWindows);
     if (customResolution) {
       return customResolution;
     }
@@ -378,11 +378,10 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   // because it requires shell: true and breaks SDK stdio streaming.
   if (isWindows) {
     const exePaths: string[] = [
-      path.join(homeDir, '.claude', 'local', 'claude.exe'),
-      path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
-      path.join(homeDir, '.local', 'bin', 'claude.exe'),
+      path.join(homeDir, '.local', 'bin', 'gemini.exe'),
+      path.join(homeDir, 'AppData', 'Local', 'Programs', 'gemini', 'gemini.exe'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'gemini', 'gemini.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'gemini', 'gemini.exe'),
     ];
 
     for (const p of exePaths) {
@@ -401,26 +400,23 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   }
 
   const commonPaths: string[] = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    path.join(homeDir, '.volta', 'bin', 'claude'),
-    path.join(homeDir, '.asdf', 'shims', 'claude'),
-    path.join(homeDir, '.asdf', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-    path.join(homeDir, '.npm-global', 'bin', 'claude'),
+    '/opt/homebrew/bin/gemini',
+    '/usr/local/bin/gemini',
+    path.join(homeDir, '.local', 'bin', 'gemini'),
+    path.join(homeDir, '.volta', 'bin', 'gemini'),
+    path.join(homeDir, '.asdf', 'shims', 'gemini'),
+    path.join(homeDir, '.npm-global', 'bin', 'gemini'),
   ];
 
   const npmPrefix = getNpmGlobalPrefix();
   if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
+    commonPaths.push(path.join(npmPrefix, 'bin', 'gemini'));
   }
 
   // NVM: resolve default version bin when NVM_BIN env var is not available (GUI apps)
   const nvmBin = resolveNvmDefaultBin(homeDir);
   if (nvmBin) {
-    commonPaths.push(path.join(nvmBin, 'claude'));
+    commonPaths.push(path.join(nvmBin, 'gemini'));
   }
 
   for (const p of commonPaths) {
@@ -440,7 +436,7 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
 
   const envEntries = dedupePaths(parsePathEntries(getEnvValue('PATH')));
   if (envEntries.length > 0) {
-    const envResolution = resolveClaudeFromPathEntries(envEntries, isWindows);
+    const envResolution = resolveGeminiFromPathEntries(envEntries, isWindows);
     if (envResolution) {
       return envResolution;
     }
@@ -694,24 +690,24 @@ export function getPathAccessType(
     return 'vault';
   }
 
-  // Allow access to specific safe subdirectories under ~/.claude/
-  const claudeDir = normalizePathForComparison(resolveRealPath(path.join(os.homedir(), '.claude')));
-  if (resolvedCandidate === claudeDir || resolvedCandidate.startsWith(claudeDir + '/')) {
+  // Allow access to specific safe subdirectories under ~/.gemini/
+  const geminiDir = normalizePathForComparison(resolveRealPath(path.join(os.homedir(), '.gemini')));
+  if (resolvedCandidate === geminiDir || resolvedCandidate.startsWith(geminiDir + '/')) {
     const safeSubdirs = ['sessions', 'projects', 'commands', 'agents', 'skills', 'plans'];
-    const safeFiles = ['mcp.json', 'settings.json', 'settings.local.json', 'claudian-settings.json'];
-    const relativeToClaude = resolvedCandidate.slice(claudeDir.length + 1);
+    const safeFiles = ['mcp.json', 'settings.json', 'settings.local.json', 'geminian-settings.json'];
+    const relativeToGemini = resolvedCandidate.slice(geminiDir.length + 1);
 
-    if (!relativeToClaude) {
-      // ~/.claude/ itself — read-only
+    if (!relativeToGemini) {
+      // ~/.gemini/ itself — read-only
       return 'context';
     }
 
-    const topSegment = relativeToClaude.split('/')[0];
+    const topSegment = relativeToGemini.split('/')[0];
     if (safeSubdirs.includes(topSegment) || safeFiles.includes(topSegment)) {
       return 'vault';
     }
 
-    // Other paths under ~/.claude/ are read-only
+    // Other paths under ~/.gemini/ are read-only
     return 'context';
   }
 

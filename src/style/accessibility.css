@@ -1,39 +1,39 @@
 /* Accessibility - Focus Visible Styles */
 
 /* outline + offset + border-radius */
-.claudian-tool-header:focus-visible,
-.claudian-thinking-header:focus-visible,
-.claudian-subagent-header:focus-visible,
-.claudian-header-btn:focus-visible,
-.claudian-model-btn:focus-visible,
-.claudian-thinking-current:focus-visible {
+.geminian-tool-header:focus-visible,
+.geminian-thinking-header:focus-visible,
+.geminian-subagent-header:focus-visible,
+.geminian-header-btn:focus-visible,
+.geminian-model-btn:focus-visible,
+.geminian-thinking-current:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 /* outline + offset only */
-.claudian-action-btn:focus-visible,
-.claudian-toggle-switch:focus-visible,
-.claudian-file-chip:focus-visible,
-.claudian-image-chip:focus-visible,
-.claudian-file-chip-remove:focus-visible,
-.claudian-image-remove:focus-visible,
-.claudian-image-modal-close:focus-visible,
-.claudian-approved-remove-btn:focus-visible,
-.claudian-save-env-btn:focus-visible,
-.claudian-restore-snippet-btn:focus-visible,
-.claudian-edit-snippet-btn:focus-visible,
-.claudian-delete-snippet-btn:focus-visible,
-.claudian-cancel-btn:focus-visible,
-.claudian-save-btn:focus-visible,
-.claudian-code-lang-label:focus-visible {
+.geminian-action-btn:focus-visible,
+.geminian-toggle-switch:focus-visible,
+.geminian-file-chip:focus-visible,
+.geminian-image-chip:focus-visible,
+.geminian-file-chip-remove:focus-visible,
+.geminian-image-remove:focus-visible,
+.geminian-image-modal-close:focus-visible,
+.geminian-approved-remove-btn:focus-visible,
+.geminian-save-env-btn:focus-visible,
+.geminian-restore-snippet-btn:focus-visible,
+.geminian-edit-snippet-btn:focus-visible,
+.geminian-delete-snippet-btn:focus-visible,
+.geminian-cancel-btn:focus-visible,
+.geminian-save-btn:focus-visible,
+.geminian-code-lang-label:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
 
 /* outline + negative offset + border-radius */
-.claudian-history-item-content:focus-visible {
+.geminian-history-item-content:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
   border-radius: 4px;

@@ -32,7 +32,7 @@ describe('BangBashModeManager', () => {
     expect(handled).toBe(true);
     expect(e.preventDefault).toHaveBeenCalled();
     expect(manager.isActive()).toBe(true);
-    expect(wrapper.addClass).toHaveBeenCalledWith('claudian-input-bang-bash-mode');
+    expect(wrapper.addClass).toHaveBeenCalledWith('geminian-input-bang-bash-mode');
   });
 
   it('should NOT enter bash mode on ! keystroke when input has content', () => {
@@ -240,7 +240,7 @@ describe('BangBashModeManager', () => {
 
     manager.destroy();
 
-    expect(wrapper.removeClass).toHaveBeenCalledWith('claudian-input-bang-bash-mode');
+    expect(wrapper.removeClass).toHaveBeenCalledWith('geminian-input-bang-bash-mode');
     expect(inputEl.placeholder).toBe('Ask...');
   });
 

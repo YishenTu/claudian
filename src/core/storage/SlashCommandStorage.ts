@@ -2,7 +2,7 @@ import { parsedToSlashCommand, parseSlashCommandContent, serializeCommand } from
 import type { SlashCommand } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
-export const COMMANDS_PATH = '.claude/commands';
+export const COMMANDS_PATH = '.gemini/commands';
 
 export class SlashCommandStorage {
   constructor(private adapter: VaultFileAdapter) {}

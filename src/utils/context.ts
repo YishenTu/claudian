@@ -1,5 +1,5 @@
 /**
- * Claudian - Context Utilities
+ * Geminian - Context Utilities
  *
  * Current note and context file formatting for prompts.
  */

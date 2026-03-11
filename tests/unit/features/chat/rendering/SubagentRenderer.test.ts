@@ -338,7 +338,7 @@ describe('Async Subagent Renderer', () => {
 
     expect(state.labelEl.textContent).toBe('Background job');
     expect(state.statusTextEl.textContent).toBe('Running in background');
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-prompt-text')[0];
+    const contentText = getTextByClass(state.contentEl as any, 'geminian-subagent-prompt-text')[0];
     expect(contentText).toContain('Do the work');
     expect((state.wrapperEl as any).getClasses()).toEqual(expect.arrayContaining(['running', 'async']));
   });
@@ -372,7 +372,7 @@ describe('Async Subagent Renderer', () => {
     expect(state.countEl.textContent).toBe('2 tool uses');
     expect(state.statusTextEl.textContent).toBe('');
     expect((state.wrapperEl as any).hasClass('done')).toBe(true);
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const contentText = getTextByClass(state.contentEl as any, 'geminian-subagent-result-output')[0];
     expect(contentText).toBe('all done');
     const lastIcon = (setIcon as jest.Mock).mock.calls.pop();
     expect(lastIcon?.[1]).toBe('check');
@@ -387,7 +387,7 @@ describe('Async Subagent Renderer', () => {
 
     expect(state.statusTextEl.textContent).toBe('Error');
     expect((state.wrapperEl as any).hasClass('error')).toBe(true);
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const contentText = getTextByClass(state.contentEl as any, 'geminian-subagent-result-output')[0];
     expect(contentText).toBe('failure happened');
     const lastIcon = (setIcon as jest.Mock).mock.calls.pop();
     expect(lastIcon?.[1]).toBe('x');
@@ -400,7 +400,7 @@ describe('Async Subagent Renderer', () => {
 
     expect(state.statusTextEl.textContent).toBe('Orphaned');
     expect((state.wrapperEl as any).hasClass('orphaned')).toBe(true);
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const contentText = getTextByClass(state.contentEl as any, 'geminian-subagent-result-output')[0];
     expect(contentText).toContain('Conversation ended before task completed');
   });
 
@@ -419,7 +419,7 @@ describe('Async Subagent Renderer', () => {
       const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
 
       expect(wrapperEl).toBeDefined();
-      expect((wrapperEl as any).hasClass('claudian-subagent-list')).toBe(true);
+      expect((wrapperEl as any).hasClass('geminian-subagent-list')).toBe(true);
     });
 
     it('shows tool-use count in async header', () => {
@@ -451,7 +451,7 @@ describe('Async Subagent Renderer', () => {
       };
 
       const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
-      const countText = getTextByClass(wrapperEl as any, 'claudian-subagent-count')[0];
+      const countText = getTextByClass(wrapperEl as any, 'geminian-subagent-count')[0];
       expect(countText).toBe('2 tool uses');
     });
 
@@ -549,7 +549,7 @@ describe('Async Subagent Renderer', () => {
       const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
 
       expect((wrapperEl as any).hasClass('error')).toBe(true);
-      const contentText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+      const contentText = getTextByClass(wrapperEl as any, 'geminian-subagent-result-output')[0];
       expect(contentText).toBe('ERROR');
     });
 
@@ -569,7 +569,7 @@ describe('Async Subagent Renderer', () => {
 
       expect((wrapperEl as any).hasClass('error')).toBe(true);
       expect((wrapperEl as any).hasClass('orphaned')).toBe(true);
-      const contentText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+      const contentText = getTextByClass(wrapperEl as any, 'geminian-subagent-result-output')[0];
       expect(contentText).toContain('Conversation ended before task completed');
       // Should use alert-circle icon
       expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'alert-circle');
@@ -590,7 +590,7 @@ describe('Async Subagent Renderer', () => {
       const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
 
       expect((wrapperEl as any).hasClass('running')).toBe(true);
-      const contentText = getTextByClass(wrapperEl as any, 'claudian-subagent-prompt-text')[0];
+      const contentText = getTextByClass(wrapperEl as any, 'geminian-subagent-prompt-text')[0];
       expect(contentText).toContain('Do some work');
     });
 
@@ -758,7 +758,7 @@ describe('finalizeSubagentBlock', () => {
 
     finalizeSubagentBlock(state, 'Done', false);
 
-    const doneText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const doneText = getTextByClass(state.contentEl as any, 'geminian-subagent-result-output')[0];
     expect(doneText).toBe('Done');
   });
 
@@ -767,7 +767,7 @@ describe('finalizeSubagentBlock', () => {
 
     finalizeSubagentBlock(state, 'Error occurred', true);
 
-    const errorText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const errorText = getTextByClass(state.contentEl as any, 'geminian-subagent-result-output')[0];
     expect(errorText).toBe('Error occurred');
   });
 
@@ -817,7 +817,7 @@ describe('renderStoredSubagent status variants', () => {
 
     expect((wrapperEl as any).hasClass('done')).toBe(true);
     expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
-    const doneText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+    const doneText = getTextByClass(wrapperEl as any, 'geminian-subagent-result-output')[0];
     expect(doneText).toBe('DONE');
   });
 
@@ -835,7 +835,7 @@ describe('renderStoredSubagent status variants', () => {
 
     expect((wrapperEl as any).hasClass('error')).toBe(true);
     expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'x');
-    const errorText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+    const errorText = getTextByClass(wrapperEl as any, 'geminian-subagent-result-output')[0];
     expect(errorText).toBe('ERROR');
   });
 
@@ -880,7 +880,7 @@ describe('renderStoredSubagent status variants', () => {
     const contentEl = (wrapperEl as any).children[1]; // content area
 
     // Should show result text
-    const resultTexts = getTextByClass(contentEl, 'claudian-tool-line');
+    const resultTexts = getTextByClass(contentEl, 'geminian-tool-line');
     expect(resultTexts.length).toBe(1);
     expect(resultTexts[0]).toContain('File contents here');
   });
@@ -900,7 +900,7 @@ describe('renderStoredSubagent status variants', () => {
 
     const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
 
-    const countTexts = getTextByClass(wrapperEl as any, 'claudian-subagent-count');
+    const countTexts = getTextByClass(wrapperEl as any, 'geminian-subagent-count');
     expect(countTexts[0]).toBe('3 tool uses');
   });
 
@@ -916,7 +916,7 @@ describe('renderStoredSubagent status variants', () => {
 
     const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
 
-    const labelTexts = getTextByClass(wrapperEl as any, 'claudian-subagent-label');
+    const labelTexts = getTextByClass(wrapperEl as any, 'geminian-subagent-label');
     expect(labelTexts[0]).toBe('A'.repeat(40) + '...');
   });
 });

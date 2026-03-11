@@ -1,9 +1,9 @@
-.claudian-history-container {
+.geminian-history-container {
   position: relative;
 }
 
 /* History dropup menu (opens upward since it's at bottom of view) */
-.claudian-history-menu {
+.geminian-history-menu {
   display: none;
   position: absolute;
   bottom: 100%;
@@ -21,12 +21,12 @@
   width: 280px;
 }
 
-.claudian-history-menu.visible {
+.geminian-history-menu.visible {
   display: block;
 }
 
 /* Header mode: dropdown instead of dropup */
-.claudian-container--header-mode .claudian-history-menu {
+.geminian-container--header-mode .geminian-history-menu {
   bottom: auto;
   top: 100%;
   margin-bottom: 0;
@@ -34,7 +34,7 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
-.claudian-history-header {
+.geminian-history-header {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -44,19 +44,19 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.claudian-history-list {
+.geminian-history-list {
   max-height: 350px;
   overflow-y: auto;
 }
 
-.claudian-history-empty {
+.geminian-history-empty {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
 }
 
-.claudian-history-item {
+.geminian-history-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -65,51 +65,51 @@
   transition: background 0.15s ease;
 }
 
-.claudian-history-item-icon {
+.geminian-history-item-icon {
   display: flex;
   align-items: center;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
-.claudian-history-item-icon svg {
+.geminian-history-item-icon svg {
   width: 16px;
   height: 16px;
 }
 
-.claudian-history-item:last-child {
+.geminian-history-item:last-child {
   border-bottom: none;
 }
 
-.claudian-history-item:hover {
+.geminian-history-item:hover {
   background: var(--background-modifier-hover);
 }
 
-.claudian-history-item.active {
+.geminian-history-item.active {
   background: var(--background-secondary);
   border-inline-start: 2px solid var(--interactive-accent);
   padding-inline-start: 10px;
 }
 
-.claudian-history-item.active .claudian-history-item-icon {
+.geminian-history-item.active .geminian-history-item-icon {
   color: var(--interactive-accent);
 }
 
-.claudian-history-item.active .claudian-history-item-content {
+.geminian-history-item.active .geminian-history-item-content {
   cursor: default;
 }
 
-.claudian-history-item.active .claudian-history-item-date {
+.geminian-history-item.active .geminian-history-item-date {
   color: var(--text-faint);
 }
 
-.claudian-history-item-content {
+.geminian-history-item-content {
   flex: 1;
   min-width: 0;
   cursor: pointer;
 }
 
-.claudian-history-item-title {
+.geminian-history-item-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-normal);
@@ -118,13 +118,13 @@
   text-overflow: ellipsis;
 }
 
-.claudian-history-item-date {
+.geminian-history-item-date {
   font-size: 11px;
   color: var(--text-faint);
   margin-top: 2px;
 }
 
-.claudian-history-item-actions {
+.geminian-history-item-actions {
   display: flex;
   gap: 4px;
   margin-inline-start: 8px;
@@ -132,11 +132,11 @@
   transition: opacity 0.15s ease;
 }
 
-.claudian-history-item:hover .claudian-history-item-actions {
+.geminian-history-item:hover .geminian-history-item-actions {
   opacity: 1;
 }
 
-.claudian-action-btn {
+.geminian-action-btn {
   background: transparent;
   border: none;
   cursor: pointer;
@@ -146,21 +146,21 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.claudian-action-btn:hover {
+.geminian-action-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-action-btn svg {
+.geminian-action-btn svg {
   width: 14px;
   height: 14px;
 }
 
-.claudian-delete-btn:hover {
+.geminian-delete-btn:hover {
   color: var(--color-red);
 }
 
-.claudian-rename-input {
+.geminian-rename-input {
   width: 100%;
   padding: 2px 4px;
   font-size: 13px;
@@ -171,13 +171,13 @@
   color: var(--text-normal);
 }
 
-.claudian-rename-input:focus {
+.geminian-rename-input:focus {
   outline: none;
   box-shadow: 0 0 0 2px var(--interactive-accent-hover);
 }
 
 /* Loading indicator for title generation */
-.claudian-action-loading {
+.geminian-action-loading {
   display: flex;
   align-items: center;
   justify-content: center;

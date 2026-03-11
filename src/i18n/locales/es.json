@@ -65,10 +65,10 @@
     }
   },
   "settings": {
-    "title": "Configuración de Claudian",
+    "title": "Configuración de Geminian",
     "customization": "Personalización",
     "userName": {
-      "name": "¿Cómo debería Claudian llamarte?",
+      "name": "¿Cómo debería Geminian llamarte?",
       "desc": "Tu nombre para saludos personalizados (dejar vacío para saludos genéricos)"
     },
     "excludedTags": {
@@ -77,7 +77,7 @@
     },
     "mediaFolder": {
       "name": "Carpeta de medios",
-      "desc": "Carpeta que contiene archivos adjuntos/imagenes. Cuando las notas usan ![[image.jpg]], Claude buscará aquí. Dejar vacío para la raíz del depósito."
+      "desc": "Carpeta que contiene archivos adjuntos/imagenes. Cuando las notas usan ![[image.jpg]], Gemini buscará aquí. Dejar vacío para la raíz del depósito."
     },
     "systemPrompt": {
       "name": "Prompt de sistema personalizado",
@@ -138,20 +138,20 @@
     },
     "hiddenSlashCommands": {
       "name": "Comandos ocultos",
-      "desc": "Oculta comandos slash específicos del menú desplegable. Útil para ocultar comandos de Claude Code que no son relevantes para Claudian. Ingresa nombres de comandos sin la barra inicial, uno por línea.",
+      "desc": "Oculta comandos slash específicos del menú desplegable. Útil para ocultar comandos de Gemini CLI que no son relevantes para Geminian. Ingresa nombres de comandos sin la barra inicial, uno por línea.",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
       "name": "Servidores MCP",
-      "desc": "Configura servidores Model Context Protocol para extender las capacidades de Claude con herramientas y fuentes de datos externas. Los servidores con modo de guardado de contexto requieren @mention para activarse."
+      "desc": "Configura servidores Model Context Protocol para extender las capacidades de Gemini con herramientas y fuentes de datos externas. Los servidores con modo de guardado de contexto requieren @mention para activarse."
     },
     "plugins": {
-      "name": "Plugins de Claude Code",
-      "desc": "Habilita o deshabilita plugins de Claude Code descubiertos desde ~/.claude/plugins. Los plugins habilitados se almacenan por bóveda."
+      "name": "Plugins de Gemini CLI",
+      "desc": "Habilita o deshabilita plugins de Gemini CLI descubiertos desde ~/.gemini/plugins. Los plugins habilitados se almacenan por bóveda."
     },
     "subagents": {
       "name": "Subagentes",
-      "desc": "Configura subagentes personalizados a los que Claude puede delegar.",
+      "desc": "Configura subagentes personalizados a los que Gemini puede delegar.",
       "noAgents": "No hay subagentes configurados. Haz clic en + para crear uno.",
       "deleteConfirm": "¿Eliminar el subagente \"{name}\"?",
       "saveFailed": "No se pudo guardar el subagente: {message}",
@@ -189,8 +189,8 @@
     },
     "safety": "Seguridad",
     "loadUserSettings": {
-      "name": "Cargar configuración de usuario Claude",
-      "desc": "Carga ~/.claude/settings.json. Cuando está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
+      "name": "Cargar configuración de usuario Gemini",
+      "desc": "Carga ~/.gemini/settings.json. Cuando está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
     },
     "enableBlocklist": {
       "name": "Habilitar lista negra de comandos",
@@ -209,7 +209,7 @@
     "environment": "Entorno",
     "customVariables": {
       "name": "Variables personalizadas",
-      "desc": "Variables de entorno para Claude SDK (formato KEY=VALUE, una por línea). Prefijo export soportado."
+      "desc": "Variables de entorno para Gemini SDK (formato KEY=VALUE, una por línea). Prefijo export soportado."
     },
     "envSnippets": {
       "name": "Fragmentos",
@@ -240,10 +240,6 @@
       "name": "Habilitar Sonnet con ventana de contexto de 1M",
       "desc": "Reemplazar Sonnet estándar con Sonnet (1M) en el selector de modelos. Mismo precio bajo 200k tokens. Requiere suscripción Max."
     },
-    "enableChrome": {
-      "name": "Habilitar extensión de Chrome",
-      "desc": "Permitir que Claude interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada. Requiere reinicio de sesión."
-    },
     "enableBangBash": {
       "name": "Habilitar modo bash (!)",
       "desc": "Escribe ! en una entrada vacía para entrar en modo bash. Ejecuta comandos directamente mediante Node.js child_process. Requiere volver a abrir la vista.",
@@ -253,7 +249,7 @@
     },
     "maxTabs": {
       "name": "Máximo de pestañas de chat",
-      "desc": "Número máximo de pestañas de chat simultáneas (3-10). Cada pestaña usa una sesión de Claude separada.",
+      "desc": "Número máximo de pestañas de chat simultáneas (3-10). Cada pestaña usa una sesión de Gemini separada.",
       "warning": "Más de 5 pestañas puede afectar el rendimiento y el uso de memoria."
     },
     "tabBarPosition": {
@@ -264,17 +260,17 @@
     },
     "enableAutoScroll": {
       "name": "Desplazamiento automático durante streaming",
-      "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
+      "desc": "Desplazarse automáticamente hacia abajo mientras Gemini transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
     },
     "openInMainTab": {
       "name": "Abrir en área de editor principal",
       "desc": "Abrir el panel de chat como una pestaña principal en el área de editor central en lugar de la barra lateral derecha"
     },
     "cliPath": {
-      "name": "Ruta CLI Claude",
-      "desc": "Ruta personalizada a Claude Code CLI. Dejar vacío para detección automática.",
-      "descWindows": "Para el instalador nativo, use claude.exe. Para instalaciones con npm/pnpm/yarn u otros gestores de paquetes, use la ruta cli.js (no claude.cmd).",
-      "descUnix": "Pegue la salida de \"which claude\" — funciona tanto para instalaciones nativas como npm/pnpm/yarn.",
+      "name": "Ruta CLI Gemini",
+      "desc": "Ruta personalizada a Gemini CLI CLI. Dejar vacío para detección automática.",
+      "descWindows": "Para el instalador nativo, use gemini.exe. Para instalaciones con npm/pnpm/yarn u otros gestores de paquetes, use la ruta cli.js (no gemini.cmd).",
+      "descUnix": "Pegue la salida de \"which gemini\" — funciona tanto para instalaciones nativas como npm/pnpm/yarn.",
       "validation": {
         "notExist": "La ruta no existe",
         "isDirectory": "La ruta es un directorio, no un archivo"

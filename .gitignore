@@ -91,4 +91,5 @@ dev
 # package-lock.json
 
 .claude/
+.gemini/
 .codex/

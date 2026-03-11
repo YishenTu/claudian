@@ -9,13 +9,8 @@ import type { PathAccessType } from '@/utils/path';
 describe('SecurityHooks', () => {
   describe('createBlocklistHook', () => {
     const createHookInput = (command: string) => ({
-      hook_event_name: 'PreToolUse' as const,
-      session_id: 'test-session',
-      transcript_path: '/tmp/transcript',
-      cwd: '/vault',
       tool_name: 'Bash',
       tool_input: { command },
-      tool_use_id: 'tool-1',
     });
 
     it('blocks commands in the blocklist when blocklist is enabled', async () => {
@@ -118,13 +113,8 @@ describe('SecurityHooks', () => {
 
       const result = await hook.hooks[0](
         {
-          hook_event_name: 'PreToolUse' as const,
-          session_id: 'test-session',
-          transcript_path: '/tmp/transcript',
-          cwd: '/vault',
           tool_name: 'Bash',
           tool_input: {},
-          tool_use_id: 'tool-1',
         },
         'tool-1',
         { signal: new AbortController().signal }
@@ -145,13 +135,8 @@ describe('SecurityHooks', () => {
 
   describe('createVaultRestrictionHook', () => {
     const createHookInput = (toolName: string, toolInput: Record<string, unknown>) => ({
-      hook_event_name: 'PreToolUse' as const,
-      session_id: 'test-session',
-      transcript_path: '/tmp/transcript',
-      cwd: '/vault',
       tool_name: toolName,
       tool_input: toolInput,
-      tool_use_id: 'tool-1',
     });
 
     describe('Bash commands', () => {

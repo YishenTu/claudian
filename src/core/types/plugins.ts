@@ -1,15 +1,15 @@
-export type PluginScope = 'user' | 'project';
+export type ExtensionScope = 'user' | 'project';
 
-export interface ClaudianPlugin {
-  /** e.g., "plugin-name@source" */
+export interface GeminianExtension {
+  /** e.g., "extension-name@source" */
   id: string;
   name: string;
   enabled: boolean;
-  scope: PluginScope;
+  scope: ExtensionScope;
   installPath: string;
 }
 
-export interface InstalledPluginEntry {
+export interface InstalledExtensionEntry {
   scope: 'user' | 'project';
   installPath: string;
   version: string;
@@ -19,7 +19,17 @@ export interface InstalledPluginEntry {
   projectPath?: string;
 }
 
-export interface InstalledPluginsFile {
+export interface InstalledExtensionsFile {
   version: number;
-  plugins: Record<string, InstalledPluginEntry[]>;
+  extensions: Record<string, InstalledExtensionEntry[]>;
 }
+
+// Backwards-compatible aliases
+/** @deprecated Use ExtensionScope */
+export type PluginScope = ExtensionScope;
+/** @deprecated Use GeminianExtension */
+export type GeminianPlugin = GeminianExtension;
+/** @deprecated Use InstalledExtensionEntry */
+export type InstalledPluginEntry = InstalledExtensionEntry;
+/** @deprecated Use InstalledExtensionsFile */
+export type InstalledPluginsFile = InstalledExtensionsFile;

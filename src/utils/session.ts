@@ -1,5 +1,5 @@
 /**
- * Claudian - Session Utilities
+ * Geminian - Session Utilities
  *
  * Session recovery and history reconstruction.
  */
@@ -81,7 +81,7 @@ function formatToolInput(input: Record<string, unknown>, maxLength = 200): strin
  * Formats a tool call for inclusion in rebuilt context.
  *
  * Strategy:
- * - Always include tool name and input (so Claude knows what was attempted)
+ * - Always include tool name and input (so Gemini knows what was attempted)
  * - Only include results for failed tools (errors are important to remember)
  * - Successful tools can be re-executed if needed
  */
@@ -120,7 +120,7 @@ export function formatContextLine(message: ChatMessage): string | null {
 
 /**
  * Formats thinking blocks for inclusion in rebuilt context.
- * Just indicates that thinking occurred (content not included - Claude will think anew).
+ * Just indicates that thinking occurred (content not included - Gemini will think anew).
  */
 function formatThinkingBlocks(message: ChatMessage): string[] {
   if (!message.contentBlocks) return [];

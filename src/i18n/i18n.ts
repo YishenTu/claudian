@@ -1,5 +1,5 @@
 /**
- * i18n - Internationalization service for Claudian
+ * i18n - Internationalization service for Geminian
  *
  * Provides translation functionality for all UI strings.
  * Supports 10 locales with English as the default fallback.

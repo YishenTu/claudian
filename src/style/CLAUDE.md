@@ -9,7 +9,7 @@ src/style/
 ├── toolbar/        # model-selector, thinking-selector, permission-toggle, external-context, mcp-selector
 ├── features/       # file-context, image-context, image-modal, inline-edit, diff, slash-commands, file-link, image-embed, plan-mode, ask-user-question
 ├── modals/         # instruction, mcp-modal, fork-target
-├── settings/       # base (shared .claudian-sp-* panel layout), env-snippets, slash-settings, mcp-settings, plugin-settings, agent-settings
+├── settings/       # base (shared .geminian-sp-* panel layout), env-snippets, slash-settings, mcp-settings, plugin-settings, agent-settings
 ├── accessibility.css
 └── index.css       # Build order (@import list)
 ```
@@ -22,8 +22,8 @@ CSS is built into root `styles.css` via `npm run build:css` (also runs in `npm r
 
 ## Conventions
 
-- **Prefix**: All classes use `.claudian-` prefix
-- **BEM-lite**: `.claudian-{block}`, `.claudian-{block}-{element}`, `.claudian-{block}--{modifier}`
+- **Prefix**: All classes use `.geminian-` prefix
+- **BEM-lite**: `.geminian-{block}`, `.geminian-{block}-{element}`, `.geminian-{block}--{modifier}`
 - **No `!important`**: Avoid unless overriding Obsidian defaults
 - **CSS variables**: Use Obsidian's `--background-*`, `--text-*`, `--interactive-*` tokens
 

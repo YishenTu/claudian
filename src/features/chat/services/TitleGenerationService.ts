@@ -1,8 +1,10 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import * as readline from 'readline';
 
+import { spawnGeminiCli } from '../../../core/agent/customSpawn';
+import { QueryOptionsBuilder } from '../../../core/agent/QueryOptionsBuilder';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../../../core/prompts/titleGeneration';
-import type ClaudianPlugin from '../../../main';
+import { parseGeminiJsonLine } from '../../../core/sdk/transformSDKMessage';
+import type GeminianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 
@@ -16,17 +18,13 @@ export type TitleGenerationCallback = (
 ) => Promise<void>;
 
 export class TitleGenerationService {
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
   private activeGenerations: Map<string, AbortController> = new Map();
 
-  constructor(plugin: ClaudianPlugin) {
+  constructor(plugin: GeminianPlugin) {
     this.plugin = plugin;
   }
 
-  /**
-   * Generates a title for a conversation based on the first user message.
-   * Non-blocking: calls callback when complete.
-   */
   async generateTitle(
     conversationId: string,
     userMessage: string,
@@ -35,99 +33,78 @@ export class TitleGenerationService {
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
       await this.safeCallback(callback, conversationId, {
-        success: false,
-        error: 'Could not determine vault path',
+        success: false, error: 'Could not determine vault path',
       });
       return;
     }
 
-    const envVars = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
-    );
-
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
-    if (!resolvedClaudePath) {
+    const envVars = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    const resolvedGeminiPath = this.plugin.getResolvedGeminiCliPath();
+    if (!resolvedGeminiPath) {
       await this.safeCallback(callback, conversationId, {
-        success: false,
-        error: 'Claude CLI not found',
+        success: false, error: 'Gemini CLI not found',
       });
       return;
     }
-    const enhancedPath = getEnhancedPath(envVars.PATH, resolvedClaudePath);
-    const missingNodeError = getMissingNodeError(resolvedClaudePath, enhancedPath);
-    if (missingNodeError) {
-      await this.safeCallback(callback, conversationId, {
-        success: false,
-        error: missingNodeError,
-      });
-      return;
+    const enhancedPath = getEnhancedPath(envVars.PATH, resolvedGeminiPath);
+
+    if (resolvedGeminiPath.endsWith('.js')) {
+      const missingNodeError = getMissingNodeError(resolvedGeminiPath, enhancedPath);
+      if (missingNodeError) {
+        await this.safeCallback(callback, conversationId, {
+          success: false, error: missingNodeError,
+        });
+        return;
+      }
     }
 
-    // Get the appropriate model with fallback chain:
-    // 1. User's titleGenerationModel setting (if set)
-    // 2. ANTHROPIC_DEFAULT_HAIKU_MODEL env var
-    // 3. claude-haiku-4-5 default
     const titleModel =
       this.plugin.settings.titleGenerationModel ||
-      envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
-      'claude-haiku-4-5';
+      envVars.GEMINI_DEFAULT_FLASH_MODEL ||
+      'gemini-2.5-flash-lite';
 
-    // Cancel any existing generation for this conversation
     const existingController = this.activeGenerations.get(conversationId);
     if (existingController) {
       existingController.abort();
     }
 
-    // Create a new local AbortController for this generation
     const abortController = new AbortController();
     this.activeGenerations.set(conversationId, abortController);
 
-    // Truncate message if too long (save tokens)
     const truncatedUser = this.truncateText(userMessage, 500);
-
-    const prompt = `User's request:
-"""
-${truncatedUser}
-"""
-
-Generate a title for this conversation:`;
-
-    const options: Options = {
-      cwd: vaultPath,
-      systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
-      model: titleModel,
-      abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
-      env: {
-        ...process.env,
-        ...envVars,
-        PATH: enhancedPath,
-      },
-      tools: [], // No tools needed for title generation
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      settingSources: this.plugin.settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-      persistSession: false, // Don't save title generation queries to session history
-    };
+    const prompt = `User's request:\n"""\n${truncatedUser}\n"""\n\nGenerate a title for this conversation:`;
 
     try {
-      const response = agentQuery({ prompt, options });
+      const promptPath = QueryOptionsBuilder.writeSystemPromptFile(vaultPath, TITLE_GENERATION_SYSTEM_PROMPT);
+      const child = spawnGeminiCli({
+        cliPath: resolvedGeminiPath,
+        args: [
+          '--output-format', 'stream-json',
+          '--model', titleModel,
+          '--approval-mode', 'yolo',
+          '--prompt', prompt,
+        ],
+        cwd: vaultPath,
+        env: {
+          ...process.env,
+          ...envVars,
+          PATH: enhancedPath,
+          GEMINI_SYSTEM_MD: promptPath,
+        },
+        signal: abortController.signal,
+        enhancedPath,
+      });
+
       let responseText = '';
 
-      for await (const message of response) {
-        if (abortController.signal.aborted) {
-          await this.safeCallback(callback, conversationId, {
-            success: false,
-            error: 'Cancelled',
-          });
-          return;
-        }
-
-        const text = this.extractTextFromMessage(message);
-        if (text) {
-          responseText += text;
+      if (child.stdout) {
+        const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+        for await (const line of rl) {
+          if (abortController.signal.aborted) break;
+          const event = parseGeminiJsonLine(line);
+          if (event && event.type === 'message' && event.role === 'assistant') {
+            responseText += event.content || '';
+          }
         }
       }
 
@@ -136,20 +113,17 @@ Generate a title for this conversation:`;
         await this.safeCallback(callback, conversationId, { success: true, title });
       } else {
         await this.safeCallback(callback, conversationId, {
-          success: false,
-          error: 'Failed to parse title from response',
+          success: false, error: 'Failed to parse title from response',
         });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       await this.safeCallback(callback, conversationId, { success: false, error: msg });
     } finally {
-      // Clean up the controller for this conversation
       this.activeGenerations.delete(conversationId);
     }
   }
 
-  /** Cancels all ongoing title generations. */
   cancel(): void {
     for (const controller of this.activeGenerations.values()) {
       controller.abort();
@@ -157,34 +131,15 @@ Generate a title for this conversation:`;
     this.activeGenerations.clear();
   }
 
-  /** Truncates text to a maximum length with ellipsis. */
   private truncateText(text: string, maxLength: number): string {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
   }
 
-  /** Extracts text content from SDK message. */
-  private extractTextFromMessage(
-    message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }
-  ): string {
-    if (message.type !== 'assistant' || !message.message?.content) {
-      return '';
-    }
-
-    return message.message.content
-      .filter((block): block is { type: 'text'; text: string } =>
-        block.type === 'text' && !!block.text
-      )
-      .map((block) => block.text)
-      .join('');
-  }
-
-  /** Parses and cleans the title from response. */
   private parseTitle(responseText: string): string | null {
     const trimmed = responseText.trim();
     if (!trimmed) return null;
 
-    // Remove surrounding quotes if present
     let title = trimmed;
     if (
       (title.startsWith('"') && title.endsWith('"')) ||
@@ -193,10 +148,7 @@ Generate a title for this conversation:`;
       title = title.slice(1, -1);
     }
 
-    // Remove trailing punctuation
     title = title.replace(/[.!?:;,]+$/, '');
-
-    // Truncate to max 50 characters
     if (title.length > 50) {
       title = title.substring(0, 47) + '...';
     }
@@ -204,7 +156,6 @@ Generate a title for this conversation:`;
     return title || null;
   }
 
-  /** Safely invokes callback with try-catch to prevent unhandled errors. */
   private async safeCallback(
     callback: TitleGenerationCallback,
     conversationId: string,

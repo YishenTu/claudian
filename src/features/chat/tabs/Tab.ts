@@ -1,12 +1,12 @@
 import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import { ClaudianService } from '../../../core/agent';
+import { GeminianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
-import type { ChatMessage, ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
+import type { ChatMessage, Conversation, GeminiModel, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
+import { DEFAULT_GEMINI_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
 import { t } from '../../../i18n';
-import type ClaudianPlugin from '../../../main';
+import type GeminianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -39,7 +39,7 @@ import type { TabData, TabDOMElements, TabId } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
 
 export interface TabCreateOptions {
-  plugin: ClaudianPlugin;
+  plugin: GeminianPlugin;
   mcpManager: McpServerManager;
 
   containerEl: HTMLElement;
@@ -67,7 +67,7 @@ export function createTab(options: TabCreateOptions): TabData {
   const id = tabId ?? generateTabId();
 
   // Create per-tab content container (hidden by default)
-  const contentEl = containerEl.createDiv({ cls: 'claudian-tab-content' });
+  const contentEl = containerEl.createDiv({ cls: 'geminian-tab-content' });
   contentEl.style.display = 'none';
 
   // Create ChatState with callbacks
@@ -149,7 +149,7 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.minHeight = '';
 
   // Calculate max height: 55% of view height, minimum 150px
-  const viewHeight = textarea.closest('.claudian-container')?.clientHeight ?? window.innerHeight;
+  const viewHeight = textarea.closest('.geminian-container')?.clientHeight ?? window.innerHeight;
   const maxHeight = Math.max(TEXTAREA_MIN_MAX_HEIGHT, viewHeight * TEXTAREA_MAX_HEIGHT_PERCENT);
 
   // Get flex-allocated height (what flexbox gives the textarea)
@@ -173,31 +173,31 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
  */
 function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   // Messages wrapper (for scroll-to-bottom button positioning)
-  const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
+  const messagesWrapperEl = contentEl.createDiv({ cls: 'geminian-messages-wrapper' });
 
   // Messages area (inside wrapper)
-  const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
+  const messagesEl = messagesWrapperEl.createDiv({ cls: 'geminian-messages' });
 
   // Welcome message placeholder
-  const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
+  const welcomeEl = messagesEl.createDiv({ cls: 'geminian-welcome' });
 
   // Status panel container (fixed between messages and input)
-  const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
+  const statusPanelContainerEl = contentEl.createDiv({ cls: 'geminian-status-panel-container' });
 
   // Input container
-  const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
+  const inputContainerEl = contentEl.createDiv({ cls: 'geminian-input-container' });
 
-  // Nav row (for tab badges and header icons, populated by ClaudianView)
-  const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
+  // Nav row (for tab badges and header icons, populated by GeminianView)
+  const navRowEl = inputContainerEl.createDiv({ cls: 'geminian-input-nav-row' });
 
-  const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
+  const inputWrapper = inputContainerEl.createDiv({ cls: 'geminian-input-wrapper' });
 
   // Context row inside input wrapper (file chips + selection indicator)
-  const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
+  const contextRowEl = inputWrapper.createDiv({ cls: 'geminian-context-row' });
 
   // Input textarea
   const inputEl = inputWrapper.createEl('textarea', {
-    cls: 'claudian-input',
+    cls: 'geminian-input',
     attr: {
       placeholder: 'How can I help you today?',
       rows: '3',
@@ -223,7 +223,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 }
 
 /**
- * Initializes the tab's ClaudianService (lazy initialization).
+ * Initializes the tab's GeminianService (lazy initialization).
  * Call this when the tab becomes active or when the first message is sent.
  *
  * Session ID resolution:
@@ -237,19 +237,19 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
  */
 export async function initializeTabService(
   tab: TabData,
-  plugin: ClaudianPlugin,
+  plugin: GeminianPlugin,
   mcpManager: McpServerManager
 ): Promise<void> {
   if (tab.serviceInitialized) {
     return;
   }
 
-  let service: ClaudianService | null = null;
+  let service: GeminianService | null = null;
   let unsubscribeReadyState: (() => void) | null = null;
 
   try {
-    // Create per-tab ClaudianService
-    service = new ClaudianService(plugin, mcpManager);
+    // Create per-tab GeminianService
+    service = new GeminianService(plugin, mcpManager);
     unsubscribeReadyState = service.onReadyStateChange((ready) => {
       tab.ui.modelSelector?.setReady(ready);
     });
@@ -300,7 +300,7 @@ export async function initializeTabService(
 /**
  * Initializes file and image context managers for a tab.
  */
-function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
+function initializeContextManagers(tab: TabData, plugin: GeminianPlugin): void {
   const { dom } = tab;
   const app = plugin.app;
 
@@ -371,7 +371,7 @@ function initializeSlashCommands(
 /**
  * Initializes instruction mode and todo panel for a tab.
  */
-function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): void {
+function initializeInstructionAndTodo(tab: TabData, plugin: GeminianPlugin): void {
   const { dom } = tab;
 
   tab.services.instructionRefineService = new InstructionRefineService(plugin);
@@ -421,24 +421,23 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
 /**
  * Creates and wires the input toolbar for a tab.
  */
-function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
+function initializeInputToolbar(tab: TabData, plugin: GeminianPlugin): void {
   const { dom } = tab;
 
-  const inputToolbar = dom.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
+  const inputToolbar = dom.inputWrapper.createDiv({ cls: 'geminian-input-toolbar' });
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getSettings: () => ({
       model: plugin.settings.model,
       thinkingBudget: plugin.settings.thinkingBudget,
       permissionMode: plugin.settings.permissionMode,
-      show1MModel: plugin.settings.show1MModel,
     }),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
-    onModelChange: async (model: ClaudeModel) => {
+    onModelChange: async (model: GeminiModel) => {
       plugin.settings.model = model;
-      const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m) => m.value === model);
+      const isDefaultModel = DEFAULT_GEMINI_MODELS.find((m) => m.value === model);
       if (isDefaultModel) {
         plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
-        plugin.settings.lastClaudeModel = model;
+        plugin.settings.lastGeminiModel = model;
       } else {
         plugin.settings.lastCustomModel = model;
       }
@@ -450,7 +449,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       // Recalculate context usage percentage for the new model's context window
       const currentUsage = tab.state.usage;
       if (currentUsage) {
-        const newContextWindow = getContextWindowSize(model, plugin.settings.show1MModel, plugin.settings.customContextLimits);
+        const newContextWindow = getContextWindowSize(model, plugin.settings.customContextLimits);
         const newPercentage = Math.min(100, Math.max(0, Math.round((currentUsage.contextTokens / newContextWindow) * 100)));
         tab.state.usage = {
           ...currentUsage,
@@ -467,7 +466,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     onPermissionModeChange: async (mode) => {
       plugin.settings.permissionMode = mode;
       await plugin.saveSettings();
-      dom.inputWrapper.toggleClass('claudian-input-plan-mode', mode === 'plan');
+      dom.inputWrapper.toggleClass('geminian-input-plan-mode', mode === 'plan');
     },
   });
 
@@ -501,7 +500,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     await plugin.saveSettings();
   });
 
-  dom.inputWrapper.toggleClass('claudian-input-plan-mode', plugin.settings.permissionMode === 'plan');
+  dom.inputWrapper.toggleClass('geminian-input-plan-mode', plugin.settings.permissionMode === 'plan');
 }
 
 export interface InitializeTabUIOptions {
@@ -514,7 +513,7 @@ export interface InitializeTabUIOptions {
  */
 export function initializeTabUI(
   tab: TabData,
-  plugin: ClaudianPlugin,
+  plugin: GeminianPlugin,
   options: InitializeTabUIOptions = {}
 ): void {
   const { dom, state } = tab;
@@ -523,15 +522,15 @@ export function initializeTabUI(
   initializeContextManagers(tab, plugin);
 
   // Selection indicator - add to contextRowEl
-  dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
+  dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'geminian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
 
   // Browser selection indicator
-  dom.browserIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-browser-selection-indicator' });
+  dom.browserIndicatorEl = dom.contextRowEl.createDiv({ cls: 'geminian-browser-selection-indicator' });
   dom.browserIndicatorEl.style.display = 'none';
 
   // Canvas selection indicator
-  dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator' });
+  dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'geminian-canvas-indicator' });
   dom.canvasIndicatorEl.style.display = 'none';
 
   // Initialize slash commands with shared SDK commands callback and hidden commands
@@ -605,7 +604,7 @@ interface ForkSource {
  * Prefers the live service session ID; falls back to persisted conversation metadata.
  * Shows a notice and returns null when no session can be resolved.
  */
-function resolveForkSource(tab: TabData, plugin: ClaudianPlugin): ForkSource | null {
+function resolveForkSource(tab: TabData, plugin: GeminianPlugin): ForkSource | null {
   let sourceSessionId = tab.service?.getSessionId() ?? null;
 
   if (!sourceSessionId && tab.conversationId) {
@@ -631,7 +630,7 @@ function resolveForkSource(tab: TabData, plugin: ClaudianPlugin): ForkSource | n
 
 async function handleForkRequest(
   tab: TabData,
-  plugin: ClaudianPlugin,
+  plugin: GeminianPlugin,
   userMessageId: string,
   forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
 ): Promise<void> {
@@ -675,7 +674,7 @@ async function handleForkRequest(
 
 async function handleForkAll(
   tab: TabData,
-  plugin: ClaudianPlugin,
+  plugin: GeminianPlugin,
   forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
 ): Promise<void> {
   const { state } = tab;
@@ -719,7 +718,7 @@ async function handleForkAll(
 
 export function initializeTabControllers(
   tab: TabData,
-  plugin: ClaudianPlugin,
+  plugin: GeminianPlugin,
   component: Component,
   mcpManager: McpServerManager,
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
@@ -907,7 +906,7 @@ export function initializeTabControllers(
  * Call this after controllers are initialized.
  * Stores cleanup functions in dom.eventCleanups for proper memory management.
  */
-export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
+export function wireTabInputEvents(tab: TabData, plugin: GeminianPlugin): void {
   const { dom, ui, state, controllers } = tab;
 
   let wasBangBashActive = ui.bangBashModeManager?.isActive() ?? false;
@@ -1126,7 +1125,7 @@ export async function destroyTab(tab: TabData): Promise<void> {
  * Gets the display title for a tab.
  * Uses synchronous access since we only need the title, not messages.
  */
-export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
+export function getTabTitle(tab: TabData, plugin: GeminianPlugin): string {
   if (tab.conversationId) {
     const conversation = plugin.getConversationSync(tab.conversationId);
     if (conversation?.title) {
@@ -1137,7 +1136,7 @@ export function getTabTitle(tab: TabData, plugin: ClaudianPlugin): string {
 }
 
 /** Shared between Tab.ts and TabManager.ts to avoid duplication. */
-export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): void {
+export function setupServiceCallbacks(tab: TabData, plugin: GeminianPlugin): void {
   if (tab.service && tab.controllers.inputController) {
     tab.service.setApprovalCallback(
       async (toolName, input, description, options) =>
@@ -1188,9 +1187,9 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
   }
 }
 
-export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: PermissionMode): void {
+export function updatePlanModeUI(tab: TabData, plugin: GeminianPlugin, mode: PermissionMode): void {
   plugin.settings.permissionMode = mode;
   void plugin.saveSettings();
   tab.ui.permissionToggle?.updateDisplay();
-  tab.dom.inputWrapper.toggleClass('claudian-input-plan-mode', mode === 'plan');
+  tab.dom.inputWrapper.toggleClass('geminian-input-plan-mode', mode === 'plan');
 }

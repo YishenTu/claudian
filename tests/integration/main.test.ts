@@ -1,17 +1,17 @@
 import * as os from 'os';
 
 import { TOOL_SUBAGENT } from '@/core/tools';
-import { DEFAULT_SETTINGS, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { DEFAULT_SETTINGS, VIEW_TYPE_GEMINIAN as VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/utils/sdkSession';
 
-// Mock fs for ClaudianService
+// Mock fs for GeminianService
 jest.mock('fs');
 
 // Now import the plugin after mocking
-import ClaudianPlugin from '@/main';
+import GeminianPlugin from '@/main';
 
-describe('ClaudianPlugin', () => {
-  let plugin: ClaudianPlugin;
+describe('GeminianPlugin', () => {
+  let plugin: GeminianPlugin;
   let mockApp: any;
   let mockManifest: any;
 
@@ -46,13 +46,13 @@ describe('ClaudianPlugin', () => {
     };
 
     mockManifest = {
-      id: 'claudian',
-      name: 'Claudian',
+      id: 'geminian',
+      name: 'Geminian',
       version: '0.1.0',
     };
 
     // Create plugin instance with mocked app
-    plugin = new ClaudianPlugin(mockApp, mockManifest);
+    plugin = new GeminianPlugin(mockApp, mockManifest);
     (plugin.loadData as jest.Mock).mockResolvedValue({});
   });
 
@@ -81,7 +81,7 @@ describe('ClaudianPlugin', () => {
 
       expect((plugin.addRibbonIcon as jest.Mock)).toHaveBeenCalledWith(
         'bot',
-        'Open Claudian',
+        'Open Geminian',
         expect.any(Function)
       );
     });
@@ -99,12 +99,12 @@ describe('ClaudianPlugin', () => {
     it('should migrate legacy cli path to hostname-based paths and clear old field', async () => {
       const legacyPath = '/legacy/claude';
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        // claudeCliPath is now in claudian-settings.json
-        return path === '.claude/claudian-settings.json';
+        // geminiCliPath is now in geminian-settings.json
+        return path === '.claude/geminian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
-          return JSON.stringify({ claudeCliPath: legacyPath });
+        if (path === '.claude/geminian-settings.json') {
+          return JSON.stringify({ geminiCliPath: legacyPath });
         }
         return '';
       });
@@ -113,23 +113,23 @@ describe('ClaudianPlugin', () => {
 
       const hostname = os.hostname();
       // Should migrate to hostname-based path
-      expect(plugin.settings.claudeCliPathsByHost[hostname]).toBe(legacyPath);
+      expect(plugin.settings.geminiCliPathsByHost[hostname]).toBe(legacyPath);
       // Should clear legacy field after migration
-      expect(plugin.settings.claudeCliPath).toBe('');
+      expect(plugin.settings.geminiCliPath).toBe('');
       // Should save settings with migrated path and cleared legacy field
       expect(mockApp.vault.adapter.write).toHaveBeenCalled();
       const settingsWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
-        ([path]) => path === '.claude/claudian-settings.json'
+        ([path]) => path === '.claude/geminian-settings.json'
       );
       expect(settingsWrite).toBeDefined();
       const savedSettings = JSON.parse(settingsWrite[1]);
-      expect(savedSettings.claudeCliPathsByHost[hostname]).toBe(legacyPath);
-      expect(savedSettings.claudeCliPath).toBe('');
+      expect(savedSettings.geminiCliPathsByHost[hostname]).toBe(legacyPath);
+      expect(savedSettings.geminiCliPath).toBe('');
     });
   });
 
   describe('onunload', () => {
-    // Note: With multi-tab, cleanup is handled per-tab via ClaudianView.onClose()
+    // Note: With multi-tab, cleanup is handled per-tab via GeminianView.onClose()
     it('should complete without error', async () => {
       await plugin.onload();
 
@@ -207,12 +207,12 @@ describe('ClaudianPlugin', () => {
 
   describe('loadSettings', () => {
     it('should merge saved data with defaults', async () => {
-      // Mock claudian-settings.json exists with custom values (Claudian-specific settings)
+      // Mock geminian-settings.json exists with custom values (Geminian-specific settings)
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json';
+        return path === '.claude/geminian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claude/geminian-settings.json') {
           return JSON.stringify({
             enableBlocklist: false,
           });
@@ -228,12 +228,12 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should normalize blockedCommands when stored value is partial', async () => {
-      // Mock claudian-settings.json exists with partial blockedCommands
+      // Mock geminian-settings.json exists with partial blockedCommands
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json';
+        return path === '.claude/geminian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claude/geminian-settings.json') {
           return JSON.stringify({
             blockedCommands: { unix: ['rm -rf', '  '] },
           });
@@ -268,12 +268,12 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should reconcile model from environment and persist when changed', async () => {
-      // Mock claudian-settings.json with environment variables
+      // Mock geminian-settings.json with environment variables
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json';
+        return path === '.claude/geminian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claude/geminian-settings.json') {
           return JSON.stringify({
             environmentVariables: 'ANTHROPIC_MODEL=custom-model',
             lastEnvHash: '',
@@ -298,23 +298,23 @@ describe('ClaudianPlugin', () => {
 
       await plugin.saveSettings();
 
-      // Claudian-specific settings should be written to .claude/claudian-settings.json
+      // Geminian-specific settings should be written to .claude/geminian-settings.json
       expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
-        '.claude/claudian-settings.json',
+        '.claude/geminian-settings.json',
         expect.stringContaining('"enableBlocklist": false')
       );
 
       // The written content should include state fields
       const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
-        ([path]) => path === '.claude/claudian-settings.json'
+        ([path]) => path === '.claude/geminian-settings.json'
       );
       expect(writeCall).toBeDefined();
       const content = JSON.parse(writeCall[1]);
       expect(content).not.toHaveProperty('activeConversationId');
       expect(content).toHaveProperty('lastEnvHash');
-      expect(content).toHaveProperty('lastClaudeModel');
+      expect(content).toHaveProperty('lastGeminiModel');
       expect(content).toHaveProperty('lastCustomModel');
-      // Permissions are now in .claude/settings.json (CC format), not claudian-settings.json
+      // Permissions are now in .claude/settings.json (CC format), not geminian-settings.json
       expect(content).not.toHaveProperty('permissions');
     });
   });
@@ -572,14 +572,14 @@ describe('ClaudianPlugin', () => {
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
         messages: [
-          { id: 'msg-1', role: 'user', content: 'Hello Claude', timestamp: Date.now() },
+          { id: 'msg-1', role: 'user', content: 'Hello Gemini', timestamp: Date.now() },
         ],
       });
 
       const list = plugin.getConversationList();
       const meta = list.find(c => c.id === conv.id);
 
-      expect(meta?.preview).toContain('Hello Claude');
+      expect(meta?.preview).toContain('Hello Gemini');
     });
   });
 
@@ -601,8 +601,8 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.jsonl') {
           return true;
         }
-        // claudian-settings.json exists
-        if (path === '.claude/claudian-settings.json') {
+        // geminian-settings.json exists
+        if (path === '.claude/geminian-settings.json') {
           return true;
         }
         return false;
@@ -617,7 +617,7 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/sessions/conv-saved-1.jsonl') {
           return sessionJsonl;
         }
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claude/geminian-settings.json') {
           return JSON.stringify({});
         }
         return '';
@@ -645,7 +645,7 @@ describe('ClaudianPlugin', () => {
       });
 
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json' ||
+        return path === '.claude/geminian-settings.json' ||
           path === '.claude/sessions' ||
           path === '.claude/sessions/conv-saved-1.jsonl';
       });
@@ -656,8 +656,8 @@ describe('ClaudianPlugin', () => {
         return { files: [], folders: [] };
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
-          // All these fields are now in claudian-settings.json
+        if (path === '.claude/geminian-settings.json') {
+          // All these fields are now in geminian-settings.json
           return JSON.stringify({
             lastEnvHash: 'old-hash',
             environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
@@ -719,7 +719,7 @@ describe('ClaudianPlugin', () => {
       });
 
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json' ||
+        return path === '.claude/geminian-settings.json' ||
           path === '.claude/sessions' ||
           path === '.claude/sessions/conv-multi-session.meta.json';
       });
@@ -733,7 +733,7 @@ describe('ClaudianPlugin', () => {
         if (path === '.claude/sessions/conv-multi-session.meta.json') {
           return sessionMeta;
         }
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claude/geminian-settings.json') {
           return JSON.stringify({});
         }
         return '';

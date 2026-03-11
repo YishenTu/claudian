@@ -16,20 +16,20 @@ export class NavigationSidebar {
     private parentEl: HTMLElement,
     private messagesEl: HTMLElement
   ) {
-    this.container = this.parentEl.createDiv({ cls: 'claudian-nav-sidebar' });
+    this.container = this.parentEl.createDiv({ cls: 'geminian-nav-sidebar' });
 
     // Create buttons
-    this.topBtn = this.createButton('claudian-nav-btn-top', 'chevrons-up', 'Scroll to top');
-    this.prevBtn = this.createButton('claudian-nav-btn-prev', 'chevron-up', 'Previous message');
-    this.nextBtn = this.createButton('claudian-nav-btn-next', 'chevron-down', 'Next message');
-    this.bottomBtn = this.createButton('claudian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
+    this.topBtn = this.createButton('geminian-nav-btn-top', 'chevrons-up', 'Scroll to top');
+    this.prevBtn = this.createButton('geminian-nav-btn-prev', 'chevron-up', 'Previous message');
+    this.nextBtn = this.createButton('geminian-nav-btn-next', 'chevron-down', 'Next message');
+    this.bottomBtn = this.createButton('geminian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
 
     this.setupEventListeners();
     this.updateVisibility();
   }
 
   private createButton(cls: string, icon: string, label: string): HTMLElement {
-    const btn = this.container.createDiv({ cls: `claudian-nav-btn ${cls}` });
+    const btn = this.container.createDiv({ cls: `geminian-nav-btn ${cls}` });
     setIcon(btn, icon);
     btn.setAttribute('aria-label', label);
     return btn;
@@ -67,7 +67,7 @@ export class NavigationSidebar {
    * Scrolls to previous or next user message, skipping assistant messages.
    */
   private scrollToMessage(direction: 'prev' | 'next'): void {
-    const messages = Array.from(this.messagesEl.querySelectorAll('.claudian-message-user')) as HTMLElement[];
+    const messages = Array.from(this.messagesEl.querySelectorAll('.geminian-message-user')) as HTMLElement[];
 
     if (messages.length === 0) return;
 

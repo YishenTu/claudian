@@ -65,10 +65,10 @@
     }
   },
   "settings": {
-    "title": "Claudian 设置",
+    "title": "Geminian 设置",
     "customization": "个性化设置",
     "userName": {
-      "name": "Claudian 应该如何称呼你？",
+      "name": "Geminian 应该如何称呼你？",
       "desc": "用于个性化问候的用户名（留空使用通用问候）"
     },
     "excludedTags": {
@@ -77,7 +77,7 @@
     },
     "mediaFolder": {
       "name": "媒体文件夹",
-      "desc": "存放附件/图片的文件夹。当笔记使用 ![[image.jpg]] 时，Claude 会在此查找。留空使用仓库根目录。"
+      "desc": "存放附件/图片的文件夹。当笔记使用 ![[image.jpg]] 时，Gemini 会在此查找。留空使用仓库根目录。"
     },
     "systemPrompt": {
       "name": "自定义系统提示词",
@@ -138,20 +138,20 @@
     },
     "hiddenSlashCommands": {
       "name": "隐藏命令",
-      "desc": "从下拉菜单中隐藏特定的斜杠命令。适用于隐藏与 Claudian 无关的 Claude Code 命令。每行输入一个命令名称，无需前导斜杠。",
+      "desc": "从下拉菜单中隐藏特定的斜杠命令。适用于隐藏与 Geminian 无关的 Gemini CLI 命令。每行输入一个命令名称，无需前导斜杠。",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
       "name": "MCP 服务器",
-      "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"
+      "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Gemini 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"
     },
     "plugins": {
-      "name": "Claude Code 插件",
-      "desc": "启用或禁用从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储。"
+      "name": "Gemini CLI 插件",
+      "desc": "启用或禁用从 ~/.gemini/plugins 发现的 Gemini CLI 插件。启用的插件按 Vault 存储。"
     },
     "subagents": {
       "name": "子代理",
-      "desc": "配置 Claude 可委派给其处理的自定义子代理。",
+      "desc": "配置 Gemini 可委派给其处理的自定义子代理。",
       "noAgents": "尚未配置子代理。点击 + 创建一个。",
       "deleteConfirm": "删除子代理“{name}”？",
       "saveFailed": "保存子代理失败：{message}",
@@ -189,8 +189,8 @@
     },
     "safety": "安全",
     "loadUserSettings": {
-      "name": "加载用户 Claude 设置",
-      "desc": "加载 ~/.claude/settings.json。启用后，用户的 Claude Code 权限规则可能绕过安全模式。"
+      "name": "加载用户 Gemini 设置",
+      "desc": "加载 ~/.gemini/settings.json。启用后，用户的 Gemini CLI 权限规则可能绕过安全模式。"
     },
     "enableBlocklist": {
       "name": "启用命令黑名单",
@@ -209,7 +209,7 @@
     "environment": "环境",
     "customVariables": {
       "name": "自定义变量",
-      "desc": "Claude SDK 的环境变量（KEY=VALUE 格式，每行一个）。支持 export 前缀。"
+      "desc": "Gemini SDK 的环境变量（KEY=VALUE 格式，每行一个）。支持 export 前缀。"
     },
     "envSnippets": {
       "name": "片段",
@@ -240,10 +240,6 @@
       "name": "启用具有 1M 上下文窗口的 Sonnet",
       "desc": "在模型选择器中将标准 Sonnet 替换为 Sonnet (1M)。在 200k 令牌以下价格相同。需要 Max 订阅。"
     },
-    "enableChrome": {
-      "name": "启用 Chrome 扩展",
-      "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
-    },
     "enableBangBash": {
       "name": "启用命令模式 (!)",
       "desc": "在空输入框中输入 ! 进入命令模式。通过 Node.js child_process 直接运行命令。需要重新打开视图。",
@@ -253,7 +249,7 @@
     },
     "maxTabs": {
       "name": "最大聊天标签数",
-      "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",
+      "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Gemini 会话。",
       "warning": "超过 5 个标签可能会影响性能和内存使用。"
     },
     "tabBarPosition": {
@@ -264,17 +260,17 @@
     },
     "enableAutoScroll": {
       "name": "流式传输时自动滚动",
-      "desc": "在 Claude 流式传输响应时自动滚动到底部。禁用后将停留在顶部，从头开始阅读。"
+      "desc": "在 Gemini 流式传输响应时自动滚动到底部。禁用后将停留在顶部，从头开始阅读。"
     },
     "openInMainTab": {
       "name": "在主编辑器区域打开",
       "desc": "在中央编辑器区域以主标签页形式打开聊天面板，而不是在右侧边栏"
     },
     "cliPath": {
-      "name": "Claude CLI 路径",
-      "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",
-      "descWindows": "对于原生安装程序，使用 claude.exe。对于 npm/pnpm/yarn 或其他包管理器安装，使用 cli.js 路径（不是 claude.cmd）。",
-      "descUnix": "粘贴 \"which claude\" 的输出 - 适用于原生安装和 npm/pnpm/yarn 安装。",
+      "name": "Gemini CLI 路径",
+      "desc": "Gemini CLI CLI 的自定义路径。留空使用自动检测。",
+      "descWindows": "对于原生安装程序，使用 gemini.exe。对于 npm/pnpm/yarn 或其他包管理器安装，使用 cli.js 路径（不是 gemini.cmd）。",
+      "descUnix": "粘贴 \"which gemini\" 的输出 - 适用于原生安装和 npm/pnpm/yarn 安装。",
       "validation": {
         "notExist": "路径不存在",
         "isDirectory": "路径是目录，不是文件"

@@ -1,6 +1,12 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 
-import { transformSDKMessage } from '@/core/sdk/transformSDKMessage';
+import type { TransformOptions } from '@/core/sdk/transformSDKMessage';
+import { transformGeminiEvent } from '@/core/sdk/transformSDKMessage';
+
+// Wrap transformGeminiEvent to accept any (old SDKMessage format from test helpers)
+function transformSDKMessage(message: any, options?: TransformOptions) {
+  return transformGeminiEvent(message, options);
+}
 
 const msg = buildSDKMessage;
 
@@ -785,7 +791,7 @@ describe('transformSDKMessage', () => {
         },
       });
 
-      const results = [...transformSDKMessage(message, { intendedModel: 'sonnet', is1MEnabled: true })];
+      const results = [...transformSDKMessage(message, { intendedModel: 'sonnet' })];
 
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(1);
@@ -840,7 +846,6 @@ describe('transformSDKMessage', () => {
 
       const results = [...transformSDKMessage(message, {
         intendedModel: 'sonnet',
-        is1MEnabled: true,
         customContextLimits: { 'sonnet': 256000 },
       })];
 

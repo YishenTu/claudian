@@ -1,5 +1,5 @@
 /* Permission Mode Toggle */
-.claudian-permission-toggle {
+.geminian-permission-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -8,18 +8,18 @@
   padding-right: 8px;
 }
 
-.claudian-permission-label {
+.geminian-permission-label {
   font-size: 11px;
   color: var(--text-muted);
   min-width: 28px;
 }
 
-.claudian-permission-label.plan-active {
+.geminian-permission-label.plan-active {
   color: rgb(92, 148, 140);
   font-weight: 600;
 }
 
-.claudian-toggle-switch {
+.geminian-toggle-switch {
   width: 32px;
   height: 18px;
   border-radius: 9px;
@@ -30,7 +30,7 @@
   flex-shrink: 0;
 }
 
-.claudian-toggle-switch::after {
+.geminian-toggle-switch::after {
   content: '';
   position: absolute;
   width: 14px;
@@ -42,15 +42,15 @@
   transition: transform 0.2s ease, background 0.2s ease;
 }
 
-.claudian-toggle-switch:hover {
+.geminian-toggle-switch:hover {
   background: var(--background-modifier-hover);
 }
 
-.claudian-toggle-switch.active {
-  background: rgba(var(--claudian-brand-rgb), 0.3);
+.geminian-toggle-switch.active {
+  background: rgba(var(--geminian-brand-rgb), 0.3);
 }
 
-.claudian-toggle-switch.active::after {
+.geminian-toggle-switch.active::after {
   transform: translateX(14px);
-  background: var(--claudian-brand);
+  background: var(--geminian-brand);
 }

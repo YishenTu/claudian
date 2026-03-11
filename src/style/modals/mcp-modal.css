@@ -1,39 +1,39 @@
 /* MCP Server Modal */
-.claudian-mcp-modal .modal-content {
+.geminian-mcp-modal .modal-content {
   width: 480px;
   max-width: 90vw;
 }
 
-.claudian-mcp-type-fields {
+.geminian-mcp-type-fields {
   margin: 12px 0;
   padding: 12px;
   background: var(--background-secondary);
   border-radius: 6px;
 }
 
-.claudian-mcp-type-fields .setting-item {
+.geminian-mcp-type-fields .setting-item {
   padding: 8px 0;
   border-top: none;
 }
 
-.claudian-mcp-type-fields .setting-item:first-child {
+.geminian-mcp-type-fields .setting-item:first-child {
   padding-top: 0;
 }
 
-.claudian-mcp-cmd-setting,
-.claudian-mcp-env-setting {
+.geminian-mcp-cmd-setting,
+.geminian-mcp-env-setting {
   flex-direction: column;
   align-items: flex-start;
 }
 
-.claudian-mcp-cmd-setting .setting-item-control,
-.claudian-mcp-env-setting .setting-item-control {
+.geminian-mcp-cmd-setting .setting-item-control,
+.geminian-mcp-env-setting .setting-item-control {
   width: 100%;
   margin-top: 8px;
 }
 
-.claudian-mcp-cmd-textarea,
-.claudian-mcp-env-textarea {
+.geminian-mcp-cmd-textarea,
+.geminian-mcp-env-textarea {
   width: 100%;
   min-height: 50px;
   resize: vertical;
@@ -45,13 +45,13 @@
   background: var(--background-primary);
 }
 
-.claudian-mcp-cmd-textarea:focus,
-.claudian-mcp-env-textarea:focus {
+.geminian-mcp-cmd-textarea:focus,
+.geminian-mcp-env-textarea:focus {
   border-color: var(--interactive-accent);
   outline: none;
 }
 
-.claudian-mcp-buttons {
+.geminian-mcp-buttons {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -59,21 +59,21 @@
 }
 
 /* MCP Test Modal */
-.claudian-mcp-test-modal {
+.geminian-mcp-test-modal {
   width: 500px;
   max-width: 90vw;
 }
 
-.claudian-mcp-test-modal .modal-content {
+.geminian-mcp-test-modal .modal-content {
   padding: 0 20px 20px 20px;
 }
 
-.claudian-mcp-test-modal .modal-title {
+.geminian-mcp-test-modal .modal-title {
   padding: 20px 20px 12px 20px;
   margin: 0 -20px;
 }
 
-.claudian-mcp-test-loading {
+.geminian-mcp-test-loading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -82,18 +82,18 @@
   color: var(--text-muted);
 }
 
-.claudian-mcp-test-spinner {
+.geminian-mcp-test-spinner {
   width: 20px;
   height: 20px;
-  animation: claudian-spin 1s linear infinite;
+  animation: geminian-spin 1s linear infinite;
 }
 
-.claudian-mcp-test-spinner svg {
+.geminian-mcp-test-spinner svg {
   width: 100%;
   height: 100%;
 }
 
-.claudian-mcp-test-status {
+.geminian-mcp-test-status {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -103,29 +103,29 @@
   margin-bottom: 12px;
 }
 
-.claudian-mcp-test-icon {
+.geminian-mcp-test-icon {
   display: flex;
   align-items: center;
 }
 
-.claudian-mcp-test-icon svg {
+.geminian-mcp-test-icon svg {
   width: 20px;
   height: 20px;
 }
 
-.claudian-mcp-test-icon.success {
+.geminian-mcp-test-icon.success {
   color: var(--color-green);
 }
 
-.claudian-mcp-test-icon.error {
+.geminian-mcp-test-icon.error {
   color: var(--text-error);
 }
 
-.claudian-mcp-test-text {
+.geminian-mcp-test-text {
   font-weight: 500;
 }
 
-.claudian-mcp-test-error {
+.geminian-mcp-test-error {
   padding: 10px 12px;
   background: rgba(var(--color-red-rgb), 0.1);
   border: 1px solid var(--text-error);
@@ -135,18 +135,18 @@
   margin-bottom: 12px;
 }
 
-.claudian-mcp-test-tools {
+.geminian-mcp-test-tools {
   margin-bottom: 16px;
 }
 
-.claudian-mcp-test-tools-header {
+.geminian-mcp-test-tools-header {
   font-weight: 600;
   font-size: 13px;
   margin-bottom: 8px;
   color: var(--text-muted);
 }
 
-.claudian-mcp-test-tools-list {
+.geminian-mcp-test-tools-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -154,67 +154,67 @@
   overflow-y: auto;
 }
 
-.claudian-mcp-test-tool {
+.geminian-mcp-test-tool {
   padding: 10px 12px;
   background: var(--background-secondary);
   border-radius: 6px;
 }
 
-.claudian-mcp-test-tool-header {
+.geminian-mcp-test-tool-header {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.claudian-mcp-test-tool-icon {
+.geminian-mcp-test-tool-icon {
   display: flex;
   align-items: center;
   color: var(--text-muted);
 }
 
-.claudian-mcp-test-tool-icon svg {
+.geminian-mcp-test-tool-icon svg {
   width: 14px;
   height: 14px;
 }
 
-.claudian-mcp-test-tool-name {
+.geminian-mcp-test-tool-name {
   font-weight: 500;
   font-size: 13px;
 }
 
-.claudian-mcp-test-tool-toggle {
+.geminian-mcp-test-tool-toggle {
   margin-left: auto;
 }
 
-.claudian-mcp-test-tool-toggle .checkbox-container {
+.geminian-mcp-test-tool-toggle .checkbox-container {
   display: flex;
   align-items: center;
 }
 
-.claudian-mcp-test-tool-disabled {
+.geminian-mcp-test-tool-disabled {
   opacity: 0.75;
 }
 
-.claudian-mcp-test-tool-disabled .claudian-mcp-test-tool-name {
+.geminian-mcp-test-tool-disabled .geminian-mcp-test-tool-name {
   text-decoration: line-through;
   color: var(--text-muted);
 }
 
-.claudian-mcp-toggle-all-btn {
+.geminian-mcp-toggle-all-btn {
   margin-right: 8px;
 }
 
-.claudian-mcp-toggle-all-btn.is-destructive {
+.geminian-mcp-toggle-all-btn.is-destructive {
   background: rgba(var(--color-red-rgb), 0.1);
   border-color: rgba(var(--color-red-rgb), 0.3);
   color: var(--text-error);
 }
 
-.claudian-mcp-toggle-all-btn.is-destructive:hover {
+.geminian-mcp-toggle-all-btn.is-destructive:hover {
   background: rgba(var(--color-red-rgb), 0.2);
 }
 
-.claudian-mcp-test-tool-desc {
+.geminian-mcp-test-tool-desc {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
@@ -224,7 +224,7 @@
   overflow: hidden;
 }
 
-.claudian-mcp-test-no-tools {
+.geminian-mcp-test-no-tools {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
@@ -234,7 +234,7 @@
   margin-bottom: 16px;
 }
 
-.claudian-mcp-test-buttons {
+.geminian-mcp-test-buttons {
   display: flex;
   justify-content: center;
   margin-top: 16px;

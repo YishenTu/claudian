@@ -1,7 +1,7 @@
 import { McpServerManager } from '@/core/mcp';
-import type { ClaudianMcpServer } from '@/core/types';
+import type { GeminianMcpServer } from '@/core/types';
 
-const createManager = async (servers: ClaudianMcpServer[]) => {
+const createManager = async (servers: GeminianMcpServer[]) => {
   const manager = new McpServerManager({
     load: async () => servers,
   });
@@ -311,7 +311,7 @@ describe('McpServerManager', () => {
 
   describe('getServers', () => {
     it('returns loaded servers', async () => {
-      const servers: ClaudianMcpServer[] = [
+      const servers: GeminianMcpServer[] = [
         { name: 'x', config: { command: 'x' }, enabled: true, contextSaving: false },
       ];
       const manager = await createManager(servers);
@@ -391,7 +391,7 @@ describe('McpServerManager', () => {
 
   describe('loadServers', () => {
     it('populates servers from storage', async () => {
-      const servers: ClaudianMcpServer[] = [
+      const servers: GeminianMcpServer[] = [
         { name: 'a', config: { command: 'cmd-a' }, enabled: true, contextSaving: false },
         { name: 'b', config: { type: 'sse', url: 'http://localhost' }, enabled: false, contextSaving: true },
       ];

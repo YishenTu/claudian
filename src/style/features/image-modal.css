@@ -1,5 +1,5 @@
 /* Full-size Image Modal */
-.claudian-image-modal-overlay {
+.geminian-image-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -13,14 +13,14 @@
   cursor: pointer;
 }
 
-.claudian-image-modal {
+.geminian-image-modal {
   position: relative;
   max-width: 90vw;
   max-height: 90vh;
   cursor: default;
 }
 
-.claudian-image-modal img {
+.geminian-image-modal img {
   max-width: 90vw;
   max-height: 90vh;
   object-fit: contain;
@@ -28,7 +28,7 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-.claudian-image-modal-close {
+.geminian-image-modal-close {
   position: absolute;
   top: -12px;
   right: -12px;
@@ -46,7 +46,7 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.claudian-image-modal-close:hover {
+.geminian-image-modal-close:hover {
   background: var(--background-modifier-error);
   color: var(--text-on-accent);
 }

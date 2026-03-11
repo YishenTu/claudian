@@ -48,7 +48,7 @@ export class BangBashModeManager {
     const wrapper = this.callbacks.getInputWrapper();
     if (!wrapper) return false;
 
-    wrapper.addClass('claudian-input-bang-bash-mode');
+    wrapper.addClass('geminian-input-bang-bash-mode');
     this.state = { active: true, rawCommand: '' };
     this.inputEl.placeholder = t('chat.bangBash.placeholder');
     return true;
@@ -57,7 +57,7 @@ export class BangBashModeManager {
   private exitMode(): void {
     const wrapper = this.callbacks.getInputWrapper();
     if (wrapper) {
-      wrapper.removeClass('claudian-input-bang-bash-mode');
+      wrapper.removeClass('geminian-input-bang-bash-mode');
     }
     this.state = { active: false, rawCommand: '' };
     this.inputEl.placeholder = this.originalPlaceholder;

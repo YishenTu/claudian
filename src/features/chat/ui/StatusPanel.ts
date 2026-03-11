@@ -135,21 +135,21 @@ export class StatusPanel {
 
     // Create panel element (no border/background - seamless)
     this.panelEl = document.createElement('div');
-    this.panelEl.className = 'claudian-status-panel';
+    this.panelEl.className = 'geminian-status-panel';
 
     // Async subagent container (above todos) - hidden by default
     this.subagentContainerEl = document.createElement('div');
-    this.subagentContainerEl.className = 'claudian-status-panel-subagents';
+    this.subagentContainerEl.className = 'geminian-status-panel-subagents';
     this.subagentContainerEl.style.display = 'none';
     this.panelEl.appendChild(this.subagentContainerEl);
 
     // Bash output container (between subagents and todos) - hidden by default
     this.bashOutputContainerEl = document.createElement('div');
-    this.bashOutputContainerEl.className = 'claudian-status-panel-bash';
+    this.bashOutputContainerEl.className = 'geminian-status-panel-bash';
     this.bashOutputContainerEl.style.display = 'none';
 
     this.bashHeaderEl = document.createElement('div');
-    this.bashHeaderEl.className = 'claudian-tool-header claudian-status-panel-bash-header';
+    this.bashHeaderEl.className = 'geminian-tool-header geminian-status-panel-bash-header';
     this.bashHeaderEl.setAttribute('tabindex', '0');
     this.bashHeaderEl.setAttribute('role', 'button');
 
@@ -164,7 +164,7 @@ export class StatusPanel {
     this.bashHeaderEl.addEventListener('keydown', this.bashKeydownHandler);
 
     this.bashContentEl = document.createElement('div');
-    this.bashContentEl.className = 'claudian-status-panel-bash-content';
+    this.bashContentEl.className = 'geminian-status-panel-bash-content';
 
     this.bashOutputContainerEl.appendChild(this.bashHeaderEl);
     this.bashOutputContainerEl.appendChild(this.bashContentEl);
@@ -172,13 +172,13 @@ export class StatusPanel {
 
     // Todo container
     this.todoContainerEl = document.createElement('div');
-    this.todoContainerEl.className = 'claudian-status-panel-todos';
+    this.todoContainerEl.className = 'geminian-status-panel-todos';
     this.todoContainerEl.style.display = 'none';
     this.panelEl.appendChild(this.todoContainerEl);
 
     // Todo header (collapsed view)
     this.todoHeaderEl = document.createElement('div');
-    this.todoHeaderEl.className = 'claudian-status-panel-header';
+    this.todoHeaderEl.className = 'geminian-status-panel-header';
     this.todoHeaderEl.setAttribute('tabindex', '0');
     this.todoHeaderEl.setAttribute('role', 'button');
 
@@ -196,7 +196,7 @@ export class StatusPanel {
 
     // Todo content (expanded list)
     this.todoContentEl = document.createElement('div');
-    this.todoContentEl.className = 'claudian-status-panel-content claudian-todo-list-container';
+    this.todoContentEl.className = 'geminian-status-panel-content geminian-todo-list-container';
     this.todoContentEl.style.display = 'none';
     this.todoContainerEl.appendChild(this.todoContentEl);
 
@@ -253,13 +253,13 @@ export class StatusPanel {
 
     // List icon
     const icon = document.createElement('span');
-    icon.className = 'claudian-status-panel-icon';
+    icon.className = 'geminian-status-panel-icon';
     setIcon(icon, getToolIcon(TOOL_TODO_WRITE));
     this.todoHeaderEl.appendChild(icon);
 
     // Label
     const label = document.createElement('span');
-    label.className = 'claudian-status-panel-label';
+    label.className = 'geminian-status-panel-label';
     label.textContent = `Tasks (${completedCount}/${totalCount})`;
     this.todoHeaderEl.appendChild(label);
 
@@ -268,7 +268,7 @@ export class StatusPanel {
       // Status indicator (tick only when all todos complete)
       if (completedCount === totalCount && totalCount > 0) {
         const status = document.createElement('span');
-        status.className = 'claudian-status-panel-status status-completed';
+        status.className = 'geminian-status-panel-status status-completed';
         setIcon(status, 'check');
         this.todoHeaderEl.appendChild(status);
       }
@@ -276,7 +276,7 @@ export class StatusPanel {
       // Current task preview
       if (currentTask) {
         const current = document.createElement('span');
-        current.className = 'claudian-status-panel-current';
+        current.className = 'geminian-status-panel-current';
         current.textContent = currentTask.activeForm;
         this.todoHeaderEl.appendChild(current);
       }
@@ -460,31 +460,31 @@ export class StatusPanel {
 
       const rowEl = document.createElement('div');
       rowEl.className = showRunningOnThisRow
-        ? 'claudian-status-panel-done-row claudian-status-panel-combined-row'
-        : 'claudian-status-panel-done-row';
+        ? 'geminian-status-panel-done-row geminian-status-panel-combined-row'
+        : 'geminian-status-panel-done-row';
 
       // Bot icon
       const botIconEl = document.createElement('span');
-      botIconEl.className = 'claudian-status-panel-icon claudian-status-panel-bot-icon';
+      botIconEl.className = 'geminian-status-panel-icon geminian-status-panel-bot-icon';
       setIcon(botIconEl, getToolIcon(TOOL_TASK));
       rowEl.appendChild(botIconEl);
 
       // Description text
       const textEl = document.createElement('span');
-      textEl.className = 'claudian-status-panel-done-text';
+      textEl.className = 'geminian-status-panel-done-text';
       textEl.textContent = this.truncateDescription(subagent.description);
       rowEl.appendChild(textEl);
 
       // Green tick icon
       const iconEl = document.createElement('span');
-      iconEl.className = 'claudian-status-panel-icon claudian-status-panel-done-icon';
+      iconEl.className = 'geminian-status-panel-icon geminian-status-panel-done-icon';
       setIcon(iconEl, 'check');
       rowEl.appendChild(iconEl);
 
       // If last done row and we have running, add running count to the right
       if (showRunningOnThisRow) {
         const runningEl = document.createElement('span');
-        runningEl.className = 'claudian-status-panel-running-text';
+        runningEl.className = 'geminian-status-panel-running-text';
         runningEl.textContent = this.formatRunningCount(runningSubagents.length);
         rowEl.appendChild(runningEl);
       }
@@ -495,11 +495,11 @@ export class StatusPanel {
     // Render running count alone (only if no completed subagents)
     if (runningSubagents.length > 0 && completedSubagents.length === 0) {
       const rowEl = document.createElement('div');
-      rowEl.className = 'claudian-status-panel-running-row';
+      rowEl.className = 'geminian-status-panel-running-row';
 
       // Count text
       const textEl = document.createElement('span');
-      textEl.className = 'claudian-status-panel-running-text';
+      textEl.className = 'geminian-status-panel-running-text';
       textEl.textContent = this.formatRunningCount(runningSubagents.length);
       rowEl.appendChild(textEl);
 
@@ -551,7 +551,7 @@ export class StatusPanel {
     this.bashContentEl.empty();
 
     const headerIconEl = document.createElement('span');
-    headerIconEl.className = 'claudian-tool-icon';
+    headerIconEl.className = 'geminian-tool-icon';
     headerIconEl.setAttribute('aria-hidden', 'true');
     setIcon(headerIconEl, 'terminal');
     this.bashHeaderEl.appendChild(headerIconEl);
@@ -559,7 +559,7 @@ export class StatusPanel {
     const latest = Array.from(this.currentBashOutputs.values()).at(-1);
 
     const headerLabelEl = document.createElement('span');
-    headerLabelEl.className = 'claudian-tool-label';
+    headerLabelEl.className = 'geminian-tool-label';
     if (this.isBashExpanded) {
       headerLabelEl.textContent = t('chat.bangBash.commandPanel');
     } else {
@@ -568,12 +568,12 @@ export class StatusPanel {
     this.bashHeaderEl.appendChild(headerLabelEl);
 
     const previewEl = document.createElement('span');
-    previewEl.className = 'claudian-tool-current';
+    previewEl.className = 'geminian-tool-current';
     previewEl.style.display = this.isBashExpanded ? '' : 'none';
     this.bashHeaderEl.appendChild(previewEl);
 
     const summaryStatusEl = document.createElement('span');
-    summaryStatusEl.className = 'claudian-tool-status';
+    summaryStatusEl.className = 'geminian-tool-status';
     if (!this.isBashExpanded && latest) {
       summaryStatusEl.classList.add(`status-${latest.status}`);
       summaryStatusEl.setAttribute('aria-label', t('chat.bangBash.statusLabel', { status: latest.status }));
@@ -587,7 +587,7 @@ export class StatusPanel {
     this.bashHeaderEl.setAttribute('aria-expanded', String(this.isBashExpanded));
 
     const actionsEl = document.createElement('span');
-    actionsEl.className = 'claudian-status-panel-bash-actions';
+    actionsEl.className = 'geminian-status-panel-bash-actions';
     this.appendActionButton(actionsEl, 'copy', t('chat.bangBash.copyAriaLabel'), 'copy', () => {
       void this.copyLatestBashOutput();
     });
@@ -614,26 +614,26 @@ export class StatusPanel {
 
   private renderBashEntry(info: PanelBashOutput): HTMLElement {
     const entryEl = document.createElement('div');
-    entryEl.className = 'claudian-tool-call claudian-status-panel-bash-entry';
+    entryEl.className = 'geminian-tool-call geminian-status-panel-bash-entry';
 
     const entryHeaderEl = document.createElement('div');
-    entryHeaderEl.className = 'claudian-tool-header';
+    entryHeaderEl.className = 'geminian-tool-header';
     entryHeaderEl.setAttribute('tabindex', '0');
     entryHeaderEl.setAttribute('role', 'button');
 
     const entryIconEl = document.createElement('span');
-    entryIconEl.className = 'claudian-tool-icon';
+    entryIconEl.className = 'geminian-tool-icon';
     entryIconEl.setAttribute('aria-hidden', 'true');
     setIcon(entryIconEl, 'dollar-sign');
     entryHeaderEl.appendChild(entryIconEl);
 
     const entryLabelEl = document.createElement('span');
-    entryLabelEl.className = 'claudian-tool-label';
+    entryLabelEl.className = 'geminian-tool-label';
     entryLabelEl.textContent = t('chat.bangBash.commandLabel', { command: this.truncateDescription(info.command, 60) });
     entryHeaderEl.appendChild(entryLabelEl);
 
     const entryStatusEl = document.createElement('span');
-    entryStatusEl.className = 'claudian-tool-status';
+    entryStatusEl.className = 'geminian-tool-status';
     entryStatusEl.classList.add(`status-${info.status}`);
     entryStatusEl.setAttribute('aria-label', t('chat.bangBash.statusLabel', { status: info.status }));
     if (info.status === 'completed') setIcon(entryStatusEl, 'check');
@@ -643,7 +643,7 @@ export class StatusPanel {
     entryEl.appendChild(entryHeaderEl);
 
     const contentEl = document.createElement('div');
-    contentEl.className = 'claudian-tool-content';
+    contentEl.className = 'geminian-tool-content';
     const isEntryExpanded = this.bashEntryExpanded.get(info.id) ?? true;
     contentEl.style.display = isEntryExpanded ? 'block' : 'none';
     entryHeaderEl.setAttribute('aria-expanded', String(isEntryExpanded));
@@ -661,10 +661,10 @@ export class StatusPanel {
     });
 
     const rowEl = document.createElement('div');
-    rowEl.className = 'claudian-tool-result-row';
+    rowEl.className = 'geminian-tool-result-row';
 
     const textEl = document.createElement('span');
-    textEl.className = 'claudian-tool-result-text';
+    textEl.className = 'geminian-tool-result-text';
     if (info.status === 'running' && !info.output) {
       textEl.textContent = t('chat.bangBash.running');
     } else if (info.output) {
@@ -699,7 +699,7 @@ export class StatusPanel {
     action: () => void
   ): void {
     const el = document.createElement('span');
-    el.className = `claudian-status-panel-bash-action claudian-status-panel-bash-action-${name}`;
+    el.className = `geminian-status-panel-bash-action geminian-status-panel-bash-action-${name}`;
     el.setAttribute('role', 'button');
     el.setAttribute('tabindex', '0');
     el.setAttribute('aria-label', ariaLabel);

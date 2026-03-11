@@ -1,16 +1,14 @@
 import type {
   ChatMessage,
-  ClaudianSettings,
   Conversation,
   ConversationMeta,
   EnvSnippet,
+  GeminianSettings,
   LegacyPermission,
   StreamChunk,
   ToolCallInfo
 } from '@/core/types';
 import {
-  BETA_1M_CONTEXT,
-  CONTEXT_WINDOW_1M,
   CONTEXT_WINDOW_STANDARD,
   createPermissionRule,
   DEFAULT_SETTINGS,
@@ -23,14 +21,13 @@ import {
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   parseCCPermissionRule,
-  resolveModelWithBetas,
-  VIEW_TYPE_CLAUDIAN
+  VIEW_TYPE_GEMINIAN,
 } from '@/core/types';
 
 describe('types.ts', () => {
-  describe('VIEW_TYPE_CLAUDIAN', () => {
+  describe('VIEW_TYPE_GEMINIAN', () => {
     it('should be defined as the correct view type', () => {
-      expect(VIEW_TYPE_CLAUDIAN).toBe('claudian-view');
+      expect(VIEW_TYPE_GEMINIAN).toBe('geminian-view');
     });
   });
 
@@ -80,8 +77,8 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.envSnippets).toEqual([]);
     });
 
-    it('should have lastClaudeModel set to haiku by default', () => {
-      expect(DEFAULT_SETTINGS.lastClaudeModel).toBe('haiku');
+    it('should have lastGeminiModel set to auto by default', () => {
+      expect(DEFAULT_SETTINGS.lastGeminiModel).toBe('auto');
     });
 
     it('should have lastCustomModel as empty string by default', () => {
@@ -89,13 +86,13 @@ describe('types.ts', () => {
     });
   });
 
-  describe('ClaudianSettings type', () => {
+  describe('GeminianSettings type', () => {
     it('should be assignable with valid settings', () => {
-      const settings: ClaudianSettings = {
+      const settings: GeminianSettings = {
         userName: '',
         enableBlocklist: false,
         blockedCommands: { unix: ['test'], windows: ['test-win'] },
-        model: 'haiku',
+        model: 'auto',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
         thinkingBudget: 'off',
@@ -111,12 +108,10 @@ describe('types.ts', () => {
         slashCommands: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'en',
-        claudeCliPath: '',
-        claudeCliPathsByHost: {},
-        loadUserClaudeSettings: false,
+        geminiCliPath: '',
+        geminiCliPathsByHost: {},
+        loadUserGeminiSettings: false,
         maxTabs: 3,
-        show1MModel: false,
-        enableChrome: false,
         enableBangBash: false,
         tabBarPosition: 'input',
         enableAutoScroll: true,
@@ -126,11 +121,11 @@ describe('types.ts', () => {
 
       expect(settings.enableBlocklist).toBe(false);
       expect(settings.blockedCommands).toEqual({ unix: ['test'], windows: ['test-win'] });
-      expect(settings.model).toBe('haiku');
+      expect(settings.model).toBe('auto');
     });
 
     it('should accept custom model strings', () => {
-      const settings: ClaudianSettings = {
+      const settings: GeminianSettings = {
         userName: '',
         enableBlocklist: true,
         blockedCommands: { unix: [], windows: [] },
@@ -150,12 +145,10 @@ describe('types.ts', () => {
         slashCommands: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'zh-CN',
-        claudeCliPath: '',
-        claudeCliPathsByHost: {},
-        loadUserClaudeSettings: false,
+        geminiCliPath: '',
+        geminiCliPathsByHost: {},
+        loadUserGeminiSettings: false,
         maxTabs: 3,
-        show1MModel: false,
-        enableChrome: false,
         enableBangBash: false,
         tabBarPosition: 'input',
         enableAutoScroll: true,
@@ -166,15 +159,15 @@ describe('types.ts', () => {
       expect(settings.model).toBe('anthropic/custom-model-v1');
     });
 
-    it('should accept optional lastClaudeModel and lastCustomModel', () => {
-      const settings: ClaudianSettings = {
+    it('should accept optional lastGeminiModel and lastCustomModel', () => {
+      const settings: GeminianSettings = {
         userName: '',
         enableBlocklist: true,
         blockedCommands: { unix: [], windows: [] },
-        model: 'sonnet',
+        model: 'pro',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
-        lastClaudeModel: 'opus',
+        lastGeminiModel: 'pro',
         lastCustomModel: 'custom/model',
         thinkingBudget: 'high',
         permissionMode: 'yolo',
@@ -189,12 +182,10 @@ describe('types.ts', () => {
         slashCommands: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'en',
-        claudeCliPath: '',
-        claudeCliPathsByHost: {},
-        loadUserClaudeSettings: false,
+        geminiCliPath: '',
+        geminiCliPathsByHost: {},
+        loadUserGeminiSettings: false,
         maxTabs: 5,
-        show1MModel: true,
-        enableChrome: false,
         enableBangBash: false,
         tabBarPosition: 'header',
         enableAutoScroll: false,
@@ -202,7 +193,7 @@ describe('types.ts', () => {
         hiddenSlashCommands: [],
       };
 
-      expect(settings.lastClaudeModel).toBe('opus');
+      expect(settings.lastGeminiModel).toBe('pro');
       expect(settings.lastCustomModel).toBe('custom/model');
     });
   });
@@ -524,10 +515,10 @@ describe('types.ts', () => {
       });
     });
 
-    describe('DEFAULT_SETTINGS.claudeCliPathsByHost', () => {
+    describe('DEFAULT_SETTINGS.geminiCliPathsByHost', () => {
       it('should have empty hostname-based CLI paths by default', () => {
-        expect(DEFAULT_SETTINGS.claudeCliPathsByHost).toBeDefined();
-        expect(DEFAULT_SETTINGS.claudeCliPathsByHost).toEqual({});
+        expect(DEFAULT_SETTINGS.geminiCliPathsByHost).toBeDefined();
+        expect(DEFAULT_SETTINGS.geminiCliPathsByHost).toEqual({});
       });
     });
   });
@@ -731,130 +722,66 @@ describe('types.ts', () => {
     });
   });
 
-  describe('1M Model Utilities', () => {
-    describe('resolveModelWithBetas', () => {
-      it('should return model with betas when include1MBeta is true', () => {
-        const result = resolveModelWithBetas('sonnet', true);
-        expect(result.model).toBe('sonnet');
-        expect(result.betas).toBeDefined();
-        expect(result.betas).toContain(BETA_1M_CONTEXT);
-      });
-
-      it('should return model without betas when include1MBeta is false', () => {
-        const result = resolveModelWithBetas('sonnet', false);
-        expect(result.model).toBe('sonnet');
-        expect(result.betas).toBeUndefined();
-      });
-
-      it('should return model without betas by default', () => {
-        const result = resolveModelWithBetas('sonnet');
-        expect(result.model).toBe('sonnet');
-        expect(result.betas).toBeUndefined();
-      });
-
-      it('should preserve model name', () => {
-        expect(resolveModelWithBetas('claude-sonnet-4-5', true).model).toBe('claude-sonnet-4-5');
-        expect(resolveModelWithBetas('claude-opus-4-5', false).model).toBe('claude-opus-4-5');
-      });
-
-      it('should return single beta flag in array', () => {
-        const result = resolveModelWithBetas('sonnet', true);
-        expect(result.betas).toHaveLength(1);
-      });
-
-      it('should throw when model is empty string', () => {
-        expect(() => resolveModelWithBetas('')).toThrow('model is required');
-        expect(() => resolveModelWithBetas('', true)).toThrow('model is required');
-      });
-
-      it('should throw when model is not provided correctly', () => {
-        // @ts-expect-error - testing runtime validation
-        expect(() => resolveModelWithBetas(null)).toThrow('model is required');
-        // @ts-expect-error - testing runtime validation
-        expect(() => resolveModelWithBetas(undefined)).toThrow('model is required');
-      });
-    });
-
-    describe('BETA_1M_CONTEXT', () => {
-      it('should be defined as the correct beta flag', () => {
-        expect(BETA_1M_CONTEXT).toBe('context-1m-2025-08-07');
-      });
-    });
-
+  describe('Context Window Utilities', () => {
     describe('getContextWindowSize', () => {
       it('should return standard context window by default', () => {
-        expect(getContextWindowSize('sonnet')).toBe(CONTEXT_WINDOW_STANDARD);
-        expect(getContextWindowSize('opus')).toBe(CONTEXT_WINDOW_STANDARD);
-        expect(getContextWindowSize('haiku')).toBe(CONTEXT_WINDOW_STANDARD);
-      });
-
-      it('should return 1M context window for sonnet when enabled', () => {
-        expect(getContextWindowSize('sonnet', true)).toBe(CONTEXT_WINDOW_1M);
-        expect(getContextWindowSize('claude-sonnet-4-5', true)).toBe(CONTEXT_WINDOW_1M);
-      });
-
-      it('should return standard context for non-sonnet models even with 1M enabled', () => {
-        expect(getContextWindowSize('opus', true)).toBe(CONTEXT_WINDOW_STANDARD);
-        expect(getContextWindowSize('haiku', true)).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('auto')).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('pro')).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('flash')).toBe(CONTEXT_WINDOW_STANDARD);
       });
 
       it('should use custom limits when provided', () => {
         const customLimits = { 'custom-model': 256000 };
-        expect(getContextWindowSize('custom-model', false, customLimits)).toBe(256000);
-      });
-
-      it('should prioritize custom limits over 1M setting', () => {
-        const customLimits = { 'custom-sonnet': 500000 };
-        expect(getContextWindowSize('custom-sonnet', true, customLimits)).toBe(500000);
+        expect(getContextWindowSize('custom-model', customLimits)).toBe(256000);
       });
 
       it('should fall back to default when model not in custom limits', () => {
         const customLimits = { 'other-model': 256000 };
-        expect(getContextWindowSize('sonnet', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('auto', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
       });
 
       it('should handle empty custom limits object', () => {
-        expect(getContextWindowSize('sonnet', false, {})).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('auto', {})).toBe(CONTEXT_WINDOW_STANDARD);
       });
 
       it('should handle undefined custom limits', () => {
-        expect(getContextWindowSize('sonnet', false, undefined)).toBe(CONTEXT_WINDOW_STANDARD);
+        expect(getContextWindowSize('auto', undefined)).toBe(CONTEXT_WINDOW_STANDARD);
       });
 
       describe('defensive validation for invalid custom limit values', () => {
         it('should fall back to default for NaN custom limit', () => {
           const customLimits = { 'custom-model': NaN };
-          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+          expect(getContextWindowSize('custom-model', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
         });
 
         it('should fall back to default for negative custom limit', () => {
           const customLimits = { 'custom-model': -100000 };
-          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+          expect(getContextWindowSize('custom-model', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
         });
 
         it('should fall back to default for zero custom limit', () => {
           const customLimits = { 'custom-model': 0 };
-          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+          expect(getContextWindowSize('custom-model', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
         });
 
         it('should fall back to default for Infinity custom limit', () => {
           const customLimits = { 'custom-model': Infinity };
-          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+          expect(getContextWindowSize('custom-model', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
         });
 
         it('should fall back to default for -Infinity custom limit', () => {
           const customLimits = { 'custom-model': -Infinity };
-          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
+          expect(getContextWindowSize('custom-model', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
         });
 
-        it('should fall back to 1M for invalid sonnet custom limit when 1M enabled', () => {
-          const customLimits = { 'sonnet': NaN };
-          expect(getContextWindowSize('sonnet', true, customLimits)).toBe(CONTEXT_WINDOW_1M);
+        it('should fall back to default for invalid custom limit on any model', () => {
+          const customLimits = { 'pro': NaN };
+          expect(getContextWindowSize('pro', customLimits)).toBe(CONTEXT_WINDOW_STANDARD);
         });
 
         it('should accept valid positive custom limit', () => {
           const customLimits = { 'custom-model': 256000 };
-          expect(getContextWindowSize('custom-model', false, customLimits)).toBe(256000);
+          expect(getContextWindowSize('custom-model', customLimits)).toBe(256000);
         });
       });
     });

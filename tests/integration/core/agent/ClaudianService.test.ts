@@ -6,7 +6,7 @@ import {
   resetMockMessages,
   setMockMessages,
   simulateCrash,
-} from '@test/__mocks__/claude-agent-sdk';
+} from '@test/__mocks__/gemini-cli-sdk';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -25,12 +25,12 @@ jest.mock('@/core/types', () => {
 // Now import after all mocks are set up
 import { buildResultErrorMessage } from '@test/helpers/sdkMessages';
 
-import { ClaudianService } from '@/core/agent/ClaudianService';
+import { GeminianService } from '@/core/agent/ClaudianService';
 import { createVaultRestrictionHook } from '@/core/hooks/SecurityHooks';
-import { transformSDKMessage } from '@/core/sdk';
+import { transformGeminiEvent as transformSDKMessage } from '@/core/sdk';
 import { getActionDescription, getActionPattern } from '@/core/security/ApprovalManager';
 import { getPathFromToolInput } from '@/core/tools/toolInput';
-import { resolveClaudeCliPath } from '@/utils/claudeCli';
+import { resolveGeminiCliPath } from '@/utils/geminiCli';
 import {
   buildContextFromHistory,
   formatToolCallForContext,
@@ -116,7 +116,7 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
       permissions: [], // Legacy field (for backwards compat tests)
       permissionMode: 'yolo',
       allowedExportPaths: [],
-      loadUserClaudeSettings: false,
+      loadUserGeminiSettings: false,
       mediaFolder: '',
       systemPrompt: '',
       model: 'claude-sonnet-4-5',
@@ -143,7 +143,7 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
     _ccPermissions: ccPermissions,
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/mock/claude'),
+    getResolvedGeminiCliPath: jest.fn().mockReturnValue('/mock/claude'),
     // Mock getView to return null (tests don't have real view)
     // This allows optional chaining to work safely
     getView: jest.fn().mockReturnValue(null),
@@ -156,15 +156,15 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
   return mockPlugin;
 }
 
-describe('ClaudianService', () => {
-  let service: ClaudianService;
+describe('GeminianService', () => {
+  let service: GeminianService;
   let mockPlugin: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockMessages();
     mockPlugin = createMockPlugin();
-    service = new ClaudianService(mockPlugin, createMockMcpManager());
+    service = new GeminianService(mockPlugin, createMockMcpManager());
   });
 
   afterEach(() => {
@@ -234,7 +234,7 @@ describe('ClaudianService', () => {
 
     it('should not block commands when blocklist is disabled', async () => {
       mockPlugin = createMockPlugin({ enableBlocklist: false });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
 
@@ -295,12 +295,12 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('findClaudeCLI', () => {
+  describe('findGeminiCLI', () => {
     beforeEach(() => {
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
-        resolveClaudeCliPath(
+      mockPlugin.getResolvedGeminiCliPath.mockImplementation(() =>
+        resolveGeminiCliPath(
           undefined,  // Hostname path (not used in tests)
-          mockPlugin.settings.claudeCliPath,
+          mockPlugin.settings.geminiCliPath,
           mockPlugin.getActiveEnvironmentVariables()
         )
       );
@@ -331,7 +331,7 @@ describe('ClaudianService', () => {
       }
 
       const errorChunk = chunks.find(
-        (c) => c.type === 'error' && c.content.includes('Claude CLI not found')
+        (c) => c.type === 'error' && c.content.includes('Gemini CLI not found')
       );
       expect(errorChunk).toBeUndefined();
     });
@@ -346,20 +346,20 @@ describe('ClaudianService', () => {
 
       const errorChunk = chunks.find((c) => c.type === 'error');
       expect(errorChunk).toBeDefined();
-      expect(errorChunk?.content).toContain('Claude CLI not found');
+      expect(errorChunk?.content).toContain('Gemini CLI not found');
     });
 
     it('should use custom CLI path when valid file is specified', async () => {
       const customPath = '/custom/path/to/claude';
-      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
-        resolveClaudeCliPath(
+      mockPlugin = createMockPlugin({ geminiCliPath: customPath });
+      mockPlugin.getResolvedGeminiCliPath.mockImplementation(() =>
+        resolveGeminiCliPath(
           undefined,  // Hostname path (not used in tests)
-          mockPlugin.settings.claudeCliPath,
+          mockPlugin.settings.geminiCliPath,
           mockPlugin.getActiveEnvironmentVariables()
         )
       );
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === customPath);
       (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true });
@@ -375,22 +375,22 @@ describe('ClaudianService', () => {
       }
 
       const errorChunk = chunks.find(
-        (c) => c.type === 'error' && c.content.includes('Claude CLI not found')
+        (c) => c.type === 'error' && c.content.includes('Gemini CLI not found')
       );
       expect(errorChunk).toBeUndefined();
     });
 
     it('should fall back to auto-detection when custom path is a directory', async () => {
       const customPath = '/custom/path/to/directory';
-      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
-        resolveClaudeCliPath(
+      mockPlugin = createMockPlugin({ geminiCliPath: customPath });
+      mockPlugin.getResolvedGeminiCliPath.mockImplementation(() =>
+        resolveGeminiCliPath(
           undefined,  // Hostname path (not used in tests)
-          mockPlugin.settings.claudeCliPath,
+          mockPlugin.settings.geminiCliPath,
           mockPlugin.getActiveEnvironmentVariables()
         )
       );
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       const homeDir = os.homedir();
       const autoDetectedPath = path.join(homeDir, '.claude', 'local', 'claude');
@@ -418,15 +418,15 @@ describe('ClaudianService', () => {
 
     it('should fall back to auto-detection when custom path does not exist', async () => {
       const customPath = '/nonexistent/path/claude';
-      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
-        resolveClaudeCliPath(
+      mockPlugin = createMockPlugin({ geminiCliPath: customPath });
+      mockPlugin.getResolvedGeminiCliPath.mockImplementation(() =>
+        resolveGeminiCliPath(
           undefined,  // Hostname path (not used in tests)
-          mockPlugin.settings.claudeCliPath,
+          mockPlugin.settings.geminiCliPath,
           mockPlugin.getActiveEnvironmentVariables()
         )
       );
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       const homeDir = os.homedir();
       const autoDetectedPath = path.join(homeDir, '.claude', 'local', 'claude');
@@ -454,15 +454,15 @@ describe('ClaudianService', () => {
 
     it('should fall back to auto-detection when custom path stat fails', async () => {
       const customPath = '/custom/path/to/claude';
-      mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
-        resolveClaudeCliPath(
+      mockPlugin = createMockPlugin({ geminiCliPath: customPath });
+      mockPlugin.getResolvedGeminiCliPath.mockImplementation(() =>
+        resolveGeminiCliPath(
           undefined,  // Hostname path (not used in tests)
-          mockPlugin.settings.claudeCliPath,
+          mockPlugin.settings.geminiCliPath,
           mockPlugin.getActiveEnvironmentVariables()
         )
       );
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       const homeDir = os.homedir();
       const autoDetectedPath = path.join(homeDir, '.claude', 'local', 'claude');
@@ -489,26 +489,26 @@ describe('ClaudianService', () => {
       }
 
       const errorChunk = chunks.find(
-        (c) => c.type === 'error' && c.content.includes('Claude CLI not found')
+        (c) => c.type === 'error' && c.content.includes('Gemini CLI not found')
       );
       expect(errorChunk).toBeUndefined();
 
       const options = getLastOptions();
-      expect(options?.pathToClaudeCodeExecutable).toBe(autoDetectedPath);
+      expect(options?.pathToGeminiCliExecutable).toBe(autoDetectedPath);
     });
 
     it('should reload CLI path after cleanup', async () => {
       const firstPath = '/custom/path/to/claude-1';
       const secondPath = '/custom/path/to/claude-2';
-      mockPlugin = createMockPlugin({ claudeCliPath: firstPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
-        resolveClaudeCliPath(
+      mockPlugin = createMockPlugin({ geminiCliPath: firstPath });
+      mockPlugin.getResolvedGeminiCliPath.mockImplementation(() =>
+        resolveGeminiCliPath(
           undefined,  // Hostname path (not used in tests)
-          mockPlugin.settings.claudeCliPath,
+          mockPlugin.settings.geminiCliPath,
           mockPlugin.getActiveEnvironmentVariables()
         )
       );
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === firstPath);
       (fs.statSync as jest.Mock).mockReturnValue({ isFile: () => true });
@@ -524,9 +524,9 @@ describe('ClaudianService', () => {
       }
 
       const firstOptions = getLastOptions();
-      expect(firstOptions?.pathToClaudeCodeExecutable).toBe(firstPath);
+      expect(firstOptions?.pathToGeminiCliExecutable).toBe(firstPath);
 
-      mockPlugin.settings.claudeCliPath = secondPath;
+      mockPlugin.settings.geminiCliPath = secondPath;
       service.cleanup();
 
       (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === secondPath);
@@ -543,7 +543,7 @@ describe('ClaudianService', () => {
       }
 
       const secondOptions = getLastOptions();
-      expect(secondOptions?.pathToClaudeCodeExecutable).toBe(secondPath);
+      expect(secondOptions?.pathToGeminiCliExecutable).toBe(secondPath);
     });
   });
 
@@ -817,7 +817,7 @@ describe('ClaudianService', () => {
       const handlersBefore = (service as any).responseHandlers?.length ?? 0;
 
       // Close with preserveHandlers: true
-      service.closePersistentQuery('test', { preserveHandlers: true });
+      service.closePersistentQuery('test');
 
       // Handlers should still exist
       const handlersAfter = (service as any).responseHandlers?.length ?? 0;
@@ -993,7 +993,7 @@ describe('ClaudianService', () => {
           },
         },
       };
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       const chunks: any[] = [];
       for await (const chunk of service.query('hello')) {
@@ -1012,7 +1012,7 @@ describe('ClaudianService', () => {
       mockPlugin = createMockPlugin({
         blockedCommands: { unix: ['rm\\s+-rf', 'chmod\\s+7{3}'], windows: [] },
       });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
 
@@ -1035,7 +1035,7 @@ describe('ClaudianService', () => {
       mockPlugin = createMockPlugin({
         blockedCommands: { unix: ['[invalid regex'], windows: [] },
       });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       (fs.existsSync as jest.Mock).mockReturnValue(true);
 
@@ -1743,7 +1743,7 @@ describe('ClaudianService', () => {
       // Now test the standalone function directly
       const context = buildContextFromHistory(messages);
 
-      // Successful tools show input but no result (Claude can re-read if needed)
+      // Successful tools show input but no result (Gemini can re-read if needed)
       expect(context).toContain('[Tool Read input: file_path=/test.md status=completed]');
       expect(context).not.toContain('File contents');
     });
@@ -1764,7 +1764,7 @@ describe('ClaudianService', () => {
 
       const context = buildContextFromHistory(messages);
 
-      // Failed tools include input AND error message so Claude knows what went wrong
+      // Failed tools include input AND error message so Gemini knows what went wrong
       expect(context).toContain('[Tool Read input: file_path=/missing.md status=error] error: File not found');
     });
 
@@ -1801,7 +1801,7 @@ describe('ClaudianService', () => {
   describe('session expiration recovery flow', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
+      mockPlugin.getResolvedGeminiCliPath.mockReturnValue('/mock/claude');
     });
 
     it('should rebuild history and retry without resume on session expiration', async () => {
@@ -1962,7 +1962,7 @@ describe('ClaudianService', () => {
   describe('image prompt and hydration', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
+      mockPlugin.getResolvedGeminiCliPath.mockReturnValue('/mock/claude');
     });
 
     it('should return plain prompt when no valid images', () => {
@@ -2054,7 +2054,7 @@ describe('ClaudianService', () => {
   describe('remaining business branches', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
+      mockPlugin.getResolvedGeminiCliPath.mockReturnValue('/mock/claude');
     });
 
     it('yields error when session retry also fails', async () => {
@@ -2115,8 +2115,8 @@ describe('ClaudianService', () => {
     });
 
     it('yields error when SDK query throws inside queryViaSDK', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const sdk = require('@anthropic-ai/claude-agent-sdk');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, jest/no-mocks-import
+      const sdk = require('@test/__mocks__/gemini-cli-sdk');
       const spy = jest.spyOn(sdk, 'query').mockImplementation(() => { throw new Error('boom'); });
 
       const chunks: any[] = [];
@@ -2207,7 +2207,7 @@ describe('ClaudianService', () => {
     it('updates permission mode via setPermissionMode when going from YOLO to normal', async () => {
       // Start in YOLO mode
       mockPlugin.settings.permissionMode = 'yolo';
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       const chunks1: any[] = [];
       for await (const c of service.query('first')) chunks1.push(c);
@@ -2226,7 +2226,7 @@ describe('ClaudianService', () => {
     it('updates permission mode via setPermissionMode when going from normal to YOLO', async () => {
       // Start in normal mode
       mockPlugin.settings.permissionMode = 'normal';
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
+      service = new GeminianService(mockPlugin, createMockMcpManager());
 
       const chunks1: any[] = [];
       for await (const c of service.query('first')) chunks1.push(c);
@@ -2285,8 +2285,8 @@ describe('ClaudianService', () => {
       mockPlugin.settings.systemPrompt = 'restart-required';
 
       // Allow query + applyDynamicUpdates, then fail restart due to missing CLI path
-      mockPlugin.getResolvedClaudeCliPath.mockReset();
-      mockPlugin.getResolvedClaudeCliPath
+      mockPlugin.getResolvedGeminiCliPath.mockReset();
+      mockPlugin.getResolvedGeminiCliPath
         .mockReturnValueOnce('/mock/claude')
         .mockReturnValueOnce('/mock/claude')
         .mockReturnValueOnce(null);
@@ -2361,8 +2361,8 @@ describe('ClaudianService', () => {
     });
 
     it('re-enqueues pending message after crash recovery restart', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const sdk = require('@anthropic-ai/claude-agent-sdk');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, jest/no-mocks-import
+      const sdk = require('@test/__mocks__/gemini-cli-sdk');
 
       let callCount = 0;
       let firstPrompt: any = null;

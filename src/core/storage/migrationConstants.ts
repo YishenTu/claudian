@@ -2,16 +2,16 @@
  * Migration Constants - Shared constants for storage migration.
  *
  * Single source of truth for fields that need to be migrated
- * from settings.json to claudian-settings.json.
+ * from settings.json to geminian-settings.json.
  */
 
 /**
- * Fields that are Claudian-specific and should NOT be in CC settings.json.
- * These are migrated to claudian-settings.json and stripped from settings.json.
+ * Fields that are Geminian-specific and should NOT be in Gemini CLI settings.json.
+ * These are migrated to geminian-settings.json and stripped from settings.json.
  *
- * IMPORTANT: Keep this list updated when adding new Claudian settings!
+ * IMPORTANT: Keep this list updated when adding new Geminian settings!
  */
-export const CLAUDIAN_ONLY_FIELDS = new Set([
+export const GEMINIAN_ONLY_FIELDS = new Set([
   // User preferences
   'userName',
 
@@ -34,7 +34,7 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
   'allowedExportPaths',
   'persistentExternalContextPaths',
 
-  // Environment (Claudian uses string format + snippets)
+  // Environment (Geminian uses string format + snippets)
   'environmentVariables',
   'envSnippets',
 
@@ -42,9 +42,9 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
   'keyboardNavigation',
 
   // CLI paths
-  'claudeCliPath',
-  'claudeCliPaths',
-  'loadUserClaudeSettings',
+  'geminiCliPath',
+  'geminiCliPaths',
+  'loadUserGeminiSettings',
 
   // Deprecated fields (removed completely, not migrated)
   'allowedContextPaths',
@@ -53,10 +53,10 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
 ]);
 
 /**
- * Fields that are Claudian-specific and should be migrated.
+ * Fields that are Geminian-specific and should be migrated.
  * Excludes deprecated fields which are just removed.
  */
-export const MIGRATABLE_CLAUDIAN_FIELDS = new Set([
+export const MIGRATABLE_GEMINIAN_FIELDS = new Set([
   'userName',
   'enableBlocklist',
   'blockedCommands',
@@ -75,9 +75,9 @@ export const MIGRATABLE_CLAUDIAN_FIELDS = new Set([
   'envSnippets',
   'env', // Converted to environmentVariables
   'keyboardNavigation',
-  'claudeCliPath',
-  'claudeCliPaths',
-  'loadUserClaudeSettings',
+  'geminiCliPath',
+  'geminiCliPaths',
+  'loadUserGeminiSettings',
 ]);
 
 /**
@@ -90,7 +90,7 @@ export const DEPRECATED_FIELDS = new Set([
 ]);
 
 /**
- * Convert CC env object format to Claudian environmentVariables string format.
+ * Convert Gemini CLI env object format to Geminian environmentVariables string format.
  *
  * @example
  * { ANTHROPIC_API_KEY: "xxx", MY_VAR: "value" }

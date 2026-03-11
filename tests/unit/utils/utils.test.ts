@@ -6,7 +6,7 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
 import { appendMarkdownSnippet } from '@/utils/markdown';
 import {
   expandHomePath,
-  findClaudeCLIPath,
+  findGeminiCLIPath,
   getPathAccessType,
   getVaultPath,
   isPathInAllowedExportPaths,
@@ -225,7 +225,7 @@ describe('utils.ts', () => {
 
   describe('expandHomePath', () => {
     const envKey = 'CLAUDIAN_TEST_PATH';
-    const envValue = path.join(os.tmpdir(), 'claudian-env');
+    const envValue = path.join(os.tmpdir(), 'geminian-env');
     let originalValue: string | undefined;
 
     beforeEach(() => {
@@ -284,10 +284,10 @@ describe('utils.ts', () => {
     it('expands environment variables before filesystem use', () => {
       const envKey = 'CLAUDIAN_FS_TEST_PATH';
       const originalValue = process.env[envKey];
-      process.env[envKey] = '/tmp/claudian-test';
+      process.env[envKey] = '/tmp/geminian-test';
 
       try {
-        expect(normalizePathForFilesystem(`$${envKey}/notes/file.md`)).toBe('/tmp/claudian-test/notes/file.md');
+        expect(normalizePathForFilesystem(`$${envKey}/notes/file.md`)).toBe('/tmp/geminian-test/notes/file.md');
       } finally {
         if (originalValue === undefined) {
           delete process.env[envKey];
@@ -538,7 +538,7 @@ describe('utils.ts', () => {
     });
   });
 
-  describe('findClaudeCLIPath', () => {
+  describe('findGeminiCLIPath', () => {
     const originalPlatform = process.platform;
     let originalEnv: NodeJS.ProcessEnv;
 
@@ -566,32 +566,32 @@ describe('utils.ts', () => {
         }) as fs.Stats);
       }
 
-      it('should return first matching Claude CLI path', () => {
+      it('should return first matching Gemini CLI path', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
         mockExistingFile('/home/test/.local/bin/claude');
 
-        expect(findClaudeCLIPath()).toBe('/home/test/.local/bin/claude');
+        expect(findGeminiCLIPath()).toBe('/home/test/.local/bin/claude');
       });
 
-      it('should return null when Claude CLI is not found', () => {
+      it('should return null when Gemini CLI is not found', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
         jest.spyOn(fs, 'existsSync').mockReturnValue(false as any);
 
-        expect(findClaudeCLIPath()).toBeNull();
+        expect(findGeminiCLIPath()).toBeNull();
       });
 
       it('should check cli.js paths as fallback on Unix', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
-        mockExistingFile('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
+        mockExistingFile('/usr/local/lib/node_modules/@google/gemini-cli/gemini.js');
 
-        expect(findClaudeCLIPath()).toBe('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
+        expect(findGeminiCLIPath()).toBe('/usr/local/lib/node_modules/@google/gemini-cli/gemini.js');
       });
 
-      it('should resolve Claude CLI from custom PATH', () => {
+      it('should resolve Gemini CLI from custom PATH', () => {
         mockExistingFile('/custom/bin/claude');
 
         const customPath = '/custom/bin:/usr/bin';
-        expect(findClaudeCLIPath(customPath)).toBe('/custom/bin/claude');
+        expect(findGeminiCLIPath(customPath)).toBe('/custom/bin/claude');
       });
 
       it('should expand home directory in custom PATH', () => {
@@ -599,7 +599,7 @@ describe('utils.ts', () => {
         mockExistingFile('/home/test/bin/claude');
 
         const customPath = '~/bin:/usr/bin';
-        expect(findClaudeCLIPath(customPath)).toBe('/home/test/bin/claude');
+        expect(findGeminiCLIPath(customPath)).toBe('/home/test/bin/claude');
       });
 
       it('should not return a directory path even if it exists', () => {
@@ -610,7 +610,7 @@ describe('utils.ts', () => {
           isFile: () => false,
         }) as fs.Stats);
 
-        expect(findClaudeCLIPath()).toBeNull();
+        expect(findGeminiCLIPath()).toBeNull();
       });
     });
 
@@ -633,31 +633,31 @@ describe('utils.ts', () => {
       it('should prefer .exe when both .exe and cli.js exist', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const exePath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
-        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@google', 'gemini-cli', 'gemini.js');
         mockExistingFile(exePath, cliJsPath);
 
-        expect(findClaudeCLIPath()).toBe(exePath);
+        expect(findGeminiCLIPath()).toBe(exePath);
       });
 
       it('should prioritize cli.js over .cmd files on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         // Note: path.join uses actual platform separator, so we match against that
-        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@google', 'gemini-cli', 'gemini.js');
         const cmdPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'claude.cmd');
         // Both .cmd and cli.js exist, but cli.js should be returned (cmd is ignored entirely)
         mockExistingFile(cmdPath, cliJsPath);
 
         // Should return cli.js, not claude.cmd
-        expect(findClaudeCLIPath()).toBe(cliJsPath);
+        expect(findGeminiCLIPath()).toBe(cliJsPath);
       });
 
       it('should find cli.js in custom npm global path via npm_config_prefix', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         process.env.npm_config_prefix = 'D:\\nodejs\\node_global';
-        const expectedPath = path.join('D:\\nodejs\\node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        const expectedPath = path.join('D:\\nodejs\\node_global', 'node_modules', '@google', 'gemini-cli', 'gemini.js');
         mockExistingFile(expectedPath);
 
-        expect(findClaudeCLIPath()).toBe(expectedPath);
+        expect(findGeminiCLIPath()).toBe(expectedPath);
       });
 
       it('should fall back to .exe if cli.js not found', () => {
@@ -665,7 +665,7 @@ describe('utils.ts', () => {
         const expectedPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
         mockExistingFile(expectedPath);
 
-        expect(findClaudeCLIPath()).toBe(expectedPath);
+        expect(findGeminiCLIPath()).toBe(expectedPath);
       });
 
       it('should ignore .cmd fallback on Windows', () => {
@@ -673,23 +673,23 @@ describe('utils.ts', () => {
         const expectedPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'claude.cmd');
         mockExistingFile(expectedPath);
 
-        expect(findClaudeCLIPath()).toBeNull();
+        expect(findGeminiCLIPath()).toBeNull();
       });
 
       it('should return null when no CLI is found on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         jest.spyOn(fs, 'existsSync').mockReturnValue(false as any);
 
-        expect(findClaudeCLIPath()).toBeNull();
+        expect(findGeminiCLIPath()).toBeNull();
       });
 
       it('should resolve cli.js from custom PATH npm prefix', () => {
         const npmBin = 'C:\\Users\\test\\AppData\\Roaming\\npm';
-        const cliJsPath = path.join(npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        const cliJsPath = path.join(npmBin, 'node_modules', '@google', 'gemini-cli', 'gemini.js');
         mockExistingFile(cliJsPath);
 
         const customPath = `${npmBin};C:\\Windows\\System32`;
-        expect(findClaudeCLIPath(customPath)).toBe(cliJsPath);
+        expect(findGeminiCLIPath(customPath)).toBe(cliJsPath);
       });
 
       it('should not return a directory path even if it exists', () => {
@@ -701,7 +701,7 @@ describe('utils.ts', () => {
           isFile: () => false,
         }) as fs.Stats);
 
-        expect(findClaudeCLIPath()).toBeNull();
+        expect(findGeminiCLIPath()).toBeNull();
       });
     });
   });

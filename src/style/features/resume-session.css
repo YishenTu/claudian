@@ -1,5 +1,5 @@
 /* Resume Session Dropdown */
-.claudian-resume-dropdown {
+.geminian-resume-dropdown {
   display: none;
   position: absolute;
   bottom: 100%;
@@ -17,11 +17,11 @@
   overflow: hidden;
 }
 
-.claudian-resume-dropdown.visible {
+.geminian-resume-dropdown.visible {
   display: block;
 }
 
-.claudian-resume-header {
+.geminian-resume-header {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -31,19 +31,19 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.claudian-resume-list {
+.geminian-resume-list {
   max-height: 350px;
   overflow-y: auto;
 }
 
-.claudian-resume-empty {
+.geminian-resume-empty {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
 }
 
-.claudian-resume-item {
+.geminian-resume-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -53,43 +53,43 @@
   transition: background 0.1s ease;
 }
 
-.claudian-resume-item:last-child {
+.geminian-resume-item:last-child {
   border-bottom: none;
 }
 
-.claudian-resume-item:hover,
-.claudian-resume-item.selected {
+.geminian-resume-item:hover,
+.geminian-resume-item.selected {
   background: var(--background-modifier-hover);
 }
 
-.claudian-resume-item.current {
+.geminian-resume-item.current {
   background: var(--background-secondary);
   border-inline-start: 2px solid var(--interactive-accent);
   padding-inline-start: 10px;
 }
 
-.claudian-resume-item-icon {
+.geminian-resume-item-icon {
   display: flex;
   align-items: center;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
-.claudian-resume-item-icon svg {
+.geminian-resume-item-icon svg {
   width: 16px;
   height: 16px;
 }
 
-.claudian-resume-item.current .claudian-resume-item-icon {
+.geminian-resume-item.current .geminian-resume-item-icon {
   color: var(--interactive-accent);
 }
 
-.claudian-resume-item-content {
+.geminian-resume-item-content {
   flex: 1;
   min-width: 0;
 }
 
-.claudian-resume-item-title {
+.geminian-resume-item-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-normal);
@@ -98,22 +98,22 @@
   text-overflow: ellipsis;
 }
 
-.claudian-resume-item-date {
+.geminian-resume-item-date {
   font-size: 11px;
   color: var(--text-faint);
   margin-top: 2px;
 }
 
 /* Scrollbar */
-.claudian-resume-list::-webkit-scrollbar {
+.geminian-resume-list::-webkit-scrollbar {
   width: 6px;
 }
 
-.claudian-resume-list::-webkit-scrollbar-track {
+.geminian-resume-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.claudian-resume-list::-webkit-scrollbar-thumb {
+.geminian-resume-list::-webkit-scrollbar-thumb {
   background: var(--background-modifier-border);
   border-radius: 3px;
 }

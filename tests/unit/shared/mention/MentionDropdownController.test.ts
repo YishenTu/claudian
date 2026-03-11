@@ -632,7 +632,7 @@ describe('MentionDropdownController', () => {
       const itemEl = createMockEl();
       renderOptions.renderItem(folderItem, itemEl);
 
-      const nameEl = itemEl.querySelector('.claudian-mention-name-folder');
+      const nameEl = itemEl.querySelector('.geminian-mention-name-folder');
       expect(nameEl?.textContent).toBe('@src/');
 
       localController.destroy();

@@ -3,7 +3,7 @@ import {
   getLastOptions,
   resetMockMessages,
   setMockMessages,
-} from '@test/__mocks__/claude-agent-sdk';
+} from '@test/__mocks__/gemini-cli-sdk';
 import * as fs from 'fs';
 import * as os from 'os';
 
@@ -39,7 +39,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
+    getResolvedGeminiCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -402,7 +402,7 @@ describe('InlineEditService', () => {
     });
 
     it('should return error when claude CLI not found', async () => {
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+      mockPlugin.getResolvedGeminiCliPath.mockReturnValue(null);
 
       const result = await service.editText({
         mode: 'selection',
@@ -412,7 +412,7 @@ describe('InlineEditService', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Claude CLI not found');
+      expect(result.error).toContain('Gemini CLI not found');
     });
 
     it('should use restricted read-only tools', async () => {
@@ -466,8 +466,8 @@ describe('InlineEditService', () => {
       expect(options?.permissionMode).toBe('bypassPermissions');
     });
 
-    it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {
-      mockPlugin.settings.loadUserClaudeSettings = false;
+    it('should set settingSources to project only when loadUserGeminiSettings is false', async () => {
+      mockPlugin.settings.loadUserGeminiSettings = false;
       service = new InlineEditService(mockPlugin);
 
       setMockMessages([
@@ -490,8 +490,8 @@ describe('InlineEditService', () => {
       expect(options?.settingSources).toEqual(['project']);
     });
 
-    it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
-      mockPlugin.settings.loadUserClaudeSettings = true;
+    it('should set settingSources to include user when loadUserGeminiSettings is true', async () => {
+      mockPlugin.settings.loadUserGeminiSettings = true;
       service = new InlineEditService(mockPlugin);
 
       setMockMessages([
@@ -928,8 +928,8 @@ describe('InlineEditService', () => {
     });
 
     it('should surface SDK query errors', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const sdk = require('@anthropic-ai/claude-agent-sdk');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, jest/no-mocks-import
+      const sdk = require('@test/__mocks__/gemini-cli-sdk');
       const spy = jest.spyOn(sdk, 'query').mockImplementation(() => {
         throw new Error('boom');
       });

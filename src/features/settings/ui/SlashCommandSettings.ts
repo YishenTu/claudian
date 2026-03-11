@@ -3,7 +3,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n';
-import type ClaudianPlugin from '../../../main';
+import type GeminianPlugin from '../../../main';
 import { extractFirstParagraph, isSkill, normalizeArgumentHint, parseSlashCommandContent, validateCommandName } from '../../../utils/slashCommand';
 
 function resolveAllowedTools(inputValue: string, parsedTools?: string[]): string[] | undefined {
@@ -18,13 +18,13 @@ function resolveAllowedTools(inputValue: string, parsedTools?: string[]): string
 }
 
 export class SlashCommandModal extends Modal {
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
   private existingCmd: SlashCommand | null;
   private onSave: (cmd: SlashCommand) => Promise<void>;
 
   constructor(
     app: App,
-    plugin: ClaudianPlugin,
+    plugin: GeminianPlugin,
     existingCmd: SlashCommand | null,
     onSave: (cmd: SlashCommand) => Promise<void>
   ) {
@@ -41,7 +41,7 @@ export class SlashCommandModal extends Modal {
     const typeLabel = () => selectedType === 'skill' ? 'Skill' : 'Slash Command';
 
     this.setTitle(this.existingCmd ? `Edit ${typeLabel()}` : `Add ${typeLabel()}`);
-    this.modalEl.addClass('claudian-sp-modal');
+    this.modalEl.addClass('geminian-sp-modal');
 
     const { contentEl } = this;
 
@@ -104,10 +104,10 @@ export class SlashCommandModal extends Modal {
         text.setValue(this.existingCmd?.description || '');
       });
 
-    const details = contentEl.createEl('details', { cls: 'claudian-sp-advanced-section' });
+    const details = contentEl.createEl('details', { cls: 'geminian-sp-advanced-section' });
     details.createEl('summary', {
       text: 'Advanced options',
-      cls: 'claudian-sp-advanced-summary',
+      cls: 'geminian-sp-advanced-summary',
     });
     if (this.existingCmd?.argumentHint || this.existingCmd?.model || this.existingCmd?.allowedTools?.length ||
         this.existingCmd?.disableModelInvocation || this.existingCmd?.userInvocable === false ||
@@ -129,7 +129,7 @@ export class SlashCommandModal extends Modal {
       .addText(text => {
         modelInput = text.inputEl;
         text.setValue(this.existingCmd?.model || '')
-          .setPlaceholder('claude-sonnet-4-5');
+          .setPlaceholder('gemini-2.5-pro');
       });
 
     new Setting(details)
@@ -185,7 +185,7 @@ export class SlashCommandModal extends Modal {
       .setDesc('Use $ARGUMENTS, $1, $2, @file, !`bash`');
 
     const contentArea = contentEl.createEl('textarea', {
-      cls: 'claudian-sp-content-area',
+      cls: 'geminian-sp-content-area',
       attr: {
         rows: '10',
         placeholder: 'Review this code for:\n$ARGUMENTS\n\n@$1',
@@ -196,17 +196,17 @@ export class SlashCommandModal extends Modal {
       : '';
     contentArea.value = initialContent;
 
-    const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
+    const buttonContainer = contentEl.createDiv({ cls: 'geminian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
       text: 'Cancel',
-      cls: 'claudian-cancel-btn',
+      cls: 'geminian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
       text: 'Save',
-      cls: 'claudian-save-btn',
+      cls: 'geminian-save-btn',
     });
     saveBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
@@ -281,9 +281,9 @@ export class SlashCommandModal extends Modal {
 
 export class SlashCommandSettings {
   private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
 
-  constructor(containerEl: HTMLElement, plugin: ClaudianPlugin) {
+  constructor(containerEl: HTMLElement, plugin: GeminianPlugin) {
     this.containerEl = containerEl;
     this.plugin = plugin;
     this.render();
@@ -292,13 +292,13 @@ export class SlashCommandSettings {
   private render(): void {
     this.containerEl.empty();
 
-    const headerEl = this.containerEl.createDiv({ cls: 'claudian-sp-header' });
-    headerEl.createSpan({ text: t('settings.slashCommands.name'), cls: 'claudian-sp-label' });
+    const headerEl = this.containerEl.createDiv({ cls: 'geminian-sp-header' });
+    headerEl.createSpan({ text: t('settings.slashCommands.name'), cls: 'geminian-sp-label' });
 
-    const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
+    const actionsEl = headerEl.createDiv({ cls: 'geminian-sp-header-actions' });
 
     const addBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn',
+      cls: 'geminian-settings-action-btn',
       attr: { 'aria-label': 'Add' },
     });
     setIcon(addBtn, 'plus');
@@ -307,12 +307,12 @@ export class SlashCommandSettings {
     const commands = this.plugin.settings.slashCommands;
 
     if (commands.length === 0) {
-      const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
+      const emptyEl = this.containerEl.createDiv({ cls: 'geminian-sp-empty-state' });
       emptyEl.setText('No commands or skills configured. Click + to create one.');
       return;
     }
 
-    const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
+    const listEl = this.containerEl.createDiv({ cls: 'geminian-sp-list' });
 
     for (const cmd of commands) {
       this.renderCommandItem(listEl, cmd);
@@ -320,33 +320,33 @@ export class SlashCommandSettings {
   }
 
   private renderCommandItem(listEl: HTMLElement, cmd: SlashCommand): void {
-    const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
+    const itemEl = listEl.createDiv({ cls: 'geminian-sp-item' });
 
-    const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
+    const infoEl = itemEl.createDiv({ cls: 'geminian-sp-info' });
 
-    const headerRow = infoEl.createDiv({ cls: 'claudian-sp-item-header' });
+    const headerRow = infoEl.createDiv({ cls: 'geminian-sp-item-header' });
 
-    const nameEl = headerRow.createSpan({ cls: 'claudian-sp-item-name' });
+    const nameEl = headerRow.createSpan({ cls: 'geminian-sp-item-name' });
     nameEl.setText(`/${cmd.name}`);
 
     if (isSkill(cmd)) {
-      headerRow.createSpan({ text: 'skill', cls: 'claudian-slash-item-badge' });
+      headerRow.createSpan({ text: 'skill', cls: 'geminian-slash-item-badge' });
     }
 
     if (cmd.argumentHint) {
-      const hintEl = headerRow.createSpan({ cls: 'claudian-slash-item-hint' });
+      const hintEl = headerRow.createSpan({ cls: 'geminian-slash-item-hint' });
       hintEl.setText(cmd.argumentHint);
     }
 
     if (cmd.description) {
-      const descEl = infoEl.createDiv({ cls: 'claudian-sp-item-desc' });
+      const descEl = infoEl.createDiv({ cls: 'geminian-sp-item-desc' });
       descEl.setText(cmd.description);
     }
 
-    const actionsEl = itemEl.createDiv({ cls: 'claudian-sp-item-actions' });
+    const actionsEl = itemEl.createDiv({ cls: 'geminian-sp-item-actions' });
 
     const editBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn',
+      cls: 'geminian-settings-action-btn',
       attr: { 'aria-label': 'Edit' },
     });
     setIcon(editBtn, 'pencil');
@@ -354,7 +354,7 @@ export class SlashCommandSettings {
 
     if (!isSkill(cmd)) {
       const convertBtn = actionsEl.createEl('button', {
-        cls: 'claudian-settings-action-btn',
+        cls: 'geminian-settings-action-btn',
         attr: { 'aria-label': 'Convert to skill' },
       });
       setIcon(convertBtn, 'package');
@@ -368,7 +368,7 @@ export class SlashCommandSettings {
     }
 
     const deleteBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
+      cls: 'geminian-settings-action-btn geminian-settings-delete-btn',
       attr: { 'aria-label': 'Delete' },
     });
     setIcon(deleteBtn, 'trash-2');

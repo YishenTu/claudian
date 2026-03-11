@@ -1,7 +1,5 @@
 /** Permission utilities for tool action approval. */
 
-import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
-
 import {
   TOOL_BASH,
   TOOL_EDIT,
@@ -11,6 +9,22 @@ import {
   TOOL_READ,
   TOOL_WRITE,
 } from '../tools/toolNames';
+
+/** Where a permission update should be applied. */
+export type PermissionUpdateDestination = 'userSettings' | 'projectSettings' | 'localSettings' | 'session' | 'cliArg';
+
+type PermissionBehavior = 'allow' | 'deny' | 'ask';
+type PermissionRuleValue = { toolName: string; ruleContent?: string };
+type PermissionModeValue = 'acceptEdits' | 'bypassPermissions' | 'default' | 'delegate' | 'dontAsk' | 'plan';
+
+/** Permission update instruction for the CLI. */
+export type PermissionUpdate =
+  | { type: 'addRules'; rules: PermissionRuleValue[]; behavior: PermissionBehavior; destination: PermissionUpdateDestination }
+  | { type: 'replaceRules'; rules: PermissionRuleValue[]; behavior: PermissionBehavior; destination: PermissionUpdateDestination }
+  | { type: 'removeRules'; rules: PermissionRuleValue[]; behavior: PermissionBehavior; destination: PermissionUpdateDestination }
+  | { type: 'setMode'; mode: PermissionModeValue; destination: PermissionUpdateDestination }
+  | { type: 'addDirectories'; directories: string[]; destination: PermissionUpdateDestination }
+  | { type: 'removeDirectories'; directories: string[]; destination: PermissionUpdateDestination };
 
 export function getActionPattern(toolName: string, input: Record<string, unknown>): string | null {
   switch (toolName) {

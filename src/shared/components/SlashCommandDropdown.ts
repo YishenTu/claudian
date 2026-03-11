@@ -1,5 +1,5 @@
 /**
- * Claudian - Slash command dropdown
+ * Geminian - Slash command dropdown
  *
  * Dropdown UI for selecting slash commands when typing /.
  * Follows the FileContext.ts pattern for input detection and keyboard navigation.
@@ -11,7 +11,7 @@ import { normalizeArgumentHint } from '../../utils/slashCommand';
 
 /**
  * SDK commands to filter out from the dropdown.
- * These are either handled differently in Claudian or don't apply.
+ * These are either handled differently in Geminian or don't apply.
  */
 const FILTERED_SDK_COMMANDS = new Set([
   'context',
@@ -243,7 +243,7 @@ export class SlashCommandDropdown {
     const seenNames = new Set<string>();
     const allCommands: SlashCommand[] = [];
 
-    // Add Claudian built-in commands first (highest priority)
+    // Add Geminian built-in commands first (highest priority)
     // Built-in commands are not subject to user hiding (they are essential UI actions)
     for (const cmd of builtInCommands) {
       const nameLower = cmd.name.toLowerCase();
@@ -277,27 +277,27 @@ export class SlashCommandDropdown {
     this.dropdownEl.empty();
 
     if (this.filteredCommands.length === 0) {
-      const emptyEl = this.dropdownEl.createDiv({ cls: 'claudian-slash-empty' });
+      const emptyEl = this.dropdownEl.createDiv({ cls: 'geminian-slash-empty' });
       emptyEl.setText('No matching commands');
     } else {
       for (let i = 0; i < this.filteredCommands.length; i++) {
         const cmd = this.filteredCommands[i];
-        const itemEl = this.dropdownEl.createDiv({ cls: 'claudian-slash-item' });
+        const itemEl = this.dropdownEl.createDiv({ cls: 'geminian-slash-item' });
 
         if (i === this.selectedIndex) {
           itemEl.addClass('selected');
         }
 
-        const nameEl = itemEl.createSpan({ cls: 'claudian-slash-name' });
+        const nameEl = itemEl.createSpan({ cls: 'geminian-slash-name' });
         nameEl.setText(`/${cmd.name}`);
 
         if (cmd.argumentHint) {
-          const hintEl = itemEl.createSpan({ cls: 'claudian-slash-hint' });
+          const hintEl = itemEl.createSpan({ cls: 'geminian-slash-hint' });
           hintEl.setText(normalizeArgumentHint(cmd.argumentHint));
         }
 
         if (cmd.description) {
-          const descEl = itemEl.createDiv({ cls: 'claudian-slash-desc' });
+          const descEl = itemEl.createDiv({ cls: 'geminian-slash-desc' });
           descEl.setText(cmd.description);
         }
 
@@ -325,12 +325,12 @@ export class SlashCommandDropdown {
     if (this.isFixed) {
       // For inline editor: append to containerEl with fixed positioning
       const dropdown = this.containerEl.createDiv({
-        cls: 'claudian-slash-dropdown claudian-slash-dropdown-fixed',
+        cls: 'geminian-slash-dropdown geminian-slash-dropdown-fixed',
       });
       return dropdown;
     } else {
       // For chat panel: append to container with absolute positioning
-      return this.containerEl.createDiv({ cls: 'claudian-slash-dropdown' });
+      return this.containerEl.createDiv({ cls: 'geminian-slash-dropdown' });
     }
   }
 
@@ -353,7 +353,7 @@ export class SlashCommandDropdown {
   }
 
   private updateSelection(): void {
-    const items = this.dropdownEl?.querySelectorAll('.claudian-slash-item');
+    const items = this.dropdownEl?.querySelectorAll('.geminian-slash-item');
     items?.forEach((item, index) => {
       if (index === this.selectedIndex) {
         item.addClass('selected');

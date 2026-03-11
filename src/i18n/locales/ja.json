@@ -65,10 +65,10 @@
     }
   },
   "settings": {
-    "title": "Claudian 設定",
+    "title": "Geminian 設定",
     "customization": "カスタマイズ",
     "userName": {
-      "name": "Claudian はどのように呼びますか？",
+      "name": "Geminian はどのように呼びますか？",
       "desc": "パーソナライズされた挨拶に使用する名前（空欄で一般の挨拶）"
     },
     "excludedTags": {
@@ -77,7 +77,7 @@
     },
     "mediaFolder": {
       "name": "メディアフォルダ",
-      "desc": "添付ファイル/画像を格納するフォルダ。ノートが ![[image.jpg]] を使用する場合、Claude はここで探します。空欄でリポジトリのルートを使用。"
+      "desc": "添付ファイル/画像を格納するフォルダ。ノートが ![[image.jpg]] を使用する場合、Gemini はここで探します。空欄でリポジトリのルートを使用。"
     },
     "systemPrompt": {
       "name": "カスタムシステムプロンプト",
@@ -138,20 +138,20 @@
     },
     "hiddenSlashCommands": {
       "name": "非表示コマンド",
-      "desc": "ドロップダウンから特定のスラッシュコマンドを非表示にします。Claudian に関係のない Claude Code コマンドを非表示にするのに便利です。先頭のスラッシュなしでコマンド名を1行に1つ入力してください。",
+      "desc": "ドロップダウンから特定のスラッシュコマンドを非表示にします。Geminian に関係のない Gemini CLI コマンドを非表示にするのに便利です。先頭のスラッシュなしでコマンド名を1行に1つ入力してください。",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
       "name": "MCP サーバー",
-      "desc": "モデルコンテキストプロトコルサーバーを設定し、外部ツールやデータソースで Claude の機能を拡張します。コンテキスト保存モードのサーバーは @mention でアクティブにする必要があります。"
+      "desc": "モデルコンテキストプロトコルサーバーを設定し、外部ツールやデータソースで Gemini の機能を拡張します。コンテキスト保存モードのサーバーは @mention でアクティブにする必要があります。"
     },
     "plugins": {
-      "name": "Claude Code プラグイン",
-      "desc": "~/.claude/plugins から検出された Claude Code プラグインを有効化または無効化します。有効化されたプラグインは保管庫ごとに保存されます。"
+      "name": "Gemini CLI プラグイン",
+      "desc": "~/.gemini/plugins から検出された Gemini CLI プラグインを有効化または無効化します。有効化されたプラグインは保管庫ごとに保存されます。"
     },
     "subagents": {
       "name": "サブエージェント",
-      "desc": "Claude が委任できるカスタムサブエージェントを設定します。",
+      "desc": "Gemini が委任できるカスタムサブエージェントを設定します。",
       "noAgents": "サブエージェントが設定されていません。+ をクリックして作成してください。",
       "deleteConfirm": "サブエージェント「{name}」を削除しますか？",
       "saveFailed": "サブエージェントの保存に失敗しました: {message}",
@@ -189,8 +189,8 @@
     },
     "safety": "セキュリティ",
     "loadUserSettings": {
-      "name": "ユーザーClaude設定を読み込む",
-      "desc": "~/.claude/settings.json を読み込みます。有効にすると、ユーザーの Claude Code 許可ルールがセキュリティモードをバイパスする可能性があります。"
+      "name": "ユーザーGemini設定を読み込む",
+      "desc": "~/.gemini/settings.json を読み込みます。有効にすると、ユーザーの Gemini CLI 許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
     "enableBlocklist": {
       "name": "コマンドブラックリストを有効化",
@@ -209,7 +209,7 @@
     "environment": "環境",
     "customVariables": {
       "name": "カスタム変数",
-      "desc": "Claude SDKの環境変数（KEY=VALUE形式、1行に1つ）。exportプレフィックス対応。"
+      "desc": "Gemini SDKの環境変数（KEY=VALUE形式、1行に1つ）。exportプレフィックス対応。"
     },
     "envSnippets": {
       "name": "スニペット",
@@ -240,10 +240,6 @@
       "name": "1Mコンテキストウィンドウを持つSonnetを有効化",
       "desc": "モデルセレクターで標準Sonnetを Sonnet (1M) に置き換えます。200kトークン未満では同じ価格。Maxサブスクリプションが必要です。"
     },
-    "enableChrome": {
-      "name": "Chrome拡張機能を有効化",
-      "desc": "claude-in-chrome拡張機能を通じてClaudeがChromeと連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"
-    },
     "enableBangBash": {
       "name": "bash モード (!) を有効化",
       "desc": "入力欄が空の状態で ! を入力すると bash モードに入ります。Node.js の child_process 経由でコマンドを直接実行します。ビューの再オープンが必要です。",
@@ -253,7 +249,7 @@
     },
     "maxTabs": {
       "name": "最大チャットタブ数",
-      "desc": "同時に開ける最大チャットタブ数（3-10）。各タブは個別の Claude セッションを使用します。",
+      "desc": "同時に開ける最大チャットタブ数（3-10）。各タブは個別の Gemini セッションを使用します。",
       "warning": "5 タブを超えるとパフォーマンスやメモリ使用量に影響する可能性があります。"
     },
     "tabBarPosition": {
@@ -264,17 +260,17 @@
     },
     "enableAutoScroll": {
       "name": "ストリーミング中の自動スクロール",
-      "desc": "Claudeが応答をストリーミングしている間、自動的に下にスクロールします。無効にすると上部に留まり、最初から読むことができます。"
+      "desc": "Geminiが応答をストリーミングしている間、自動的に下にスクロールします。無効にすると上部に留まり、最初から読むことができます。"
     },
     "openInMainTab": {
       "name": "メインエディタ領域で開く",
       "desc": "チャットパネルを右サイドバーではなく、中央エディタ領域のメインタブとして開きます"
     },
     "cliPath": {
-      "name": "Claude CLI パス",
-      "desc": "Claude Code CLI のカスタムパス。空欄で自動検出を使用。",
-      "descWindows": "ネイティブインストーラーの場合は claude.exe を使用。npm/pnpm/yarn やその他のパッケージマネージャーでのインストールの場合は cli.js パスを使用（claude.cmd ではない）。",
-      "descUnix": "\"which claude\" の出力を貼り付けてください - ネイティブと npm/pnpm/yarn インストールの両方で動作します。",
+      "name": "Gemini CLI パス",
+      "desc": "Gemini CLI CLI のカスタムパス。空欄で自動検出を使用。",
+      "descWindows": "ネイティブインストーラーの場合は gemini.exe を使用。npm/pnpm/yarn やその他のパッケージマネージャーでのインストールの場合は cli.js パスを使用（gemini.cmd ではない）。",
+      "descUnix": "\"which gemini\" の出力を貼り付けてください - ネイティブと npm/pnpm/yarn インストールの両方で動作します。",
       "validation": {
         "notExist": "パスが存在しません",
         "isDirectory": "パスはディレクトリでファイルではありません"

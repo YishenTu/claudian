@@ -32,7 +32,7 @@ export const COMPLETION_FLAVOR_WORDS = [
   'Cogitated',
 ] as const;
 
-/** Random flavor texts shown while Claude is thinking. */
+/** Random flavor texts shown while Gemini is thinking. */
 export const FLAVOR_TEXTS = [
   // Classic
   'Thinking...',

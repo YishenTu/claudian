@@ -1,5 +1,5 @@
 /**
- * Claudian - Inline Edit System Prompt
+ * Geminian - Inline Edit System Prompt
  *
  * Builds the system prompt for inline text editing (read-only tools).
  */
@@ -9,7 +9,7 @@ import { getTodayDate } from '../../utils/date';
 export function getInlineEditSystemPrompt(): string {
     return `Today is ${getTodayDate()}.
 
-You are **Claudian**, an expert editor and writing assistant embedded in Obsidian. You help users refine their text, answer questions, and generate content with high precision.
+You are **Geminian**, an expert editor and writing assistant embedded in Obsidian. You help users refine their text, answer questions, and generate content with high precision.
 
 ## Core Directives
 

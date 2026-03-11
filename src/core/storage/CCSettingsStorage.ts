@@ -1,43 +1,43 @@
 /**
- * CCSettingsStorage - Handles CC-compatible settings.json read/write.
+ * GeminiCLISettingsStorage - Handles Gemini CLI-compatible settings.json read/write.
  *
- * Manages the .claude/settings.json file in Claude Code compatible format.
- * This file is shared with Claude Code CLI for interoperability.
+ * Manages the .gemini/settings.json file in Gemini CLI compatible format.
+ * This file is shared with Gemini CLI for interoperability.
  *
- * Only CC-compatible fields are stored here:
+ * Only Gemini CLI-compatible fields are stored here:
  * - permissions (allow/deny/ask)
  * - model (optional override)
  * - env (optional environment variables)
  *
- * Claudian-specific settings go in claudian-settings.json.
+ * Geminian-specific settings go in geminian-settings.json.
  */
 
 import type {
-  CCPermissions,
-  CCSettings,
+  GeminiCLISettings,
+  GeminiPermissions,
   LegacyPermission,
   PermissionRule,
 } from '../types';
 import {
-  DEFAULT_CC_PERMISSIONS,
-  DEFAULT_CC_SETTINGS,
+  DEFAULT_GEMINI_CLI_SETTINGS,
+  DEFAULT_GEMINI_PERMISSIONS,
   legacyPermissionsToCCPermissions,
 } from '../types';
-import { CLAUDIAN_ONLY_FIELDS } from './migrationConstants';
+import { GEMINIAN_ONLY_FIELDS } from './migrationConstants';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
-/** Path to CC settings file relative to vault root. */
-export const CC_SETTINGS_PATH = '.claude/settings.json';
+/** Path to Gemini CLI settings file relative to vault root. */
+export const GEMINI_CLI_SETTINGS_PATH = '.gemini/settings.json';
 
-/** Schema URL for CC settings. */
-const CC_SETTINGS_SCHEMA = 'https://json.schemastore.org/claude-code-settings.json';
+/** Schema URL for Gemini CLI settings. */
+const GEMINI_CLI_SETTINGS_SCHEMA = 'https://json.schemastore.org/gemini-cli-settings.json';
 
-function hasClaudianOnlyFields(data: Record<string, unknown>): boolean {
-  return Object.keys(data).some(key => CLAUDIAN_ONLY_FIELDS.has(key));
+function hasGeminianOnlyFields(data: Record<string, unknown>): boolean {
+  return Object.keys(data).some(key => GEMINIAN_ONLY_FIELDS.has(key));
 }
 
 /**
- * Check if a settings object uses the legacy Claudian permissions format.
+ * Check if a settings object uses the legacy Geminian permissions format.
  * Legacy format: permissions is an array of objects with toolName/pattern.
  */
 export function isLegacyPermissionsFormat(data: unknown): data is { permissions: LegacyPermission[] } {
@@ -62,9 +62,9 @@ function normalizeRuleList(value: unknown): PermissionRule[] {
   return value.filter((r): r is string => typeof r === 'string') as PermissionRule[];
 }
 
-function normalizePermissions(permissions: unknown): CCPermissions {
+function normalizePermissions(permissions: unknown): GeminiPermissions {
   if (!permissions || typeof permissions !== 'object') {
-    return { ...DEFAULT_CC_PERMISSIONS };
+    return { ...DEFAULT_GEMINI_PERMISSIONS };
   }
 
   const p = permissions as Record<string, unknown>;
@@ -72,7 +72,7 @@ function normalizePermissions(permissions: unknown): CCPermissions {
     allow: normalizeRuleList(p.allow),
     deny: normalizeRuleList(p.deny),
     ask: normalizeRuleList(p.ask),
-    defaultMode: typeof p.defaultMode === 'string' ? p.defaultMode as CCPermissions['defaultMode'] : undefined,
+    defaultMode: typeof p.defaultMode === 'string' ? p.defaultMode as GeminiPermissions['defaultMode'] : undefined,
     additionalDirectories: Array.isArray(p.additionalDirectories)
       ? p.additionalDirectories.filter((d): d is string => typeof d === 'string')
       : undefined,
@@ -80,71 +80,67 @@ function normalizePermissions(permissions: unknown): CCPermissions {
 }
 
 /**
- * Storage for CC-compatible settings.
+ * Storage for Gemini CLI-compatible settings.
  *
  * Note: Permission update methods (addAllowRule, addDenyRule, etc.) use a
  * read-modify-write pattern. Concurrent calls may race and lose updates.
  * In practice this is fine since user interactions are sequential.
  */
-export class CCSettingsStorage {
+export class GeminiCLISettingsStorage {
   constructor(private adapter: VaultFileAdapter) { }
 
   /**
-   * Load CC settings from .claude/settings.json.
+   * Load Gemini CLI settings from .gemini/settings.json.
    * Returns default settings if file doesn't exist.
    * Throws if file exists but cannot be read or parsed.
    */
-  async load(): Promise<CCSettings> {
-    if (!(await this.adapter.exists(CC_SETTINGS_PATH))) {
-      return { ...DEFAULT_CC_SETTINGS };
+  async load(): Promise<GeminiCLISettings> {
+    if (!(await this.adapter.exists(GEMINI_CLI_SETTINGS_PATH))) {
+      return { ...DEFAULT_GEMINI_CLI_SETTINGS };
     }
 
-    const content = await this.adapter.read(CC_SETTINGS_PATH);
+    const content = await this.adapter.read(GEMINI_CLI_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
 
     // Check for legacy format and migrate if needed
     if (isLegacyPermissionsFormat(stored)) {
       const legacyPerms = stored.permissions as LegacyPermission[];
-      const ccPerms = legacyPermissionsToCCPermissions(legacyPerms);
+      const geminiPerms = legacyPermissionsToCCPermissions(legacyPerms);
 
-      // Return migrated permissions but keep other CC fields
       return {
-        $schema: CC_SETTINGS_SCHEMA,
+        $schema: GEMINI_CLI_SETTINGS_SCHEMA,
         ...stored,
-        permissions: ccPerms,
+        permissions: geminiPerms,
       };
     }
 
     return {
-      $schema: CC_SETTINGS_SCHEMA,
+      $schema: GEMINI_CLI_SETTINGS_SCHEMA,
       ...stored,
       permissions: normalizePermissions(stored.permissions),
     };
   }
 
   /**
-   * Save CC settings to .claude/settings.json.
-   * Preserves unknown fields for CC compatibility.
+   * Save Gemini CLI settings to .gemini/settings.json.
+   * Preserves unknown fields for Gemini CLI compatibility.
    *
-   * @param stripClaudianFields - If true, remove Claudian-only fields (only during migration)
+   * @param stripGeminianFields - If true, remove Geminian-only fields (only during migration)
    */
-  async save(settings: CCSettings, stripClaudianFields: boolean = false): Promise<void> {
-    // Load existing to preserve CC-specific fields we don't manage
+  async save(settings: GeminiCLISettings, stripGeminianFields: boolean = false): Promise<void> {
     let existing: Record<string, unknown> = {};
-    if (await this.adapter.exists(CC_SETTINGS_PATH)) {
+    if (await this.adapter.exists(GEMINI_CLI_SETTINGS_PATH)) {
       try {
-        const content = await this.adapter.read(CC_SETTINGS_PATH);
+        const content = await this.adapter.read(GEMINI_CLI_SETTINGS_PATH);
         const parsed = JSON.parse(content) as Record<string, unknown>;
 
-        // Only strip Claudian-only fields during explicit migration
-        if (stripClaudianFields && (isLegacyPermissionsFormat(parsed) || hasClaudianOnlyFields(parsed))) {
+        if (stripGeminianFields && (isLegacyPermissionsFormat(parsed) || hasGeminianOnlyFields(parsed))) {
           existing = {};
           for (const [key, value] of Object.entries(parsed)) {
-            if (!CLAUDIAN_ONLY_FIELDS.has(key)) {
+            if (!GEMINIAN_ONLY_FIELDS.has(key)) {
               existing[key] = value;
             }
           }
-          // Also strip legacy permissions array format
           if (Array.isArray(existing.permissions)) {
             delete existing.permissions;
           }
@@ -156,31 +152,30 @@ export class CCSettingsStorage {
       }
     }
 
-    // Merge: existing CC fields + our updates
-    const merged: CCSettings = {
+    const merged: GeminiCLISettings = {
       ...existing,
-      $schema: CC_SETTINGS_SCHEMA,
-      permissions: settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS },
+      $schema: GEMINI_CLI_SETTINGS_SCHEMA,
+      permissions: settings.permissions ?? { ...DEFAULT_GEMINI_PERMISSIONS },
     };
 
-    if (settings.enabledPlugins !== undefined) {
-      merged.enabledPlugins = settings.enabledPlugins;
+    if (settings.enabledExtensions !== undefined) {
+      merged.enabledExtensions = settings.enabledExtensions;
     }
 
     const content = JSON.stringify(merged, null, 2);
-    await this.adapter.write(CC_SETTINGS_PATH, content);
+    await this.adapter.write(GEMINI_CLI_SETTINGS_PATH, content);
   }
 
   async exists(): Promise<boolean> {
-    return this.adapter.exists(CC_SETTINGS_PATH);
+    return this.adapter.exists(GEMINI_CLI_SETTINGS_PATH);
   }
 
-  async getPermissions(): Promise<CCPermissions> {
+  async getPermissions(): Promise<GeminiPermissions> {
     const settings = await this.load();
-    return settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
+    return settings.permissions ?? { ...DEFAULT_GEMINI_PERMISSIONS };
   }
 
-  async updatePermissions(permissions: CCPermissions): Promise<void> {
+  async updatePermissions(permissions: GeminiPermissions): Promise<void> {
     const settings = await this.load();
     settings.permissions = permissions;
     await this.save(settings);
@@ -222,49 +217,48 @@ export class CCSettingsStorage {
   }
 
   /**
-   * Get enabled plugins map from CC settings.
+   * Get enabled extensions map from Gemini CLI settings.
    * Returns empty object if not set.
    */
-  async getEnabledPlugins(): Promise<Record<string, boolean>> {
+  async getEnabledExtensions(): Promise<Record<string, boolean>> {
     const settings = await this.load();
-    return settings.enabledPlugins ?? {};
+    return settings.enabledExtensions ?? {};
   }
 
   /**
-   * Set plugin enabled state.
-   * Writes to .claude/settings.json so CLI respects the state.
+   * Set extension enabled state.
+   * Writes to .gemini/settings.json so CLI respects the state.
    *
-   * @param pluginId - Full plugin ID (e.g., "plugin-name@source")
+   * @param extensionId - Full extension ID (e.g., "extension-name@source")
    * @param enabled - true to enable, false to disable
    */
-  async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
+  async setExtensionEnabled(extensionId: string, enabled: boolean): Promise<void> {
     const settings = await this.load();
-    const enabledPlugins = settings.enabledPlugins ?? {};
+    const enabledExtensions = settings.enabledExtensions ?? {};
 
-    enabledPlugins[pluginId] = enabled;
-    settings.enabledPlugins = enabledPlugins;
+    enabledExtensions[extensionId] = enabled;
+    settings.enabledExtensions = enabledExtensions;
 
     await this.save(settings);
   }
 
   /**
-   * Get list of plugin IDs that are explicitly enabled.
-   * Used for PluginManager initialization.
+   * Get list of extension IDs that are explicitly enabled.
    */
-  async getExplicitlyEnabledPluginIds(): Promise<string[]> {
-    const enabledPlugins = await this.getEnabledPlugins();
-    return Object.entries(enabledPlugins)
+  async getExplicitlyEnabledExtensionIds(): Promise<string[]> {
+    const enabledExtensions = await this.getEnabledExtensions();
+    return Object.entries(enabledExtensions)
       .filter(([, enabled]) => enabled)
       .map(([id]) => id);
   }
 
   /**
-   * Check if a plugin is explicitly disabled.
-   * Returns true only if the plugin is set to false.
+   * Check if an extension is explicitly disabled.
+   * Returns true only if the extension is set to false.
    * Returns false if not set (inherits from global) or set to true.
    */
-  async isPluginDisabled(pluginId: string): Promise<boolean> {
-    const enabledPlugins = await this.getEnabledPlugins();
-    return enabledPlugins[pluginId] === false;
+  async isExtensionDisabled(extensionId: string): Promise<boolean> {
+    const enabledExtensions = await this.getEnabledExtensions();
+    return enabledExtensions[extensionId] === false;
   }
 }

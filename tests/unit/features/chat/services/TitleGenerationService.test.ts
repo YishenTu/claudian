@@ -3,7 +3,7 @@ import {
   getLastOptions,
   resetMockMessages,
   setMockMessages,
-} from '@test/__mocks__/claude-agent-sdk';
+} from '@test/__mocks__/gemini-cli-sdk';
 
 import { type TitleGenerationResult, TitleGenerationService } from '@/features/chat/services/TitleGenerationService';
 function createMockPlugin(settings = {}) {
@@ -22,7 +22,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
+    getResolvedGeminiCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -268,20 +268,20 @@ describe('TitleGenerationService', () => {
       });
     });
 
-    it('should fail when Claude CLI is not found', async () => {
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+    it('should fail when Gemini CLI is not found', async () => {
+      mockPlugin.getResolvedGeminiCliPath.mockReturnValue(null);
 
       const callback = jest.fn();
       await service.generateTitle('conv-123', 'test', callback);
 
       expect(callback).toHaveBeenCalledWith('conv-123', {
         success: false,
-        error: 'Claude CLI not found',
+        error: 'Gemini CLI not found',
       });
     });
 
-    it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {
-      mockPlugin.settings.loadUserClaudeSettings = false;
+    it('should set settingSources to project only when loadUserGeminiSettings is false', async () => {
+      mockPlugin.settings.loadUserGeminiSettings = false;
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -301,8 +301,8 @@ describe('TitleGenerationService', () => {
       expect(options?.settingSources).toEqual(['project']);
     });
 
-    it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
-      mockPlugin.settings.loadUserClaudeSettings = true;
+    it('should set settingSources to include user when loadUserGeminiSettings is true', async () => {
+      mockPlugin.settings.loadUserGeminiSettings = true;
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },

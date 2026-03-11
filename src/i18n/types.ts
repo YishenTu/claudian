@@ -210,8 +210,6 @@ export type TranslationKey =
   | 'settings.advanced'
   | 'settings.show1MModel.name'
   | 'settings.show1MModel.desc'
-  | 'settings.enableChrome.name'
-  | 'settings.enableChrome.desc'
   | 'settings.enableBangBash.name'
   | 'settings.enableBangBash.desc'
   | 'settings.enableBangBash.validation.noNode'

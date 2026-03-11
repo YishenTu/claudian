@@ -2,46 +2,46 @@
  * StorageService - Main coordinator for distributed storage system.
  *
  * Manages:
- * - CC settings in .claude/settings.json (CC-compatible, shareable)
- * - Claudian settings in .claude/claudian-settings.json (Claudian-specific)
- * - Slash commands in .claude/commands/*.md
- * - Chat sessions in .claude/sessions/*.jsonl
- * - MCP configs in .claude/mcp.json
+ * - Gemini CLI settings in .gemini/settings.json (Gemini CLI-compatible, shareable)
+ * - Geminian settings in .gemini/geminian-settings.json (Geminian-specific)
+ * - Slash commands in .gemini/commands/*.md
+ * - Chat sessions in .gemini/sessions/*.jsonl
+ * - MCP configs in .gemini/mcp.json
  *
  * Handles migration from legacy formats:
- * - Old settings.json with Claudian fields → split into CC + Claudian files
- * - Old permissions array → CC permissions object
- * - data.json state → claudian-settings.json
+ * - Old settings.json with Geminian fields → split into Gemini CLI + Geminian files
+ * - Old permissions array → Gemini CLI permissions object
+ * - data.json state → geminian-settings.json
  */
 
 import type { App, Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type {
-  CCPermissions,
-  CCSettings,
-  ClaudeModel,
   Conversation,
+  GeminiCLISettings,
+  GeminiModel,
+  GeminiPermissions,
   LegacyPermission,
   SlashCommand,
 } from '../types';
 import {
   createPermissionRule,
-  DEFAULT_CC_PERMISSIONS,
+  DEFAULT_GEMINI_PERMISSIONS,
   DEFAULT_SETTINGS,
   legacyPermissionsToCCPermissions,
 } from '../types';
 import { AGENTS_PATH, AgentVaultStorage } from './AgentVaultStorage';
-import { CC_SETTINGS_PATH, CCSettingsStorage, isLegacyPermissionsFormat } from './CCSettingsStorage';
+import { GEMINI_CLI_SETTINGS_PATH, GeminiCLISettingsStorage, isLegacyPermissionsFormat } from './CCSettingsStorage';
 import {
-  ClaudianSettingsStorage,
+  GeminianSettingsStorage,
   normalizeBlockedCommands,
-  type StoredClaudianSettings,
+  type StoredGeminianSettings,
 } from './ClaudianSettingsStorage';
 import { McpStorage } from './McpStorage';
 import {
-  CLAUDIAN_ONLY_FIELDS,
   convertEnvObjectToString,
+  GEMINIAN_ONLY_FIELDS,
   mergeEnvironmentVariables,
 } from './migrationConstants';
 import { SESSIONS_PATH, SessionStorage } from './SessionStorage';
@@ -49,26 +49,26 @@ import { SKILLS_PATH, SkillStorage } from './SkillStorage';
 import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 import { VaultFileAdapter } from './VaultFileAdapter';
 
-/** Base path for all Claudian storage. */
-export const CLAUDE_PATH = '.claude';
+/** Base path for all Geminian storage. */
+export const GEMINI_PATH = '.gemini';
 
-/** Legacy settings path (now CC settings). */
-export const SETTINGS_PATH = CC_SETTINGS_PATH;
+/** Legacy settings path (now Gemini CLI settings). */
+export const SETTINGS_PATH = GEMINI_CLI_SETTINGS_PATH;
 
 /**
  * Combined settings for the application.
- * Merges CC settings (permissions) with Claudian settings.
+ * Merges Gemini CLI settings (permissions) with Geminian settings.
  */
 export interface CombinedSettings {
-  /** CC-compatible settings (permissions, etc.) */
-  cc: CCSettings;
-  /** Claudian-specific settings */
-  claudian: StoredClaudianSettings;
+  /** Gemini CLI-compatible settings (permissions, etc.) */
+  geminiCli: GeminiCLISettings;
+  /** Geminian-specific settings */
+  geminian: StoredGeminianSettings;
 }
 
 /** Legacy data format (pre-split migration). */
 interface LegacySettingsJson {
-  // Old Claudian fields that were in settings.json
+  // Old Geminian fields that were in settings.json
   userName?: string;
   enableBlocklist?: boolean;
   blockedCommands?: unknown;
@@ -84,13 +84,13 @@ interface LegacySettingsJson {
   systemPrompt?: string;
   allowedExportPaths?: string[];
   keyboardNavigation?: unknown;
-  claudeCliPath?: string;
-  claudeCliPaths?: unknown;
-  loadUserClaudeSettings?: boolean;
+  geminiCliPath?: string;
+  geminiCliPaths?: unknown;
+  loadUserGeminiSettings?: boolean;
   enableAutoTitleGeneration?: boolean;
   titleGenerationModel?: string;
 
-  // CC fields
+  // Gemini CLI fields
   $schema?: string;
   env?: Record<string, string>;
 }
@@ -99,20 +99,17 @@ interface LegacySettingsJson {
 interface LegacyDataJson {
   activeConversationId?: string | null;
   lastEnvHash?: string;
-  lastClaudeModel?: ClaudeModel;
-  lastCustomModel?: ClaudeModel;
+  lastGeminiModel?: GeminiModel;
+  lastCustomModel?: GeminiModel;
   conversations?: Conversation[];
   slashCommands?: SlashCommand[];
   migrationVersion?: number;
-  // May also contain old settings if not yet migrated
   [key: string]: unknown;
 }
 
-// CLAUDIAN_ONLY_FIELDS is imported from ./migrationConstants
-
 export class StorageService {
-  readonly ccSettings: CCSettingsStorage;
-  readonly claudianSettings: ClaudianSettingsStorage;
+  readonly geminiCliSettings: GeminiCLISettingsStorage;
+  readonly geminianSettings: GeminianSettingsStorage;
   readonly commands: SlashCommandStorage;
   readonly skills: SkillStorage;
   readonly sessions: SessionStorage;
@@ -127,8 +124,8 @@ export class StorageService {
     this.plugin = plugin;
     this.app = plugin.app;
     this.adapter = new VaultFileAdapter(this.app);
-    this.ccSettings = new CCSettingsStorage(this.adapter);
-    this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
+    this.geminiCliSettings = new GeminiCLISettingsStorage(this.adapter);
+    this.geminianSettings = new GeminianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);
     this.skills = new SkillStorage(this.adapter);
     this.sessions = new SessionStorage(this.adapter);
@@ -140,19 +137,19 @@ export class StorageService {
     await this.ensureDirectories();
     await this.runMigrations();
 
-    const cc = await this.ccSettings.load();
-    const claudian = await this.claudianSettings.load();
+    const geminiCli = await this.geminiCliSettings.load();
+    const geminian = await this.geminianSettings.load();
 
-    return { cc, claudian };
+    return { geminiCli, geminian };
   }
 
   private async runMigrations(): Promise<void> {
-    const ccExists = await this.ccSettings.exists();
-    const claudianExists = await this.claudianSettings.exists();
+    const geminiCliExists = await this.geminiCliSettings.exists();
+    const geminianExists = await this.geminianSettings.exists();
     const dataJson = await this.loadDataJson();
 
-    // Check if old settings.json has Claudian fields that need migration
-    if (ccExists && !claudianExists) {
+    // Check if old settings.json has Geminian fields that need migration
+    if (geminiCliExists && !geminianExists) {
       await this.migrateFromOldSettingsJson();
     }
 
@@ -160,7 +157,7 @@ export class StorageService {
       const hasState = this.hasStateToMigrate(dataJson);
       const hasLegacyContent = this.hasLegacyContentToMigrate(dataJson);
 
-      // Migrate data.json state to claudian-settings.json
+      // Migrate data.json state to geminian-settings.json
       if (hasState) {
         await this.migrateFromDataJson(dataJson);
       }
@@ -182,7 +179,7 @@ export class StorageService {
   private hasStateToMigrate(data: LegacyDataJson): boolean {
     return (
       data.lastEnvHash !== undefined ||
-      data.lastClaudeModel !== undefined ||
+      data.lastGeminiModel !== undefined ||
       data.lastCustomModel !== undefined
     );
   }
@@ -195,77 +192,72 @@ export class StorageService {
   }
 
   /**
-   * Migrate from old settings.json (with Claudian fields) to split format.
+   * Migrate from old settings.json (with Geminian fields) to split format.
    *
    * Handles:
-   * - Legacy Claudian fields (userName, model, etc.) → claudian-settings.json
-   * - Legacy permissions array → CC permissions object
-   * - CC env object → Claudian environmentVariables string
-   * - Preserves existing CC permissions if already in CC format
+   * - Legacy Geminian fields (userName, model, etc.) → geminian-settings.json
+   * - Legacy permissions array → Gemini CLI permissions object
+   * - Gemini CLI env object → Geminian environmentVariables string
+   * - Preserves existing permissions if already in Gemini CLI format
    */
   private async migrateFromOldSettingsJson(): Promise<void> {
-    const content = await this.adapter.read(CC_SETTINGS_PATH);
+    const content = await this.adapter.read(GEMINI_CLI_SETTINGS_PATH);
     const oldSettings = JSON.parse(content) as LegacySettingsJson;
 
-    const hasClaudianFields = Array.from(CLAUDIAN_ONLY_FIELDS).some(
+    const hasGeminianFields = Array.from(GEMINIAN_ONLY_FIELDS).some(
       field => (oldSettings as Record<string, unknown>)[field] !== undefined
     );
 
-    if (!hasClaudianFields) {
+    if (!hasGeminianFields) {
       return;
     }
 
-    // Handle environment variables: merge Claudian string format with CC object format
     let environmentVariables = oldSettings.environmentVariables ?? '';
     if (oldSettings.env && typeof oldSettings.env === 'object') {
-      const envFromCC = convertEnvObjectToString(oldSettings.env);
-      if (envFromCC) {
-        environmentVariables = mergeEnvironmentVariables(environmentVariables, envFromCC);
+      const envFromCli = convertEnvObjectToString(oldSettings.env);
+      if (envFromCli) {
+        environmentVariables = mergeEnvironmentVariables(environmentVariables, envFromCli);
       }
     }
 
-    const claudianFields: Partial<StoredClaudianSettings> = {
+    const geminianFields: Partial<StoredGeminianSettings> = {
       userName: oldSettings.userName ?? DEFAULT_SETTINGS.userName,
       enableBlocklist: oldSettings.enableBlocklist ?? DEFAULT_SETTINGS.enableBlocklist,
       blockedCommands: normalizeBlockedCommands(oldSettings.blockedCommands),
-      model: (oldSettings.model as ClaudeModel) ?? DEFAULT_SETTINGS.model,
-      thinkingBudget: (oldSettings.thinkingBudget as StoredClaudianSettings['thinkingBudget']) ?? DEFAULT_SETTINGS.thinkingBudget,
-      permissionMode: (oldSettings.permissionMode as StoredClaudianSettings['permissionMode']) ?? DEFAULT_SETTINGS.permissionMode,
+      model: (oldSettings.model as GeminiModel) ?? DEFAULT_SETTINGS.model,
+      thinkingBudget: (oldSettings.thinkingBudget as StoredGeminianSettings['thinkingBudget']) ?? DEFAULT_SETTINGS.thinkingBudget,
+      permissionMode: (oldSettings.permissionMode as StoredGeminianSettings['permissionMode']) ?? DEFAULT_SETTINGS.permissionMode,
       excludedTags: oldSettings.excludedTags ?? DEFAULT_SETTINGS.excludedTags,
       mediaFolder: oldSettings.mediaFolder ?? DEFAULT_SETTINGS.mediaFolder,
-      environmentVariables, // Merged from both sources
-      envSnippets: oldSettings.envSnippets as StoredClaudianSettings['envSnippets'] ?? DEFAULT_SETTINGS.envSnippets,
+      environmentVariables,
+      envSnippets: oldSettings.envSnippets as StoredGeminianSettings['envSnippets'] ?? DEFAULT_SETTINGS.envSnippets,
       systemPrompt: oldSettings.systemPrompt ?? DEFAULT_SETTINGS.systemPrompt,
       allowedExportPaths: oldSettings.allowedExportPaths ?? DEFAULT_SETTINGS.allowedExportPaths,
       persistentExternalContextPaths: DEFAULT_SETTINGS.persistentExternalContextPaths,
-      keyboardNavigation: oldSettings.keyboardNavigation as StoredClaudianSettings['keyboardNavigation'] ?? DEFAULT_SETTINGS.keyboardNavigation,
-      claudeCliPath: oldSettings.claudeCliPath ?? DEFAULT_SETTINGS.claudeCliPath,
-      claudeCliPathsByHost: DEFAULT_SETTINGS.claudeCliPathsByHost,  // Migration to hostname-based handled in main.ts
-      loadUserClaudeSettings: oldSettings.loadUserClaudeSettings ?? DEFAULT_SETTINGS.loadUserClaudeSettings,
+      keyboardNavigation: oldSettings.keyboardNavigation as StoredGeminianSettings['keyboardNavigation'] ?? DEFAULT_SETTINGS.keyboardNavigation,
+      geminiCliPath: oldSettings.geminiCliPath ?? DEFAULT_SETTINGS.geminiCliPath,
+      geminiCliPathsByHost: DEFAULT_SETTINGS.geminiCliPathsByHost,
+      loadUserGeminiSettings: oldSettings.loadUserGeminiSettings ?? DEFAULT_SETTINGS.loadUserGeminiSettings,
       enableAutoTitleGeneration: oldSettings.enableAutoTitleGeneration ?? DEFAULT_SETTINGS.enableAutoTitleGeneration,
       titleGenerationModel: oldSettings.titleGenerationModel ?? DEFAULT_SETTINGS.titleGenerationModel,
-      lastClaudeModel: DEFAULT_SETTINGS.lastClaudeModel,
+      lastGeminiModel: DEFAULT_SETTINGS.lastGeminiModel,
       lastCustomModel: DEFAULT_SETTINGS.lastCustomModel,
       lastEnvHash: DEFAULT_SETTINGS.lastEnvHash,
     };
 
-    // Save Claudian settings FIRST (before stripping from settings.json)
-    await this.claudianSettings.save(claudianFields as StoredClaudianSettings);
+    await this.geminianSettings.save(geminianFields as StoredGeminianSettings);
 
-    // Verify Claudian settings were saved
-    const savedClaudian = await this.claudianSettings.load();
-    if (!savedClaudian || savedClaudian.userName === undefined) {
-      throw new Error('Failed to verify claudian-settings.json was saved correctly');
+    const savedGeminian = await this.geminianSettings.load();
+    if (!savedGeminian || savedGeminian.userName === undefined) {
+      throw new Error('Failed to verify geminian-settings.json was saved correctly');
     }
 
-    // Handle permissions: convert legacy format OR preserve existing CC format
-    let ccPermissions: CCPermissions;
+    let geminiPermissions: GeminiPermissions;
     if (isLegacyPermissionsFormat(oldSettings)) {
-      ccPermissions = legacyPermissionsToCCPermissions(oldSettings.permissions);
+      geminiPermissions = legacyPermissionsToCCPermissions(oldSettings.permissions);
     } else if (oldSettings.permissions && typeof oldSettings.permissions === 'object' && !Array.isArray(oldSettings.permissions)) {
-      // Already in CC format - preserve it including defaultMode and additionalDirectories
-      const existingPerms = oldSettings.permissions as unknown as CCPermissions;
-      ccPermissions = {
+      const existingPerms = oldSettings.permissions as unknown as GeminiPermissions;
+      geminiPermissions = {
         allow: existingPerms.allow ?? [],
         deny: existingPerms.deny ?? [],
         ask: existingPerms.ask ?? [],
@@ -273,34 +265,31 @@ export class StorageService {
         additionalDirectories: existingPerms.additionalDirectories,
       };
     } else {
-      ccPermissions = { ...DEFAULT_CC_PERMISSIONS };
+      geminiPermissions = { ...DEFAULT_GEMINI_PERMISSIONS };
     }
 
-    // Rewrite settings.json with only CC fields
-    const ccSettings: CCSettings = {
-      $schema: 'https://json.schemastore.org/claude-code-settings.json',
-      permissions: ccPermissions,
+    const geminiCliSettings: GeminiCLISettings = {
+      $schema: 'https://json.schemastore.org/gemini-cli-settings.json',
+      permissions: geminiPermissions,
     };
 
-    // Pass true to strip Claudian-only fields during migration
-    await this.ccSettings.save(ccSettings, true);
+    await this.geminiCliSettings.save(geminiCliSettings, true);
   }
 
   private async migrateFromDataJson(dataJson: LegacyDataJson): Promise<void> {
-    const claudian = await this.claudianSettings.load();
+    const geminian = await this.geminianSettings.load();
 
-    // Only migrate if not already set (claudian-settings.json takes precedence)
-    if (dataJson.lastEnvHash !== undefined && !claudian.lastEnvHash) {
-      claudian.lastEnvHash = dataJson.lastEnvHash;
+    if (dataJson.lastEnvHash !== undefined && !geminian.lastEnvHash) {
+      geminian.lastEnvHash = dataJson.lastEnvHash;
     }
-    if (dataJson.lastClaudeModel !== undefined && !claudian.lastClaudeModel) {
-      claudian.lastClaudeModel = dataJson.lastClaudeModel;
+    if (dataJson.lastGeminiModel !== undefined && !geminian.lastGeminiModel) {
+      geminian.lastGeminiModel = dataJson.lastGeminiModel;
     }
-    if (dataJson.lastCustomModel !== undefined && !claudian.lastCustomModel) {
-      claudian.lastCustomModel = dataJson.lastCustomModel;
+    if (dataJson.lastCustomModel !== undefined && !geminian.lastCustomModel) {
+      geminian.lastCustomModel = dataJson.lastCustomModel;
     }
 
-    await this.claudianSettings.save(claudian);
+    await this.geminianSettings.save(geminian);
   }
 
   private async migrateLegacyDataJsonContent(dataJson: LegacyDataJson): Promise<{ hadErrors: boolean }> {
@@ -345,7 +334,7 @@ export class StorageService {
 
     const cleaned: Record<string, unknown> = { ...dataJson };
     delete cleaned.lastEnvHash;
-    delete cleaned.lastClaudeModel;
+    delete cleaned.lastGeminiModel;
     delete cleaned.lastCustomModel;
     delete cleaned.conversations;
     delete cleaned.slashCommands;
@@ -370,7 +359,7 @@ export class StorageService {
   }
 
   async ensureDirectories(): Promise<void> {
-    await this.adapter.ensureFolder(CLAUDE_PATH);
+    await this.adapter.ensureFolder(GEMINI_PATH);
     await this.adapter.ensureFolder(COMMANDS_PATH);
     await this.adapter.ensureFolder(SKILLS_PATH);
     await this.adapter.ensureFolder(SESSIONS_PATH);
@@ -387,46 +376,43 @@ export class StorageService {
     return this.adapter;
   }
 
-  async getPermissions(): Promise<CCPermissions> {
-    return this.ccSettings.getPermissions();
+  async getPermissions(): Promise<GeminiPermissions> {
+    return this.geminiCliSettings.getPermissions();
   }
 
-  async updatePermissions(permissions: CCPermissions): Promise<void> {
-    return this.ccSettings.updatePermissions(permissions);
+  async updatePermissions(permissions: GeminiPermissions): Promise<void> {
+    return this.geminiCliSettings.updatePermissions(permissions);
   }
 
   async addAllowRule(rule: string): Promise<void> {
-    return this.ccSettings.addAllowRule(createPermissionRule(rule));
+    return this.geminiCliSettings.addAllowRule(createPermissionRule(rule));
   }
 
   async addDenyRule(rule: string): Promise<void> {
-    return this.ccSettings.addDenyRule(createPermissionRule(rule));
+    return this.geminiCliSettings.addDenyRule(createPermissionRule(rule));
   }
 
-  /**
-   * Remove a permission rule from all lists.
-   */
   async removePermissionRule(rule: string): Promise<void> {
-    return this.ccSettings.removeRule(createPermissionRule(rule));
+    return this.geminiCliSettings.removeRule(createPermissionRule(rule));
   }
 
-  async updateClaudianSettings(updates: Partial<StoredClaudianSettings>): Promise<void> {
-    return this.claudianSettings.update(updates);
+  async updateGeminianSettings(updates: Partial<StoredGeminianSettings>): Promise<void> {
+    return this.geminianSettings.update(updates);
   }
 
-  async saveClaudianSettings(settings: StoredClaudianSettings): Promise<void> {
-    return this.claudianSettings.save(settings);
+  async saveGeminianSettings(settings: StoredGeminianSettings): Promise<void> {
+    return this.geminianSettings.save(settings);
   }
 
-  async loadClaudianSettings(): Promise<StoredClaudianSettings> {
-    return this.claudianSettings.load();
+  async loadGeminianSettings(): Promise<StoredGeminianSettings> {
+    return this.geminianSettings.load();
   }
 
   /**
-   * Get legacy activeConversationId from storage (claudian-settings.json or data.json).
+   * Get legacy activeConversationId from storage (geminian-settings.json or data.json).
    */
   async getLegacyActiveConversationId(): Promise<string | null> {
-    const fromSettings = await this.claudianSettings.getLegacyActiveConversationId();
+    const fromSettings = await this.geminianSettings.getLegacyActiveConversationId();
     if (fromSettings) {
       return fromSettings;
     }
@@ -443,7 +429,7 @@ export class StorageService {
    * Remove legacy activeConversationId from storage after migration.
    */
   async clearLegacyActiveConversationId(): Promise<void> {
-    await this.claudianSettings.clearLegacyActiveConversationId();
+    await this.geminianSettings.clearLegacyActiveConversationId();
 
     const dataJson = await this.loadDataJson();
     if (!dataJson || !('activeConversationId' in dataJson)) {

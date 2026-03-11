@@ -29,9 +29,9 @@ class MockResizeObserver {
 }
 global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-// Mock ClaudianService
+// Mock GeminianService
 jest.mock('@/core/agent', () => ({
-  ClaudianService: jest.fn().mockImplementation(() => ({
+  GeminianService: jest.fn().mockImplementation(() => ({
     ensureReady: jest.fn().mockResolvedValue(true),
     closePersistentQuery: jest.fn(),
     isReady: jest.fn().mockReturnValue(false),
@@ -105,7 +105,7 @@ const createMockModelSelector = () => ({
   setReady: jest.fn(),
 });
 
-const createMockClaudianService = (overrides?: {
+const createMockGeminianService = (overrides?: {
   ensureReady?: jest.Mock;
   onReadyStateChange?: jest.Mock;
 }) => ({
@@ -463,7 +463,7 @@ describe('Tab - Service Initialization', () => {
       expect(tab.service).toEqual({});
     });
 
-    it('should create ClaudianService on first initialization', async () => {
+    it('should create GeminianService on first initialization', async () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
@@ -475,8 +475,8 @@ describe('Tab - Service Initialization', () => {
 
     it('should ensureReady without session ID (just spin up process)', async () => {
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
-      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ ensureReady: mockEnsureReady }));
+      const agentModule = jest.requireMock('@/core/agent') as { GeminianService: jest.Mock };
+      agentModule.GeminianService.mockImplementationOnce(() => createMockGeminianService({ ensureReady: mockEnsureReady }));
 
       const options = createMockOptions();
       const tab = createTab(options);
@@ -491,8 +491,8 @@ describe('Tab - Service Initialization', () => {
 
     it('should ensureReady with saved external contexts for existing conversation', async () => {
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
-      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ ensureReady: mockEnsureReady }));
+      const agentModule = jest.requireMock('@/core/agent') as { GeminianService: jest.Mock };
+      agentModule.GeminianService.mockImplementationOnce(() => createMockGeminianService({ ensureReady: mockEnsureReady }));
 
       const conversation = {
         id: 'conv-1',
@@ -525,8 +525,8 @@ describe('Tab - Service Initialization', () => {
         return () => {};
       });
 
-      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ onReadyStateChange: mockOnReadyStateChange }));
+      const agentModule = jest.requireMock('@/core/agent') as { GeminianService: jest.Mock };
+      agentModule.GeminianService.mockImplementationOnce(() => createMockGeminianService({ onReadyStateChange: mockOnReadyStateChange }));
 
       const options = createMockOptions();
       const tab = createTab(options);
@@ -652,8 +652,8 @@ describe('Tab - Destruction', () => {
       const unsubscribeFn = jest.fn();
       const mockOnReadyStateChange = jest.fn(() => unsubscribeFn);
 
-      const agentModule = jest.requireMock('@/core/agent') as { ClaudianService: jest.Mock };
-      agentModule.ClaudianService.mockImplementationOnce(() => createMockClaudianService({ onReadyStateChange: mockOnReadyStateChange }));
+      const agentModule = jest.requireMock('@/core/agent') as { GeminianService: jest.Mock };
+      agentModule.GeminianService.mockImplementationOnce(() => createMockGeminianService({ onReadyStateChange: mockOnReadyStateChange }));
 
       const options = createMockOptions();
       const tab = createTab(options);

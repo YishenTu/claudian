@@ -21,16 +21,16 @@ class ForkTargetModal extends Modal {
 
   onOpen() {
     this.setTitle(t('chat.fork.chooseTarget'));
-    this.modalEl.addClass('claudian-fork-target-modal');
+    this.modalEl.addClass('geminian-fork-target-modal');
 
-    const list = this.contentEl.createDiv({ cls: 'claudian-fork-target-list' });
+    const list = this.contentEl.createDiv({ cls: 'geminian-fork-target-list' });
 
     this.createOption(list, 'current-tab', t('chat.fork.targetCurrentTab'));
     this.createOption(list, 'new-tab', t('chat.fork.targetNewTab'));
   }
 
   private createOption(container: HTMLElement, target: ForkTarget, label: string): void {
-    const item = container.createDiv({ cls: 'claudian-fork-target-option', text: label });
+    const item = container.createDiv({ cls: 'geminian-fork-target-option', text: label });
     item.addEventListener('click', () => {
       this.resolved = true;
       this.resolve(target);

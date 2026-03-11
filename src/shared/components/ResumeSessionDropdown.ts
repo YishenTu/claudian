@@ -1,5 +1,5 @@
 /**
- * Claudian - Resume session dropdown
+ * Geminian - Resume session dropdown
  *
  * Dropup UI for selecting a previous conversation to resume.
  * Shown when the /resume built-in command is executed.
@@ -37,7 +37,7 @@ export class ResumeSessionDropdown {
     this.currentConversationId = currentConversationId;
     this.callbacks = callbacks;
 
-    this.dropdownEl = this.containerEl.createDiv({ cls: 'claudian-resume-dropdown' });
+    this.dropdownEl = this.containerEl.createDiv({ cls: 'geminian-resume-dropdown' });
     this.render();
     this.dropdownEl.addClass('visible');
 
@@ -109,7 +109,7 @@ export class ResumeSessionDropdown {
   }
 
   private updateSelection(): void {
-    const items = this.dropdownEl.querySelectorAll('.claudian-resume-item');
+    const items = this.dropdownEl.querySelectorAll('.geminian-resume-item');
     items?.forEach((item, index) => {
       if (index === this.selectedIndex) {
         item.addClass('selected');
@@ -129,32 +129,32 @@ export class ResumeSessionDropdown {
   private render(): void {
     this.dropdownEl.empty();
 
-    const header = this.dropdownEl.createDiv({ cls: 'claudian-resume-header' });
+    const header = this.dropdownEl.createDiv({ cls: 'geminian-resume-header' });
     header.createSpan({ text: 'Resume conversation' });
 
     if (this.conversations.length === 0) {
-      this.dropdownEl.createDiv({ cls: 'claudian-resume-empty', text: 'No conversations' });
+      this.dropdownEl.createDiv({ cls: 'geminian-resume-empty', text: 'No conversations' });
       return;
     }
 
-    const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
+    const list = this.dropdownEl.createDiv({ cls: 'geminian-resume-list' });
 
     for (let i = 0; i < this.conversations.length; i++) {
       const conv = this.conversations[i];
       const isCurrent = conv.id === this.currentConversationId;
 
-      const item = list.createDiv({ cls: 'claudian-resume-item' });
+      const item = list.createDiv({ cls: 'geminian-resume-item' });
       if (isCurrent) item.addClass('current');
       if (i === this.selectedIndex) item.addClass('selected');
 
-      const iconEl = item.createDiv({ cls: 'claudian-resume-item-icon' });
+      const iconEl = item.createDiv({ cls: 'geminian-resume-item-icon' });
       setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
 
-      const content = item.createDiv({ cls: 'claudian-resume-item-content' });
-      const titleEl = content.createDiv({ cls: 'claudian-resume-item-title', text: conv.title });
+      const content = item.createDiv({ cls: 'geminian-resume-item-content' });
+      const titleEl = content.createDiv({ cls: 'geminian-resume-item-title', text: conv.title });
       titleEl.setAttribute('title', conv.title);
       content.createDiv({
-        cls: 'claudian-resume-item-date',
+        cls: 'geminian-resume-item-date',
         text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),
       });
 

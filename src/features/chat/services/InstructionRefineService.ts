@@ -1,30 +1,30 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import * as readline from 'readline';
 
+import { spawnGeminiCli } from '../../../core/agent/customSpawn';
+import { QueryOptionsBuilder } from '../../../core/agent/QueryOptionsBuilder';
 import { buildRefineSystemPrompt } from '../../../core/prompts/instructionRefine';
-import { type InstructionRefineResult, THINKING_BUDGETS } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
+import { parseGeminiJsonLine } from '../../../core/sdk/transformSDKMessage';
+import { type InstructionRefineResult } from '../../../core/types';
+import type GeminianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 
 export type RefineProgressCallback = (update: InstructionRefineResult) => void;
 
 export class InstructionRefineService {
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
   private abortController: AbortController | null = null;
   private sessionId: string | null = null;
   private existingInstructions: string = '';
 
-  constructor(plugin: ClaudianPlugin) {
+  constructor(plugin: GeminianPlugin) {
     this.plugin = plugin;
   }
 
-  /** Resets conversation state for a new refinement session. */
   resetConversation(): void {
     this.sessionId = null;
   }
 
-  /** Refines a raw instruction from user input. */
   async refineInstruction(
     rawInstruction: string,
     existingInstructions: string,
@@ -36,7 +36,6 @@ export class InstructionRefineService {
     return this.sendMessage(prompt, onProgress);
   }
 
-  /** Continues conversation with a follow-up message (for clarifications). */
   async continueConversation(
     message: string,
     onProgress?: RefineProgressCallback
@@ -47,7 +46,6 @@ export class InstructionRefineService {
     return this.sendMessage(message, onProgress);
   }
 
-  /** Cancels any ongoing query. */
   cancel(): void {
     if (this.abortController) {
       this.abortController.abort();
@@ -64,71 +62,73 @@ export class InstructionRefineService {
       return { success: false, error: 'Could not determine vault path' };
     }
 
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
-    if (!resolvedClaudePath) {
-      return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
+    const resolvedGeminiPath = this.plugin.getResolvedGeminiCliPath();
+    if (!resolvedGeminiPath) {
+      return { success: false, error: 'Gemini CLI not found. Please install Gemini CLI.' };
     }
 
     this.abortController = new AbortController();
-
-    // Parse custom environment variables
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-    const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedClaudePath);
-    const missingNodeError = getMissingNodeError(resolvedClaudePath, enhancedPath);
-    if (missingNodeError) {
-      return { success: false, error: missingNodeError };
+    const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedGeminiPath);
+
+    if (resolvedGeminiPath.endsWith('.js')) {
+      const missingNodeError = getMissingNodeError(resolvedGeminiPath, enhancedPath);
+      if (missingNodeError) {
+        return { success: false, error: missingNodeError };
+      }
     }
 
-    const options: Options = {
-      cwd: vaultPath,
-      systemPrompt: buildRefineSystemPrompt(this.existingInstructions),
-      model: this.plugin.settings.model,
-      abortController: this.abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
-      env: {
-        ...process.env,
-        ...customEnv,
-        PATH: enhancedPath,
-      },
-      tools: [], // No tools needed for instruction refinement
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      settingSources: this.plugin.settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-    };
+    const args: string[] = [
+      '--output-format', 'stream-json',
+      '--model', this.plugin.settings.model,
+      '--approval-mode', 'yolo',
+      '--prompt', prompt,
+    ];
 
     if (this.sessionId) {
-      options.resume = this.sessionId;
-    }
-
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
+      args.push('--resume', this.sessionId);
     }
 
     try {
-      const response = agentQuery({ prompt, options });
+      const promptPath = QueryOptionsBuilder.writeSystemPromptFile(
+        vaultPath,
+        buildRefineSystemPrompt(this.existingInstructions)
+      );
+      const child = spawnGeminiCli({
+        cliPath: resolvedGeminiPath,
+        args,
+        cwd: vaultPath,
+        env: {
+          ...process.env,
+          ...customEnv,
+          PATH: enhancedPath,
+          GEMINI_SYSTEM_MD: promptPath,
+        },
+        signal: this.abortController.signal,
+        enhancedPath,
+      });
+
       let responseText = '';
 
-      for await (const message of response) {
-        if (this.abortController?.signal.aborted) {
-          await response.interrupt();
-          return { success: false, error: 'Cancelled' };
-        }
+      if (child.stdout) {
+        const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+        for await (const line of rl) {
+          if (this.abortController?.signal.aborted) break;
+          const event = parseGeminiJsonLine(line);
+          if (!event) continue;
 
-        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-          this.sessionId = message.session_id;
-        }
+          if (event.type === 'init' && event.session_id) {
+            this.sessionId = event.session_id;
+          }
 
-        const text = this.extractTextFromMessage(message);
-        if (text) {
-          responseText += text;
-          // Stream progress updates
-          if (onProgress) {
-            const partialResult = this.parseResponse(responseText);
-            onProgress(partialResult);
+          if (event.type === 'message' && event.role === 'assistant') {
+            const text = event.content || '';
+            if (text) {
+              responseText += text;
+              if (onProgress) {
+                onProgress(this.parseResponse(responseText));
+              }
+            }
           }
         }
       }
@@ -142,31 +142,17 @@ export class InstructionRefineService {
     }
   }
 
-  /** Parses response text for <instruction> tag. */
   private parseResponse(responseText: string): InstructionRefineResult {
     const instructionMatch = responseText.match(/<instruction>([\s\S]*?)<\/instruction>/);
     if (instructionMatch) {
       return { success: true, refinedInstruction: instructionMatch[1].trim() };
     }
 
-    // No instruction tag - treat as clarification question
     const trimmed = responseText.trim();
     if (trimmed) {
       return { success: true, clarification: trimmed };
     }
 
     return { success: false, error: 'Empty response' };
-  }
-
-  /** Extracts text content from SDK message. */
-  private extractTextFromMessage(message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }): string {
-    if (message.type !== 'assistant' || !message.message?.content) {
-      return '';
-    }
-
-    return message.message.content
-      .filter((block): block is { type: 'text'; text: string } => block.type === 'text' && !!block.text)
-      .map(block => block.text)
-      .join('');
   }
 }

@@ -3,6 +3,8 @@ export {
   getActionDescription,
   getActionPattern,
   matchesRulePattern,
+  type PermissionUpdate,
+  type PermissionUpdateDestination,
 } from './ApprovalManager';
 export {
   checkBashPathAccess,

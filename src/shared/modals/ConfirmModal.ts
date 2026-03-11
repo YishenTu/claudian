@@ -29,7 +29,7 @@ class ConfirmModal extends Modal {
 
   onOpen() {
     this.setTitle(t('common.confirm'));
-    this.modalEl.addClass('claudian-confirm-modal');
+    this.modalEl.addClass('geminian-confirm-modal');
 
     this.contentEl.createEl('p', { text: this.message });
 

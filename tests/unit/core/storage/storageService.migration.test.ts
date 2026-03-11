@@ -143,7 +143,7 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
     const blocked = saved.blockedCommands as { unix: string[]; windows: string[] };
 
     expect(blocked.unix).toEqual(['rm -rf']);
@@ -158,7 +158,7 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const rawSettings = files.get('.claude/claudian-settings.json');
+    const rawSettings = files.get('.claude/geminian-settings.json');
     // If settings file was created, it should NOT contain the legacy activeConversationId
     const containsLegacyField = rawSettings
       ? 'activeConversationId' in (JSON.parse(rawSettings) as Record<string, unknown>)
@@ -206,7 +206,7 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
     expect(saved.persistentExternalContextPaths).toEqual([]);
   });
 
@@ -228,7 +228,7 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
     const envVars = saved.environmentVariables as string;
     expect(envVars).toContain('FOO=bar');
     expect(envVars).toContain('BAZ=qux');
@@ -262,15 +262,15 @@ describe('StorageService migration', () => {
     expect(ccSettings.permissions.additionalDirectories).toEqual(['/external']);
   });
 
-  it('migrates data.json state fields to claudian-settings when empty', async () => {
+  it('migrates data.json state fields to geminian-settings when empty', async () => {
     // Migration only writes when the target field is falsy.
-    // Default lastClaudeModel='haiku' (truthy) → won't overwrite
+    // Default lastGeminiModel='haiku' (truthy) → won't overwrite
     // Default lastCustomModel='' (falsy) → will overwrite
     // Default lastEnvHash='' (falsy) → will overwrite
     const { plugin, files } = createMockPlugin({
       dataJson: {
         lastEnvHash: 'abc123',
-        lastClaudeModel: 'claude-3-sonnet',
+        lastGeminiModel: 'claude-3-sonnet',
         lastCustomModel: 'custom-model',
       },
     });
@@ -278,24 +278,24 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
     expect(saved.lastEnvHash).toBe('abc123');
-    // lastClaudeModel defaults to 'haiku' (truthy), so migration doesn't overwrite it
-    expect(saved.lastClaudeModel).toBe('haiku');
+    // lastGeminiModel defaults to 'haiku' (truthy), so migration doesn't overwrite it
+    expect(saved.lastGeminiModel).toBe('haiku');
     expect(saved.lastCustomModel).toBe('custom-model');
   });
 
-  it('does not overwrite existing claudian-settings fields from data.json', async () => {
+  it('does not overwrite existing geminian-settings fields from data.json', async () => {
     const { plugin, files } = createMockPlugin({
       dataJson: {
         lastEnvHash: 'old-hash',
-        lastClaudeModel: 'old-model',
+        lastGeminiModel: 'old-model',
       },
       initialFiles: {
-        '.claude/claudian-settings.json': JSON.stringify({
+        '.claude/geminian-settings.json': JSON.stringify({
           userName: 'Test User',
           lastEnvHash: 'existing-hash',
-          lastClaudeModel: 'existing-model',
+          lastGeminiModel: 'existing-model',
         }),
       },
     });
@@ -303,9 +303,9 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
     expect(saved.lastEnvHash).toBe('existing-hash');
-    expect(saved.lastClaudeModel).toBe('existing-model');
+    expect(saved.lastGeminiModel).toBe('existing-model');
   });
 
   it('skips existing slash commands during migration', async () => {
@@ -464,18 +464,18 @@ describe('StorageService migration', () => {
     expect(ccSettings.permissions.ask).toEqual([]);
   });
 
-  it('migrates lastClaudeModel from data.json when claudian-settings has falsy value', async () => {
+  it('migrates lastGeminiModel from data.json when geminian-settings has falsy value', async () => {
     const { plugin, files } = createMockPlugin({
       dataJson: {
-        lastClaudeModel: 'claude-3-sonnet',
+        lastGeminiModel: 'claude-3-sonnet',
       },
       initialFiles: {
         '.claude/settings.json': JSON.stringify({
           permissions: { allow: [], deny: [], ask: [] },
         }),
-        '.claude/claudian-settings.json': JSON.stringify({
+        '.claude/geminian-settings.json': JSON.stringify({
           userName: 'Test User',
-          lastClaudeModel: '',
+          lastGeminiModel: '',
         }),
       },
     });
@@ -483,8 +483,8 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
-    expect(saved.lastClaudeModel).toBe('claude-3-sonnet');
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
+    expect(saved.lastGeminiModel).toBe('claude-3-sonnet');
   });
 
   it('preserves persistentExternalContextPaths from existing settings', async () => {
@@ -497,14 +497,14 @@ describe('StorageService migration', () => {
     const { plugin, files } = createMockPlugin({
       dataJson: null,
       initialFiles: {
-        '.claude/claudian-settings.json': JSON.stringify(existingSettings),
+        '.claude/geminian-settings.json': JSON.stringify(existingSettings),
       },
     });
 
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    const saved = JSON.parse(files.get('.claude/claudian-settings.json') || '{}') as Record<string, unknown>;
+    const saved = JSON.parse(files.get('.claude/geminian-settings.json') || '{}') as Record<string, unknown>;
     expect(saved.persistentExternalContextPaths).toEqual(['/path/a', '/path/b']);
   });
 });

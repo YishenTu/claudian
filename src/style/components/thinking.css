@@ -1,42 +1,42 @@
-.claudian-thinking {
-  color: var(--claudian-brand);
+.geminian-thinking {
+  color: var(--geminian-brand);
   font-style: italic;
   padding: 4px 0;
   text-align: start;
   animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
-.claudian-thinking.claudian-thinking--compact {
-  color: var(--claudian-compact);
+.geminian-thinking.geminian-thinking--compact {
+  color: var(--geminian-compact);
 }
 
-.claudian-thinking-hint {
+.geminian-thinking-hint {
   color: var(--text-muted);
   font-style: normal;
   font-variant-numeric: tabular-nums;
 }
 
-.claudian-thinking-block {
+.geminian-thinking-block {
   margin: 8px 0;
 }
 
-.claudian-text-block+.claudian-thinking-block {
+.geminian-text-block+.geminian-thinking-block {
   margin-top: 8px;
 }
 
-.claudian-thinking-block+.claudian-text-block {
+.geminian-thinking-block+.geminian-text-block {
   margin-top: 8px;
 }
 
-.claudian-thinking-block+.claudian-tool-call {
+.geminian-thinking-block+.geminian-tool-call {
   margin-top: 8px;
 }
 
-.claudian-tool-call+.claudian-thinking-block {
+.geminian-tool-call+.geminian-thinking-block {
   margin-top: 8px;
 }
 
-.claudian-thinking-header {
+.geminian-thinking-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -45,15 +45,15 @@
   overflow: hidden;
 }
 
-.claudian-thinking-label {
+.geminian-thinking-label {
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: var(--claudian-brand);
+  color: var(--geminian-brand);
 }
 
 /* Thinking block content - tree-branch style */
-.claudian-thinking-content {
+.geminian-thinking-content {
   padding: 4px 0;
   padding-inline-start: 24px;
   font-size: 13px;
@@ -65,24 +65,24 @@
   margin-inline-start: 7px;
 }
 
-.claudian-thinking-content p {
+.geminian-thinking-content p {
   margin: 0 0 8px 0;
 }
 
-.claudian-thinking-content p:last-child {
+.geminian-thinking-content p:last-child {
   margin-bottom: 0;
 }
 
-.claudian-thinking-content .claudian-code-wrapper {
+.geminian-thinking-content .geminian-code-wrapper {
   margin: 8px 0;
 }
 
-.claudian-thinking-content .claudian-code-wrapper pre {
+.geminian-thinking-content .geminian-code-wrapper pre {
   padding: 8px 10px;
   border-radius: 4px;
 }
 
-.claudian-thinking-content code {
+.geminian-thinking-content code {
   font-family: var(--font-monospace);
   font-size: 12px;
 }

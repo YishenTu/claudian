@@ -3,13 +3,13 @@ import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
 import { getCurrentPlatformKey, getHostnameKey } from '../../core/types';
-import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
+import { DEFAULT_GEMINI_MODELS } from '../../core/types/models';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
-import type ClaudianPlugin from '../../main';
+import type GeminianPlugin from '../../main';
 import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
-import { ClaudianView } from '../chat/ClaudianView';
+import { GeminianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { AgentSettings } from './ui/AgentSettings';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
@@ -39,7 +39,7 @@ function openHotkeySettings(app: App): void {
       // Handle both old and new Obsidian versions
       const searchEl = tab.searchInputEl ?? tab.searchComponent?.inputEl;
       if (searchEl) {
-        searchEl.value = 'Claudian';
+        searchEl.value = 'Geminian';
         tab.updateHotkeyVisibility?.();
       }
     }
@@ -66,19 +66,19 @@ function addHotkeySettingRow(
   translationPrefix: string
 ): void {
   const hotkey = getHotkeyForCommand(app, commandId);
-  const item = containerEl.createDiv({ cls: 'claudian-hotkey-item' });
-  item.createSpan({ cls: 'claudian-hotkey-name', text: t(`${translationPrefix}.name` as TranslationKey) });
+  const item = containerEl.createDiv({ cls: 'geminian-hotkey-item' });
+  item.createSpan({ cls: 'geminian-hotkey-name', text: t(`${translationPrefix}.name` as TranslationKey) });
   if (hotkey) {
-    item.createSpan({ cls: 'claudian-hotkey-badge', text: hotkey });
+    item.createSpan({ cls: 'geminian-hotkey-badge', text: hotkey });
   }
   item.addEventListener('click', () => openHotkeySettings(app));
 }
 
-export class ClaudianSettingTab extends PluginSettingTab {
-  plugin: ClaudianPlugin;
+export class GeminianSettingTab extends PluginSettingTab {
+  plugin: GeminianPlugin;
   private contextLimitsContainer: HTMLElement | null = null;
 
-  constructor(app: App, plugin: ClaudianPlugin) {
+  constructor(app: App, plugin: GeminianPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -86,7 +86,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.addClass('claudian-settings');
+    containerEl.addClass('geminian-settings');
 
     setLocale(this.plugin.settings.locale);
 
@@ -158,7 +158,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.plugin.settings.mediaFolder = value.trim();
             await this.plugin.saveSettings();
           });
-        text.inputEl.addClass('claudian-settings-media-input');
+        text.inputEl.addClass('geminian-settings-media-input');
         text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
       });
 
@@ -214,7 +214,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           // Get available models from environment or defaults
           const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
           const customModels = getModelsFromEnvironment(envVars);
-          const models = customModels.length > 0 ? customModels : DEFAULT_CLAUDE_MODELS;
+          const models = customModels.length > 0 ? customModels : DEFAULT_GEMINI_MODELS;
 
           for (const model of models) {
             dropdown.addOption(model.value, model.label);
@@ -297,8 +297,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
 
             // Update all views' layouts immediately
-            for (const leaf of this.plugin.app.workspace.getLeavesOfType('claudian-view')) {
-              if (leaf.view instanceof ClaudianView) {
+            for (const leaf of this.plugin.app.workspace.getLeavesOfType('geminian-view')) {
+              if (leaf.view instanceof GeminianView) {
                 leaf.view.updateLayoutForPosition();
               }
             }
@@ -320,24 +320,24 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(t('settings.hotkeys')).setHeading();
 
-    const hotkeyGrid = containerEl.createDiv({ cls: 'claudian-hotkey-grid' });
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:inline-edit', 'settings.inlineEditHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:open-view', 'settings.openChatHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-session', 'settings.newSessionHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-tab', 'settings.newTabHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:close-current-tab', 'settings.closeTabHotkey');
+    const hotkeyGrid = containerEl.createDiv({ cls: 'geminian-hotkey-grid' });
+    addHotkeySettingRow(hotkeyGrid, this.app, 'geminian:inline-edit', 'settings.inlineEditHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'geminian:open-view', 'settings.openChatHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'geminian:new-session', 'settings.newSessionHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'geminian:new-tab', 'settings.newTabHotkey');
+    addHotkeySettingRow(hotkeyGrid, this.app, 'geminian:close-current-tab', 'settings.closeTabHotkey');
 
     new Setting(containerEl).setName(t('settings.slashCommands.name')).setHeading();
 
-    const slashCommandsDesc = containerEl.createDiv({ cls: 'claudian-sp-settings-desc' });
+    const slashCommandsDesc = containerEl.createDiv({ cls: 'geminian-sp-settings-desc' });
     const descP = slashCommandsDesc.createEl('p', { cls: 'setting-item-description' });
     descP.appendText(t('settings.slashCommands.desc') + ' ');
     descP.createEl('a', {
       text: 'Learn more',
-      href: 'https://code.claude.com/docs/en/skills',
+      href: 'https://ai.google.dev/gemini-api/docs',
     });
 
-    const slashCommandsContainer = containerEl.createDiv({ cls: 'claudian-slash-commands-container' });
+    const slashCommandsContainer = containerEl.createDiv({ cls: 'geminian-slash-commands-container' });
     new SlashCommandSettings(slashCommandsContainer, this.plugin);
 
     new Setting(containerEl)
@@ -361,35 +361,35 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(t('settings.subagents.name')).setHeading();
 
-    const agentsDesc = containerEl.createDiv({ cls: 'claudian-sp-settings-desc' });
+    const agentsDesc = containerEl.createDiv({ cls: 'geminian-sp-settings-desc' });
     agentsDesc.createEl('p', {
       text: t('settings.subagents.desc'),
       cls: 'setting-item-description',
     });
 
-    const agentsContainer = containerEl.createDiv({ cls: 'claudian-agents-container' });
+    const agentsContainer = containerEl.createDiv({ cls: 'geminian-agents-container' });
     new AgentSettings(agentsContainer, this.plugin);
 
     new Setting(containerEl).setName(t('settings.mcpServers.name')).setHeading();
 
-    const mcpDesc = containerEl.createDiv({ cls: 'claudian-mcp-settings-desc' });
+    const mcpDesc = containerEl.createDiv({ cls: 'geminian-mcp-settings-desc' });
     mcpDesc.createEl('p', {
       text: t('settings.mcpServers.desc'),
       cls: 'setting-item-description',
     });
 
-    const mcpContainer = containerEl.createDiv({ cls: 'claudian-mcp-container' });
+    const mcpContainer = containerEl.createDiv({ cls: 'geminian-mcp-container' });
     new McpSettingsManager(mcpContainer, this.plugin);
 
     new Setting(containerEl).setName(t('settings.plugins.name')).setHeading();
 
-    const pluginsDesc = containerEl.createDiv({ cls: 'claudian-plugin-settings-desc' });
+    const pluginsDesc = containerEl.createDiv({ cls: 'geminian-plugin-settings-desc' });
     pluginsDesc.createEl('p', {
       text: t('settings.plugins.desc'),
       cls: 'setting-item-description',
     });
 
-    const pluginsContainer = containerEl.createDiv({ cls: 'claudian-plugins-container' });
+    const pluginsContainer = containerEl.createDiv({ cls: 'geminian-plugins-container' });
     new PluginSettingsManager(pluginsContainer, this.plugin);
 
     new Setting(containerEl).setName(t('settings.safety')).setHeading();
@@ -399,9 +399,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.loadUserSettings.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.loadUserClaudeSettings)
+          .setValue(this.plugin.settings.loadUserGeminiSettings)
           .onChange(async (value) => {
-            this.plugin.settings.loadUserClaudeSettings = value;
+            this.plugin.settings.loadUserGeminiSettings = value;
             await this.plugin.saveSettings();
           })
       );
@@ -497,49 +497,22 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.environmentVariables);
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
-        text.inputEl.addClass('claudian-settings-env-textarea');
+        text.inputEl.addClass('geminian-settings-env-textarea');
         text.inputEl.addEventListener('blur', async () => {
           await this.plugin.applyEnvironmentVariables(text.inputEl.value);
           this.renderContextLimitsSection();
         });
       });
 
-    this.contextLimitsContainer = containerEl.createDiv({ cls: 'claudian-context-limits-container' });
+    this.contextLimitsContainer = containerEl.createDiv({ cls: 'geminian-context-limits-container' });
     this.renderContextLimitsSection();
 
-    const envSnippetsContainer = containerEl.createDiv({ cls: 'claudian-env-snippets-container' });
+    const envSnippetsContainer = containerEl.createDiv({ cls: 'geminian-env-snippets-container' });
     new EnvSnippetManager(envSnippetsContainer, this.plugin, () => {
       this.renderContextLimitsSection();
     });
 
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
-
-    new Setting(containerEl)
-      .setName(t('settings.show1MModel.name'))
-      .setDesc(t('settings.show1MModel.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.show1MModel ?? false)
-          .onChange(async (value) => {
-            this.plugin.settings.show1MModel = value;
-            await this.plugin.saveSettings();
-
-            const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
-            view?.refreshModelSelector();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t('settings.enableChrome.name'))
-      .setDesc(t('settings.enableChrome.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableChrome ?? false)
-          .onChange(async (value) => {
-            this.plugin.settings.enableChrome = value;
-            await this.plugin.saveSettings();
-          })
-      );
 
     new Setting(containerEl)
       .setName(t('settings.enableBangBash.name'))
@@ -564,7 +537,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    const bangBashValidationEl = containerEl.createDiv({ cls: 'claudian-bang-bash-validation' });
+    const bangBashValidationEl = containerEl.createDiv({ cls: 'geminian-bang-bash-validation' });
     bangBashValidationEl.style.color = 'var(--text-error)';
     bangBashValidationEl.style.fontSize = '0.85em';
     bangBashValidationEl.style.marginTop = '-0.5em';
@@ -575,7 +548,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName(t('settings.maxTabs.name'))
       .setDesc(t('settings.maxTabs.desc'));
 
-    const maxTabsWarningEl = containerEl.createDiv({ cls: 'claudian-max-tabs-warning' });
+    const maxTabsWarningEl = containerEl.createDiv({ cls: 'geminian-max-tabs-warning' });
     maxTabsWarningEl.style.color = 'var(--text-warning)';
     maxTabsWarningEl.style.fontSize = '0.85em';
     maxTabsWarningEl.style.marginTop = '-0.5em';
@@ -611,7 +584,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName(`${t('settings.cliPath.name')} (${hostnameKey})`)
       .setDesc(cliPathDescription);
 
-    const validationEl = containerEl.createDiv({ cls: 'claudian-cli-path-validation' });
+    const validationEl = containerEl.createDiv({ cls: 'geminian-cli-path-validation' });
     validationEl.style.color = 'var(--text-error)';
     validationEl.style.fontSize = '0.85em';
     validationEl.style.marginTop = '-0.5em';
@@ -636,10 +609,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     cliPathSetting.addText((text) => {
       const placeholder = process.platform === 'win32'
-        ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
-        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+        ? 'D:\\nodejs\\node_global\\node_modules\\@google\\gemini-cli\\gemini.js'
+        : '/usr/local/lib/node_modules/@google/gemini-cli/gemini.js';
 
-      const currentValue = this.plugin.settings.claudeCliPathsByHost?.[hostnameKey] || '';
+      const currentValue = this.plugin.settings.geminiCliPathsByHost?.[hostnameKey] || '';
 
       text
         .setPlaceholder(placeholder)
@@ -656,10 +629,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
           }
 
           const trimmed = value.trim();
-          if (!this.plugin.settings.claudeCliPathsByHost) {
-            this.plugin.settings.claudeCliPathsByHost = {};
+          if (!this.plugin.settings.geminiCliPathsByHost) {
+            this.plugin.settings.geminiCliPathsByHost = {};
           }
-          this.plugin.settings.claudeCliPathsByHost[hostnameKey] = trimmed;
+          this.plugin.settings.geminiCliPathsByHost[hostnameKey] = trimmed;
           await this.plugin.saveSettings();
           this.plugin.cliResolver?.reset();
           const view = this.plugin.getView();
@@ -667,7 +640,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             (service) => Promise.resolve(service.cleanup())
           );
         });
-      text.inputEl.addClass('claudian-settings-cli-path-input');
+      text.inputEl.addClass('geminian-settings-cli-path-input');
       text.inputEl.style.width = '100%';
 
       const initialError = validatePath(currentValue);
@@ -692,33 +665,33 @@ export class ClaudianSettingTab extends PluginSettingTab {
       return;
     }
 
-    const headerEl = container.createDiv({ cls: 'claudian-context-limits-header' });
-    headerEl.createSpan({ text: t('settings.customContextLimits.name'), cls: 'claudian-context-limits-label' });
+    const headerEl = container.createDiv({ cls: 'geminian-context-limits-header' });
+    headerEl.createSpan({ text: t('settings.customContextLimits.name'), cls: 'geminian-context-limits-label' });
 
-    const descEl = container.createDiv({ cls: 'claudian-context-limits-desc' });
+    const descEl = container.createDiv({ cls: 'geminian-context-limits-desc' });
     descEl.setText(t('settings.customContextLimits.desc'));
 
-    const listEl = container.createDiv({ cls: 'claudian-context-limits-list' });
+    const listEl = container.createDiv({ cls: 'geminian-context-limits-list' });
 
     for (const modelId of uniqueModelIds) {
       const currentValue = this.plugin.settings.customContextLimits?.[modelId];
 
-      const itemEl = listEl.createDiv({ cls: 'claudian-context-limits-item' });
+      const itemEl = listEl.createDiv({ cls: 'geminian-context-limits-item' });
 
-      const nameEl = itemEl.createDiv({ cls: 'claudian-context-limits-model' });
+      const nameEl = itemEl.createDiv({ cls: 'geminian-context-limits-model' });
       nameEl.setText(modelId);
 
-      const inputWrapper = itemEl.createDiv({ cls: 'claudian-context-limits-input-wrapper' });
+      const inputWrapper = itemEl.createDiv({ cls: 'geminian-context-limits-input-wrapper' });
 
       const inputEl = inputWrapper.createEl('input', {
         type: 'text',
         placeholder: '200k',
-        cls: 'claudian-context-limits-input',
+        cls: 'geminian-context-limits-input',
         value: currentValue ? formatContextLimit(currentValue) : '',
       });
 
       // Validation element
-      const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation' });
+      const validationEl = inputWrapper.createDiv({ cls: 'geminian-context-limit-validation' });
 
       inputEl.addEventListener('input', async () => {
         const trimmed = inputEl.value.trim();
@@ -731,19 +704,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
           // Empty = use default (remove from custom limits)
           delete this.plugin.settings.customContextLimits[modelId];
           validationEl.style.display = 'none';
-          inputEl.classList.remove('claudian-input-error');
+          inputEl.classList.remove('geminian-input-error');
         } else {
           const parsed = parseContextLimit(trimmed);
           if (parsed === null) {
             validationEl.setText(t('settings.customContextLimits.invalid'));
             validationEl.style.display = 'block';
-            inputEl.classList.add('claudian-input-error');
+            inputEl.classList.add('geminian-input-error');
             return; // Don't save invalid value
           }
 
           this.plugin.settings.customContextLimits[modelId] = parsed;
           validationEl.style.display = 'none';
-          inputEl.classList.remove('claudian-input-error');
+          inputEl.classList.remove('geminian-input-error');
         }
 
         await this.plugin.saveSettings();

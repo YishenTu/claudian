@@ -32,7 +32,7 @@ describe('InstructionModeManager', () => {
     expect(e.preventDefault).toHaveBeenCalled();
     expect(manager.isActive()).toBe(true);
     expect(inputEl.placeholder).toBe('# Save in custom system prompt');
-    expect(wrapper.addClass).toHaveBeenCalledWith('claudian-input-instruction-mode');
+    expect(wrapper.addClass).toHaveBeenCalledWith('geminian-input-instruction-mode');
   });
 
   it('should NOT enter instruction mode on # keystroke when input has content', () => {
@@ -88,7 +88,7 @@ describe('InstructionModeManager', () => {
 
     expect(manager.isActive()).toBe(false);
     expect(inputEl.placeholder).toBe('Ask...');
-    expect(wrapper.removeClass).toHaveBeenCalledWith('claudian-input-instruction-mode');
+    expect(wrapper.removeClass).toHaveBeenCalledWith('geminian-input-instruction-mode');
   });
 
   it('should submit instruction on Enter (without Shift) and trim whitespace', async () => {
@@ -237,7 +237,7 @@ describe('InstructionModeManager', () => {
 
     manager.destroy();
 
-    expect(wrapper.removeClass).toHaveBeenCalledWith('claudian-input-instruction-mode');
+    expect(wrapper.removeClass).toHaveBeenCalledWith('geminian-input-instruction-mode');
     expect(inputEl.placeholder).toBe('Ask...');
   });
 });

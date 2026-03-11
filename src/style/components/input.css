@@ -1,12 +1,12 @@
 /* Input area */
-.claudian-input-container {
+.geminian-input-container {
   position: relative;
   padding: 12px 0 0 0;
 }
 
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
-.claudian-input-wrapper {
+.geminian-input-wrapper {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -18,7 +18,7 @@
 
 /* Context row (file chip start, selection indicator end) - inside input wrapper at top */
 /* Collapsed by default; expanded via .has-content class; textarea fills remaining space */
-.claudian-context-row {
+.geminian-context-row {
   display: none;
   align-items: flex-start;
   justify-content: flex-start;
@@ -28,12 +28,12 @@
 }
 
 /* Show context row when it has visible content */
-.claudian-context-row.has-content {
+.geminian-context-row.has-content {
   display: flex;
 }
 
 /* Nav row (tab badges start, header icons end) - above input wrapper */
-.claudian-input-nav-row {
+.geminian-input-nav-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -42,16 +42,16 @@
 }
 
 /* Header mode: hide nav row above input (content moved to header) */
-.claudian-container--header-mode .claudian-input-nav-row {
+.geminian-container--header-mode .geminian-input-nav-row {
   display: none;
 }
 
 /* Selection indicator (shown when text is selected in editor) */
 /* Match file chip height (24px): chip has 16px remove button + 6px padding + 2px border */
 /* Indicator: 12px text + 10px padding (5+5) + 2px border = 24px */
-.claudian-selection-indicator,
-.claudian-browser-selection-indicator,
-.claudian-canvas-indicator {
+.geminian-selection-indicator,
+.geminian-browser-selection-indicator,
+.geminian-canvas-indicator {
   color: #7abaff;
   font-size: 12px;
   line-height: 1;
@@ -69,7 +69,7 @@
   text-overflow: ellipsis;
 }
 
-.claudian-input {
+.geminian-input {
   width: 100%;
   flex: 1 1 0;
   min-height: 60px;
@@ -88,20 +88,20 @@
   unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
 }
 
-.claudian-input:hover,
-.claudian-input:focus {
+.geminian-input:hover,
+.geminian-input:focus {
   outline: none !important;
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
-.claudian-input::placeholder {
+.geminian-input::placeholder {
   color: var(--text-muted);
 }
 
 /* Input toolbar */
-.claudian-input-toolbar {
+.geminian-input-toolbar {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -110,13 +110,13 @@
 }
 
 /* File indicator (attached files) */
-.claudian-file-indicator {
+.geminian-file-indicator {
   display: none;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.claudian-file-chip {
+.geminian-file-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -130,26 +130,26 @@
   cursor: pointer;
 }
 
-.claudian-file-chip-icon {
+.geminian-file-chip-icon {
   display: flex;
   align-items: center;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
-.claudian-file-chip-icon svg {
+.geminian-file-chip-icon svg {
   width: 12px;
   height: 12px;
 }
 
-.claudian-file-chip-name {
+.geminian-file-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-normal);
 }
 
-.claudian-file-chip-remove {
+.geminian-file-chip-remove {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -163,17 +163,17 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.claudian-file-chip-remove:hover {
+.geminian-file-chip-remove:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-file-chip:hover {
+.geminian-file-chip:hover {
   background: var(--background-modifier-hover);
 }
 
 /* Message Queue Indicator (shown below flavor text in thinking indicator) */
-.claudian-queue-indicator {
+.geminian-queue-indicator {
   display: none;
   font-size: 12px;
   color: var(--text-muted);
@@ -185,18 +185,18 @@
 }
 
 /* Light blue border when instruction mode is active */
-.claudian-input-instruction-mode {
+.geminian-input-instruction-mode {
   border-color: #60a5fa !important;
   box-shadow: 0 0 0 1px #60a5fa;
 }
 
 /* Pink border when bash mode is active */
-.claudian-input-bang-bash-mode {
+.geminian-input-bang-bash-mode {
   border-color: #f472b6 !important;
   box-shadow: 0 0 0 1px #f472b6;
 }
 
 /* Monospace input while in bash mode */
-.claudian-input-wrapper.claudian-input-bang-bash-mode .claudian-input {
+.geminian-input-wrapper.geminian-input-bang-bash-mode .geminian-input {
   font-family: var(--font-monospace);
 }

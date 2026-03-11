@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 
-import { ClaudeCliResolver, resolveClaudeCliPath } from '@/utils/claudeCli';
-import { findClaudeCLIPath } from '@/utils/path';
+import { GeminiCliResolver, resolveGeminiCliPath } from '@/utils/geminiCli';
+import { findGeminiCLIPath } from '@/utils/path';
 
 jest.mock('fs');
 jest.mock('os');
@@ -10,16 +10,16 @@ jest.mock('@/utils/path', () => {
   const actual = jest.requireActual('@/utils/path');
   return {
     ...actual,
-    findClaudeCLIPath: jest.fn(),
+    findGeminiCLIPath: jest.fn(),
   };
 });
 
 const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
-const mockedFind = findClaudeCLIPath as jest.Mock;
+const mockedFind = findGeminiCLIPath as jest.Mock;
 const mockedHostname = os.hostname as jest.Mock;
 
-describe('ClaudeCliResolver', () => {
+describe('GeminiCliResolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedHostname.mockReturnValue('test-host');
@@ -30,7 +30,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const resolved = resolver.resolve(
         { 'test-host': '/hostname/claude' },
         '/legacy/claude',
@@ -44,7 +44,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const resolved = resolver.resolve(
         { 'other-host': '/other/claude' },
         '/legacy/claude',
@@ -58,7 +58,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const resolved = resolver.resolve(
         {},
         '/legacy/claude',
@@ -72,7 +72,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockReturnValue(false);
       mockedFind.mockReturnValue('/auto/claude');
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const resolved = resolver.resolve({}, '', '');
 
       expect(resolved).toBe('/auto/claude');
@@ -85,7 +85,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
       mockedStat.mockReturnValue({ isFile: () => true });
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const first = resolver.resolve(
         { 'test-host': '/hostname/claude' },
         '',
@@ -107,7 +107,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockReturnValue(true);
       mockedStat.mockReturnValue({ isFile: () => true });
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const first = resolver.resolve(
         { 'test-host': '/hostname/claude1' },
         '',
@@ -127,7 +127,7 @@ describe('ClaudeCliResolver', () => {
       mockedExists.mockReturnValue(true);
       mockedStat.mockReturnValue({ isFile: () => true });
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       resolver.resolve(
         { 'test-host': '/hostname/claude' },
         '',
@@ -153,7 +153,7 @@ describe('ClaudeCliResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
       mockedFind.mockReturnValue('/auto/claude');
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const resolved = resolver.resolve({}, '/legacy/claude', '');
 
       expect(resolved).toBe('/legacy/claude');
@@ -165,7 +165,7 @@ describe('ClaudeCliResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
       mockedFind.mockReturnValue('/auto/claude');
 
-      const resolver = new ClaudeCliResolver();
+      const resolver = new GeminiCliResolver();
       const resolved = resolver.resolve(undefined, '/legacy/claude', '');
 
       expect(resolved).toBe('/legacy/claude');
@@ -174,7 +174,7 @@ describe('ClaudeCliResolver', () => {
   });
 });
 
-describe('resolveClaudeCliPath', () => {
+describe('resolveGeminiCliPath', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -183,7 +183,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('/hostname/claude', '/legacy/claude', '');
+    const result = resolveGeminiCliPath('/hostname/claude', '/legacy/claude', '');
 
     expect(result).toBe('/hostname/claude');
   });
@@ -194,7 +194,7 @@ describe('resolveClaudeCliPath', () => {
       isFile: () => p !== '/hostname/claude',
     }));
 
-    const result = resolveClaudeCliPath('/hostname/claude', '/legacy/claude', '');
+    const result = resolveGeminiCliPath('/hostname/claude', '/legacy/claude', '');
 
     expect(result).toBe('/legacy/claude');
   });
@@ -203,7 +203,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('', '/legacy/claude', '');
+    const result = resolveGeminiCliPath('', '/legacy/claude', '');
 
     expect(result).toBe('/legacy/claude');
   });
@@ -212,7 +212,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('  /hostname/claude  ', '', '');
+    const result = resolveGeminiCliPath('  /hostname/claude  ', '', '');
 
     expect(result).toBe('/hostname/claude');
   });
@@ -221,7 +221,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath(undefined, '/legacy/claude', '');
+    const result = resolveGeminiCliPath(undefined, '/legacy/claude', '');
 
     expect(result).toBe('/legacy/claude');
   });
@@ -230,7 +230,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockReturnValue(false);
     mockedFind.mockReturnValue('/auto/claude');
 
-    const result = resolveClaudeCliPath('', undefined, '');
+    const result = resolveGeminiCliPath('', undefined, '');
 
     expect(result).toBe('/auto/claude');
   });
@@ -239,7 +239,7 @@ describe('resolveClaudeCliPath', () => {
     mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('/nonexistent/claude', '/legacy/claude', '');
+    const result = resolveGeminiCliPath('/nonexistent/claude', '/legacy/claude', '');
 
     expect(result).toBe('/legacy/claude');
   });
@@ -251,7 +251,7 @@ describe('resolveClaudeCliPath', () => {
     });
     mockedStat.mockReturnValue({ isFile: () => true });
 
-    const result = resolveClaudeCliPath('/nonexistent/claude', '/legacy/claude', '');
+    const result = resolveGeminiCliPath('/nonexistent/claude', '/legacy/claude', '');
 
     expect(result).toBe('/legacy/claude');
   });
@@ -262,7 +262,7 @@ describe('resolveClaudeCliPath', () => {
     });
     mockedFind.mockReturnValue('/auto/claude');
 
-    const result = resolveClaudeCliPath('', '/bad/path', '');
+    const result = resolveGeminiCliPath('', '/bad/path', '');
 
     expect(result).toBe('/auto/claude');
   });
@@ -272,16 +272,16 @@ describe('resolveClaudeCliPath', () => {
     mockedStat.mockReturnValue({ isFile: () => false });
     mockedFind.mockReturnValue('/auto/claude');
 
-    const result = resolveClaudeCliPath('', '/legacy/dir', '');
+    const result = resolveGeminiCliPath('', '/legacy/dir', '');
 
     expect(result).toBe('/auto/claude');
   });
 
-  it('should pass env PATH to findClaudeCLIPath', () => {
+  it('should pass env PATH to findGeminiCLIPath', () => {
     mockedExists.mockReturnValue(false);
     mockedFind.mockReturnValue(null);
 
-    resolveClaudeCliPath('', '', 'PATH=/custom/bin');
+    resolveGeminiCliPath('', '', 'PATH=/custom/bin');
 
     expect(mockedFind).toHaveBeenCalledWith('/custom/bin');
   });

@@ -9,7 +9,7 @@ describe('externalContextScanner', () => {
 
   beforeEach(() => {
     // Create a temp directory for testing
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-test-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'geminian-test-'));
 
     // Create test file structure
     fs.mkdirSync(path.join(tempDir, 'subdir'));
@@ -95,7 +95,7 @@ describe('externalContextScanner', () => {
 
     it('should handle multiple external context paths', () => {
       // Create a second temp directory
-      const tempDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-test2-'));
+      const tempDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'geminian-test2-'));
       fs.writeFileSync(path.join(tempDir2, 'file4.js'), 'content4');
 
       try {
@@ -147,7 +147,7 @@ describe('externalContextScanner', () => {
 
     it('should invalidate specific path', () => {
       // Create a second temp directory
-      const tempDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-test2-'));
+      const tempDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'geminian-test2-'));
       fs.writeFileSync(path.join(tempDir2, 'file4.js'), 'content4');
 
       try {

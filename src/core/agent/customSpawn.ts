@@ -1,48 +1,42 @@
 /**
- * Custom spawn logic for Claude Agent SDK.
+ * Gemini CLI process spawner.
  *
- * Provides a custom spawn function that resolves the full path to Node.js
- * instead of relying on PATH lookup. This fixes issues in GUI apps (like Obsidian)
- * where the minimal PATH doesn't include Node.js.
+ * Spawns the Gemini CLI as a subprocess with --output-format stream-json
+ * for structured JSONL output parsing.
  */
 
-import type { SpawnedProcess, SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
+import type { ChildProcess } from 'child_process';
 import { spawn } from 'child_process';
 
 import { findNodeExecutable } from '../../utils/env';
 
-export function createCustomSpawnFunction(
-  enhancedPath: string
-): (options: SpawnOptions) => SpawnedProcess {
-  return (options: SpawnOptions): SpawnedProcess => {
-    let { command } = options;
-    const { args, cwd, env, signal } = options;
-    const shouldPipeStderr = !!env?.DEBUG_CLAUDE_AGENT_SDK;
+export interface GeminiSpawnOptions {
+  cliPath: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string | undefined>;
+  signal?: AbortSignal;
+  enhancedPath?: string;
+}
 
-    // Resolve full path to avoid PATH lookup issues in GUI apps
-    if (command === 'node') {
-      const nodeFullPath = findNodeExecutable(enhancedPath);
-      if (nodeFullPath) {
-        command = nodeFullPath;
-      }
-    }
+export function spawnGeminiCli(options: GeminiSpawnOptions): ChildProcess {
+  const { cliPath, args, cwd, env, signal, enhancedPath } = options;
 
-    const child = spawn(command, args, {
-      cwd,
-      env: env as NodeJS.ProcessEnv,
-      signal,
-      stdio: ['pipe', 'pipe', shouldPipeStderr ? 'pipe' : 'ignore'],
-      windowsHide: true,
-    });
+  let command = cliPath;
+  let spawnArgs = args;
 
-    if (shouldPipeStderr && child.stderr && typeof child.stderr.on === 'function') {
-      child.stderr.on('data', () => {});
-    }
+  // If cliPath is a .js file, run it with node
+  if (cliPath.endsWith('.js')) {
+    const nodePath = findNodeExecutable(enhancedPath || env.PATH || '');
+    command = nodePath || 'node';
+    spawnArgs = [cliPath, ...args];
+  }
 
-    if (!child.stdin || !child.stdout) {
-      throw new Error('Failed to create process streams');
-    }
-
-    return child as unknown as SpawnedProcess;
-  };
+  return spawn(command, spawnArgs, {
+    cwd,
+    env: env as NodeJS.ProcessEnv,
+    signal,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
 }

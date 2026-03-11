@@ -48,7 +48,7 @@ function findAllByClass(root: any, cls: string): any[] {
 }
 
 function clickButton(root: any, text: string): void {
-  const buttons = findAllByClass(root, 'claudian-instruction-btn');
+  const buttons = findAllByClass(root, 'geminian-instruction-btn');
   const btn = buttons.find((b: any) => b.textContent === text);
   if (!btn) throw new Error(`Button "${text}" not found`);
   btn.click();
@@ -61,7 +61,7 @@ describe('InstructionModal', () => {
       const modal = openModal('Make it better', callbacks);
       const contentEl = (modal as any).contentEl;
 
-      const originalEl = findByClass(contentEl, 'claudian-instruction-original');
+      const originalEl = findByClass(contentEl, 'geminian-instruction-original');
       expect(originalEl).not.toBeNull();
       expect(originalEl.textContent).toBe('Make it better');
     });
@@ -71,14 +71,14 @@ describe('InstructionModal', () => {
       const modal = openModal('test', callbacks);
       const contentEl = (modal as any).contentEl;
 
-      const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
+      const loadingEl = findByClass(contentEl, 'geminian-instruction-loading');
       expect(loadingEl).not.toBeNull();
       expect(loadingEl.style.display).not.toBe('none');
 
-      const clarificationEl = findByClass(contentEl, 'claudian-instruction-clarification-section');
+      const clarificationEl = findByClass(contentEl, 'geminian-instruction-clarification-section');
       expect(clarificationEl.style.display).toBe('none');
 
-      const confirmationEl = findByClass(contentEl, 'claudian-instruction-confirmation-section');
+      const confirmationEl = findByClass(contentEl, 'geminian-instruction-confirmation-section');
       expect(confirmationEl.style.display).toBe('none');
     });
 
@@ -87,7 +87,7 @@ describe('InstructionModal', () => {
       const modal = openModal('test', callbacks);
       const contentEl = (modal as any).contentEl;
 
-      const buttons = findAllByClass(contentEl, 'claudian-instruction-btn');
+      const buttons = findAllByClass(contentEl, 'geminian-instruction-btn');
       expect(buttons.length).toBe(1);
       expect(buttons[0].textContent).toBe('Cancel');
     });
@@ -101,10 +101,10 @@ describe('InstructionModal', () => {
 
       modal.showClarification('What style do you want?');
 
-      const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
+      const loadingEl = findByClass(contentEl, 'geminian-instruction-loading');
       expect(loadingEl.style.display).toBe('none');
 
-      const clarificationEl = findByClass(contentEl, 'claudian-instruction-clarification-section');
+      const clarificationEl = findByClass(contentEl, 'geminian-instruction-clarification-section');
       expect(clarificationEl.style.display).toBe('block');
     });
 
@@ -115,7 +115,7 @@ describe('InstructionModal', () => {
 
       modal.showClarification('What format?');
 
-      const clarificationTextEl = findByClass(contentEl, 'claudian-instruction-clarification');
+      const clarificationTextEl = findByClass(contentEl, 'geminian-instruction-clarification');
       expect(clarificationTextEl.textContent).toBe('What format?');
     });
 
@@ -126,7 +126,7 @@ describe('InstructionModal', () => {
 
       modal.showClarification('Question?');
 
-      const buttons = findAllByClass(contentEl, 'claudian-instruction-btn');
+      const buttons = findAllByClass(contentEl, 'geminian-instruction-btn');
       const buttonTexts = buttons.map((b: any) => b.textContent);
       expect(buttonTexts).toContain('Cancel');
       expect(buttonTexts).toContain('Submit');
@@ -141,10 +141,10 @@ describe('InstructionModal', () => {
 
       modal.showConfirmation('Refined instruction text');
 
-      const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
+      const loadingEl = findByClass(contentEl, 'geminian-instruction-loading');
       expect(loadingEl.style.display).toBe('none');
 
-      const confirmationEl = findByClass(contentEl, 'claudian-instruction-confirmation-section');
+      const confirmationEl = findByClass(contentEl, 'geminian-instruction-confirmation-section');
       expect(confirmationEl.style.display).toBe('block');
     });
 
@@ -155,7 +155,7 @@ describe('InstructionModal', () => {
 
       modal.showConfirmation('The refined snippet');
 
-      const refinedEl = findByClass(contentEl, 'claudian-instruction-refined');
+      const refinedEl = findByClass(contentEl, 'geminian-instruction-refined');
       expect(refinedEl.textContent).toBe('The refined snippet');
     });
 
@@ -166,7 +166,7 @@ describe('InstructionModal', () => {
 
       modal.showConfirmation('instruction');
 
-      const buttons = findAllByClass(contentEl, 'claudian-instruction-btn');
+      const buttons = findAllByClass(contentEl, 'geminian-instruction-btn');
       const buttonTexts = buttons.map((b: any) => b.textContent);
       expect(buttonTexts).toContain('Cancel');
       expect(buttonTexts).toContain('Edit');
@@ -295,10 +295,10 @@ describe('InstructionModal', () => {
       modal.showClarification('question?');
       modal.showClarificationLoading();
 
-      const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
+      const loadingEl = findByClass(contentEl, 'geminian-instruction-loading');
       expect(loadingEl.style.display).not.toBe('none');
 
-      const clarificationEl = findByClass(contentEl, 'claudian-instruction-clarification-section');
+      const clarificationEl = findByClass(contentEl, 'geminian-instruction-clarification-section');
       expect(clarificationEl.style.display).toBe('none');
     });
   });

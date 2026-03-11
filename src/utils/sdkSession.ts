@@ -1,10 +1,10 @@
 /**
- * SDK Session Parser - Parses Claude Agent SDK native session files.
+ * SDK Session Parser - Parses Gemini CLI native session files.
  *
  * The SDK stores sessions in ~/.claude/projects/{vault-path-encoded}/{sessionId}.jsonl
  * Each line is a JSON object with message data.
  *
- * This utility converts SDK native messages to Claudian's ChatMessage format
+ * This utility converts SDK native messages to Geminian's ChatMessage format
  * for displaying conversation history from native sessions.
  */
 
@@ -27,7 +27,7 @@ export interface SDKSessionReadResult {
   error?: string;
 }
 
-/** Stored in session JSONL files. Based on Claude Agent SDK internal format. */
+/** Stored in session JSONL files. Based on Gemini CLI internal format. */
 export interface SDKNativeMessage {
   type: 'user' | 'assistant' | 'system' | 'result' | 'file-history-snapshot' | 'queue-operation';
   parentUuid?: string | null;
@@ -339,7 +339,7 @@ export async function loadSubagentFinalResult(
 /**
  * Validates a session ID to prevent path traversal attacks.
  * Accepts alphanumeric strings with hyphens and underscores (max 128 chars).
- * Common formats: SDK UUIDs, Claudian IDs (conv-TIMESTAMP-RANDOM).
+ * Common formats: SDK UUIDs, Geminian IDs (conv-TIMESTAMP-RANDOM).
  */
 export function isValidSessionId(sessionId: string): boolean {
   if (!sessionId || sessionId.length === 0 || sessionId.length > 128) {

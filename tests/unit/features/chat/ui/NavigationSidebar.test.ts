@@ -214,7 +214,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       expect(container).not.toBeNull();
     });
 
@@ -224,7 +224,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       expect(container).not.toBeNull();
       expect(container!.children.length).toBe(4);
     });
@@ -235,7 +235,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       const buttons = container!.children;
 
       expect(buttons[0].getAttribute('aria-label')).toBe('Scroll to top');
@@ -250,7 +250,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       const buttons = container!.children;
 
       expect(buttons[0].getAttribute('data-icon')).toBe('chevrons-up');
@@ -270,7 +270,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       expect(container!.classList.contains('visible')).toBe(false);
     });
 
@@ -283,7 +283,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       expect(container!.classList.contains('visible')).toBe(true);
     });
 
@@ -296,7 +296,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       expect(container!.classList.contains('visible')).toBe(false);
 
       // Simulate content growth
@@ -318,7 +318,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       const topBtn = container!.children[0];
       topBtn.click();
 
@@ -339,7 +339,7 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
+      const container = parentEl.querySelector('.geminian-nav-sidebar');
       const bottomBtn = container!.children[3];
       bottomBtn.click();
 
@@ -351,13 +351,13 @@ describe('NavigationSidebar', () => {
 
   describe('previous/next message navigation', () => {
     function addUserMessage(el: MockElement, offset: number): MockElement {
-      const msg = el.createDiv({ cls: 'claudian-message claudian-message-user' });
+      const msg = el.createDiv({ cls: 'geminian-message geminian-message-user' });
       msg.offsetTop = offset;
       return msg;
     }
 
     function addAssistantMessage(el: MockElement, offset: number): MockElement {
-      const msg = el.createDiv({ cls: 'claudian-message claudian-message-assistant' });
+      const msg = el.createDiv({ cls: 'geminian-message geminian-message-assistant' });
       msg.offsetTop = offset;
       return msg;
     }
@@ -375,7 +375,7 @@ describe('NavigationSidebar', () => {
     }
 
     function getButtons(parent: MockElement) {
-      const container = parent.querySelector('.claudian-nav-sidebar')!;
+      const container = parent.querySelector('.geminian-nav-sidebar')!;
       return {
         prev: container.children[1],
         next: container.children[2],
@@ -507,11 +507,11 @@ describe('NavigationSidebar', () => {
         messagesEl as unknown as HTMLElement
       );
 
-      expect(parentEl.querySelector('.claudian-nav-sidebar')).not.toBeNull();
+      expect(parentEl.querySelector('.geminian-nav-sidebar')).not.toBeNull();
 
       sidebar.destroy();
 
-      expect(parentEl.querySelector('.claudian-nav-sidebar')).toBeNull();
+      expect(parentEl.querySelector('.geminian-nav-sidebar')).toBeNull();
     });
   });
 });

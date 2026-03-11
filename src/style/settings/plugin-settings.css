@@ -1,13 +1,13 @@
 /* Plugin Settings */
-.claudian-plugin-settings-desc {
+.geminian-plugin-settings-desc {
   margin-bottom: 12px;
 }
 
-.claudian-plugins-container {
+.geminian-plugins-container {
   margin-top: 8px;
 }
 
-.claudian-plugin-header {
+.geminian-plugin-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -15,13 +15,13 @@
   padding: 0 12px;
 }
 
-.claudian-plugin-label {
+.geminian-plugin-label {
   font-size: var(--font-ui-small);
   color: var(--text-muted);
   font-weight: var(--font-medium);
 }
 
-.claudian-plugin-empty {
+.geminian-plugin-empty {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
@@ -30,13 +30,13 @@
   border-radius: 6px;
 }
 
-.claudian-plugin-list {
+.geminian-plugin-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.claudian-plugin-section-header {
+.geminian-plugin-section-header {
   font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -44,7 +44,7 @@
   font-weight: 600;
 }
 
-.claudian-plugin-item {
+.geminian-plugin-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -54,19 +54,19 @@
   transition: background 0.15s ease;
 }
 
-.claudian-plugin-item:hover {
+.geminian-plugin-item:hover {
   background: var(--background-modifier-hover);
 }
 
-.claudian-plugin-item-disabled {
+.geminian-plugin-item-disabled {
   opacity: 0.6;
 }
 
-.claudian-plugin-item-error {
+.geminian-plugin-item-error {
   opacity: 0.8;
 }
 
-.claudian-plugin-status {
+.geminian-plugin-status {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -74,35 +74,35 @@
   flex-shrink: 0;
 }
 
-.claudian-plugin-status-enabled {
+.geminian-plugin-status-enabled {
   background: var(--color-green);
 }
 
-.claudian-plugin-status-disabled {
+.geminian-plugin-status-disabled {
   background: var(--text-muted);
 }
 
-.claudian-plugin-status-error {
+.geminian-plugin-status-error {
   background: var(--text-error);
 }
 
-.claudian-plugin-info {
+.geminian-plugin-info {
   flex: 1;
   min-width: 0;
 }
 
-.claudian-plugin-name-row {
+.geminian-plugin-name-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.claudian-plugin-name {
+.geminian-plugin-name {
   font-weight: 600;
 }
 
-.claudian-plugin-version-badge {
+.geminian-plugin-version-badge {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--background-modifier-border);
@@ -110,7 +110,7 @@
   color: var(--text-muted);
 }
 
-.claudian-plugin-error-badge {
+.geminian-plugin-error-badge {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--text-error);
@@ -119,7 +119,7 @@
   text-transform: uppercase;
 }
 
-.claudian-plugin-preview {
+.geminian-plugin-preview {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
@@ -128,17 +128,17 @@
   white-space: nowrap;
 }
 
-.claudian-plugin-preview-error {
+.geminian-plugin-preview-error {
   color: var(--text-error);
 }
 
-.claudian-plugin-actions {
+.geminian-plugin-actions {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
 }
 
-.claudian-plugin-action-btn {
+.geminian-plugin-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -153,12 +153,12 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.claudian-plugin-action-btn:hover {
+.geminian-plugin-action-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-plugin-action-btn svg {
+.geminian-plugin-action-btn svg {
   width: 14px;
   height: 14px;
 }

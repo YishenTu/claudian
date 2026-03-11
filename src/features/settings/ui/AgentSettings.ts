@@ -3,7 +3,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { AgentDefinition } from '../../../core/types';
 import { t } from '../../../i18n';
-import type ClaudianPlugin from '../../../main';
+import type GeminianPlugin from '../../../main';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import { validateAgentName } from '../../../utils/agent';
 
@@ -15,13 +15,13 @@ const MODEL_OPTIONS = [
 ] as const;
 
 class AgentModal extends Modal {
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
   private existingAgent: AgentDefinition | null;
   private onSave: (agent: AgentDefinition) => Promise<void>;
 
   constructor(
     app: App,
-    plugin: ClaudianPlugin,
+    plugin: GeminianPlugin,
     existingAgent: AgentDefinition | null,
     onSave: (agent: AgentDefinition) => Promise<void>
   ) {
@@ -37,7 +37,7 @@ class AgentModal extends Modal {
         ? t('settings.subagents.modal.titleEdit')
         : t('settings.subagents.modal.titleAdd')
     );
-    this.modalEl.addClass('claudian-sp-modal');
+    this.modalEl.addClass('geminian-sp-modal');
 
     const { contentEl } = this;
 
@@ -66,10 +66,10 @@ class AgentModal extends Modal {
           .setPlaceholder(t('settings.subagents.modal.descriptionPlaceholder'));
       });
 
-    const details = contentEl.createEl('details', { cls: 'claudian-sp-advanced-section' });
+    const details = contentEl.createEl('details', { cls: 'geminian-sp-advanced-section' });
     details.createEl('summary', {
       text: t('settings.subagents.modal.advancedOptions'),
-      cls: 'claudian-sp-advanced-summary',
+      cls: 'geminian-sp-advanced-summary',
     });
     if ((this.existingAgent?.model && this.existingAgent.model !== 'inherit') ||
         this.existingAgent?.tools?.length ||
@@ -119,7 +119,7 @@ class AgentModal extends Modal {
       .setDesc(t('settings.subagents.modal.promptDesc'));
 
     const contentArea = contentEl.createEl('textarea', {
-      cls: 'claudian-sp-content-area',
+      cls: 'geminian-sp-content-area',
       attr: {
         rows: '10',
         placeholder: t('settings.subagents.modal.promptPlaceholder'),
@@ -127,17 +127,17 @@ class AgentModal extends Modal {
     });
     contentArea.value = this.existingAgent?.prompt || '';
 
-    const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
+    const buttonContainer = contentEl.createDiv({ cls: 'geminian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
       text: t('common.cancel'),
-      cls: 'claudian-cancel-btn',
+      cls: 'geminian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
       text: t('common.save'),
-      cls: 'claudian-save-btn',
+      cls: 'geminian-save-btn',
     });
     saveBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
@@ -209,9 +209,9 @@ class AgentModal extends Modal {
 
 export class AgentSettings {
   private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
 
-  constructor(containerEl: HTMLElement, plugin: ClaudianPlugin) {
+  constructor(containerEl: HTMLElement, plugin: GeminianPlugin) {
     this.containerEl = containerEl;
     this.plugin = plugin;
     this.render();
@@ -220,20 +220,20 @@ export class AgentSettings {
   private render(): void {
     this.containerEl.empty();
 
-    const headerEl = this.containerEl.createDiv({ cls: 'claudian-sp-header' });
-    headerEl.createSpan({ text: t('settings.subagents.name'), cls: 'claudian-sp-label' });
+    const headerEl = this.containerEl.createDiv({ cls: 'geminian-sp-header' });
+    headerEl.createSpan({ text: t('settings.subagents.name'), cls: 'geminian-sp-label' });
 
-    const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
+    const actionsEl = headerEl.createDiv({ cls: 'geminian-sp-header-actions' });
 
     const refreshBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn',
+      cls: 'geminian-settings-action-btn',
       attr: { 'aria-label': t('common.refresh') },
     });
     setIcon(refreshBtn, 'refresh-cw');
     refreshBtn.addEventListener('click', () => { void this.refreshAgents(); });
 
     const addBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn',
+      cls: 'geminian-settings-action-btn',
       attr: { 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
@@ -243,12 +243,12 @@ export class AgentSettings {
     const vaultAgents = allAgents.filter(a => a.source === 'vault');
 
     if (vaultAgents.length === 0) {
-      const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
+      const emptyEl = this.containerEl.createDiv({ cls: 'geminian-sp-empty-state' });
       emptyEl.setText(t('settings.subagents.noAgents'));
       return;
     }
 
-    const listEl = this.containerEl.createDiv({ cls: 'claudian-sp-list' });
+    const listEl = this.containerEl.createDiv({ cls: 'geminian-sp-list' });
 
     for (const agent of vaultAgents) {
       this.renderAgentItem(listEl, agent);
@@ -256,31 +256,31 @@ export class AgentSettings {
   }
 
   private renderAgentItem(listEl: HTMLElement, agent: AgentDefinition): void {
-    const itemEl = listEl.createDiv({ cls: 'claudian-sp-item' });
+    const itemEl = listEl.createDiv({ cls: 'geminian-sp-item' });
 
-    const infoEl = itemEl.createDiv({ cls: 'claudian-sp-info' });
+    const infoEl = itemEl.createDiv({ cls: 'geminian-sp-info' });
 
-    const headerRow = infoEl.createDiv({ cls: 'claudian-sp-item-header' });
+    const headerRow = infoEl.createDiv({ cls: 'geminian-sp-item-header' });
 
-    const nameEl = headerRow.createSpan({ cls: 'claudian-sp-item-name' });
+    const nameEl = headerRow.createSpan({ cls: 'geminian-sp-item-name' });
     nameEl.setText(agent.name);
 
     if (agent.description) {
-      const descEl = infoEl.createDiv({ cls: 'claudian-sp-item-desc' });
+      const descEl = infoEl.createDiv({ cls: 'geminian-sp-item-desc' });
       descEl.setText(agent.description);
     }
 
-    const actionsEl = itemEl.createDiv({ cls: 'claudian-sp-item-actions' });
+    const actionsEl = itemEl.createDiv({ cls: 'geminian-sp-item-actions' });
 
     const editBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn',
+      cls: 'geminian-settings-action-btn',
       attr: { 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => { void this.openAgentModal(agent); });
 
     const deleteBtn = actionsEl.createEl('button', {
-      cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
+      cls: 'geminian-settings-action-btn geminian-settings-delete-btn',
       attr: { 'aria-label': t('common.delete') },
     });
     setIcon(deleteBtn, 'trash-2');

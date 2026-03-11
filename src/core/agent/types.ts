@@ -1,11 +1,9 @@
 /**
- * Types and constants for the ClaudianService module.
+ * Types and constants for the GeminianService module.
  */
 
-import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-
 import type { SystemPromptSettings } from '../prompts/mainAgent';
-import type { ClaudeModel, PermissionMode, StreamChunk } from '../types';
+import type { GeminiModel, PermissionMode, StreamChunk } from '../types';
 
 export interface TextContentBlock {
   type: 'text';
@@ -35,10 +33,20 @@ export interface PendingTextMessage {
   content: string;
 }
 
+export interface GeminiUserMessage {
+  prompt: string;
+  images?: Array<{
+    mediaType: string;
+    data: string;
+  }>;
+  sessionId?: string;
+  uuid?: string;
+}
+
 /** Pending message with attachments (cannot be merged). */
 export interface PendingAttachmentMessage {
   type: 'attachment';
-  message: SDKUserMessage;
+  message: GeminiUserMessage;
 }
 
 export type PendingMessage = PendingTextMessage | PendingAttachmentMessage;
@@ -109,15 +117,13 @@ export interface PersistentQueryConfig {
   externalContextPaths: string[];
   allowedExportPaths: string[];
   settingSources: string;
-  claudeCliPath: string;
-  show1MModel: boolean;  // Whether 1M beta flag is always included
-  enableChrome: boolean;  // Whether --chrome flag is passed to CLI
+  geminiCliPath: string;
 }
 
 export interface SessionState {
   sessionId: string | null;
-  sessionModel: ClaudeModel | null;
-  pendingSessionModel: ClaudeModel | null;
+  sessionModel: GeminiModel | null;
+  pendingSessionModel: GeminiModel | null;
   wasInterrupted: boolean;
   /** Set when SDK returns a different session ID than expected (context lost). */
   needsHistoryRebuild: boolean;
@@ -132,8 +138,8 @@ export const DISABLED_BUILTIN_SUBAGENTS = [
   'Task(statusline-setup)',
 ] as const;
 
-export function isTurnCompleteMessage(message: SDKMessage): boolean {
-  return message.type === 'result';
+export function isTurnCompleteMessage(event: { type: string }): boolean {
+  return event.type === 'result';
 }
 
 export function computeSystemPromptKey(settings: SystemPromptSettings): string {

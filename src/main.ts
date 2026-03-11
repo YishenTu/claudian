@@ -1,5 +1,5 @@
 /**
- * Claudian - Obsidian plugin entry point
+ * Geminian - Obsidian plugin entry point
  *
  * Registers the sidebar chat view, settings tab, and commands.
  * Manages conversation persistence and environment variable configuration.
@@ -15,26 +15,26 @@ import { StorageService } from './core/storage';
 import { isSubagentToolName, TOOL_TASK } from './core/tools/toolNames';
 import type {
   ChatMessage,
-  ClaudianSettings,
   Conversation,
   ConversationMeta,
+  GeminianSettings,
   SlashCommand,
   SubagentInfo,
 } from './core/types';
 import {
-  DEFAULT_CLAUDE_MODELS,
+  DEFAULT_GEMINI_MODELS,
   DEFAULT_SETTINGS,
   getCliPlatformKey,
   getHostnameKey,
-  VIEW_TYPE_CLAUDIAN,
+  VIEW_TYPE_GEMINIAN,
 } from './core/types';
-import { ClaudianView } from './features/chat/ClaudianView';
+import { GeminianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
-import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
+import { GeminianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
-import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
+import { GeminiCliResolver } from './utils/geminiCli';
 import { getVaultPath } from './utils/path';
 import {
   deleteSDKSession,
@@ -45,23 +45,23 @@ import {
 } from './utils/sdkSession';
 
 /**
- * Main plugin class for Claudian.
+ * Main plugin class for Geminian.
  * Handles plugin lifecycle, settings persistence, and conversation management.
  */
-export default class ClaudianPlugin extends Plugin {
-  settings: ClaudianSettings;
+export default class GeminianPlugin extends Plugin {
+  settings: GeminianSettings;
   mcpManager: McpServerManager;
   pluginManager: PluginManager;
   agentManager: AgentManager;
   storage: StorageService;
-  cliResolver: ClaudeCliResolver;
+  cliResolver: GeminiCliResolver;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
 
   async onload() {
     await this.loadSettings();
 
-    this.cliResolver = new ClaudeCliResolver();
+    this.cliResolver = new GeminiCliResolver();
 
     // Initialize MCP manager (shared for agent + UI)
     this.mcpManager = new McpServerManager(this.storage.mcp);
@@ -69,19 +69,19 @@ export default class ClaudianPlugin extends Plugin {
 
     // Initialize plugin manager (reads from installed_plugins.json + settings.json)
     const vaultPath = (this.app.vault.adapter as any).basePath;
-    this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
-    await this.pluginManager.loadPlugins();
+    this.pluginManager = new PluginManager(vaultPath, this.storage.geminiCliSettings);
+    await this.pluginManager.loadExtensions();
 
     // Initialize agent manager (loads plugin agents from plugin install paths)
     this.agentManager = new AgentManager(vaultPath, this.pluginManager);
     await this.agentManager.loadAgents();
 
     this.registerView(
-      VIEW_TYPE_CLAUDIAN,
-      (leaf) => new ClaudianView(leaf, this)
+      VIEW_TYPE_GEMINIAN,
+      (leaf) => new GeminianView(leaf, this)
     );
 
-    this.addRibbonIcon('bot', 'Open Claudian', () => {
+    this.addRibbonIcon('bot', 'Open Geminian', () => {
       this.activateView();
     });
 
@@ -135,10 +135,10 @@ export default class ClaudianPlugin extends Plugin {
       id: 'new-tab',
       name: 'New tab',
       checkCallback: (checking: boolean) => {
-        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINIAN)[0];
         if (!leaf) return false;
 
-        const view = leaf.view as ClaudianView;
+        const view = leaf.view as GeminianView;
         const tabManager = view.getTabManager();
         if (!tabManager) return false;
 
@@ -155,10 +155,10 @@ export default class ClaudianPlugin extends Plugin {
       id: 'new-session',
       name: 'New session (in current tab)',
       checkCallback: (checking: boolean) => {
-        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINIAN)[0];
         if (!leaf) return false;
 
-        const view = leaf.view as ClaudianView;
+        const view = leaf.view as GeminianView;
         const tabManager = view.getTabManager();
         if (!tabManager) return false;
 
@@ -178,10 +178,10 @@ export default class ClaudianPlugin extends Plugin {
       id: 'close-current-tab',
       name: 'Close current tab',
       checkCallback: (checking: boolean) => {
-        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINIAN)[0];
         if (!leaf) return false;
 
-        const view = leaf.view as ClaudianView;
+        const view = leaf.view as GeminianView;
         const tabManager = view.getTabManager();
         if (!tabManager) return false;
 
@@ -196,7 +196,7 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
-    this.addSettingTab(new ClaudianSettingTab(this.app, this));
+    this.addSettingTab(new GeminianSettingTab(this.app, this));
   }
 
   async onunload() {
@@ -212,7 +212,7 @@ export default class ClaudianPlugin extends Plugin {
 
   async activateView() {
     const { workspace } = this.app;
-    let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+    let leaf = workspace.getLeavesOfType(VIEW_TYPE_GEMINIAN)[0];
 
     if (!leaf) {
       const newLeaf = this.settings.openInMainTab
@@ -220,7 +220,7 @@ export default class ClaudianPlugin extends Plugin {
         : workspace.getRightLeaf(false);
       if (newLeaf) {
         await newLeaf.setViewState({
-          type: VIEW_TYPE_CLAUDIAN,
+          type: VIEW_TYPE_GEMINIAN,
           active: true,
         });
         leaf = newLeaf;
@@ -236,13 +236,13 @@ export default class ClaudianPlugin extends Plugin {
   async loadSettings() {
     // Initialize storage service (handles migration if needed)
     this.storage = new StorageService(this);
-    const { claudian } = await this.storage.initialize();
+    const { geminian } = await this.storage.initialize();
 
     const slashCommands = await this.storage.loadAllSlashCommands();
 
     this.settings = {
       ...DEFAULT_SETTINGS,
-      ...claudian,
+      ...geminian,
       slashCommands,
     };
 
@@ -253,24 +253,24 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     // Initialize and migrate legacy CLI paths to hostname-based paths
-    this.settings.claudeCliPathsByHost ??= {};
+    this.settings.geminiCliPathsByHost ??= {};
     const hostname = getHostnameKey();
     let didMigrateCliPath = false;
 
-    if (!this.settings.claudeCliPathsByHost[hostname]) {
+    if (!this.settings.geminiCliPathsByHost[hostname]) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const platformPaths = (this.settings as any).claudeCliPaths as Record<string, string> | undefined;
-      const migratedPath = platformPaths?.[getCliPlatformKey()]?.trim() || this.settings.claudeCliPath?.trim();
+      const platformPaths = (this.settings as any).geminiCliPaths as Record<string, string> | undefined;
+      const migratedPath = platformPaths?.[getCliPlatformKey()]?.trim() || this.settings.geminiCliPath?.trim();
 
       if (migratedPath) {
-        this.settings.claudeCliPathsByHost[hostname] = migratedPath;
-        this.settings.claudeCliPath = '';
+        this.settings.geminiCliPathsByHost[hostname] = migratedPath;
+        this.settings.geminiCliPath = '';
         didMigrateCliPath = true;
       }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (this.settings as any).claudeCliPaths;
+    delete (this.settings as any).geminiCliPaths;
 
     // Load all conversations from session files (legacy JSONL + native metadata)
     const { conversations: legacyConversations, failedCount } = await this.storage.sessions.loadAllConversations();
@@ -398,7 +398,7 @@ export default class ClaudianPlugin extends Plugin {
       ...settingsToSave
     } = this.settings;
 
-    await this.storage.saveClaudianSettings(settingsToSave);
+    await this.storage.saveGeminianSettings(settingsToSave);
   }
 
   /** Updates and persists environment variables, restarting processes to apply changes. */
@@ -482,16 +482,16 @@ export default class ClaudianPlugin extends Plugin {
     return this.runtimeEnvironmentVariables;
   }
 
-  getResolvedClaudeCliPath(): string | null {
+  getResolvedGeminiCliPath(): string | null {
     return this.cliResolver.resolve(
-      this.settings.claudeCliPathsByHost,  // Per-device paths (preferred)
-      this.settings.claudeCliPath,          // Legacy path (fallback)
+      this.settings.geminiCliPathsByHost,  // Per-device paths (preferred)
+      this.settings.geminiCliPath,          // Legacy path (fallback)
       this.getActiveEnvironmentVariables()
     );
   }
 
   private getDefaultModelValues(): string[] {
-    return DEFAULT_CLAUDE_MODELS.map((m) => m.value);
+    return DEFAULT_GEMINI_MODELS.map((m) => m.value);
   }
 
   private getPreferredCustomModel(envVars: Record<string, string>, customModels: { value: string }[]): string {
@@ -506,13 +506,13 @@ export default class ClaudianPlugin extends Plugin {
   private computeEnvHash(envText: string): string {
     const envVars = parseEnvironmentVariables(envText || '');
     const modelKeys = [
-      'ANTHROPIC_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'GEMINI_MODEL',
+      'GEMINI_DEFAULT_PRO_MODEL',
+      'GEMINI_DEFAULT_FLASH_MODEL',
+      'GEMINI_DEFAULT_FLASH_LITE_MODEL',
     ];
     const providerKeys = [
-      'ANTHROPIC_BASE_URL',
+      'GEMINI_BASE_URL',
     ];
     const allKeys = [...modelKeys, ...providerKeys];
     const relevantPairs = allKeys
@@ -559,7 +559,7 @@ export default class ClaudianPlugin extends Plugin {
     if (customModels.length > 0) {
       this.settings.model = this.getPreferredCustomModel(envVars, customModels);
     } else {
-      this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
+      this.settings.model = DEFAULT_GEMINI_MODELS[0].value;
     }
 
     this.settings.lastEnvHash = currentHash;
@@ -1061,26 +1061,26 @@ export default class ClaudianPlugin extends Plugin {
     }));
   }
 
-  /** Returns the active Claudian view from workspace, if open. */
-  getView(): ClaudianView | null {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
+  /** Returns the active Geminian view from workspace, if open. */
+  getView(): GeminianView | null {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINIAN);
     if (leaves.length > 0) {
-      return leaves[0].view as ClaudianView;
+      return leaves[0].view as GeminianView;
     }
     return null;
   }
 
-  /** Returns all open Claudian views in the workspace. */
-  getAllViews(): ClaudianView[] {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
-    return leaves.map(leaf => leaf.view as ClaudianView);
+  /** Returns all open Geminian views in the workspace. */
+  getAllViews(): GeminianView[] {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_GEMINIAN);
+    return leaves.map(leaf => leaf.view as GeminianView);
   }
 
   /**
-   * Checks if a conversation is open in any Claudian view.
+   * Checks if a conversation is open in any Geminian view.
    * Returns the view and tab if found, null otherwise.
    */
-  findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {
+  findConversationAcrossViews(conversationId: string): { view: GeminianView; tabId: string } | null {
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;

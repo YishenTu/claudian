@@ -46,11 +46,11 @@ jest.mock('obsidian', () => {
 
 function getOptionItems(): Array<{ text: string; click: () => void }> {
   const listEl = lastModalInstance.contentEl.children?.find(
-    (c: any) => c.hasClass?.('claudian-fork-target-list'),
+    (c: any) => c.hasClass?.('geminian-fork-target-list'),
   );
   if (!listEl) return [];
   return (listEl.children || [])
-    .filter((c: any) => c.hasClass?.('claudian-fork-target-option'))
+    .filter((c: any) => c.hasClass?.('geminian-fork-target-option'))
     .map((c: any) => ({
       text: c.textContent,
       click: () => {

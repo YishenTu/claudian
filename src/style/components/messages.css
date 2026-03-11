@@ -1,5 +1,5 @@
 /* Messages wrapper (for scroll-to-bottom button positioning) */
-.claudian-messages-wrapper {
+.geminian-messages-wrapper {
   position: relative;
   flex: 1;
   min-height: 0;
@@ -8,7 +8,7 @@
   overflow: hidden;
 }
 
-.claudian-messages {
+.geminian-messages {
   flex: 1;
   overflow-y: auto;
   padding: 12px 0;
@@ -18,12 +18,12 @@
 }
 
 /* Focusable messages panel for vim-style navigation */
-.claudian-messages-focusable:focus {
+.geminian-messages-focusable:focus {
   outline: none;
 }
 
 /* Welcome message - claude.ai style */
-.claudian-welcome {
+.geminian-welcome {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -34,7 +34,7 @@
   min-height: 200px;
 }
 
-.claudian-welcome-greeting {
+.geminian-welcome-greeting {
   font-family: 'Copernicus', 'Tiempos Headline', 'Tiempos', Georgia, 'Times New Roman', serif;
   font-size: 28px;
   font-weight: 300;
@@ -42,14 +42,14 @@
   letter-spacing: -0.01em;
 }
 
-.claudian-message {
+.geminian-message {
   padding: 10px 14px;
   border-radius: 8px;
   max-width: 95%;
   word-wrap: break-word;
 }
 
-.claudian-message-user {
+.geminian-message-user {
   position: relative;
   background: rgba(0, 0, 0, 0.3);
   align-self: flex-end;
@@ -57,12 +57,12 @@
 }
 
 /* Text selection in user messages - visible highlight */
-.claudian-message-user ::selection {
+.geminian-message-user ::selection {
   background: rgba(255, 255, 255, 0.35);
   color: inherit;
 }
 
-.claudian-message-assistant {
+.geminian-message-assistant {
   background: transparent;
   align-self: stretch;
   width: 100%;
@@ -71,27 +71,27 @@
   text-align: start;
 }
 
-.claudian-message-content {
+.geminian-message-content {
   line-height: 1.5;
   user-select: text;
   -webkit-user-select: text;
   unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
 }
 
-.claudian-interrupted {
+.geminian-interrupted {
   color: #d45d5d;
 }
 
-.claudian-interrupted-hint {
+.geminian-interrupted-hint {
   color: var(--text-muted);
 }
 
-.claudian-text-block {
+.geminian-text-block {
   position: relative;
   margin: 0;
 }
 
-.claudian-text-copy-btn {
+.geminian-text-copy-btn {
   position: absolute;
   bottom: 0;
   inset-inline-end: 0;
@@ -106,93 +106,93 @@
   gap: 4px;
 }
 
-.claudian-text-copy-btn svg {
+.geminian-text-copy-btn svg {
   width: 16px;
   height: 16px;
 }
 
-.claudian-text-block:hover .claudian-text-copy-btn {
+.geminian-text-block:hover .geminian-text-copy-btn {
   opacity: 1;
 }
 
-.claudian-text-copy-btn:hover {
+.geminian-text-copy-btn:hover {
   color: var(--text-normal);
 }
 
-.claudian-text-copy-btn.copied {
+.geminian-text-copy-btn.copied {
   color: var(--text-accent);
   font-size: 11px;
   font-family: var(--font-monospace);
 }
 
-.claudian-text-block+.claudian-tool-call {
+.geminian-text-block+.geminian-tool-call {
   margin-top: 8px;
 }
 
-.claudian-tool-call+.claudian-text-block {
+.geminian-tool-call+.geminian-text-block {
   margin-top: 8px;
 }
 
-.claudian-message-content p {
+.geminian-message-content p {
   margin: 0 0 8px 0;
 }
 
-.claudian-message-content p:last-child {
+.geminian-message-content p:last-child {
   margin-bottom: 0;
 }
 
-.claudian-message-content ul,
-.claudian-message-content ol {
+.geminian-message-content ul,
+.geminian-message-content ol {
   margin: 8px 0;
   padding-inline-start: 20px;
 }
 
 /* Full-width tables */
-.claudian-message-content table {
+.geminian-message-content table {
   width: 100%;
   border-collapse: collapse;
   margin: 8px 0;
 }
 
-.claudian-message-content th,
-.claudian-message-content td {
+.geminian-message-content th,
+.geminian-message-content td {
   border: 1px solid var(--background-modifier-border);
   padding: 6px 10px;
   text-align: start;
 }
 
-.claudian-message-content th {
+.geminian-message-content th {
   background: var(--background-secondary);
   font-weight: 600;
 }
 
-.claudian-message-content tr:hover {
+.geminian-message-content tr:hover {
   background: var(--background-secondary-alt);
 }
 
-.claudian-messages::-webkit-scrollbar {
+.geminian-messages::-webkit-scrollbar {
   width: 6px;
 }
 
-.claudian-messages::-webkit-scrollbar-track {
+.geminian-messages::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.claudian-messages::-webkit-scrollbar-thumb {
+.geminian-messages::-webkit-scrollbar-thumb {
   background: var(--background-modifier-border);
   border-radius: 3px;
 }
 
-.claudian-messages::-webkit-scrollbar-thumb:hover {
+.geminian-messages::-webkit-scrollbar-thumb:hover {
   background: var(--background-modifier-border-hover);
 }
 
 /* Response duration footer - styled as another line of content */
-.claudian-response-footer {
+.geminian-response-footer {
   margin-top: 8px;
 }
 
-.claudian-baked-duration {
+.geminian-baked-duration {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
@@ -200,7 +200,7 @@
 }
 
 /* Action buttons toolbar below user messages */
-.claudian-user-msg-actions {
+.geminian-user-msg-actions {
   position: absolute;
   bottom: -20px;
   right: 0;
@@ -211,11 +211,11 @@
   z-index: 1;
 }
 
-.claudian-message-user:hover .claudian-user-msg-actions {
+.geminian-message-user:hover .geminian-user-msg-actions {
   opacity: 1;
 }
 
-.claudian-user-msg-actions span {
+.geminian-user-msg-actions span {
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -224,38 +224,38 @@
   transition: color 0.15s;
 }
 
-.claudian-user-msg-actions span svg {
+.geminian-user-msg-actions span svg {
   width: 16px;
   height: 16px;
 }
 
-.claudian-user-msg-actions span:hover {
+.geminian-user-msg-actions span:hover {
   color: var(--text-normal);
 }
 
-.claudian-user-msg-actions span.copied {
+.geminian-user-msg-actions span.copied {
   color: var(--text-accent);
   font-size: 11px;
   font-family: var(--font-monospace);
 }
 
 /* Compact boundary indicator */
-.claudian-compact-boundary {
+.geminian-compact-boundary {
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 12px 0;
 }
 
-.claudian-compact-boundary::before,
-.claudian-compact-boundary::after {
+.geminian-compact-boundary::before,
+.geminian-compact-boundary::after {
   content: '';
   flex: 1;
   height: 1px;
   background: var(--background-modifier-border);
 }
 
-.claudian-compact-boundary-label {
+.geminian-compact-boundary-label {
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;

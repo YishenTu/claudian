@@ -1,28 +1,156 @@
-import type {
-  SDKAssistantMessage,
-  SDKAuthStatusMessage,
-  SDKCompactBoundaryMessage,
-  SDKMessage,
-  SDKPartialAssistantMessage,
-  SDKResultError,
-  SDKResultSuccess,
-  SDKStatusMessage,
-  SDKSystemMessage,
-  SDKToolProgressMessage,
-  SDKUserMessage,
-} from '@anthropic-ai/claude-agent-sdk';
+/**
+ * Test helpers for building SDK-shaped messages.
+ *
+ * These types mirror the Gemini CLI JSONL output shapes used throughout tests.
+ * No external SDK dependency required.
+ */
+
+// --- Local type definitions (replacing SDK imports) ---
+
+export interface SDKSystemMessage {
+  type: 'system';
+  subtype: 'init';
+  apiKeySource?: string;
+  claude_code_version?: string;
+  cwd?: string;
+  tools?: string[];
+  mcp_servers?: unknown[];
+  model?: string;
+  permissionMode?: string;
+  slash_commands?: unknown[];
+  output_style?: string;
+  skills?: unknown[];
+  plugins?: unknown[];
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKStatusMessage {
+  type: 'system';
+  subtype: 'status';
+  status?: string | null;
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKCompactBoundaryMessage {
+  type: 'system';
+  subtype: 'compact_boundary';
+  compact_metadata?: { trigger: string; pre_tokens: number };
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKAssistantMessage {
+  type: 'assistant';
+  message: { content: unknown[]; model?: string; [key: string]: unknown };
+  parent_tool_use_id?: string | null;
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKUserMessage {
+  type: 'user';
+  message: { role?: string; content: unknown };
+  parent_tool_use_id?: string | null;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKPartialAssistantMessage {
+  type: 'stream_event';
+  event: unknown;
+  parent_tool_use_id?: string | null;
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKResultSuccess {
+  type: 'result';
+  subtype: 'success';
+  duration_ms?: number;
+  duration_api_ms?: number;
+  is_error?: boolean;
+  num_turns?: number;
+  result?: string;
+  stop_reason?: string | null;
+  total_cost_usd?: number;
+  usage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number };
+  modelUsage?: Record<string, unknown>;
+  permission_denials?: unknown[];
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKResultError {
+  type: 'result';
+  subtype: 'error' | 'error_max_turns' | 'error_tool_use';
+  duration_ms?: number;
+  duration_api_ms?: number;
+  is_error?: boolean;
+  num_turns?: number;
+  stop_reason?: string | null;
+  total_cost_usd?: number;
+  usage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number };
+  modelUsage?: Record<string, unknown>;
+  permission_denials?: unknown[];
+  errors?: string[];
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKToolProgressMessage {
+  type: 'tool_progress';
+  tool_use_id?: string;
+  tool_name?: string;
+  parent_tool_use_id?: string | null;
+  elapsed_time_seconds?: number;
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export interface SDKAuthStatusMessage {
+  type: 'auth_status';
+  isAuthenticating?: boolean;
+  output?: unknown[];
+  uuid?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+export type SDKMessage =
+  | SDKSystemMessage
+  | SDKStatusMessage
+  | SDKCompactBoundaryMessage
+  | SDKAssistantMessage
+  | SDKUserMessage
+  | SDKPartialAssistantMessage
+  | SDKResultSuccess
+  | SDKResultError
+  | SDKToolProgressMessage
+  | SDKAuthStatusMessage;
+
+// --- Constants ---
 
 const TEST_UUID = '00000000-0000-4000-8000-000000000001';
 const TEST_SESSION_ID = 'test-session';
 
-const DEFAULT_RESULT_USAGE = ({
+const DEFAULT_RESULT_USAGE = {
   input_tokens: 0,
   output_tokens: 0,
   cache_creation_input_tokens: 0,
   cache_read_input_tokens: 0,
-} as unknown) as SDKResultSuccess['usage'];
+};
 
-const DEFAULT_MODEL_USAGE: SDKResultSuccess['modelUsage'] = {
+const DEFAULT_MODEL_USAGE: Record<string, unknown> = {
   'claude-sonnet-test': {
     inputTokens: 0,
     outputTokens: 0,
@@ -34,6 +162,8 @@ const DEFAULT_MODEL_USAGE: SDKResultSuccess['modelUsage'] = {
     maxOutputTokens: 8192,
   },
 };
+
+// --- Input types for test builder ---
 
 export type SystemInitMessageInput = {
   type: 'system';
@@ -94,6 +224,8 @@ export type SDKTestMessageInput =
   | ToolProgressMessageInput
   | AuthStatusMessageInput;
 
+// --- Builder functions ---
+
 export function buildSystemInitMessage(overrides: Partial<Omit<SDKSystemMessage, 'type' | 'subtype'>> = {}): SDKSystemMessage {
   return {
     type: 'system',
@@ -145,7 +277,7 @@ export function buildCompactBoundaryMessage(
 export function buildAssistantMessage(overrides: Partial<Omit<SDKAssistantMessage, 'type'>> = {}): SDKAssistantMessage {
   return {
     type: 'assistant',
-    message: ({ content: [] } as unknown) as SDKAssistantMessage['message'],
+    message: { content: [] },
     parent_tool_use_id: null,
     uuid: TEST_UUID,
     session_id: TEST_SESSION_ID,
@@ -156,7 +288,7 @@ export function buildAssistantMessage(overrides: Partial<Omit<SDKAssistantMessag
 export function buildUserMessage(overrides: Partial<Omit<SDKUserMessage, 'type'>> = {}): SDKUserMessage {
   return {
     type: 'user',
-    message: ({ content: [] } as unknown) as SDKUserMessage['message'],
+    message: { content: [] },
     parent_tool_use_id: null,
     session_id: TEST_SESSION_ID,
     ...overrides,
@@ -168,10 +300,10 @@ export function buildStreamEventMessage(
 ): SDKPartialAssistantMessage {
   return {
     type: 'stream_event',
-    event: ({
+    event: {
       type: 'content_block_delta',
       delta: { type: 'text_delta', text: '' },
-    } as unknown) as SDKPartialAssistantMessage['event'],
+    },
     parent_tool_use_id: null,
     uuid: TEST_UUID,
     session_id: TEST_SESSION_ID,

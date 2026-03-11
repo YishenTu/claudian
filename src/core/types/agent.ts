@@ -3,7 +3,7 @@ export type AgentPermissionMode = typeof AGENT_PERMISSION_MODES[number];
 
 /**
  * Agent definition loaded from markdown files with YAML frontmatter.
- * Matches Claude Code's agent format for compatibility.
+ * Matches Gemini CLI's agent format for compatibility.
  */
 export interface AgentDefinition {
   /** Unique identifier. Namespaced for plugins: "plugin-name:agent-name" */
@@ -42,7 +42,7 @@ export interface AgentDefinition {
   /** Parsed from frontmatter; round-tripped on save so the SDK reads hooks from the agent file */
   hooks?: Record<string, unknown>;
 
-  /** Frontmatter keys not recognized by Claudian, preserved on round-trip */
+  /** Frontmatter keys not recognized by Geminian, preserved on round-trip */
   extraFrontmatter?: Record<string, unknown>;
 }
 

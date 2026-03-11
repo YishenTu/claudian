@@ -3,7 +3,7 @@ import {
   getLastOptions,
   resetMockMessages,
   setMockMessages,
-} from '@test/__mocks__/claude-agent-sdk';
+} from '@test/__mocks__/gemini-cli-sdk';
 
 // Import after mocks are set up
 import { InstructionRefineService } from '@/features/chat/services/InstructionRefineService';
@@ -24,7 +24,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
+    getResolvedGeminiCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -61,8 +61,8 @@ describe('InstructionRefineService', () => {
       expect(options?.allowDangerouslySkipPermissions).toBe(true);
     });
 
-    it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {
-      mockPlugin.settings.loadUserClaudeSettings = false;
+    it('should set settingSources to project only when loadUserGeminiSettings is false', async () => {
+      mockPlugin.settings.loadUserGeminiSettings = false;
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         {
@@ -80,8 +80,8 @@ describe('InstructionRefineService', () => {
       expect(options?.settingSources).toEqual(['project']);
     });
 
-    it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
-      mockPlugin.settings.loadUserClaudeSettings = true;
+    it('should set settingSources to include user when loadUserGeminiSettings is true', async () => {
+      mockPlugin.settings.loadUserGeminiSettings = true;
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
         {
@@ -336,11 +336,11 @@ describe('InstructionRefineService', () => {
       expect(result.error).toBe('Could not determine vault path');
     });
 
-    it('should return error when Claude CLI is not found', async () => {
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+    it('should return error when Gemini CLI is not found', async () => {
+      mockPlugin.getResolvedGeminiCliPath.mockReturnValue(null);
       const result = await service.refineInstruction('test', '');
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Claude CLI not found. Please install Claude Code CLI.');
+      expect(result.error).toBe('Gemini CLI not found. Please install Gemini CLI CLI.');
     });
   });
 });

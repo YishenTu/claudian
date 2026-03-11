@@ -10,40 +10,36 @@ export {
   type SessionMetadata,
   type StreamChunk,
   type UsageInfo,
-  VIEW_TYPE_CLAUDIAN,
+  VIEW_TYPE_GEMINIAN,
 } from './chat';
 
 // Model types
 export {
-  BETA_1M_CONTEXT,
-  type ClaudeModel,
-  CONTEXT_WINDOW_1M,
   CONTEXT_WINDOW_STANDARD,
-  DEFAULT_CLAUDE_MODELS,
+  DEFAULT_GEMINI_MODELS as DEFAULT_CLAUDE_MODELS,
+  DEFAULT_GEMINI_MODELS,
   DEFAULT_THINKING_BUDGET,
+  type GeminiModel,
   getContextWindowSize,
-  type ModelWithBetas,
-  type ModelWithoutBetas,
-  resolveModelWithBetas,
   THINKING_BUDGETS,
   type ThinkingBudget,
 } from './models';
 
 // SDK types
-export { type SDKMessage } from './sdk';
+export { type BlockedUserMessage, isBlockedMessage } from './sdk';
 
 // Settings types
 export {
   type ApprovalDecision,
-  type CCPermissions,
-  type CCSettings,
-  type ClaudianSettings,
   type CliPlatformKey,
   createPermissionRule,
-  DEFAULT_CC_PERMISSIONS,
-  DEFAULT_CC_SETTINGS,
+  DEFAULT_GEMINI_CLI_SETTINGS,
+  DEFAULT_GEMINI_PERMISSIONS,
   DEFAULT_SETTINGS,
   type EnvSnippet,
+  type GeminianSettings,
+  type GeminiCLISettings,
+  type GeminiPermissions,
   getBashToolBlockedCommands,
   getCliPlatformKey,  // Kept for migration
   getCurrentPlatformBlockedCommands,
@@ -91,9 +87,9 @@ export {
 
 // MCP types
 export {
-  type ClaudianMcpConfigFile,
-  type ClaudianMcpServer,
   DEFAULT_MCP_SERVER,
+  type GeminianMcpConfigFile,
+  type GeminianMcpServer,
   getMcpServerType,
   isValidMcpServerConfig,
   type McpConfigFile,
@@ -105,9 +101,14 @@ export {
   type ParsedMcpConfig,
 } from './mcp';
 
-// Plugin types
+// Extension types (formerly Plugin)
 export {
-  type ClaudianPlugin,
+  type ExtensionScope,
+  type GeminianExtension,
+  // Backwards-compatible aliases
+  type GeminianPlugin,
+  type InstalledExtensionEntry,
+  type InstalledExtensionsFile,
   type InstalledPluginEntry,
   type InstalledPluginsFile,
   type PluginScope,

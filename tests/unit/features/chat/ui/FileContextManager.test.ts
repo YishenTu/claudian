@@ -203,11 +203,11 @@ describe('FileContextManager', () => {
 
     manager.setCurrentNote('notes/chip.md');
 
-    const indicator = findByClass(containerEl, 'claudian-file-indicator');
+    const indicator = findByClass(containerEl, 'geminian-file-indicator');
     expect(indicator).toBeDefined();
     expect(indicator?.style.display).toBe('flex');
 
-    const removeEl = findByClass(containerEl, 'claudian-file-chip-remove');
+    const removeEl = findByClass(containerEl, 'geminian-file-chip-remove');
     expect(removeEl).toBeDefined();
 
     removeEl!.click();
@@ -262,7 +262,7 @@ describe('FileContextManager', () => {
     manager.handleInputChange();
     jest.advanceTimersByTime(200);
 
-    const pathEl = findByClass(containerEl, 'claudian-mention-path');
+    const pathEl = findByClass(containerEl, 'geminian-mention-path');
     expect(pathEl?.textContent).toBe('clipping/file.md');
 
     manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
@@ -295,7 +295,7 @@ describe('FileContextManager', () => {
     jest.advanceTimersByTime(200);
 
     expect(getFoldersSpy).toHaveBeenCalled();
-    const folderLabel = findByClass(containerEl, 'claudian-mention-name-folder');
+    const folderLabel = findByClass(containerEl, 'geminian-mention-name-folder');
     expect(folderLabel?.textContent).toBe('@src/');
 
     manager.destroy();
@@ -328,7 +328,7 @@ describe('FileContextManager', () => {
     manager.handleInputChange();
     jest.advanceTimersByTime(200);
 
-    const nameEls = findAllByClass(containerEl, 'claudian-mention-name-context');
+    const nameEls = findAllByClass(containerEl, 'geminian-mention-name-context');
     expect(nameEls[0]?.textContent).toBe('src/app.md');
 
     manager.handleMentionKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);

@@ -1,27 +1,26 @@
 /**
- * Claudian - Claude CLI resolver
+ * Geminian - Gemini CLI resolver
  *
- * Shared resolver for Claude CLI path detection across services.
+ * Shared resolver for Gemini CLI path detection across services.
  */
 
 import * as fs from 'fs';
 
 import { type HostnameCliPaths } from '../core/types/settings';
 import { getHostnameKey, parseEnvironmentVariables } from './env';
-import { expandHomePath, findClaudeCLIPath } from './path';
+import { expandHomePath, findGeminiCLIPath } from './path';
 
-export class ClaudeCliResolver {
+export class GeminiCliResolver {
   private resolvedPath: string | null = null;
   private lastHostnamePath = '';
   private lastLegacyPath = '';
   private lastEnvText = '';
-  // Cache hostname since it doesn't change during a session
   private readonly cachedHostname = getHostnameKey();
 
   /**
    * Resolves CLI path with priority: hostname-specific -> legacy -> auto-detect.
    * @param hostnamePaths Per-device CLI paths keyed by hostname (preferred)
-   * @param legacyPath Legacy claudeCliPath (for backwards compatibility)
+   * @param legacyPath Legacy geminiCliPath (for backwards compatibility)
    * @param envText Environment variables text
    */
   resolve(
@@ -48,7 +47,7 @@ export class ClaudeCliResolver {
     this.lastLegacyPath = normalizedLegacy;
     this.lastEnvText = normalizedEnv;
 
-    this.resolvedPath = resolveClaudeCliPath(hostnamePath, normalizedLegacy, normalizedEnv);
+    this.resolvedPath = resolveGeminiCliPath(hostnamePath, normalizedLegacy, normalizedEnv);
     return this.resolvedPath;
   }
 
@@ -61,12 +60,12 @@ export class ClaudeCliResolver {
 }
 
 /**
- * Resolves CLI path with fallback chain.
+ * Resolves Gemini CLI path with fallback chain.
  * @param hostnamePath Hostname-specific path for this device (preferred)
- * @param legacyPath Legacy claudeCliPath (backwards compatibility)
+ * @param legacyPath Legacy geminiCliPath (backwards compatibility)
  * @param envText Environment variables text
  */
-export function resolveClaudeCliPath(
+export function resolveGeminiCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
   envText: string
@@ -102,5 +101,5 @@ export function resolveClaudeCliPath(
   }
 
   const customEnv = parseEnvironmentVariables(envText || '');
-  return findClaudeCLIPath(customEnv.PATH);
+  return findGeminiCLIPath(customEnv.PATH);
 }

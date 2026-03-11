@@ -65,10 +65,10 @@
     }
   },
   "settings": {
-    "title": "Claudian 설정",
+    "title": "Geminian 설정",
     "customization": "사용자 정의",
     "userName": {
-      "name": "Claudian이 당신을 어떻게 불러야 합니까?",
+      "name": "Geminian이 당신을 어떻게 불러야 합니까?",
       "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"
     },
     "excludedTags": {
@@ -77,7 +77,7 @@
     },
     "mediaFolder": {
       "name": "미디어 폴더",
-      "desc": "첨부 파일/이미지를 저장할 폴더. 노트가 ![[image.jpg]]를 사용할 때 Claude가 여기서 찾습니다. 비워두면 저장소 루트 사용."
+      "desc": "첨부 파일/이미지를 저장할 폴더. 노트가 ![[image.jpg]]를 사용할 때 Gemini가 여기서 찾습니다. 비워두면 저장소 루트 사용."
     },
     "systemPrompt": {
       "name": "커스텀 시스템 프롬프트",
@@ -138,20 +138,20 @@
     },
     "hiddenSlashCommands": {
       "name": "숨겨진 명령어",
-      "desc": "드롭다운에서 특정 슬래시 명령어를 숨깁니다. Claudian과 관련 없는 Claude Code 명령어를 숨기는 데 유용합니다. 앞의 슬래시 없이 한 줄에 하나씩 명령어 이름을 입력하세요.",
+      "desc": "드롭다운에서 특정 슬래시 명령어를 숨깁니다. Geminian과 관련 없는 Gemini CLI 명령어를 숨기는 데 유용합니다. 앞의 슬래시 없이 한 줄에 하나씩 명령어 이름을 입력하세요.",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
       "name": "MCP 서버",
-      "desc": "모델 컨텍스트 프로토콜 서버를 설정하여 외부 도구와 데이터 소스로 Claude의 기능을 확장합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
+      "desc": "모델 컨텍스트 프로토콜 서버를 설정하여 외부 도구와 데이터 소스로 Gemini의 기능을 확장합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
     },
     "plugins": {
-      "name": "Claude Code 플러그인",
-      "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 활성화 또는 비활성화합니다. 활성화된 플러그인은 볼트별로 저장됩니다."
+      "name": "Gemini CLI 플러그인",
+      "desc": "~/.gemini/plugins에서 발견된 Gemini CLI 플러그인을 활성화 또는 비활성화합니다. 활성화된 플러그인은 볼트별로 저장됩니다."
     },
     "subagents": {
       "name": "서브에이전트",
-      "desc": "Claude가 위임할 수 있는 사용자 정의 서브에이전트를 설정합니다.",
+      "desc": "Gemini가 위임할 수 있는 사용자 정의 서브에이전트를 설정합니다.",
       "noAgents": "구성된 서브에이전트가 없습니다. +를 클릭해 새로 만드세요.",
       "deleteConfirm": "서브에이전트 \"{name}\"을 삭제하시겠습니까?",
       "saveFailed": "서브에이전트를 저장하지 못했습니다: {message}",
@@ -189,8 +189,8 @@
     },
     "safety": "보안",
     "loadUserSettings": {
-      "name": "사용자 Claude 설정 로드",
-      "desc": "~/.claude/settings.json을 로드합니다. 활성화하면 사용자의 Claude Code 허용 규칙이 보안 모드를 우회할 수 있습니다."
+      "name": "사용자 Gemini 설정 로드",
+      "desc": "~/.gemini/settings.json을 로드합니다. 활성화하면 사용자의 Gemini CLI 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
     "enableBlocklist": {
       "name": "명령어 블랙리스트 활성화",
@@ -209,7 +209,7 @@
     "environment": "환경",
     "customVariables": {
       "name": "커스텀 변수",
-      "desc": "Claude SDK 환경 변수 (KEY=VALUE 형식, 한 줄에 하나). export 접두사 지원."
+      "desc": "Gemini SDK 환경 변수 (KEY=VALUE 형식, 한 줄에 하나). export 접두사 지원."
     },
     "envSnippets": {
       "name": "스니펫",
@@ -240,10 +240,6 @@
       "name": "1M 컨텍스트 창을 가진 Sonnet 활성화",
       "desc": "모델 선택기에서 표준 Sonnet을 Sonnet (1M)으로 교체합니다. 200k 토큰 미만에서는 동일한 가격. Max 구독이 필요합니다."
     },
-    "enableChrome": {
-      "name": "Chrome 확장 프로그램 활성화",
-      "desc": "claude-in-chrome 확장 프로그램을 통해 Claude가 Chrome과 상호작용할 수 있도록 합니다. 확장 프로그램이 설치되어 있어야 합니다. 세션 재시작이 필요합니다."
-    },
     "enableBangBash": {
       "name": "bash 모드 (!) 활성화",
       "desc": "입력창이 비어 있을 때 !를 입력하면 bash 모드로 들어갑니다. Node.js child_process를 통해 명령을 직접 실행합니다. 보기를 다시 열어야 합니다.",
@@ -253,7 +249,7 @@
     },
     "maxTabs": {
       "name": "최대 채팅 탭 수",
-      "desc": "동시에 열 수 있는 최대 채팅 탭 수(3-10). 각 탭은 별도의 Claude 세션을 사용합니다.",
+      "desc": "동시에 열 수 있는 최대 채팅 탭 수(3-10). 각 탭은 별도의 Gemini 세션을 사용합니다.",
       "warning": "5개 탭을 초과하면 성능 및 메모리 사용량에 영향을 줄 수 있습니다."
     },
     "tabBarPosition": {
@@ -264,17 +260,17 @@
     },
     "enableAutoScroll": {
       "name": "스트리밍 중 자동 스크롤",
-      "desc": "Claude가 응답을 스트리밍하는 동안 자동으로 아래로 스크롤합니다. 비활성화하면 상단에 머물러 처음부터 읽을 수 있습니다."
+      "desc": "Gemini가 응답을 스트리밍하는 동안 자동으로 아래로 스크롤합니다. 비활성화하면 상단에 머물러 처음부터 읽을 수 있습니다."
     },
     "openInMainTab": {
       "name": "메인 편집기 영역에서 열기",
       "desc": "채팅 패널을 오른쪽 사이드바가 아닌 중앙 편집기 영역의 메인 탭으로 엽니다"
     },
     "cliPath": {
-      "name": "Claude CLI 경로",
-      "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",
-      "descWindows": "네이티브 설치 프로그램의 경우 claude.exe를 사용하세요. npm/pnpm/yarn 또는 기타 패키지 관리자 설치의 경우 cli.js 경로를 사용하세요 (claude.cmd가 아님).",
-      "descUnix": "\"which claude\"의 출력을 붙여넣으세요 - 네이티브 및 npm/pnpm/yarn 설치 모두에서 작동합니다.",
+      "name": "Gemini CLI 경로",
+      "desc": "Gemini CLI CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",
+      "descWindows": "네이티브 설치 프로그램의 경우 gemini.exe를 사용하세요. npm/pnpm/yarn 또는 기타 패키지 관리자 설치의 경우 cli.js 경로를 사용하세요 (gemini.cmd가 아님).",
+      "descUnix": "\"which gemini\"의 출력을 붙여넣으세요 - 네이티브 및 npm/pnpm/yarn 설치 모두에서 작동합니다.",
       "validation": {
         "notExist": "경로가 존재하지 않습니다",
         "isDirectory": "경로가 디렉토리입니다 파일이 아닙니다"

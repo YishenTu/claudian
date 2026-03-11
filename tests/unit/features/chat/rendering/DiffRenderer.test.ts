@@ -317,8 +317,8 @@ describe('DiffRenderer', () => {
       renderDiffContent(container, lines);
 
       // All 20 insert lines rendered, no separator
-      expect(countByClass(container, 'claudian-diff-insert')).toBe(20);
-      expect(countByClass(container, 'claudian-diff-separator')).toBe(0);
+      expect(countByClass(container, 'geminian-diff-insert')).toBe(20);
+      expect(countByClass(container, 'geminian-diff-separator')).toBe(0);
     });
 
     it('should cap all-inserts diff at 20 lines with remainder message', () => {
@@ -328,11 +328,11 @@ describe('DiffRenderer', () => {
       renderDiffContent(container, lines);
 
       // Only 20 insert lines rendered
-      expect(countByClass(container, 'claudian-diff-insert')).toBe(20);
+      expect(countByClass(container, 'geminian-diff-insert')).toBe(20);
 
       // Separator shows remaining count
       const separator = container._children.find(
-        (c: any) => c.hasClass('claudian-diff-separator'),
+        (c: any) => c.hasClass('geminian-diff-separator'),
       );
       expect(separator).toBeDefined();
       expect(separator.textContent).toBe('... 80 more lines');
@@ -349,7 +349,7 @@ describe('DiffRenderer', () => {
       renderDiffContent(container, lines);
 
       // All 30 insert lines rendered (not capped because not all-inserts)
-      expect(countByClass(container, 'claudian-diff-insert')).toBe(30);
+      expect(countByClass(container, 'geminian-diff-insert')).toBe(30);
     });
   });
 });

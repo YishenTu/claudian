@@ -1,10 +1,10 @@
 import { Notice } from 'obsidian';
 
-import type { ApprovalCallbackOptions, ClaudianService } from '../../../core/agent';
+import type { ApprovalCallbackOptions, GeminianService } from '../../../core/agent';
 import { detectBuiltInCommand } from '../../../core/commands';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
+import type GeminianPlugin from '../../../main';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendBrowserContext, type BrowserSelectionContext } from '../../../utils/browser';
@@ -37,7 +37,7 @@ const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
 };
 
 export interface InputControllerDeps {
-  plugin: ClaudianPlugin;
+  plugin: GeminianPlugin;
   state: ChatState;
   renderer: MessageRenderer;
   streamController: StreamController;
@@ -62,7 +62,7 @@ export interface InputControllerDeps {
   getInputContainerEl: () => HTMLElement;
   generateId: () => string;
   resetInputHeight: () => void;
-  getAgentService?: () => ClaudianService | null;
+  getAgentService?: () => GeminianService | null;
   getSubagentManager: () => SubagentManager;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
@@ -82,7 +82,7 @@ export class InputController {
     this.deps = deps;
   }
 
-  private getAgentService(): ClaudianService | null {
+  private getAgentService(): GeminianService | null {
     return this.deps.getAgentService?.() ?? null;
   }
 
@@ -290,7 +290,7 @@ export class InputController {
     };
     state.addMessage(assistantMsg);
     const msgEl = renderer.addMessage(assistantMsg);
-    const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement;
+    const contentEl = msgEl.querySelector('.geminian-message-content') as HTMLElement;
 
     state.toolCallElements.clear();
     state.currentContentEl = contentEl;
@@ -299,7 +299,7 @@ export class InputController {
 
     streamController.showThinkingIndicator(
       isCompact ? 'Compacting...' : undefined,
-      isCompact ? 'claudian-thinking--compact' : undefined,
+      isCompact ? 'geminian-thinking--compact' : undefined,
     );
     state.responseStartTime = performance.now();
 
@@ -402,7 +402,7 @@ export class InputController {
       if (!wasInvalidated && state.streamGeneration === streamGeneration) {
         const didCancelThisTurn = wasInterrupted || state.cancelRequested;
         if (didCancelThisTurn && !state.pendingNewSessionPlan) {
-          await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
+          await streamController.appendText('\n\n<span class="geminian-interrupted">Interrupted</span> <span class="geminian-interrupted-hint">· What should Geminian do instead?</span>');
         }
         streamController.hideThinkingIndicator();
         state.isStreaming = false;
@@ -421,10 +421,10 @@ export class InputController {
             assistantMsg.durationFlavorWord = flavorWord;
             // Add footer to live message in DOM
             if (contentEl) {
-              const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
+              const footerEl = contentEl.createDiv({ cls: 'geminian-response-footer' });
               footerEl.createSpan({
                 text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
-                cls: 'claudian-baked-duration',
+                cls: 'geminian-baked-duration',
               });
             }
           }
@@ -781,26 +781,26 @@ export class InputController {
     }
 
     // Build header element, then detach — InlineAskUserQuestion will re-attach it
-    const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
+    const headerEl = parentEl.createDiv({ cls: 'geminian-ask-approval-info' });
     headerEl.remove();
 
-    const toolEl = headerEl.createDiv({ cls: 'claudian-ask-approval-tool' });
-    const iconEl = toolEl.createSpan({ cls: 'claudian-ask-approval-icon' });
+    const toolEl = headerEl.createDiv({ cls: 'geminian-ask-approval-tool' });
+    const iconEl = toolEl.createSpan({ cls: 'geminian-ask-approval-icon' });
     iconEl.setAttribute('aria-hidden', 'true');
     setToolIcon(iconEl, toolName);
-    toolEl.createSpan({ text: toolName, cls: 'claudian-ask-approval-tool-name' });
+    toolEl.createSpan({ text: toolName, cls: 'geminian-ask-approval-tool-name' });
 
     if (approvalOptions?.decisionReason) {
-      headerEl.createDiv({ text: approvalOptions.decisionReason, cls: 'claudian-ask-approval-reason' });
+      headerEl.createDiv({ text: approvalOptions.decisionReason, cls: 'geminian-ask-approval-reason' });
     }
     if (approvalOptions?.blockedPath) {
-      headerEl.createDiv({ text: approvalOptions.blockedPath, cls: 'claudian-ask-approval-blocked-path' });
+      headerEl.createDiv({ text: approvalOptions.blockedPath, cls: 'geminian-ask-approval-blocked-path' });
     }
     if (approvalOptions?.agentID) {
-      headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
+      headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'geminian-ask-approval-agent' });
     }
 
-    headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
+    headerEl.createDiv({ text: description, cls: 'geminian-ask-approval-desc' });
 
     // Always include "Always allow" — SDK callback has no toggle
     const questionOptions = Object.keys(APPROVAL_OPTION_MAP);

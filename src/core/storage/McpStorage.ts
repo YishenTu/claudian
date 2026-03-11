@@ -1,15 +1,15 @@
 /**
- * McpStorage - Handles .claude/mcp.json read/write
+ * McpStorage - Handles .gemini/mcp.json read/write
  *
- * MCP server configurations are stored in Claude Code-compatible format
- * with optional Claudian-specific metadata in _claudian field.
+ * MCP server configurations are stored in Gemini CLI-compatible format
+ * with optional Geminian-specific metadata in _geminian field.
  *
  * File format:
  * {
  *   "mcpServers": {
  *     "server-name": { "command": "...", "args": [...] }
  *   },
- *   "_claudian": {
+ *   "_geminian": {
  *     "servers": {
  *       "server-name": { "enabled": true, "contextSaving": true, "disabledTools": ["tool"], "description": "..." }
  *     }
@@ -18,8 +18,8 @@
  */
 
 import type {
-  ClaudianMcpConfigFile,
-  ClaudianMcpServer,
+  GeminianMcpConfigFile,
+  GeminianMcpServer,
   McpServerConfig,
   ParsedMcpConfig,
 } from '../types';
@@ -27,33 +27,33 @@ import { DEFAULT_MCP_SERVER, isValidMcpServerConfig } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to MCP config file relative to vault root. */
-export const MCP_CONFIG_PATH = '.claude/mcp.json';
+export const MCP_CONFIG_PATH = '.gemini/mcp.json';
 
 export class McpStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
-  async load(): Promise<ClaudianMcpServer[]> {
+  async load(): Promise<GeminianMcpServer[]> {
     try {
       if (!(await this.adapter.exists(MCP_CONFIG_PATH))) {
         return [];
       }
 
       const content = await this.adapter.read(MCP_CONFIG_PATH);
-      const file = JSON.parse(content) as ClaudianMcpConfigFile;
+      const file = JSON.parse(content) as GeminianMcpConfigFile;
 
       if (!file.mcpServers || typeof file.mcpServers !== 'object') {
         return [];
       }
 
-      const claudianMeta = file._claudian?.servers ?? {};
-      const servers: ClaudianMcpServer[] = [];
+      const geminianMeta = file._geminian?.servers ?? {};
+      const servers: GeminianMcpServer[] = [];
 
       for (const [name, config] of Object.entries(file.mcpServers)) {
         if (!isValidMcpServerConfig(config)) {
           continue;
         }
 
-        const meta = claudianMeta[name] ?? {};
+        const meta = geminianMeta[name] ?? {};
         const disabledTools = Array.isArray(meta.disabledTools)
           ? meta.disabledTools.filter((tool) => typeof tool === 'string')
           : undefined;
@@ -76,9 +76,9 @@ export class McpStorage {
     }
   }
 
-  async save(servers: ClaudianMcpServer[]): Promise<void> {
+  async save(servers: GeminianMcpServer[]): Promise<void> {
     const mcpServers: Record<string, McpServerConfig> = {};
-    const claudianServers: Record<
+    const geminianServers: Record<
       string,
       { enabled?: boolean; contextSaving?: boolean; disabledTools?: string[]; description?: string }
     > = {};
@@ -86,7 +86,6 @@ export class McpStorage {
     for (const server of servers) {
       mcpServers[server.name] = server.config;
 
-      // Only store Claudian metadata if different from defaults
       const meta: {
         enabled?: boolean;
         contextSaving?: boolean;
@@ -111,7 +110,7 @@ export class McpStorage {
       }
 
       if (Object.keys(meta).length > 0) {
-        claudianServers[server.name] = meta;
+        geminianServers[server.name] = meta;
       }
     }
 
@@ -131,22 +130,22 @@ export class McpStorage {
     const file: Record<string, unknown> = existing ? { ...existing } : {};
     file.mcpServers = mcpServers;
 
-    const existingClaudian =
-      existing && typeof existing._claudian === 'object'
-        ? (existing._claudian as Record<string, unknown>)
+    const existingGeminian =
+      existing && typeof existing._geminian === 'object'
+        ? (existing._geminian as Record<string, unknown>)
         : null;
 
-    if (Object.keys(claudianServers).length > 0) {
-      file._claudian = { ...(existingClaudian ?? {}), servers: claudianServers };
-    } else if (existingClaudian) {
-      const { servers: _servers, ...rest } = existingClaudian;
+    if (Object.keys(geminianServers).length > 0) {
+      file._geminian = { ...(existingGeminian ?? {}), servers: geminianServers };
+    } else if (existingGeminian) {
+      const { servers: _servers, ...rest } = existingGeminian;
       if (Object.keys(rest).length > 0) {
-        file._claudian = rest;
+        file._geminian = rest;
       } else {
-        delete file._claudian;
+        delete file._geminian;
       }
     } else {
-      delete file._claudian;
+      delete file._geminian;
     }
 
     const content = JSON.stringify(file, null, 2);
@@ -161,7 +160,7 @@ export class McpStorage {
    * Parse pasted JSON (supports multiple formats).
    *
    * Formats supported:
-   * 1. Full Claude Code format: { "mcpServers": { "name": {...} } }
+   * 1. Full Gemini CLI format: { "mcpServers": { "name": {...} } }
    * 2. Single server with name: { "name": { "command": "..." } }
    * 3. Single server without name: { "command": "..." }
    */
@@ -173,7 +172,7 @@ export class McpStorage {
         throw new Error('Invalid JSON object');
       }
 
-      // Format 1: Full Claude Code format
+      // Format 1: Full Gemini CLI format
       // { "mcpServers": { "server-name": { "command": "...", ... } } }
       if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
         const servers: Array<{ name: string; config: McpServerConfig }> = [];

@@ -1,5 +1,5 @@
 /**
- * Claudian - Environment Utilities
+ * Geminian - Environment Utilities
  *
  * Environment variable parsing, model configuration, PATH enhancement for GUI apps,
  * and system identification utilities.
@@ -245,7 +245,7 @@ export function getMissingNodeError(cliPath: string, enhancedPath?: string): str
     return null;
   }
 
-  return 'Claude Code CLI requires Node.js, but Node was not found on PATH. Install Node.js or use the native Claude Code binary, then restart Obsidian.';
+  return 'Gemini CLI requires Node.js, but Node was not found on PATH. Install Node.js or use the native Gemini CLI binary, then restart Obsidian.';
 }
 
 /**

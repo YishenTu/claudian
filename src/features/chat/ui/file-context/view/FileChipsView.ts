@@ -15,7 +15,7 @@ export class FileChipsView {
     this.callbacks = callbacks;
 
     const firstChild = this.containerEl.firstChild;
-    this.fileIndicatorEl = this.containerEl.createDiv({ cls: 'claudian-file-indicator' });
+    this.fileIndicatorEl = this.containerEl.createDiv({ cls: 'geminian-file-indicator' });
     if (firstChild) {
       this.containerEl.insertBefore(this.fileIndicatorEl, firstChild);
     }
@@ -40,23 +40,23 @@ export class FileChipsView {
   }
 
   private renderFileChip(filePath: string, onRemove: () => void): void {
-    const chipEl = this.fileIndicatorEl.createDiv({ cls: 'claudian-file-chip' });
+    const chipEl = this.fileIndicatorEl.createDiv({ cls: 'geminian-file-chip' });
 
-    const iconEl = chipEl.createSpan({ cls: 'claudian-file-chip-icon' });
+    const iconEl = chipEl.createSpan({ cls: 'geminian-file-chip-icon' });
     setIcon(iconEl, 'file-text');
 
     const normalizedPath = filePath.replace(/\\/g, '/');
     const filename = normalizedPath.split('/').pop() || filePath;
-    const nameEl = chipEl.createSpan({ cls: 'claudian-file-chip-name' });
+    const nameEl = chipEl.createSpan({ cls: 'geminian-file-chip-name' });
     nameEl.setText(filename);
     nameEl.setAttribute('title', filePath);
 
-    const removeEl = chipEl.createSpan({ cls: 'claudian-file-chip-remove' });
+    const removeEl = chipEl.createSpan({ cls: 'geminian-file-chip-remove' });
     removeEl.setText('\u00D7');
     removeEl.setAttribute('aria-label', 'Remove');
 
     chipEl.addEventListener('click', (e) => {
-      if (!(e.target as HTMLElement).closest('.claudian-file-chip-remove')) {
+      if (!(e.target as HTMLElement).closest('.geminian-file-chip-remove')) {
         this.callbacks.onOpenFile(filePath);
       }
     });

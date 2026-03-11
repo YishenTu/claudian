@@ -5,11 +5,11 @@
  * and interruption state.
  */
 
-import type { ClaudeModel } from '../types';
+import type { GeminiModel } from '../types';
 import type { SessionState } from './types';
 
 /**
- * Manages session state for the Claude Agent SDK.
+ * Manages session state for the Gemini CLI.
  *
  * Tracks:
  * - Session ID: Unique identifier for the conversation
@@ -36,7 +36,7 @@ export class SessionManager {
     return this.state.sessionId;
   }
 
-  setSessionId(id: string | null, defaultModel?: ClaudeModel): void {
+  setSessionId(id: string | null, defaultModel?: GeminiModel): void {
     this.state.sessionId = id;
     this.state.sessionModel = id ? (defaultModel ?? null) : null;
     // Clear rebuild flag when switching sessions to prevent carrying over to different conversation
@@ -57,7 +57,7 @@ export class SessionManager {
     this.state.wasInterrupted = false;
   }
 
-  setPendingModel(model: ClaudeModel): void {
+  setPendingModel(model: GeminiModel): void {
     this.state.pendingSessionModel = model;
   }
 

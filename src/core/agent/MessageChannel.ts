@@ -5,9 +5,8 @@
  * Handles message queuing, turn management, and text merging.
  */
 
-import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-
 import {
+  type GeminiUserMessage,
   MESSAGE_CHANNEL_CONFIG,
   type PendingMessage,
   type PendingTextMessage,
@@ -22,11 +21,11 @@ import {
  * - Attachment messages (with images) queue one at a time; newer replaces older while turn is active
  * - Overflow policy: drop newest and warn
  */
-export class MessageChannel implements AsyncIterable<SDKUserMessage> {
+export class MessageChannel implements AsyncIterable<GeminiUserMessage> {
   private queue: PendingMessage[] = [];
   private turnActive = false;
   private closed = false;
-  private resolveNext: ((value: IteratorResult<SDKUserMessage>) => void) | null = null;
+  private resolveNext: ((value: IteratorResult<GeminiUserMessage>) => void) | null = null;
   private currentSessionId: string | null = null;
   private onWarning: (message: string) => void;
 
@@ -51,7 +50,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
    * - Text-only: merge with queued text (up to MAX_MERGED_CHARS)
    * - With attachments: replace any existing queued attachment (one at a time)
    */
-  enqueue(message: SDKUserMessage): void {
+  enqueue(message: GeminiUserMessage): void {
     if (this.closed) {
       throw new Error('MessageChannel is closed');
     }
@@ -139,7 +138,7 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
     if (this.resolveNext) {
       const resolve = this.resolveNext;
       this.resolveNext = null;
-      resolve({ value: undefined, done: true } as IteratorResult<SDKUserMessage>);
+      resolve({ value: undefined, done: true } as IteratorResult<GeminiUserMessage>);
     }
   }
 
@@ -154,11 +153,11 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
     return this.queue.length;
   }
 
-  [Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
+  [Symbol.asyncIterator](): AsyncIterator<GeminiUserMessage> {
     return {
-      next: (): Promise<IteratorResult<SDKUserMessage>> => {
+      next: (): Promise<IteratorResult<GeminiUserMessage>> => {
         if (this.closed) {
-          return Promise.resolve({ value: undefined, done: true } as IteratorResult<SDKUserMessage>);
+          return Promise.resolve({ value: undefined, done: true } as IteratorResult<GeminiUserMessage>);
         }
 
         // If there's a queued message and no active turn, return it
@@ -176,34 +175,21 @@ export class MessageChannel implements AsyncIterable<SDKUserMessage> {
     };
   }
 
-  private messageHasAttachments(message: SDKUserMessage): boolean {
-    if (!message.message?.content) return false;
-    if (typeof message.message.content === 'string') return false;
-    return message.message.content.some((block: { type: string }) => block.type === 'image');
+  private messageHasAttachments(message: GeminiUserMessage): boolean {
+    return !!message.images && message.images.length > 0;
   }
 
-  private extractTextContent(message: SDKUserMessage): string {
-    if (!message.message?.content) return '';
-    if (typeof message.message.content === 'string') return message.message.content;
-    return message.message.content
-      .filter((block: { type: string }): block is { type: 'text'; text: string } => block.type === 'text')
-      .map((block: { type: 'text'; text: string }) => block.text)
-      .join('\n\n');
+  private extractTextContent(message: GeminiUserMessage): string {
+    return message.prompt || '';
   }
 
-  private pendingToMessage(pending: PendingMessage): SDKUserMessage {
+  private pendingToMessage(pending: PendingMessage): GeminiUserMessage {
     if (pending.type === 'attachment') {
       return pending.message;
     }
-
     return {
-      type: 'user',
-      message: {
-        role: 'user',
-        content: pending.content,
-      },
-      parent_tool_use_id: null,
-      session_id: this.currentSessionId || '',
+      prompt: pending.content,
+      sessionId: this.currentSessionId || '',
     };
   }
 }

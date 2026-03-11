@@ -7,7 +7,7 @@ import { McpServerManager } from '@/core/mcp';
 import { testMcpServer } from '@/core/mcp/McpTester';
 import { MCP_CONFIG_PATH, McpStorage } from '@/core/storage/McpStorage';
 import type {
-  ClaudianMcpServer,
+  GeminianMcpServer,
   McpHttpServerConfig,
   McpServerConfig,
   McpSSEServerConfig,
@@ -132,7 +132,7 @@ describe('MCP Types', () => {
 
 describe('McpStorage', () => {
   describe('parseClipboardConfig', () => {
-    it('should parse full Claude Code format', () => {
+    it('should parse full Gemini CLI format', () => {
       const json = JSON.stringify({
         mcpServers: {
           'my-server': { command: 'npx', args: ['server'] },
@@ -273,12 +273,12 @@ describe('McpStorage', () => {
   });
 
   describe('load/save', () => {
-    it('should preserve unknown top-level keys and merge _claudian', async () => {
+    it('should preserve unknown top-level keys and merge _geminian', async () => {
       const initial = {
         mcpServers: {
           legacy: { command: 'node' },
         },
-        _claudian: {
+        _geminian: {
           servers: {
             legacy: { enabled: false },
           },
@@ -288,7 +288,7 @@ describe('McpStorage', () => {
       };
       const { storage, files } = createMemoryStorage(initial);
 
-      const servers: ClaudianMcpServer[] = [
+      const servers: GeminianMcpServer[] = [
         {
           name: 'new-server',
           config: {
@@ -313,7 +313,7 @@ describe('McpStorage', () => {
           headers: { Authorization: 'Bearer token' },
         },
       });
-      expect(saved._claudian).toEqual({
+      expect(saved._geminian).toEqual({
         extra: { keep: true },
         servers: {
           'new-server': {
@@ -325,18 +325,18 @@ describe('McpStorage', () => {
       });
     });
 
-    it('should keep existing _claudian fields when metadata is defaulted', async () => {
+    it('should keep existing _geminian fields when metadata is defaulted', async () => {
       const initial = {
         mcpServers: {
           legacy: { command: 'node' },
         },
-        _claudian: {
+        _geminian: {
           extra: { keep: true },
         },
       };
       const { storage, files } = createMemoryStorage(initial);
 
-      const servers: ClaudianMcpServer[] = [
+      const servers: GeminianMcpServer[] = [
         {
           name: 'default-meta',
           config: { command: 'npx' },
@@ -348,7 +348,7 @@ describe('McpStorage', () => {
       await storage.save(servers);
 
       const saved = JSON.parse(files.get(MCP_CONFIG_PATH) || '{}') as Record<string, unknown>;
-      expect(saved._claudian).toEqual({ extra: { keep: true } });
+      expect(saved._geminian).toEqual({ extra: { keep: true } });
       expect(saved.mcpServers).toEqual({ 'default-meta': { command: 'npx' } });
     });
 
@@ -358,7 +358,7 @@ describe('McpStorage', () => {
           stdio: { command: 'npx' },
           remote: { type: 'sse', url: 'http://localhost:3000/sse' },
         },
-        _claudian: {
+        _geminian: {
           servers: {
             stdio: { enabled: false, contextSaving: false, description: 'Local tools' },
           },
@@ -386,7 +386,7 @@ describe('McpStorage', () => {
           valid: { command: 'npx' },
           invalid: { foo: 'bar' },
         },
-        _claudian: {
+        _geminian: {
           servers: {
             invalid: { enabled: false },
           },
@@ -402,12 +402,12 @@ describe('McpStorage', () => {
       expect(servers[0].contextSaving).toBe(true);
     });
 
-    it('should remove _claudian when only servers metadata exists', async () => {
+    it('should remove _geminian when only servers metadata exists', async () => {
       const initial = {
         mcpServers: {
           legacy: { command: 'node' },
         },
-        _claudian: {
+        _geminian: {
           servers: {
             legacy: { enabled: false },
           },
@@ -415,7 +415,7 @@ describe('McpStorage', () => {
       };
       const { storage, files } = createMemoryStorage(initial);
 
-      const servers: ClaudianMcpServer[] = [
+      const servers: GeminianMcpServer[] = [
         {
           name: 'legacy',
           config: { command: 'node' },
@@ -427,7 +427,7 @@ describe('McpStorage', () => {
       await storage.save(servers);
 
       const saved = JSON.parse(files.get(MCP_CONFIG_PATH) || '{}') as Record<string, unknown>;
-      expect(saved._claudian).toBeUndefined();
+      expect(saved._geminian).toBeUndefined();
     });
   });
 });
@@ -596,7 +596,7 @@ describe('McpTester', () => {
   });
 
   it('should test stdio server and return tools', async () => {
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'local',
       config: { command: 'node', args: ['server'] },
       enabled: true,
@@ -617,7 +617,7 @@ describe('McpTester', () => {
   });
 
   it('should fail when stdio command is missing', async () => {
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'missing',
       config: { command: '' },
       enabled: true,
@@ -632,7 +632,7 @@ describe('McpTester', () => {
   });
 
   it('should fail for invalid URL', async () => {
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'bad-url',
       config: { type: 'http', url: 'not-a-valid-url' },
       enabled: true,
@@ -647,7 +647,7 @@ describe('McpTester', () => {
   });
 
   it('should test http server and return tools', async () => {
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'http',
       config: { type: 'http', url: 'http://localhost:3000/mcp', headers: { Authorization: 'token' } },
       enabled: true,
@@ -670,7 +670,7 @@ describe('McpTester', () => {
   });
 
   it('should test sse server and return tools', async () => {
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'sse',
       config: { type: 'sse', url: 'http://localhost:3000/sse', headers: { Authorization: 'token' } },
       enabled: true,
@@ -695,7 +695,7 @@ describe('McpTester', () => {
   it('should return failure when connect fails', async () => {
     mockClientInstance.connect.mockRejectedValue(new Error('Connection refused'));
 
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'fail',
       config: { type: 'http', url: 'http://localhost:3000/mcp' },
       enabled: true,
@@ -711,7 +711,7 @@ describe('McpTester', () => {
   it('should return partial success when listTools fails', async () => {
     mockClientInstance.listTools.mockRejectedValue(new Error('tools/list not supported'));
 
-    const server: ClaudianMcpServer = {
+    const server: GeminianMcpServer = {
       name: 'partial',
       config: { type: 'http', url: 'http://localhost:3000/mcp' },
       enabled: true,
@@ -736,7 +736,7 @@ describe('McpTester', () => {
           }),
       );
 
-      const server: ClaudianMcpServer = {
+      const server: GeminianMcpServer = {
         name: 'timeout',
         config: { type: 'http', url: 'http://localhost:3000/mcp' },
         enabled: true,
@@ -760,7 +760,7 @@ describe('McpTester', () => {
 // ============================================================================
 
 describe('McpServerManager', () => {
-  function createManager(servers: ClaudianMcpServer[]): McpServerManager {
+  function createManager(servers: GeminianMcpServer[]): McpServerManager {
     const manager = new McpServerManager({
       load: jest.fn().mockResolvedValue(servers),
     });
@@ -770,7 +770,7 @@ describe('McpServerManager', () => {
   }
 
   describe('getActiveServers', () => {
-    const servers: ClaudianMcpServer[] = [
+    const servers: GeminianMcpServer[] = [
       {
         name: 'always-on',
         config: { command: 'server1' },
@@ -829,7 +829,7 @@ describe('McpServerManager', () => {
     });
 
     it('should return empty object for all disabled servers', () => {
-      const disabledServers: ClaudianMcpServer[] = [
+      const disabledServers: GeminianMcpServer[] = [
         { name: 's1', config: { command: 'c1' }, enabled: false, contextSaving: false },
         { name: 's2', config: { command: 'c2' }, enabled: false, contextSaving: true },
       ];
@@ -842,7 +842,7 @@ describe('McpServerManager', () => {
   });
 
   describe('getContextSavingServers', () => {
-    const servers: ClaudianMcpServer[] = [
+    const servers: GeminianMcpServer[] = [
       { name: 's1', config: { command: 'c1' }, enabled: true, contextSaving: true },
       { name: 's2', config: { command: 'c2' }, enabled: true, contextSaving: false },
       { name: 's3', config: { command: 'c3' }, enabled: false, contextSaving: true },
@@ -859,7 +859,7 @@ describe('McpServerManager', () => {
   });
 
   describe('extractMentions', () => {
-    const servers: ClaudianMcpServer[] = [
+    const servers: GeminianMcpServer[] = [
       { name: 'context7', config: { command: 'c1' }, enabled: true, contextSaving: true },
       { name: 'always-on', config: { command: 'c2' }, enabled: true, contextSaving: false },
       { name: 'disabled', config: { command: 'c3' }, enabled: false, contextSaving: true },
@@ -883,7 +883,7 @@ describe('McpServerManager', () => {
 
   describe('helper methods', () => {
     it('should report enabled counts and server presence', () => {
-      const servers: ClaudianMcpServer[] = [
+      const servers: GeminianMcpServer[] = [
         { name: 's1', config: { command: 'c1' }, enabled: true, contextSaving: true },
         { name: 's2', config: { command: 'c2' }, enabled: true, contextSaving: false },
         { name: 's3', config: { command: 'c3' }, enabled: false, contextSaving: true },

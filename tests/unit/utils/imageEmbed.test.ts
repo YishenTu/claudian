@@ -39,7 +39,7 @@ describe('replaceImageEmbedsWithHtml', () => {
 
       expect(result).toContain('<img');
       expect(result).toContain('src="app://local/image.png"');
-      expect(result).toContain('class="claudian-embedded-image"');
+      expect(result).toContain('class="geminian-embedded-image"');
     });
 
     it('replaces image embed with folder path', () => {
@@ -153,7 +153,7 @@ describe('replaceImageEmbedsWithHtml', () => {
       const app = createMockApp(); // Empty vault
       const result = replaceImageEmbedsWithHtml('![[missing.png]]', app);
 
-      expect(result).toContain('class="claudian-embedded-image-fallback"');
+      expect(result).toContain('class="geminian-embedded-image-fallback"');
       expect(result).toContain('![[missing.png]]');
     });
 
@@ -348,7 +348,7 @@ describe('replaceImageEmbedsWithHtml', () => {
 
       const result = replaceImageEmbedsWithHtml('![[test.png]]', app);
 
-      expect(result).toContain('class="claudian-embedded-image-fallback"');
+      expect(result).toContain('class="geminian-embedded-image-fallback"');
     });
   });
 

@@ -3,7 +3,7 @@ import { buildAgentFromFrontmatter, parseAgentFile } from '../agents/AgentStorag
 import type { AgentDefinition } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
-export const AGENTS_PATH = '.claude/agents';
+export const AGENTS_PATH = '.gemini/agents';
 
 export class AgentVaultStorage {
   constructor(private adapter: VaultFileAdapter) {}

@@ -81,7 +81,7 @@ describe('session utilities', () => {
 
       const result = formatToolCallForContext(toolCall);
 
-      // Successful tools show input but no result (Claude can re-execute if needed)
+      // Successful tools show input but no result (Gemini can re-execute if needed)
       expect(result).toBe('[Tool Read input: file_path=/path/to/file.md status=completed]');
       expect(result).not.toContain('File contents');
     });
@@ -331,7 +331,7 @@ describe('session utilities', () => {
       expect(result).toContain('User: Read file');
       expect(result).toContain('Assistant: Let me read that file.');
       expect(result).toContain('[Tool Read status=completed]');
-      // Successful tools don't include results (Claude can re-execute if needed)
+      // Successful tools don't include results (Gemini can re-execute if needed)
       expect(result).not.toContain('file contents');
     });
 
@@ -487,7 +487,7 @@ describe('session utilities', () => {
       const result = buildContextFromHistory(messages);
 
       expect(result).toContain('[Thinking: 1 block(s), 5.5s total]');
-      // Thinking content is NOT included (Claude will think anew)
+      // Thinking content is NOT included (Gemini will think anew)
       expect(result).not.toContain('Let me think');
     });
 

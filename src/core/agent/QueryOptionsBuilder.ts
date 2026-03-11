@@ -1,135 +1,81 @@
 /**
- * QueryOptionsBuilder - SDK Options Construction
+ * GeminiOptionsBuilder - CLI Arguments Construction
  *
- * Extracts options-building logic from ClaudianService for:
- * - Persistent query options (warm path)
- * - Cold-start query options
- * - Configuration change detection
- *
- * Design: Static builder methods that take a context object containing
- * all required dependencies (settings, managers, paths).
+ * Builds command-line arguments for the Gemini CLI instead of SDK Options objects.
+ * Handles model selection, permission modes, session resume, and MCP configuration.
  */
 
-import type {
-  CanUseTool,
-  Options,
-} from '@anthropic-ai/claude-agent-sdk';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import type { McpServerManager } from '../mcp';
 import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
-import type { ClaudianSettings, PermissionMode } from '../types';
-import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
-import { createCustomSpawnFunction } from './customSpawn';
+import type { GeminianSettings, PermissionMode } from '../types';
+import { THINKING_BUDGETS } from '../types';
 import {
   computeSystemPromptKey,
-  DISABLED_BUILTIN_SUBAGENTS,
   type PersistentQueryConfig,
-  UNSUPPORTED_SDK_TOOLS,
 } from './types';
 
-/**
- * Context required for building SDK options.
- * Passed to builder methods to avoid direct dependencies on ClaudianService.
- */
 export interface QueryOptionsContext {
-  /** Absolute path to the vault root. */
   vaultPath: string;
-  /** Path to the Claude CLI executable. */
   cliPath: string;
-  /** Current plugin settings. */
-  settings: ClaudianSettings;
-  /** Parsed environment variables (from settings). */
+  settings: GeminianSettings;
   customEnv: Record<string, string>;
-  /** Enhanced PATH with CLI directories. */
   enhancedPath: string;
-  /** MCP server manager for server configuration. */
   mcpManager: McpServerManager;
-  /** Plugin manager for Claude Code plugins. */
   pluginManager: PluginManager;
 }
 
-/**
- * Additional context for persistent query options.
- */
 export interface PersistentQueryContext extends QueryOptionsContext {
-  /** AbortController for the query. */
   abortController?: AbortController;
-  /** Session resume state (sessionId required; sessionAt and fork only meaningful with a session). */
   resume?: {
     sessionId: string;
-    /** Assistant UUID for resumeSessionAt after rewind. */
     sessionAt?: string;
-    /** Fork the session (non-destructive branch). */
     fork?: boolean;
   };
-  /** Approval callback for normal mode. */
-  canUseTool?: CanUseTool;
-  /** Pre-built hooks array. */
-  hooks: Options['hooks'];
-  /** External context paths for additionalDirectories SDK option. */
+  hooks?: unknown;
   externalContextPaths?: string[];
 }
 
-/**
- * Additional context for cold-start query options.
- */
 export interface ColdStartQueryContext extends QueryOptionsContext {
-  /** AbortController for the query. */
   abortController?: AbortController;
-  /** Session ID for resuming a conversation. */
   sessionId?: string;
-  /** Optional model override for cold-start queries. */
   modelOverride?: string;
-  /** Approval callback for normal mode. */
-  canUseTool?: CanUseTool;
-  /** Pre-built hooks array. */
-  hooks: Options['hooks'];
-  /** MCP server @-mentions from the query. */
+  hooks?: unknown;
   mcpMentions?: Set<string>;
-  /** MCP servers enabled via UI selector. */
   enabledMcpServers?: Set<string>;
-  /** Allowed tools restriction (undefined = no restriction). */
   allowedTools?: string[];
-  /** Whether the query has editor context. */
   hasEditorContext: boolean;
-  /** External context paths for additionalDirectories SDK option. */
   externalContextPaths?: string[];
 }
 
-/** Static builder for SDK Options and configuration objects. */
+export interface GeminiCliArgs {
+  args: string[];
+  env: Record<string, string | undefined>;
+  cwd: string;
+  cliPath: string;
+  systemPrompt: string;
+}
+
 export class QueryOptionsBuilder {
-  /**
-   * Some changes (model, thinking tokens) can be updated dynamically; others require restart.
-   */
   static needsRestart(
     currentConfig: PersistentQueryConfig | null,
     newConfig: PersistentQueryConfig
   ): boolean {
     if (!currentConfig) return true;
 
-    // These require restart (cannot be updated dynamically)
     if (currentConfig.systemPromptKey !== newConfig.systemPromptKey) return true;
     if (currentConfig.disallowedToolsKey !== newConfig.disallowedToolsKey) return true;
     if (currentConfig.pluginsKey !== newConfig.pluginsKey) return true;
     if (currentConfig.settingSources !== newConfig.settingSources) return true;
-    if (currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
+    if (currentConfig.geminiCliPath !== newConfig.geminiCliPath) return true;
 
-    // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
-    // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
-
-    // Beta flag presence is determined by show1MModel setting.
-    // If it changes, restart is required.
-    if (currentConfig.show1MModel !== newConfig.show1MModel) return true;
-
-    if (currentConfig.enableChrome !== newConfig.enableChrome) return true;
-
-    // Export paths affect system prompt
     if (QueryOptionsBuilder.pathsChanged(currentConfig.allowedExportPaths, newConfig.allowedExportPaths)) {
       return true;
     }
 
-    // External context paths require restart (additionalDirectories can't be updated dynamically)
     if (QueryOptionsBuilder.pathsChanged(currentConfig.externalContextPaths, newConfig.externalContextPaths)) {
       return true;
     }
@@ -137,7 +83,6 @@ export class QueryOptionsBuilder {
     return false;
   }
 
-  /** Builds configuration snapshot for restart detection. */
   static buildPersistentQueryConfig(
     ctx: QueryOptionsContext,
     externalContextPaths?: string[]
@@ -154,11 +99,9 @@ export class QueryOptionsBuilder {
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
     const thinkingTokens = budgetConfig?.tokens ?? null;
 
-    // Compute disallowedToolsKey from all disabled MCP tools (pre-registered upfront)
     const allDisallowedTools = ctx.mcpManager.getAllDisallowedMcpTools();
     const disallowedToolsKey = allDisallowedTools.join('|');
 
-    // Compute pluginsKey from active plugins
     const pluginsKey = ctx.pluginManager.getPluginsKey();
 
     return {
@@ -167,22 +110,17 @@ export class QueryOptionsBuilder {
       permissionMode: ctx.settings.permissionMode,
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
       disallowedToolsKey,
-      mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
+      mcpServersKey: '',
       pluginsKey,
       externalContextPaths: externalContextPaths || [],
       allowedExportPaths: ctx.settings.allowedExportPaths,
-      settingSources: ctx.settings.loadUserClaudeSettings ? 'user,project' : 'project',
-      claudeCliPath: ctx.cliPath,
-      show1MModel: ctx.settings.show1MModel,
-      enableChrome: ctx.settings.enableChrome,
+      settingSources: ctx.settings.loadUserGeminiSettings ? 'user,project' : 'project',
+      geminiCliPath: ctx.cliPath,
     };
   }
 
-  /** Builds SDK options for the persistent query. */
-  static buildPersistentQueryOptions(ctx: PersistentQueryContext): Options {
-    const permissionMode = ctx.settings.permissionMode;
-
-    const resolved = resolveModelWithBetas(ctx.settings.model, ctx.settings.show1MModel);
+  /** Builds Gemini CLI arguments for a persistent/warm query. */
+  static buildPersistentCliArgs(ctx: PersistentQueryContext): GeminiCliArgs {
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -191,66 +129,43 @@ export class QueryOptionsBuilder {
       userName: ctx.settings.userName,
     });
 
-    const options: Options = {
-      cwd: ctx.vaultPath,
-      systemPrompt,
-      model: resolved.model,
-      abortController: ctx.abortController,
-      pathToClaudeCodeExecutable: ctx.cliPath,
-      settingSources: ctx.settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-      env: {
-        ...process.env,
-        ...ctx.customEnv,
-        PATH: ctx.enhancedPath,
-      },
-      includePartialMessages: true,
-    };
+    const promptPath = QueryOptionsBuilder.writeSystemPromptFile(ctx.vaultPath, systemPrompt);
 
-    if (resolved.betas) {
-      options.betas = resolved.betas;
-    }
-
-    QueryOptionsBuilder.applyExtraArgs(options, ctx.settings);
-
-    options.disallowedTools = [
-      ...ctx.mcpManager.getAllDisallowedMcpTools(),
-      ...UNSUPPORTED_SDK_TOOLS,
-      ...DISABLED_BUILTIN_SUBAGENTS,
+    const args: string[] = [
+      '--output-format', 'stream-json',
+      '--model', ctx.settings.model,
     ];
 
-    QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
-    QueryOptionsBuilder.applyThinkingBudget(options, ctx.settings.thinkingBudget);
-    options.hooks = ctx.hooks;
-
-    options.enableFileCheckpointing = true;
+    QueryOptionsBuilder.applyApprovalMode(args, ctx.settings.permissionMode);
 
     if (ctx.resume) {
-      options.resume = ctx.resume.sessionId;
-      if (ctx.resume.sessionAt) {
-        options.resumeSessionAt = ctx.resume.sessionAt;
-      }
-      if (ctx.resume.fork) {
-        options.forkSession = true;
-      }
+      args.push('--resume', ctx.resume.sessionId);
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
-      options.additionalDirectories = ctx.externalContextPaths;
+      args.push('--include-directories', ctx.externalContextPaths.join(','));
     }
 
-    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      ...ctx.customEnv,
+      PATH: ctx.enhancedPath,
+      GEMINI_SYSTEM_MD: promptPath,
+    };
 
-    return options;
+    return {
+      args,
+      env,
+      cwd: ctx.vaultPath,
+      cliPath: ctx.cliPath,
+      systemPrompt,
+    };
   }
 
-  /** Builds SDK options for a cold-start query. */
-  static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
-    const permissionMode = ctx.settings.permissionMode;
-
+  /** Builds Gemini CLI arguments for a cold-start query. */
+  static buildColdStartCliArgs(ctx: ColdStartQueryContext, prompt: string): GeminiCliArgs {
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;
-    const resolved = resolveModelWithBetas(selectedModel, ctx.settings.show1MModel);
+
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -259,104 +174,63 @@ export class QueryOptionsBuilder {
       userName: ctx.settings.userName,
     });
 
-    const options: Options = {
-      cwd: ctx.vaultPath,
-      systemPrompt,
-      model: resolved.model,
-      abortController: ctx.abortController,
-      pathToClaudeCodeExecutable: ctx.cliPath,
-      // User settings may contain permission rules that bypass Claudian's permission system
-      settingSources: ctx.settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-      env: {
-        ...process.env,
-        ...ctx.customEnv,
-        PATH: ctx.enhancedPath,
-      },
-      includePartialMessages: true,
-    };
+    const promptPath = QueryOptionsBuilder.writeSystemPromptFile(ctx.vaultPath, systemPrompt);
 
-    if (resolved.betas) {
-      options.betas = resolved.betas;
-    }
-
-    QueryOptionsBuilder.applyExtraArgs(options, ctx.settings);
-
-    const mcpMentions = ctx.mcpMentions || new Set<string>();
-    const uiEnabledServers = ctx.enabledMcpServers || new Set<string>();
-    const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
-    const mcpServers = ctx.mcpManager.getActiveServers(combinedMentions);
-
-    if (Object.keys(mcpServers).length > 0) {
-      options.mcpServers = mcpServers;
-    }
-
-    const disallowedMcpTools = ctx.mcpManager.getDisallowedMcpTools(combinedMentions);
-    options.disallowedTools = [
-      ...disallowedMcpTools,
-      ...UNSUPPORTED_SDK_TOOLS,
-      ...DISABLED_BUILTIN_SUBAGENTS,
+    const args: string[] = [
+      '--output-format', 'stream-json',
+      '--model', selectedModel,
+      '--prompt', prompt,
     ];
 
-    QueryOptionsBuilder.applyPermissionMode(options, permissionMode, ctx.canUseTool);
-    options.hooks = ctx.hooks;
-    QueryOptionsBuilder.applyThinkingBudget(options, ctx.settings.thinkingBudget);
-
-    if (ctx.allowedTools !== undefined && ctx.allowedTools.length > 0) {
-      options.tools = ctx.allowedTools;
-    }
+    QueryOptionsBuilder.applyApprovalMode(args, ctx.settings.permissionMode);
 
     if (ctx.sessionId) {
-      options.resume = ctx.sessionId;
+      args.push('--resume', ctx.sessionId);
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
-      options.additionalDirectories = ctx.externalContextPaths;
+      args.push('--include-directories', ctx.externalContextPaths.join(','));
     }
 
-    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
+    if (ctx.allowedTools && ctx.allowedTools.length > 0) {
+      args.push('--allowed-tools', ctx.allowedTools.join(','));
+    }
 
-    return options;
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      ...ctx.customEnv,
+      PATH: ctx.enhancedPath,
+      GEMINI_SYSTEM_MD: promptPath,
+    };
+
+    return {
+      args,
+      env,
+      cwd: ctx.vaultPath,
+      cliPath: ctx.cliPath,
+      systemPrompt,
+    };
   }
 
   /**
-   * Always sets allowDangerouslySkipPermissions: true to enable dynamic
-   * switching between permission modes without requiring a process restart.
+   * Writes the system prompt to a temp file inside the vault's .gemini/ directory.
+   * Gemini CLI reads its system prompt from a file pointed to by GEMINI_SYSTEM_MD.
    */
-  private static applyPermissionMode(
-    options: Options,
-    permissionMode: PermissionMode,
-    canUseTool?: CanUseTool
-  ): void {
-    options.allowDangerouslySkipPermissions = true;
+  static writeSystemPromptFile(vaultPath: string, systemPrompt: string): string {
+    const geminiDir = path.join(vaultPath, '.gemini');
+    fs.mkdirSync(geminiDir, { recursive: true });
+    const promptPath = path.join(geminiDir, '.system-prompt.md');
+    fs.writeFileSync(promptPath, systemPrompt, 'utf-8');
+    return promptPath;
+  }
 
-    if (canUseTool) {
-      options.canUseTool = canUseTool;
-    }
-
+  private static applyApprovalMode(args: string[], permissionMode: PermissionMode): void {
     if (permissionMode === 'yolo') {
-      options.permissionMode = 'bypassPermissions';
+      args.push('--approval-mode', 'yolo');
     } else if (permissionMode === 'plan') {
-      options.permissionMode = 'plan';
+      args.push('--approval-mode', 'plan');
     } else {
-      options.permissionMode = 'acceptEdits';
-    }
-  }
-
-  private static applyExtraArgs(options: Options, settings: ClaudianSettings): void {
-    if (settings.enableChrome) {
-      options.extraArgs = { ...options.extraArgs, chrome: null };
-    }
-  }
-
-  private static applyThinkingBudget(
-    options: Options,
-    budgetSetting: string
-  ): void {
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
+      args.push('--approval-mode', 'auto_edit');
     }
   }
 
@@ -365,5 +239,4 @@ export class QueryOptionsBuilder {
     const bKey = [...(b || [])].sort().join('|');
     return aKey !== bKey;
   }
-
 }

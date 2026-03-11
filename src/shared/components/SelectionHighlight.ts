@@ -25,7 +25,7 @@ function createSelectionHighlighter(): SelectionHighlighter {
         if (e.is(showHighlight)) {
           const builder = new RangeSetBuilder<Decoration>();
           builder.add(e.value.from, e.value.to, Decoration.mark({
-            class: 'claudian-selection-highlight',
+            class: 'geminian-selection-highlight',
           }));
           return builder.finish();
         } else if (e.is(hideHighlight)) {

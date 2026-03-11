@@ -1,14 +1,13 @@
-import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 
-import { createCustomSpawnFunction } from '@/core/agent/customSpawn';
+import { type GeminiSpawnOptions,spawnGeminiCli } from '@/core/agent/customSpawn';
 import * as env from '@/utils/env';
 
 jest.mock('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-describe('createCustomSpawnFunction', () => {
+describe('spawnGeminiCli', () => {
   const spawnMock = spawn as jest.MockedFunction<typeof spawn>;
 
   afterEach(() => {
@@ -28,10 +27,30 @@ describe('createCustomSpawnFunction', () => {
       on: jest.fn(),
       once: jest.fn(),
       off: jest.fn(),
+      pid: 1234,
     };
   };
 
-  it('resolves node command to full path when available', () => {
+  it('spawns the CLI directly when cliPath is not a .js file', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const options: GeminiSpawnOptions = {
+      cliPath: '/usr/local/bin/gemini',
+      args: ['--output-format', 'stream-json'],
+      cwd: '/tmp',
+      env: {},
+    };
+
+    const result = spawnGeminiCli(options);
+
+    expect(spawnMock).toHaveBeenCalledWith('/usr/local/bin/gemini', ['--output-format', 'stream-json'], expect.objectContaining({
+      cwd: '/tmp',
+    }));
+    expect(result).toBe(mockProcess);
+  });
+
+  it('resolves node command for .js cliPath when available', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
@@ -39,126 +58,107 @@ describe('createCustomSpawnFunction', () => {
       .spyOn(env, 'findNodeExecutable')
       .mockReturnValue('/custom/node');
 
-    const spawnFn = createCustomSpawnFunction('/enhanced/path');
-    const signal = new AbortController().signal;
-    const options: SpawnOptions = {
-      command: 'node',
-      args: ['cli.js'],
+    const options: GeminiSpawnOptions = {
+      cliPath: '/path/to/cli.js',
+      args: ['--prompt', 'hello'],
       cwd: '/tmp',
       env: {},
-      signal,
+      enhancedPath: '/enhanced/path',
     };
 
-    const result = spawnFn(options);
+    const result = spawnGeminiCli(options);
 
     expect(findNodeExecutable).toHaveBeenCalledWith('/enhanced/path');
-    expect(spawnMock).toHaveBeenCalledWith('/custom/node', ['cli.js'], expect.objectContaining({
+    expect(spawnMock).toHaveBeenCalledWith('/custom/node', ['/path/to/cli.js', '--prompt', 'hello'], expect.objectContaining({
       cwd: '/tmp',
     }));
     expect(result).toBe(mockProcess);
   });
 
-  it('pipes stderr only when DEBUG_CLAUDE_AGENT_SDK is set', () => {
-    const mockProcess = createMockProcess();
-    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
-
-    const spawnFn = createCustomSpawnFunction('/enhanced/path');
-    const signal = new AbortController().signal;
-    spawnFn({
-      command: 'node',
-      args: ['cli.js'],
-      cwd: '/tmp',
-      env: { DEBUG_CLAUDE_AGENT_SDK: '1' },
-      signal,
-    });
-
-    const spawnOptions = spawnMock.mock.calls[0][2];
-    expect(spawnOptions.stdio).toEqual(['pipe', 'pipe', 'pipe']);
-    expect(mockProcess.stderr?.on).toHaveBeenCalledWith('data', expect.any(Function));
-  });
-
-  it('ignores stderr when DEBUG_CLAUDE_AGENT_SDK is not set', () => {
-    const mockProcess = createMockProcess();
-    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
-
-    const spawnFn = createCustomSpawnFunction('/enhanced/path');
-    const signal = new AbortController().signal;
-    spawnFn({
-      command: 'node',
-      args: ['cli.js'],
-      cwd: '/tmp',
-      env: {},
-      signal,
-    });
-
-    const spawnOptions = spawnMock.mock.calls[0][2];
-    expect(spawnOptions.stdio).toEqual(['pipe', 'pipe', 'ignore']);
-    expect(mockProcess.stderr?.on).not.toHaveBeenCalled();
-  });
-
-  it('throws when process streams are missing', () => {
-    const mockProcess = {
-      stdin: null,
-      stdout: null,
-      stderr: null,
-      killed: false,
-      exitCode: null,
-      kill: jest.fn(),
-      on: jest.fn(),
-      once: jest.fn(),
-      off: jest.fn(),
-    };
-    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
-
-    const spawnFn = createCustomSpawnFunction('/enhanced/path');
-    const signal = new AbortController().signal;
-
-    expect(() => spawnFn({
-      command: 'node',
-      args: ['cli.js'],
-      cwd: '/tmp',
-      env: {},
-      signal,
-    })).toThrow('Failed to create process streams');
-  });
-
-  it('falls back to original command when findNodeExecutable returns null', () => {
+  it('falls back to "node" when findNodeExecutable returns null for .js cliPath', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
     jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
 
-    const spawnFn = createCustomSpawnFunction('/enhanced/path');
-    const signal = new AbortController().signal;
-    spawnFn({
-      command: 'node',
-      args: ['cli.js'],
+    const options: GeminiSpawnOptions = {
+      cliPath: '/path/to/cli.js',
+      args: ['--prompt', 'hello'],
       cwd: '/tmp',
       env: {},
-      signal,
-    });
+    };
 
-    // Should use 'node' as-is since findNodeExecutable returned null
-    expect(spawnMock).toHaveBeenCalledWith('node', ['cli.js'], expect.any(Object));
+    spawnGeminiCli(options);
+
+    expect(spawnMock).toHaveBeenCalledWith('node', ['/path/to/cli.js', '--prompt', 'hello'], expect.any(Object));
   });
 
-  it('does not resolve non-node commands', () => {
+  it('does not resolve node for non-.js cliPath', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
     const findNodeExecutable = jest.spyOn(env, 'findNodeExecutable');
 
-    const spawnFn = createCustomSpawnFunction('/enhanced/path');
-    const signal = new AbortController().signal;
-    spawnFn({
-      command: 'python',
-      args: ['script.py'],
+    const options: GeminiSpawnOptions = {
+      cliPath: '/usr/local/bin/gemini',
+      args: [],
       cwd: '/tmp',
       env: {},
-      signal,
-    });
+    };
+
+    spawnGeminiCli(options);
 
     expect(findNodeExecutable).not.toHaveBeenCalled();
-    expect(spawnMock).toHaveBeenCalledWith('python', ['script.py'], expect.any(Object));
+    expect(spawnMock).toHaveBeenCalledWith('/usr/local/bin/gemini', [], expect.any(Object));
+  });
+
+  it('passes signal to spawn options', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const abortController = new AbortController();
+    const options: GeminiSpawnOptions = {
+      cliPath: '/usr/local/bin/gemini',
+      args: [],
+      cwd: '/tmp',
+      env: {},
+      signal: abortController.signal,
+    };
+
+    spawnGeminiCli(options);
+
+    const spawnOptions = spawnMock.mock.calls[0][2];
+    expect(spawnOptions.signal).toBe(abortController.signal);
+  });
+
+  it('uses pipe for all stdio channels', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    spawnGeminiCli({
+      cliPath: '/usr/local/bin/gemini',
+      args: [],
+      cwd: '/tmp',
+      env: {},
+    });
+
+    const spawnOptions = spawnMock.mock.calls[0][2];
+    expect(spawnOptions.stdio).toEqual(['pipe', 'pipe', 'pipe']);
+  });
+
+  it('uses PATH from env when enhancedPath is not provided for .js cliPath', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const findNodeExecutable = jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+
+    spawnGeminiCli({
+      cliPath: '/path/to/cli.js',
+      args: [],
+      cwd: '/tmp',
+      env: { PATH: '/some/path' },
+    });
+
+    expect(findNodeExecutable).toHaveBeenCalledWith('/some/path');
   });
 });

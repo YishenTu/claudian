@@ -1,7 +1,10 @@
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import * as readline from 'readline';
 
+import { spawnGeminiCli } from '../../core/agent/customSpawn';
+import { QueryOptionsBuilder } from '../../core/agent/QueryOptionsBuilder';
+import type { HookCallbackMatcher } from '../../core/hooks';
 import { getInlineEditSystemPrompt } from '../../core/prompts/inlineEdit';
+import { parseGeminiJsonLine } from '../../core/sdk/transformSDKMessage';
 import { getPathFromToolInput } from '../../core/tools/toolInput';
 import {
   isReadOnlyTool,
@@ -11,8 +14,7 @@ import {
   TOOL_LS,
   TOOL_READ,
 } from '../../core/tools/toolNames';
-import { THINKING_BUDGETS } from '../../core/types';
-import type ClaudianPlugin from '../../main';
+import type GeminianPlugin from '../../main';
 import { appendContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../utils/env';
@@ -98,7 +100,6 @@ export function buildInlineEditPrompt(request: InlineEditRequest): string {
   if (request.mode === 'cursor') {
     prompt = buildCursorPrompt(request);
   } else {
-    // Instruction first for slash command detection
     const lineAttr = request.startLine && request.lineCount
       ? ` lines="${request.startLine}-${request.startLine + request.lineCount - 1}"`
       : '';
@@ -111,7 +112,6 @@ export function buildInlineEditPrompt(request: InlineEditRequest): string {
     ].join('\n');
   }
 
-  // User content first for slash command detection
   if (request.contextFiles && request.contextFiles.length > 0) {
     prompt = appendContextFiles(prompt, request.contextFiles);
   }
@@ -164,7 +164,6 @@ export function createVaultRestrictionHook(vaultPath: string): HookCallbackMatch
 
         const filePath = getPathFromToolInput(toolName, input.tool_input);
         if (!filePath) {
-          // Fail-closed: deny if we can't determine the path for a file tool
           return {
             continue: false,
             hookSpecificOutput: {
@@ -175,12 +174,10 @@ export function createVaultRestrictionHook(vaultPath: string): HookCallbackMatch
           };
         }
 
-        // Allows vault and ~/.claude/ paths (context/readwrite params are undefined)
         let accessType: PathAccessType;
         try {
           accessType = getPathAccessType(filePath, undefined, undefined, vaultPath);
         } catch {
-          // Fail-closed: deny if path validation throws (ENOENT, ELOOP, EPERM, etc.)
           return {
             continue: false,
             hookSpecificOutput: {
@@ -231,11 +228,11 @@ export function extractTextFromSdkMessage(message: any): string | null {
 }
 
 export class InlineEditService {
-  private plugin: ClaudianPlugin;
+  private plugin: GeminianPlugin;
   private abortController: AbortController | null = null;
   private sessionId: string | null = null;
 
-  constructor(plugin: ClaudianPlugin) {
+  constructor(plugin: GeminianPlugin) {
     this.plugin = plugin;
   }
 
@@ -253,7 +250,6 @@ export class InlineEditService {
     if (!this.sessionId) {
       return { success: false, error: 'No active conversation to continue' };
     }
-    // User content first for slash command detection
     let prompt = message;
     if (contextFiles && contextFiles.length > 0) {
       prompt = appendContextFiles(message, contextFiles);
@@ -267,72 +263,70 @@ export class InlineEditService {
       return { success: false, error: 'Could not determine vault path' };
     }
 
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
-    if (!resolvedClaudePath) {
-      return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
+    const resolvedGeminiPath = this.plugin.getResolvedGeminiCliPath();
+    if (!resolvedGeminiPath) {
+      return { success: false, error: 'Gemini CLI not found. Please install Gemini CLI.' };
     }
 
     this.abortController = new AbortController();
 
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-    const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedClaudePath);
-    const missingNodeError = getMissingNodeError(resolvedClaudePath, enhancedPath);
-    if (missingNodeError) {
-      return { success: false, error: missingNodeError };
+    const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedGeminiPath);
+
+    if (resolvedGeminiPath.endsWith('.js')) {
+      const missingNodeError = getMissingNodeError(resolvedGeminiPath, enhancedPath);
+      if (missingNodeError) {
+        return { success: false, error: missingNodeError };
+      }
     }
 
-    const options: Options = {
-      cwd: vaultPath,
-      systemPrompt: getInlineEditSystemPrompt(),
-      model: this.plugin.settings.model,
-      abortController: this.abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
-      env: {
-        ...process.env,
-        ...customEnv,
-        PATH: enhancedPath,
-      },
-      tools: [...READ_ONLY_TOOLS],
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      settingSources: this.plugin.settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-      hooks: {
-        PreToolUse: [
-          createReadOnlyHook(),
-          createVaultRestrictionHook(vaultPath),
-        ],
-      },
-    };
+    const allowedTools = [...READ_ONLY_TOOLS].join(',');
+    const args: string[] = [
+      '--output-format', 'stream-json',
+      '--model', this.plugin.settings.model,
+      '--approval-mode', 'yolo',
+      '--allowed-tools', allowedTools,
+      '--prompt', prompt,
+    ];
 
     if (this.sessionId) {
-      options.resume = this.sessionId;
-    }
-
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
+      args.push('--resume', this.sessionId);
     }
 
     try {
-      const response = agentQuery({ prompt, options });
+      const child = spawnGeminiCli({
+        cliPath: resolvedGeminiPath,
+        args,
+        cwd: vaultPath,
+        env: {
+          ...process.env,
+          ...customEnv,
+          PATH: enhancedPath,
+          GEMINI_SYSTEM_MD: QueryOptionsBuilder.writeSystemPromptFile(vaultPath, getInlineEditSystemPrompt()),
+        },
+        signal: this.abortController.signal,
+        enhancedPath,
+      });
+
       let responseText = '';
 
-      for await (const message of response) {
-        if (this.abortController?.signal.aborted) {
-          await response.interrupt();
-          return { success: false, error: 'Cancelled' };
-        }
+      if (child.stdout) {
+        const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+        for await (const line of rl) {
+          if (this.abortController?.signal.aborted) break;
+          const event = parseGeminiJsonLine(line);
+          if (!event) continue;
 
-        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-          this.sessionId = message.session_id;
-        }
+          if (event.type === 'init' && event.session_id) {
+            this.sessionId = event.session_id;
+          }
 
-        const text = extractTextFromSdkMessage(message);
-        if (text) {
-          responseText += text;
+          if (event.type === 'message' && event.role === 'assistant') {
+            const text = event.content || event.delta || '';
+            if (text) {
+              responseText += text;
+            }
+          }
         }
       }
 
