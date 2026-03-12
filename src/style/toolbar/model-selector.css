@@ -23,6 +23,18 @@
   font-weight: 500;
 }
 
+.geminian-model-resolved {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.geminian-model-option-resolved {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
 .geminian-model-chevron {
   display: flex;
   align-items: center;

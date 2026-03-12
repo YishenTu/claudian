@@ -1,6 +1,6 @@
 {
   "name": "geminian",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Geminian - Gemini CLI embedded in Obsidian sidebar",
   "main": "main.js",
   "scripts": {

@@ -30,6 +30,8 @@ export interface ToolbarCallbacks {
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
+  /** Resolved model name from CLI (e.g. gemini-2.5-pro), shown in selector when set. */
+  getResolvedModel?: () => string | null;
 }
 
 export class ModelSelector {
@@ -81,13 +83,18 @@ export class ModelSelector {
     const currentModel = this.callbacks.getSettings().model;
     const models = this.getAvailableModels();
     const modelInfo = models.find(m => m.value === currentModel);
-
     const displayModel = modelInfo || models[0];
+    const resolved = this.callbacks.getResolvedModel?.() ?? null;
 
     this.buttonEl.empty();
 
     const labelEl = this.buttonEl.createSpan({ cls: 'geminian-model-label' });
     labelEl.setText(displayModel?.label || 'Unknown');
+    if (resolved) {
+      labelEl.setAttribute('title', resolved);
+      const sub = this.buttonEl.createSpan({ cls: 'geminian-model-resolved' });
+      sub.setText(` (${resolved})`);
+    }
   }
 
   setReady(ready: boolean) {
@@ -109,8 +116,12 @@ export class ModelSelector {
       }
 
       option.createSpan({ text: model.label });
-      if (model.description) {
-        option.setAttribute('title', model.description);
+      const resolved = this.callbacks.getResolvedModel?.() ?? null;
+      const title = model.value === currentModel && resolved ? resolved : (model.description ?? '');
+      if (title) option.setAttribute('title', title);
+      if (model.value === currentModel && resolved) {
+        const sub = option.createSpan({ cls: 'geminian-model-option-resolved' });
+        sub.setText(` — ${resolved}`);
       }
 
       option.addEventListener('click', async (e) => {

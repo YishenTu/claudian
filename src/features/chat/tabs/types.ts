@@ -202,6 +202,9 @@ export interface TabData {
 
   /** Per-tab renderer. */
   renderer: MessageRenderer | null;
+
+  /** Resolved model name from CLI (e.g. gemini-2.5-pro), set when first response starts. */
+  resolvedModelName?: string | null;
 }
 
 /**

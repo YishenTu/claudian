@@ -64,6 +64,8 @@ export interface InputControllerDeps {
   resetInputHeight: () => void;
   getAgentService?: () => GeminianService | null;
   getSubagentManager: () => SubagentManager;
+  /** Called when CLI reports resolved model (e.g. gemini-2.5-pro). */
+  onResolvedModel?: (model: string) => void;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
@@ -388,6 +390,9 @@ export class InputController {
           wasInterrupted = true;
           break;
         }
+
+        const resolvedModel = this.getAgentService()?.getResolvedModel();
+        if (resolvedModel) this.deps.onResolvedModel?.(resolvedModel);
 
         await streamController.handleStreamChunk(chunk, assistantMsg);
       }

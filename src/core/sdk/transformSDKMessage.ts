@@ -48,6 +48,7 @@ export function* transformGeminiEvent(
       yield {
         type: 'session_init',
         sessionId: event.session_id || '',
+        model: event.model,
         agents: [],
         permissionMode: undefined,
       };

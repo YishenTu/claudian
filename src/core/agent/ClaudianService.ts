@@ -91,6 +91,7 @@ export class GeminianService {
   private mcpManager: McpServerManager;
   private currentProcess: ChildProcess | null = null;
   private ready = false;
+  private lastResolvedModel: string | null = null;
 
   constructor(plugin: GeminianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -329,6 +330,7 @@ export class GeminianService {
         for (const event of transformGeminiEvent(geminiEvent, transformOptions)) {
           if (isSessionInitEvent(event)) {
             this.sessionManager.captureSession(event.sessionId);
+            this.lastResolvedModel = event.model ?? null;
           } else if (isStreamChunk(event)) {
             if (event.type === 'usage') {
               yield { ...event, sessionId: this.sessionManager.getSessionId() };
@@ -387,6 +389,13 @@ export class GeminianService {
 
   getSessionId(): string | null {
     return this.sessionManager.getSessionId();
+  }
+
+  /** Resolved model name from CLI init (e.g. gemini-2.5-pro). One-shot: returns and clears. */
+  getResolvedModel(): string | null {
+    const m = this.lastResolvedModel;
+    this.lastResolvedModel = null;
+    return m;
   }
 
   consumeSessionInvalidation(): boolean {

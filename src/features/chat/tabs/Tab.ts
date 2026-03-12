@@ -432,8 +432,10 @@ function initializeInputToolbar(tab: TabData, plugin: GeminianPlugin): void {
       permissionMode: plugin.settings.permissionMode,
     }),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
+    getResolvedModel: () => tab.resolvedModelName ?? null,
     onModelChange: async (model: GeminiModel) => {
       plugin.settings.model = model;
+      tab.resolvedModelName = null;
       const isDefaultModel = DEFAULT_GEMINI_MODELS.find((m) => m.value === model);
       if (isDefaultModel) {
         plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
@@ -863,6 +865,11 @@ export function initializeTabControllers(
     // Override to use tab's service instead of plugin.agentService
     getAgentService: () => tab.service,
     getSubagentManager: () => services.subagentManager,
+    onResolvedModel: (model: string) => {
+      tab.resolvedModelName = model;
+      tab.ui.modelSelector?.updateDisplay();
+      tab.ui.modelSelector?.renderOptions();
+    },
     // Lazy initialization: ensure service is ready before first query
     // initializeTabService() handles session ID resolution from tab.conversationId
     ensureServiceInitialized: async () => {

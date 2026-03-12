@@ -28,8 +28,8 @@ import {
   getHostnameKey,
   VIEW_TYPE_GEMINIAN,
 } from './core/types';
-import { GEMINI_LOGO_SVG } from './features/chat/constants';
 import { GeminianView } from './features/chat/ClaudianView';
+import { GEMINI_LOGO_SVG } from './features/chat/constants';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { GeminianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
