@@ -14,9 +14,9 @@ An Obsidian plugin that embeds [Gemini CLI](https://github.com/google-gemini/gem
 - **Instruction Mode (`#`)**: Add refined custom instructions to your system prompt directly from the chat input.
 - **Slash Commands**: Create reusable prompt templates triggered by `/command`, with argument placeholders and `@file` references.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP).
-- **Model Selection**: Choose between Auto, Pro (Gemini 2.5 Pro), Flash (Gemini 2.5 Flash), and Flash Lite models.
+- **Model Selection**: Choose between Auto, Pro, Flash, and Flash Lite. The actual model (Gemini 2.5 or 3.x) depends on your [Gemini CLI](https://github.com/google-gemini/gemini-cli) version.
 - **Plan Mode**: Toggle plan mode via Shift+Tab — Gemini explores and designs before implementing.
-- **Security**: Permission modes (YOLO/Safe/Plan), safety blocklist, and vault confinement with symlink-safe checks.
+- **Security**: Permission modes — **YOLO** (auto-approve all tools), **Safe** (prompt before each tool), **Plan** (read-only); plus safety blocklist and vault confinement.
 - **10 Languages**: English, Chinese (Simplified/Traditional), Japanese, Korean, Spanish, German, French, Portuguese, Russian.
 
 ## Requirements
@@ -88,6 +88,8 @@ npm run lint    # Lint code
 2. Select text + hotkey for inline edit
 
 Use it like Gemini CLI — read, write, edit, search files in your vault.
+
+**Check you're connected:** If you get a reply in the chat, you're connected. You can ask e.g. “What model are you?” to confirm. The **model** (Auto / Pro / Flash / Flash Lite) is shown in the input toolbar next to “Thinking”; click it to change. **YOLO** is the permission toggle: when on, Gemini can run tools (edit files, run commands) without asking each time; turn it off for Safe mode (approve each action).
 
 ### Context
 

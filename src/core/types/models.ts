@@ -7,8 +7,8 @@ export type GeminiModel = string;
 
 export const DEFAULT_GEMINI_MODELS: { value: GeminiModel; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Auto-selects best model' },
-  { value: 'pro', label: 'Pro', description: 'Complex reasoning (Gemini 2.5 Pro)' },
-  { value: 'flash', label: 'Flash', description: 'Fast and balanced (Gemini 2.5 Flash)' },
+  { value: 'pro', label: 'Pro', description: 'Complex reasoning (Pro tier)' },
+  { value: 'flash', label: 'Flash', description: 'Fast and balanced (Flash tier)' },
   { value: 'flash-lite', label: 'Flash Lite', description: 'Fastest for simple tasks' },
 ];
 
