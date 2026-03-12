@@ -64,7 +64,7 @@ Follow the prompts to sign in with your Google account.
 
 #### Manual Install
 
-1. Download `main.js`, `manifest.json`, and `styles.css` from a release
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Momoyu404/geminian/releases/latest)
 2. Create a folder called `geminian` in your vault's plugins folder:
    ```
    /path/to/vault/.obsidian/plugins/geminian/
