@@ -1,7 +1,7 @@
 {
   "id": "geminian",
   "name": "Geminian",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "minAppVersion": "1.4.5",
   "description": "Embeds Gemini CLI as an AI collaborator in your vault. Your vault becomes Gemini's working directory, giving it full agentic capabilities: file read/write, search, bash commands, and multi-step workflows.",
   "author": "Guangxing Lyu (forked from Claudian by Yishen Tu)",

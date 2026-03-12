@@ -44,26 +44,6 @@ Follow the prompts to sign in with your Google account.
 
 ### Install the Plugin
 
-#### From Source
-
-1. Clone this repository into your vault's plugins folder:
-   ```bash
-   cd /path/to/vault/.obsidian/plugins
-   git clone https://github.com/Momoyu404/geminian.git
-   cd geminian
-   ```
-
-2. Install dependencies and build:
-   ```bash
-   npm install
-   npm run build
-   ```
-
-3. Enable the plugin in Obsidian:
-   - Settings → Community plugins → Enable "Geminian"
-
-#### Manual Install
-
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Momoyu404/geminian/releases/latest)
 2. Create a folder called `geminian` in your vault's plugins folder:
    ```
