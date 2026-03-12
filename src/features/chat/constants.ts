@@ -1,14 +1,14 @@
-/** Gemini-style star logo (single color for header and ribbon). */
+/** Gemini 4-pointed sparkle logo with gradient fill for header and ribbon. */
 export const LOGO_SVG = {
   viewBox: '0 0 24 24',
   width: '18',
   height: '18',
-  path: 'M12 2L14.5 8.5L21 9L16 13.5L17.5 20L12 17L6.5 20L8 13.5L3 9L9.5 8.5L12 2Z',
-  fill: '#4285F4',
+  path: 'M12 2C12 7.52 16.48 12 22 12C16.48 12 12 16.48 12 22C12 16.48 7.52 12 2 12C7.52 12 12 7.52 12 2Z',
+  fill: 'url(#gemini-gradient)',
 } as const;
 
 /** Full Gemini logo SVG string for ribbon icon (Obsidian uses Lucide by default; we inject this). */
-export const GEMINI_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 2L14.5 8.5L21 9L16 13.5L17.5 20L12 17L6.5 20L8 13.5L3 9L9.5 8.5L12 2Z" fill="#4285F4"/></svg>`;
+export const GEMINI_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4285F4"/><stop offset="100%" stop-color="#874DE4"/></linearGradient></defs><path d="M12 2C12 7.52 16.48 12 22 12C16.48 12 12 16.48 12 22C12 16.48 7.52 12 2 12C7.52 12 12 7.52 12 2Z" fill="url(#g)"/></svg>`;
 
 /** Random flavor words shown when response completes (e.g., "Baked for 1:23"). */
 export const COMPLETION_FLAVOR_WORDS = [
