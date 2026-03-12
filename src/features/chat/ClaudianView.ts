@@ -74,7 +74,7 @@ export class GeminianView extends ItemView {
   }
 
   getIcon(): string {
-    return 'bot';
+    return 'sparkles';
   }
 
   /** Refreshes the model selector display (used after env var changes). */

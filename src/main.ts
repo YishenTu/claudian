@@ -28,6 +28,7 @@ import {
   getHostnameKey,
   VIEW_TYPE_GEMINIAN,
 } from './core/types';
+import { GEMINI_LOGO_SVG } from './features/chat/constants';
 import { GeminianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { GeminianSettingTab } from './features/settings/ClaudianSettings';
@@ -81,9 +82,11 @@ export default class GeminianPlugin extends Plugin {
       (leaf) => new GeminianView(leaf, this)
     );
 
-    this.addRibbonIcon('bot', 'Open Geminian', () => {
+    const ribbonEl = this.addRibbonIcon('bot', 'Open Geminian', () => {
       this.activateView();
     });
+    const iconWrap = ribbonEl?.querySelector('.svg-icon') ?? ribbonEl?.firstElementChild;
+    if (iconWrap) iconWrap.innerHTML = GEMINI_LOGO_SVG;
 
     this.addCommand({
       id: 'open-view',
