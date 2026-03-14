@@ -22,7 +22,6 @@ export interface ToolbarSettings {
   model: ClaudeModel;
   thinkingBudget: ThinkingBudget;
   permissionMode: PermissionMode;
-  show1MModel?: boolean;
 }
 
 export interface ToolbarCallbacks {
@@ -61,14 +60,6 @@ export class ModelSelector {
       }
     } else {
       models = [...DEFAULT_CLAUDE_MODELS];
-    }
-
-    // When 1M context is enabled, update sonnet label to show "(1M)"
-    const settings = this.callbacks.getSettings();
-    if (settings.show1MModel) {
-      models = models.map(m =>
-        m.value === 'sonnet' ? { ...m, label: 'Sonnet (1M)' } : m
-      );
     }
 
     return models;

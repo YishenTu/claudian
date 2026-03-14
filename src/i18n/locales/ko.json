@@ -236,10 +236,6 @@
       "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
     },
     "advanced": "고급",
-    "show1MModel": {
-      "name": "1M 컨텍스트 창을 가진 Sonnet 활성화",
-      "desc": "모델 선택기에서 표준 Sonnet을 Sonnet (1M)으로 교체합니다. 200k 토큰 미만에서는 동일한 가격. Max 구독이 필요합니다."
-    },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",
       "desc": "claude-in-chrome 확장 프로그램을 통해 Claude가 Chrome과 상호작용할 수 있도록 합니다. 확장 프로그램이 설치되어 있어야 합니다. 세션 재시작이 필요합니다."

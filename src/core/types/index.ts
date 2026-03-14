@@ -15,16 +15,11 @@ export {
 
 // Model types
 export {
-  BETA_1M_CONTEXT,
   type ClaudeModel,
-  CONTEXT_WINDOW_1M,
   CONTEXT_WINDOW_STANDARD,
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_THINKING_BUDGET,
   getContextWindowSize,
-  type ModelWithBetas,
-  type ModelWithoutBetas,
-  resolveModelWithBetas,
   THINKING_BUDGETS,
   type ThinkingBudget,
 } from './models';

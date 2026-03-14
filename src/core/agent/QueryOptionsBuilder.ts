@@ -19,7 +19,7 @@ import type { McpServerManager } from '../mcp';
 import type { PluginManager } from '../plugins';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompts/mainAgent';
 import type { ClaudianSettings, PermissionMode } from '../types';
-import { resolveModelWithBetas, THINKING_BUDGETS } from '../types';
+import { THINKING_BUDGETS } from '../types';
 import { createCustomSpawnFunction } from './customSpawn';
 import {
   computeSystemPromptKey,
@@ -118,10 +118,6 @@ export class QueryOptionsBuilder {
     // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
 
-    // Beta flag presence is determined by show1MModel setting.
-    // If it changes, restart is required.
-    if (currentConfig.show1MModel !== newConfig.show1MModel) return true;
-
     if (currentConfig.enableChrome !== newConfig.enableChrome) return true;
 
     // Export paths affect system prompt
@@ -173,7 +169,6 @@ export class QueryOptionsBuilder {
       allowedExportPaths: ctx.settings.allowedExportPaths,
       settingSources: ctx.settings.loadUserClaudeSettings ? 'user,project' : 'project',
       claudeCliPath: ctx.cliPath,
-      show1MModel: ctx.settings.show1MModel,
       enableChrome: ctx.settings.enableChrome,
     };
   }
@@ -182,7 +177,6 @@ export class QueryOptionsBuilder {
   static buildPersistentQueryOptions(ctx: PersistentQueryContext): Options {
     const permissionMode = ctx.settings.permissionMode;
 
-    const resolved = resolveModelWithBetas(ctx.settings.model, ctx.settings.show1MModel);
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -194,7 +188,7 @@ export class QueryOptionsBuilder {
     const options: Options = {
       cwd: ctx.vaultPath,
       systemPrompt,
-      model: resolved.model,
+      model: ctx.settings.model,
       abortController: ctx.abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,
       settingSources: ctx.settings.loadUserClaudeSettings
@@ -207,10 +201,6 @@ export class QueryOptionsBuilder {
       },
       includePartialMessages: true,
     };
-
-    if (resolved.betas) {
-      options.betas = resolved.betas;
-    }
 
     QueryOptionsBuilder.applyExtraArgs(options, ctx.settings);
 
@@ -250,7 +240,6 @@ export class QueryOptionsBuilder {
     const permissionMode = ctx.settings.permissionMode;
 
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;
-    const resolved = resolveModelWithBetas(selectedModel, ctx.settings.show1MModel);
     const systemPrompt = buildSystemPrompt({
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -262,7 +251,7 @@ export class QueryOptionsBuilder {
     const options: Options = {
       cwd: ctx.vaultPath,
       systemPrompt,
-      model: resolved.model,
+      model: selectedModel,
       abortController: ctx.abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,
       // User settings may contain permission rules that bypass Claudian's permission system
@@ -276,10 +265,6 @@ export class QueryOptionsBuilder {
       },
       includePartialMessages: true,
     };
-
-    if (resolved.betas) {
-      options.betas = resolved.betas;
-    }
 
     QueryOptionsBuilder.applyExtraArgs(options, ctx.settings);
 

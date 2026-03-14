@@ -770,31 +770,6 @@ describe('transformSDKMessage', () => {
       expect(usageResults).toHaveLength(0);
     });
 
-    it('uses 1M context window when is1MEnabled is true for sonnet', () => {
-      const message = msg({
-        type: 'assistant',
-        parent_tool_use_id: null,
-        message: {
-          content: [{ type: 'text', text: 'Hello' }],
-          usage: {
-            input_tokens: 50000,
-            output_tokens: 10000,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-          },
-        },
-      });
-
-      const results = [...transformSDKMessage(message, { intendedModel: 'sonnet', is1MEnabled: true })];
-
-      const usageResults = results.filter(r => r.type === 'usage');
-      expect(usageResults).toHaveLength(1);
-
-      const usage = (usageResults[0] as any).usage;
-      expect(usage.contextWindow).toBe(1000000); // 1M context window
-      expect(usage.percentage).toBe(5); // 50000 / 1000000 * 100 = 5%
-    });
-
     it('uses custom context limits when provided', () => {
       const message = msg({
         type: 'assistant',
@@ -823,7 +798,7 @@ describe('transformSDKMessage', () => {
       expect(usage.percentage).toBe(10); // 50000 / 500000 * 100 = 10%
     });
 
-    it('prioritizes custom context limits over 1M setting', () => {
+    it('uses custom context limits over standard window', () => {
       const message = msg({
         type: 'assistant',
         parent_tool_use_id: null,
@@ -840,7 +815,6 @@ describe('transformSDKMessage', () => {
 
       const results = [...transformSDKMessage(message, {
         intendedModel: 'sonnet',
-        is1MEnabled: true,
         customContextLimits: { 'sonnet': 256000 },
       })];
 
@@ -848,7 +822,7 @@ describe('transformSDKMessage', () => {
       expect(usageResults).toHaveLength(1);
 
       const usage = (usageResults[0] as any).usage;
-      expect(usage.contextWindow).toBe(256000); // Custom limit takes precedence over 1M
+      expect(usage.contextWindow).toBe(256000); // Custom limit takes precedence
       expect(usage.percentage).toBe(39); // 100000 / 256000 * 100 ≈ 39%
     });
 

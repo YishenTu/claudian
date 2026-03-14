@@ -515,21 +515,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName(t('settings.advanced')).setHeading();
 
     new Setting(containerEl)
-      .setName(t('settings.show1MModel.name'))
-      .setDesc(t('settings.show1MModel.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.show1MModel ?? false)
-          .onChange(async (value) => {
-            this.plugin.settings.show1MModel = value;
-            await this.plugin.saveSettings();
-
-            const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
-            view?.refreshModelSelector();
-          })
-      );
-
-    new Setting(containerEl)
       .setName(t('settings.enableChrome.name'))
       .setDesc(t('settings.enableChrome.desc'))
       .addToggle((toggle) =>

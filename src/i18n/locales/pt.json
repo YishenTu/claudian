@@ -236,10 +236,6 @@
       "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
     },
     "advanced": "Avançado",
-    "show1MModel": {
-      "name": "Habilitar Sonnet com janela de contexto de 1M",
-      "desc": "Substituir Sonnet padrão por Sonnet (1M) no seletor de modelos. Mesmo preço abaixo de 200k tokens. Requer assinatura Max."
-    },
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",
       "desc": "Permitir que o Claude interaja com o Chrome através da extensão claude-in-chrome. Requer que a extensão esteja instalada. Requer reinício de sessão."

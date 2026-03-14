@@ -430,7 +430,6 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       model: plugin.settings.model,
       thinkingBudget: plugin.settings.thinkingBudget,
       permissionMode: plugin.settings.permissionMode,
-      show1MModel: plugin.settings.show1MModel,
     }),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
     onModelChange: async (model: ClaudeModel) => {
@@ -450,7 +449,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       // Recalculate context usage percentage for the new model's context window
       const currentUsage = tab.state.usage;
       if (currentUsage) {
-        const newContextWindow = getContextWindowSize(model, plugin.settings.show1MModel, plugin.settings.customContextLimits);
+        const newContextWindow = getContextWindowSize(model, plugin.settings.customContextLimits);
         const newPercentage = Math.min(100, Math.max(0, Math.round((currentUsage.contextTokens / newContextWindow) * 100)));
         tab.state.usage = {
           ...currentUsage,

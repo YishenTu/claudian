@@ -117,18 +117,6 @@ describe('ModelSelector', () => {
     expect(btn?.hasClass('ready')).toBe(false);
   });
 
-  it('should show Sonnet (1M) when show1MModel is enabled', () => {
-    callbacks.getSettings.mockReturnValue({
-      model: 'sonnet',
-      thinkingBudget: 'low',
-      permissionMode: 'normal',
-      show1MModel: true,
-    });
-    selector.updateDisplay();
-    const label = parentEl.querySelector('.claudian-model-label');
-    expect(label?.textContent).toBe('Sonnet (1M)');
-  });
-
   it('should use custom models from environment variables', () => {
     callbacks.getEnvironmentVariables.mockReturnValue(
       'CLAUDE_CODE_USE_BEDROCK=1\nANTHROPIC_MODEL=us.anthropic.claude-sonnet-4-20250514-v1:0'

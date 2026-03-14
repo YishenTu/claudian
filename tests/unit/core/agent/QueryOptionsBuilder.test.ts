@@ -60,7 +60,6 @@ function createMockSettings(overrides: Partial<ClaudianSettings> = {}): Claudian
       focusInputKey: 'i',
     },
     claudeCliPath: '',
-    show1MModel: false,
     enableChrome: false,
     ...overrides,
   } as ClaudianSettings;
@@ -81,7 +80,6 @@ function createMockPersistentQueryConfig(
     allowedExportPaths: [],
     settingSources: 'project',
     claudeCliPath: '/mock/claude',
-    show1MModel: false,
     enableChrome: false,
     ...overrides,
   };
@@ -153,18 +151,6 @@ describe('QueryOptionsBuilder', () => {
       const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, model: 'claude-opus-4-5' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(false);
-    });
-
-    it('returns true when show1MModel changes from false to true', () => {
-      const currentConfig = createMockPersistentQueryConfig();
-      const newConfig = { ...currentConfig, show1MModel: true };
-      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
-    });
-
-    it('returns true when show1MModel changes from true to false', () => {
-      const currentConfig = createMockPersistentQueryConfig({ show1MModel: true });
-      const newConfig = { ...currentConfig, show1MModel: false };
-      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
     it('returns true when enableChrome changes from false to true', () => {
@@ -330,35 +316,6 @@ describe('QueryOptionsBuilder', () => {
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
       expect(options.resume).toBe('session-123');
-    });
-
-    it('does not set betas when show1MModel is disabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet', show1MModel: false }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeUndefined();
-    });
-
-    it('sets betas for non-1M model when show1MModel is enabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet', show1MModel: true }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-      };
-      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeDefined();
-      expect(options.betas).toContain('context-1m-2025-08-07');
     });
 
     it('sets extraArgs with chrome flag when enableChrome is enabled', () => {
@@ -555,37 +512,6 @@ describe('QueryOptionsBuilder', () => {
       const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
 
       expect(options.tools).toEqual(['Read', 'Grep']);
-    });
-
-    it('sets betas when show1MModel is enabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet', show1MModel: true }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-        hasEditorContext: false,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeDefined();
-      expect(options.betas).toContain('context-1m-2025-08-07');
-    });
-
-    it('does not set betas when show1MModel is disabled', () => {
-      const ctx = {
-        ...createMockContext({
-          settings: createMockSettings({ model: 'sonnet' }),
-        }),
-        abortController: new AbortController(),
-        hooks: {},
-        hasEditorContext: false,
-      };
-      const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
-
-      expect(options.model).toBe('sonnet');
-      expect(options.betas).toBeUndefined();
     });
 
     it('sets extraArgs with chrome flag when enableChrome is enabled', () => {

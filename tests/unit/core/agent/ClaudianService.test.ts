@@ -1845,7 +1845,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2023,7 +2023,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2089,7 +2089,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2134,7 +2134,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2187,7 +2187,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2228,7 +2228,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2285,7 +2285,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 
@@ -2353,7 +2353,7 @@ describe('ClaudianService', () => {
         allowedExportPaths: [],
         settingSources: '',
         claudeCliPath: '/usr/local/bin/claude',
-        show1MModel: false,
+
         enableChrome: false,
       };
 

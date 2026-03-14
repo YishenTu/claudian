@@ -236,10 +236,6 @@
       "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。"
     },
     "advanced": "高级",
-    "show1MModel": {
-      "name": "启用具有 1M 上下文窗口的 Sonnet",
-      "desc": "在模型选择器中将标准 Sonnet 替换为 Sonnet (1M)。在 200k 令牌以下价格相同。需要 Max 订阅。"
-    },
     "enableChrome": {
       "name": "启用 Chrome 扩展",
       "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"

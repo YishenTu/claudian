@@ -247,7 +247,6 @@ export interface ClaudianSettings {
   thinkingBudget: ThinkingBudget;
   enableAutoTitleGeneration: boolean;
   titleGenerationModel: string;  // Model for auto title generation (empty = auto)
-  show1MModel: boolean;  // Show Sonnet (1M) in model selector (requires Max subscription)
   enableChrome: boolean;  // Enable Chrome extension support (passes --chrome flag)
   enableBangBash: boolean;  // Enable ! bash mode for direct command execution
 
@@ -265,7 +264,7 @@ export interface ClaudianSettings {
    * Custom context window limits for models configured via environment variables.
    * Keys are model IDs (from ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_*_MODEL env vars).
    * Values are token counts in range [1000, 10000000].
-   * Empty object means all models use default context limits (200k or 1M for Sonnet).
+   * Empty object means all models use default context limits (200k).
    */
   customContextLimits: Record<string, number>;
 
@@ -313,7 +312,6 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   thinkingBudget: 'off',
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  show1MModel: false,  // Hidden by default
   enableChrome: false,  // Disabled by default
   enableBangBash: false,  // Disabled by default
 
