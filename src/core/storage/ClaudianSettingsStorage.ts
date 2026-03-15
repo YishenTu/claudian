@@ -90,7 +90,7 @@ export class ClaudianSettingsStorage {
 
     const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
-    const { activeConversationId: _activeConversationId, ...storedWithoutLegacy } = stored;
+    const { activeConversationId: _activeConversationId, show1MModel: _show1MModel, ...storedWithoutLegacy } = stored;
 
     const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
     const hostnameCliPaths = normalizeHostnameCliPaths(stored.claudeCliPathsByHost);
