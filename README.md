@@ -20,7 +20,7 @@ An Obsidian plugin that embeds Claude Code as an AI collaborator in your vault. 
 - **Custom Agents**: Define custom subagents that Claude can invoke, with support for tool restrictions and model overrides.
 - **Claude Code Plugins**: Enable Claude Code plugins installed via the CLI, with automatic discovery from `~/.claude/plugins` and per-vault configuration. Plugin skills, agents, and slash commands integrate seamlessly.
 - **MCP Support**: Connect external tools and data sources via Model Context Protocol servers (stdio, SSE, HTTP) with context-saving mode and `@`-mention activation.
-- **Advanced Model Control**: Select between Haiku, Sonnet, and Opus, configure custom models via environment variables, fine-tune thinking budget, and enable Sonnet with 1M context window (requires Max subscription).
+- **Advanced Model Control**: Auto-detects available models from the SDK at runtime (supports custom CLIs like `claude-internal`), configure custom models via environment variables, fine-tune thinking budget, and enable Sonnet with 1M context window (requires Max subscription).
 - **Plan Mode**: Toggle plan mode via Shift+Tab in the chat input. Claudian explores and designs before implementing, presenting a plan for approval with options to approve in a new session, continue in the current session, or provide feedback.
 - **Security**: Permission modes (YOLO/Safe/Plan), safety blocklist, and vault confinement with symlink-safe checks.
 - **Claude in Chrome**: Allow Claude to interact with Chrome through the `claude-in-chrome` extension.

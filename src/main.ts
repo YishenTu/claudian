@@ -5,6 +5,9 @@
  * Manages conversation persistence and environment variable configuration.
  */
 
+// Must be first: patches events.setMaxListeners for Electron AbortSignal compatibility
+import './utils/electronCompat';
+
 import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
@@ -33,6 +36,7 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
 import { ClaudeCliResolver } from './utils/claudeCli';
+import { setClaudeHomeDirName } from './utils/claudePaths';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
@@ -59,23 +63,61 @@ export default class ClaudianPlugin extends Plugin {
   private runtimeEnvironmentVariables = '';
 
   async onload() {
-    await this.loadSettings();
+    // Phase 1: Settings initialization (with fallback to defaults on failure)
+    let initError = false;
+    try {
+      const data = await this.loadData();
+      const claudeHomeDirName = data?.claudeHomeDirName || '.claude';
+      setClaudeHomeDirName(claudeHomeDirName);
+      await this.loadSettings();
+    } catch {
+      initError = true;
+      // Ensure minimum viable state so the plugin can still register views/commands
+      if (!this.storage) {
+        this.storage = new StorageService(this);
+        try { await this.storage.initialize(); } catch { /* best effort */ }
+      }
+      if (!this.settings) {
+        this.settings = { ...DEFAULT_SETTINGS, slashCommands: [] };
+      }
+    }
 
-    this.cliResolver = new ClaudeCliResolver();
-
-    // Initialize MCP manager (shared for agent + UI)
-    this.mcpManager = new McpServerManager(this.storage.mcp);
-    await this.mcpManager.loadServers();
-
-    // Initialize plugin manager (reads from installed_plugins.json + settings.json)
+    // Phase 2: Non-critical manager initialization (each independently resilient)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultPath = (this.app.vault.adapter as any).basePath;
-    this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
-    await this.pluginManager.loadPlugins();
 
-    // Initialize agent manager (loads plugin agents from plugin install paths)
-    this.agentManager = new AgentManager(vaultPath, this.pluginManager);
-    await this.agentManager.loadAgents();
+    try {
+      this.cliResolver = new ClaudeCliResolver();
+    } catch { /* CLI resolution deferred to first use */ }
 
+    try {
+      this.mcpManager = new McpServerManager(this.storage.mcp);
+      await this.mcpManager.loadServers();
+    } catch {
+      if (!this.mcpManager) {
+        this.mcpManager = new McpServerManager(this.storage.mcp);
+      }
+    }
+
+    try {
+      this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
+      await this.pluginManager.loadPlugins();
+    } catch {
+      if (!this.pluginManager) {
+        this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
+      }
+    }
+
+    try {
+      this.agentManager = new AgentManager(vaultPath, this.pluginManager);
+      await this.agentManager.loadAgents();
+    } catch {
+      if (!this.agentManager) {
+        this.agentManager = new AgentManager(vaultPath, this.pluginManager);
+      }
+    }
+
+    // Phase 3: Critical registrations — must always execute
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
       (leaf) => new ClaudianView(leaf, this)
@@ -197,6 +239,10 @@ export default class ClaudianPlugin extends Plugin {
     });
 
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
+
+    if (initError) {
+      new Notice('Claudian loaded with errors. Some features may need reloading.');
+    }
   }
 
   async onunload() {
@@ -272,7 +318,38 @@ export default class ClaudianPlugin extends Plugin {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (this.settings as any).claudeCliPaths;
 
-    // Load all conversations from session files (legacy JSONL + native metadata)
+    // Conversation loading is non-critical for plugin registration
+    try {
+      await this.loadConversationsFromStorage();
+    } catch {
+      new Notice('Failed to load conversation history.');
+    }
+
+    setLocale(this.settings.locale);
+
+    this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
+
+    if (changed || didMigrateCliPath) {
+      await this.saveSettings();
+    }
+
+    // Persist backfilled and invalidated conversations to their session files
+    const backfilledConversations = this.backfillConversationResponseTimestamps();
+    const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
+    for (const conv of conversationsToSave) {
+      if (conv.isNative) {
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conv)
+        );
+      } else {
+        await this.storage.sessions.saveConversation(conv);
+      }
+    }
+  }
+
+  /** Loads all conversations from session files (legacy JSONL + native metadata). */
+  private async loadConversationsFromStorage(): Promise<void> {
     const { conversations: legacyConversations, failedCount } = await this.storage.sessions.loadAllConversations();
     const legacyIds = new Set(legacyConversations.map(c => c.id));
 
@@ -345,30 +422,6 @@ export default class ClaudianPlugin extends Plugin {
 
     if (failedCount > 0) {
       new Notice(`Failed to load ${failedCount} conversation${failedCount > 1 ? 's' : ''}`);
-    }
-    setLocale(this.settings.locale);
-
-    const backfilledConversations = this.backfillConversationResponseTimestamps();
-
-    this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
-
-    if (changed || didMigrateCliPath) {
-      await this.saveSettings();
-    }
-
-    // Persist backfilled and invalidated conversations to their session files
-    const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
-    for (const conv of conversationsToSave) {
-      if (conv.isNative) {
-        // Native session: save metadata only
-        await this.storage.sessions.saveMetadata(
-          this.storage.sessions.toSessionMetadata(conv)
-        );
-      } else {
-        // Legacy session: save full JSONL
-        await this.storage.sessions.saveConversation(conv);
-      }
     }
   }
 

@@ -117,6 +117,7 @@ export class TabManager implements TabManagerInterface {
     // Initialize UI components with shared SDK commands callback
     initializeTabUI(tab, this.plugin, {
       getSdkCommands: () => this.getSdkCommands(),
+      getSdkModels: () => this.getSdkModels(),
     });
 
     // Initialize controllers (pass mcpManager for lazy service initialization)
@@ -561,6 +562,15 @@ export class TabManager implements TabManagerInterface {
     for (const tab of this.tabs.values()) {
       if (tab.service?.isReady()) {
         return tab.service.getSupportedCommands();
+      }
+    }
+    return [];
+  }
+
+  async getSdkModels(): Promise<{ value: string; label: string; description: string }[]> {
+    for (const tab of this.tabs.values()) {
+      if (tab.service?.isReady()) {
+        return tab.service.getSupportedModels();
       }
     }
     return [];

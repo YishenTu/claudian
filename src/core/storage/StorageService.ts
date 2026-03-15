@@ -17,6 +17,7 @@
 import type { App, Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import { getVaultClaudeDir } from '../../utils/claudePaths';
 import type {
   CCPermissions,
   CCSettings,
@@ -31,8 +32,8 @@ import {
   DEFAULT_SETTINGS,
   legacyPermissionsToCCPermissions,
 } from '../types';
-import { AGENTS_PATH, AgentVaultStorage } from './AgentVaultStorage';
-import { CC_SETTINGS_PATH, CCSettingsStorage, isLegacyPermissionsFormat } from './CCSettingsStorage';
+import { AgentVaultStorage, getAgentsPath } from './AgentVaultStorage';
+import { CCSettingsStorage, getCCSettingsPath, isLegacyPermissionsFormat } from './CCSettingsStorage';
 import {
   ClaudianSettingsStorage,
   normalizeBlockedCommands,
@@ -44,16 +45,16 @@ import {
   convertEnvObjectToString,
   mergeEnvironmentVariables,
 } from './migrationConstants';
-import { SESSIONS_PATH, SessionStorage } from './SessionStorage';
-import { SKILLS_PATH, SkillStorage } from './SkillStorage';
-import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
+import { getSessionsPath, SessionStorage } from './SessionStorage';
+import { getSkillsPath, SkillStorage } from './SkillStorage';
+import { getCommandsPath, SlashCommandStorage } from './SlashCommandStorage';
 import { VaultFileAdapter } from './VaultFileAdapter';
 
-/** Base path for all Claudian storage. */
+/** @deprecated Use getVaultClaudeDir() from claudePaths instead */
 export const CLAUDE_PATH = '.claude';
 
-/** Legacy settings path (now CC settings). */
-export const SETTINGS_PATH = CC_SETTINGS_PATH;
+/** @deprecated Use getCCSettingsPath() instead */
+export const SETTINGS_PATH = '.claude/settings.json';
 
 /**
  * Combined settings for the application.
@@ -138,7 +139,11 @@ export class StorageService {
 
   async initialize(): Promise<CombinedSettings> {
     await this.ensureDirectories();
-    await this.runMigrations();
+    try {
+      await this.runMigrations();
+    } catch {
+      // Migration failures are non-fatal; settings load will fall back to defaults
+    }
 
     const cc = await this.ccSettings.load();
     const claudian = await this.claudianSettings.load();
@@ -204,7 +209,7 @@ export class StorageService {
    * - Preserves existing CC permissions if already in CC format
    */
   private async migrateFromOldSettingsJson(): Promise<void> {
-    const content = await this.adapter.read(CC_SETTINGS_PATH);
+    const content = await this.adapter.read(getCCSettingsPath());
     const oldSettings = JSON.parse(content) as LegacySettingsJson;
 
     const hasClaudianFields = Array.from(CLAUDIAN_ONLY_FIELDS).some(
@@ -252,10 +257,11 @@ export class StorageService {
     // Save Claudian settings FIRST (before stripping from settings.json)
     await this.claudianSettings.save(claudianFields as StoredClaudianSettings);
 
-    // Verify Claudian settings were saved
+    // Verify Claudian settings were saved — abort migration gracefully if not
     const savedClaudian = await this.claudianSettings.load();
     if (!savedClaudian || savedClaudian.userName === undefined) {
-      throw new Error('Failed to verify claudian-settings.json was saved correctly');
+      new Notice('Settings migration incomplete. Will retry on next launch.');
+      return;
     }
 
     // Handle permissions: convert legacy format OR preserve existing CC format
@@ -370,11 +376,11 @@ export class StorageService {
   }
 
   async ensureDirectories(): Promise<void> {
-    await this.adapter.ensureFolder(CLAUDE_PATH);
-    await this.adapter.ensureFolder(COMMANDS_PATH);
-    await this.adapter.ensureFolder(SKILLS_PATH);
-    await this.adapter.ensureFolder(SESSIONS_PATH);
-    await this.adapter.ensureFolder(AGENTS_PATH);
+    await this.adapter.ensureFolder(getVaultClaudeDir());
+    await this.adapter.ensureFolder(getCommandsPath());
+    await this.adapter.ensureFolder(getSkillsPath());
+    await this.adapter.ensureFolder(getSessionsPath());
+    await this.adapter.ensureFolder(getAgentsPath());
   }
 
   async loadAllSlashCommands(): Promise<SlashCommand[]> {

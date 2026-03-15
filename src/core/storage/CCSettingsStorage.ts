@@ -12,6 +12,7 @@
  * Claudian-specific settings go in claudian-settings.json.
  */
 
+import { getVaultClaudePath } from '../../utils/claudePaths';
 import type {
   CCPermissions,
   CCSettings,
@@ -27,6 +28,11 @@ import { CLAUDIAN_ONLY_FIELDS } from './migrationConstants';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /** Path to CC settings file relative to vault root. */
+export function getCCSettingsPath(): string {
+  return getVaultClaudePath('settings.json');
+}
+
+/** @deprecated Use getCCSettingsPath() instead */
 export const CC_SETTINGS_PATH = '.claude/settings.json';
 
 /** Schema URL for CC settings. */
@@ -95,11 +101,12 @@ export class CCSettingsStorage {
    * Throws if file exists but cannot be read or parsed.
    */
   async load(): Promise<CCSettings> {
-    if (!(await this.adapter.exists(CC_SETTINGS_PATH))) {
+    const settingsPath = getCCSettingsPath();
+    if (!(await this.adapter.exists(settingsPath))) {
       return { ...DEFAULT_CC_SETTINGS };
     }
 
-    const content = await this.adapter.read(CC_SETTINGS_PATH);
+    const content = await this.adapter.read(settingsPath);
     const stored = JSON.parse(content) as Record<string, unknown>;
 
     // Check for legacy format and migrate if needed
@@ -131,9 +138,10 @@ export class CCSettingsStorage {
   async save(settings: CCSettings, stripClaudianFields: boolean = false): Promise<void> {
     // Load existing to preserve CC-specific fields we don't manage
     let existing: Record<string, unknown> = {};
-    if (await this.adapter.exists(CC_SETTINGS_PATH)) {
+    const settingsPath = getCCSettingsPath();
+    if (await this.adapter.exists(settingsPath)) {
       try {
-        const content = await this.adapter.read(CC_SETTINGS_PATH);
+        const content = await this.adapter.read(settingsPath);
         const parsed = JSON.parse(content) as Record<string, unknown>;
 
         // Only strip Claudian-only fields during explicit migration
@@ -168,11 +176,11 @@ export class CCSettingsStorage {
     }
 
     const content = JSON.stringify(merged, null, 2);
-    await this.adapter.write(CC_SETTINGS_PATH, content);
+    await this.adapter.write(getCCSettingsPath(), content);
   }
 
   async exists(): Promise<boolean> {
-    return this.adapter.exists(CC_SETTINGS_PATH);
+    return this.adapter.exists(getCCSettingsPath());
   }
 
   async getPermissions(): Promise<CCPermissions> {

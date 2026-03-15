@@ -252,6 +252,9 @@ export async function initializeTabService(
     service = new ClaudianService(plugin, mcpManager);
     unsubscribeReadyState = service.onReadyStateChange((ready) => {
       tab.ui.modelSelector?.setReady(ready);
+      if (ready) {
+        tab.ui.modelSelector?.refreshSdkModels();
+      }
     });
     tab.dom.eventCleanups.push(() => unsubscribeReadyState?.());
 
@@ -421,7 +424,7 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
 /**
  * Creates and wires the input toolbar for a tab.
  */
-function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
+function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin, options?: InitializeTabUIOptions): void {
   const { dom } = tab;
 
   const inputToolbar = dom.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
@@ -432,6 +435,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       permissionMode: plugin.settings.permissionMode,
     }),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
+    getSdkModels: options?.getSdkModels,
     onModelChange: async (model: ClaudeModel) => {
       plugin.settings.model = model;
       const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m) => m.value === model);
@@ -505,6 +509,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
 
 export interface InitializeTabUIOptions {
   getSdkCommands?: () => Promise<SlashCommand[]>;
+  getSdkModels?: () => Promise<{ value: string; label: string; description: string }[]>;
 }
 
 /**
@@ -552,7 +557,7 @@ export function initializeTabUI(
   initializeInstructionAndTodo(tab, plugin);
 
   // Initialize input toolbar
-  initializeInputToolbar(tab, plugin);
+  initializeInputToolbar(tab, plugin, options);
 
   // Update ChatState callbacks for UI updates
   state.callbacks = {
