@@ -418,6 +418,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName(t('settings.allowExternalAccess.name'))
+      .setDesc(t('settings.allowExternalAccess.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.allowExternalAccess)
+          .onChange(async (value) => {
+            this.plugin.settings.allowExternalAccess = value;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
     const platformKey = getCurrentPlatformKey();
     const isWindows = platformKey === 'windows';
     const platformLabel = isWindows ? 'Windows' : 'Unix';
@@ -466,7 +479,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t('settings.exportPaths.name'))
-      .setDesc(t('settings.exportPaths.desc'))
+      .setDesc(
+        this.plugin.settings.allowExternalAccess
+          ? t('settings.exportPaths.disabledDesc')
+          : t('settings.exportPaths.desc')
+      )
       .addTextArea((text) => {
         const placeholder = process.platform === 'win32'
           ? '~/Desktop\n~/Downloads\n%TEMP%'
@@ -474,6 +491,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text
           .setPlaceholder(placeholder)
           .setValue(this.plugin.settings.allowedExportPaths.join('\n'))
+          .setDisabled(this.plugin.settings.allowExternalAccess)
           .onChange(async (value) => {
             this.plugin.settings.allowedExportPaths = value
               .split(/\r?\n/)

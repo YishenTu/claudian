@@ -196,6 +196,10 @@
       "name": "Befehlsblockliste aktivieren",
       "desc": "Blockiert potenziell gefährliche Bash-Befehle"
     },
+    "allowExternalAccess": {
+      "name": "Externen Zugriff erlauben",
+      "desc": "Erlaubt Datei- und Befehlszugriff außerhalb des Vault-Verzeichnisses für neue Sitzungen. Bestehende Sitzungen behalten ihren aktuellen Beschränkungsstatus bis zum Neustart. Das Deaktivieren der Vault-Beschränkung kann sensible Dateien für Prompt-Injection anfällig machen."
+    },
     "blockedCommands": {
       "name": "Blockierte Befehle ({platform})",
       "desc": "Muster zum Blockieren auf {platform} (einer pro Zeile). Unterstützt Regex.",
@@ -204,7 +208,8 @@
     },
     "exportPaths": {
       "name": "Zugelassene Exportpfade",
-      "desc": "Pfade außerhalb des Vaults, in die Dateien exportiert werden können (einer pro Zeile). Unterstützt ~ für Home-Verzeichnis."
+      "desc": "Nur-Schreib-Ziele außerhalb des Vaults, wenn externer Zugriff deaktiviert ist (einer pro Zeile). Unterstützt ~ für das Home-Verzeichnis.",
+      "disabledDesc": "Wird ignoriert, solange externer Zugriff aktiviert ist. Deaktiviere externen Zugriff, um Nur-Schreib-Exportpfade zu erzwingen."
     },
     "environment": "Umgebung",
     "customVariables": {

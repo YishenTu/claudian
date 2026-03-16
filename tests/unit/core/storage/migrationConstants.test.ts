@@ -14,6 +14,7 @@ describe('migrationConstants', () => {
 
     it('contains all expected security settings', () => {
       expect(CLAUDIAN_ONLY_FIELDS.has('enableBlocklist')).toBe(true);
+      expect(CLAUDIAN_ONLY_FIELDS.has('allowExternalAccess')).toBe(true);
       expect(CLAUDIAN_ONLY_FIELDS.has('blockedCommands')).toBe(true);
       expect(CLAUDIAN_ONLY_FIELDS.has('permissionMode')).toBe(true);
       expect(CLAUDIAN_ONLY_FIELDS.has('lastNonPlanPermissionMode')).toBe(true);
@@ -63,6 +64,7 @@ describe('migrationConstants', () => {
 
     it('contains security settings', () => {
       expect(MIGRATABLE_CLAUDIAN_FIELDS.has('enableBlocklist')).toBe(true);
+      expect(MIGRATABLE_CLAUDIAN_FIELDS.has('allowExternalAccess')).toBe(true);
       expect(MIGRATABLE_CLAUDIAN_FIELDS.has('blockedCommands')).toBe(true);
       expect(MIGRATABLE_CLAUDIAN_FIELDS.has('permissionMode')).toBe(true);
     });

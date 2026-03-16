@@ -283,7 +283,7 @@ export class InlineEditService {
 
     const options: Options = {
       cwd: vaultPath,
-      systemPrompt: getInlineEditSystemPrompt(),
+      systemPrompt: getInlineEditSystemPrompt(this.plugin.settings.allowExternalAccess),
       model: this.plugin.settings.model,
       abortController: this.abortController,
       pathToClaudeCodeExecutable: resolvedClaudePath,
@@ -299,10 +299,9 @@ export class InlineEditService {
         ? ['user', 'project']
         : ['project'],
       hooks: {
-        PreToolUse: [
-          createReadOnlyHook(),
-          createVaultRestrictionHook(vaultPath),
-        ],
+        PreToolUse: this.plugin.settings.allowExternalAccess
+          ? [createReadOnlyHook()]
+          : [createReadOnlyHook(), createVaultRestrictionHook(vaultPath)],
       },
     };
 

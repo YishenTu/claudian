@@ -17,6 +17,7 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
 
   // Security settings
   'enableBlocklist',
+  'allowExternalAccess',
   'blockedCommands',
   'permissionMode',
   'lastNonPlanPermissionMode',
@@ -59,6 +60,7 @@ export const CLAUDIAN_ONLY_FIELDS = new Set([
 export const MIGRATABLE_CLAUDIAN_FIELDS = new Set([
   'userName',
   'enableBlocklist',
+  'allowExternalAccess',
   'blockedCommands',
   'permissionMode',
   'lastNonPlanPermissionMode',

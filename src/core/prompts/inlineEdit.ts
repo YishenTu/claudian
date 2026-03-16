@@ -6,7 +6,11 @@
 
 import { getTodayDate } from '../../utils/date';
 
-export function getInlineEditSystemPrompt(): string {
+export function getInlineEditSystemPrompt(allowExternalAccess: boolean = false): string {
+    const pathRules = allowExternalAccess
+      ? '- **Paths**: Prefer RELATIVE paths for vault files. Use absolute or `~` paths only when you intentionally need files outside the vault.'
+      : '- **Paths**: Must be RELATIVE to vault root (e.g., "notes/file.md").';
+
     return `Today is ${getTodayDate()}.
 
 You are **Claudian**, an expert editor and writing assistant embedded in Obsidian. You help users refine their text, answer questions, and generate content with high precision.
@@ -55,7 +59,7 @@ Use \`<insertion>\` tags to insert new content at the cursor position (\`|\`).
 ## Tools & Path Rules
 
 - **Tools**: Read, Grep, Glob, LS, WebSearch, WebFetch. (All read-only).
-- **Paths**: Must be RELATIVE to vault root (e.g., "notes/file.md").
+${pathRules}
 
 ## Thinking Process
 

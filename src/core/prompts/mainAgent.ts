@@ -11,16 +11,79 @@ export interface SystemPromptSettings {
   mediaFolder?: string;
   customPrompt?: string;
   allowedExportPaths?: string[];
+  allowExternalAccess?: boolean;
   vaultPath?: string;
   userName?: string;
 }
 
-function getBaseSystemPrompt(vaultPath?: string, userName?: string): string {
+function getPathRules(vaultPath?: string, allowExternalAccess: boolean = false): string {
+  if (!allowExternalAccess) {
+    return `## Path Rules (MUST FOLLOW)
+
+| Location | Access | Path Format | Example |
+|----------|--------|-------------|---------|
+| **Vault** | Read/Write | Relative from vault root | \`notes/my-note.md\`, \`.\` |
+| **Export paths** | Write-only | \`~\` or absolute | \`~/Desktop/output.docx\` |
+| **External contexts** | Full access | Absolute path | \`/Users/me/Workspace/file.ts\` |
+
+**Vault files** (default):
+- ✓ Correct: \`notes/my-note.md\`, \`my-note.md\`, \`folder/subfolder/file.md\`, \`.\`
+- ✗ WRONG: \`/notes/my-note.md\`, \`${vaultPath || '/absolute/path'}/file.md\`
+- A leading slash or absolute path will FAIL for vault operations.
+
+**Path specificity**: When paths overlap, the **more specific path wins**:
+- If \`~/Desktop\` is export (write-only) and \`~/Desktop/Workspace\` is external context (full access)
+- → Files in \`~/Desktop/Workspace\` have full read/write access
+- → Files directly in \`~/Desktop\` remain write-only`;
+  }
+
+  return `## Path Rules (MUST FOLLOW)
+
+| Location | Access | Path Format | Example |
+|----------|--------|-------------|---------|
+| **Vault** | Read/Write | Relative from vault root preferred | \`notes/my-note.md\`, \`.\` |
+| **External paths** | Read/Write | \`~\` or absolute | \`~/Desktop/output.docx\`, \`/Users/me/Workspace/file.ts\` |
+| **Session external contexts** | Full access | Absolute path | \`/Users/me/Workspace\` |
+
+**Vault files**:
+- Prefer relative paths for files inside the vault.
+- Absolute vault paths are allowed when needed, but relative paths are usually simpler and less error-prone.
+
+**External files**:
+- Use absolute or \`~\` paths for files outside the vault.
+- Be explicit about the target path and avoid broad filesystem operations unless they are necessary.
+
+**Path specificity**:
+- When multiple directories could match, use the narrowest path that fits the task.
+- Prefer the most specific external directory instead of a broad parent path.`;
+}
+
+function getSubagentPathRules(allowExternalAccess: boolean = false): string {
+  if (!allowExternalAccess) {
+    return `**CRITICAL - Subagent Path Rules:**
+- Subagents inherit the vault as their working directory.
+- Reference files using **RELATIVE** paths.
+- NEVER use absolute paths in subagent prompts.`;
+  }
+
+  return `**CRITICAL - Subagent Path Rules:**
+- Subagents inherit the vault as their working directory.
+- Reference vault files using **RELATIVE** paths.
+- Use absolute or \`~\` paths only when you intentionally need files outside the vault.`;
+}
+
+function getBaseSystemPrompt(
+  vaultPath?: string,
+  userName?: string,
+  allowExternalAccess: boolean = false
+): string {
   const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
   const trimmedUserName = userName?.trim();
   const userContext = trimmedUserName
     ? `## User Context\n\nYou are collaborating with **${trimmedUserName}**.\n\n`
     : '';
+  const pathRules = getPathRules(vaultPath, allowExternalAccess);
+  const subagentPathRules = getSubagentPathRules(allowExternalAccess);
 
   return `${userContext}## Time Context
 
@@ -39,23 +102,7 @@ You are **Claudian**, an expert AI assistant specialized in Obsidian vault manag
 
 The current working directory is the user's vault root.${vaultInfo}
 
-## Path Rules (MUST FOLLOW)
-
-| Location | Access | Path Format | Example |
-|----------|--------|-------------|---------|
-| **Vault** | Read/Write | Relative from vault root | \`notes/my-note.md\`, \`.\` |
-| **Export paths** | Write-only | \`~\` or absolute | \`~/Desktop/output.docx\` |
-| **External contexts** | Full access | Absolute path | \`/Users/me/Workspace/file.ts\` |
-
-**Vault files** (default):
-- ✓ Correct: \`notes/my-note.md\`, \`my-note.md\`, \`folder/subfolder/file.md\`, \`.\`
-- ✗ WRONG: \`/notes/my-note.md\`, \`${vaultPath || '/absolute/path'}/file.md\`
-- A leading slash or absolute path will FAIL for vault operations.
-
-**Path specificity**: When paths overlap, the **more specific path wins**:
-- If \`~/Desktop\` is export (write-only) and \`~/Desktop/Workspace\` is external context (full access)
-- → Files in \`~/Desktop/Workspace\` have full read/write access
-- → Files directly in \`~/Desktop\` remain write-only
+${pathRules}
 
 ## User Message Format
 
@@ -146,10 +193,7 @@ Use WebSearch strictly according to the following logic:
 
 Spawn subagents for complex multi-step tasks. Parameters: \`prompt\`, \`description\`, \`subagent_type\`, \`run_in_background\`.
 
-**CRITICAL - Subagent Path Rules:**
-- Subagents inherit the vault as their working directory.
-- Reference files using **RELATIVE** paths.
-- NEVER use absolute paths in subagent prompts.
+${subagentPathRules}
 
 **When to use:**
 - Parallelizable work (main + subagent or multiple subagents)
@@ -265,8 +309,10 @@ Then read with \`Read file_path="${examplePath}$img_name"\`, and replace the mar
 **Benefits**: Image becomes a permanent vault asset, works offline, and uses Obsidian's native embed syntax.`;
 }
 
-/** Returns instructions for allowed export paths (write-only paths outside vault). */
-function getExportInstructions(allowedExportPaths: string[]): string {
+function getExportInstructions(
+  allowedExportPaths: string[],
+  allowExternalAccess: boolean = false
+): string {
   if (allowedExportPaths.length === 0) {
     return '';
   }
@@ -277,12 +323,16 @@ function getExportInstructions(allowedExportPaths: string[]): string {
   }
 
   const formattedPaths = uniquePaths.map((p) => `- ${p}`).join('\n');
+  const heading = allowExternalAccess ? 'Preferred Export Paths' : 'Allowed Export Paths';
+  const description = allowExternalAccess
+    ? 'Suggested destinations for exports outside the vault:'
+    : 'Write-only destinations outside the vault:';
 
   return `
 
-## Allowed Export Paths
+## ${heading}
 
-Write-only destinations outside the vault:
+${description}
 
 ${formattedPaths}
 
@@ -296,11 +346,13 @@ cp ./note.md ~/Desktop/note.md
 
 
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
-  let prompt = getBaseSystemPrompt(settings.vaultPath, settings.userName);
+  const allowExternalAccess = settings.allowExternalAccess ?? false;
+
+  let prompt = getBaseSystemPrompt(settings.vaultPath, settings.userName, allowExternalAccess);
 
   // Stable content (ordered for context cache optimization)
   prompt += getImageInstructions(settings.mediaFolder || '');
-  prompt += getExportInstructions(settings.allowedExportPaths || []);
+  prompt += getExportInstructions(settings.allowedExportPaths || [], allowExternalAccess);
 
   if (settings.customPrompt?.trim()) {
     prompt += '\n\n## Custom Instructions\n\n' + settings.customPrompt.trim();

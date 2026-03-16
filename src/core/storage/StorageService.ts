@@ -71,6 +71,7 @@ interface LegacySettingsJson {
   // Old Claudian fields that were in settings.json
   userName?: string;
   enableBlocklist?: boolean;
+  allowExternalAccess?: boolean;
   blockedCommands?: unknown;
   model?: string;
   thinkingBudget?: string;
@@ -227,6 +228,7 @@ export class StorageService {
     const claudianFields: Partial<StoredClaudianSettings> = {
       userName: oldSettings.userName ?? DEFAULT_SETTINGS.userName,
       enableBlocklist: oldSettings.enableBlocklist ?? DEFAULT_SETTINGS.enableBlocklist,
+      allowExternalAccess: oldSettings.allowExternalAccess ?? DEFAULT_SETTINGS.allowExternalAccess,
       blockedCommands: normalizeBlockedCommands(oldSettings.blockedCommands),
       model: (oldSettings.model as ClaudeModel) ?? DEFAULT_SETTINGS.model,
       thinkingBudget: (oldSettings.thinkingBudget as StoredClaudianSettings['thinkingBudget']) ?? DEFAULT_SETTINGS.thinkingBudget,

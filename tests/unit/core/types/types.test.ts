@@ -36,6 +36,10 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.enableBlocklist).toBe(true);
     });
 
+    it('should have allowExternalAccess set to false by default', () => {
+      expect(DEFAULT_SETTINGS.allowExternalAccess).toBe(false);
+    });
+
     it('should have default blocked commands as platform-keyed object', () => {
       expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('unix');
       expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('windows');
@@ -91,6 +95,7 @@ describe('types.ts', () => {
       const settings: ClaudianSettings = {
         userName: '',
         enableBlocklist: false,
+        allowExternalAccess: false,
         blockedCommands: { unix: ['test'], windows: ['test-win'] },
         model: 'haiku',
         enableAutoTitleGeneration: true,
@@ -129,6 +134,7 @@ describe('types.ts', () => {
       const settings: ClaudianSettings = {
         userName: '',
         enableBlocklist: true,
+        allowExternalAccess: false,
         blockedCommands: { unix: [], windows: [] },
         model: 'anthropic/custom-model-v1',
         enableAutoTitleGeneration: true,
@@ -165,6 +171,7 @@ describe('types.ts', () => {
       const settings: ClaudianSettings = {
         userName: '',
         enableBlocklist: true,
+        allowExternalAccess: false,
         blockedCommands: { unix: [], windows: [] },
         model: 'sonnet',
         enableAutoTitleGeneration: true,

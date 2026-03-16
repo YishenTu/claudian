@@ -50,6 +50,7 @@ describe('ClaudianService', () => {
         thinkingBudget: 0,
         blockedCommands: [],
         enableBlocklist: false,
+        allowExternalAccess: false,
         mediaFolder: 'claudian-media',
         systemPrompt: '',
         allowedExportPaths: [],
@@ -2853,6 +2854,17 @@ describe('ClaudianService', () => {
       });
 
       expect(result.continue).toBe(true);
+    });
+  });
+
+  describe('buildHooks - external access', () => {
+    it('should omit vault restriction hook when external access is enabled', () => {
+      (mockPlugin.settings as any).allowExternalAccess = true;
+
+      const hooks = (service as any).buildHooks();
+
+      expect(hooks.PreToolUse).toHaveLength(1);
+      expect(hooks.PreToolUse[0].matcher).toBe('Bash');
     });
   });
 

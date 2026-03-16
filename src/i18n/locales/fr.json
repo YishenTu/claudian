@@ -196,6 +196,10 @@
       "name": "Activer la liste noire de commandes",
       "desc": "Bloque les commandes bash potentiellement dangereuses"
     },
+    "allowExternalAccess": {
+      "name": "Autoriser l'accès externe",
+      "desc": "Autorise l'accès aux fichiers et commandes en dehors du répertoire du coffre pour les nouvelles sessions. Les sessions existantes conservent leur état de restriction actuel jusqu'au redémarrage. La désactivation de la restriction du coffre peut exposer des fichiers sensibles à l'injection de prompt."
+    },
     "blockedCommands": {
       "name": "Commandes bloquées ({platform})",
       "desc": "Modèles à bloquer sur {platform} (un par ligne). Supporte les expressions régulières.",
@@ -204,7 +208,8 @@
     },
     "exportPaths": {
       "name": "Chemins d'exportation autorisés",
-      "desc": "Chemins en dehors du coffre où les fichiers peuvent être exportés (un par ligne). Supporte ~ pour le répertoire home."
+      "desc": "Destinations en écriture seule hors du coffre lorsque l'accès externe est désactivé (une par ligne). Supporte ~ pour le répertoire personnel.",
+      "disabledDesc": "Ignoré tant que l'accès externe est activé. Désactivez l'accès externe pour appliquer des chemins d'export en écriture seule."
     },
     "environment": "Environnement",
     "customVariables": {

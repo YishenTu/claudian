@@ -196,6 +196,10 @@
       "name": "Enable command blocklist",
       "desc": "Block potentially dangerous bash commands"
     },
+    "allowExternalAccess": {
+      "name": "Allow external access",
+      "desc": "Allow file and command access outside the vault directory for new sessions. Existing sessions keep their current restriction state until restarted. Disabling vault restriction may expose sensitive files to prompt injection."
+    },
     "blockedCommands": {
       "name": "Blocked commands ({platform})",
       "desc": "Patterns to block on {platform} (one per line). Supports regex.",
@@ -204,7 +208,8 @@
     },
     "exportPaths": {
       "name": "Allowed export paths",
-      "desc": "Paths outside the vault where files can be exported (one per line). Supports ~ for home directory."
+      "desc": "Write-only destinations outside the vault when external access is off (one per line). Supports ~ for home directory.",
+      "disabledDesc": "Ignored while external access is enabled. Turn off external access to enforce write-only export paths."
     },
     "environment": "Environment",
     "customVariables": {

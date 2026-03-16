@@ -500,6 +500,10 @@ export class ClaudianService {
       enableBlocklist: this.plugin.settings.enableBlocklist,
     }));
 
+    if (this.plugin.settings.allowExternalAccess) {
+      return { PreToolUse: [blocklistHook] };
+    }
+
     const vaultRestrictionHook = createVaultRestrictionHook({
       getPathAccessType: (p) => {
         if (!this.vaultPath) return 'vault';

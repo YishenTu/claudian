@@ -174,12 +174,15 @@ export type TranslationKey =
   | 'settings.loadUserSettings.desc'
   | 'settings.enableBlocklist.name'
   | 'settings.enableBlocklist.desc'
+  | 'settings.allowExternalAccess.name'
+  | 'settings.allowExternalAccess.desc'
   | 'settings.blockedCommands.name'
   | 'settings.blockedCommands.desc'
   | 'settings.blockedCommands.unixName'
   | 'settings.blockedCommands.unixDesc'
   | 'settings.exportPaths.name'
   | 'settings.exportPaths.desc'
+  | 'settings.exportPaths.disabledDesc'
 
   // Settings - Environment
   | 'settings.environment'

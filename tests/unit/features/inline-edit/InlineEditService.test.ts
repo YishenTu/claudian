@@ -29,6 +29,7 @@ function createMockPlugin(settings = {}) {
     settings: {
       model: 'sonnet',
       thinkingBudget: 'off',
+      allowExternalAccess: false,
       ...settings,
     },
     app: {
@@ -464,6 +465,38 @@ describe('InlineEditService', () => {
 
       const options = getLastOptions();
       expect(options?.permissionMode).toBe('bypassPermissions');
+    });
+
+    it('should omit vault restriction hook when external access is enabled', async () => {
+      mockPlugin.settings.allowExternalAccess = true;
+      service = new InlineEditService(mockPlugin);
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>fixed</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      const options = getLastOptions();
+      expect(options?.hooks?.PreToolUse).toHaveLength(1);
+
+      const hookResult = await callHook(
+        options?.hooks?.PreToolUse?.[0].hooks[0],
+        { tool_name: 'Read', tool_input: { file_path: '/etc/passwd' } },
+        'tool-allow-external',
+        {},
+      );
+      expect(hookResult.continue).toBe(true);
     });
 
     it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {

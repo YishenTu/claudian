@@ -196,6 +196,10 @@
       "name": "Habilitar lista negra de comandos",
       "desc": "Bloquea comandos bash potencialmente peligrosos"
     },
+    "allowExternalAccess": {
+      "name": "Permitir acceso externo",
+      "desc": "Permite el acceso a archivos y comandos fuera del directorio del vault para nuevas sesiones. Las sesiones existentes mantienen su estado actual de restricción hasta reiniciarse. Desactivar la restricción del vault puede exponer archivos sensibles a inyección de prompts."
+    },
     "blockedCommands": {
       "name": "Comandos bloqueados ({platform})",
       "desc": "Patrones a bloquear en {platform} (uno por línea). Soporta expresiones regulares.",
@@ -204,7 +208,8 @@
     },
     "exportPaths": {
       "name": "Rutas de exportación permitidas",
-      "desc": "Rutas fuera del depósito donde se pueden exportar archivos (una por línea). Soporta ~ para el directorio home."
+      "desc": "Destinos de solo escritura fuera del vault cuando el acceso externo está desactivado (uno por línea). Admite ~ para el directorio personal.",
+      "disabledDesc": "Se ignora mientras el acceso externo esté activado. Desactiva el acceso externo para aplicar rutas de exportación de solo escritura."
     },
     "environment": "Entorno",
     "customVariables": {

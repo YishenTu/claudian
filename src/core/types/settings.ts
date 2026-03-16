@@ -239,6 +239,7 @@ export interface ClaudianSettings {
 
   // Security (Claudian-specific, CC uses permissions.deny instead)
   enableBlocklist: boolean;
+  allowExternalAccess: boolean;
   blockedCommands: PlatformBlockedCommands;
   permissionMode: PermissionMode;
 
@@ -304,6 +305,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
 
   // Security
   enableBlocklist: true,
+  allowExternalAccess: false,
   blockedCommands: getDefaultBlockedCommands(),
   permissionMode: 'yolo',
 
