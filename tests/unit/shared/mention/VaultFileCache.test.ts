@@ -1,6 +1,6 @@
 import type { App, TFile } from 'obsidian';
 
-import { VaultFileCache } from '@/features/chat/ui/file-context/state/VaultFileCache';
+import { VaultFileCache } from '@/shared/mention/VaultMentionCache';
 
 describe('VaultFileCache', () => {
   let mockApp: App;

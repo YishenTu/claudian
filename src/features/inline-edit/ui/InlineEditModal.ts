@@ -1,13 +1,14 @@
 import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import type { DecorationSet } from '@codemirror/view';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
-import type { App, Editor, MarkdownView, TFile } from 'obsidian';
+import type { App, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
   createExternalContextLookupGetter,
   findBestMentionLookupMatch,
@@ -21,7 +22,6 @@ import { buildExternalContextDisplayEntries } from '../../../utils/externalConte
 import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { escapeHtml, normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
-import { VaultFolderCache } from '../../chat/ui/file-context/state/VaultFolderCache';
 import { type InlineEditMode, InlineEditService } from '../InlineEditService';
 
 export type InlineEditContext =
@@ -270,8 +270,7 @@ class InlineEditController {
   private isConversing = false;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
-  private folderCache: VaultFolderCache | null = null;
-  private hasShownVaultFilesError = false;
+  private mentionDataProvider: VaultMentionDataProvider;
 
   constructor(
     private app: App,
@@ -284,6 +283,11 @@ class InlineEditController {
     private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void
   ) {
     this.inlineEditService = new InlineEditService(plugin);
+    this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
+      onFileLoadError: () => {
+        new Notice('Failed to load vault files. Vault @-mentions may be unavailable.');
+      },
+    });
     this.mode = editContext.mode;
     if (editContext.mode === 'cursor') {
       this.cursorContext = editContext.cursorContext;
@@ -424,7 +428,6 @@ class InlineEditController {
       }
     );
 
-    this.folderCache = new VaultFolderCache(this.app);
     this.mentionDropdown = new MentionDropdownController(
       document.body,
       this.inputEl,
@@ -436,9 +439,8 @@ class InlineEditController {
         setMentionedMcpServers: () => false,
         addMentionedMcpServer: () => {},
         getExternalContexts: this.getExternalContexts,
-        getCachedVaultFolders: () =>
-          this.folderCache?.getFolders().map(f => ({ name: f.name, path: f.path })) ?? [],
-        getCachedVaultFiles: () => this.getVaultFilesSafely(),
+        getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
+        getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
         normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
       },
       { fixed: true }
@@ -549,17 +551,7 @@ class InlineEditController {
       }),
     });
 
-    if (this.escHandler) {
-      document.removeEventListener('keydown', this.escHandler);
-    }
-    this.escHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.isComposing) {
-        this.reject();
-      } else if (e.key === 'Enter' && !e.isComposing) {
-        this.accept();
-      }
-    };
-    document.addEventListener('keydown', this.escHandler);
+    this.installAcceptRejectHandler();
   }
 
   private showInsertionInPlace() {
@@ -581,6 +573,10 @@ class InlineEditController {
       }),
     });
 
+    this.installAcceptRejectHandler();
+  }
+
+  private installAcceptRejectHandler() {
     if (this.escHandler) {
       document.removeEventListener('keydown', this.escHandler);
     }
@@ -640,7 +636,6 @@ class InlineEditController {
 
     this.mentionDropdown?.destroy();
     this.mentionDropdown = null;
-    this.folderCache = null;
 
     if (activeController === this) {
       activeController = null;
@@ -688,7 +683,7 @@ class InlineEditController {
   private resolveContextFilesFromMessage(message: string): string[] {
     if (!message.includes('@')) return [];
 
-    const vaultFiles = this.getVaultFilesSafely();
+    const vaultFiles = this.mentionDataProvider.getCachedVaultFiles();
 
     const pathLookup = new Map<string, string>();
     for (const file of vaultFiles) {
@@ -729,18 +724,6 @@ class InlineEditController {
     }
 
     return [...resolved];
-  }
-
-  private getVaultFilesSafely(): TFile[] {
-    try {
-      return this.app.vault.getFiles();
-    } catch {
-      if (!this.hasShownVaultFilesError) {
-        this.hasShownVaultFilesError = true;
-        new Notice('Failed to load vault files. Vault @-mentions may be unavailable.');
-      }
-      return [];
-    }
   }
 
 }

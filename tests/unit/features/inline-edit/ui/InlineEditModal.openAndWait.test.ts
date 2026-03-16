@@ -1,8 +1,8 @@
 import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 
-import { VaultFolderCache } from '@/features/chat/ui/file-context/state/VaultFolderCache';
 import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
+import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 import * as editorUtils from '@/utils/editor';
 
 const mentionDropdownCtor = jest.fn();

@@ -4,6 +4,7 @@ import { Notice, TFile } from 'obsidian';
 import type { AgentManager } from '../../../core/agents';
 import type { McpServerManager } from '../../../core/mcp';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
   createExternalContextLookupGetter,
   isMentionStart,
@@ -13,8 +14,6 @@ import { buildExternalContextDisplayEntries } from '../../../utils/externalConte
 import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import { FileContextState } from './file-context/state/FileContextState';
-import { VaultFileCache } from './file-context/state/VaultFileCache';
-import { VaultFolderCache } from './file-context/state/VaultFolderCache';
 import { FileChipsView } from './file-context/view/FileChipsView';
 
 export interface FileContextCallbacks {
@@ -32,8 +31,7 @@ export class FileContextManager {
   private dropdownContainerEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private state: FileContextState;
-  private fileCache: VaultFileCache;
-  private folderCache: VaultFolderCache;
+  private mentionDataProvider: VaultMentionDataProvider;
   private chipsView: FileChipsView;
   private mentionDropdown: MentionDropdownController;
   private deleteEventRef: EventRef | null = null;
@@ -59,10 +57,8 @@ export class FileContextManager {
     this.callbacks = callbacks;
 
     this.state = new FileContextState();
-    this.fileCache = new VaultFileCache(this.app);
-    this.fileCache.initializeInBackground();
-    this.folderCache = new VaultFolderCache(this.app);
-    this.folderCache.initializeInBackground();
+    this.mentionDataProvider = new VaultMentionDataProvider(this.app);
+    this.mentionDataProvider.initializeInBackground();
 
     this.chipsView = new FileChipsView(this.chipsContainerEl, {
       onRemoveAttachment: (filePath) => {
@@ -97,9 +93,8 @@ export class FileContextManager {
         setMentionedMcpServers: (mentions) => this.state.setMentionedMcpServers(mentions),
         addMentionedMcpServer: (name) => this.state.addMentionedMcpServer(name),
         getExternalContexts: () => this.callbacks.getExternalContexts?.() || [],
-        getCachedVaultFolders: () =>
-          this.folderCache.getFolders().map(folder => ({ name: folder.name, path: folder.path })),
-        getCachedVaultFiles: () => this.fileCache.getFiles(),
+        getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
+        getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
         normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
       }
     );
@@ -195,11 +190,11 @@ export class FileContextManager {
   }
 
   markFileCacheDirty() {
-    this.fileCache.markDirty();
+    this.mentionDataProvider.markFilesDirty();
   }
 
   markFolderCacheDirty() {
-    this.folderCache.markDirty();
+    this.mentionDataProvider.markFoldersDirty();
   }
 
   /** Handles input changes to detect @ mentions. */
@@ -225,7 +220,35 @@ export class FileContextManager {
   }
 
   transformContextMentions(text: string): string {
-    return this.transformPastedExternalContextMentions(text);
+    const externalContexts = this.callbacks.getExternalContexts?.() || [];
+    if (externalContexts.length === 0 || !text.includes('@')) return text;
+
+    const contextEntries = buildExternalContextDisplayEntries(externalContexts)
+      .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
+    const getContextLookup = createExternalContextLookupGetter(
+      contextRoot => externalContextScanner.scanPaths([contextRoot])
+    );
+
+    let replaced = false;
+    let cursor = 0;
+    const chunks: string[] = [];
+
+    for (let index = 0; index < text.length; index++) {
+      if (!isMentionStart(text, index)) continue;
+
+      const resolved = resolveExternalMentionAtIndex(text, index, contextEntries, getContextLookup);
+      if (!resolved) continue;
+
+      chunks.push(text.slice(cursor, index));
+      chunks.push(`${resolved.resolvedPath}${resolved.trailingPunctuation}`);
+      cursor = resolved.endIndex;
+      index = resolved.endIndex - 1;
+      replaced = true;
+    }
+
+    if (!replaced) return text;
+    chunks.push(text.slice(cursor));
+    return chunks.join('');
   }
 
   /** Cleans up event listeners (call on view close). */
@@ -332,38 +355,6 @@ export class FileContextManager {
 
   updateMcpMentionsFromText(text: string): void {
     this.mentionDropdown.updateMcpMentionsFromText(text);
-  }
-
-  private transformPastedExternalContextMentions(text: string): string {
-    const externalContexts = this.callbacks.getExternalContexts?.() || [];
-    if (externalContexts.length === 0 || !text.includes('@')) return text;
-
-    const contextEntries = buildExternalContextDisplayEntries(externalContexts)
-      .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
-    const getContextLookup = createExternalContextLookupGetter(
-      contextRoot => externalContextScanner.scanPaths([contextRoot])
-    );
-
-    let replaced = false;
-    let cursor = 0;
-    const chunks: string[] = [];
-
-    for (let index = 0; index < text.length; index++) {
-      if (!isMentionStart(text, index)) continue;
-
-      const resolved = resolveExternalMentionAtIndex(text, index, contextEntries, getContextLookup);
-      if (!resolved) continue;
-
-      chunks.push(text.slice(cursor, index));
-      chunks.push(`${resolved.resolvedPath}${resolved.trailingPunctuation}`);
-      cursor = resolved.endIndex;
-      index = resolved.endIndex - 1;
-      replaced = true;
-    }
-
-    if (!replaced) return text;
-    chunks.push(text.slice(cursor));
-    return chunks.join('');
   }
 
   private hasExcludedTag(file: TFile): boolean {

@@ -530,13 +530,18 @@ describe('MentionDropdownController', () => {
       localController.destroy();
     });
 
-    it('prioritizes name starts-with matches then sorts by path', () => {
+    it('prioritizes name starts-with matches then sorts by mtime', () => {
       const localCallbacks = createMockCallbacks({
         getCachedVaultFolders: jest.fn().mockReturnValue([
           { name: 'helpers', path: 'lib/src-utils' },
           { name: 'src-core', path: 'src-core' },
           { name: 'src-app', path: 'src-app' },
         ]),
+        getCachedVaultFiles: jest.fn().mockReturnValue([
+          { path: 'src-core/main.ts', name: 'main.ts', stat: { mtime: 3000 } },
+          { path: 'src-app/index.ts', name: 'index.ts', stat: { mtime: 1000 } },
+          { path: 'lib/src-utils/helper.ts', name: 'helper.ts', stat: { mtime: 2000 } },
+        ] as any[]),
       });
       const localInput = createMockInput();
       const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
@@ -548,9 +553,11 @@ describe('MentionDropdownController', () => {
 
       const renderOptions = getLatestDropdownRenderOptions();
       const folderItems = renderOptions.items.filter((item: any) => item.type === 'folder');
+      // starts-with matches first (src-core, src-app), sorted by derived mtime desc
+      // src-core has file mtime 3000, src-app has 1000, lib/src-utils has 2000
       expect(folderItems.map((item: any) => item.path)).toEqual([
-        'src-app',
         'src-core',
+        'src-app',
         'lib/src-utils',
       ]);
 
@@ -685,18 +692,18 @@ describe('MentionDropdownController', () => {
       localController.destroy();
     });
 
-    it('applies the same path-based ranking across files and folders', () => {
+    it('sorts files and folders by mtime with alphabetical tiebreaker', () => {
+      const now = Date.now();
       const localCallbacks = createMockCallbacks({
         getCachedVaultFolders: jest.fn().mockReturnValue([
-          { name: 'alpha', path: 'alpha' },
+          { name: 'recent-folder', path: 'recent-folder' },
+          { name: 'old-folder', path: 'old-folder' },
         ]),
         getCachedVaultFiles: jest.fn().mockReturnValue([
-          {
-            path: 'zeta.md',
-            name: 'zeta.md',
-            stat: { mtime: Date.now() },
-          } as any,
-        ]),
+          { path: 'recent-folder/new.md', name: 'new.md', stat: { mtime: now } },
+          { path: 'old-folder/old.md', name: 'old.md', stat: { mtime: now - 5000 } },
+          { path: 'root-file.md', name: 'root-file.md', stat: { mtime: now - 2000 } },
+        ] as any[]),
       });
       const localInput = createMockInput();
       const localController = new MentionDropdownController(createMockEl(), localInput, localCallbacks);
@@ -710,9 +717,15 @@ describe('MentionDropdownController', () => {
       const vaultItems = renderOptions.items.filter(
         (item: any) => item.type === 'file' || item.type === 'folder'
       );
+      // mtime: recent-folder=now (from new.md), old-folder=now-5000 (from old.md)
+      // Files: new.md=now, root-file.md=now-2000, old.md=now-5000
+      // When mtime ties, files sort above folders
       expect(vaultItems.map((item: any) => ({ type: item.type, path: item.path }))).toEqual([
-        { type: 'folder', path: 'alpha' },
-        { type: 'file', path: 'zeta.md' },
+        { type: 'file', path: 'recent-folder/new.md' },
+        { type: 'folder', path: 'recent-folder' },
+        { type: 'file', path: 'root-file.md' },
+        { type: 'file', path: 'old-folder/old.md' },
+        { type: 'folder', path: 'old-folder' },
       ]);
 
       localController.destroy();

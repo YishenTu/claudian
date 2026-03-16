@@ -341,13 +341,30 @@ export class MentionDropdownController {
 
   private appendVaultItems(searchLower: string): number {
     type ScoredItem =
-      | { type: 'folder'; name: string; path: string; startsWithQuery: boolean }
-      | { type: 'file'; name: string; path: string; file: TFile; startsWithQuery: boolean };
+      | { type: 'folder'; name: string; path: string; startsWithQuery: boolean; mtime: number }
+      | { type: 'file'; name: string; path: string; file: TFile; startsWithQuery: boolean; mtime: number };
 
     const compare = (a: ScoredItem, b: ScoredItem): number => {
       if (a.startsWithQuery !== b.startsWithQuery) return a.startsWithQuery ? -1 : 1;
+      if (a.mtime !== b.mtime) return b.mtime - a.mtime;
+      if (a.type !== b.type) return a.type === 'file' ? -1 : 1;
       return a.path.localeCompare(b.path);
     };
+
+    const allFiles = this.callbacks.getCachedVaultFiles();
+
+    // Derive folder mtime from the most recently modified file within each folder
+    const folderMtimeMap = new Map<string, number>();
+    for (const f of allFiles) {
+      const parts = f.path.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const folderPath = parts.slice(0, i).join('/');
+        const existing = folderMtimeMap.get(folderPath) ?? 0;
+        if (f.stat.mtime > existing) {
+          folderMtimeMap.set(folderPath, f.stat.mtime);
+        }
+      }
+    }
 
     const scoredFolders: ScoredItem[] = this.callbacks.getCachedVaultFolders()
       .map(f => ({
@@ -363,11 +380,12 @@ export class MentionDropdownController {
         name: f.name,
         path: f.path,
         startsWithQuery: f.name.toLowerCase().startsWith(searchLower),
+        mtime: folderMtimeMap.get(f.path) ?? 0,
       }))
       .sort(compare)
       .slice(0, 50);
 
-    const scoredFiles: ScoredItem[] = this.callbacks.getCachedVaultFiles()
+    const scoredFiles: ScoredItem[] = allFiles
       .filter(f =>
         f.path.toLowerCase().includes(searchLower) || f.name.toLowerCase().includes(searchLower)
       )
@@ -377,6 +395,7 @@ export class MentionDropdownController {
         path: f.path,
         file: f,
         startsWithQuery: f.name.toLowerCase().startsWith(searchLower),
+        mtime: f.stat.mtime,
       }))
       .sort(compare)
       .slice(0, 100);
@@ -400,66 +419,75 @@ export class MentionDropdownController {
       selectedIndex: this.selectedMentionIndex,
       emptyText: 'No matches',
       getItemClass: (item) => {
-        if (item.type === 'mcp-server') return 'mcp-server';
-        if (item.type === 'folder') return 'vault-folder';
-        if (item.type === 'agent') return 'agent';
-        if (item.type === 'agent-folder') return 'agent-folder';
-        if (item.type === 'context-file') return 'context-file';
-        if (item.type === 'context-folder') return 'context-folder';
-        return undefined;
+        switch (item.type) {
+          case 'mcp-server': return 'mcp-server';
+          case 'folder': return 'vault-folder';
+          case 'agent': return 'agent';
+          case 'agent-folder': return 'agent-folder';
+          case 'context-file': return 'context-file';
+          case 'context-folder': return 'context-folder';
+          default: return undefined;
+        }
       },
       renderItem: (item, itemEl) => {
         const iconEl = itemEl.createSpan({ cls: 'claudian-mention-icon' });
-        if (item.type === 'mcp-server') {
-          iconEl.innerHTML = MCP_ICON_SVG;
-        } else if (item.type === 'folder') {
-          setIcon(iconEl, 'folder');
-        } else if (item.type === 'agent' || item.type === 'agent-folder') {
-          setIcon(iconEl, 'bot');
-        } else if (item.type === 'context-file') {
-          setIcon(iconEl, 'folder-open');
-        } else if (item.type === 'context-folder') {
-          setIcon(iconEl, 'folder');
-        } else {
-          setIcon(iconEl, 'file-text');
+        switch (item.type) {
+          case 'mcp-server':
+            iconEl.innerHTML = MCP_ICON_SVG;
+            break;
+          case 'agent':
+          case 'agent-folder':
+            setIcon(iconEl, 'bot');
+            break;
+          case 'context-file':
+            setIcon(iconEl, 'folder-open');
+            break;
+          case 'folder':
+          case 'context-folder':
+            setIcon(iconEl, 'folder');
+            break;
+          default:
+            setIcon(iconEl, 'file-text');
         }
 
         const textEl = itemEl.createSpan({ cls: 'claudian-mention-text' });
 
-        if (item.type === 'mcp-server') {
-          const nameEl = textEl.createSpan({ cls: 'claudian-mention-name' });
-          nameEl.setText(`@${item.name}`);
-        } else if (item.type === 'agent-folder') {
-          const nameEl = textEl.createSpan({
-            cls: 'claudian-mention-name claudian-mention-name-agent-folder',
-          });
-          nameEl.setText(`@${item.name}/`);
-        } else if (item.type === 'agent') {
-          const nameEl = textEl.createSpan({ cls: 'claudian-mention-name claudian-mention-name-agent' });
-          // Show ID (which is namespaced for plugin agents) for consistency with inserted text
-          nameEl.setText(`@${item.id}`);
-          if (item.description) {
-            const descEl = textEl.createSpan({ cls: 'claudian-mention-agent-desc' });
-            descEl.setText(item.description);
+        switch (item.type) {
+          case 'mcp-server':
+            textEl.createSpan({ cls: 'claudian-mention-name' }).setText(`@${item.name}`);
+            break;
+          case 'agent-folder':
+            textEl.createSpan({
+              cls: 'claudian-mention-name claudian-mention-name-agent-folder',
+            }).setText(`@${item.name}/`);
+            break;
+          case 'agent': {
+            // Show ID (which is namespaced for plugin agents) for consistency with inserted text
+            textEl.createSpan({
+              cls: 'claudian-mention-name claudian-mention-name-agent',
+            }).setText(`@${item.id}`);
+            if (item.description) {
+              textEl.createSpan({ cls: 'claudian-mention-agent-desc' }).setText(item.description);
+            }
+            break;
           }
-        } else if (item.type === 'context-folder') {
-          const nameEl = textEl.createSpan({
-            cls: 'claudian-mention-name claudian-mention-name-folder',
-          });
-          nameEl.setText(`@${item.name}/`);
-        } else if (item.type === 'context-file') {
-          const nameEl = textEl.createSpan({
-            cls: 'claudian-mention-name claudian-mention-name-context',
-          });
-          nameEl.setText(item.name);
-        } else if (item.type === 'folder') {
-          const nameEl = textEl.createSpan({
-            cls: 'claudian-mention-name claudian-mention-name-folder',
-          });
-          nameEl.setText(`@${item.path}/`);
-        } else {
-          const pathEl = textEl.createSpan({ cls: 'claudian-mention-path' });
-          pathEl.setText(item.path || item.name);
+          case 'context-folder':
+            textEl.createSpan({
+              cls: 'claudian-mention-name claudian-mention-name-folder',
+            }).setText(`@${item.name}/`);
+            break;
+          case 'context-file':
+            textEl.createSpan({
+              cls: 'claudian-mention-name claudian-mention-name-context',
+            }).setText(item.name);
+            break;
+          case 'folder':
+            textEl.createSpan({
+              cls: 'claudian-mention-name claudian-mention-name-folder',
+            }).setText(`@${item.path}/`);
+            break;
+          default:
+            textEl.createSpan({ cls: 'claudian-mention-path' }).setText(item.path || item.name);
         }
       },
       onItemClick: (item, index, e) => {
@@ -494,6 +522,11 @@ export class MentionDropdownController {
     dropdownEl.style.zIndex = '10001';
   }
 
+  private insertReplacement(beforeAt: string, replacement: string, afterCursor: string): void {
+    this.inputEl.value = beforeAt + replacement + afterCursor;
+    this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+  }
+
   private returnToFirstLevel(): void {
     const text = this.inputEl.value;
     const beforeAt = text.substring(0, this.mentionStartIndex);
@@ -522,65 +555,58 @@ export class MentionDropdownController {
     const cursorPos = this.inputEl.selectionStart || 0;
     const afterCursor = text.substring(cursorPos);
 
-    if (selectedItem.type === 'mcp-server') {
-      const replacement = `@${selectedItem.name} `;
-      this.inputEl.value = beforeAt + replacement + afterCursor;
-      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-
-      this.callbacks.addMentionedMcpServer(selectedItem.name);
-      this.callbacks.onMcpMentionChange?.(this.callbacks.getMentionedMcpServers());
-    } else if (selectedItem.type === 'agent-folder') {
-      // Don't modify input text - just show agents submenu
-      this.activeAgentFilter = true;
-      this.inputEl.focus();
-      this.showMentionDropdown('Agents/');
-      return;
-    } else if (selectedItem.type === 'agent') {
-      const replacement = `@${selectedItem.id} (agent) `;
-      this.inputEl.value = beforeAt + replacement + afterCursor;
-      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-
-      this.callbacks.onAgentMentionSelect?.(selectedItem.id);
-    } else if (selectedItem.type === 'context-folder') {
-      const replacement = `@${selectedItem.name}/`;
-      this.inputEl.value = beforeAt + replacement + afterCursor;
-      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-      this.inputEl.focus();
-
-      this.handleInputChange();
-      return;
-    } else if (selectedItem.type === 'context-file') {
-      // Display friendly name in input; absolute path resolution happens at send time.
-      const displayName = selectedItem.folderName
-        ? `@${selectedItem.folderName}/${selectedItem.name}`
-        : `@${selectedItem.name}`;
-
-      if (selectedItem.absolutePath) {
-        this.callbacks.onAttachFile(selectedItem.absolutePath);
+    switch (selectedItem.type) {
+      case 'mcp-server': {
+        const replacement = `@${selectedItem.name} `;
+        this.insertReplacement(beforeAt, replacement, afterCursor);
+        this.callbacks.addMentionedMcpServer(selectedItem.name);
+        this.callbacks.onMcpMentionChange?.(this.callbacks.getMentionedMcpServers());
+        break;
       }
-
-      const replacement = `${displayName} `;
-      this.inputEl.value = beforeAt + replacement + afterCursor;
-      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-    } else if (selectedItem.type === 'folder') {
-      const normalizedPath = this.callbacks.normalizePathForVault(selectedItem.path);
-      const replacement = `@${normalizedPath ?? selectedItem.path}/ `;
-      this.inputEl.value = beforeAt + replacement + afterCursor;
-      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
-    } else {
-      const file = selectedItem.file;
-      const rawPath = file?.path ?? selectedItem.path;
-      const normalizedPath = this.callbacks.normalizePathForVault(rawPath);
-
-      if (normalizedPath) {
-        // Use full vault-relative path directly - no mapping needed
-        this.callbacks.onAttachFile(normalizedPath);
+      case 'agent-folder':
+        // Don't modify input text - just show agents submenu
+        this.activeAgentFilter = true;
+        this.inputEl.focus();
+        this.showMentionDropdown('Agents/');
+        return;
+      case 'agent': {
+        const replacement = `@${selectedItem.id} (agent) `;
+        this.insertReplacement(beforeAt, replacement, afterCursor);
+        this.callbacks.onAgentMentionSelect?.(selectedItem.id);
+        break;
       }
-
-      // Insert full path so what user sees is what Claude gets
-      const replacement = `@${normalizedPath ?? selectedItem.name} `;
-      this.inputEl.value = beforeAt + replacement + afterCursor;
-      this.inputEl.selectionStart = this.inputEl.selectionEnd = beforeAt.length + replacement.length;
+      case 'context-folder': {
+        const replacement = `@${selectedItem.name}/`;
+        this.insertReplacement(beforeAt, replacement, afterCursor);
+        this.inputEl.focus();
+        this.handleInputChange();
+        return;
+      }
+      case 'context-file': {
+        // Display friendly name in input; absolute path resolution happens at send time.
+        const displayName = selectedItem.folderName
+          ? `@${selectedItem.folderName}/${selectedItem.name}`
+          : `@${selectedItem.name}`;
+        if (selectedItem.absolutePath) {
+          this.callbacks.onAttachFile(selectedItem.absolutePath);
+        }
+        this.insertReplacement(beforeAt, `${displayName} `, afterCursor);
+        break;
+      }
+      case 'folder': {
+        const normalizedPath = this.callbacks.normalizePathForVault(selectedItem.path);
+        this.insertReplacement(beforeAt, `@${normalizedPath ?? selectedItem.path}/ `, afterCursor);
+        break;
+      }
+      default: {
+        const rawPath = selectedItem.file?.path ?? selectedItem.path;
+        const normalizedPath = this.callbacks.normalizePathForVault(rawPath);
+        if (normalizedPath) {
+          this.callbacks.onAttachFile(normalizedPath);
+        }
+        this.insertReplacement(beforeAt, `@${normalizedPath ?? selectedItem.name} `, afterCursor);
+        break;
+      }
     }
 
     this.hide();

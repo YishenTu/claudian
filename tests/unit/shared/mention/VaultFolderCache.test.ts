@@ -1,6 +1,6 @@
 import { TFile, TFolder } from 'obsidian';
 
-import { VaultFolderCache } from '@/features/chat/ui/file-context/state/VaultFolderCache';
+import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 
 function createFolder(path: string): TFolder {
   return new (TFolder as any)(path) as TFolder;

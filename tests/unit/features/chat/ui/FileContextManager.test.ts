@@ -1,9 +1,9 @@
 import { createMockEl, type MockElement } from '@test/helpers/mockElement';
 import { TFile } from 'obsidian';
 
-import { VaultFolderCache } from '@/features/chat/ui/file-context/state/VaultFolderCache';
 import type { FileContextCallbacks } from '@/features/chat/ui/FileContext';
 import { FileContextManager } from '@/features/chat/ui/FileContext';
+import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 import type { ExternalContextFile } from '@/utils/externalContextScanner';
 
 jest.mock('obsidian', () => {
