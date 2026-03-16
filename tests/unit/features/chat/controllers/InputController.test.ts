@@ -1474,6 +1474,33 @@ describe('InputController - Message Queue', () => {
       expect(promptSent).toContain('selected text content');
       expect(promptSent).toContain('test/note.md');
     });
+
+    it('should preserve preview selection text without fabricating line attributes', async () => {
+      const editorContext = {
+        notePath: 'test/note.md',
+        mode: 'selection' as const,
+        selectedText: '  selected text\nsecond line  ',
+        lineCount: 2,
+      };
+
+      deps = createSendableDeps();
+      (deps.selectionController.getContext as jest.Mock).mockReturnValue(editorContext);
+
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }])
+      );
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'hello';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
+      const promptSent = queryCall[0];
+      expect(promptSent).toContain('<editor_selection path="test/note.md">\n  selected text\nsecond line  \n</editor_selection>');
+      expect(promptSent).not.toContain('lines=');
+    });
   });
 
   describe('Built-in commands - unknown', () => {

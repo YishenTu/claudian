@@ -76,7 +76,7 @@ describe('SelectionController', () => {
       cm: editorView,
     };
 
-    const view = { editor, file: { path: 'notes/test.md' } };
+    const view = { editor, getMode: () => 'source', file: { path: 'notes/test.md' } };
     app = {
       workspace: {
         getActiveViewOfType: jest.fn().mockReturnValue(view),
@@ -174,6 +174,202 @@ describe('SelectionController', () => {
     jest.advanceTimersByTime(750);
     expect(controller.hasSelection()).toBe(false);
     expect(hideSelectionHighlight).toHaveBeenCalledWith(editorView);
+  });
+
+  describe('Reading mode (preview)', () => {
+    let readingView: any;
+    let containerEl: any;
+
+    beforeEach(() => {
+      containerEl = {
+        contains: jest.fn().mockReturnValue(true),
+      };
+      readingView = {
+        editor,
+        getMode: () => 'preview',
+        file: { path: 'notes/reading.md' },
+        containerEl,
+      };
+      app.workspace.getActiveViewOfType.mockReturnValue(readingView);
+    });
+
+    it('captures selection via document.getSelection() in reading mode', () => {
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'reading selection',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+
+      expect(controller.hasSelection()).toBe(true);
+      expect(controller.getContext()).toEqual({
+        notePath: 'notes/reading.md',
+        mode: 'selection',
+        selectedText: 'reading selection',
+        lineCount: 1,
+      });
+      expect(indicatorEl.textContent).toBe('1 line selected');
+      expect(indicatorEl.style.display).toBe('block');
+    });
+
+    it('preserves raw reading mode text and omits line metadata', () => {
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => '  reading selection\nsecond line  ',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+
+      expect(controller.getContext()).toEqual({
+        notePath: 'notes/reading.md',
+        mode: 'selection',
+        selectedText: '  reading selection\nsecond line  ',
+        lineCount: 2,
+      });
+      expect(indicatorEl.textContent).toBe('2 lines selected');
+    });
+
+    it('does not set highlight in reading mode', () => {
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'reading selection',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+      controller.showHighlight();
+
+      expect(showSelectionHighlight).not.toHaveBeenCalled();
+    });
+
+    it('clears selection when deselected in reading mode', () => {
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'reading selection',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+      expect(controller.hasSelection()).toBe(true);
+
+      (global as any).document.getSelection.mockReturnValue({
+        toString: () => '',
+        anchorNode: null,
+      });
+      jest.advanceTimersByTime(250);
+
+      expect(controller.hasSelection()).toBe(false);
+      expect(indicatorEl.style.display).toBe('none');
+    });
+
+    it('preserves reading mode selection when input is focused', () => {
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'reading selection',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+      expect(controller.hasSelection()).toBe(true);
+
+      (global as any).document.getSelection.mockReturnValue({
+        toString: () => '',
+        anchorNode: null,
+      });
+      (global as any).document.activeElement = inputEl;
+      jest.advanceTimersByTime(250);
+
+      expect(controller.hasSelection()).toBe(true);
+    });
+
+    it('ignores selection outside the view container', () => {
+      containerEl.contains.mockReturnValue(false);
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'outside selection',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+
+      expect(controller.hasSelection()).toBe(false);
+    });
+
+    it('uses focusNode when anchorNode is outside the view container', () => {
+      const anchorNode = {};
+      const focusNode = {};
+      containerEl.contains.mockImplementation((node: unknown) => node === focusNode);
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'reading selection',
+          anchorNode,
+          focusNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+
+      expect(controller.hasSelection()).toBe(true);
+    });
+
+    it('replaces source selection metadata when switching the same text into preview mode', () => {
+      const sourceView = { editor, getMode: () => 'source', file: { path: 'notes/test.md' } };
+      app.workspace.getActiveViewOfType.mockReturnValue(sourceView);
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+
+      const previewAnchorNode = {};
+      readingView.file.path = 'notes/test.md';
+      app.workspace.getActiveViewOfType.mockReturnValue(readingView);
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'selected text',
+          anchorNode: previewAnchorNode,
+        }),
+      };
+      (showSelectionHighlight as jest.Mock).mockClear();
+
+      jest.advanceTimersByTime(250);
+      controller.showHighlight();
+
+      expect(controller.getContext()).toEqual({
+        notePath: 'notes/test.md',
+        mode: 'selection',
+        selectedText: 'selected text',
+        lineCount: 1,
+      });
+      expect(showSelectionHighlight).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps context row visible when canvas selection indicator is visible', () => {
