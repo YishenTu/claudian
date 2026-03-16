@@ -288,6 +288,7 @@ class InlineEditController {
         new Notice('Failed to load vault files. Vault @-mentions may be unavailable.');
       },
     });
+    this.mentionDataProvider.initializeInBackground();
     this.mode = editContext.mode;
     if (editContext.mode === 'cursor') {
       this.cursorContext = editContext.cursorContext;

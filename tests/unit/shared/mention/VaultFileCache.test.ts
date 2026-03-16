@@ -70,6 +70,19 @@ describe('VaultFileCache', () => {
       expect(getFiles).toHaveBeenCalledTimes(2);
     });
 
+    it('should invoke onLoadError callback when getFiles fails', () => {
+      const error = new Error('Vault error');
+      mockApp.vault.getFiles = jest.fn(() => {
+        throw error;
+      });
+      const onLoadError = jest.fn();
+
+      const cache = new VaultFileCache(mockApp, { onLoadError });
+      cache.getFiles();
+
+      expect(onLoadError).toHaveBeenCalledWith(error);
+    });
+
     it('should not reload repeatedly when vault has no files', () => {
       mockApp.vault.getFiles = jest.fn().mockReturnValue([]);
       const cache = new VaultFileCache(mockApp);
@@ -121,6 +134,20 @@ describe('VaultFileCache', () => {
       cache.initializeInBackground();
 
       expect(() => jest.runAllTimers()).not.toThrow();
+    });
+
+    it('should invoke onLoadError callback when initialization fails', () => {
+      const error = new Error('Vault error');
+      mockApp.vault.getFiles = jest.fn(() => {
+        throw error;
+      });
+      const onLoadError = jest.fn();
+
+      const cache = new VaultFileCache(mockApp, { onLoadError });
+      cache.initializeInBackground();
+      jest.runAllTimers();
+
+      expect(onLoadError).toHaveBeenCalledWith(error);
     });
 
     it('should mark initialization attempted even if loading fails', () => {
