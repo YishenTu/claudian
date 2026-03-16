@@ -62,7 +62,7 @@ import type {
   SlashCommand,
   StreamChunk,
 } from '../types';
-import { THINKING_BUDGETS } from '../types';
+import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types';
 import { MessageChannel } from './MessageChannel';
 import {
   type ColdStartQueryContext,
@@ -1111,9 +1111,6 @@ export class ClaudianService {
 
     const selectedModel = queryOptions?.model || this.plugin.settings.model;
     const permissionMode = this.plugin.settings.permissionMode;
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    const thinkingTokens = budgetConfig?.tokens ?? null;
 
     // Model can always be updated dynamically
     if (this.currentConfig && selectedModel !== this.currentConfig.model) {
@@ -1125,16 +1122,20 @@ export class ClaudianService {
       }
     }
 
-    // Update thinking tokens if changed
-    const currentThinking = this.currentConfig?.thinkingTokens ?? null;
-    if (thinkingTokens !== currentThinking) {
-      try {
-        await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
-        if (this.currentConfig) {
-          this.currentConfig.thinkingTokens = thinkingTokens;
+    // Update thinking tokens for custom models (adaptive models don't need dynamic updates)
+    if (!isAdaptiveThinkingModel(selectedModel)) {
+      const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+      const thinkingTokens = budgetConfig?.tokens ?? null;
+      const currentThinking = this.currentConfig?.thinkingTokens ?? null;
+      if (thinkingTokens !== currentThinking) {
+        try {
+          await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
+          if (this.currentConfig) {
+            this.currentConfig.thinkingTokens = thinkingTokens;
+          }
+        } catch {
+          new Notice('Failed to update thinking budget');
         }
-      } catch {
-        new Notice('Failed to update thinking budget');
       }
     }
 

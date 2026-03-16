@@ -1,9 +1,16 @@
-/* Thinking budget selector */
+/* Thinking selector (effort for adaptive models, token budget for custom) */
 .claudian-thinking-selector {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: 12px;
+}
+
+/* Effort / budget container (shared layout) */
+.claudian-thinking-effort,
+.claudian-thinking-budget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .claudian-thinking-label-text {

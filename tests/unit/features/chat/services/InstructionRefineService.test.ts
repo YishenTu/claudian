@@ -181,7 +181,27 @@ describe('InstructionRefineService', () => {
       expect(onProgress).toHaveBeenCalled();
     });
 
-    it('should set thinking budget when configured', async () => {
+    it('should set adaptive thinking for Claude models', async () => {
+      mockPlugin.settings.model = 'sonnet';
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: '<instruction>ok</instruction>' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.refineInstruction('test', '');
+      const options = getLastOptions();
+      expect(options?.thinking).toEqual({ type: 'adaptive' });
+      expect(options?.maxThinkingTokens).toBeUndefined();
+    });
+
+    it('should set thinking budget for custom models', async () => {
+      mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'medium';
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -197,6 +217,7 @@ describe('InstructionRefineService', () => {
       await service.refineInstruction('test', '');
       const options = getLastOptions();
       expect(options?.maxThinkingTokens).toBeGreaterThan(0);
+      expect(options?.thinking).toBeUndefined();
     });
 
     it('should ignore non-text content blocks', async () => {

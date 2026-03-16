@@ -21,6 +21,7 @@ import {
   getCurrentPlatformBlockedCommands,
   getCurrentPlatformKey,
   getDefaultBlockedCommands,
+  isAdaptiveThinkingModel,
   legacyPermissionsToCCPermissions,
   legacyPermissionToCCRule,
   normalizeVisibleModelVariant,
@@ -129,6 +130,7 @@ describe('types.ts', () => {
         enableAutoScroll: true,
         openInMainTab: false,
         hiddenSlashCommands: [],
+        effortLevel: 'high',
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -170,6 +172,7 @@ describe('types.ts', () => {
         enableAutoScroll: true,
         openInMainTab: false,
         hiddenSlashCommands: [],
+        effortLevel: 'high',
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -211,6 +214,7 @@ describe('types.ts', () => {
         enableAutoScroll: false,
         openInMainTab: false,
         hiddenSlashCommands: [],
+        effortLevel: 'high',
       };
 
       expect(settings.lastClaudeModel).toBe('opus');
@@ -856,6 +860,28 @@ describe('types.ts', () => {
         expect(normalizeVisibleModelVariant('haiku', true, true)).toBe('haiku');
         expect(normalizeVisibleModelVariant('custom-model', true, true)).toBe('custom-model');
       });
+    });
+  });
+
+  describe('isAdaptiveThinkingModel', () => {
+    it('should return true for default model aliases', () => {
+      expect(isAdaptiveThinkingModel('haiku')).toBe(true);
+      expect(isAdaptiveThinkingModel('sonnet')).toBe(true);
+      expect(isAdaptiveThinkingModel('sonnet[1m]')).toBe(true);
+      expect(isAdaptiveThinkingModel('opus')).toBe(true);
+      expect(isAdaptiveThinkingModel('opus[1m]')).toBe(true);
+    });
+
+    it('should return true for full Claude model IDs', () => {
+      expect(isAdaptiveThinkingModel('claude-sonnet-4-6-20250514')).toBe(true);
+      expect(isAdaptiveThinkingModel('claude-opus-4-6-20250514')).toBe(true);
+      expect(isAdaptiveThinkingModel('claude-haiku-4-5-20251001')).toBe(true);
+    });
+
+    it('should return false for custom/unknown models', () => {
+      expect(isAdaptiveThinkingModel('custom-model')).toBe(false);
+      expect(isAdaptiveThinkingModel('gpt-4')).toBe(false);
+      expect(isAdaptiveThinkingModel('')).toBe(false);
     });
   });
 });

@@ -3,8 +3,8 @@ import { Notice } from 'obsidian';
 
 import { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
-import type { ChatMessage, ClaudeModel, Conversation, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, getContextWindowSize } from '../../../core/types';
+import type { ChatMessage, ClaudeModel, Conversation, EffortLevel, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
+import { DEFAULT_CLAUDE_MODELS, DEFAULT_EFFORT_LEVEL, DEFAULT_THINKING_BUDGET, getContextWindowSize, isAdaptiveThinkingModel } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -429,6 +429,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     getSettings: () => ({
       model: plugin.settings.model,
       thinkingBudget: plugin.settings.thinkingBudget,
+      effortLevel: plugin.settings.effortLevel,
       permissionMode: plugin.settings.permissionMode,
       enableOpus1M: plugin.settings.enableOpus1M,
       enableSonnet1M: plugin.settings.enableSonnet1M,
@@ -439,6 +440,9 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m) => m.value === model);
       if (isDefaultModel) {
         plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
+        if (isAdaptiveThinkingModel(model)) {
+          plugin.settings.effortLevel = DEFAULT_EFFORT_LEVEL[model] ?? 'high';
+        }
         plugin.settings.lastClaudeModel = model;
       } else {
         plugin.settings.lastCustomModel = model;
@@ -463,6 +467,10 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     },
     onThinkingBudgetChange: async (budget: ThinkingBudget) => {
       plugin.settings.thinkingBudget = budget;
+      await plugin.saveSettings();
+    },
+    onEffortLevelChange: async (effort: EffortLevel) => {
+      plugin.settings.effortLevel = effort;
       await plugin.saveSettings();
     },
     onPermissionModeChange: async (mode) => {

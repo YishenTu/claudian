@@ -39,6 +39,8 @@ export interface Options {
   pathToClaudeCodeExecutable?: string;
   resume?: string;
   maxThinkingTokens?: number;
+  thinking?: { type: string; budgetTokens?: number };
+  effort?: 'low' | 'medium' | 'high' | 'max';
   canUseTool?: CanUseTool;
   systemPrompt?: string | { content: string; cacheControl?: { type: string } };
   mcpServers?: Record<string, unknown>;

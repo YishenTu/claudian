@@ -3,7 +3,7 @@
  */
 
 import type { Locale } from '../../i18n/types';
-import type { ClaudeModel, ThinkingBudget } from './models';
+import type { ClaudeModel, EffortLevel, ThinkingBudget } from './models';
 
 const UNIX_BLOCKED_COMMANDS = [
   'rm -rf',
@@ -245,7 +245,8 @@ export interface ClaudianSettings {
 
   // Model & thinking (Claudian uses enum, CC uses full model ID string)
   model: ClaudeModel;
-  thinkingBudget: ThinkingBudget;
+  thinkingBudget: ThinkingBudget;  // Legacy token budget for custom models
+  effortLevel: EffortLevel;  // Effort level for adaptive thinking models
   enableAutoTitleGeneration: boolean;
   titleGenerationModel: string;  // Model for auto title generation (empty = auto)
   enableChrome: boolean;  // Enable Chrome extension support (passes --chrome flag)
@@ -314,6 +315,7 @@ export const DEFAULT_SETTINGS: ClaudianSettings = {
   // Model & thinking
   model: 'haiku',
   thinkingBudget: 'off',
+  effortLevel: 'high',
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
   enableChrome: false,  // Disabled by default

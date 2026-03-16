@@ -5,13 +5,16 @@ import type { McpServerManager } from '../../../core/mcp';
 import type {
   ClaudeModel,
   ClaudianMcpServer,
+  EffortLevel,
   PermissionMode,
   ThinkingBudget,
   UsageInfo
 } from '../../../core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
+  EFFORT_LEVELS,
   filterVisibleModelOptions,
+  isAdaptiveThinkingModel,
   THINKING_BUDGETS
 } from '../../../core/types';
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../../shared/icons';
@@ -22,6 +25,7 @@ import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path'
 export interface ToolbarSettings {
   model: ClaudeModel;
   thinkingBudget: ThinkingBudget;
+  effortLevel: EffortLevel;
   permissionMode: PermissionMode;
   enableOpus1M: boolean;
   enableSonnet1M: boolean;
@@ -30,6 +34,7 @@ export interface ToolbarSettings {
 export interface ToolbarCallbacks {
   onModelChange: (model: ClaudeModel) => Promise<void>;
   onThinkingBudgetChange: (budget: ThinkingBudget) => Promise<void>;
+  onEffortLevelChange: (effort: EffortLevel) => Promise<void>;
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
@@ -124,7 +129,10 @@ export class ModelSelector {
 
 export class ThinkingBudgetSelector {
   private container: HTMLElement;
-  private gearsEl: HTMLElement | null = null;
+  private effortEl: HTMLElement | null = null;
+  private effortGearsEl: HTMLElement | null = null;
+  private budgetEl: HTMLElement | null = null;
+  private budgetGearsEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
@@ -136,24 +144,60 @@ export class ThinkingBudgetSelector {
   private render() {
     this.container.empty();
 
-    const labelEl = this.container.createSpan({ cls: 'claudian-thinking-label-text' });
-    labelEl.setText('Thinking:');
+    // Effort selector (for adaptive thinking models)
+    this.effortEl = this.container.createDiv({ cls: 'claudian-thinking-effort' });
+    const effortLabel = this.effortEl.createSpan({ cls: 'claudian-thinking-label-text' });
+    effortLabel.setText('Effort:');
+    this.effortGearsEl = this.effortEl.createDiv({ cls: 'claudian-thinking-gears' });
 
-    this.gearsEl = this.container.createDiv({ cls: 'claudian-thinking-gears' });
-    this.renderGears();
+    // Legacy budget selector (for custom models)
+    this.budgetEl = this.container.createDiv({ cls: 'claudian-thinking-budget' });
+    const budgetLabel = this.budgetEl.createSpan({ cls: 'claudian-thinking-label-text' });
+    budgetLabel.setText('Thinking:');
+    this.budgetGearsEl = this.budgetEl.createDiv({ cls: 'claudian-thinking-gears' });
+
+    this.updateDisplay();
   }
 
-  private renderGears() {
-    if (!this.gearsEl) return;
-    this.gearsEl.empty();
+  private renderEffortGears() {
+    if (!this.effortGearsEl) return;
+    this.effortGearsEl.empty();
+
+    const currentEffort = this.callbacks.getSettings().effortLevel;
+    const currentInfo = EFFORT_LEVELS.find(e => e.value === currentEffort);
+
+    const currentEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-current' });
+    currentEl.setText(currentInfo?.label || 'High');
+
+    const optionsEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-options' });
+
+    for (const effort of [...EFFORT_LEVELS].reverse()) {
+      const gearEl = optionsEl.createDiv({ cls: 'claudian-thinking-gear' });
+      gearEl.setText(effort.label);
+
+      if (effort.value === currentEffort) {
+        gearEl.addClass('selected');
+      }
+
+      gearEl.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await this.callbacks.onEffortLevelChange(effort.value);
+        this.updateDisplay();
+      });
+    }
+  }
+
+  private renderBudgetGears() {
+    if (!this.budgetGearsEl) return;
+    this.budgetGearsEl.empty();
 
     const currentBudget = this.callbacks.getSettings().thinkingBudget;
     const currentBudgetInfo = THINKING_BUDGETS.find(b => b.value === currentBudget);
 
-    const currentEl = this.gearsEl.createDiv({ cls: 'claudian-thinking-current' });
+    const currentEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-current' });
     currentEl.setText(currentBudgetInfo?.label || 'Off');
 
-    const optionsEl = this.gearsEl.createDiv({ cls: 'claudian-thinking-options' });
+    const optionsEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
     for (const budget of [...THINKING_BUDGETS].reverse()) {
       const gearEl = optionsEl.createDiv({ cls: 'claudian-thinking-gear' });
@@ -173,7 +217,21 @@ export class ThinkingBudgetSelector {
   }
 
   updateDisplay() {
-    this.renderGears();
+    const model = this.callbacks.getSettings().model;
+    const adaptive = isAdaptiveThinkingModel(model);
+
+    if (this.effortEl) {
+      this.effortEl.style.display = adaptive ? '' : 'none';
+    }
+    if (this.budgetEl) {
+      this.budgetEl.style.display = adaptive ? 'none' : '';
+    }
+
+    if (adaptive) {
+      this.renderEffortGears();
+    } else {
+      this.renderBudgetGears();
+    }
   }
 }
 

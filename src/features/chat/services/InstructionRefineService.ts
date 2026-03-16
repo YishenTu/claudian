@@ -2,7 +2,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
 import { buildRefineSystemPrompt } from '../../../core/prompts/instructionRefine';
-import { type InstructionRefineResult, THINKING_BUDGETS } from '../../../core/types';
+import { type InstructionRefineResult, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -102,10 +102,14 @@ export class InstructionRefineService {
       options.resume = this.sessionId;
     }
 
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
+    if (isAdaptiveThinkingModel(this.plugin.settings.model)) {
+      options.thinking = { type: 'adaptive' };
+      options.effort = this.plugin.settings.effortLevel;
+    } else {
+      const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+      if (budgetConfig && budgetConfig.tokens > 0) {
+        options.maxThinkingTokens = budgetConfig.tokens;
+      }
     }
 
     try {

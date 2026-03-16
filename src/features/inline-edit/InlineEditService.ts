@@ -11,7 +11,7 @@ import {
   TOOL_LS,
   TOOL_READ,
 } from '../../core/tools/toolNames';
-import { THINKING_BUDGETS } from '../../core/types';
+import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { appendContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
@@ -309,10 +309,14 @@ export class InlineEditService {
       options.resume = this.sessionId;
     }
 
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
+    if (isAdaptiveThinkingModel(this.plugin.settings.model)) {
+      options.thinking = { type: 'adaptive' };
+      options.effort = this.plugin.settings.effortLevel;
+    } else {
+      const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+      if (budgetConfig && budgetConfig.tokens > 0) {
+        options.maxThinkingTokens = budgetConfig.tokens;
+      }
     }
 
     try {

@@ -547,7 +547,33 @@ describe('InlineEditService', () => {
       expect(options?.settingSources).toEqual(['user', 'project']);
     });
 
-    it('should enable thinking when configured', async () => {
+    it('should set adaptive thinking for Claude models', async () => {
+      mockPlugin.settings.model = 'sonnet';
+      service = new InlineEditService(mockPlugin);
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>fixed</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      const options = getLastOptions();
+      expect(options?.thinking).toEqual({ type: 'adaptive' });
+      expect(options?.maxThinkingTokens).toBeUndefined();
+    });
+
+    it('should set thinking budget for custom models', async () => {
+      mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'medium';
       service = new InlineEditService(mockPlugin);
 
@@ -569,6 +595,7 @@ describe('InlineEditService', () => {
 
       const options = getLastOptions();
       expect(options?.maxThinkingTokens).toBeGreaterThan(0);
+      expect(options?.thinking).toBeUndefined();
     });
 
     it('should capture session ID for conversation continuity', async () => {

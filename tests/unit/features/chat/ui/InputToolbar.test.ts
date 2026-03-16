@@ -31,10 +31,12 @@ function createMockCallbacks(overrides: Record<string, any> = {}) {
   return {
     onModelChange: jest.fn().mockResolvedValue(undefined),
     onThinkingBudgetChange: jest.fn().mockResolvedValue(undefined),
+    onEffortLevelChange: jest.fn().mockResolvedValue(undefined),
     onPermissionModeChange: jest.fn().mockResolvedValue(undefined),
     getSettings: jest.fn().mockReturnValue({
       model: 'sonnet',
       thinkingBudget: 'low',
+      effortLevel: 'high',
       permissionMode: 'normal',
       enableOpus1M: false,
       enableSonnet1M: false,
@@ -185,79 +187,120 @@ describe('ThinkingBudgetSelector', () => {
   let callbacks: ReturnType<typeof createMockCallbacks>;
   let selector: ThinkingBudgetSelector;
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    parentEl = createMockEl();
-    callbacks = createMockCallbacks();
-    selector = new ThinkingBudgetSelector(parentEl, callbacks);
-  });
-
-  it('should create a container with thinking-selector class', () => {
-    const container = parentEl.querySelector('.claudian-thinking-selector');
-    expect(container).not.toBeNull();
-  });
-
-  it('should display Thinking: label', () => {
-    const label = parentEl.querySelector('.claudian-thinking-label-text');
-    expect(label?.textContent).toBe('Thinking:');
-  });
-
-  it('should display current budget label', () => {
-    const current = parentEl.querySelector('.claudian-thinking-current');
-    expect(current?.textContent).toBe('Low');
-  });
-
-  it('should display Off when budget is off', () => {
-    callbacks.getSettings.mockReturnValue({
-      model: 'sonnet',
-      thinkingBudget: 'off',
-      permissionMode: 'normal',
-      enableOpus1M: false,
-      enableSonnet1M: false,
+  describe('adaptive mode (Claude models)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      parentEl = createMockEl();
+      callbacks = createMockCallbacks();
+      selector = new ThinkingBudgetSelector(parentEl, callbacks);
     });
-    selector.updateDisplay();
-    const current = parentEl.querySelector('.claudian-thinking-current');
-    expect(current?.textContent).toBe('Off');
+
+    it('should create a container with thinking-selector class', () => {
+      const container = parentEl.querySelector('.claudian-thinking-selector');
+      expect(container).not.toBeNull();
+    });
+
+    it('should show effort selector for Claude models', () => {
+      const effort = parentEl.querySelector('.claudian-thinking-effort');
+      expect(effort).not.toBeNull();
+      expect(effort?.style?.display).not.toBe('none');
+    });
+
+    it('should hide budget selector for Claude models', () => {
+      const budget = parentEl.querySelector('.claudian-thinking-budget');
+      expect(budget?.style?.display).toBe('none');
+    });
+
+    it('should display current effort level for Claude models', () => {
+      const current = parentEl.querySelector('.claudian-thinking-current');
+      expect(current?.textContent).toBe('High');
+    });
   });
 
-  it('should render budget options in reverse order', () => {
-    const options = parentEl.querySelector('.claudian-thinking-options');
-    expect(options).not.toBeNull();
-    // THINKING_BUDGETS reversed: [xhigh, high, medium, low, off]
-    const gears = options?.children || [];
-    expect(gears.length).toBe(5);
-    expect(gears[0]?.textContent).toBe('Ultra');
-    expect(gears[4]?.textContent).toBe('Off');
-  });
+  describe('legacy mode (custom models)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      parentEl = createMockEl();
+      callbacks = createMockCallbacks({
+        getSettings: jest.fn().mockReturnValue({
+          model: 'custom-model',
+          thinkingBudget: 'low',
+          effortLevel: 'high',
+          permissionMode: 'normal',
+          enableOpus1M: false,
+          enableSonnet1M: false,
+        }),
+      });
+      selector = new ThinkingBudgetSelector(parentEl, callbacks);
+    });
 
-  it('should mark current budget as selected', () => {
-    const options = parentEl.querySelector('.claudian-thinking-options');
-    const gears = options?.children || [];
-    const lowGear = gears.find((g: any) => g.textContent === 'Low');
-    expect(lowGear?.hasClass('selected')).toBe(true);
-  });
+    it('should hide effort selector for custom models', () => {
+      const effort = parentEl.querySelector('.claudian-thinking-effort');
+      expect(effort?.style?.display).toBe('none');
+    });
 
-  it('should call onThinkingBudgetChange when gear clicked', async () => {
-    const options = parentEl.querySelector('.claudian-thinking-options');
-    const gears = options?.children || [];
-    const highGear = gears.find((g: any) => g.textContent === 'High');
+    it('should show budget selector for custom models', () => {
+      const budget = parentEl.querySelector('.claudian-thinking-budget');
+      expect(budget?.style?.display).not.toBe('none');
+    });
 
-    await highGear?.dispatchEvent('click', { stopPropagation: () => {} });
-    expect(callbacks.onThinkingBudgetChange).toHaveBeenCalledWith('high');
-  });
+    it('should display current budget label', () => {
+      const current = parentEl.querySelector('.claudian-thinking-current');
+      expect(current?.textContent).toBe('Low');
+    });
 
-  it('should set title with token count for non-off budgets', () => {
-    const options = parentEl.querySelector('.claudian-thinking-options');
-    const gears = options?.children || [];
-    const highGear = gears.find((g: any) => g.textContent === 'High');
-    expect(highGear?.getAttribute('title')).toContain('16,000 tokens');
-  });
+    it('should display Off when budget is off', () => {
+      callbacks.getSettings.mockReturnValue({
+        model: 'custom-model',
+        thinkingBudget: 'off',
+        permissionMode: 'normal',
+        enableOpus1M: false,
+        enableSonnet1M: false,
+      });
+      selector.updateDisplay();
+      const current = parentEl.querySelector('.claudian-thinking-current');
+      expect(current?.textContent).toBe('Off');
+    });
 
-  it('should set title as Disabled for off budget', () => {
-    const options = parentEl.querySelector('.claudian-thinking-options');
-    const gears = options?.children || [];
-    const offGear = gears.find((g: any) => g.textContent === 'Off');
-    expect(offGear?.getAttribute('title')).toBe('Disabled');
+    it('should render budget options in reverse order', () => {
+      const options = parentEl.querySelector('.claudian-thinking-options');
+      expect(options).not.toBeNull();
+      // THINKING_BUDGETS reversed: [xhigh, high, medium, low, off]
+      const gears = options?.children || [];
+      expect(gears.length).toBe(5);
+      expect(gears[0]?.textContent).toBe('Ultra');
+      expect(gears[4]?.textContent).toBe('Off');
+    });
+
+    it('should mark current budget as selected', () => {
+      const options = parentEl.querySelector('.claudian-thinking-options');
+      const gears = options?.children || [];
+      const lowGear = gears.find((g: any) => g.textContent === 'Low');
+      expect(lowGear?.hasClass('selected')).toBe(true);
+    });
+
+    it('should call onThinkingBudgetChange when gear clicked', async () => {
+      const options = parentEl.querySelector('.claudian-thinking-options');
+      const gears = options?.children || [];
+      const highGear = gears.find((g: any) => g.textContent === 'High');
+
+      await highGear?.dispatchEvent('click', { stopPropagation: () => {} });
+      expect(callbacks.onThinkingBudgetChange).toHaveBeenCalledWith('high');
+    });
+
+    it('should set title with token count for non-off budgets', () => {
+      const options = parentEl.querySelector('.claudian-thinking-options');
+      const gears = options?.children || [];
+      const highGear = gears.find((g: any) => g.textContent === 'High');
+      expect(highGear?.getAttribute('title')).toContain('16,000 tokens');
+    });
+
+    it('should set title as Disabled for off budget', () => {
+      const options = parentEl.querySelector('.claudian-thinking-options');
+      const gears = options?.children || [];
+      const offGear = gears.find((g: any) => g.textContent === 'Off');
+      expect(offGear?.getAttribute('title')).toBe('Disabled');
+    });
   });
 });
 

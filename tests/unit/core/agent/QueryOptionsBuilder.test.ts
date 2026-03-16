@@ -71,6 +71,7 @@ function createMockPersistentQueryConfig(
   return {
     model: 'sonnet',
     thinkingTokens: null,
+    effortLevel: null,
     permissionMode: 'yolo',
     systemPromptKey: 'key1',
     disallowedToolsKey: '',
@@ -293,10 +294,25 @@ describe('QueryOptionsBuilder', () => {
       expect(options.canUseTool).toBe(canUseTool);
     });
 
-    it('sets thinking tokens for high budget', () => {
+    it('sets adaptive thinking with effort for Claude models', () => {
       const ctx = {
         ...createMockContext({
-          settings: createMockSettings({ thinkingBudget: 'high' }),
+          settings: createMockSettings({ model: 'sonnet', effortLevel: 'max' }),
+        }),
+        abortController: new AbortController(),
+        hooks: {},
+      };
+      const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
+
+      expect(options.thinking).toEqual({ type: 'adaptive' });
+      expect(options.effort).toBe('max');
+      expect(options.maxThinkingTokens).toBeUndefined();
+    });
+
+    it('sets thinking tokens for custom models', () => {
+      const ctx = {
+        ...createMockContext({
+          settings: createMockSettings({ model: 'custom-model', thinkingBudget: 'high' }),
         }),
         abortController: new AbortController(),
         hooks: {},
@@ -304,6 +320,7 @@ describe('QueryOptionsBuilder', () => {
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
       expect(options.maxThinkingTokens).toBe(16000);
+      expect(options.thinking).toBeUndefined();
     });
 
     it('sets resume session ID when provided', () => {

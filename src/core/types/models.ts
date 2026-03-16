@@ -23,6 +23,25 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
   { value: 'xhigh', label: 'Ultra', tokens: 32000 },
 ];
 
+/** Effort levels for adaptive thinking models. */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+
+export const EFFORT_LEVELS: { value: EffortLevel; label: string }[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Med' },
+  { value: 'high', label: 'High' },
+  { value: 'max', label: 'Max' },
+];
+
+/** Default effort level per model tier. */
+export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = {
+  'haiku': 'high',
+  'sonnet': 'high',
+  'sonnet[1m]': 'high',
+  'opus': 'high',
+  'opus[1m]': 'high',
+};
+
 /** Default thinking budget per model tier. */
 export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   'haiku': 'off',
@@ -31,6 +50,14 @@ export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   'opus': 'medium',
   'opus[1m]': 'medium',
 };
+
+const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value));
+
+/** Whether the model is a known Claude model that supports adaptive thinking. */
+export function isAdaptiveThinkingModel(model: string): boolean {
+  if (DEFAULT_MODEL_VALUES.has(model)) return true;
+  return /^claude-(haiku|sonnet|opus)-/.test(model);
+}
 
 export const CONTEXT_WINDOW_STANDARD = 200_000;
 export const CONTEXT_WINDOW_1M = 1_000_000;

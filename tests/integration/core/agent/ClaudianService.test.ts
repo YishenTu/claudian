@@ -2186,8 +2186,9 @@ describe('ClaudianService', () => {
   });
 
   describe('persistent query dynamic updates', () => {
-    it('updates thinking tokens on the active persistent query when budget changes', async () => {
-      // Start with default thinking budget ('off')
+    it('updates thinking tokens on the active persistent query when budget changes (custom model)', async () => {
+      // Use a custom model so the legacy budget path is used
+      mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'off';
 
       const chunks1: any[] = [];
