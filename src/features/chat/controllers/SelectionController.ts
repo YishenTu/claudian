@@ -119,7 +119,7 @@ export class SelectionController {
   }
 
   private pollReadingMode(view: MarkdownView): void {
-    const containerEl = (view as unknown as { containerEl?: HTMLElement }).containerEl;
+    const containerEl = view.containerEl;
     if (!containerEl) {
       this.clearWhenMarkdownIsNotActive();
       return;
@@ -144,7 +144,7 @@ export class SelectionController {
       const lineCount = selectedText.split(/\r?\n/).length;
 
       const unchanged = this.storedSelection
-        && this.storedSelection.editorView == null
+        && this.storedSelection.editorView === undefined
         && this.storedSelection.notePath === notePath
         && this.storedSelection.selectedText === selectedText
         && this.storedSelection.lineCount === lineCount;
@@ -192,7 +192,7 @@ export class SelectionController {
 
   showHighlight(): void {
     const sel = this.storedSelection;
-    if (!sel?.editorView || sel.from == null || sel.to == null) return;
+    if (!sel?.editorView || sel.from === undefined || sel.to === undefined) return;
     showSelectionHighlight(sel.editorView, sel.from, sel.to);
   }
 
