@@ -198,7 +198,7 @@
     },
     "allowExternalAccess": {
       "name": "Allow external access",
-      "desc": "Allow file and command access outside the vault directory for new sessions. Existing sessions keep their current restriction state until restarted. Disabling vault restriction may expose sensitive files to prompt injection."
+      "desc": "Allow file and command access outside the vault directory. Takes effect immediately for all active sessions. Disabling vault restriction may expose sensitive files to prompt injection."
     },
     "blockedCommands": {
       "name": "Blocked commands ({platform})",

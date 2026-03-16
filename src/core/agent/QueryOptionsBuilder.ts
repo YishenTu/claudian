@@ -142,6 +142,7 @@ export class QueryOptionsBuilder {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
       allowedExportPaths: ctx.settings.allowedExportPaths,
+      allowExternalAccess: ctx.settings.allowExternalAccess,
       vaultPath: ctx.vaultPath,
       userName: ctx.settings.userName,
     };

@@ -198,7 +198,7 @@
     },
     "allowExternalAccess": {
       "name": "Autoriser l'accès externe",
-      "desc": "Autorise l'accès aux fichiers et commandes en dehors du répertoire du coffre pour les nouvelles sessions. Les sessions existantes conservent leur état de restriction actuel jusqu'au redémarrage. La désactivation de la restriction du coffre peut exposer des fichiers sensibles à l'injection de prompt."
+      "desc": "Autorise l'accès aux fichiers et commandes en dehors du répertoire du coffre. Prend effet immédiatement pour toutes les sessions actives. La désactivation de la restriction du coffre peut exposer des fichiers sensibles à l'injection de prompt."
     },
     "blockedCommands": {
       "name": "Commandes bloquées ({platform})",

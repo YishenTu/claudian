@@ -198,7 +198,7 @@
     },
     "allowExternalAccess": {
       "name": "Externen Zugriff erlauben",
-      "desc": "Erlaubt Datei- und Befehlszugriff außerhalb des Vault-Verzeichnisses für neue Sitzungen. Bestehende Sitzungen behalten ihren aktuellen Beschränkungsstatus bis zum Neustart. Das Deaktivieren der Vault-Beschränkung kann sensible Dateien für Prompt-Injection anfällig machen."
+      "desc": "Erlaubt Datei- und Befehlszugriff außerhalb des Vault-Verzeichnisses. Wird sofort für alle aktiven Sitzungen wirksam. Das Deaktivieren der Vault-Beschränkung kann sensible Dateien für Prompt-Injection anfällig machen."
     },
     "blockedCommands": {
       "name": "Blockierte Befehle ({platform})",

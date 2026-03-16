@@ -428,6 +428,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.plugin.settings.allowExternalAccess = value;
             await this.plugin.saveSettings();
             this.display();
+            await this.restartServiceForPromptChange();
           })
       );
 

@@ -198,7 +198,7 @@
     },
     "allowExternalAccess": {
       "name": "Permitir acesso externo",
-      "desc": "Permite acesso a arquivos e comandos fora do diretório do vault para novas sessões. Sessões existentes mantêm o estado atual de restrição até serem reiniciadas. Desativar a restrição do vault pode expor arquivos sensíveis a injeção de prompt."
+      "desc": "Permite acesso a arquivos e comandos fora do diretório do vault. Aplica-se imediatamente a todas as sessões ativas. Desativar a restrição do vault pode expor arquivos sensíveis a injeção de prompt."
     },
     "blockedCommands": {
       "name": "Comandos bloqueados ({platform})",

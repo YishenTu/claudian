@@ -38,7 +38,7 @@ describe('computeSystemPromptKey', () => {
     const key = computeSystemPromptKey(settings);
 
     // Paths are sorted to keep the key stable.
-    expect(key).toBe('attachments::Be helpful::/path/a|/path/b::/vault::Alice');
+    expect(key).toBe('attachments::Be helpful::/path/a|/path/b::/vault::Alice::false');
   });
 
   it('handles empty/undefined values', () => {
@@ -51,8 +51,8 @@ describe('computeSystemPromptKey', () => {
     };
 
     const key = computeSystemPromptKey(settings);
-    // 5 empty parts joined with '::' = 4 separators = 8 colons
-    expect(key).toBe('::::::::');
+    // 6 parts joined with '::' = 5 separators = 10 colons, last part is 'false'
+    expect(key).toBe('::::::::::false');
   });
 
   it('produces different keys for different inputs', () => {
@@ -88,6 +88,18 @@ describe('computeSystemPromptKey', () => {
 
     // Paths are sorted, so order shouldn't matter
     expect(computeSystemPromptKey(settings1)).toBe(computeSystemPromptKey(settings2));
+  });
+
+  it('produces different keys when allowExternalAccess differs', () => {
+    const base = {
+      mediaFolder: '',
+      customPrompt: '',
+      allowedExportPaths: [],
+      vaultPath: '/vault',
+    };
+
+    expect(computeSystemPromptKey({ ...base, allowExternalAccess: false }))
+      .not.toBe(computeSystemPromptKey({ ...base, allowExternalAccess: true }));
   });
 });
 
