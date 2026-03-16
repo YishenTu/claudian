@@ -55,6 +55,7 @@ describe('createNodeFetch', () => {
   let getUrl: () => string;
   let received: ReceivedRequest[];
   let nodeFetch: ReturnType<typeof createNodeFetch>;
+  const serversToClose: http.Server[] = [];
 
   beforeAll(() => {
     ({ server, getUrl, received } = createTestServer());
@@ -65,8 +66,12 @@ describe('createNodeFetch', () => {
     server.close(() => resolve());
   }));
 
-  beforeEach(() => {
+  afterEach(async () => {
     received.length = 0;
+    await Promise.all(
+      serversToClose.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))),
+    );
+    serversToClose.length = 0;
   });
 
   it('should set Content-Length header for POST with body', async () => {
@@ -135,19 +140,16 @@ describe('createNodeFetch', () => {
         res.end(JSON.stringify({ error: 'not found' }));
       },
     );
+    serversToClose.push(errorServer);
 
-    try {
-      const response = await nodeFetch(errorUrl(), { method: 'GET' });
+    const response = await nodeFetch(errorUrl(), { method: 'GET' });
 
-      expect(response.status).toBe(404);
-      expect(response.ok).toBe(false);
-      expect(errorReceived).toHaveLength(1);
+    expect(response.status).toBe(404);
+    expect(response.ok).toBe(false);
+    expect(errorReceived).toHaveLength(1);
 
-      const data = await response.json() as { error: string };
-      expect(data).toEqual({ error: 'not found' });
-    } finally {
-      errorServer.close();
-    }
+    const data = await response.json() as { error: string };
+    expect(data).toEqual({ error: 'not found' });
   });
 
   it('should support abort signal', async () => {
