@@ -40,7 +40,7 @@ function normalizeAnswersObject(value: unknown): AskUserAnswers | undefined {
   const answers: AskUserAnswers = {};
   for (const [question, rawValue] of Object.entries(value as Record<string, unknown>)) {
     const normalized = normalizeAnswerValue(rawValue);
-    if (normalized !== undefined) {
+    if (normalized) {
       answers[question] = normalized;
     }
   }

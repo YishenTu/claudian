@@ -31,6 +31,14 @@ describe('extractResolvedAnswers', () => {
       choices: 'A, B',
     });
   });
+
+  it('excludes empty-string answers', () => {
+    expect(extractResolvedAnswers({ answers: { q1: 'yes', q2: '' } })).toEqual({ q1: 'yes' });
+  });
+
+  it('returns undefined when all answers are empty strings', () => {
+    expect(extractResolvedAnswers({ answers: { q1: '', q2: '' } })).toBeUndefined();
+  });
 });
 
 describe('extractResolvedAnswersFromResultText', () => {
@@ -57,6 +65,12 @@ describe('extractResolvedAnswersFromResultText', () => {
 
   it('returns undefined when text cannot be parsed', () => {
     expect(extractResolvedAnswersFromResultText('No parsed answers here')).toBeUndefined();
+  });
+
+  it('excludes empty-string values in JSON object text', () => {
+    expect(extractResolvedAnswersFromResultText('{"Color?":"Blue","Name?":""}')).toEqual({
+      'Color?': 'Blue',
+    });
   });
 });
 
