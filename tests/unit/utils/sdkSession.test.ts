@@ -2,11 +2,11 @@ import { existsSync } from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 
+import { extractToolResultContent } from '@/core/sdk/toolResultContent';
 import {
   collectAsyncSubagentResults,
   deleteSDKSession,
   encodeVaultPathForSDK,
-  extractToolResultContent,
   filterActiveBranch,
   getSDKProjectsPath,
   getSDKSessionPath,
@@ -1858,6 +1858,23 @@ describe('sdkSession', () => {
 
       // Should follow the latest branch (u2-new), not the old one or progress
       expect(uuids).toEqual(['u1', 'a1', 'u2-new', 'a2-new']);
+    });
+
+    it('detects rewind when abandoned path continues through assistant/tool nodes', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'assistant', uuid: 'a1-tool', parentUuid: 'a1' },
+        { type: 'user', uuid: 'tr1', parentUuid: 'a1-tool', toolUseResult: {} },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'tr1' },
+        { type: 'user', uuid: 'u2-new', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a3-new', parentUuid: 'u2-new' },
+      ];
+
+      const result = filterActiveBranch(entries);
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+
+      expect(uuids).toEqual(['u1', 'a1', 'u2-new', 'a3-new']);
     });
 
     it('preserves earlier parallel tool-result descendants when a later rewind exists', () => {

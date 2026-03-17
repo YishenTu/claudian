@@ -621,8 +621,6 @@ export function parseSDKMessageToChat(
   };
 }
 
-export { extractToolResultContent };
-
 /** tool_result often appears in user message following assistant's tool_use. */
 function collectToolResults(sdkMessages: SDKNativeMessage[]): Map<string, { content: string; isError: boolean }> {
   const results = new Map<string, { content: string; isError: boolean }>();
@@ -766,6 +764,13 @@ export function filterActiveBranch(
     );
   }
 
+  function isDirectRealUserBranchChild(
+    parentUuid: string,
+    entry: SDKNativeMessage | undefined
+  ): boolean {
+    return !!entry && entry.parentUuid === parentUuid && isRealUserBranchChild(entry);
+  }
+
   // SDK may write duplicates around compaction, which inflates child counts
   const seen = new Set<string>();
   const deduped: SDKNativeMessage[] = [];
@@ -826,34 +831,91 @@ export function filterActiveBranch(
     }
   }
 
-  // A real branch is a rewind/fork: a parent with 2+ genuine user message children
-  // (not tool results, not meta-injected). Parallel tool calls, tool results, and
-  // assistant continuations sharing a parent are normal conversation flow.
-  const hasBranching = [...childrenOf.entries()].some(([, children]) => {
-    if (children.size <= 1) return false;
-    let realUserChildren = 0;
-    for (const childUuid of children) {
-      const child = byUuid.get(childUuid);
-      if (isRealUserBranchChild(child)) {
-        realUserChildren++;
-        if (realUserChildren > 1) return true;
+  function findLatestLeaf(): SDKNativeMessage | undefined {
+    for (let i = convEntries.length - 1; i >= 0; i--) {
+      const uuid = convEntries[i].uuid;
+      if (uuid && !childrenOf.has(uuid)) {
+        return convEntries[i];
       }
     }
+    return undefined;
+  }
+
+  const latestLeaf = findLatestLeaf();
+  const latestBranchUuids = new Set<string>();
+  const activeChildOf = new Map<string, string>();
+
+  let currentLatest: SDKNativeMessage | undefined = latestLeaf;
+  while (currentLatest?.uuid) {
+    latestBranchUuids.add(currentLatest.uuid);
+    const ep = resolveParent(currentLatest.parentUuid);
+    if (ep) {
+      activeChildOf.set(ep, currentLatest.uuid);
+    }
+    currentLatest = ep ? byUuid.get(ep) : undefined;
+  }
+
+  const conversationContentCache = new Map<string, boolean>();
+  function hasConversationContent(uuid: string): boolean {
+    const cached = conversationContentCache.get(uuid);
+    if (cached !== undefined) return cached;
+
+    const entry = byUuid.get(uuid);
+    let result = false;
+
+    if (entry?.type === 'assistant') {
+      result = true;
+    } else if (entry?.type === 'user' && !entry.isMeta && !('sourceToolUseID' in entry)) {
+      result = true;
+    } else {
+      const children = childrenOf.get(uuid);
+      if (children) {
+        for (const childUuid of children) {
+          if (hasConversationContent(childUuid)) {
+            result = true;
+            break;
+          }
+        }
+      }
+    }
+
+    conversationContentCache.set(uuid, result);
+    return result;
+  }
+
+  // A real rewind shows up along the latest branch as:
+  // 1. at least one genuine user child from a parent on that branch, and
+  // 2. another sibling subtree with conversation content that the latest branch did not take.
+  // This catches rewinds where the abandoned path continues through assistant/tool nodes,
+  // while still ignoring parallel tool calls that never create a user branch.
+  const hasBranching = [...latestBranchUuids].some(uuid => {
+    const children = childrenOf.get(uuid);
+    if (!children || children.size <= 1) return false;
+
+    const activeChildUuid = activeChildOf.get(uuid);
+    let sawRealUserChild = false;
+    let sawAlternateConversationChild = false;
+
+    for (const childUuid of children) {
+      const child = byUuid.get(childUuid);
+      if (isDirectRealUserBranchChild(uuid, child)) {
+        sawRealUserChild = true;
+      }
+      if (childUuid !== activeChildUuid && hasConversationContent(childUuid)) {
+        sawAlternateConversationChild = true;
+      }
+      if (sawRealUserChild && sawAlternateConversationChild) {
+        return true;
+      }
+    }
+
     return false;
   });
 
   let leaf: SDKNativeMessage | undefined;
 
   if (hasBranching) {
-    // Pick last-appearing leaf (no children) in file order — more robust than
-    // "last entry with uuid" which breaks on trailing non-dialog nodes
-    for (let i = convEntries.length - 1; i >= 0; i--) {
-      const uuid = convEntries[i].uuid;
-      if (uuid && !childrenOf.has(uuid)) {
-        leaf = convEntries[i];
-        break;
-      }
-    }
+    leaf = latestLeaf;
 
     // When resumeSessionAt is also set (rewind on the latest branch without follow-up),
     // truncate at that point instead of using the full branch leaf
@@ -892,37 +954,40 @@ export function filterActiveBranch(
   // calls, tool results from the same parent) and their non-branching
   // descendants.
   if (hasBranching) {
-    const additionalUuids = new Set<string>();
-    const pendingParents: string[] = [];
+    // Seed: collect non-branch siblings of active nodes (parallel tool calls,
+    // tool results) that the main ancestor walk didn't pick up.
+    const ancestorUuids = [...activeUuids];
+    const pending: string[] = [];
 
-    for (const uuid of activeUuids) {
+    for (const uuid of ancestorUuids) {
       const children = childrenOf.get(uuid);
       if (!children || children.size <= 1) continue;
+      const activeChildUuid = activeChildOf.get(uuid);
+      if (activeChildUuid && isDirectRealUserBranchChild(uuid, byUuid.get(activeChildUuid))) {
+        continue;
+      }
       for (const childUuid of children) {
         if (activeUuids.has(childUuid)) continue;
         const child = byUuid.get(childUuid);
-        if (!child || isRealUserBranchChild(child) || additionalUuids.has(childUuid)) continue;
-        additionalUuids.add(childUuid);
-        pendingParents.push(childUuid);
+        if (!child || isRealUserBranchChild(child)) continue;
+        activeUuids.add(childUuid);
+        pending.push(childUuid);
       }
     }
 
-    while (pendingParents.length > 0) {
-      const parentUuid = pendingParents.pop()!;
+    // BFS: include non-branching descendants of seeded siblings
+    while (pending.length > 0) {
+      const parentUuid = pending.pop()!;
       const children = childrenOf.get(parentUuid);
       if (!children) continue;
 
       for (const childUuid of children) {
-        if (activeUuids.has(childUuid) || additionalUuids.has(childUuid)) continue;
+        if (activeUuids.has(childUuid)) continue;
         const child = byUuid.get(childUuid);
         if (!child || isRealUserBranchChild(child)) continue;
-        additionalUuids.add(childUuid);
-        pendingParents.push(childUuid);
+        activeUuids.add(childUuid);
+        pending.push(childUuid);
       }
-    }
-
-    for (const uuid of additionalUuids) {
-      activeUuids.add(uuid);
     }
   }
 
