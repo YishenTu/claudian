@@ -5,7 +5,7 @@
 import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import type { SystemPromptSettings } from '../prompts/mainAgent';
-import type { ClaudeModel, PermissionMode, StreamChunk } from '../types';
+import type { ClaudeModel, EffortLevel, PermissionMode, StreamChunk } from '../types';
 
 export interface TextContentBlock {
   type: 'text';
@@ -101,7 +101,7 @@ export function createResponseHandler(options: ResponseHandlerOptions): Response
 export interface PersistentQueryConfig {
   model: string | null;
   thinkingTokens: number | null;
-  effortLevel: string | null;
+  effortLevel: EffortLevel | null;
   permissionMode: PermissionMode | null;
   systemPromptKey: string;
   disallowedToolsKey: string;

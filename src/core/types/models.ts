@@ -56,7 +56,7 @@ const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value));
 /** Whether the model is a known Claude model that supports adaptive thinking. */
 export function isAdaptiveThinkingModel(model: string): boolean {
   if (DEFAULT_MODEL_VALUES.has(model)) return true;
-  return /^claude-(haiku|sonnet|opus)-/.test(model);
+  return /claude-(haiku|sonnet|opus)-/.test(model);
 }
 
 export const CONTEXT_WINDOW_STANDARD = 200_000;

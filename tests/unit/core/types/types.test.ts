@@ -883,5 +883,22 @@ describe('types.ts', () => {
       expect(isAdaptiveThinkingModel('gpt-4')).toBe(false);
       expect(isAdaptiveThinkingModel('')).toBe(false);
     });
+
+    it('should return true for provider-qualified Claude model IDs', () => {
+      expect(isAdaptiveThinkingModel('us.anthropic.claude-sonnet-4-20250514-v1:0')).toBe(true);
+      expect(isAdaptiveThinkingModel('anthropic/claude-opus-4-6')).toBe(true);
+      expect(isAdaptiveThinkingModel('eu.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe(true);
+    });
+
+    it('should return false for partial model IDs without version suffix', () => {
+      expect(isAdaptiveThinkingModel('claude-haiku')).toBe(false);
+      expect(isAdaptiveThinkingModel('claude-sonnet')).toBe(false);
+      expect(isAdaptiveThinkingModel('claude-opus')).toBe(false);
+    });
+
+    it('should return true for full versioned 1M model IDs', () => {
+      expect(isAdaptiveThinkingModel('claude-opus-4-6[1m]')).toBe(true);
+      expect(isAdaptiveThinkingModel('claude-sonnet-4-6[1m]')).toBe(true);
+    });
   });
 });

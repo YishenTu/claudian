@@ -148,6 +148,12 @@ describe('QueryOptionsBuilder', () => {
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
+    it('returns true when effortLevel changes', () => {
+      const currentConfig = createMockPersistentQueryConfig({ effortLevel: 'high' });
+      const newConfig = { ...currentConfig, effortLevel: 'low' as const };
+      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
+    });
+
     it('returns false when only model changes (dynamic update)', () => {
       const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, model: 'claude-opus-4-5' };
@@ -211,6 +217,24 @@ describe('QueryOptionsBuilder', () => {
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
       expect(config.thinkingTokens).toBe(16000);
+    });
+
+    it('includes effortLevel for adaptive model', () => {
+      const ctx = createMockContext({
+        settings: createMockSettings({ model: 'sonnet', effortLevel: 'max' }),
+      });
+      const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
+
+      expect(config.effortLevel).toBe('max');
+    });
+
+    it('sets effortLevel to null for custom model', () => {
+      const ctx = createMockContext({
+        settings: createMockSettings({ model: 'custom-model', effortLevel: 'high' }),
+      });
+      const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
+
+      expect(config.effortLevel).toBeNull();
     });
 
     it('includes enableChrome from settings', () => {

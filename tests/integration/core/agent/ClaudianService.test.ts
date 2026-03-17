@@ -2205,6 +2205,24 @@ describe('ClaudianService', () => {
       expect(response?.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
     });
 
+    it('does not call setMaxThinkingTokens for adaptive models when budget changes', async () => {
+      // Adaptive model (sonnet) should use effort levels, not token budgets
+      mockPlugin.settings.model = 'sonnet';
+      mockPlugin.settings.thinkingBudget = 'off';
+
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      // Change thinking budget — should be ignored for adaptive models
+      mockPlugin.settings.thinkingBudget = 'high';
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      const response = getLastResponse();
+      expect(response?.setMaxThinkingTokens).not.toHaveBeenCalled();
+    });
+
     it('updates permission mode via setPermissionMode when going from YOLO to normal', async () => {
       // Start in YOLO mode
       mockPlugin.settings.permissionMode = 'yolo';
