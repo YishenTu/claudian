@@ -123,7 +123,7 @@ export class InlineAskUserQuestion {
         question: q.question,
         header: typeof q.header === 'string' ? q.header.slice(0, 12) : `Q${idx + 1}`,
         options: this.deduplicateOptions(q.options.map((o) => this.coerceOption(o))),
-        multiSelect: q.multiSelect ?? false,
+        multiSelect: q.multiSelect === true,
       }));
   }
 

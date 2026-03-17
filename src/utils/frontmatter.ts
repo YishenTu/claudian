@@ -1,43 +1,100 @@
 import { parseYaml } from 'obsidian';
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+const VALID_KEY_PATTERN = /^[\w-]+$/;
+
+function isValidKey(key: string): boolean {
+  return key.length > 0 && VALID_KEY_PATTERN.test(key);
+}
+
+function unquote(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function parseScalarValue(rawValue: string): unknown {
+  const value = rawValue.trim();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value === 'null' || value === '') return null;
+  if (!Number.isNaN(Number(value))) return Number(value);
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value
+      .slice(1, -1)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean)
+      .map(item => unquote(item));
+  }
+  return unquote(value);
+}
 
 /** Handles malformed YAML (e.g. unquoted values with colons) by line-by-line key:value extraction. */
 function parseFrontmatterFallback(yamlContent: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const lines = yamlContent.split('\n');
+  const lines = yamlContent.split(/\r?\n/);
+  let currentListKey: string | null = null;
+  let currentList: unknown[] = [];
+
+  function flushList(): void {
+    if (!currentListKey) return;
+    result[currentListKey] = currentList;
+    currentListKey = null;
+    currentList = [];
+  }
+
+  let pendingBareKey: string | null = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
+    if (currentListKey) {
+      if (trimmed.startsWith('- ')) {
+        currentList.push(parseScalarValue(trimmed.slice(2)));
+        continue;
+      }
+      flushList();
+    }
+
+    if (pendingBareKey) {
+      if (trimmed.startsWith('- ')) {
+        currentListKey = pendingBareKey;
+        currentList = [];
+        pendingBareKey = null;
+        currentList.push(parseScalarValue(trimmed.slice(2)));
+        continue;
+      }
+      result[pendingBareKey] = '';
+      pendingBareKey = null;
+    }
+
     const colonIndex = trimmed.indexOf(': ');
     if (colonIndex === -1) {
       if (trimmed.endsWith(':')) {
         const key = trimmed.slice(0, -1).trim();
-        if (key && /^[\w-]+$/.test(key)) {
-          result[key] = '';
+        if (isValidKey(key)) {
+          pendingBareKey = key;
         }
       }
       continue;
     }
 
     const key = trimmed.slice(0, colonIndex).trim();
-    let value: unknown = trimmed.slice(colonIndex + 2);
-
-    if (!key || !/^[\w-]+$/.test(key)) continue;
-
-    if (value === 'true') value = true;
-    else if (value === 'false') value = false;
-    else if (value === 'null' || value === '') value = null;
-    else if (!isNaN(Number(value)) && value !== '') value = Number(value);
-    else if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
-      value = value.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
-    }
-
-    result[key] = value;
+    if (!isValidKey(key)) continue;
+    result[key] = parseScalarValue(trimmed.slice(colonIndex + 2));
   }
 
+  if (pendingBareKey) {
+    result[pendingBareKey] = '';
+  }
+
+  flushList();
   return result;
 }
 

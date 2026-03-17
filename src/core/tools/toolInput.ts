@@ -18,8 +18,7 @@ import {
 export function extractResolvedAnswers(toolUseResult: unknown): AskUserAnswers | undefined {
   if (typeof toolUseResult !== 'object' || toolUseResult === null) return undefined;
   const r = toolUseResult as Record<string, unknown>;
-  if (!r.answers || typeof r.answers !== 'object') return undefined;
-  return r.answers as AskUserAnswers;
+  return normalizeAnswersObject(r.answers);
 }
 
 function normalizeAnswerValue(value: unknown): string | undefined {
@@ -35,6 +34,20 @@ function normalizeAnswerValue(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeAnswersObject(value: unknown): AskUserAnswers | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+
+  const answers: AskUserAnswers = {};
+  for (const [question, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalized = normalizeAnswerValue(rawValue);
+    if (normalized !== undefined) {
+      answers[question] = normalized;
+    }
+  }
+
+  return Object.keys(answers).length > 0 ? answers : undefined;
+}
+
 function parseAnswersFromJsonObject(resultText: string): AskUserAnswers | undefined {
   const start = resultText.indexOf('{');
   const end = resultText.lastIndexOf('}');
@@ -42,14 +55,7 @@ function parseAnswersFromJsonObject(resultText: string): AskUserAnswers | undefi
 
   try {
     const parsed = JSON.parse(resultText.slice(start, end + 1)) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
-
-    const answers: AskUserAnswers = {};
-    for (const [question, value] of Object.entries(parsed as Record<string, unknown>)) {
-      const normalized = normalizeAnswerValue(value);
-      if (normalized) answers[question] = normalized;
-    }
-    return Object.keys(answers).length > 0 ? answers : undefined;
+    return normalizeAnswersObject(parsed);
   } catch {
     return undefined;
   }

@@ -19,11 +19,17 @@ describe('extractResolvedAnswers', () => {
   it('returns undefined when answers is not an object', () => {
     expect(extractResolvedAnswers({ answers: 'bad' })).toBeUndefined();
     expect(extractResolvedAnswers({ answers: null })).toBeUndefined();
+    expect(extractResolvedAnswers({ answers: [] })).toBeUndefined();
   });
 
-  it('returns answers when valid', () => {
-    const answers = { foo: 'bar', baz: 1 };
-    expect(extractResolvedAnswers({ answers })).toBe(answers);
+  it('normalizes structured answers', () => {
+    const answers = { foo: 'bar', baz: 1, ok: true, choices: ['A', 'B'] };
+    expect(extractResolvedAnswers({ answers })).toEqual({
+      foo: 'bar',
+      baz: '1',
+      ok: 'true',
+      choices: 'A, B',
+    });
   });
 });
 

@@ -135,6 +135,22 @@ describe('InlineAskUserQuestion', () => {
       expect(tabLabels[1]?.textContent).toBe('Q2');
     });
 
+    it('treats non-boolean multiSelect values as false', () => {
+      const input = {
+        questions: [
+          { question: 'Pick one', options: ['A', 'B'], multiSelect: 'false' },
+        ],
+      };
+      const { container } = renderWidget(input);
+
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+
+      expect(container.querySelector('claudian-ask-review-title')?.textContent).toBe('Review your answers');
+    });
+
     it('truncates header to 12 characters', () => {
       const input = makeInput([
         { question: 'Q', options: ['A'], header: 'VeryLongHeaderText' },

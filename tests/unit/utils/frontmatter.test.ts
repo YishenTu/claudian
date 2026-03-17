@@ -335,6 +335,32 @@ Body`;
     expect(result!.frontmatter.tools).toEqual(['Read', 'Grep', 'Glob']);
   });
 
+  it('fallback parser handles multi-line arrays', () => {
+    const content = `---
+description: Use this agent when reviewing. Examples: Context: The user said something. user: hello
+allowed-tools:
+  - Read
+  - Grep
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.description).toContain('Use this agent');
+    expect(result!.frontmatter['allowed-tools']).toEqual(['Read', 'Grep']);
+  });
+
+  it('fallback parser unquotes quoted scalars', () => {
+    const content = `---
+description: "Value with: colon"
+argument-hint: '[file] [focus]'
+---
+Body`;
+    const result = parseFrontmatter(content);
+    expect(result).not.toBeNull();
+    expect(result!.frontmatter.description).toBe('Value with: colon');
+    expect(result!.frontmatter['argument-hint']).toBe('[file] [focus]');
+  });
+
   it('fallback parser skips comment lines', () => {
     const content = `---
 # This is a comment

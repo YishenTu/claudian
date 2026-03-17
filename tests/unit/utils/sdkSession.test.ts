@@ -6,6 +6,7 @@ import {
   collectAsyncSubagentResults,
   deleteSDKSession,
   encodeVaultPathForSDK,
+  extractToolResultContent,
   filterActiveBranch,
   getSDKProjectsPath,
   getSDKSessionPath,
@@ -1444,6 +1445,49 @@ describe('sdkSession', () => {
       expect(result.messages[0].images![1].mediaType).toBe('image/jpeg');
       expect(result.messages[0].images![1].name).toBe('image-2');
     });
+
+    it('extracts text from Agent tool results with array content', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        JSON.stringify({
+          type: 'user', uuid: 'u1', timestamp: '2024-01-15T10:00:00Z',
+          message: { content: 'Use an agent' },
+        }),
+        JSON.stringify({
+          type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2024-01-15T10:00:01Z',
+          message: { content: [{ type: 'tool_use', id: 'agent-1', name: 'Agent', input: { description: 'test', prompt: 'do stuff' } }] },
+        }),
+        // Agent tool result has array content (not string)
+        JSON.stringify({
+          type: 'user', uuid: 'tr1', parentUuid: 'a1', timestamp: '2024-01-15T10:00:30Z',
+          toolUseResult: { status: 'completed', agentId: 'abc123' },
+          message: { content: [{
+            type: 'tool_result', tool_use_id: 'agent-1', is_error: false,
+            content: [
+              { type: 'text', text: 'Agent completed the task successfully.' },
+              { type: 'text', text: 'agentId: abc123\n<usage>total_tokens: 500</usage>' },
+            ],
+          }] },
+        }),
+        JSON.stringify({
+          type: 'assistant', uuid: 'a2', parentUuid: 'tr1', timestamp: '2024-01-15T10:00:31Z',
+          message: { content: [{ type: 'text', text: 'Done.' }] },
+        }),
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-agent-result');
+
+      // The Agent tool call should have extracted text, not JSON.stringify'd array
+      const assistantMsg = result.messages.find(m => m.role === 'assistant' && m.toolCalls?.length);
+      expect(assistantMsg).toBeDefined();
+      const agentToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent');
+      expect(agentToolCall).toBeDefined();
+      expect(agentToolCall!.result).toBe(
+        'Agent completed the task successfully.\nagentId: abc123\n<usage>total_tokens: 500</usage>'
+      );
+      // Must NOT contain JSON artifacts
+      expect(agentToolCall!.result).not.toContain('"type":"text"');
+    });
   });
 
   describe('filterActiveBranch', () => {
@@ -1663,6 +1707,146 @@ describe('sdkSession', () => {
       // queue-operation between a2 (not active) and u3 (active) — should be dropped
       expect(result.some(e => e.type === 'queue-operation')).toBe(false);
     });
+
+    it('excludes progress entries and does not treat them as branches', () => {
+      // Simulates Agent tool call: assistant issues tool_use, SDK writes progress chain,
+      // then next user message is parented to end of progress chain.
+      // Without fix: progress creates false branching, losing the conversation branch.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        // a1 is a tool_use (Agent). SDK writes tool_result + progress chain as siblings:
+        { type: 'user', uuid: 'tr1', parentUuid: 'a1', toolUseResult: {} },  // tool result
+        { type: 'assistant', uuid: 'a2', parentUuid: 'tr1' },  // response after tool
+        // Progress chain branching off a1 (subagent execution logs):
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p1', parentUuid: 'a1' },
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p2', parentUuid: 'p1' },
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p3', parentUuid: 'p2' },
+        // Next conversation message parented to end of progress chain:
+        { type: 'user', uuid: 'u2', parentUuid: 'p3' },
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u2' },
+      ];
+
+      const result = filterActiveBranch(entries);
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+
+      // All conversation entries should be present, progress entries excluded
+      expect(uuids).toEqual(['u1', 'a1', 'tr1', 'a2', 'u2', 'a3']);
+      expect(result.every(e => (e.type as string) !== 'progress')).toBe(true);
+    });
+
+    it('reparents through long progress chains to preserve full conversation', () => {
+      // Two turns, each with Agent tool calls generating progress entries.
+      // The second turn's user message is parented to the end of the first progress chain.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1-think', parentUuid: 'u1' },
+        { type: 'assistant', uuid: 'a1-tool', parentUuid: 'a1-think' },  // Agent tool_use
+        // Conversation branch: tool result → assistant response
+        { type: 'user', uuid: 'tr1', parentUuid: 'a1-tool', toolUseResult: {} },
+        { type: 'assistant', uuid: 'a1-think2', parentUuid: 'tr1' },
+        { type: 'assistant', uuid: 'a1-text', parentUuid: 'a1-think2' },
+        // Progress chain off a1-tool:
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p1', parentUuid: 'a1-tool' },
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p2', parentUuid: 'p1' },
+        // System entry chained to progress:
+        { type: 'system', uuid: 'sys1', parentUuid: 'p2' },
+        // Second turn parented to system (which is parented to progress chain):
+        { type: 'user', uuid: 'u2', parentUuid: 'sys1' },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },
+      ];
+
+      const result = filterActiveBranch(entries);
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+
+      // Must include BOTH turns' content — nothing lost
+      expect(uuids).toContain('a1-text');  // First turn's response
+      expect(uuids).toContain('u2');       // Second turn's input
+      expect(uuids).toContain('a2');       // Second turn's response
+      // Progress entries must be excluded
+      expect(uuids).not.toContain('p1');
+      expect(uuids).not.toContain('p2');
+    });
+
+    it('does not treat parallel tool calls as branches', () => {
+      // Assistant sends two tool_use blocks in parallel. SDK writes them as
+      // separate entries. Their tool results are parented to respective entries.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1-text', parentUuid: 'u1' },
+        { type: 'assistant', uuid: 'a1-tool1', parentUuid: 'a1-text' },  // first tool_use
+        { type: 'assistant', uuid: 'a1-tool2', parentUuid: 'a1-text' },  // second tool_use (parallel)
+        // Tool results:
+        { type: 'user', uuid: 'tr1', parentUuid: 'a1-tool1', toolUseResult: {} },
+        { type: 'user', uuid: 'tr2', parentUuid: 'a1-tool2', toolUseResult: {} },
+        // Assistant continues after both results:
+        { type: 'assistant', uuid: 'a2', parentUuid: 'tr2' },
+      ];
+
+      const result = filterActiveBranch(entries);
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+
+      // Both tool calls and their results should be present
+      expect(uuids).toContain('a1-tool1');
+      expect(uuids).toContain('a1-tool2');
+      expect(uuids).toContain('tr1');
+      expect(uuids).toContain('tr2');
+      expect(uuids).toContain('a2');
+    });
+
+    it('handles real rewind alongside progress entries', () => {
+      // Turn 1 with Agent tool (progress entries), then a real rewind at a1.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        // Original continuation:
+        { type: 'user', uuid: 'u2-old', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2-old', parentUuid: 'u2-old' },
+        // Progress entries off a1:
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p1', parentUuid: 'a1' },
+        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p2', parentUuid: 'p1' },
+        // Rewind: new user message also branching off a1
+        { type: 'user', uuid: 'u2-new', parentUuid: 'a1' },
+        { type: 'assistant', uuid: 'a2-new', parentUuid: 'u2-new' },
+      ];
+
+      const result = filterActiveBranch(entries);
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+
+      // Should follow the latest branch (u2-new), not the old one or progress
+      expect(uuids).toEqual(['u1', 'a1', 'u2-new', 'a2-new']);
+    });
+
+    it('preserves earlier parallel tool-result descendants when a later rewind exists', () => {
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1-text', parentUuid: 'u1' },
+        { type: 'assistant', uuid: 'a1-tool1', parentUuid: 'a1-text' },
+        { type: 'assistant', uuid: 'a1-tool2', parentUuid: 'a1-text' },
+        { type: 'user', uuid: 'tr1', parentUuid: 'a1-tool1', toolUseResult: {} },
+        { type: 'user', uuid: 'tr2', parentUuid: 'a1-tool2', toolUseResult: {} },
+        { type: 'assistant', uuid: 'a2', parentUuid: 'tr2' },
+        { type: 'user', uuid: 'u3-old', parentUuid: 'a2' },
+        { type: 'assistant', uuid: 'a3-old', parentUuid: 'u3-old' },
+        { type: 'user', uuid: 'u3-new', parentUuid: 'a2' },
+        { type: 'assistant', uuid: 'a3-new', parentUuid: 'u3-new' },
+      ];
+
+      const result = filterActiveBranch(entries);
+      const uuids = result.filter(e => e.uuid).map(e => e.uuid);
+
+      expect(uuids).toEqual([
+        'u1',
+        'a1-text',
+        'a1-tool1',
+        'a1-tool2',
+        'tr1',
+        'tr2',
+        'a2',
+        'u3-new',
+        'a3-new',
+      ]);
+    });
   });
 
   describe('loadSDKSessionMessages with resumeSessionAt', () => {
@@ -1715,6 +1899,43 @@ describe('sdkSession', () => {
       expect(result.messages[1].content).toBe('Hi!');
       expect(result.messages[2].content).toBe('New branch');
       expect(result.messages[3].content).toBe('New response');
+    });
+  });
+
+  describe('extractToolResultContent', () => {
+    it('passes through string content unchanged', () => {
+      expect(extractToolResultContent('hello world')).toBe('hello world');
+    });
+
+    it('extracts text from array of content blocks (Agent results)', () => {
+      const content = [
+        { type: 'text', text: 'First block of output.' },
+        { type: 'text', text: 'agentId: abc123\n<usage>total_tokens: 1000</usage>' },
+      ];
+      expect(extractToolResultContent(content)).toBe(
+        'First block of output.\nagentId: abc123\n<usage>total_tokens: 1000</usage>'
+      );
+    });
+
+    it('skips non-text blocks in array content', () => {
+      const content = [
+        { type: 'image', source: { type: 'base64', data: 'abc' } },
+        { type: 'text', text: 'The only text.' },
+      ];
+      expect(extractToolResultContent(content)).toBe('The only text.');
+    });
+
+    it('returns empty string for null/undefined content', () => {
+      expect(extractToolResultContent(null)).toBe('');
+      expect(extractToolResultContent(undefined)).toBe('');
+    });
+
+    it('JSON-stringifies unknown content types as fallback', () => {
+      expect(extractToolResultContent({ custom: 'value' })).toBe('{"custom":"value"}');
+    });
+
+    it('handles empty array content', () => {
+      expect(extractToolResultContent([])).toBe('');
     });
   });
 

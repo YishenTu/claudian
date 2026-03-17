@@ -167,12 +167,7 @@ function parseSubagentEvents(entry: unknown): SubagentToolEvent[] {
 
     if (block.type === 'tool_result') {
       if (typeof block.tool_use_id !== 'string') continue;
-      const contentText =
-        typeof block.content === 'string'
-          ? block.content
-          : block.content === undefined
-            ? ''
-            : JSON.stringify(block.content);
+      const contentText = extractToolResultContent(block.content);
       events.push({
         type: 'tool_result',
         toolUseId: block.tool_use_id,
@@ -494,11 +489,8 @@ function extractToolCalls(
   if (!toolResults) {
     for (const block of content) {
       if (block.type === 'tool_result' && block.tool_use_id) {
-        const resultContent = typeof block.content === 'string'
-          ? block.content
-          : JSON.stringify(block.content);
         results.set(block.tool_use_id, {
-          content: resultContent,
+          content: extractToolResultContent(block.content),
           isError: block.is_error ?? false,
         });
       }
@@ -627,6 +619,28 @@ export function parseSDKMessageToChat(
   };
 }
 
+/**
+ * The SDK writes content as a string for most tools, but as an array of content blocks
+ * for Agent/subagent results (e.g., [{type:'text', text:'...'}]).
+ */
+export function extractToolResultContent(content: string | unknown): string {
+  if (typeof content === 'string') return content;
+  if (content == null) return '';
+  if (Array.isArray(content)) {
+    return content
+      .filter(isTextBlock)
+      .map(b => b.text)
+      .join('\n');
+  }
+  return JSON.stringify(content);
+}
+
+function isTextBlock(b: unknown): b is { type: 'text'; text: string } {
+  if (!b || typeof b !== 'object') return false;
+  const record = b as Record<string, unknown>;
+  return record.type === 'text' && typeof record.text === 'string';
+}
+
 /** tool_result often appears in user message following assistant's tool_use. */
 function collectToolResults(sdkMessages: SDKNativeMessage[]): Map<string, { content: string; isError: boolean }> {
   const results = new Map<string, { content: string; isError: boolean }>();
@@ -637,11 +651,8 @@ function collectToolResults(sdkMessages: SDKNativeMessage[]): Map<string, { cont
 
     for (const block of content) {
       if (block.type === 'tool_result' && block.tool_use_id) {
-        const resultContent = typeof block.content === 'string'
-          ? block.content
-          : JSON.stringify(block.content);
         results.set(block.tool_use_id, {
-          content: resultContent,
+          content: extractToolResultContent(block.content),
           isError: block.is_error ?? false,
         });
       }
@@ -763,6 +774,16 @@ export function filterActiveBranch(
 ): SDKNativeMessage[] {
   if (entries.length === 0) return [];
 
+  function isRealUserBranchChild(entry: SDKNativeMessage | undefined): boolean {
+    return (
+      !!entry &&
+      entry.type === 'user' &&
+      !('toolUseResult' in entry) &&
+      !entry.isMeta &&
+      !('sourceToolUseID' in entry)
+    );
+  }
+
   // SDK may write duplicates around compaction, which inflates child counts
   const seen = new Set<string>();
   const deduped: SDKNativeMessage[] = [];
@@ -774,34 +795,80 @@ export function filterActiveBranch(
     deduped.push(entry);
   }
 
+  // Strip progress entries (subagent execution logs) from the tree.
+  // They have uuid/parentUuid chains that create false branching.
+  // Entries whose parentUuid points into a progress chain get reparented
+  // to the chain's conversation-level ancestor.
+  const progressUuids = new Set<string>();
+  const progressParentOf = new Map<string, string | null>();
+  for (const entry of deduped) {
+    if ((entry.type as string) === 'progress' && entry.uuid) {
+      progressUuids.add(entry.uuid);
+      progressParentOf.set(entry.uuid, entry.parentUuid ?? null);
+    }
+  }
+
+  function resolveParent(parentUuid: string | null | undefined): string | null | undefined {
+    if (!parentUuid) return parentUuid;
+    let cur: string | null = parentUuid;
+    let guard = progressUuids.size + 1;
+    while (cur && progressUuids.has(cur)) {
+      if (--guard < 0) break;
+      cur = progressParentOf.get(cur) ?? null;
+    }
+    return cur;
+  }
+
+  // Build maps from conversation entries only (excluding progress)
+  const convEntries: SDKNativeMessage[] = [];
+  for (const entry of deduped) {
+    if ((entry.type as string) === 'progress') continue;
+    convEntries.push(entry);
+  }
+
   const byUuid = new Map<string, SDKNativeMessage>();
   const childrenOf = new Map<string, Set<string>>();
 
-  for (const entry of deduped) {
+  for (const entry of convEntries) {
     if (entry.uuid) {
       byUuid.set(entry.uuid, entry);
     }
-    if (entry.parentUuid && entry.uuid) {
-      let children = childrenOf.get(entry.parentUuid);
+    const effectiveParent = resolveParent(entry.parentUuid) ?? null;
+    if (effectiveParent && entry.uuid) {
+      let children = childrenOf.get(effectiveParent);
       if (!children) {
         children = new Set();
-        childrenOf.set(entry.parentUuid, children);
+        childrenOf.set(effectiveParent, children);
       }
       children.add(entry.uuid);
     }
   }
 
-  const hasBranching = [...childrenOf.values()].some(children => children.size > 1);
+  // A real branch is a rewind/fork: a parent with 2+ genuine user message children
+  // (not tool results, not meta-injected). Parallel tool calls, tool results, and
+  // assistant continuations sharing a parent are normal conversation flow.
+  const hasBranching = [...childrenOf.entries()].some(([, children]) => {
+    if (children.size <= 1) return false;
+    let realUserChildren = 0;
+    for (const childUuid of children) {
+      const child = byUuid.get(childUuid);
+      if (isRealUserBranchChild(child)) {
+        realUserChildren++;
+        if (realUserChildren > 1) return true;
+      }
+    }
+    return false;
+  });
 
   let leaf: SDKNativeMessage | undefined;
 
   if (hasBranching) {
     // Pick last-appearing leaf (no children) in file order — more robust than
     // "last entry with uuid" which breaks on trailing non-dialog nodes
-    for (let i = deduped.length - 1; i >= 0; i--) {
-      const uuid = deduped[i].uuid;
+    for (let i = convEntries.length - 1; i >= 0; i--) {
+      const uuid = convEntries[i].uuid;
       if (uuid && !childrenOf.has(uuid)) {
-        leaf = deduped[i];
+        leaf = convEntries[i];
         break;
       }
     }
@@ -816,54 +883,89 @@ export function filterActiveBranch(
           leaf = current;
           break;
         }
-        if (current.parentUuid) {
-          current = byUuid.get(current.parentUuid);
-        } else {
-          break;
-        }
+        const ep = resolveParent(current.parentUuid);
+        current = ep ? byUuid.get(ep) : undefined;
       }
     }
   } else if (resumeSessionAt) {
     leaf = byUuid.get(resumeSessionAt);
   } else {
-    return deduped;
+    return convEntries;
   }
 
-  if (!leaf || !leaf.uuid) return deduped;
+  if (!leaf || !leaf.uuid) return convEntries;
 
   const activeUuids = new Set<string>();
   let current: SDKNativeMessage | undefined = leaf;
   while (current?.uuid) {
     activeUuids.add(current.uuid);
-    if (current.parentUuid) {
-      current = byUuid.get(current.parentUuid);
-    } else {
-      break;
+    const ep = resolveParent(current.parentUuid);
+    current = ep ? byUuid.get(ep) : undefined;
+  }
+
+  // When no real branching was detected but resumeSessionAt truncated,
+  // the active set only has the chain up to the leaf. For no-branching
+  // with truncation, this is correct. For branching, we also need to
+  // include sibling entries that are part of the same turn (parallel tool
+  // calls, tool results from the same parent) and their non-branching
+  // descendants.
+  if (hasBranching) {
+    const additionalUuids = new Set<string>();
+    const pendingParents: string[] = [];
+
+    for (const uuid of activeUuids) {
+      const children = childrenOf.get(uuid);
+      if (!children || children.size <= 1) continue;
+      for (const childUuid of children) {
+        if (activeUuids.has(childUuid)) continue;
+        const child = byUuid.get(childUuid);
+        if (!child || isRealUserBranchChild(child) || additionalUuids.has(childUuid)) continue;
+        additionalUuids.add(childUuid);
+        pendingParents.push(childUuid);
+      }
+    }
+
+    while (pendingParents.length > 0) {
+      const parentUuid = pendingParents.pop()!;
+      const children = childrenOf.get(parentUuid);
+      if (!children) continue;
+
+      for (const childUuid of children) {
+        if (activeUuids.has(childUuid) || additionalUuids.has(childUuid)) continue;
+        const child = byUuid.get(childUuid);
+        if (!child || isRealUserBranchChild(child)) continue;
+        additionalUuids.add(childUuid);
+        pendingParents.push(childUuid);
+      }
+    }
+
+    for (const uuid of additionalUuids) {
+      activeUuids.add(uuid);
     }
   }
 
   // O(n) sweep: include no-uuid entries only if both nearest uuid neighbors are active
-  const n = deduped.length;
+  const n = convEntries.length;
   const prevIsActive = new Array<boolean>(n);
   const nextIsActive = new Array<boolean>(n);
 
   let lastPrevActive = false;
   for (let i = 0; i < n; i++) {
-    if (deduped[i].uuid) {
-      lastPrevActive = activeUuids.has(deduped[i].uuid!);
+    if (convEntries[i].uuid) {
+      lastPrevActive = activeUuids.has(convEntries[i].uuid!);
     }
     prevIsActive[i] = lastPrevActive;
   }
 
   let lastNextActive = false;
   for (let i = n - 1; i >= 0; i--) {
-    if (deduped[i].uuid) {
-      lastNextActive = activeUuids.has(deduped[i].uuid!);
+    if (convEntries[i].uuid) {
+      lastNextActive = activeUuids.has(convEntries[i].uuid!);
     }
     nextIsActive[i] = lastNextActive;
   }
 
-  return deduped.filter((entry, idx) => {
+  return convEntries.filter((entry, idx) => {
     if (entry.uuid) return activeUuids.has(entry.uuid);
     return prevIsActive[idx] && nextIsActive[idx];
   });
