@@ -3,6 +3,7 @@ import type { SDKMessage, SDKResultError } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKToolUseResult, UsageInfo } from '../types';
 import { getContextWindowSize } from '../types';
 import { isBlockedMessage } from '../types/sdk';
+import { extractToolResultContent } from './toolResultContent';
 import type { TransformEvent } from './types';
 
 export interface TransformOptions {
@@ -187,9 +188,7 @@ export function* transformSDKMessage(
         yield {
           type: 'tool_result',
           id: message.parent_tool_use_id,
-          content: typeof message.tool_use_result === 'string'
-            ? message.tool_use_result
-            : JSON.stringify(message.tool_use_result, null, 2),
+          content: extractToolResultContent(message.tool_use_result, { fallbackIndent: 2 }),
           isError: false,
           parentToolUseId,
           toolUseResult: (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined,
@@ -202,9 +201,7 @@ export function* transformSDKMessage(
             yield {
               type: 'tool_result',
               id: block.tool_use_id || message.parent_tool_use_id || '',
-              content: typeof block.content === 'string'
-                ? block.content
-                : JSON.stringify(block.content, null, 2),
+              content: extractToolResultContent(block.content, { fallbackIndent: 2 }),
               isError: block.is_error || false,
               parentToolUseId,
               toolUseResult: (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined,

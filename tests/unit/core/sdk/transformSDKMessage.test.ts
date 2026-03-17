@@ -356,6 +356,31 @@ describe('transformSDKMessage', () => {
       expect((results[0] as any).content).toContain('"status": "success"');
     });
 
+    it('extracts text from array-based tool_use_result content', () => {
+      const toolUseResult = [
+        { type: 'text', text: 'Agent completed successfully.' },
+        { type: 'text', text: 'Saved summary to notes.md' },
+      ];
+      const message = msg({
+        type: 'user',
+        parent_tool_use_id: 'tool-123',
+        tool_use_result: toolUseResult,
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        {
+          type: 'tool_result',
+          id: 'tool-123',
+          content: 'Agent completed successfully.\nSaved summary to notes.md',
+          isError: false,
+          parentToolUseId: 'tool-123',
+          toolUseResult,
+        },
+      ]);
+    });
+
     it('yields tool_result from message.content blocks', () => {
       const message = msg({
         type: 'user',
@@ -412,7 +437,37 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
-    it('stringifies non-string content in tool_result blocks', () => {
+    it('extracts text from array content in tool_result blocks', () => {
+      const message = msg({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-agent',
+              content: [
+                { type: 'text', text: 'Agent completed successfully.' },
+                { type: 'text', text: 'Next step queued.' },
+              ],
+            },
+          ],
+        },
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        {
+          type: 'tool_result',
+          id: 'tool-agent',
+          content: 'Agent completed successfully.\nNext step queued.',
+          isError: false,
+          parentToolUseId: null,
+        },
+      ]);
+    });
+
+    it('stringifies non-string object content in tool_result blocks', () => {
       const message = msg({
         type: 'user',
         message: {
@@ -430,6 +485,30 @@ describe('transformSDKMessage', () => {
 
       expect(results.length).toBe(1);
       expect((results[0] as any).content).toContain('"key": "value"');
+    });
+
+    it('preserves tool_reference array content in tool_result blocks', () => {
+      const toolRefs = [
+        { type: 'tool_reference', tool_name: 'WebSearch' },
+        { type: 'tool_reference', tool_name: 'Grep' },
+      ];
+      const message = msg({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-search-1',
+              content: toolRefs,
+            },
+          ],
+        },
+      });
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results.length).toBe(1);
+      expect((results[0] as any).content).toBe(JSON.stringify(toolRefs, null, 2));
     });
 
     it('uses parent_tool_use_id as fallback for tool_result id', () => {

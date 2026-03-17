@@ -13,6 +13,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+import { extractToolResultContent } from '../core/sdk/toolResultContent';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../core/tools';
 import { isSubagentToolName, TOOL_ASK_USER_QUESTION } from '../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, SubagentInfo, ToolCallInfo } from '../core/types';
@@ -503,7 +504,7 @@ function extractToolCalls(
       id: block.id,
       name: block.name,
       input: block.input ?? {},
-      status: result ? (result.isError ? 'error' : 'completed') : 'completed',
+      status: result ? (result.isError ? 'error' : 'completed') : 'running',
       result: result?.content,
       isExpanded: false,
     };
@@ -519,9 +520,10 @@ function mapContentBlocks(content: string | SDKNativeContentBlock[] | undefined)
     switch (block.type) {
       case 'text': {
         // Skip "(no content)" placeholder the SDK writes as the first assistant entry
-        const trimmed = block.text?.trim();
-        if (trimmed && trimmed !== '(no content)') {
-          blocks.push({ type: 'text', content: trimmed });
+        const text = block.text;
+        const trimmed = text?.trim();
+        if (text && trimmed && trimmed !== '(no content)') {
+          blocks.push({ type: 'text', content: text });
         }
         break;
       }
@@ -619,27 +621,7 @@ export function parseSDKMessageToChat(
   };
 }
 
-/**
- * The SDK writes content as a string for most tools, but as an array of content blocks
- * for Agent/subagent results (e.g., [{type:'text', text:'...'}]).
- */
-export function extractToolResultContent(content: string | unknown): string {
-  if (typeof content === 'string') return content;
-  if (content == null) return '';
-  if (Array.isArray(content)) {
-    return content
-      .filter(isTextBlock)
-      .map(b => b.text)
-      .join('\n');
-  }
-  return JSON.stringify(content);
-}
-
-function isTextBlock(b: unknown): b is { type: 'text'; text: string } {
-  if (!b || typeof b !== 'object') return false;
-  const record = b as Record<string, unknown>;
-  return record.type === 'text' && typeof record.text === 'string';
-}
+export { extractToolResultContent };
 
 /** tool_result often appears in user message following assistant's tool_use. */
 function collectToolResults(sdkMessages: SDKNativeMessage[]): Map<string, { content: string; isError: boolean }> {

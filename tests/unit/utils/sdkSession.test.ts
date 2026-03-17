@@ -536,6 +536,29 @@ describe('sdkSession', () => {
       expect(chatMsg!.toolCalls![0].status).toBe('error');
     });
 
+    it('keeps tool calls running when no matching tool_result exists yet', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-running',
+        timestamp: '2024-01-15T10:33:30Z',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-running',
+              name: 'Read',
+              input: { file_path: 'notes/todo.md' },
+            },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.toolCalls![0].status).toBe('running');
+      expect(chatMsg!.toolCalls![0].result).toBeUndefined();
+    });
+
     it('extracts thinking content blocks', () => {
       const sdkMsg: SDKNativeMessage = {
         type: 'assistant',
@@ -559,6 +582,26 @@ describe('sdkSession', () => {
       expect(thinkingBlock.type === 'thinking' && thinkingBlock.content).toBe('Let me consider this...');
 
       expect(chatMsg!.contentBlocks![1].type).toBe('text');
+    });
+
+    it('preserves text block whitespace in contentBlocks', () => {
+      const sdkMsg: SDKNativeMessage = {
+        type: 'assistant',
+        uuid: 'asst-whitespace',
+        timestamp: '2024-01-15T10:34:30Z',
+        message: {
+          content: [
+            { type: 'text', text: '  Preserve leading and trailing space  ' },
+          ],
+        },
+      };
+
+      const chatMsg = parseSDKMessageToChat(sdkMsg);
+
+      expect(chatMsg!.content).toBe('  Preserve leading and trailing space  ');
+      expect(chatMsg!.contentBlocks).toEqual([
+        { type: 'text', content: '  Preserve leading and trailing space  ' },
+      ]);
     });
 
     it('returns null for system messages', () => {
@@ -1936,6 +1979,23 @@ describe('sdkSession', () => {
 
     it('handles empty array content', () => {
       expect(extractToolResultContent([])).toBe('');
+    });
+
+    it('JSON-stringifies non-empty array with no text blocks (e.g. tool_reference)', () => {
+      const content = [
+        { type: 'tool_reference', tool_name: 'WebSearch' },
+        { type: 'tool_reference', tool_name: 'Grep' },
+      ];
+      expect(extractToolResultContent(content)).toBe(JSON.stringify(content));
+    });
+
+    it('JSON-stringifies non-empty array with no text blocks using fallbackIndent', () => {
+      const content = [
+        { type: 'tool_reference', tool_name: 'Read' },
+      ];
+      expect(extractToolResultContent(content, { fallbackIndent: 2 })).toBe(
+        JSON.stringify(content, null, 2)
+      );
     });
   });
 
