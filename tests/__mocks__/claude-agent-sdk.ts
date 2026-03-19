@@ -48,6 +48,8 @@ export interface Options {
   spawnClaudeCodeProcess?: (options: SpawnOptions) => SpawnedProcess;
   hooks?: {
     PreToolUse?: HookCallbackMatcher[];
+    PostToolUse?: HookCallbackMatcher[];
+    Stop?: HookCallbackMatcher[];
   };
   agents?: Record<string, AgentDefinition>;
 }

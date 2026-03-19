@@ -2177,6 +2177,34 @@ describe('sdkSession', () => {
       expect(taskToolCall.status).toBe('completed');
     });
 
+    it('prefers queue-operation completion over misleading async tool_result error flags', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
+        const p = String(filePath);
+        if (p.endsWith('.jsonl') && !p.includes('subagents')) {
+          return [
+            '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run background task"}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Review code","prompt":"Check for bugs","run_in_background":true}}]}}',
+            `{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"ae5eb9a","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background.","is_error":true}]}}`,
+            `{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>ae5eb9a</task-id><status>completed</status><summary>Agent completed</summary><result>Background work finished cleanly</result></task-notification>"}`,
+          ].join('\n');
+        }
+        return '';
+      });
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-async-error-flag');
+
+      const assistantMsg = result.messages.find(m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.name === 'Task'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+
+      expect(taskToolCall.subagent).toBeDefined();
+      expect(taskToolCall.subagent!.status).toBe('completed');
+      expect(taskToolCall.subagent!.asyncStatus).toBe('completed');
+      expect(taskToolCall.subagent!.result).toBe('Background work finished cleanly');
+      expect(taskToolCall.status).toBe('completed');
+      expect(taskToolCall.result).toBe('Background work finished cleanly');
+    });
+
     it('uses truncated API result when no queue-operation exists', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
@@ -2199,6 +2227,9 @@ describe('sdkSession', () => {
 
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.agentId).toBe('abc123');
+      expect(taskToolCall.subagent!.status).toBe('running');
+      expect(taskToolCall.subagent!.asyncStatus).toBe('running');
+      expect(taskToolCall.status).toBe('running');
       // Falls back to the API content (truncated)
       expect(taskToolCall.subagent!.result).toBe('Task launched.');
     });

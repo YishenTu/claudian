@@ -42,7 +42,9 @@ import {
 } from '../../utils/session';
 import {
   createBlocklistHook,
+  createStopSubagentHook,
   createVaultRestrictionHook,
+  type SubagentHookState,
 } from '../hooks';
 import type { McpServerManager } from '../mcp';
 import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
@@ -162,6 +164,14 @@ export class ClaudianService {
   private lastSentQueryOptions: QueryOptions | null = null;
   private crashRecoveryAttempted = false;
   private coldStartInProgress = false;  // Prevent consumer error restarts during cold-start
+
+  // Subagent hook state provider (set from feature layer to avoid core→feature dependency)
+  private _subagentStateProvider: (() => SubagentHookState) | null = null;
+
+  // Auto-triggered turn handling (e.g., task-notification delivery by the SDK)
+  private _autoTurnBuffer: StreamChunk[] = [];
+  private _autoTurnSawStreamText = false;
+  private _autoTurnCallback: ((chunks: StreamChunk[]) => void) | null = null;
 
   constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
     this.plugin = plugin;
@@ -409,6 +419,8 @@ export class ClaudianService {
     this.responseConsumerRunning = false;
     this.responseConsumerPromise = null;
     this.currentConfig = null;
+    this._autoTurnBuffer = [];
+    this._autoTurnSawStreamText = false;
     if (!preserveHandlers) {
       this.responseHandlers = [];
       this.currentAllowedTools = null;
@@ -500,29 +512,37 @@ export class ClaudianService {
       enableBlocklist: this.plugin.settings.enableBlocklist,
     }));
 
+    const hooks: Options['hooks'] = {};
+
     if (this.plugin.settings.allowExternalAccess) {
-      return { PreToolUse: [blocklistHook] };
+      hooks.PreToolUse = [blocklistHook];
+    } else {
+      const vaultRestrictionHook = createVaultRestrictionHook({
+        getPathAccessType: (p) => {
+          if (!this.vaultPath) return 'vault';
+          // For cold-start queries, use the passed externalContextPaths.
+          // For persistent queries, read this.currentExternalContextPaths at execution time
+          // so dynamic updates are reflected.
+          const paths = externalContextPaths ?? this.currentExternalContextPaths;
+          return getPathAccessType(
+            p,
+            paths,
+            this.plugin.settings.allowedExportPaths,
+            this.vaultPath
+          );
+        },
+      });
+      hooks.PreToolUse = [blocklistHook, vaultRestrictionHook];
     }
 
-    const vaultRestrictionHook = createVaultRestrictionHook({
-      getPathAccessType: (p) => {
-        if (!this.vaultPath) return 'vault';
-        // For cold-start queries, use the passed externalContextPaths.
-        // For persistent queries, read this.currentExternalContextPaths at execution time
-        // so dynamic updates are reflected.
-        const paths = externalContextPaths ?? this.currentExternalContextPaths;
-        return getPathAccessType(
-          p,
-          paths,
-          this.plugin.settings.allowedExportPaths,
-          this.vaultPath
-        );
-      },
-    });
+    // Always register subagent hooks — closures resolve provider at execution time
+    // so hooks work even when provider is set after the persistent query starts.
+    const noopState: SubagentHookState = { hasRunning: false };
+    hooks.Stop = [createStopSubagentHook(
+      () => this._subagentStateProvider?.() ?? noopState
+    )];
 
-    return {
-      PreToolUse: [blocklistHook, vaultRestrictionHook],
-    };
+    return hooks;
   }
 
   /**
@@ -635,8 +655,12 @@ export class ClaudianService {
 
     // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
-    if (handler && this.isStreamTextEvent(message)) {
-      handler.markStreamTextSeen();
+    if (this.isStreamTextEvent(message)) {
+      if (handler) {
+        handler.markStreamTextSeen();
+      } else {
+        this._autoTurnSawStreamText = true;
+      }
     }
 
     // Transform SDK message to StreamChunks
@@ -657,8 +681,12 @@ export class ClaudianService {
           try { this.permissionModeSyncCallback(event.permissionMode); } catch { /* non-critical */ }
         }
       } else if (isStreamChunk(event)) {
-        if (message.type === 'assistant' && handler?.sawStreamText && event.type === 'text') {
-          continue;
+        // Dedup: SDK delivers text via stream_events (incremental) AND the assistant message
+        // (complete). Skip the assistant message text if stream text was already seen.
+        if (message.type === 'assistant' && event.type === 'text') {
+          if (handler?.sawStreamText || (!handler && this._autoTurnSawStreamText)) {
+            continue;
+          }
         }
 
         // SDK auto-approves EnterPlanMode (checkPermissions → allow),
@@ -680,12 +708,20 @@ export class ClaudianService {
           } else {
             handler.onChunk(event);
           }
+        } else {
+          // No handler — buffer for auto-triggered turn (e.g., task-notification delivery)
+          this._autoTurnBuffer.push(event);
         }
       }
     }
 
-    if (message.type === 'assistant' && message.uuid && handler) {
-      handler.onChunk({ type: 'sdk_assistant_uuid', uuid: message.uuid });
+    if (message.type === 'assistant' && message.uuid) {
+      const uuidChunk = { type: 'sdk_assistant_uuid' as const, uuid: message.uuid };
+      if (handler) {
+        handler.onChunk(uuidChunk);
+      } else {
+        this._autoTurnBuffer.push(uuidChunk);
+      }
     }
 
     // Check for turn completion
@@ -697,6 +733,12 @@ export class ClaudianService {
       if (handler) {
         handler.resetStreamText();
         handler.onDone();
+      } else if (this._autoTurnBuffer.length > 0) {
+        // Flush buffered chunks from auto-triggered turn (no handler was registered)
+        const chunks = [...this._autoTurnBuffer];
+        this._autoTurnBuffer = [];
+        this._autoTurnSawStreamText = false;
+        try { this._autoTurnCallback?.(chunks); } catch { /* non-critical */ }
       }
     }
   }
@@ -1656,6 +1698,16 @@ export class ClaudianService {
 
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void {
     this.permissionModeSyncCallback = callback;
+  }
+
+  setSubagentHookProvider(
+    getState: () => SubagentHookState
+  ): void {
+    this._subagentStateProvider = getState;
+  }
+
+  setAutoTurnCallback(callback: ((chunks: StreamChunk[]) => void) | null): void {
+    this._autoTurnCallback = callback;
   }
 
   private createApprovalCallback(): CanUseTool {

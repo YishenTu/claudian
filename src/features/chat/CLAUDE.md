@@ -37,7 +37,7 @@ ClaudianView (lifecycle + assembly)
     ├── InputToolbar            # Model selector, thinking, permissions, context meter
     ├── FileContext             # @-mention chips and dropdown
     ├── ImageContext            # Image attachments
-    ├── StatusPanel             # Todo/subagent/command output panels container
+    ├── StatusPanel             # Todo/command output panels container
     ├── InstructionModeManager  # "#" mode UI
     └── BangBashModeManager     # "!" bash mode UI
 ```

@@ -1003,6 +1003,147 @@ describe('ClaudianPlugin', () => {
       loadSpy.mockRestore();
     });
 
+    it('prefers terminal SDK async status over stale cached running state', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-sdk-terminal',
+        sdkMessagesLoaded: false,
+        messages: [],
+        subagentData: {
+          'task-async-sdk-terminal': {
+            id: 'task-async-sdk-terminal',
+            description: 'Cached async subagent',
+            mode: 'async',
+            asyncStatus: 'running',
+            status: 'running',
+            result: 'Still running',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'assistant-sdk-terminal',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-async-sdk-terminal',
+                name: 'Task',
+                input: { description: 'SDK async subagent', run_in_background: true },
+                status: 'completed',
+                result: 'Full SDK final result',
+                subagent: {
+                  id: 'task-async-sdk-terminal',
+                  description: 'SDK async subagent',
+                  mode: 'async',
+                  asyncStatus: 'completed',
+                  status: 'completed',
+                  result: 'Full SDK final result',
+                  toolCalls: [],
+                  isExpanded: false,
+                  agentId: 'agent-sdk-terminal',
+                },
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-sdk-terminal', mode: 'async' }] as any,
+          } as any,
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-sdk-terminal');
+
+      expect(taskTool?.status).toBe('completed');
+      expect(taskTool?.result).toBe('Full SDK final result');
+      expect(taskTool?.subagent?.status).toBe('completed');
+      expect(taskTool?.subagent?.asyncStatus).toBe('completed');
+      expect(taskTool?.subagent?.result).toBe('Full SDK final result');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('prefers cached terminal async status over SDK launch-only running state', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-cache-terminal',
+        sdkMessagesLoaded: false,
+        messages: [],
+        subagentData: {
+          'task-async-cache-terminal': {
+            id: 'task-async-cache-terminal',
+            description: 'Cached async subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered final result',
+            toolCalls: [],
+            isExpanded: false,
+            agentId: 'agent-cache-terminal',
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'assistant-sdk-running',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-async-cache-terminal',
+                name: 'Task',
+                input: { description: 'SDK async subagent', run_in_background: true },
+                status: 'running',
+                result: 'Task launched in background.',
+                subagent: {
+                  id: 'task-async-cache-terminal',
+                  description: 'SDK async subagent',
+                  mode: 'async',
+                  asyncStatus: 'running',
+                  status: 'running',
+                  result: 'Task launched in background.',
+                  toolCalls: [],
+                  isExpanded: false,
+                  agentId: 'agent-cache-terminal',
+                },
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-cache-terminal', mode: 'async' }] as any,
+          } as any,
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-cache-terminal');
+
+      expect(taskTool?.status).toBe('completed');
+      expect(taskTool?.result).toBe('Recovered final result');
+      expect(taskTool?.subagent?.status).toBe('completed');
+      expect(taskTool?.subagent?.asyncStatus).toBe('completed');
+      expect(taskTool?.subagent?.result).toBe('Recovered final result');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('restores async subagent data and mode when Task tool exists but async block is missing', async () => {
       await plugin.onload();
 

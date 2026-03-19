@@ -1,22 +1,9 @@
 import { Notice, setIcon } from 'obsidian';
 
 import type { TodoItem } from '../../../core/tools';
-import { getToolIcon, TOOL_TASK, TOOL_TODO_WRITE } from '../../../core/tools';
-import type { AsyncSubagentStatus } from '../../../core/types';
+import { getToolIcon, TOOL_TODO_WRITE } from '../../../core/tools';
 import { t } from '../../../i18n';
 import { renderTodoItems } from '../rendering/todoUtils';
-
-/** Terminal states for async subagents (no longer trackable). */
-const TERMINAL_STATES: PanelSubagentInfo['status'][] = ['completed', 'error', 'orphaned'];
-
-/** Async subagent display info for the panel. */
-export interface PanelSubagentInfo {
-  id: string;
-  description: string;
-  status: AsyncSubagentStatus;
-  prompt?: string;
-  result?: string;
-}
 
 export interface PanelBashOutput {
   id: string;
@@ -29,17 +16,13 @@ export interface PanelBashOutput {
 const MAX_BASH_OUTPUTS = 50;
 
 /**
- * StatusPanel - persistent bottom panel for async subagent status and todos.
+ * StatusPanel - persistent bottom panel for todos and command output.
  */
 export class StatusPanel {
   private containerEl: HTMLElement | null = null;
   private panelEl: HTMLElement | null = null;
 
-  // Async subagent section (above todos)
-  private subagentContainerEl: HTMLElement | null = null;
-  private currentSubagents: Map<string, PanelSubagentInfo> = new Map();
-
-  // Bash output section (between subagents and todos)
+  // Bash output section
   private bashOutputContainerEl: HTMLElement | null = null;
   private bashHeaderEl: HTMLElement | null = null;
   private bashContentEl: HTMLElement | null = null;
@@ -108,7 +91,6 @@ export class StatusPanel {
 
     // Clear references and recreate
     this.panelEl = null;
-    this.subagentContainerEl = null;
     this.bashOutputContainerEl = null;
     this.bashHeaderEl = null;
     this.bashContentEl = null;
@@ -118,7 +100,6 @@ export class StatusPanel {
     this.createPanel();
 
     // Re-render current state
-    this.renderSubagentStatus();
     this.renderBashOutputs();
     if (this.currentTodos && this.currentTodos.length > 0) {
       this.updateTodos(this.currentTodos);
@@ -137,13 +118,7 @@ export class StatusPanel {
     this.panelEl = document.createElement('div');
     this.panelEl.className = 'claudian-status-panel';
 
-    // Async subagent container (above todos) - hidden by default
-    this.subagentContainerEl = document.createElement('div');
-    this.subagentContainerEl.className = 'claudian-status-panel-subagents';
-    this.subagentContainerEl.style.display = 'none';
-    this.panelEl.appendChild(this.subagentContainerEl);
-
-    // Bash output container (between subagents and todos) - hidden by default
+    // Bash output container - hidden by default
     this.bashOutputContainerEl = document.createElement('div');
     this.bashOutputContainerEl.className = 'claudian-status-panel-bash';
     this.bashOutputContainerEl.style.display = 'none';
@@ -344,174 +319,13 @@ export class StatusPanel {
   }
 
   // ============================================
-  // Async Subagent Status Methods
+  // Bash Output Methods
   // ============================================
 
-  /**
-   * Add or update an async subagent in the panel.
-   */
-  updateSubagent(info: PanelSubagentInfo): void {
-    this.currentSubagents.set(info.id, info);
-    this.renderSubagentStatus();
-  }
-
-  /**
-   * Remove a subagent from the panel.
-   */
-  removeSubagent(id: string): void {
-    this.currentSubagents.delete(id);
-    this.renderSubagentStatus();
-  }
-
-  /**
-   * Clear all subagents from the panel.
-   */
-  clearSubagents(): void {
-    this.currentSubagents.clear();
-    this.renderSubagentStatus();
-  }
-
-  /**
-   * Clear completed/error/orphaned subagents from the panel.
-   * Called when user sends a new query - done entries are dismissed.
-   */
-  clearTerminalSubagents(): void {
-    for (const [id, info] of this.currentSubagents) {
-      if (TERMINAL_STATES.includes(info.status)) {
-        this.currentSubagents.delete(id);
-      }
-    }
-    this.renderSubagentStatus();
-  }
-
-  /**
-   * Check if all subagents completed successfully.
-   * Used for auto-hide on response completion.
-   * Returns false if empty or any subagent is pending, running, error, or orphaned.
-   */
-  areAllSubagentsCompleted(): boolean {
-    if (this.currentSubagents.size === 0) return false;
-    for (const info of this.currentSubagents.values()) {
-      if (info.status !== 'completed') {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  /**
-   * Truncate description for display.
-   */
   private truncateDescription(description: string, maxLength = 50): string {
     if (description.length <= maxLength) return description;
     return description.substring(0, maxLength) + '...';
   }
-
-  /**
-   * Format running task count text.
-   */
-  private formatRunningCount(count: number): string {
-    const taskWord = count === 1 ? 'background task' : 'background tasks';
-    return `${count} ${taskWord}`;
-  }
-
-  /**
-   * Render the subagent status section.
-   * - Completed tasks: show ✓ + description for each
-   * - Running tasks: show "X background tasks" count
-   */
-  private renderSubagentStatus(): void {
-    if (!this.subagentContainerEl) return;
-
-    // Collect running and completed subagents
-    const runningSubagents: PanelSubagentInfo[] = [];
-    const completedSubagents: PanelSubagentInfo[] = [];
-
-    for (const info of this.currentSubagents.values()) {
-      switch (info.status) {
-        case 'pending':
-        case 'running':
-          runningSubagents.push(info);
-          break;
-        case 'completed':
-          completedSubagents.push(info);
-          break;
-        // Ignore error/orphaned - they don't show in panel
-      }
-    }
-
-    // Hide if nothing to show
-    if (runningSubagents.length === 0 && completedSubagents.length === 0) {
-      this.subagentContainerEl.style.display = 'none';
-      return;
-    }
-
-    this.subagentContainerEl.style.display = 'block';
-    this.subagentContainerEl.empty();
-
-    // If we have both done and running, render last done row with running on same line
-    const lastDoneIndex = completedSubagents.length - 1;
-
-    // Render completed subagents (each with ✓ + description)
-    for (let i = 0; i < completedSubagents.length; i++) {
-      const subagent = completedSubagents[i];
-      const isLastDone = i === lastDoneIndex;
-      const showRunningOnThisRow = isLastDone && runningSubagents.length > 0;
-
-      const rowEl = document.createElement('div');
-      rowEl.className = showRunningOnThisRow
-        ? 'claudian-status-panel-done-row claudian-status-panel-combined-row'
-        : 'claudian-status-panel-done-row';
-
-      // Bot icon
-      const botIconEl = document.createElement('span');
-      botIconEl.className = 'claudian-status-panel-icon claudian-status-panel-bot-icon';
-      setIcon(botIconEl, getToolIcon(TOOL_TASK));
-      rowEl.appendChild(botIconEl);
-
-      // Description text
-      const textEl = document.createElement('span');
-      textEl.className = 'claudian-status-panel-done-text';
-      textEl.textContent = this.truncateDescription(subagent.description);
-      rowEl.appendChild(textEl);
-
-      // Green tick icon
-      const iconEl = document.createElement('span');
-      iconEl.className = 'claudian-status-panel-icon claudian-status-panel-done-icon';
-      setIcon(iconEl, 'check');
-      rowEl.appendChild(iconEl);
-
-      // If last done row and we have running, add running count to the right
-      if (showRunningOnThisRow) {
-        const runningEl = document.createElement('span');
-        runningEl.className = 'claudian-status-panel-running-text';
-        runningEl.textContent = this.formatRunningCount(runningSubagents.length);
-        rowEl.appendChild(runningEl);
-      }
-
-      this.subagentContainerEl.appendChild(rowEl);
-    }
-
-    // Render running count alone (only if no completed subagents)
-    if (runningSubagents.length > 0 && completedSubagents.length === 0) {
-      const rowEl = document.createElement('div');
-      rowEl.className = 'claudian-status-panel-running-row';
-
-      // Count text
-      const textEl = document.createElement('span');
-      textEl.className = 'claudian-status-panel-running-text';
-      textEl.textContent = this.formatRunningCount(runningSubagents.length);
-      rowEl.appendChild(textEl);
-
-      this.subagentContainerEl.appendChild(rowEl);
-    }
-
-    this.scrollToBottom();
-  }
-
-  // ============================================
-  // Bash Output Methods
-  // ============================================
 
   addBashOutput(info: PanelBashOutput): void {
     this.currentBashOutputs.set(info.id, info);
@@ -754,15 +568,13 @@ export class StatusPanel {
     this.bashClickHandler = null;
     this.bashKeydownHandler = null;
 
-    // Clear subagent and bash output tracking
-    this.currentSubagents.clear();
+    // Clear bash output tracking
     this.currentBashOutputs.clear();
 
     if (this.panelEl) {
       this.panelEl.remove();
       this.panelEl = null;
     }
-    this.subagentContainerEl = null;
     this.bashOutputContainerEl = null;
     this.bashHeaderEl = null;
     this.bashContentEl = null;

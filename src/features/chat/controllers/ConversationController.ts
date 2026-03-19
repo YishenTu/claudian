@@ -128,7 +128,6 @@ export class ConversationController {
 
       // Remount StatusPanel to restore state for new conversation
       this.deps.getStatusPanel()?.remount();
-      this.deps.getStatusPanel()?.clearSubagents();
 
       this.deps.getInputEl().value = '';
 
@@ -207,9 +206,8 @@ export class ConversationController {
     state.usage = conversation.usage ?? null;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
-    // Clear status panels (auto-hide: panels reappear when agent creates new todos/subagents)
+    // Clear status panels (auto-hide: panels reappear when agent creates new todos)
     state.currentTodos = null;
-    this.deps.getStatusPanel()?.clearSubagents();
 
     const hasMessages = state.messages.length > 0;
 
@@ -280,9 +278,8 @@ export class ConversationController {
       state.usage = conversation.usage ?? null;
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
-      // Clear status panels (auto-hide: panels reappear when agent creates new todos/subagents)
+      // Clear status panels (auto-hide: panels reappear when agent creates new todos)
       state.currentTodos = null;
-      this.deps.getStatusPanel()?.clearSubagents();
 
       const hasMessages = state.messages.length > 0;
 

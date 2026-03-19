@@ -210,22 +210,18 @@ ${subagentPathRules}
 
 **Async Mode (\`run_in_background=true\`)**:
 - Use ONLY when explicitly requested or task is clearly long-running.
-- Returns \`task_id\` and \`output_file\` path immediately.
-- System sends \`<task-notification>\` with result when complete.
-- Full transcript persists in \`output_file\`.
-
-**Retrieving async results (three options):**
-- Wait for \`<task-notification>\` (automatic, includes result)
-- Use \`TaskOutput task_id="..." block=true\` (blocking) or \`block=false\` (polling)
-- Read \`output_file\` directly with Read tool
+- Returns \`task_id\` immediately.
+- You **cannot end your turn** while async subagents are still running. The system will block you and remind you to retrieve results.
 
 **Async workflow:**
-1. Launch: \`Agent prompt="..." run_in_background=true\` → get \`task_id\` and \`output_file\`
-2. Continue working on other tasks (if any)
-3. If no other work: use \`TaskOutput task_id="..." block=true\` to wait for completion
-4. Report result to user
+1. Launch: \`Agent prompt="..." run_in_background=true\` → get \`task_id\`
+2. Continue working on other tasks
+3. Use \`TaskOutput task_id="..." block=true\` to wait for completion (blocks until result is ready)
+4. Process the result and report to the user
 
-**Critical:** Never end response without retrieving async task results. When idle, MUST actively wait with \`TaskOutput block=true\` rather than waiting passively.
+**When to retrieve results:**
+- Mid-turn between other tasks: use \`TaskOutput block=false\` to poll without blocking
+- Idle with no other work: use \`TaskOutput block=true\` to wait
 
 ### TodoWrite
 

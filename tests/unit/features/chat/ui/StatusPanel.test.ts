@@ -177,11 +177,11 @@ class MockElement {
   querySelectorAll(selector: string): MockElement[] {
     const matches: MockElement[] = [];
     const match = (el: MockElement): boolean => {
-      // Handle attribute selectors like [data-panel-subagent-id]
+      // Handle attribute selectors like [data-icon]
       const attrMatch = selector.match(/\[([a-zA-Z0-9_-]+)\]/);
       if (attrMatch) {
         const attrName = attrMatch[1];
-        // Convert data-* attributes to dataset keys (data-panel-subagent-id -> panelSubagentId)
+        // Convert data-* attributes to dataset keys (data-foo-bar -> fooBar)
         if (attrName.startsWith('data-')) {
           const dataKey = attrName.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
           return el.dataset[dataKey] !== undefined;
@@ -513,17 +513,6 @@ describe('StatusPanel', () => {
       expect(label?.textContent).toBe('Tasks (1/2)');
     });
 
-    it('should re-render subagents after remount', () => {
-      panel.mount(containerEl as unknown as HTMLElement);
-
-      panel.updateSubagent({ id: 'task-1', description: 'Running task', status: 'running' });
-
-      panel.remount();
-
-      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((subagentsEl as any)?.style?.display).toBe('block');
-    });
-
     it('should not throw when called without mount', () => {
       const unmountedPanel = new StatusPanel();
       expect(() => unmountedPanel.remount()).not.toThrow();
@@ -542,31 +531,6 @@ describe('StatusPanel', () => {
 
       const content = containerEl.querySelector('.claudian-status-panel-content');
       expect(content!.style.display).toBe('none');
-    });
-  });
-
-  describe('removeSubagent', () => {
-    beforeEach(() => {
-      panel.mount(containerEl as unknown as HTMLElement);
-    });
-
-    it('should remove a subagent by id', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'running' });
-
-      panel.removeSubagent('task-1');
-
-      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('1 background task');
-    });
-
-    it('should hide container when last subagent is removed', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
-
-      panel.removeSubagent('task-1');
-
-      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((subagentsEl as any)?.style?.display).toBe('none');
     });
   });
 
@@ -597,29 +561,6 @@ describe('StatusPanel', () => {
     });
   });
 
-  describe('truncateDescription', () => {
-    beforeEach(() => {
-      panel.mount(containerEl as unknown as HTMLElement);
-    });
-
-    it('should truncate long subagent descriptions', () => {
-      const longDescription = 'A'.repeat(60);
-      panel.updateSubagent({ id: 'task-1', description: longDescription, status: 'completed' });
-
-      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
-      expect(doneText?.textContent).toContain('...');
-      expect(doneText!.textContent!.length).toBeLessThan(longDescription.length);
-    });
-
-    it('should not truncate short descriptions', () => {
-      const shortDescription = 'Short task';
-      panel.updateSubagent({ id: 'task-1', description: shortDescription, status: 'completed' });
-
-      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
-      expect(doneText?.textContent).toBe(shortDescription);
-    });
-  });
-
   describe('destroy', () => {
     it('should remove panel from DOM', () => {
       panel.mount(containerEl as unknown as HTMLElement);
@@ -646,204 +587,6 @@ describe('StatusPanel', () => {
       expect(() => {
         unmountedPanel.destroy();
       }).not.toThrow();
-    });
-  });
-
-  describe('updateSubagent', () => {
-    beforeEach(() => {
-      panel.mount(containerEl as unknown as HTMLElement);
-    });
-
-    it('should show container when subagent is added', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'New task', status: 'pending' });
-
-      const containerEl2 = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((containerEl2 as any)?.style?.display).toBe('block');
-    });
-
-    it('should show done row when status changes to completed', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'completed' });
-
-      const doneRow = containerEl.querySelector('.claudian-status-panel-done-row');
-      expect(doneRow).toBeDefined();
-      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
-      expect(doneText?.textContent).toBe('Task');
-    });
-
-    it('should show running row for running status', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
-
-      const runningRow = containerEl.querySelector('.claudian-status-panel-running-row');
-      expect(runningRow).toBeDefined();
-      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('1 background task');
-    });
-
-    it('should count pending as running', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
-
-      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('1 background task');
-    });
-
-    it('should not show orphaned subagents', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'orphaned' });
-
-      // Orphaned subagents don't show in panel
-      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((subagentsEl as any)?.style?.display).toBe('none');
-    });
-
-    it('should not show error subagents', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'error' });
-
-      // Error subagents don't show in panel
-      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((subagentsEl as any)?.style?.display).toBe('none');
-    });
-
-    it('should handle updateSubagent called before mount', () => {
-      const unmountedPanel = new StatusPanel();
-
-      expect(() => {
-        unmountedPanel.updateSubagent({ id: 'task-1', description: 'Task', status: 'pending' });
-      }).not.toThrow();
-    });
-  });
-
-  describe('subagent status display', () => {
-    beforeEach(() => {
-      panel.mount(containerEl as unknown as HTMLElement);
-    });
-
-    it('should show container when subagents are added', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task', status: 'running' });
-
-      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((subagentsEl as any)?.style?.display).toBe('block');
-    });
-
-    it('should hide container when no subagents', () => {
-      // Clear any subagents
-      panel.clearSubagents();
-
-      const subagentsEl = containerEl.querySelector('.claudian-status-panel-subagents');
-      expect((subagentsEl as any)?.style?.display).toBe('none');
-    });
-
-    it('should show done rows for completed and running row for running', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'running' });
-      panel.updateSubagent({ id: 'task-3', description: 'Task 3', status: 'completed' });
-
-      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
-      expect(doneRows).toHaveLength(1);
-
-      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('2 background tasks');
-    });
-
-    it('should update display when subagent status changes', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'running' });
-
-      // Check running row exists
-      let runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('1 background task');
-
-      // Change to completed
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-
-      // Running row should be gone, done row should exist
-      runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText).toBeNull();
-
-      const doneText = containerEl.querySelector('.claudian-status-panel-done-text');
-      expect(doneText?.textContent).toBe('Task 1');
-    });
-  });
-
-  describe('clearTerminalSubagents', () => {
-    it('should remove completed subagents but keep running ones', () => {
-      panel.mount(containerEl as unknown as HTMLElement);
-
-      // Add a running and a completed subagent
-      panel.updateSubagent({ id: 'running-1', description: 'Running task', status: 'running' });
-      panel.updateSubagent({ id: 'completed-1', description: 'Completed task', status: 'completed' });
-      panel.updateSubagent({ id: 'error-1', description: 'Error task', status: 'error' });
-
-      panel.clearTerminalSubagents();
-
-      // Check only running row remains
-      const doneRows = containerEl.querySelectorAll('.claudian-status-panel-done-row');
-      expect(doneRows).toHaveLength(0);
-
-      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('1 background task');
-    });
-
-    it('should remove orphaned subagents', () => {
-      panel.mount(containerEl as unknown as HTMLElement);
-
-      panel.updateSubagent({ id: 'orphaned-1', description: 'Orphaned task', status: 'orphaned' });
-      panel.updateSubagent({ id: 'pending-1', description: 'Pending task', status: 'pending' });
-
-      panel.clearTerminalSubagents();
-
-      // Check only running row remains (pending counts as running)
-      const runningText = containerEl.querySelector('.claudian-status-panel-running-text');
-      expect(runningText?.textContent).toBe('1 background task');
-    });
-  });
-
-  describe('areAllSubagentsCompleted', () => {
-    beforeEach(() => {
-      panel.mount(containerEl as unknown as HTMLElement);
-    });
-
-    it('should return false when no subagents', () => {
-      expect(panel.areAllSubagentsCompleted()).toBe(false);
-    });
-
-    it('should return true when all subagents are completed', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'completed' });
-
-      expect(panel.areAllSubagentsCompleted()).toBe(true);
-    });
-
-    it('should return false when any subagent is pending', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'pending' });
-
-      expect(panel.areAllSubagentsCompleted()).toBe(false);
-    });
-
-    it('should return false when any subagent is running', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'running' });
-
-      expect(panel.areAllSubagentsCompleted()).toBe(false);
-    });
-
-    it('should return false when any subagent has error', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'error' });
-
-      expect(panel.areAllSubagentsCompleted()).toBe(false);
-    });
-
-    it('should return false when any subagent is orphaned', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-      panel.updateSubagent({ id: 'task-2', description: 'Task 2', status: 'orphaned' });
-
-      expect(panel.areAllSubagentsCompleted()).toBe(false);
-    });
-
-    it('should return true for single completed subagent', () => {
-      panel.updateSubagent({ id: 'task-1', description: 'Task 1', status: 'completed' });
-
-      expect(panel.areAllSubagentsCompleted()).toBe(true);
     });
   });
 

@@ -787,56 +787,6 @@ describe('InputController - Message Queue', () => {
       expect(deps.state.currentTodos).toHaveLength(2);
     });
 
-    it('should call clearTerminalSubagents when all subagents completed', async () => {
-      const mockStatusPanel = {
-        areAllSubagentsCompleted: jest.fn().mockReturnValue(true),
-        clearTerminalSubagents: jest.fn(),
-      };
-
-      deps = createSendableDeps({
-        getStatusPanel: () => mockStatusPanel as any,
-      });
-
-      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
-        createMockStream([{ type: 'done' }])
-      );
-
-      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
-      inputEl.value = 'Test message';
-      controller = new InputController(deps);
-
-      await controller.sendMessage();
-
-      expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
-      // clearTerminalSubagents called twice: once at start, once at response end
-      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(2);
-    });
-
-    it('should only call clearTerminalSubagents at start when subagents still running', async () => {
-      const mockStatusPanel = {
-        areAllSubagentsCompleted: jest.fn().mockReturnValue(false),
-        clearTerminalSubagents: jest.fn(),
-      };
-
-      deps = createSendableDeps({
-        getStatusPanel: () => mockStatusPanel as any,
-      });
-
-      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
-        createMockStream([{ type: 'done' }])
-      );
-
-      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
-      inputEl.value = 'Test message';
-      controller = new InputController(deps);
-
-      await controller.sendMessage();
-
-      expect(mockStatusPanel.areAllSubagentsCompleted).toHaveBeenCalled();
-      // clearTerminalSubagents called once at start (not at response end since subagents still running)
-      expect(mockStatusPanel.clearTerminalSubagents).toHaveBeenCalledTimes(1);
-    });
-
     it('should handle null statusPanel gracefully', async () => {
       deps = createSendableDeps({
         getStatusPanel: () => null,
