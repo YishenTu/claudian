@@ -38,6 +38,7 @@ import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
   getLastUserMessage,
+  isAuthenticationError,
   isSessionExpiredError,
 } from '../../utils/session';
 import {
@@ -572,6 +573,12 @@ export class ClaudianService {
               this.messageChannel.enqueue(messageToReplay);
               return;
             } catch (restartError) {
+              // If restart failed due to auth error, notify with actionable message
+              if (isAuthenticationError(restartError)) {
+                handler.onError(new Error('Authentication failed — your Claude OAuth token has expired. Please run `claude auth login` in your terminal to re-authenticate, then restart Claudian.'));
+                new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+                return;
+              }
               // If restart failed due to session expiration, invalidate session
               // so next query triggers noSessionButHasHistory → history rebuild
               if (isSessionExpiredError(restartError)) {
@@ -584,6 +591,12 @@ export class ClaudianService {
 
           // Notify active handler of error
           if (handler) {
+            // Check if original error is an auth error — give actionable message
+            if (isAuthenticationError(errorInstance)) {
+              handler.onError(new Error('Authentication failed — your Claude OAuth token has expired. Please run `claude auth login` in your terminal to re-authenticate, then restart Claudian.'));
+              new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+              return;
+            }
             handler.onError(errorInstance);
           }
 
@@ -593,6 +606,11 @@ export class ClaudianService {
             try {
               await this.ensureReady({ force: true });
             } catch (restartError) {
+              // If restart failed due to auth error, don't bother retrying
+              if (isAuthenticationError(restartError)) {
+                new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+                return;
+              }
               // If restart failed due to session expiration, invalidate session
               // so next query triggers noSessionButHasHistory → history rebuild
               if (isSessionExpiredError(restartError)) {
@@ -811,6 +829,14 @@ export class ClaudianService {
           yield* this.queryViaPersistent(promptToSend, images, vaultPath, resolvedClaudePath, effectiveQueryOptions);
           return;
         } catch (error) {
+          // Authentication errors are non-recoverable — don't retry
+          if (isAuthenticationError(error)) {
+            this.closePersistentQuery('authentication error');
+            yield { type: 'error', content: 'Authentication failed — your Claude OAuth token has expired. Please run `claude auth login` in your terminal to re-authenticate, then restart Claudian.' };
+            new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+            return;
+          }
+
           if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
             this.sessionManager.invalidateSession();
             const retryRequest = this.buildHistoryRebuildRequest(prompt, conversationHistory);
@@ -828,8 +854,13 @@ export class ClaudianService {
                 effectiveQueryOptions
               );
             } catch (retryError) {
-              const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
-              yield { type: 'error', content: msg };
+              if (isAuthenticationError(retryError)) {
+                yield { type: 'error', content: 'Authentication failed — your Claude OAuth token has expired. Please run `claude auth login` in your terminal to re-authenticate, then restart Claudian.' };
+                new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+              } else {
+                const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
+                yield { type: 'error', content: msg };
+              }
             } finally {
               this.coldStartInProgress = false;
               this.abortController = null;
@@ -850,6 +881,13 @@ export class ClaudianService {
     try {
       yield* this.queryViaSDK(promptToSend, vaultPath, resolvedClaudePath, images, effectiveQueryOptions);
     } catch (error) {
+      // Authentication errors are non-recoverable — don't retry
+      if (isAuthenticationError(error)) {
+        yield { type: 'error', content: 'Authentication failed — your Claude OAuth token has expired. Please run `claude auth login` in your terminal to re-authenticate, then restart Claudian.' };
+        new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+        return;
+      }
+
       if (isSessionExpiredError(error) && conversationHistory && conversationHistory.length > 0) {
         this.sessionManager.invalidateSession();
         const retryRequest = this.buildHistoryRebuildRequest(prompt, conversationHistory);
@@ -864,8 +902,13 @@ export class ClaudianService {
             effectiveQueryOptions
           );
         } catch (retryError) {
-          const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
-          yield { type: 'error', content: msg };
+          if (isAuthenticationError(retryError)) {
+            yield { type: 'error', content: 'Authentication failed — your Claude OAuth token has expired. Please run `claude auth login` in your terminal to re-authenticate, then restart Claudian.' };
+            new Notice('Claude authentication expired. Run "claude auth login" in terminal to fix.', 10000);
+          } else {
+            const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
+            yield { type: 'error', content: msg };
+          }
         }
         return;
       }
@@ -1025,6 +1068,10 @@ export class ClaudianService {
 
       // Check if an error occurred (assigned in onError callback)
       if (state.error) {
+        // Re-throw authentication errors for outer handling (non-recoverable)
+        if (isAuthenticationError(state.error)) {
+          throw state.error;
+        }
         // Re-throw session expired errors for outer retry logic to handle
         if (isSessionExpiredError(state.error)) {
           throw state.error;
@@ -1329,6 +1376,10 @@ export class ClaudianService {
         }
       }
     } catch (error) {
+      // Re-throw authentication errors (non-recoverable)
+      if (isAuthenticationError(error)) {
+        throw error;
+      }
       // Re-throw session expired errors for outer retry logic to handle
       if (isSessionExpiredError(error)) {
         throw error;

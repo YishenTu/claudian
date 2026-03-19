@@ -44,6 +44,58 @@ export function isSessionExpiredError(error: unknown): boolean {
 }
 
 // ============================================
+// Authentication Error Detection
+// ============================================
+
+const AUTH_ERROR_PATTERNS = [
+  'authentication_failed',
+  'authentication_error',
+  'oauth token has expired',
+  'failed to authenticate',
+  'obtain a new token',
+  'refresh your existing token',
+  'invalid api key',
+  'invalid x-api-key',
+  'api key not found',
+] as const;
+
+const AUTH_ERROR_COMPOUND_PATTERNS = [
+  { includes: ['401', 'authentication'] },
+  { includes: ['token', 'expired'] },
+  { includes: ['oauth', 'expired'] },
+] as const;
+
+/**
+ * Detects authentication/OAuth errors from the Claude API.
+ * These are distinct from session expiry — retrying won't help
+ * because the underlying credentials are invalid.
+ */
+export function isAuthenticationError(error: unknown): boolean {
+  let msg = '';
+  if (error instanceof Error) {
+    msg = error.message.toLowerCase();
+  } else if (typeof error === 'string') {
+    msg = error.toLowerCase();
+  }
+
+  if (!msg) return false;
+
+  for (const pattern of AUTH_ERROR_PATTERNS) {
+    if (msg.includes(pattern)) {
+      return true;
+    }
+  }
+
+  for (const { includes } of AUTH_ERROR_COMPOUND_PATTERNS) {
+    if (includes.every(part => msg.includes(part))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// ============================================
 // History Reconstruction
 // ============================================
 
