@@ -1144,20 +1144,16 @@ function buildAsyncSubagentInfo(
 
   // Determine final result: prefer queue-operation result (full), fall back to tool_result content
   const finalResult = queueResult?.result ?? toolCall.result;
+  const toolCallFallback: ResolvedAsyncStatus =
+    toolCall.status === 'error' ? 'error'
+    : toolCall.status === 'completed' ? 'completed'
+    : 'running';
+
   // Queue-operation status reflects the actual async task outcome and must win over
   // the Task tool_result block, whose status only describes launch success.
-  let status: ResolvedAsyncStatus = 'running';
-  if (queueResult?.status === 'completed') {
-    status = 'completed';
-  } else if (queueResult?.status === 'error') {
-    status = 'error';
-  } else {
-    const toolCallFallback: ResolvedAsyncStatus =
-      toolCall.status === 'error' ? 'error'
-      : toolCall.status === 'completed' ? 'completed'
-      : 'running';
-    status = resolveToolUseResultStatus(toolUseResult, toolCallFallback);
-  }
+  const status = queueResult
+    ? resolveToolUseResultStatus({ status: queueResult.status }, 'completed')
+    : resolveToolUseResultStatus(toolUseResult, toolCallFallback);
 
   const taskStatus = status === 'orphaned' ? 'error' : status;
 

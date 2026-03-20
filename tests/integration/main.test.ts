@@ -1072,6 +1072,62 @@ describe('ClaudianPlugin', () => {
       loadSpy.mockRestore();
     });
 
+    it('drops stale asyncStatus from cached sync subagents during recovery', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-sync-subagent-cleanup',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-sync',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-sync-1',
+                name: 'Task',
+                input: { description: 'Do sync task' },
+                status: 'completed',
+                result: 'Sync result',
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-sync-1', mode: 'sync' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-sync-1': {
+            id: 'task-sync-1',
+            description: 'Recovered sync subagent',
+            mode: 'sync',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered sync result',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-sync-1');
+
+      expect(taskTool?.subagent?.mode).toBe('sync');
+      expect(taskTool?.subagent?.asyncStatus).toBeUndefined();
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('prefers terminal SDK async status over stale cached running state', async () => {
       await plugin.onload();
 

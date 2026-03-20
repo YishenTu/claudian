@@ -70,10 +70,20 @@ function chooseRicherToolCalls(
   return cachedToolCalls;
 }
 
-function getAsyncStatus(subagent: SubagentInfo | undefined): AsyncSubagentStatus | undefined {
+function normalizeAsyncStatus(
+  subagent: SubagentInfo | undefined,
+  modeOverride?: SubagentInfo['mode']
+): AsyncSubagentStatus | undefined {
   if (!subagent) return undefined;
-  if (subagent.mode !== 'async' && !subagent.asyncStatus) return undefined;
-  return subagent.asyncStatus ?? subagent.status;
+
+  const mode = modeOverride ?? subagent.mode;
+  if (mode === 'sync') return undefined;
+  if (mode === 'async') return subagent.asyncStatus ?? subagent.status;
+  return subagent.asyncStatus;
+}
+
+function getAsyncStatus(subagent: SubagentInfo | undefined): AsyncSubagentStatus | undefined {
+  return normalizeAsyncStatus(subagent);
 }
 
 function isTerminalAsyncStatus(status: AsyncSubagentStatus | undefined): boolean {
@@ -85,15 +95,16 @@ function mergeSubagentInfo(
   cachedSubagent: SubagentInfo
 ): SubagentInfo {
   const sdkSubagent = taskToolCall.subagent;
+  const cachedAsyncStatus = normalizeAsyncStatus(cachedSubagent);
   if (!sdkSubagent) {
     return {
       ...cachedSubagent,
+      asyncStatus: cachedAsyncStatus,
       result: chooseRicherResult(taskToolCall.result, cachedSubagent.result),
     };
   }
 
   const sdkAsyncStatus = getAsyncStatus(sdkSubagent);
-  const cachedAsyncStatus = getAsyncStatus(cachedSubagent);
   const sdkIsTerminal = isTerminalAsyncStatus(sdkAsyncStatus);
   const cachedIsTerminal = isTerminalAsyncStatus(cachedAsyncStatus);
   const sdkResult = taskToolCall.result ?? sdkSubagent.result;
@@ -112,9 +123,7 @@ function mergeSubagentInfo(
   const mergedResult = preferred === cachedSubagent
     ? (cachedSubagent.result ?? fallbackResult)
     : fallbackResult;
-  const mergedAsyncStatus = mergedMode === 'async'
-    ? preferred.asyncStatus ?? preferred.status
-    : preferred.asyncStatus;
+  const mergedAsyncStatus = normalizeAsyncStatus(preferred, mergedMode);
 
   return {
     ...cachedSubagent,

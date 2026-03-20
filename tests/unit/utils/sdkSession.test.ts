@@ -2268,6 +2268,33 @@ describe('sdkSession', () => {
       expect(taskToolCall.result).toBe('Task launched in background.');
     });
 
+    it('treats queue-operation success status as completed', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
+        const p = String(filePath);
+        if (p.endsWith('.jsonl') && !p.includes('subagents')) {
+          return [
+            '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run task"}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
+            '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"abc123","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background."}]}}',
+            '{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>abc123</task-id><status>success</status><result>Background task succeeded</result></task-notification>"}',
+          ].join('\n');
+        }
+        return '';
+      });
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-queue-success');
+
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+
+      expect(taskToolCall.subagent).toBeDefined();
+      expect(taskToolCall.subagent!.status).toBe('completed');
+      expect(taskToolCall.subagent!.asyncStatus).toBe('completed');
+      expect(taskToolCall.status).toBe('completed');
+      expect(taskToolCall.result).toBe('Background task succeeded');
+    });
+
     it('does not build SubagentInfo for sync Task tools', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
