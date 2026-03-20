@@ -1,6 +1,9 @@
+import { TFile } from 'obsidian';
+
 import type { ClaudianService } from '../../../core/agent';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText, parseTodoInput } from '../../../core/tools';
 import {
+  isEditTool,
   isSubagentToolName,
   isWriteEditTool,
   skipsBlockedDetection,
@@ -15,7 +18,7 @@ import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
-import { getVaultPath } from '../../../utils/path';
+import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../../../utils/sdkSession';
 import { FLAVOR_TEXTS } from '../constants';
 import {
@@ -398,6 +401,11 @@ export class StreamController {
         finalizeWriteEditBlock(writeEditState, chunk.isError || isBlocked);
       } else {
         updateToolCallResult(chunk.id, existingToolCall, state.toolCallElements);
+      }
+
+      // Notify Obsidian vault so the file tree refreshes after Write/Edit/NotebookEdit
+      if (!chunk.isError && !isBlocked && isEditTool(existingToolCall.name)) {
+        this.notifyVaultFileChange(existingToolCall.input);
       }
     }
 
@@ -978,6 +986,33 @@ export class StreamController {
   // ============================================
   // Utilities
   // ============================================
+
+  /**
+   * Nudges Obsidian's vault after a Write/Edit/NotebookEdit so the file tree
+   * refreshes. Direct `fs` writes bypass the Vault API, and macOS + iCloud
+   * FSWatcher often misses the event.
+   */
+  private notifyVaultFileChange(input: Record<string, unknown>): void {
+    const rawPath = (input.file_path ?? input.notebook_path) as string | undefined;
+    const vaultPath = getVaultPath(this.deps.plugin.app);
+    const relativePath = normalizePathForVault(rawPath, vaultPath);
+    if (!relativePath || relativePath.startsWith('/')) return;
+
+    setTimeout(() => {
+      const { vault } = this.deps.plugin.app;
+      const file = vault.getAbstractFileByPath(relativePath);
+      if (file instanceof TFile) {
+        // Existing file — tell listeners the content changed
+        vault.trigger('modify', file);
+      } else {
+        // New file — scan parent directory so Obsidian discovers it
+        const parentDir = relativePath.includes('/')
+          ? relativePath.substring(0, relativePath.lastIndexOf('/'))
+          : '';
+        vault.adapter.list(parentDir).catch(() => { /* ignore */ });
+      }
+    }, 200);
+  }
 
   /** Scrolls messages to bottom if auto-scroll is enabled. */
   private scrollToBottom(): void {
