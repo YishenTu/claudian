@@ -1199,7 +1199,7 @@ function generateMessageId(): string {
  * that arrives after the main handler has completed.
  */
 function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
-  if (tab.dom.contentEl.isConnected === false) {
+  if (!tab.dom.contentEl.isConnected) {
     return;
   }
 

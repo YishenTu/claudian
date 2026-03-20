@@ -12,21 +12,16 @@ export function createStopSubagentHook(
   return {
     hooks: [
       async () => {
-        let state: SubagentHookState;
+        let hasRunning: boolean;
         try {
-          state = getState();
+          hasRunning = getState().hasRunning;
         } catch {
-          return {
-            decision: 'block' as const,
-            reason: STOP_BLOCK_REASON,
-          };
+          // Provider failed — assume subagents are running to be safe
+          hasRunning = true;
         }
 
-        if (state.hasRunning) {
-          return {
-            decision: 'block' as const,
-            reason: STOP_BLOCK_REASON,
-          };
+        if (hasRunning) {
+          return { decision: 'block' as const, reason: STOP_BLOCK_REASON };
         }
 
         return {};

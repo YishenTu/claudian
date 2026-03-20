@@ -379,9 +379,10 @@ export class SubagentManager {
       toolUseResult,
       isError ? 'error' : 'completed'
     );
+    const finalStatus = resolvedStatus === 'error' ? 'error' : 'completed';
 
-    subagent.asyncStatus = resolvedStatus === 'error' ? 'error' : 'completed';
-    subagent.status = resolvedStatus === 'error' ? 'error' : 'completed';
+    subagent.asyncStatus = finalStatus;
+    subagent.status = finalStatus;
     subagent.result = extractedResult;
     subagent.completedAt = Date.now();
 

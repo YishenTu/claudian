@@ -82,10 +82,6 @@ function normalizeAsyncStatus(
   return subagent.asyncStatus;
 }
 
-function getAsyncStatus(subagent: SubagentInfo | undefined): AsyncSubagentStatus | undefined {
-  return normalizeAsyncStatus(subagent);
-}
-
 function isTerminalAsyncStatus(status: AsyncSubagentStatus | undefined): boolean {
   return status === 'completed' || status === 'error' || status === 'orphaned';
 }
@@ -104,17 +100,13 @@ function mergeSubagentInfo(
     };
   }
 
-  const sdkAsyncStatus = getAsyncStatus(sdkSubagent);
+  const sdkAsyncStatus = normalizeAsyncStatus(sdkSubagent);
   const sdkIsTerminal = isTerminalAsyncStatus(sdkAsyncStatus);
   const cachedIsTerminal = isTerminalAsyncStatus(cachedAsyncStatus);
   const sdkResult = taskToolCall.result ?? sdkSubagent.result;
 
-  let preferred = sdkSubagent;
-  if (!sdkIsTerminal && cachedIsTerminal) {
-    preferred = cachedSubagent;
-  } else if (sdkIsTerminal && cachedIsTerminal) {
-    preferred = sdkSubagent;
-  }
+  // Prefer cached data only when it reached a terminal state but SDK hasn't yet
+  const preferred = (!sdkIsTerminal && cachedIsTerminal) ? cachedSubagent : sdkSubagent;
 
   const mergedMode = sdkSubagent.mode
     ?? cachedSubagent.mode

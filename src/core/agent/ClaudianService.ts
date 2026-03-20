@@ -1707,9 +1707,7 @@ export class ClaudianService {
     this.permissionModeSyncCallback = callback;
   }
 
-  setSubagentHookProvider(
-    getState: () => SubagentHookState
-  ): void {
+  setSubagentHookProvider(getState: () => SubagentHookState): void {
     this._subagentStateProvider = getState;
   }
 

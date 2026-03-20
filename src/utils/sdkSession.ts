@@ -1105,7 +1105,6 @@ export function extractAgentIdFromToolUseResult(toolUseResult: unknown): string 
 export type ResolvedAsyncStatus = Exclude<AsyncSubagentStatus, 'pending'>;
 
 /**
- * Resolves the async status from a structured toolUseResult object.
  * Both the streaming layer (SubagentManager) and the session-load layer (buildAsyncSubagentInfo)
  * need to interpret the same SDK response shapes — this centralizes that logic.
  */
@@ -1144,10 +1143,9 @@ function buildAsyncSubagentInfo(
 
   // Determine final result: prefer queue-operation result (full), fall back to tool_result content
   const finalResult = queueResult?.result ?? toolCall.result;
-  const toolCallFallback: ResolvedAsyncStatus =
-    toolCall.status === 'error' ? 'error'
-    : toolCall.status === 'completed' ? 'completed'
-    : 'running';
+  let toolCallFallback: ResolvedAsyncStatus = 'running';
+  if (toolCall.status === 'error') toolCallFallback = 'error';
+  else if (toolCall.status === 'completed') toolCallFallback = 'completed';
 
   // Queue-operation status reflects the actual async task outcome and must win over
   // the Task tool_result block, whose status only describes launch success.
