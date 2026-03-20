@@ -27,13 +27,23 @@ export function createCustomSpawnFunction(
       }
     }
 
+    // Do not pass `signal` directly to spawn() — Obsidian's Electron runtime
+    // uses a different realm for AbortSignal, causing `instanceof EventTarget`
+    // checks inside Node's internals to fail. Handle abort manually instead.
     const child = spawn(command, args, {
       cwd,
       env: env as NodeJS.ProcessEnv,
-      signal,
       stdio: ['pipe', 'pipe', shouldPipeStderr ? 'pipe' : 'ignore'],
       windowsHide: true,
     });
+
+    if (signal) {
+      if (signal.aborted) {
+        child.kill();
+      } else {
+        signal.addEventListener('abort', () => child.kill(), { once: true });
+      }
+    }
 
     if (shouldPipeStderr && child.stderr && typeof child.stderr.on === 'function') {
       child.stderr.on('data', () => {});

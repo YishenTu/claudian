@@ -161,4 +161,78 @@ describe('createCustomSpawnFunction', () => {
     expect(findNodeExecutable).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledWith('python', ['script.py'], expect.any(Object));
   });
+
+  it('does not pass signal to spawn options', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    const signal = new AbortController().signal;
+    spawnFn({
+      command: 'node',
+      args: ['cli.js'],
+      cwd: '/tmp',
+      env: {},
+      signal,
+    });
+
+    const spawnOptions = spawnMock.mock.calls[0][2];
+    expect(spawnOptions).not.toHaveProperty('signal');
+  });
+
+  it('kills child immediately when signal is already aborted', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: 'node',
+      args: ['cli.js'],
+      cwd: '/tmp',
+      env: {},
+      signal: controller.signal,
+    });
+
+    expect(mockProcess.kill).toHaveBeenCalled();
+  });
+
+  it('kills child when signal aborts after spawn', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const controller = new AbortController();
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: 'node',
+      args: ['cli.js'],
+      cwd: '/tmp',
+      env: {},
+      signal: controller.signal,
+    });
+
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+
+    controller.abort();
+
+    expect(mockProcess.kill).toHaveBeenCalled();
+  });
+
+  it('does not kill child when signal is not provided', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: 'node',
+      args: ['cli.js'],
+      cwd: '/tmp',
+      env: {},
+    } as SpawnOptions);
+
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+  });
 });
