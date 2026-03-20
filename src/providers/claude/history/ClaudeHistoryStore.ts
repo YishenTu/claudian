@@ -16,7 +16,15 @@ import * as path from 'path';
 import { extractToolResultContent } from '../../../core/sdk/toolResultContent';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools';
 import { isSubagentToolName, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
-import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import type {
+  AsyncSubagentStatus,
+  ChatMessage,
+  ContentBlock,
+  ImageAttachment,
+  ImageMediaType,
+  SubagentInfo,
+  ToolCallInfo,
+} from '../../../core/types';
 import { extractContentBeforeXmlContext } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import { isCompactionCanceledStderr, isInterruptSignalText } from '../../../utils/interrupt';
@@ -701,7 +709,7 @@ export function collectAsyncSubagentResults(
   return results;
 }
 
-function extractXmlTag(content: string, tagName: string): string | null {
+export function extractXmlTag(content: string, tagName: string): string | null {
   const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*</${tagName}>`, 'i');
   const match = content.match(regex);
   if (!match || !match[1]) return null;
@@ -739,6 +747,7 @@ function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   if (text.startsWith('This session is being continued from a previous conversation')) return true;
   if (text.includes('<command-name>')) return true;
   if (text.includes('<local-command-stdout>') || text.includes('<local-command-stderr>')) return true;
+  if (text.includes('<task-notification>')) return true;
 
   return false;
 }
@@ -1072,7 +1081,7 @@ function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
  * Extracts the agentId from an Agent tool's toolUseResult (async launch shape).
  * The SDK stores `{ isAsync: true, agentId: '...' }` on the tool result.
  */
-function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null {
+export function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null {
   if (!toolUseResult || typeof toolUseResult !== 'object') return null;
   const record = toolUseResult as Record<string, unknown>;
 
@@ -1093,6 +1102,29 @@ function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null 
   return null;
 }
 
+export type ResolvedAsyncStatus = Exclude<AsyncSubagentStatus, 'pending'>;
+
+/**
+ * Both the streaming layer (SubagentManager) and the session-load layer (buildAsyncSubagentInfo)
+ * need to interpret the same SDK response shapes — this centralizes that logic.
+ */
+export function resolveToolUseResultStatus(
+  toolUseResult: unknown,
+  fallbackStatus: ResolvedAsyncStatus
+): ResolvedAsyncStatus {
+  if (!toolUseResult || typeof toolUseResult !== 'object') return fallbackStatus;
+
+  const record = toolUseResult as Record<string, unknown>;
+  const rawStatus = record.retrieval_status ?? record.status;
+  const status = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : '';
+
+  if (status === 'error') return 'error';
+  if (status === 'completed' || status === 'success') return 'completed';
+  if (record.isAsync === true || status === 'async_launched') return 'running';
+
+  return fallbackStatus;
+}
+
 /**
  * Builds a SubagentInfo for an async Agent tool call from stored data.
  * Uses the toolUseResult (launch shape → agentId) and queue-operation results (full result).
@@ -1111,10 +1143,17 @@ function buildAsyncSubagentInfo(
 
   // Determine final result: prefer queue-operation result (full), fall back to tool_result content
   const finalResult = queueResult?.result ?? toolCall.result;
-  const isCompleted = queueResult?.status === 'completed' || toolCall.status === 'completed';
-  const isError = queueResult?.status === 'error' || toolCall.status === 'error';
+  let toolCallFallback: ResolvedAsyncStatus = 'running';
+  if (toolCall.status === 'error') toolCallFallback = 'error';
+  else if (toolCall.status === 'completed') toolCallFallback = 'completed';
 
-  const status: SubagentInfo['status'] = isError ? 'error' : isCompleted ? 'completed' : 'running';
+  // Queue-operation status reflects the actual async task outcome and must win over
+  // the Task tool_result block, whose status only describes launch success.
+  const status = queueResult
+    ? resolveToolUseResultStatus({ status: queueResult.status }, 'completed')
+    : resolveToolUseResultStatus(toolUseResult, toolCallFallback);
+
+  const taskStatus = status === 'orphaned' ? 'error' : status;
 
   return {
     id: toolCall.id,
@@ -1122,9 +1161,9 @@ function buildAsyncSubagentInfo(
     prompt,
     mode: 'async',
     isExpanded: false,
-    status,
+    status: taskStatus,
     toolCalls: [],
-    asyncStatus: status === 'running' ? 'running' : status === 'error' ? 'error' : 'completed',
+    asyncStatus: status,
     agentId,
     result: finalResult,
   };
@@ -1237,8 +1276,7 @@ export async function loadSDKSessionMessages(
           if (subagent.result !== undefined) {
             toolCall.result = subagent.result;
           }
-          if (subagent.status === 'completed') toolCall.status = 'completed';
-          else if (subagent.status === 'error') toolCall.status = 'error';
+          toolCall.status = subagent.status;
 
           // Load tool calls from subagent sidecar JSONL in parallel
           if (subagent.agentId && isValidAgentId(subagent.agentId)) {

@@ -129,9 +129,6 @@ export class InputController {
     const hasImages = imageContextManager?.hasImages() ?? false;
     if (!content && !hasImages) return;
 
-    // Clear completed/error/orphaned subagents from previous responses
-    this.deps.getStatusPanel()?.clearTerminalSubagents();
-
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content);
     if (builtInCmd) {
@@ -398,16 +395,11 @@ export class InputController {
         streamController.finalizeCurrentTextBlock(assistantMsg);
         this.deps.getSubagentManager().resetStreamingState();
 
-        // Auto-hide completed status panels on response end
-        // Panels reappear only when new TodoWrite/Task tool is called
+        // Auto-hide completed todo panel on response end
+        // Panel reappears only when new TodoWrite tool is called
         if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
           state.currentTodos = null;
         }
-        const statusPanel = this.deps.getStatusPanel();
-        if (statusPanel?.areAllSubagentsCompleted()) {
-          statusPanel.clearTerminalSubagents();
-        }
-
         this.syncScrollToBottomAfterRenderUpdates();
 
         // approve-new-session: the tool_result chunk is dropped because cancelRequested

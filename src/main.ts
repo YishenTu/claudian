@@ -14,12 +14,14 @@ import { PluginManager } from './core/plugins';
 import { StorageService } from './core/storage';
 import { isSubagentToolName, TOOL_TASK } from './core/tools/toolNames';
 import type {
+  AsyncSubagentStatus,
   ChatMessage,
   ClaudianSettings,
   Conversation,
   ConversationMeta,
   SlashCommand,
   SubagentInfo,
+  ToolCallInfo,
 } from './core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
@@ -44,6 +46,137 @@ import { ClaudeCliResolver } from './providers/claude/runtime/ClaudeCliResolver'
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
+
+// ============================================
+// Subagent data merge helpers (pure functions)
+// ============================================
+
+function chooseRicherResult(sdkResult?: string, cachedResult?: string): string | undefined {
+  const sdkText = typeof sdkResult === 'string' ? sdkResult.trim() : '';
+  const cachedText = typeof cachedResult === 'string' ? cachedResult.trim() : '';
+
+  if (sdkText.length === 0 && cachedText.length === 0) return undefined;
+  if (sdkText.length === 0) return cachedResult;
+  if (cachedText.length === 0) return sdkResult;
+
+  return sdkText.length >= cachedText.length ? sdkResult : cachedResult;
+}
+
+function chooseRicherToolCalls(
+  sdkToolCalls: ToolCallInfo[] = [],
+  cachedToolCalls: ToolCallInfo[] = []
+): ToolCallInfo[] {
+  if (sdkToolCalls.length >= cachedToolCalls.length) return sdkToolCalls;
+  return cachedToolCalls;
+}
+
+function normalizeAsyncStatus(
+  subagent: SubagentInfo | undefined,
+  modeOverride?: SubagentInfo['mode']
+): AsyncSubagentStatus | undefined {
+  if (!subagent) return undefined;
+
+  const mode = modeOverride ?? subagent.mode;
+  if (mode === 'sync') return undefined;
+  if (mode === 'async') return subagent.asyncStatus ?? subagent.status;
+  return subagent.asyncStatus;
+}
+
+function isTerminalAsyncStatus(status: AsyncSubagentStatus | undefined): boolean {
+  return status === 'completed' || status === 'error' || status === 'orphaned';
+}
+
+function mergeSubagentInfo(
+  taskToolCall: ToolCallInfo,
+  cachedSubagent: SubagentInfo
+): SubagentInfo {
+  const sdkSubagent = taskToolCall.subagent;
+  const cachedAsyncStatus = normalizeAsyncStatus(cachedSubagent);
+  if (!sdkSubagent) {
+    return {
+      ...cachedSubagent,
+      asyncStatus: cachedAsyncStatus,
+      result: chooseRicherResult(taskToolCall.result, cachedSubagent.result),
+    };
+  }
+
+  const sdkAsyncStatus = normalizeAsyncStatus(sdkSubagent);
+  const sdkIsTerminal = isTerminalAsyncStatus(sdkAsyncStatus);
+  const cachedIsTerminal = isTerminalAsyncStatus(cachedAsyncStatus);
+  const sdkResult = taskToolCall.result ?? sdkSubagent.result;
+
+  // Prefer cached data only when it reached a terminal state but SDK hasn't yet
+  const preferred = (!sdkIsTerminal && cachedIsTerminal) ? cachedSubagent : sdkSubagent;
+
+  const mergedMode = sdkSubagent.mode
+    ?? cachedSubagent.mode
+    ?? (taskToolCall.input?.run_in_background === true ? 'async' : undefined);
+  const fallbackResult = chooseRicherResult(sdkResult, cachedSubagent.result);
+  const mergedResult = preferred === cachedSubagent
+    ? (cachedSubagent.result ?? fallbackResult)
+    : fallbackResult;
+  const mergedAsyncStatus = normalizeAsyncStatus(preferred, mergedMode);
+
+  return {
+    ...cachedSubagent,
+    ...sdkSubagent,
+    description: sdkSubagent.description || cachedSubagent.description,
+    prompt: sdkSubagent.prompt || cachedSubagent.prompt,
+    mode: mergedMode,
+    status: preferred.status,
+    asyncStatus: mergedAsyncStatus,
+    result: mergedResult,
+    toolCalls: chooseRicherToolCalls(sdkSubagent.toolCalls, cachedSubagent.toolCalls),
+    agentId: sdkSubagent.agentId || cachedSubagent.agentId,
+    outputToolId: sdkSubagent.outputToolId || cachedSubagent.outputToolId,
+    startedAt: sdkSubagent.startedAt ?? cachedSubagent.startedAt,
+    completedAt: sdkSubagent.completedAt ?? cachedSubagent.completedAt,
+    isExpanded: sdkSubagent.isExpanded ?? cachedSubagent.isExpanded,
+  };
+}
+
+function ensureTaskToolCall(
+  msg: ChatMessage,
+  subagentId: string,
+  subagent: SubagentInfo
+): ToolCallInfo {
+  msg.toolCalls = msg.toolCalls || [];
+  let taskToolCall = msg.toolCalls.find(
+    tc => tc.id === subagentId && isSubagentToolName(tc.name)
+  );
+
+  if (!taskToolCall) {
+    taskToolCall = {
+      id: subagentId,
+      name: TOOL_TASK,
+      input: {
+        description: subagent.description,
+        prompt: subagent.prompt || '',
+        ...(subagent.mode === 'async' ? { run_in_background: true } : {}),
+      },
+      status: subagent.status,
+      result: subagent.result,
+      isExpanded: false,
+      subagent,
+    };
+    msg.toolCalls.push(taskToolCall);
+    return taskToolCall;
+  }
+
+  if (!taskToolCall.input.description) taskToolCall.input.description = subagent.description;
+  if (!taskToolCall.input.prompt) taskToolCall.input.prompt = subagent.prompt || '';
+  if (subagent.mode === 'async') taskToolCall.input.run_in_background = true;
+  const mergedSubagent = mergeSubagentInfo(taskToolCall, subagent);
+  taskToolCall.status = mergedSubagent.status;
+  if (mergedSubagent.mode === 'async') {
+    taskToolCall.input.run_in_background = true;
+  }
+  if (mergedSubagent.result !== undefined) {
+    taskToolCall.result = mergedSubagent.result;
+  }
+  taskToolCall.subagent = mergedSubagent;
+  return taskToolCall;
+}
 
 /**
  * Main plugin class for Claudian.
@@ -764,57 +897,6 @@ export default class ClaudianPlugin extends Plugin {
    */
   private applySubagentData(messages: ChatMessage[], subagentData: Record<string, SubagentInfo>): void {
     const attachedSubagentIds = new Set<string>();
-    const chooseRicherResult = (sdkResult?: string, cachedResult?: string): string | undefined => {
-      const sdkText = typeof sdkResult === 'string' ? sdkResult.trim() : '';
-      const cachedText = typeof cachedResult === 'string' ? cachedResult.trim() : '';
-
-      if (sdkText.length === 0 && cachedText.length === 0) return undefined;
-      if (sdkText.length === 0) return cachedResult;
-      if (cachedText.length === 0) return sdkResult;
-
-      return sdkText.length >= cachedText.length ? sdkResult : cachedResult;
-    };
-
-    const ensureTaskToolCall = (
-      msg: ChatMessage,
-      subagentId: string,
-      subagent: SubagentInfo
-    ) => {
-      msg.toolCalls = msg.toolCalls || [];
-      let taskToolCall = msg.toolCalls.find(
-        tc => tc.id === subagentId && isSubagentToolName(tc.name)
-      );
-
-      if (!taskToolCall) {
-        taskToolCall = {
-          id: subagentId,
-          name: TOOL_TASK,
-          input: {
-            description: subagent.description,
-            prompt: subagent.prompt || '',
-            ...(subagent.mode === 'async' ? { run_in_background: true } : {}),
-          },
-          status: subagent.status,
-          result: subagent.result,
-          isExpanded: false,
-          subagent,
-        };
-        msg.toolCalls.push(taskToolCall);
-        return taskToolCall;
-      }
-
-      if (!taskToolCall.input.description) taskToolCall.input.description = subagent.description;
-      if (!taskToolCall.input.prompt) taskToolCall.input.prompt = subagent.prompt || '';
-      if (subagent.mode === 'async') taskToolCall.input.run_in_background = true;
-      taskToolCall.status = subagent.status;
-      const mergedResult = chooseRicherResult(taskToolCall.result, subagent.result);
-      if (mergedResult !== undefined) {
-        taskToolCall.result = mergedResult;
-        subagent.result = mergedResult;
-      }
-      taskToolCall.subagent = subagent;
-      return taskToolCall;
-    };
 
     for (const msg of messages) {
       if (msg.role !== 'assistant') continue;

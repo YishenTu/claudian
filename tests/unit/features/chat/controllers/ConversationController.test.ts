@@ -92,8 +92,6 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     getTitleGenerationService: () => null,
     getStatusPanel: () => ({
       remount: jest.fn(),
-      clearSubagents: jest.fn(),
-      restoreSubagents: jest.fn(),
     }) as any,
     ...overrides,
   };

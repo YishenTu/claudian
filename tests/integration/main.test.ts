@@ -1003,6 +1003,272 @@ describe('ClaudianPlugin', () => {
       loadSpy.mockRestore();
     });
 
+    it('keeps the richer cached async result when both SDK and cache are terminal', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-subagent-cache-richer',
+        sdkMessagesLoaded: false,
+        messages: [],
+        subagentData: {
+          'task-merge-2': {
+            id: 'task-merge-2',
+            description: 'Recovered subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered final result with full details',
+            toolCalls: [],
+            isExpanded: false,
+            agentId: 'agent-cache-richer',
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'assistant-cache-richer',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-merge-2',
+                name: 'Task',
+                input: { description: 'SDK async subagent', run_in_background: true },
+                status: 'completed',
+                result: 'Short SDK result',
+                subagent: {
+                  id: 'task-merge-2',
+                  description: 'SDK async subagent',
+                  mode: 'async',
+                  asyncStatus: 'completed',
+                  status: 'completed',
+                  result: 'Short SDK result',
+                  toolCalls: [],
+                  isExpanded: false,
+                  agentId: 'agent-cache-richer',
+                },
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-2', mode: 'async' }] as any,
+          } as any,
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-merge-2');
+
+      expect(taskTool?.status).toBe('completed');
+      expect(taskTool?.result).toBe('Recovered final result with full details');
+      expect(taskTool?.subagent?.result).toBe('Recovered final result with full details');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('drops stale asyncStatus from cached sync subagents during recovery', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-sync-subagent-cleanup',
+        sdkMessagesLoaded: false,
+        messages: [
+          {
+            id: 'assistant-sync',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-sync-1',
+                name: 'Task',
+                input: { description: 'Do sync task' },
+                status: 'completed',
+                result: 'Sync result',
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-sync-1', mode: 'sync' }] as any,
+          } as any,
+        ],
+        subagentData: {
+          'task-sync-1': {
+            id: 'task-sync-1',
+            description: 'Recovered sync subagent',
+            mode: 'sync',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered sync result',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-sync-1');
+
+      expect(taskTool?.subagent?.mode).toBe('sync');
+      expect(taskTool?.subagent?.asyncStatus).toBeUndefined();
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('prefers terminal SDK async status over stale cached running state', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-sdk-terminal',
+        sdkMessagesLoaded: false,
+        messages: [],
+        subagentData: {
+          'task-async-sdk-terminal': {
+            id: 'task-async-sdk-terminal',
+            description: 'Cached async subagent',
+            mode: 'async',
+            asyncStatus: 'running',
+            status: 'running',
+            result: 'Still running',
+            toolCalls: [],
+            isExpanded: false,
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'assistant-sdk-terminal',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-async-sdk-terminal',
+                name: 'Task',
+                input: { description: 'SDK async subagent', run_in_background: true },
+                status: 'completed',
+                result: 'Full SDK final result',
+                subagent: {
+                  id: 'task-async-sdk-terminal',
+                  description: 'SDK async subagent',
+                  mode: 'async',
+                  asyncStatus: 'completed',
+                  status: 'completed',
+                  result: 'Full SDK final result',
+                  toolCalls: [],
+                  isExpanded: false,
+                  agentId: 'agent-sdk-terminal',
+                },
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-sdk-terminal', mode: 'async' }] as any,
+          } as any,
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-sdk-terminal');
+
+      expect(taskTool?.status).toBe('completed');
+      expect(taskTool?.result).toBe('Full SDK final result');
+      expect(taskTool?.subagent?.status).toBe('completed');
+      expect(taskTool?.subagent?.asyncStatus).toBe('completed');
+      expect(taskTool?.subagent?.result).toBe('Full SDK final result');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('prefers cached terminal async status over SDK launch-only running state', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-async-cache-terminal',
+        sdkMessagesLoaded: false,
+        messages: [],
+        subagentData: {
+          'task-async-cache-terminal': {
+            id: 'task-async-cache-terminal',
+            description: 'Cached async subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered final result',
+            toolCalls: [],
+            isExpanded: false,
+            agentId: 'agent-cache-terminal',
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'assistant-sdk-running',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-async-cache-terminal',
+                name: 'Task',
+                input: { description: 'SDK async subagent', run_in_background: true },
+                status: 'running',
+                result: 'Task launched in background.',
+                subagent: {
+                  id: 'task-async-cache-terminal',
+                  description: 'SDK async subagent',
+                  mode: 'async',
+                  asyncStatus: 'running',
+                  status: 'running',
+                  result: 'Task launched in background.',
+                  toolCalls: [],
+                  isExpanded: false,
+                  agentId: 'agent-cache-terminal',
+                },
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-cache-terminal', mode: 'async' }] as any,
+          } as any,
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-cache-terminal');
+
+      expect(taskTool?.status).toBe('completed');
+      expect(taskTool?.result).toBe('Recovered final result');
+      expect(taskTool?.subagent?.status).toBe('completed');
+      expect(taskTool?.subagent?.asyncStatus).toBe('completed');
+      expect(taskTool?.subagent?.result).toBe('Recovered final result');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('restores async subagent data and mode when Task tool exists but async block is missing', async () => {
       await plugin.onload();
 

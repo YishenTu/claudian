@@ -4,7 +4,7 @@ import { Notice } from 'obsidian';
 import type { McpServerManager } from '../../../core/mcp';
 import { ProviderRegistry } from '../../../core/providers';
 import type { ChatRuntime } from '../../../core/runtime';
-import type { ChatMessage, ClaudeModel, Conversation, EffortLevel, PermissionMode, SlashCommand, ThinkingBudget } from '../../../core/types';
+import type { ChatMessage, ClaudeModel, Conversation, EffortLevel, PermissionMode, SlashCommand, StreamChunk, ThinkingBudget } from '../../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_EFFORT_LEVEL, DEFAULT_THINKING_BUDGET, getContextWindowSize, isAdaptiveThinkingModel } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
@@ -784,7 +784,7 @@ export function initializeTabControllers(
 
   // Wire subagent callback now that StreamController exists
   // DOM updates for async subagents are handled by SubagentManager directly;
-  // this callback handles message persistence and status panel updates.
+  // this callback handles message persistence.
   services.subagentManager.setCallback(
     (subagent) => {
       // Update messages (DOM already updated by manager)
@@ -794,21 +794,6 @@ export function initializeTabControllers(
       if (!tab.state.isStreaming && tab.state.currentConversationId) {
         void tab.controllers.conversationController?.save(false).catch(() => {
           // Best-effort persistence; avoid surfacing background-save failures here.
-        });
-      }
-
-      // Update status panel (hidden by default - inline is shown first)
-      if (subagent.mode === 'async' && ui.statusPanel) {
-        ui.statusPanel.updateSubagent({
-          id: subagent.id,
-          description: subagent.description,
-          status: subagent.asyncStatus === 'completed' ? 'completed'
-            : subagent.asyncStatus === 'error' ? 'error'
-            : subagent.asyncStatus === 'orphaned' ? 'orphaned'
-            : subagent.asyncStatus === 'running' ? 'running'
-            : 'pending',
-          prompt: subagent.prompt,
-          result: subagent.result,
         });
       }
     }
@@ -839,7 +824,6 @@ export function initializeTabControllers(
   );
 
   // Input controller - needs the tab's service
-  const generateId = () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
   tab.controllers.inputController = new InputController({
     plugin,
@@ -862,7 +846,7 @@ export function initializeTabControllers(
     getInstructionRefineService: () => services.instructionRefineService,
     getTitleGenerationService: () => services.titleGenerationService,
     getStatusPanel: () => ui.statusPanel,
-    generateId,
+    generateId: generateMessageId,
     resetInputHeight: () => {
       // Per-tab input height is managed by CSS, no dynamic adjustment needed
     },
@@ -1174,6 +1158,14 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         return decision;
       }
     );
+    tab.service.setSubagentHookProvider(
+      () => ({
+        hasRunning: tab.services.subagentManager.hasRunningSubagents(),
+      })
+    );
+    tab.service.setAutoTurnCallback((chunks: StreamChunk[]) => {
+      renderAutoTriggeredTurn(tab, chunks);
+    });
     tab.service.setPermissionModeSyncCallback((sdkMode) => {
       let mode: PermissionMode;
       if (sdkMode === 'bypassPermissions') mode = 'yolo';
@@ -1189,6 +1181,51 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
       }
     });
   }
+}
+
+function generateMessageId(): string {
+  return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * Renders an auto-triggered turn (e.g., agent response to task-notification)
+ * that arrives after the main handler has completed.
+ */
+function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
+  if (!tab.dom.contentEl.isConnected) {
+    return;
+  }
+
+  const hasToolActivity = chunks.some(
+    chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result'
+  );
+  let textContent = '';
+  let sdkAssistantUuid: string | undefined;
+
+  for (const chunk of chunks) {
+    if (chunk.type === 'text') {
+      textContent += chunk.content;
+    } else if (chunk.type === 'sdk_assistant_uuid') {
+      sdkAssistantUuid = chunk.uuid;
+    }
+  }
+
+  if (!textContent.trim() && !hasToolActivity) return;
+
+  const content = textContent.trim() || '(background task completed)';
+
+  const assistantMsg: ChatMessage = {
+    id: sdkAssistantUuid ?? generateMessageId(),
+    role: 'assistant',
+    content,
+    timestamp: Date.now(),
+    contentBlocks: [{ type: 'text', content }],
+    ...(sdkAssistantUuid && { sdkAssistantUuid }),
+  };
+
+  tab.state.addMessage(assistantMsg);
+  tab.renderer?.renderStoredMessage(assistantMsg);
+  tab.renderer?.scrollToBottom();
 }
 
 export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: PermissionMode): void {

@@ -1,3 +1,4 @@
+import type { SubagentHookState } from '../hooks';
 import type { ProviderCapabilities, ProviderId } from '../providers/types';
 import type { ChatMessage, Conversation, SlashCommand, StreamChunk, ToolCallInfo } from '../types';
 import type {
@@ -44,6 +45,8 @@ export interface ChatRuntime {
   setAskUserQuestionCallback(callback: AskUserQuestionCallback | null): void;
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void;
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void;
+  setSubagentHookProvider(getState: () => SubagentHookState): void;
+  setAutoTurnCallback(callback: ((chunks: StreamChunk[]) => void) | null): void;
 
   buildSessionUpdates(params: {
     conversation: Conversation | null;

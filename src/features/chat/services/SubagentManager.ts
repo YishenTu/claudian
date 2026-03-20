@@ -8,6 +8,11 @@ import type {
   SubagentMode,
   ToolCallInfo,
 } from '../../../core/types';
+import {
+  extractAgentIdFromToolUseResult,
+  extractXmlTag,
+  resolveToolUseResultStatus,
+} from '../../../providers/claude/history/ClaudeHistoryStore';
 import { extractFinalResultFromSubagentJsonl } from '../../../utils/subagentJsonl';
 import {
   addSubagentToolCall,
@@ -367,8 +372,17 @@ export class SubagentManager {
 
     const extractedResult = this.extractAgentResult(result, agentId ?? '', toolUseResult);
 
-    subagent.asyncStatus = isError ? 'error' : 'completed';
-    subagent.status = isError ? 'error' : 'completed';
+    // The chunk's is_error flag can be unreliable for async subagent results
+    // (SDK may set is_error on the content block even when the agent succeeded).
+    // Prefer the structured toolUseResult to determine actual error status.
+    const resolvedStatus = resolveToolUseResultStatus(
+      toolUseResult,
+      isError ? 'error' : 'completed'
+    );
+    const finalStatus = resolvedStatus === 'error' ? 'error' : 'completed';
+
+    subagent.asyncStatus = finalStatus;
+    subagent.status = finalStatus;
     subagent.result = extractedResult;
     subagent.completedAt = Date.now();
 
@@ -407,6 +421,15 @@ export class SubagentManager {
   public refreshAsyncSubagent(subagent: SubagentInfo): void {
     this.updateAsyncDomState(subagent);
     this.onStateChange(subagent);
+  }
+
+  // ============================================
+  // Hook State
+  // ============================================
+
+  public hasRunningSubagents(): boolean {
+    // pendingAsyncSubagents: awaiting agent_id; activeAsyncSubagents: only holds running entries
+    return this.pendingAsyncSubagents.size > 0 || this.activeAsyncSubagents.size > 0;
   }
 
   // ============================================
@@ -940,24 +963,13 @@ export class SubagentManager {
   }
 
   private extractAgentIdFromTaskToolUseResult(toolUseResult: unknown): string | null {
-    if (!toolUseResult || typeof toolUseResult !== 'object') {
-      return null;
-    }
+    // Shared utility handles the common agentId/agent_id and data.agent_id paths
+    const directId = extractAgentIdFromToolUseResult(toolUseResult);
+    if (directId) return directId;
 
+    // Streaming-specific fallback: scan content blocks for agent ID strings
+    if (!toolUseResult || typeof toolUseResult !== 'object') return null;
     const record = toolUseResult as Record<string, unknown>;
-    const directAgentId = record.agent_id ?? record.agentId;
-    if (typeof directAgentId === 'string' && directAgentId.length > 0) {
-      return directAgentId;
-    }
-
-    const data = record.data;
-    if (data && typeof data === 'object') {
-      const nested = data as Record<string, unknown>;
-      const nestedAgentId = nested.agent_id ?? nested.agentId;
-      if (typeof nestedAgentId === 'string' && nestedAgentId.length > 0) {
-        return nestedAgentId;
-      }
-    }
 
     if (Array.isArray(record.content)) {
       for (const block of record.content) {
@@ -1014,28 +1026,20 @@ export class SubagentManager {
   }
 
   private extractResultFromTaggedPayload(payload: string): string | null {
-    const directResult = this.extractTagContent(payload, 'result');
+    const directResult = extractXmlTag(payload, 'result');
     if (directResult) return directResult;
 
-    const outputContent = this.extractTagContent(payload, 'output');
+    const outputContent = extractXmlTag(payload, 'output');
     if (!outputContent) return null;
 
     const extractedFromJsonl = this.extractResultFromOutputJsonl(outputContent);
     if (extractedFromJsonl) return extractedFromJsonl;
 
-    const nestedResult = this.extractTagContent(outputContent, 'result');
+    const nestedResult = extractXmlTag(outputContent, 'result');
     if (nestedResult) return nestedResult;
 
     const trimmed = outputContent.trim();
     return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private extractTagContent(payload: string, tagName: string): string | null {
-    const tagRegex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*</${tagName}>`, 'i');
-    const match = payload.match(tagRegex);
-    if (!match || !match[1]) return null;
-    const content = match[1].trim();
-    return content.length > 0 ? content : null;
   }
 
   private extractResultFromOutputJsonl(outputContent: string): string | null {

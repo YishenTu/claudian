@@ -521,7 +521,7 @@ describe('SubagentManager', () => {
       expect(result?.asyncStatus).toBe('completed');
     });
 
-    it('returns error message when toolUseResult has retrieval_status error', () => {
+    it('marks error when toolUseResult has retrieval_status error', () => {
       const { manager } = createManager();
       setupLinkedAgentOutput(manager, 'task-1', 'agent-1', 'out-1');
 
@@ -536,11 +536,11 @@ describe('SubagentManager', () => {
         false,
         toolUseResult
       );
-      expect(result?.asyncStatus).toBe('completed');
+      expect(result?.asyncStatus).toBe('error');
       expect(result?.result).toBe('Error: Agent process crashed');
     });
 
-    it('returns generic error when retrieval_status is error without error field', () => {
+    it('marks error when retrieval_status is error without error field', () => {
       const { manager } = createManager();
       setupLinkedAgentOutput(manager, 'task-1', 'agent-1', 'out-1');
 
@@ -554,7 +554,7 @@ describe('SubagentManager', () => {
         false,
         toolUseResult
       );
-      expect(result?.asyncStatus).toBe('completed');
+      expect(result?.asyncStatus).toBe('error');
       expect(result?.result).toBe('Error: Task retrieval failed');
     });
 
@@ -1345,6 +1345,133 @@ Only this is the final result.
       });
 
       expect(addSubagentToolCall).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================
+  // Async Error Resolution (resolveAsyncError)
+  // ============================================
+
+  describe('resolveAsyncError via handleAgentOutputToolResult', () => {
+    function setupRunningSubagent(manager: SubagentManager) {
+      const parentEl = createMockEl();
+      manager.handleTaskToolUse('task-1', { description: 'BG', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-1' }));
+      manager.handleAgentOutputToolUse({
+        id: 'output-1', name: 'AgentOutput',
+        input: { task_id: 'agent-1' }, status: 'running', isExpanded: false,
+      });
+    }
+
+    it('marks completed when toolUseResult.status is "completed" even if chunk isError is true', () => {
+      const { manager, updates } = createManager();
+      setupRunningSubagent(manager);
+
+      manager.handleAgentOutputToolResult(
+        'output-1', 'result text', true,
+        { status: 'completed', content: [{ type: 'text', text: 'Done' }] }
+      );
+
+      const final = updates[updates.length - 1];
+      expect(final.asyncStatus).toBe('completed');
+      expect(final.status).toBe('completed');
+    });
+
+    it('marks completed when toolUseResult.retrieval_status is "success" even if chunk isError is true', () => {
+      const { manager, updates } = createManager();
+      setupRunningSubagent(manager);
+
+      manager.handleAgentOutputToolResult(
+        'output-1', 'result text', true,
+        { retrieval_status: 'success', result: 'All good' }
+      );
+
+      const final = updates[updates.length - 1];
+      expect(final.asyncStatus).toBe('completed');
+    });
+
+    it('marks error when toolUseResult.retrieval_status is "error" even if chunk isError is false', () => {
+      const { manager, updates } = createManager();
+      setupRunningSubagent(manager);
+
+      manager.handleAgentOutputToolResult(
+        'output-1', 'result text', false,
+        { retrieval_status: 'error', error: 'Agent crashed' }
+      );
+
+      const final = updates[updates.length - 1];
+      expect(final.asyncStatus).toBe('error');
+    });
+
+    it('falls back to chunk isError when toolUseResult has no status fields', () => {
+      const { manager, updates } = createManager();
+      setupRunningSubagent(manager);
+
+      manager.handleAgentOutputToolResult('output-1', 'result text', true, { foo: 'bar' });
+
+      const final = updates[updates.length - 1];
+      expect(final.asyncStatus).toBe('error');
+    });
+
+    it('falls back to chunk isError when no toolUseResult is provided', () => {
+      const { manager, updates } = createManager();
+      setupRunningSubagent(manager);
+
+      manager.handleAgentOutputToolResult('output-1', 'result text', false);
+
+      const final = updates[updates.length - 1];
+      expect(final.asyncStatus).toBe('completed');
+    });
+  });
+
+  // ============================================
+  // Hook Delivery Methods
+  // ============================================
+
+  describe('hook delivery', () => {
+    describe('hasRunningSubagents', () => {
+      it('returns false when no subagents exist', () => {
+        const { manager } = createManager();
+        expect(manager.hasRunningSubagents()).toBe(false);
+      });
+
+      it('returns true when pending async subagents exist', () => {
+        const { manager } = createManager();
+        const parentEl = createMockEl();
+        manager.handleTaskToolUse('task-1', { description: 'Background', run_in_background: true }, parentEl);
+
+        expect(manager.hasRunningSubagents()).toBe(true);
+      });
+
+      it('returns true when active running subagents exist', () => {
+        const { manager } = createManager();
+        const parentEl = createMockEl();
+        manager.handleTaskToolUse('task-1', { description: 'Background', run_in_background: true }, parentEl);
+        manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-123' }));
+
+        expect(manager.hasRunningSubagents()).toBe(true);
+      });
+
+      it('returns false when all subagents have completed', () => {
+        const { manager } = createManager();
+        const parentEl = createMockEl();
+        manager.handleTaskToolUse('task-1', { description: 'Task agent-123', run_in_background: true }, parentEl);
+        manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-123' }));
+        manager.handleAgentOutputToolUse({
+          id: 'output-agent-123',
+          name: 'AgentOutput',
+          input: { agent_id: 'agent-123' },
+          status: 'running',
+          isExpanded: false,
+        });
+        manager.handleAgentOutputToolResult(
+          'output-agent-123',
+          JSON.stringify({ result: 'Result from agent-123' }),
+          false
+        );
+
+        expect(manager.hasRunningSubagents()).toBe(false);
+      });
     });
   });
 

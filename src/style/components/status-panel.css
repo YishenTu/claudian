@@ -1,4 +1,4 @@
-/* Status Panel - persistent bottom panel for async subagents and todos */
+/* Status Panel - persistent bottom panel for todos and command output */
 
 .claudian-status-panel-container {
   flex-shrink: 0;
@@ -7,53 +7,6 @@
 
 .claudian-status-panel {
   padding-top: 12px;
-}
-
-/* Async Subagent Section */
-
-.claudian-status-panel-subagents {
-  margin-bottom: 4px;
-}
-
-.claudian-status-panel-done-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-}
-
-.claudian-status-panel-combined-row {
-  justify-content: flex-start;
-}
-
-.claudian-status-panel-combined-row .claudian-status-panel-done-text {
-  flex: 1;
-}
-
-.claudian-status-panel-icon.claudian-status-panel-done-icon {
-  color: var(--color-green);
-}
-
-.claudian-status-panel-icon.claudian-status-panel-bot-icon {
-  color: var(--interactive-accent);
-}
-
-.claudian-status-panel-done-text {
-  font-family: var(--font-monospace);
-  font-size: 13px;
-  color: var(--text-normal);
-}
-
-.claudian-status-panel-running-row {
-  display: flex;
-  justify-content: flex-end;
-  padding: 2px 0;
-}
-
-.claudian-status-panel-running-text {
-  font-family: var(--font-monospace);
-  font-size: 13px;
-  color: var(--color-cyan);
 }
 
 /* Todo Section */

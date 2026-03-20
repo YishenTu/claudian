@@ -326,7 +326,6 @@ describe('Async Subagent Renderer', () => {
     const state = createAsyncSubagentBlock(parentEl as any, 'task-1', { description: 'Background job' });
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.countEl.textContent).toBe('');
     expect(state.statusTextEl.textContent).toBe('Initializing');
     expect((state.wrapperEl as any).getClasses()).toEqual(expect.arrayContaining(['async', 'pending']));
   });
@@ -369,7 +368,6 @@ describe('Async Subagent Renderer', () => {
     finalizeAsyncSubagent(state, 'all done', false);
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.countEl.textContent).toBe('2 tool uses');
     expect(state.statusTextEl.textContent).toBe('');
     expect((state.wrapperEl as any).hasClass('done')).toBe(true);
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
@@ -420,39 +418,6 @@ describe('Async Subagent Renderer', () => {
 
       expect(wrapperEl).toBeDefined();
       expect((wrapperEl as any).hasClass('claudian-subagent-list')).toBe(true);
-    });
-
-    it('shows tool-use count in async header', () => {
-      const subagent: SubagentInfo = {
-        id: 'task-count',
-        description: 'Count task',
-        status: 'completed',
-        toolCalls: [
-          {
-            id: 'tool-1',
-            name: 'Read',
-            input: { file_path: 'a.md' },
-            status: 'completed',
-            result: 'A',
-            isExpanded: false,
-          },
-          {
-            id: 'tool-2',
-            name: 'Grep',
-            input: { pattern: 'x' },
-            status: 'completed',
-            result: 'B',
-            isExpanded: false,
-          },
-        ],
-        isExpanded: false,
-        mode: 'async',
-        asyncStatus: 'completed',
-      };
-
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
-      const countText = getTextByClass(wrapperEl as any, 'claudian-subagent-count')[0];
-      expect(countText).toBe('2 tool uses');
     });
 
     it('should expand content when header is clicked', () => {
