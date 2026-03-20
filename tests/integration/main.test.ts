@@ -1003,6 +1003,75 @@ describe('ClaudianPlugin', () => {
       loadSpy.mockRestore();
     });
 
+    it('keeps the richer cached async result when both SDK and cache are terminal', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        isNative: true,
+        sdkSessionId: 'session-subagent-cache-richer',
+        sdkMessagesLoaded: false,
+        messages: [],
+        subagentData: {
+          'task-merge-2': {
+            id: 'task-merge-2',
+            description: 'Recovered subagent',
+            mode: 'async',
+            asyncStatus: 'completed',
+            status: 'completed',
+            result: 'Recovered final result with full details',
+            toolCalls: [],
+            isExpanded: false,
+            agentId: 'agent-cache-richer',
+          } as any,
+        },
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'assistant-cache-richer',
+            role: 'assistant',
+            content: '',
+            timestamp: 1000,
+            toolCalls: [
+              {
+                id: 'task-merge-2',
+                name: 'Task',
+                input: { description: 'SDK async subagent', run_in_background: true },
+                status: 'completed',
+                result: 'Short SDK result',
+                subagent: {
+                  id: 'task-merge-2',
+                  description: 'SDK async subagent',
+                  mode: 'async',
+                  asyncStatus: 'completed',
+                  status: 'completed',
+                  result: 'Short SDK result',
+                  toolCalls: [],
+                  isExpanded: false,
+                  agentId: 'agent-cache-richer',
+                },
+              } as any,
+            ],
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-2', mode: 'async' }] as any,
+          } as any,
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+      const taskTool = loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-merge-2');
+
+      expect(taskTool?.status).toBe('completed');
+      expect(taskTool?.result).toBe('Recovered final result with full details');
+      expect(taskTool?.subagent?.result).toBe('Recovered final result with full details');
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('prefers terminal SDK async status over stale cached running state', async () => {
       await plugin.onload();
 

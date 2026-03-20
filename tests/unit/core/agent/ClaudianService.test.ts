@@ -1,4 +1,5 @@
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
+import { Notice } from 'obsidian';
 
 import { ClaudianService } from '@/core/agent/ClaudianService';
 import { MessageChannel } from '@/core/agent/MessageChannel';
@@ -1184,6 +1185,63 @@ describe('ClaudianService', () => {
         ([chunk]: any) => chunk.type === 'text'
       );
       expect(textChunks).toHaveLength(0);
+    });
+
+    it('should reset auto-turn stream-text dedup after an empty buffered turn completes', async () => {
+      (service as any).responseHandlers = [];
+      const autoTurnCallback = jest.fn();
+      service.setAutoTurnCallback(autoTurnCallback);
+
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'text' } },
+      });
+      await (service as any).routeMessage({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Deduped away' }] },
+      });
+      await (service as any).routeMessage({
+        type: 'result',
+        subtype: 'success',
+        result: 'first turn complete',
+      });
+
+      await (service as any).routeMessage({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Fresh auto-turn text' }] },
+      });
+      await (service as any).routeMessage({
+        type: 'result',
+        subtype: 'success',
+        result: 'second turn complete',
+      });
+
+      expect(autoTurnCallback).toHaveBeenCalledTimes(1);
+      expect(autoTurnCallback).toHaveBeenCalledWith([
+        expect.objectContaining({ type: 'text', content: 'Fresh auto-turn text' }),
+      ]);
+    });
+
+    it('should notify when auto-turn callback rendering fails', async () => {
+      (service as any).responseHandlers = [];
+      const callbackError = new Error('renderer exploded');
+      service.setAutoTurnCallback(() => {
+        throw callbackError;
+      });
+
+      await (service as any).routeMessage({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Background result' }] },
+      });
+      await (service as any).routeMessage({
+        type: 'result',
+        subtype: 'success',
+        result: 'turn complete',
+      });
+
+      expect(Notice).toHaveBeenCalledWith(
+        expect.stringContaining('Background task completed')
+      );
     });
 
     it('should suppress history rebuild and clear pendingForkSession on fork session init', async () => {

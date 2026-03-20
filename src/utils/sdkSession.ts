@@ -16,7 +16,15 @@ import * as path from 'path';
 import { extractToolResultContent } from '../core/sdk/toolResultContent';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../core/tools';
 import { isSubagentToolName, TOOL_ASK_USER_QUESTION } from '../core/tools/toolNames';
-import type { ChatMessage, ContentBlock, ImageAttachment, ImageMediaType, SubagentInfo, ToolCallInfo } from '../core/types';
+import type {
+  AsyncSubagentStatus,
+  ChatMessage,
+  ContentBlock,
+  ImageAttachment,
+  ImageMediaType,
+  SubagentInfo,
+  ToolCallInfo,
+} from '../core/types';
 import { extractContentBeforeXmlContext } from './context';
 import { extractDiffData } from './diff';
 import { isCompactionCanceledStderr, isInterruptSignalText } from './interrupt';
@@ -1094,7 +1102,7 @@ export function extractAgentIdFromToolUseResult(toolUseResult: unknown): string 
   return null;
 }
 
-export type ResolvedAsyncStatus = 'running' | 'completed' | 'error';
+export type ResolvedAsyncStatus = Exclude<AsyncSubagentStatus, 'pending'>;
 
 /**
  * Resolves the async status from a structured toolUseResult object.
@@ -1151,13 +1159,15 @@ function buildAsyncSubagentInfo(
     status = resolveToolUseResultStatus(toolUseResult, toolCallFallback);
   }
 
+  const taskStatus = status === 'orphaned' ? 'error' : status;
+
   return {
     id: toolCall.id,
     description,
     prompt,
     mode: 'async',
     isExpanded: false,
-    status,
+    status: taskStatus,
     toolCalls: [],
     asyncStatus: status,
     agentId,

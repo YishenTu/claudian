@@ -11,6 +11,7 @@ import {
   initializeTabControllers,
   initializeTabService,
   initializeTabUI,
+  setupServiceCallbacks,
   type TabCreateOptions,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
@@ -729,6 +730,116 @@ describe('Tab - Destruction', () => {
       expect(cancelInstructionRefine).toHaveBeenCalled();
       expect(cancelTitleGeneration).toHaveBeenCalled();
       expect(destroyTodoPanel).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('Tab - Service Callbacks', () => {
+  describe('setupServiceCallbacks', () => {
+    it('renders tool-only auto-triggered turns with a placeholder assistant message', () => {
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      const addMessageSpy = jest.spyOn(tab.state, 'addMessage');
+      const renderStoredMessage = jest.fn();
+      const scrollToBottom = jest.fn();
+
+      Object.defineProperty(tab.dom.contentEl, 'isConnected', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      tab.renderer = {
+        renderStoredMessage,
+        scrollToBottom,
+      } as any;
+      tab.controllers.inputController = {
+        handleApprovalRequest: jest.fn(),
+        dismissPendingApproval: jest.fn(),
+        handleAskUserQuestion: jest.fn(),
+        handleExitPlanMode: jest.fn(),
+      } as any;
+      tab.services.subagentManager = {
+        hasRunningSubagents: jest.fn().mockReturnValue(false),
+      } as any;
+
+      const service = {
+        setApprovalCallback: jest.fn(),
+        setApprovalDismisser: jest.fn(),
+        setAskUserQuestionCallback: jest.fn(),
+        setExitPlanModeCallback: jest.fn(),
+        setSubagentHookProvider: jest.fn(),
+        setAutoTurnCallback: jest.fn(),
+        setPermissionModeSyncCallback: jest.fn(),
+      };
+      tab.service = service as any;
+
+      setupServiceCallbacks(tab, plugin);
+
+      const autoTurnCallback = service.setAutoTurnCallback.mock.calls[0][0];
+      autoTurnCallback([
+        { type: 'tool_result', tool_use_id: 'task-1', content: 'done' },
+      ]);
+
+      expect(addMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: 'assistant',
+          content: '(background task completed)',
+        })
+      );
+      expect(renderStoredMessage).toHaveBeenCalled();
+      expect(scrollToBottom).toHaveBeenCalled();
+    });
+
+    it('skips auto-triggered rendering after the tab DOM is detached', () => {
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      const addMessageSpy = jest.spyOn(tab.state, 'addMessage');
+      const renderStoredMessage = jest.fn();
+      const scrollToBottom = jest.fn();
+
+      Object.defineProperty(tab.dom.contentEl, 'isConnected', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      tab.renderer = {
+        renderStoredMessage,
+        scrollToBottom,
+      } as any;
+      tab.controllers.inputController = {
+        handleApprovalRequest: jest.fn(),
+        dismissPendingApproval: jest.fn(),
+        handleAskUserQuestion: jest.fn(),
+        handleExitPlanMode: jest.fn(),
+      } as any;
+      tab.services.subagentManager = {
+        hasRunningSubagents: jest.fn().mockReturnValue(false),
+      } as any;
+
+      const service = {
+        setApprovalCallback: jest.fn(),
+        setApprovalDismisser: jest.fn(),
+        setAskUserQuestionCallback: jest.fn(),
+        setExitPlanModeCallback: jest.fn(),
+        setSubagentHookProvider: jest.fn(),
+        setAutoTurnCallback: jest.fn(),
+        setPermissionModeSyncCallback: jest.fn(),
+      };
+      tab.service = service as any;
+
+      setupServiceCallbacks(tab, plugin);
+
+      const autoTurnCallback = service.setAutoTurnCallback.mock.calls[0][0];
+      (tab.dom.contentEl as any).isConnected = false;
+      autoTurnCallback([
+        { type: 'text', content: 'Background result' },
+      ]);
+
+      expect(addMessageSpy).not.toHaveBeenCalled();
+      expect(renderStoredMessage).not.toHaveBeenCalled();
+      expect(scrollToBottom).not.toHaveBeenCalled();
     });
   });
 });

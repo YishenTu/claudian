@@ -16,6 +16,7 @@ import {
   loadSubagentToolCalls,
   parseSDKMessageToChat,
   readSDKSession,
+  resolveToolUseResultStatus,
   type SDKNativeMessage,
   sdkSessionExists,
 } from '@/utils/sdkSession';
@@ -2134,6 +2135,13 @@ describe('sdkSession', () => {
     });
   });
 
+  describe('resolveToolUseResultStatus', () => {
+    it('preserves orphaned fallback when the tool result has no stronger signal', () => {
+      expect(resolveToolUseResultStatus(undefined, 'orphaned')).toBe('orphaned');
+      expect(resolveToolUseResultStatus({ status: 'unknown' }, 'orphaned')).toBe('orphaned');
+    });
+  });
+
   describe('loadSDKSessionMessages - async subagent hydration', () => {
     it('populates toolCall.subagent for async Task tools from queue-operation results', async () => {
       mockExistsSync.mockReturnValue(true);
@@ -2232,6 +2240,32 @@ describe('sdkSession', () => {
       expect(taskToolCall.status).toBe('running');
       // Falls back to the API content (truncated)
       expect(taskToolCall.subagent!.result).toBe('Task launched.');
+    });
+
+    it('treats async launch tool results as running even when the content block is flagged as error', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
+        const p = String(filePath);
+        if (p.endsWith('.jsonl') && !p.includes('subagents')) {
+          return [
+            '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run task"}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
+            '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"abc123","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background.","is_error":true}]}}',
+          ].join('\n');
+        }
+        return '';
+      });
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-async-launch-error-flag');
+
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+
+      expect(taskToolCall.subagent).toBeDefined();
+      expect(taskToolCall.subagent!.status).toBe('running');
+      expect(taskToolCall.subagent!.asyncStatus).toBe('running');
+      expect(taskToolCall.status).toBe('running');
+      expect(taskToolCall.result).toBe('Task launched in background.');
     });
 
     it('does not build SubagentInfo for sync Task tools', async () => {

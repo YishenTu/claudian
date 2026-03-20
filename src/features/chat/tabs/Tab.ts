@@ -1108,6 +1108,7 @@ export async function destroyTab(tab: TabData): Promise<void> {
   // Close the tab's service
   // Note: closePersistentQuery is synchronous but we make destroyTab async
   // for future-proofing and proper cleanup ordering
+  tab.service?.setAutoTurnCallback?.(null);
   tab.service?.closePersistentQuery('tab closed');
   tab.service = null;
 
@@ -1198,17 +1199,21 @@ function generateMessageId(): string {
  * that arrives after the main handler has completed.
  */
 function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
+  if (tab.dom.contentEl.isConnected === false) {
+    return;
+  }
+
+  const hasToolActivity = chunks.some(
+    chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result'
+  );
   let textContent = '';
   let sdkAssistantUuid: string | undefined;
-  let hasToolActivity = false;
 
   for (const chunk of chunks) {
     if (chunk.type === 'text') {
       textContent += chunk.content;
     } else if (chunk.type === 'sdk_assistant_uuid') {
       sdkAssistantUuid = chunk.uuid;
-    } else if (chunk.type === 'tool_use' || chunk.type === 'tool_result') {
-      hasToolActivity = true;
     }
   }
 

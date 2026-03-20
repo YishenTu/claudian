@@ -537,9 +537,8 @@ export class ClaudianService {
 
     // Always register subagent hooks — closures resolve provider at execution time
     // so hooks work even when provider is set after the persistent query starts.
-    const noopState: SubagentHookState = { hasRunning: false };
     hooks.Stop = [createStopSubagentHook(
-      () => this._subagentStateProvider?.() ?? noopState
+      () => this._subagentStateProvider?.() ?? { hasRunning: false }
     )];
 
     return hooks;
@@ -716,7 +715,7 @@ export class ClaudianService {
     }
 
     if (message.type === 'assistant' && message.uuid) {
-      const uuidChunk = { type: 'sdk_assistant_uuid' as const, uuid: message.uuid };
+      const uuidChunk: StreamChunk = { type: 'sdk_assistant_uuid', uuid: message.uuid };
       if (handler) {
         handler.onChunk(uuidChunk);
       } else {
@@ -733,12 +732,20 @@ export class ClaudianService {
       if (handler) {
         handler.resetStreamText();
         handler.onDone();
-      } else if (this._autoTurnBuffer.length > 0) {
+      } else {
+        this._autoTurnSawStreamText = false;
+        if (this._autoTurnBuffer.length === 0) {
+          return;
+        }
+
         // Flush buffered chunks from auto-triggered turn (no handler was registered)
         const chunks = [...this._autoTurnBuffer];
         this._autoTurnBuffer = [];
-        this._autoTurnSawStreamText = false;
-        try { this._autoTurnCallback?.(chunks); } catch { /* non-critical */ }
+        try {
+          this._autoTurnCallback?.(chunks);
+        } catch {
+          new Notice('Background task completed, but the result could not be rendered.');
+        }
       }
     }
   }

@@ -14,6 +14,7 @@ import { PluginManager } from './core/plugins';
 import { StorageService } from './core/storage';
 import { isSubagentToolName, TOOL_TASK } from './core/tools/toolNames';
 import type {
+  AsyncSubagentStatus,
   ChatMessage,
   ClaudianSettings,
   Conversation,
@@ -69,13 +70,13 @@ function chooseRicherToolCalls(
   return cachedToolCalls;
 }
 
-function getAsyncStatus(subagent: SubagentInfo | undefined): string | undefined {
+function getAsyncStatus(subagent: SubagentInfo | undefined): AsyncSubagentStatus | undefined {
   if (!subagent) return undefined;
   if (subagent.mode !== 'async' && !subagent.asyncStatus) return undefined;
   return subagent.asyncStatus ?? subagent.status;
 }
 
-function isTerminalAsyncStatus(status: string | undefined): boolean {
+function isTerminalAsyncStatus(status: AsyncSubagentStatus | undefined): boolean {
   return status === 'completed' || status === 'error' || status === 'orphaned';
 }
 
@@ -110,7 +111,7 @@ function mergeSubagentInfo(
   const fallbackResult = chooseRicherResult(sdkResult, cachedSubagent.result);
   const mergedResult = preferred === cachedSubagent
     ? (cachedSubagent.result ?? fallbackResult)
-    : (sdkResult ?? fallbackResult);
+    : fallbackResult;
   const mergedAsyncStatus = mergedMode === 'async'
     ? preferred.asyncStatus ?? preferred.status
     : preferred.asyncStatus;

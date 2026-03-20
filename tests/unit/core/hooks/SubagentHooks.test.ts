@@ -56,6 +56,23 @@ describe('SubagentHooks', () => {
       expect(result2).toEqual({});
     });
 
+    it('fails closed when reading subagent state throws', async () => {
+      const hook = createStopSubagentHook(() => {
+        throw new Error('tab already torn down');
+      });
+
+      const result = await hook.hooks[0](
+        createHookInput(),
+        undefined,
+        { signal: new AbortController().signal }
+      );
+
+      expect(result).toEqual({
+        decision: 'block',
+        reason: expect.stringContaining('still running'),
+      });
+    });
+
     it('has no matcher (applies to all stop events)', () => {
       const hook = createStopSubagentHook(
         () => ({ hasRunning: false })
