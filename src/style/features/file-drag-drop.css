@@ -22,6 +22,12 @@
   animation: claudian-drop-pulse 0.5s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .claudian-file-drop-overlay.visible {
+    animation: none;
+  }
+}
+
 @keyframes claudian-drop-pulse {
   0% {
     background: rgba(var(--claudian-brand-rgb), 0.08);

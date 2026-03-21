@@ -70,6 +70,7 @@ export class FileContextManager {
         }
 
         this.state.detachFile(filePath);
+        this.pendingContextFiles.delete(filePath);
         this.refreshCurrentNoteChip();
       },
       onOpenFile: async (filePath) => {

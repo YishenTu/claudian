@@ -131,7 +131,7 @@ export function parsePathEntries(pathValue?: string): string[] {
 
   if (process.platform !== 'win32') {
     rawEntries = pathValue.split(':');
-  } else if (/^[A-Za-z]:[\\/]/.test(pathValue)) {
+  } else if (/^[A-Za-z]:[\\/]/.test(pathValue) && !pathValue.includes(';')) {
     // Single Windows absolute path entry (e.g., C:\custom\bin)
     rawEntries = [pathValue];
   } else if (pathValue.includes(';')) {

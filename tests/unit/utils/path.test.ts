@@ -148,6 +148,15 @@ describe('parsePathEntries', () => {
     const result = parsePathEntries('~/bin');
     expect(result[0]).toBe(path.join(os.homedir(), 'bin'));
   });
+
+  if (isWindows) {
+    it('parses Windows PATH with multiple drive-letter entries', () => {
+      const result = parsePathEntries('C:\\Windows\\System32;D:\\tools\\bin');
+      expect(result).toContain('C:\\Windows\\System32');
+      expect(result).toContain('D:\\tools\\bin');
+      expect(result).toHaveLength(2);
+    });
+  }
 });
 
 describe('translateMsysPath', () => {

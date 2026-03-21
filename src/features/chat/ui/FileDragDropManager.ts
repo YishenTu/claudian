@@ -264,7 +264,7 @@ export class FileDragDropManager {
       const url = new URL(trimmed);
       if (url.hostname !== 'open') return null;
       const file = url.searchParams.get('file');
-      return file ? decodeURIComponent(file) : null;
+      return file || null;
     } catch {
       return null;
     }
