@@ -304,6 +304,28 @@ describe('SelectionController', () => {
       expect(controller.hasSelection()).toBe(true);
     });
 
+    it('preserves reading mode selection when sidebar gets focus', () => {
+      const anchorNode = {};
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue({
+          toString: () => 'reading selection',
+          anchorNode,
+        }),
+      };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+      expect(controller.hasSelection()).toBe(true);
+
+      // Sidebar gets focus — no active MarkdownView
+      app.workspace.getActiveViewOfType.mockReturnValue(null);
+      jest.advanceTimersByTime(250);
+
+      expect(controller.hasSelection()).toBe(true);
+      expect(indicatorEl.style.display).toBe('block');
+    });
+
     it('ignores selection outside the view container', () => {
       containerEl.contains.mockReturnValue(false);
       const anchorNode = {};
