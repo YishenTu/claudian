@@ -17,7 +17,7 @@ export interface SkillRun {
   updatedAt: number;
   startedAt?: number;
   completedAt?: number;
-  sessionId?: string | null;
+  sessionId?: string;
   summary?: string;
   lastLogLine?: string;
   log?: string;

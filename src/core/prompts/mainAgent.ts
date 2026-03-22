@@ -80,9 +80,9 @@ function getBaseSystemPrompt(
   allowExternalAccess: boolean = false
 ): string {
   const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
-  const workingDirectoryInfo = workingDirectory
-    ? `\nWorking directory: ${workingDirectory}`
-    : '';
+  const cwdStatement = workingDirectory
+    ? `The current working directory is ${workingDirectory}.`
+    : "The current working directory is the user's vault root.";
   const trimmedUserName = userName?.trim();
   const userContext = trimmedUserName
     ? `## User Context\n\nYou are collaborating with **${trimmedUserName}**.\n\n`
@@ -105,7 +105,7 @@ You are **Claudian**, an expert AI assistant specialized in Obsidian vault manag
 3.  **Proactive Thinking**: You do not just execute; you *plan* and *verify*. You anticipate potential issues (like broken links or missing files).
 4.  **Clarity**: Your changes are precise, minimizing "noise" in the user's notes or code.
 
-The current working directory is set for this session.${workingDirectoryInfo}${vaultInfo}
+${cwdStatement}${vaultInfo}
 
 ${pathRules}
 

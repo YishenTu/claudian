@@ -537,11 +537,6 @@ export class StorageService {
     }
   }
 
-  async setSkillRuns(runs: SkillRun[]): Promise<void> {
-    const usageCounts = await this.getSkillRunUsageCounts();
-    await this.setSkillRunState(runs, usageCounts);
-  }
-
   async getSkillRunUsageCounts(): Promise<SkillRunUsageCounts> {
     try {
       const data = await this.plugin.loadData();
@@ -603,7 +598,7 @@ export class StorageService {
         updatedAt: run.updatedAt,
         startedAt: typeof run.startedAt === 'number' ? run.startedAt : undefined,
         completedAt: typeof run.completedAt === 'number' ? run.completedAt : undefined,
-        sessionId: typeof run.sessionId === 'string' || run.sessionId === null ? run.sessionId : undefined,
+        sessionId: typeof run.sessionId === 'string' ? run.sessionId : undefined,
         summary: typeof run.summary === 'string' ? run.summary : undefined,
         lastLogLine: typeof run.lastLogLine === 'string' ? run.lastLogLine : undefined,
         log: typeof run.log === 'string' ? run.log : undefined,

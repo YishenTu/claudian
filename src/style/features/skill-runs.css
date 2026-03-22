@@ -34,13 +34,6 @@
   margin: 0;
 }
 
-.claudian-runs-subtitle {
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  line-height: 1.35;
-  max-width: 58ch;
-}
-
 .claudian-runs-count {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
