@@ -676,17 +676,19 @@ export function getPathAccessType(
   candidatePath: string,
   allowedContextPaths: string[] | undefined,
   allowedExportPaths: string[] | undefined,
-  vaultPath: string
+  vaultPath: string,
+  cwdPath?: string
 ): PathAccessType {
   if (!candidatePath) return 'none';
 
   const vaultReal = normalizePathForComparison(resolveRealPath(vaultPath));
 
+  const resolutionBase = cwdPath || vaultPath;
   const normalizedCandidate = normalizePathBeforeResolution(candidatePath);
 
   const absCandidate = path.isAbsolute(normalizedCandidate)
     ? normalizedCandidate
-    : path.resolve(vaultPath, normalizedCandidate);
+    : path.resolve(resolutionBase, normalizedCandidate);
 
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 

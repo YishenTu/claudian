@@ -135,6 +135,24 @@ export function cleanPathToken(raw: string): string | null {
 }
 
 const QUOTE_CHARS = new Set(["'", '"', '`']);
+const UNIX_SPECIAL_DEVICE_PATHS = new Set([
+  '/dev/null',
+  '/dev/stdin',
+  '/dev/stdout',
+  '/dev/stderr',
+  '/dev/tty',
+]);
+
+function isSpecialShellPath(token: string): boolean {
+  const normalized = token.trim();
+  if (!normalized) return false;
+
+  if (process.platform === 'win32') {
+    return /^(?:nul|con|prn|aux|com[1-9]|lpt[1-9])(?::.*)?$/i.test(normalized);
+  }
+
+  return UNIX_SPECIAL_DEVICE_PATHS.has(normalized) || /^\/dev\/fd\/\d+$/.test(normalized);
+}
 
 function stripQuoteChars(token: string): string {
   // Strip matched quotes first
@@ -195,6 +213,7 @@ export function checkBashPathAccess(
 ): PathViolation | null {
   const cleaned = cleanPathToken(candidate);
   if (!cleaned) return null;
+  if (isSpecialShellPath(cleaned)) return null;
 
   const accessType = context.getPathAccessType(cleaned);
 
@@ -404,4 +423,3 @@ export function findBashCommandPathViolation(
 
   return null;
 }
-

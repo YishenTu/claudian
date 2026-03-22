@@ -13,6 +13,7 @@ export interface SystemPromptSettings {
   allowedExportPaths?: string[];
   allowExternalAccess?: boolean;
   vaultPath?: string;
+  workingDirectory?: string;
   userName?: string;
 }
 
@@ -74,10 +75,14 @@ function getSubagentPathRules(allowExternalAccess: boolean = false): string {
 
 function getBaseSystemPrompt(
   vaultPath?: string,
+  workingDirectory?: string,
   userName?: string,
   allowExternalAccess: boolean = false
 ): string {
   const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
+  const workingDirectoryInfo = workingDirectory
+    ? `\nWorking directory: ${workingDirectory}`
+    : '';
   const trimmedUserName = userName?.trim();
   const userContext = trimmedUserName
     ? `## User Context\n\nYou are collaborating with **${trimmedUserName}**.\n\n`
@@ -100,7 +105,7 @@ You are **Claudian**, an expert AI assistant specialized in Obsidian vault manag
 3.  **Proactive Thinking**: You do not just execute; you *plan* and *verify*. You anticipate potential issues (like broken links or missing files).
 4.  **Clarity**: Your changes are precise, minimizing "noise" in the user's notes or code.
 
-The current working directory is the user's vault root.${vaultInfo}
+The current working directory is set for this session.${workingDirectoryInfo}${vaultInfo}
 
 ${pathRules}
 
@@ -344,7 +349,12 @@ cp ./note.md ~/Desktop/note.md
 export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   const allowExternalAccess = settings.allowExternalAccess ?? false;
 
-  let prompt = getBaseSystemPrompt(settings.vaultPath, settings.userName, allowExternalAccess);
+  let prompt = getBaseSystemPrompt(
+    settings.vaultPath,
+    settings.workingDirectory,
+    settings.userName,
+    allowExternalAccess
+  );
 
   // Stable content (ordered for context cache optimization)
   prompt += getImageInstructions(settings.mediaFolder || '');

@@ -135,6 +135,7 @@ export class ClaudianService {
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private vaultPath: string | null = null;
+  private workingDirectory: string | null = null;
   private currentExternalContextPaths: string[] = [];
   private readyStateListeners = new Set<(ready: boolean) => void>();
 
@@ -173,9 +174,10 @@ export class ClaudianService {
   private _autoTurnSawStreamText = false;
   private _autoTurnCallback: ((chunks: StreamChunk[]) => void) | null = null;
 
-  constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
+  constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager, workingDirectory?: string | null) {
     this.plugin = plugin;
     this.mcpManager = mcpManager;
+    this.workingDirectory = workingDirectory ?? null;
   }
 
   onReadyStateChange(listener: (ready: boolean) => void): () => void {
@@ -459,8 +461,10 @@ export class ClaudianService {
   private buildQueryOptionsContext(vaultPath: string, cliPath: string): QueryOptionsContext {
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+    const cwdPath = this.workingDirectory || vaultPath;
 
     return {
+      cwdPath,
       vaultPath,
       cliPath,
       settings: this.plugin.settings,
@@ -520,6 +524,8 @@ export class ClaudianService {
       const vaultRestrictionHook = createVaultRestrictionHook({
         getPathAccessType: (p) => {
           if (!this.vaultPath) return 'vault';
+          const vaultPath = this.vaultPath;
+          const cwdPath = this.workingDirectory || vaultPath;
           // For cold-start queries, use the passed externalContextPaths.
           // For persistent queries, read this.currentExternalContextPaths at execution time
           // so dynamic updates are reflected.
@@ -528,7 +534,8 @@ export class ClaudianService {
             p,
             paths,
             this.plugin.settings.allowedExportPaths,
-            this.vaultPath
+            vaultPath,
+            cwdPath
           );
         },
       });

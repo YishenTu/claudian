@@ -122,3 +122,9 @@ export {
   type AgentFrontmatter,
   type AgentPermissionMode,
 } from './agent';
+
+// Skill run types
+export {
+  type SkillRun,
+  type SkillRunStatus,
+} from './runs';
