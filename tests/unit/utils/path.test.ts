@@ -438,6 +438,21 @@ describe('getPathAccessType', () => {
     );
     expect(result).toBe('readwrite');
   });
+
+  it('returns vault for relative path inside vault even if symlink target is outside (e.g. .venv/bin/python3)', () => {
+    // Simulates a virtualenv executable: logically inside the vault as a relative path,
+    // but the symlink would resolve to /usr/bin/python3.
+    // The logical path check must fire before the realpath check.
+    const candidate = '.venv/bin/python3';
+    const cwdPath = vaultPath;
+    expect(getPathAccessType(candidate, [], [], vaultPath, cwdPath)).toBe('vault');
+  });
+
+  it('returns vault for deep relative path inside a working subdirectory', () => {
+    const cwdPath = path.join(vaultPath, 'myproject');
+    const candidate = '.venv/bin/python3';
+    expect(getPathAccessType(candidate, [], [], vaultPath, cwdPath)).toBe('vault');
+  });
 });
 
 describe('findClaudeCLIPath', () => {

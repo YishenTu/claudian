@@ -690,6 +690,16 @@ export function getPathAccessType(
     ? normalizedCandidate
     : path.resolve(resolutionBase, normalizedCandidate);
 
+  // Check the logical (pre-symlink) path first so that executables like
+  // .venv/bin/python3 — which are symlinks inside the vault pointing at
+  // system binaries — are not rejected just because their symlink target
+  // lives outside the vault.
+  const logicalCandidate = normalizePathForComparison(absCandidate);
+  const logicalVault = normalizePathForComparison(vaultPath);
+  if (logicalCandidate === logicalVault || logicalCandidate.startsWith(logicalVault + '/')) {
+    return 'vault';
+  }
+
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
 
   if (resolvedCandidate === vaultReal || resolvedCandidate.startsWith(vaultReal + '/')) {

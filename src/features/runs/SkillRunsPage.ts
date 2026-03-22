@@ -555,6 +555,7 @@ export class SkillRunsPage {
     }
 
     for (const run of runs) {
+      const isActive = run.status === 'running' || run.status === 'queued';
       const itemEl = this.listEl.createDiv({ cls: `claudian-run-item claudian-run-item--${run.status}` });
 
       const topRow = itemEl.createDiv({ cls: 'claudian-run-item-top' });
@@ -580,12 +581,18 @@ export class SkillRunsPage {
         cls: 'claudian-run-item-time',
       });
 
-      if (run.summary || run.lastLogLine || run.error) {
+      const displayText = isActive
+        ? (run.lastLogLine || run.summary || 'Waiting for output…')
+        : (run.summary || run.lastLogLine || run.error || '');
+
+      if (displayText || run.workingDirectory || (run.error && run.status === 'failed')) {
         const bodyEl = itemEl.createDiv({ cls: 'claudian-run-item-body' });
-        bodyEl.createDiv({
-          text: run.summary || run.lastLogLine || run.error || '',
-          cls: 'claudian-run-item-summary',
-        });
+        if (displayText) {
+          bodyEl.createDiv({
+            text: displayText,
+            cls: 'claudian-run-item-summary',
+          });
+        }
 
         if (run.workingDirectory) {
           const dirEl = bodyEl.createDiv({ cls: 'claudian-run-item-dir' });
@@ -608,16 +615,22 @@ export class SkillRunsPage {
       const actionsEl = itemEl.createDiv({ cls: 'claudian-run-item-actions' });
 
       const openBtn = actionsEl.createEl('button', { text: 'Chat' });
-      openBtn.addEventListener('click', () => {
-        void this.callbacks.openConversation(run.conversationId);
-      });
+      if (isActive) {
+        openBtn.disabled = true;
+        openBtn.setAttribute('aria-label', 'Chat will be available once the run finishes');
+        openBtn.title = 'Available after run finishes';
+      } else {
+        openBtn.addEventListener('click', () => {
+          void this.callbacks.openConversation(run.conversationId);
+        });
+      }
 
       const logBtn = actionsEl.createEl('button', { text: 'Log' });
       logBtn.addEventListener('click', () => {
         new SkillRunLogModal(this.plugin.app, run).open();
       });
 
-      if (run.status === 'running' || run.status === 'queued') {
+      if (isActive) {
         const cancelBtn = actionsEl.createEl('button', { text: 'Cancel' });
         cancelBtn.addEventListener('click', () => {
           void this.plugin.skillRunManager.cancelRun(run.id);
