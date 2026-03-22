@@ -127,7 +127,7 @@ describe('SelectionController', () => {
     expect(hideSelectionHighlight).toHaveBeenCalledWith(editorView);
   });
 
-  it('clears markdown selection when active view is no longer markdown', () => {
+  it('preserves selection when active view is no longer markdown (e.g., sidebar focused)', () => {
     controller.start();
     jest.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
@@ -136,9 +136,9 @@ describe('SelectionController', () => {
     (global as any).document.activeElement = null;
     jest.advanceTimersByTime(250);
 
-    expect(controller.hasSelection()).toBe(false);
-    expect(indicatorEl.style.display).toBe('none');
-    expect(hideSelectionHighlight).toHaveBeenCalledWith(editorView);
+    // Selection persists — it clears naturally when the user returns to the editor and deselects
+    expect(controller.hasSelection()).toBe(true);
+    expect(indicatorEl.style.display).toBe('block');
   });
 
   it('preserves selection when input focus arrives after a slow editor blur handoff', () => {

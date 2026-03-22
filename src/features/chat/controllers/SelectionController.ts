@@ -65,7 +65,9 @@ export class SelectionController {
   private poll(): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
-      this.clearWhenMarkdownIsNotActive();
+      // No active MarkdownView (e.g., sidebar or other view has focus).
+      // Preserve stored selection — it will clear naturally when the user
+      // returns to an editor and deselects, or switches to a different note.
       return;
     }
 
@@ -77,10 +79,7 @@ export class SelectionController {
 
     const editor = view.editor;
     const editorView = getEditorView(editor);
-    if (!editorView) {
-      this.clearWhenMarkdownIsNotActive();
-      return;
-    }
+    if (!editorView) return;
 
     const selectedText = editor.getSelection();
 
@@ -120,10 +119,7 @@ export class SelectionController {
 
   private pollReadingMode(view: MarkdownView): void {
     const containerEl = view.containerEl;
-    if (!containerEl) {
-      this.clearWhenMarkdownIsNotActive();
-      return;
-    }
+    if (!containerEl) return;
 
     const selection = document.getSelection();
     const selectedText = selection?.toString() ?? '';
@@ -169,16 +165,6 @@ export class SelectionController {
     if (this.inputHandoffGraceUntil !== null && Date.now() <= this.inputHandoffGraceUntil) {
       return;
     }
-
-    this.inputHandoffGraceUntil = null;
-    this.clearHighlight();
-    this.storedSelection = null;
-    this.updateIndicator();
-  }
-
-  private clearWhenMarkdownIsNotActive(): void {
-    if (!this.storedSelection) return;
-    if (document.activeElement === this.inputEl) return;
 
     this.inputHandoffGraceUntil = null;
     this.clearHighlight();
