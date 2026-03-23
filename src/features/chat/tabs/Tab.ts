@@ -753,7 +753,8 @@ export function initializeTabControllers(
     dom.selectionIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl)
+    () => autoResizeTextarea(dom.inputEl),
+    dom.contentEl,
   );
 
   // Browser selection controller
@@ -980,12 +981,13 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));
 
-  // Input focus handler
-  const focusHandler = () => {
+  // Sidebar focus handler — show selection highlight when focus enters the tab from outside
+  const focusHandler = (e: FocusEvent) => {
+    if (e.relatedTarget && dom.contentEl.contains(e.relatedTarget as Node)) return;
     controllers.selectionController?.showHighlight();
   };
-  dom.inputEl.addEventListener('focus', focusHandler);
-  dom.eventCleanups.push(() => dom.inputEl.removeEventListener('focus', focusHandler));
+  dom.contentEl.addEventListener('focusin', focusHandler);
+  dom.eventCleanups.push(() => dom.contentEl.removeEventListener('focusin', focusHandler));
 
   // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   const SCROLL_THRESHOLD = 20; // pixels from bottom to consider "at bottom"
