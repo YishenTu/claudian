@@ -584,10 +584,12 @@ describe('Tab - Event Wiring', () => {
       wireTabInputEvents(tab, options.plugin);
 
       // Check that event listeners were added (cast to any to access mock method)
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      expect(listeners.get('keydown')).toBeDefined();
-      expect(listeners.get('input')).toBeDefined();
-      expect(listeners.get('focus')).toBeDefined();
+      const inputListeners = (tab.dom.inputEl as any).getEventListeners();
+      expect(inputListeners.get('keydown')).toBeDefined();
+      expect(inputListeners.get('input')).toBeDefined();
+      // focusin is registered on contentEl (not inputEl) to catch focus on any sidebar element
+      const contentListeners = (tab.dom.contentEl as any).getEventListeners();
+      expect(contentListeners.get('focusin')).toBeDefined();
     });
 
     it('should store cleanup functions for memory management', () => {
@@ -1553,7 +1555,7 @@ describe('Tab - Event Handler Behavior', () => {
   });
 
   describe('wireTabInputEvents - focus handler', () => {
-    it('should show selection highlight on focus', () => {
+    it('should show selection highlight on focusin (any sidebar element)', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
@@ -1562,9 +1564,10 @@ describe('Tab - Event Handler Behavior', () => {
 
       wireTabInputEvents(tab, options.plugin);
 
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const focusHandler = listeners.get('focus')[0];
-      focusHandler();
+      const listeners = (tab.dom.contentEl as any).getEventListeners();
+      const focusHandler = listeners.get('focusin')[0];
+      // Simulate focus entering from outside (relatedTarget is null)
+      focusHandler({ relatedTarget: null });
 
       expect(mockSelectionController.showHighlight).toHaveBeenCalled();
     });

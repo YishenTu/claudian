@@ -42,6 +42,7 @@ export interface StoredSelection {
   from?: number;
   to?: number;
   editorView?: EditorView;
+  domRanges?: Range[];
 }
 
 /** Centralized chat state data. */
