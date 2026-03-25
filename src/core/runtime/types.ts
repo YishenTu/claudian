@@ -68,7 +68,6 @@ export type ChatRuntimeConversationState = Pick<
 
 export interface SessionUpdateResult {
   updates: Partial<Conversation>;
-  usesNativeHistory: boolean;
 }
 
 export interface ChatRewindResult {

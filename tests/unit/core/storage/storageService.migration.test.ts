@@ -347,7 +347,7 @@ describe('StorageService migration', () => {
     const storage = new StorageService(plugin);
     await storage.initialize();
 
-    expect(files.has('.claude/sessions/conv-1.jsonl')).toBe(true);
+    expect(files.has('.claude/sessions/conv-1.meta.json')).toBe(true);
   });
 
   it('skips existing conversations during migration', async () => {
@@ -363,7 +363,7 @@ describe('StorageService migration', () => {
     const { plugin, files } = createMockPlugin({
       dataJson: { conversations: [conversation] },
       initialFiles: {
-        '.claude/sessions/conv-1.jsonl': '{"existing": true}',
+        '.claude/sessions/conv-1.meta.json': '{"existing": true}',
       },
     });
 
@@ -371,7 +371,7 @@ describe('StorageService migration', () => {
     await storage.initialize();
 
     // Should keep existing file
-    expect(files.get('.claude/sessions/conv-1.jsonl')).toBe('{"existing": true}');
+    expect(files.get('.claude/sessions/conv-1.meta.json')).toBe('{"existing": true}');
   });
 
   it('handles conversation migration errors gracefully', async () => {

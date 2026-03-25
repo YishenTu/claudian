@@ -585,10 +585,9 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('loadSettings with conversations', () => {
-    it('should load saved conversations from JSONL files', async () => {
+    it('should load saved conversations from metadata files', async () => {
       const timestamp = Date.now();
-      const sessionJsonl = JSON.stringify({
-        type: 'meta',
+      const sessionMeta = JSON.stringify({
         id: 'conv-saved-1',
         title: 'Saved Chat',
         createdAt: timestamp,
@@ -599,7 +598,7 @@ describe('ClaudianPlugin', () => {
       // Mock files exist
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
         // Session files
-        if (path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.jsonl') {
+        if (path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.meta.json') {
           return true;
         }
         // claudian-settings.json exists
@@ -610,13 +609,13 @@ describe('ClaudianPlugin', () => {
       });
       mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
         if (path === '.claude/sessions') {
-          return { files: ['.claude/sessions/conv-saved-1.jsonl'], folders: [] };
+          return { files: ['.claude/sessions/conv-saved-1.meta.json'], folders: [] };
         }
         return { files: [], folders: [] };
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/sessions/conv-saved-1.jsonl') {
-          return sessionJsonl;
+        if (path === '.claude/sessions/conv-saved-1.meta.json') {
+          return sessionMeta;
         }
         if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({});
@@ -636,8 +635,7 @@ describe('ClaudianPlugin', () => {
 
     it('should clear session IDs when provider base URL changes', async () => {
       const timestamp = Date.now();
-      const sessionJsonl = JSON.stringify({
-        type: 'meta',
+      const sessionMeta = JSON.stringify({
         id: 'conv-saved-1',
         title: 'Saved Chat',
         createdAt: timestamp,
@@ -648,11 +646,11 @@ describe('ClaudianPlugin', () => {
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
         return path === '.claude/claudian-settings.json' ||
           path === '.claude/sessions' ||
-          path === '.claude/sessions/conv-saved-1.jsonl';
+          path === '.claude/sessions/conv-saved-1.meta.json';
       });
       mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
         if (path === '.claude/sessions') {
-          return { files: ['.claude/sessions/conv-saved-1.jsonl'], folders: [] };
+          return { files: ['.claude/sessions/conv-saved-1.meta.json'], folders: [] };
         }
         return { files: [], folders: [] };
       });
@@ -664,8 +662,8 @@ describe('ClaudianPlugin', () => {
             environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
           });
         }
-        if (path === '.claude/sessions/conv-saved-1.jsonl') {
-          return sessionJsonl;
+        if (path === '.claude/sessions/conv-saved-1.meta.json') {
+          return sessionMeta;
         }
         return '';
       });
@@ -679,11 +677,10 @@ describe('ClaudianPlugin', () => {
       expect(loaded?.sessionId).toBeNull();
 
       const sessionWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
-        ([path]) => path === '.claude/sessions/conv-saved-1.jsonl'
+        ([path]) => path === '.claude/sessions/conv-saved-1.meta.json'
       );
       expect(sessionWrite).toBeDefined();
-      const metaLine = (sessionWrite?.[1] as string).split(/\r?\n/)[0];
-      const meta = JSON.parse(metaLine);
+      const meta = JSON.parse(sessionWrite?.[1] as string);
       expect(meta.sessionId).toBeNull();
     });
 
@@ -716,7 +713,7 @@ describe('ClaudianPlugin', () => {
         updatedAt: timestamp,
         providerSessionId: 'session-B',
         previousProviderSessionIds: ['session-A'],
-        usesNativeHistory: true,
+
       });
 
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
@@ -756,7 +753,7 @@ describe('ClaudianPlugin', () => {
       await plugin.updateConversation(conv.id, {
         providerSessionId: 'session-B',
         previousProviderSessionIds: ['session-A'],
-        usesNativeHistory: true,
+
       });
 
       const updated = await plugin.getConversationById(conv.id);
@@ -779,7 +776,7 @@ describe('ClaudianPlugin', () => {
       await plugin.updateConversation(conv.id, {
         providerSessionId: 'session-A',
         previousProviderSessionIds: [],
-        usesNativeHistory: true,
+
       });
 
       const updated = await plugin.getConversationById(conv.id);
@@ -793,13 +790,13 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         forkSource: { sessionId: 'source-session-abc', resumeAt: 'asst-uuid-cutoff' },
         // No sessionId or providerSessionId → isPendingFork returns true
         sessionId: null,
         providerSessionId: undefined,
-        // Reset nativeHistoryLoaded to simulate plugin restart
-        nativeHistoryLoaded: false,
+
+
       });
 
       const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
@@ -828,7 +825,7 @@ describe('ClaudianPlugin', () => {
       );
 
       // Messages should be loaded
-      expect(loaded?.nativeHistoryLoaded).toBe(true);
+      expect(loaded?.messages).toBeDefined();
 
       existsSpy.mockRestore();
       loadSpy.mockRestore();
@@ -839,10 +836,10 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         forkSource: { sessionId: 'source-session', resumeAt: 'asst-uuid' },
         providerSessionId: 'own-session-id',
-        nativeHistoryLoaded: false,
+
       });
 
       const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
@@ -870,9 +867,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-subagent-recovery',
-        nativeHistoryLoaded: false,
+
         messages: [
           {
             id: 'assistant-1',
@@ -948,9 +945,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-subagent-merge',
-        nativeHistoryLoaded: false,
+
         messages: [
           {
             id: 'assistant-merge',
@@ -1009,9 +1006,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-subagent-cache-richer',
-        nativeHistoryLoaded: false,
+
         messages: [],
         subagentData: {
           'task-merge-2': {
@@ -1078,9 +1075,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-sync-subagent-cleanup',
-        nativeHistoryLoaded: false,
+
         messages: [
           {
             id: 'assistant-sync',
@@ -1134,9 +1131,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-async-sdk-terminal',
-        nativeHistoryLoaded: false,
+
         messages: [],
         subagentData: {
           'task-async-sdk-terminal': {
@@ -1204,9 +1201,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-async-cache-terminal',
-        nativeHistoryLoaded: false,
+
         messages: [],
         subagentData: {
           'task-async-cache-terminal': {
@@ -1275,9 +1272,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-async-subagent-recovery',
-        nativeHistoryLoaded: false,
+
         messages: [
           {
             id: 'assistant-1',
@@ -1344,9 +1341,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-async-subagent-tools',
-        nativeHistoryLoaded: false,
+
         messages: [
           {
             id: 'assistant-1',
@@ -1424,9 +1421,9 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       await plugin.updateConversation(conv.id, {
-        usesNativeHistory: true,
+
         providerSessionId: 'session-async-subagent-fallback',
-        nativeHistoryLoaded: false,
+
         messages: [
           {
             id: 'assistant-1',

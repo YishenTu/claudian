@@ -253,16 +253,8 @@ export class ClaudianService implements ChatRuntime {
   }): SessionUpdateResult {
     const sessionId = this.getSessionId();
 
-    const wasNative = conversation?.usesNativeHistory ?? false;
-    const shouldPromote = !wasNative && !!sessionId;
-    const usesNativeHistory = wasNative || shouldPromote;
-    const legacyMessages = conversation?.messages ?? [];
-    const nativeHistoryCutoffAt = shouldPromote
-      ? legacyMessages[legacyMessages.length - 1]?.timestamp
-      : conversation?.nativeHistoryCutoffAt;
-
     const oldSdkSessionId = conversation?.providerSessionId;
-    const sessionChanged = usesNativeHistory && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
+    const sessionChanged = sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
     const previousProviderSessionIds = sessionChanged
       ? [...new Set([...(conversation?.previousProviderSessionIds || []), oldSdkSessionId])]
       : conversation?.previousProviderSessionIds;
@@ -282,18 +274,15 @@ export class ClaudianService implements ChatRuntime {
 
     const updates: Partial<Conversation> = {
       sessionId: resolvedSessionId,
-      providerSessionId: usesNativeHistory && sessionId && !isForkSourceOnly ? sessionId : conversation?.providerSessionId,
+      providerSessionId: sessionId && !isForkSourceOnly ? sessionId : conversation?.providerSessionId,
       previousProviderSessionIds,
-      usesNativeHistory: usesNativeHistory || undefined,
-      nativeHistoryCutoffAt,
-      nativeHistoryLoaded: usesNativeHistory ? true : undefined,
     };
 
     if (conversation?.forkSource && sessionId && sessionId !== conversation.forkSource.sessionId) {
       updates.forkSource = undefined;
     }
 
-    return { updates, usesNativeHistory };
+    return { updates };
   }
 
   resolveSessionIdForFork(conversation: Conversation | null): string | null {

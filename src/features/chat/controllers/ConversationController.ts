@@ -362,15 +362,13 @@ export class ConversationController {
 
     const conversation = plugin.getConversationSync(state.currentConversationId!);
 
-    // Delegate session bookkeeping (providerSessionId, forkSource, previousProviderSessionIds,
-    // usesNativeHistory promotion, nativeHistoryCutoffAt) to the runtime — these are provider-specific.
-    const { updates: sessionUpdates, usesNativeHistory } = agentService
+    const { updates: sessionUpdates } = agentService
       ? agentService.buildSessionUpdates({ conversation, sessionInvalidated })
-      : { updates: {}, usesNativeHistory: conversation?.usesNativeHistory ?? false };
+      : { updates: {} };
 
     const updates: Partial<Conversation> = {
       ...sessionUpdates,
-      messages: usesNativeHistory ? state.messages : state.getPersistedMessages(),
+      messages: state.messages,
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,

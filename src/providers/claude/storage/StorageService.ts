@@ -325,11 +325,13 @@ export class StorageService {
     if (dataJson.conversations && dataJson.conversations.length > 0) {
       for (const conversation of dataJson.conversations) {
         try {
-          const filePath = this.sessions.getFilePath(conversation.id);
+          const filePath = this.sessions.getMetadataPath(conversation.id);
           if (await this.adapter.exists(filePath)) {
             continue;
           }
-          await this.sessions.saveConversation(conversation);
+          await this.sessions.saveMetadata(
+            this.sessions.toSessionMetadata(conversation)
+          );
         } catch {
           hadErrors = true;
         }

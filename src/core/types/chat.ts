@@ -95,12 +95,6 @@ export interface Conversation {
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
   enabledMcpServers?: string[];
-  /** True if this conversation relies on provider-native history storage. */
-  usesNativeHistory?: boolean;
-  /** Timestamp of the last legacy JSONL message (used to merge provider-native history). */
-  nativeHistoryCutoffAt?: number;
-  /** Internal flag to avoid reloading provider-native history repeatedly. */
-  nativeHistoryLoaded?: boolean;
   /**
    * Cached subagent data for Task tool operations.
    * Loaded from metadata for native sessions to restore tool count and status on reload.
@@ -124,8 +118,6 @@ export interface ConversationMeta {
   preview: string;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
-  /** True if this conversation uses SDK-native storage. */
-  usesNativeHistory?: boolean;
 }
 
 /**
@@ -156,8 +148,6 @@ export interface SessionMetadata {
   externalContextPaths?: string[];
   enabledMcpServers?: string[];
   usage?: UsageInfo;
-  /** Timestamp of the last legacy JSONL message (used to merge provider-native history). */
-  nativeHistoryCutoffAt?: number;
   /**
    * Subagent data for Task tool operations.
    * Maps toolUseId to subagent info (tool count, status, result).

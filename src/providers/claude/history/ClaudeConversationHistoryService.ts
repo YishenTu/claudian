@@ -283,6 +283,8 @@ function applySubagentData(
 }
 
 export class ClaudeConversationHistoryService implements ProviderConversationHistoryService {
+  private hydratedConversationIds = new Set<string>();
+
   isPendingForkConversation(conversation: Conversation): boolean {
     return !!conversation.forkSource
       && !conversation.providerSessionId
@@ -297,7 +299,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: Conversation,
     vaultPath: string | null,
   ): Promise<void> {
-    if (!conversation.usesNativeHistory || conversation.nativeHistoryLoaded || !vaultPath) {
+    if (!vaultPath || this.hydratedConversationIds.has(conversation.id)) {
       return;
     }
 
@@ -350,13 +352,10 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
-    const afterCutoff = conversation.nativeHistoryCutoffAt != null
-      ? filteredSdkMessages.filter(msg => msg.timestamp > conversation.nativeHistoryCutoffAt!)
-      : filteredSdkMessages;
 
     const merged = dedupeMessages([
       ...conversation.messages,
-      ...afterCutoff,
+      ...filteredSdkMessages,
     ]).sort((a, b) => a.timestamp - b.timestamp);
 
     if (conversation.subagentData) {
@@ -369,7 +368,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     conversation.messages = merged;
-    conversation.nativeHistoryLoaded = true;
+    this.hydratedConversationIds.add(conversation.id);
   }
 
   async deleteConversationSession(

@@ -1530,30 +1530,6 @@ describe('TabManager - forkToNewTab at max tabs', () => {
 });
 
 describe('TabManager - createForkConversation', () => {
-  it('should set nativeHistoryLoaded to true on fork conversation', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
-    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
-
-    const plugin = createMockPlugin({
-      createConversation: mockCreateConversation,
-      updateConversation: mockUpdateConversation,
-    });
-
-    const manager = createManager({ plugin });
-    await manager.createTab();
-
-    await manager.forkToNewTab({
-      messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }] as any,
-      sourceSessionId: 'session-1',
-      resumeAt: 'asst-uuid-1',
-      sourceTitle: 'My Chat',
-    });
-
-    expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
-      nativeHistoryLoaded: true,
-    }));
-  });
-
   it('should set forkSource with sessionId and resumeAt', async () => {
     const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);

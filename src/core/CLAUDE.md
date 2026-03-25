@@ -75,4 +75,4 @@ const adapter = storage.getAdapter();
 - `ChatRuntime.cleanup()` must be called on tab close
 - Storage paths are encoded: non-alphanumeric → `-`
 - Plan mode uses dedicated callbacks (`exitPlanModeCallback`, `permissionModeSyncCallback`) that bypass normal approval flow in `canUseTool`. `EnterPlanMode` is auto-approved by the SDK; the stream event is detected to sync UI state.
-- Session bookkeeping (`providerSessionId`, `forkSource`, `previousProviderSessionIds`) is handled by `ChatRuntime.buildSessionUpdates()` — features should not access these fields directly.
+- Session bookkeeping (`providerSessionId`, `forkSource`, `previousProviderSessionIds`) is handled by `ChatRuntime.buildSessionUpdates()` — features should not access these fields directly. All conversations use SDK-native storage; legacy JSONL storage has been removed.

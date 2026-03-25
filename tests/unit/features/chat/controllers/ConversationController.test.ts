@@ -1596,15 +1596,13 @@ describe('ConversationController - Persistent External Context Paths', () => {
 function createMockBuildSessionUpdates(mockService: any) {
   return jest.fn().mockImplementation(({ conversation, sessionInvalidated }: any) => {
     const sessionId = mockService.getSessionId();
-    const wasNative = conversation?.usesNativeHistory ?? false;
-    const shouldPromote = !wasNative && !!sessionId;
-    const usesNativeHistory = wasNative || shouldPromote;
     const legacyMessages = conversation?.messages ?? [];
-    const legacyCutoffAt = shouldPromote
+    const hasSession = !!sessionId;
+    const legacyCutoffAt = hasSession && !conversation?.providerSessionId
       ? legacyMessages[legacyMessages.length - 1]?.timestamp
       : conversation?.legacyCutoffAt;
     const oldSdkSessionId = conversation?.providerSessionId;
-    const sessionChanged = usesNativeHistory && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
+    const sessionChanged = hasSession && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
     const previousProviderSessionIds = sessionChanged
       ? [...new Set([...(conversation?.previousProviderSessionIds || []), oldSdkSessionId])]
       : conversation?.previousProviderSessionIds;
@@ -1621,16 +1619,14 @@ function createMockBuildSessionUpdates(mockService: any) {
     }
     const updates: any = {
       sessionId: resolvedSessionId,
-      providerSessionId: usesNativeHistory && sessionId && !isForkSourceOnly ? sessionId : conversation?.providerSessionId,
+      providerSessionId: hasSession && sessionId && !isForkSourceOnly ? sessionId : conversation?.providerSessionId,
       previousProviderSessionIds,
-      usesNativeHistory: usesNativeHistory || undefined,
       legacyCutoffAt,
-      nativeHistoryLoaded: usesNativeHistory ? true : undefined,
     };
     if (conversation?.forkSource && sessionId && sessionId !== conversation.forkSource.sessionId) {
       updates.forkSource = undefined;
     }
-    return { updates, usesNativeHistory };
+    return { updates };
   });
 }
 
@@ -1664,7 +1660,6 @@ describe('ConversationController - Previous SDK Session IDs', () => {
         id: 'conv-1',
         messages: [],
         providerSessionId: 'session-A',
-        usesNativeHistory: true,
         previousProviderSessionIds: undefined,
       });
 
@@ -1691,7 +1686,6 @@ describe('ConversationController - Previous SDK Session IDs', () => {
         id: 'conv-1',
         messages: [],
         providerSessionId: 'session-B',
-        usesNativeHistory: true,
         previousProviderSessionIds: ['session-A'],
       });
 
@@ -1717,7 +1711,6 @@ describe('ConversationController - Previous SDK Session IDs', () => {
         id: 'conv-1',
         messages: [],
         providerSessionId: 'session-A',
-        usesNativeHistory: true,
         previousProviderSessionIds: undefined,
       });
 
@@ -1744,7 +1737,6 @@ describe('ConversationController - Previous SDK Session IDs', () => {
         id: 'conv-1',
         messages: [],
         providerSessionId: 'session-A',
-        usesNativeHistory: true,
         previousProviderSessionIds: ['session-A'], // Already contains A (from prior bug/race)
       });
 
@@ -1795,7 +1787,6 @@ describe('ConversationController - Fork Session ID Isolation', () => {
       messages: [],
       sessionId: null,
       providerSessionId: undefined,
-      usesNativeHistory: true,
       forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
     });
 
@@ -1822,7 +1813,6 @@ describe('ConversationController - Fork Session ID Isolation', () => {
       messages: [],
       sessionId: null,
       providerSessionId: undefined,
-      usesNativeHistory: true,
       forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
     });
 
@@ -1851,7 +1841,6 @@ describe('ConversationController - Fork Session ID Isolation', () => {
       messages: [],
       sessionId: 'new-session-xyz',
       providerSessionId: 'new-session-xyz',
-      usesNativeHistory: true,
       forkSource: undefined,
     });
 
@@ -1897,7 +1886,6 @@ describe('ConversationController - switchTo fork path', () => {
       messages: [{ id: '1', role: 'user', content: 'forked msg', timestamp: Date.now() }],
       sessionId: null,
       providerSessionId: undefined,
-      usesNativeHistory: true,
       forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
     };
     (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(forkConversation);
@@ -1918,7 +1906,6 @@ describe('ConversationController - switchTo fork path', () => {
       messages: [{ id: '1', role: 'user', content: 'forked msg', timestamp: Date.now() }],
       sessionId: 'own-session-xyz',
       providerSessionId: 'own-session-xyz',
-      usesNativeHistory: true,
       forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
     };
     (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(forkConversation);
