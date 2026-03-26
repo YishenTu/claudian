@@ -7,7 +7,6 @@ import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { getCustomModelIds } from '../../providers/claude/env/claudeModelEnv';
 import { findNodeExecutable, formatContextLimit, getEnhancedPath, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { getHostnameKey } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
@@ -730,7 +729,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     container.empty();
 
     const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
-    const uniqueModelIds = getCustomModelIds(envVars);
+    const uniqueModelIds = ProviderRegistry.getChatUIConfig().getCustomModelIds(envVars);
 
     if (uniqueModelIds.size === 0) {
       return;

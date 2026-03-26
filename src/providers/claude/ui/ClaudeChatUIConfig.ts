@@ -5,7 +5,7 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
-import { getModelsFromEnvironment } from '../env/claudeModelEnv';
+import { getCustomModelIds, getModelsFromEnvironment } from '../env/claudeModelEnv';
 import {
   type ClaudeModel,
   type ClaudianSettings,
@@ -93,6 +93,10 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
       (settings.enableOpus1M as boolean) ?? false,
       (settings.enableSonnet1M as boolean) ?? false,
     );
+  },
+
+  getCustomModelIds(envVars: Record<string, string>): Set<string> {
+    return getCustomModelIds(envVars);
   },
 
   getPermissionModeToggle() {

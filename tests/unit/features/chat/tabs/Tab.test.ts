@@ -644,6 +644,7 @@ describe('Tab - Service Initialization', () => {
         isDefaultModel: jest.fn().mockReturnValue(true),
         applyModelDefaults: jest.fn(),
         normalizeModelVariant: jest.fn((model: string) => model),
+        getCustomModelIds: jest.fn().mockReturnValue(new Set()),
       });
       getCapabilitiesSpy.mockReturnValue({
         providerId: 'codex',

@@ -1,10 +1,10 @@
 import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
+import { ProviderRegistry } from '../../../core/providers';
 import type { EnvSnippet } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
-import { getCustomModelIds } from '../../../providers/claude/env/claudeModelEnv';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../../utils/env';
 import type { ClaudianView } from '../../chat/ClaudianView';
 
@@ -79,7 +79,7 @@ export class EnvSnippetModal extends Modal {
       contextLimitInputs.clear();
 
       const envVars = parseEnvironmentVariables(envVarsEl.value);
-      const uniqueModelIds = getCustomModelIds(envVars);
+      const uniqueModelIds = ProviderRegistry.getChatUIConfig().getCustomModelIds(envVars);
 
       if (uniqueModelIds.size === 0) {
         contextLimitsContainer.style.display = 'none';

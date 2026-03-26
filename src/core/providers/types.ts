@@ -105,6 +105,9 @@ export interface ProviderChatUIConfig {
   /** Normalize model variant based on visibility flags. Provider extracts what it needs from the settings bag. */
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string;
 
+  /** Extract custom model IDs from parsed environment variables. Used for per-model context limit UI. */
+  getCustomModelIds(envVars: Record<string, string>): Set<string>;
+
   /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
   getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
 }
