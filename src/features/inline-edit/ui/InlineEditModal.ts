@@ -5,6 +5,7 @@ import type { App, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type { InlineEditMode, InlineEditService } from '../../../core/providers';
+import { DEFAULT_CHAT_PROVIDER_ID } from '../../../core/providers';
 import { ProviderRegistry } from '../../../core/providers';
 import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
@@ -283,7 +284,17 @@ class InlineEditController {
     private getExternalContexts: () => string[],
     private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void
   ) {
-    this.inlineEditService = ProviderRegistry.createInlineEditService(plugin);
+    const activeView = typeof plugin.getView === 'function'
+      ? plugin.getView()
+      : null;
+    const activeTab = activeView?.getActiveTab();
+    const conversation = activeTab?.conversationId
+      ? plugin.getConversationSync(activeTab.conversationId)
+      : null;
+    const providerId = conversation?.providerId
+      ?? activeTab?.service?.providerId
+      ?? DEFAULT_CHAT_PROVIDER_ID;
+    this.inlineEditService = ProviderRegistry.createInlineEditService(plugin, providerId);
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {
         new Notice('Failed to load vault files. Vault @-mentions may be unavailable.');

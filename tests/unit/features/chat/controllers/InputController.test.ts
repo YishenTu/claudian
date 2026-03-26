@@ -62,6 +62,17 @@ const mockMcpForEncoder = {
 
 function createMockAgentService() {
   return {
+    providerId: 'claude',
+    getCapabilities: jest.fn().mockReturnValue({
+      providerId: 'claude',
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: true,
+      supportsRewind: true,
+      supportsFork: true,
+      supportsProviderCommands: true,
+      reasoningControl: 'effort',
+    }),
     prepareTurn: jest.fn().mockImplementation((request: any) =>
       encodeClaudeTurn(request, mockMcpForEncoder),
     ),
@@ -689,6 +700,37 @@ describe('InputController - Message Queue', () => {
       const callArgs = mockTitleService.generateTitle.mock.calls[0];
       expect(callArgs[0]).toBe('conv-1');
       expect(callArgs[1]).toContain('Hello world');
+    });
+
+    it('should lazily create the conversation with the active runtime provider', async () => {
+      const sendableDeps = createSendableDeps({}, null);
+      sendableDeps.mockAgentService.providerId = 'codex';
+      deps = sendableDeps;
+      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({ id: 'conv-codex', providerId: 'codex' });
+
+      (sendableDeps.mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response text' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
+        providerId: 'codex',
+        sessionId: undefined,
+      });
     });
 
     it('should not overwrite user-renamed title in callback', async () => {

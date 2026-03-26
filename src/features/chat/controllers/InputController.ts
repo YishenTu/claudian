@@ -1,7 +1,14 @@
 import { Notice } from 'obsidian';
 
 import { detectBuiltInCommand } from '../../../core/commands';
-import { type InstructionRefineService, ProviderRegistry, type TitleGenerationService } from '../../../core/providers';
+import {
+  DEFAULT_CHAT_PROVIDER_ID,
+  type InstructionRefineService,
+  type ProviderCapabilities,
+  type ProviderId,
+  ProviderRegistry,
+  type TitleGenerationService,
+} from '../../../core/providers';
 import type { ApprovalCallbackOptions, ChatRuntime, ChatTurnRequest } from '../../../core/runtime';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
@@ -81,6 +88,30 @@ export class InputController {
 
   private getAgentService(): ChatRuntime | null {
     return this.deps.getAgentService?.() ?? null;
+  }
+
+  private getActiveProviderId(): ProviderId {
+    const agentService = this.getAgentService();
+    if (agentService?.providerId) {
+      return agentService.providerId;
+    }
+
+    const conversationId = this.deps.state.currentConversationId;
+    if (conversationId) {
+      return this.deps.plugin.getConversationSync(conversationId)?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+    }
+
+    return DEFAULT_CHAT_PROVIDER_ID;
+  }
+
+  private getActiveCapabilities(): ProviderCapabilities {
+    const providerId = this.getActiveProviderId();
+    const agentService = this.getAgentService();
+    if (agentService?.providerId === providerId) {
+      return agentService.getCapabilities();
+    }
+
+    return ProviderRegistry.getCapabilities(providerId);
   }
 
   private isResumeSessionAtStillNeeded(resumeUuid: string, previousMessages: ChatMessage[]): boolean {
@@ -530,7 +561,10 @@ export class InputController {
 
     if (!state.currentConversationId) {
       const sessionId = this.getAgentService()?.getSessionId() ?? undefined;
-      const conversation = await plugin.createConversation({ sessionId });
+      const conversation = await plugin.createConversation({
+        providerId: this.getActiveProviderId(),
+        sessionId,
+      });
       state.currentConversationId = conversation.id;
     }
 
@@ -941,7 +975,7 @@ export class InputController {
         this.showResumeDropdown();
         break;
       case 'fork': {
-        if (!ProviderRegistry.getCapabilities().supportsFork) {
+        if (!this.getActiveCapabilities().supportsFork) {
           new Notice('Fork is not supported by this provider.');
           return;
         }

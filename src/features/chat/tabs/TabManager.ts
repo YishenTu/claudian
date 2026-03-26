@@ -117,7 +117,7 @@ export class TabManager implements TabManagerInterface {
 
     // Initialize UI components with shared SDK commands callback
     initializeTabUI(tab, this.plugin, {
-      getSdkCommands: () => this.getSdkCommands(),
+      getSdkCommands: () => this.getSdkCommands(tab.id),
     });
 
     // Initialize controllers (pass mcpManager for lazy service initialization)
@@ -438,7 +438,9 @@ export class TabManager implements TabManagerInterface {
   }
 
   private async createForkConversation(context: ForkContext): Promise<string> {
-    const conversation = await this.plugin.createConversation();
+    const conversation = await this.plugin.createConversation({
+      providerId: context.providerId,
+    });
 
     const title = context.sourceTitle
       ? this.buildForkTitle(context.sourceTitle, context.forkAtUserMessage)
@@ -553,17 +555,37 @@ export class TabManager implements TabManagerInterface {
   // ============================================
 
   /**
-   * Gets SDK supported commands from any ready service.
-   * The command list is the same for all tabs, so we just need one ready service.
+   * Gets provider-scoped SDK supported commands for a tab.
+   * Reuses a ready runtime from the same provider when available to avoid
+   * leaking commands across providers in mixed-provider workspaces.
    * @returns Array of SDK commands, or empty array if no service is ready.
    */
-  async getSdkCommands(): Promise<SlashCommand[]> {
-    // Find any tab with a ready service
+  async getSdkCommands(tabId?: TabId): Promise<SlashCommand[]> {
+    const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
+    if (!targetTab) {
+      return [];
+    }
+
+    const providerId = targetTab.service?.providerId ?? targetTab.providerId;
+    const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
+    if (!staticCapabilities.supportsProviderCommands) {
+      return [];
+    }
+
+    const targetService = targetTab.service;
+    if (targetService?.providerId === providerId && targetService.isReady()) {
+      return targetService.getSupportedCommands();
+    }
+
     for (const tab of this.tabs.values()) {
-      if (tab.service?.isReady()) {
+      if (tab.id === targetTab.id) {
+        continue;
+      }
+      if (tab.service?.providerId === providerId && tab.service.isReady()) {
         return tab.service.getSupportedCommands();
       }
     }
+
     return [];
   }
 

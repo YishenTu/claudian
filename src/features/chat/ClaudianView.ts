@@ -5,7 +5,7 @@ import { ProviderRegistry } from '../../core/providers';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { LOGO_SVG } from './constants';
-import { TabBar, TabManager, updatePlanModeUI } from './tabs';
+import { getTabProviderId, TabBar, TabManager, updatePlanModeUI } from './tabs';
 import type { TabData, TabId } from './tabs/types';
 
 export class ClaudianView extends ItemView {
@@ -80,11 +80,13 @@ export class ClaudianView extends ItemView {
 
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
   refreshModelSelector(): void {
-    const model = this.plugin.settings.model;
-    const uiConfig = ProviderRegistry.getChatUIConfig();
-    const contextWindow = uiConfig.getContextWindowSize(model, this.plugin.settings.customContextLimits);
-
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      const model = this.plugin.settings.model;
+      const providerId = getTabProviderId(tab, this.plugin);
+      const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+      const capabilities = ProviderRegistry.getCapabilities(providerId);
+      const contextWindow = uiConfig.getContextWindowSize(model, this.plugin.settings.customContextLimits);
+
       if (tab.state.usage) {
         const percentage = Math.min(100, Math.max(0, Math.round((tab.state.usage.contextTokens / contextWindow) * 100)));
         tab.state.usage = { ...tab.state.usage, model, contextWindow, percentage };
@@ -92,6 +94,12 @@ export class ClaudianView extends ItemView {
 
       tab.ui.modelSelector?.updateDisplay();
       tab.ui.modelSelector?.renderOptions();
+      tab.ui.thinkingBudgetSelector?.updateDisplay();
+      tab.ui.permissionToggle?.updateDisplay();
+      tab.dom.inputWrapper.toggleClass(
+        'claudian-input-plan-mode',
+        this.plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,
+      );
     }
   }
 
@@ -486,9 +494,10 @@ export class ClaudianView extends ItemView {
     this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
       if (e.key === 'Tab' && e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        if (!ProviderRegistry.getCapabilities().supportsPlanMode) return;
         const activeTab = this.tabManager?.getActiveTab();
         if (!activeTab) return;
+        const providerId = getTabProviderId(activeTab, this.plugin);
+        if (!ProviderRegistry.getCapabilities(providerId).supportsPlanMode) return;
         const current = this.plugin.settings.permissionMode;
         if (current === 'plan') {
           const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';

@@ -109,6 +109,14 @@ function createMockUIConfig() {
     ),
     applyModelDefaults: jest.fn(),
     normalizeModelVariant: jest.fn((model: string) => model),
+    getPermissionModeToggle: jest.fn().mockReturnValue({
+      inactiveValue: 'normal',
+      inactiveLabel: 'Safe',
+      activeValue: 'yolo',
+      activeLabel: 'YOLO',
+      planValue: 'plan',
+      planLabel: 'PLAN',
+    }),
   };
 }
 
@@ -491,6 +499,18 @@ describe('PermissionToggle', () => {
     const toggle = parentEl2.querySelector('.claudian-toggle-switch');
     await toggle?.dispatchEvent('click');
     expect(callbacks.onPermissionModeChange).toHaveBeenCalledWith('normal');
+  });
+
+  it('should hide the control when provider exposes no permission toggle UI', () => {
+    callbacks.getUIConfig.mockReturnValue({
+      ...createMockUIConfig(),
+      getPermissionModeToggle: jest.fn().mockReturnValue(null),
+    });
+    const parentEl2 = createMockEl();
+    new PermissionToggle(parentEl2, callbacks);
+
+    const container = parentEl2.querySelector('.claudian-permission-toggle');
+    expect(container?.style.display).toBe('none');
   });
 });
 

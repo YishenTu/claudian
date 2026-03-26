@@ -10,6 +10,7 @@ export {
   type ProviderCliResolver,
   type ProviderConversationHistoryService,
   type ProviderId,
+  type ProviderPermissionModeToggleConfig,
   type ProviderReasoningOption,
   type ProviderRegistration,
   type ProviderTaskResultInterpreter,

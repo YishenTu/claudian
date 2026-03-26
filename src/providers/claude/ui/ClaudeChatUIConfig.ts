@@ -1,5 +1,6 @@
 import type {
   ProviderChatUIConfig,
+  ProviderPermissionModeToggleConfig,
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
@@ -17,6 +18,15 @@ import {
   normalizeVisibleModelVariant,
   THINKING_BUDGETS,
 } from '../types';
+
+const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
+  inactiveValue: 'normal',
+  inactiveLabel: 'Safe',
+  activeValue: 'yolo',
+  activeLabel: 'YOLO',
+  planValue: 'plan',
+  planLabel: 'PLAN',
+};
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings) {
@@ -81,6 +91,10 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
       settings.enableOpus1M ?? false,
       settings.enableSonnet1M ?? false,
     );
+  },
+
+  getPermissionModeToggle() {
+    return CLAUDE_PERMISSION_MODE_TOGGLE;
   },
 };
 

@@ -400,6 +400,38 @@ describe('ConversationController', () => {
       );
     });
 
+    it('should preserve the active runtime provider when lazily creating a conversation', async () => {
+      deps = createMockDeps({
+        getAgentService: () => ({
+          providerId: 'codex',
+          getSessionId: jest.fn().mockReturnValue('session-codex'),
+          consumeSessionInvalidation: jest.fn().mockReturnValue(false),
+          buildSessionUpdates: jest.fn().mockReturnValue({ updates: {} }),
+          syncConversationState: jest.fn(),
+        }) as any,
+      });
+      controller = new ConversationController(deps);
+      deps.state.currentConversationId = null;
+      deps.state.messages = [{ id: '1', role: 'user', content: 'hello', timestamp: Date.now() }];
+
+      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({
+        id: 'lazy-codex-conv',
+        providerId: 'codex',
+        title: 'Codex Conversation',
+        messages: [],
+        sessionId: 'session-codex',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      await controller.save();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
+        providerId: 'codex',
+        sessionId: 'session-codex',
+      });
+    });
+
     it('should set lastResponseAt when updateLastResponse is true', async () => {
       deps.state.currentConversationId = 'conv-1';
       deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
@@ -1218,6 +1250,7 @@ describe('ConversationController - MCP Server Persistence', () => {
       deps.state.currentConversationId = 'old-conv';
       (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
         id: 'new-conv',
+        providerId: 'claude',
         messages: [],
         sessionId: null,
         enabledMcpServers: ['switched-server'],
@@ -1232,6 +1265,7 @@ describe('ConversationController - MCP Server Persistence', () => {
       deps.state.currentConversationId = 'old-conv';
       (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
         id: 'new-conv',
+        providerId: 'claude',
         messages: [],
         sessionId: null,
         enabledMcpServers: undefined,
@@ -1240,6 +1274,33 @@ describe('ConversationController - MCP Server Persistence', () => {
       await controller.switchTo('new-conv');
 
       expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
+    });
+
+    it('should ensure the tab service matches the switched conversation provider', async () => {
+      const ensureServiceForConversation = jest.fn().mockResolvedValue(undefined);
+      const switchedConversation = {
+        id: 'new-conv',
+        providerId: 'codex',
+        title: 'Codex Conversation',
+        messages: [],
+        sessionId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      deps = createMockDeps({
+        ensureServiceForConversation,
+        plugin: {
+          ...createMockDeps().plugin,
+          switchConversation: jest.fn().mockResolvedValue(switchedConversation),
+        } as any,
+      });
+      controller = new ConversationController(deps);
+      deps.state.currentConversationId = 'old-conv';
+
+      await controller.switchTo('new-conv');
+
+      expect(ensureServiceForConversation).toHaveBeenCalledWith(switchedConversation);
     });
   });
 

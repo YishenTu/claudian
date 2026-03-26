@@ -37,6 +37,7 @@ export interface ConversationControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
   getAgentService?: () => ChatRuntime | null;
+  ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
 }
 
 type SaveOptions = {
@@ -200,6 +201,7 @@ export class ConversationController {
       return;
     }
 
+    await this.deps.ensureServiceForConversation?.(conversation);
     this.restoreConversation(conversation, { autoAttachFile: true });
     this.updateWelcomeVisibility();
 
@@ -227,6 +229,8 @@ export class ConversationController {
       if (!conversation) {
         return;
       }
+
+      await this.deps.ensureServiceForConversation?.(conversation);
 
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
@@ -349,7 +353,10 @@ export class ConversationController {
     // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
       const initialSessionId = agentService?.getSessionId() ?? undefined;
-      const conversation = await plugin.createConversation({ sessionId: initialSessionId });
+      const conversation = await plugin.createConversation({
+        providerId: agentService?.providerId,
+        sessionId: initialSessionId,
+      });
       state.currentConversationId = conversation.id;
     }
 

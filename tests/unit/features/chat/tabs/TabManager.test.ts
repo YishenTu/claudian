@@ -42,11 +42,22 @@ const mockBuildForkProviderState = jest.fn(
     forkSource: { sessionId: sourceSessionId, resumeAt },
   }),
 );
+const mockGetCapabilities = jest.fn().mockReturnValue({
+  providerId: 'claude',
+  supportsPersistentRuntime: true,
+  supportsNativeHistory: true,
+  supportsPlanMode: true,
+  supportsRewind: true,
+  supportsFork: true,
+  supportsProviderCommands: true,
+  reasoningControl: 'effort',
+});
 jest.mock('@/core/providers', () => ({
   ProviderRegistry: {
     getConversationHistoryService: () => ({
       buildForkProviderState: mockBuildForkProviderState,
     }),
+    getCapabilities: (...args: any[]) => mockGetCapabilities(...args),
   },
 }));
 
@@ -104,6 +115,7 @@ function createMockTabData(overrides: Record<string, any> = {}): any {
 
   return {
     id: `tab-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    providerId: 'claude',
     conversationId: null,
     service: null,
     serviceInitialized: false,
@@ -752,6 +764,97 @@ describe('TabManager - Broadcast', () => {
       // Should only be called for the 2 initialized tabs, not the 3rd
       expect(broadcastFn).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('TabManager - SDK Commands', () => {
+  beforeEach(() => {
+    mockGetCapabilities.mockReset();
+    mockGetCapabilities.mockReturnValue({
+      providerId: 'claude',
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: true,
+      supportsRewind: true,
+      supportsFork: true,
+      supportsProviderCommands: true,
+      reasoningControl: 'effort',
+    });
+  });
+
+  it('should return commands from the target tab runtime when it is ready', async () => {
+    const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+    };
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-ready',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+
+    const tab = await manager.createTab();
+
+    await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(supportedCommands);
+    expect(readyService.getSupportedCommands).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reuse commands from another ready tab with the same provider', async () => {
+    const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyClaudeService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+    };
+    const manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        providerId: 'claude',
+        service: n === 1 ? readyClaudeService : null,
+      }),
+    });
+
+    await manager.createTab();
+    const lazyClaudeTab = await manager.createTab();
+
+    await expect(manager.getSdkCommands(lazyClaudeTab!.id)).resolves.toEqual(supportedCommands);
+    expect(readyClaudeService.getSupportedCommands).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not leak commands across providers', async () => {
+    const claudeCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyClaudeService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(claudeCommands),
+    };
+    const manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        providerId: n === 2 ? 'codex' : 'claude',
+        service: n === 1 ? readyClaudeService : null,
+      }),
+    });
+
+    await manager.createTab();
+    const codexTab = await manager.createTab();
+    mockGetCapabilities.mockImplementation((providerId: string) => ({
+      providerId,
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: providerId === 'claude',
+      supportsRewind: providerId === 'claude',
+      supportsFork: providerId === 'claude',
+      supportsProviderCommands: providerId === 'claude',
+      reasoningControl: providerId === 'claude' ? 'effort' : 'none',
+    }));
+
+    await expect(manager.getSdkCommands(codexTab!.id)).resolves.toEqual([]);
+    expect(readyClaudeService.getSupportedCommands).not.toHaveBeenCalled();
   });
 });
 
@@ -1564,6 +1667,28 @@ describe('TabManager - createForkConversation', () => {
     expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
       providerState: { forkSource: { sessionId: 'session-abc', resumeAt: 'asst-uuid-xyz' } },
     }));
+  });
+
+  it('should create the fork conversation with the source provider', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-codex', providerId: 'codex' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      providerId: 'codex',
+      sourceSessionId: 'session-codex',
+      resumeAt: 'asst-codex',
+    });
+
+    expect(mockCreateConversation).toHaveBeenCalledWith({ providerId: 'codex' });
   });
 
   it('should not set title when sourceTitle is undefined', async () => {

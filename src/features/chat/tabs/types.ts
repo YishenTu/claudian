@@ -1,6 +1,6 @@
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
-import type { InstructionRefineService, TitleGenerationService } from '../../../core/providers';
+import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers';
 import type { ChatRuntime } from '../../../core/runtime';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import type {
@@ -174,6 +174,9 @@ export interface TabDOMElements {
 export interface TabData {
   /** Unique tab identifier. */
   id: TabId;
+
+  /** Active provider for this tab's current conversation/runtime. */
+  providerId: ProviderId;
 
   /** Conversation ID bound to this tab (null for new/empty tabs). */
   conversationId: string | null;

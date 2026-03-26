@@ -5,6 +5,7 @@ import type { McpServerManager } from '../../../core/mcp';
 import type {
   ProviderCapabilities,
   ProviderChatUIConfig,
+  ProviderPermissionModeToggleConfig,
   ProviderReasoningOption,
 } from '../../../core/providers';
 import type {
@@ -262,31 +263,52 @@ export class PermissionToggle {
     this.toggleEl.addEventListener('click', () => this.toggle());
   }
 
+  private getToggleConfig(): ProviderPermissionModeToggleConfig | null {
+    const uiConfig = this.callbacks.getUIConfig();
+    return uiConfig.getPermissionModeToggle?.() ?? null;
+  }
+
   updateDisplay() {
     if (!this.toggleEl || !this.labelEl) return;
 
-    const mode = this.callbacks.getSettings().permissionMode;
+    const toggleConfig = this.getToggleConfig();
+    const capabilities = this.callbacks.getCapabilities();
+    if (!toggleConfig) {
+      this.container.style.display = 'none';
+      return;
+    }
 
-    if (mode === 'plan') {
+    this.container.style.display = '';
+    const mode = this.callbacks.getSettings().permissionMode;
+    const planValue = toggleConfig.planValue;
+    const planLabel = toggleConfig.planLabel ?? 'PLAN';
+    const canShowPlan = Boolean(planValue) && capabilities.supportsPlanMode;
+
+    if (canShowPlan && planValue && mode === planValue) {
       this.toggleEl.style.display = 'none';
-      this.labelEl.setText('PLAN');
+      this.labelEl.setText(planLabel);
       this.labelEl.addClass('plan-active');
     } else {
       this.toggleEl.style.display = '';
       this.labelEl.removeClass('plan-active');
-      if (mode === 'yolo') {
+      if (mode === toggleConfig.activeValue) {
         this.toggleEl.addClass('active');
-        this.labelEl.setText('YOLO');
+        this.labelEl.setText(toggleConfig.activeLabel);
       } else {
         this.toggleEl.removeClass('active');
-        this.labelEl.setText('Safe');
+        this.labelEl.setText(toggleConfig.inactiveLabel);
       }
     }
   }
 
   private async toggle() {
+    const toggleConfig = this.getToggleConfig();
+    if (!toggleConfig) return;
+
     const current = this.callbacks.getSettings().permissionMode;
-    const newMode = current === 'yolo' ? 'normal' : 'yolo';
+    const newMode = current === toggleConfig.activeValue
+      ? toggleConfig.inactiveValue
+      : toggleConfig.activeValue;
     await this.callbacks.onPermissionModeChange(newMode);
     this.updateDisplay();
   }

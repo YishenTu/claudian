@@ -65,6 +65,10 @@ export class SubagentManager {
     this.onStateChange = callback;
   }
 
+  public setTaskResultInterpreter(interpreter: ProviderTaskResultInterpreter): void {
+    this.taskResultInterpreter = interpreter;
+  }
+
   // ============================================
   // Unified Subagent Entry Point
   // ============================================

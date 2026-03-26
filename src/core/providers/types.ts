@@ -57,6 +57,16 @@ export interface ProviderReasoningOption extends ProviderUIOption {
   tokens?: number;
 }
 
+/** Compact permission-mode toggle descriptor for providers that expose the current toolbar control. */
+export interface ProviderPermissionModeToggleConfig {
+  inactiveValue: string;
+  inactiveLabel: string;
+  activeValue: string;
+  activeLabel: string;
+  planValue?: string;
+  planLabel?: string;
+}
+
 /** Static UI configuration owned by the provider (model list, reasoning, context window). */
 export interface ProviderChatUIConfig {
   /** Model options for the selector dropdown. */
@@ -89,6 +99,9 @@ export interface ProviderChatUIConfig {
     enableOpus1M?: boolean;
     enableSonnet1M?: boolean;
   }): string;
+
+  /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
+  getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
 }
 
 // ---------------------------------------------------------------------------
