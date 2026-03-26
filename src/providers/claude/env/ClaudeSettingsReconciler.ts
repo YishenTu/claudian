@@ -1,7 +1,7 @@
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
-import { DEFAULT_CLAUDE_MODELS, normalizeVisibleModelVariant } from '../types';
+import { DEFAULT_CLAUDE_MODELS, getCliPlatformKey, normalizeVisibleModelVariant } from '../types';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment } from './claudeModelEnv';
 
 const ENV_HASH_MODEL_KEYS = [
@@ -95,5 +95,29 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
     }
 
     return changed;
+  },
+
+  migrateCliPaths(settings: Record<string, unknown>, hostname: string): boolean {
+    const byHost = (settings.claudeCliPathsByHost ?? {}) as Record<string, string>;
+    settings.claudeCliPathsByHost = byHost;
+
+    if (!byHost[hostname]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const platformPaths = (settings as any).claudeCliPaths as Record<string, string> | undefined;
+      const migratedPath = platformPaths?.[getCliPlatformKey()]?.trim()
+        || ((settings.claudeCliPath as string) ?? '').trim();
+
+      if (migratedPath) {
+        byHost[hostname] = migratedPath;
+        settings.claudeCliPath = '';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (settings as any).claudeCliPaths;
+        return true;
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (settings as any).claudeCliPaths;
+    return false;
   },
 };

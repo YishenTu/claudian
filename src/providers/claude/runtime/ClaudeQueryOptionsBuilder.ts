@@ -16,10 +16,11 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import type { McpServerManager } from '../../../core/mcp';
-import type { PluginManager } from '../plugins';
+import type { AppPluginManager } from '../../../core/providers';
 import { buildSystemPrompt, type SystemPromptSettings } from '../prompt';
 import {
   type ClaudianSettings,
+  type EffortLevel,
   isAdaptiveThinkingModel,
   type PermissionMode,
   THINKING_BUDGETS,
@@ -50,7 +51,7 @@ export interface QueryOptionsContext {
   /** MCP server manager for server configuration. */
   mcpManager: McpServerManager;
   /** Plugin manager for Claude Code plugins. */
-  pluginManager: PluginManager;
+  pluginManager: AppPluginManager;
 }
 
 /**
@@ -168,7 +169,7 @@ export class QueryOptionsBuilder {
     return {
       model: ctx.settings.model,
       thinkingTokens: thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null,
-      effortLevel: isAdaptiveThinkingModel(ctx.settings.model) ? ctx.settings.effortLevel : null,
+      effortLevel: isAdaptiveThinkingModel(ctx.settings.model) ? ctx.settings.effortLevel as EffortLevel : null,
       permissionMode: ctx.settings.permissionMode,
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
       disallowedToolsKey,
@@ -353,7 +354,7 @@ export class QueryOptionsBuilder {
   ): void {
     if (isAdaptiveThinkingModel(model)) {
       options.thinking = { type: 'adaptive' };
-      options.effort = settings.effortLevel;
+      options.effort = settings.effortLevel as EffortLevel;
     } else {
       const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
       if (budgetConfig && budgetConfig.tokens > 0) {

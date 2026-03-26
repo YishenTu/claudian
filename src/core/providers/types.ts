@@ -1,10 +1,18 @@
+import type { Plugin } from 'obsidian';
+
 import type ClaudianPlugin from '../../main';
 import type { CursorContext } from '../../utils/editor';
 import type { McpServerManager } from '../mcp';
 import type { ChatRuntime } from '../runtime';
 import type {
+  AgentDefinition,
+  ClaudianSettings,
   Conversation,
   InstructionRefineResult,
+  ManagedMcpServer,
+  PluginInfo,
+  SessionMetadata,
+  SlashCommand,
   ToolCallInfo,
 } from '../types';
 
@@ -34,11 +42,15 @@ export interface ProviderRegistration {
   capabilities: ProviderCapabilities;
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
+  defaultSettings: ClaudianSettings;
   createRuntime: (options: Omit<CreateChatRuntimeOptions, 'providerId'>) => ChatRuntime;
   createTitleGenerationService: (plugin: ClaudianPlugin) => TitleGenerationService;
   createInstructionRefineService: (plugin: ClaudianPlugin) => InstructionRefineService;
   createInlineEditService: (plugin: ClaudianPlugin) => InlineEditService;
   createCliResolver: () => ProviderCliResolver;
+  createStorageService: (plugin: Plugin) => AppStorageService;
+  createPluginManager: (vaultPath: string, storage: AppStorageService) => AppPluginManager;
+  createAgentManager: (vaultPath: string, pluginManager: AppPluginManager) => AppAgentManager;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
 }
@@ -51,6 +63,92 @@ export interface ProviderSettingsReconciler {
   ): { changed: boolean; invalidatedConversations: Conversation[] };
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean;
+
+  /** Migrate legacy CLI path fields. Returns true if settings were modified. */
+  migrateCliPaths(settings: Record<string, unknown>, hostname: string): boolean;
+}
+
+// ---------------------------------------------------------------------------
+// App-level service interfaces (provider-created, app-consumed)
+// ---------------------------------------------------------------------------
+
+/** Tab manager state persisted across restarts. */
+export interface AppTabManagerState {
+  openTabs: Array<{ tabId: string; conversationId: string | null }>;
+  activeTabId: string | null;
+}
+
+/** Provider-created storage service consumed by the app layer. */
+export interface AppStorageService {
+  initialize(): Promise<{ claudian: Record<string, unknown> }>;
+  loadAllSlashCommands(): Promise<SlashCommand[]>;
+  saveClaudianSettings(settings: Record<string, unknown>): Promise<void>;
+  setTabManagerState(state: AppTabManagerState): Promise<void>;
+  getTabManagerState(): Promise<AppTabManagerState | null>;
+  getLegacyActiveConversationId(): Promise<string | null>;
+  clearLegacyActiveConversationId(): Promise<void>;
+  getPermissions(): Promise<unknown>;
+  updatePermissions(permissions: unknown): Promise<void>;
+  addAllowRule(rule: string): Promise<void>;
+  addDenyRule(rule: string): Promise<void>;
+  removePermissionRule(rule: string): Promise<void>;
+  sessions: AppSessionStorage;
+  mcp: AppMcpStorage;
+  ccSettings: unknown;
+  commands: AppCommandStorage;
+  skills: AppSkillStorage;
+  agents: AppAgentStorage;
+}
+
+export interface AppSessionStorage {
+  listMetadata(): Promise<SessionMetadata[]>;
+  saveMetadata(meta: SessionMetadata): Promise<void>;
+  deleteMetadata(id: string): Promise<void>;
+  toSessionMetadata(conv: Conversation): SessionMetadata;
+}
+
+export interface AppMcpStorage {
+  load(): Promise<ManagedMcpServer[]>;
+  save(servers: ManagedMcpServer[]): Promise<void>;
+  tryParseClipboardConfig?(text: string): unknown | null;
+}
+
+export interface AppCommandStorage {
+  save(command: SlashCommand): Promise<void>;
+  delete(name: string): Promise<void>;
+}
+
+export interface AppSkillStorage {
+  save(skill: SlashCommand): Promise<void>;
+  delete(name: string): Promise<void>;
+}
+
+export interface AppAgentStorage {
+  load(agent: AgentDefinition): Promise<AgentDefinition | null>;
+  save(agent: AgentDefinition): Promise<void>;
+  delete(agent: AgentDefinition): Promise<void>;
+}
+
+/** Provider-created plugin manager consumed by the app layer. */
+export interface AppPluginManager {
+  loadPlugins(): Promise<void>;
+  getPlugins(): PluginInfo[];
+  hasPlugins(): boolean;
+  hasEnabledPlugins(): boolean;
+  getEnabledCount(): number;
+  getPluginsKey(): string;
+  togglePlugin(pluginId: string): Promise<void>;
+  enablePlugin(pluginId: string): Promise<void>;
+  disablePlugin(pluginId: string): Promise<void>;
+}
+
+/** Provider-created agent manager consumed by the app layer. */
+export interface AppAgentManager {
+  loadAgents(): Promise<void>;
+  getAvailableAgents(): AgentDefinition[];
+  getAgentById(id: string): AgentDefinition | undefined;
+  searchAgents(query: string): AgentDefinition[];
+  setBuiltinAgentNames(names: string[]): void;
 }
 
 // ---------------------------------------------------------------------------

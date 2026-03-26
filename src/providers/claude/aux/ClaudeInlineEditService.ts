@@ -23,7 +23,7 @@ import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from 
 import { getPathAccessType, getVaultPath, type PathAccessType } from '../../../utils/path';
 import { getInlineEditSystemPrompt } from '../prompt';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
-import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types';
+import { type EffortLevel, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types';
 
 export type {
   InlineEditCursorRequest,
@@ -296,7 +296,7 @@ export class InlineEditService {
 
     if (isAdaptiveThinkingModel(this.plugin.settings.model)) {
       options.thinking = { type: 'adaptive' };
-      options.effort = this.plugin.settings.effortLevel;
+      options.effort = this.plugin.settings.effortLevel as EffortLevel;
     } else {
       const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
       if (budgetConfig && budgetConfig.tokens > 0) {

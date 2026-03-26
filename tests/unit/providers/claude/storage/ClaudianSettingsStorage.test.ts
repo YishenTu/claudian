@@ -1,5 +1,5 @@
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { getDefaultBlockedCommands } from '@/core/types';
+import { getDefaultBlockedCommands, type PlatformBlockedCommands } from '@/core/types';
 import {
   CLAUDIAN_SETTINGS_PATH,
   ClaudianSettingsStorage,
@@ -63,8 +63,8 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect(result.blockedCommands.unix).toContain('custom-unix-cmd');
-      expect(result.blockedCommands.windows).toContain('custom-win-cmd');
+      expect((result.blockedCommands as PlatformBlockedCommands).unix).toContain('custom-unix-cmd');
+      expect((result.blockedCommands as PlatformBlockedCommands).windows).toContain('custom-win-cmd');
     });
 
     it('should normalize claudeCliPathsByHost from loaded data', async () => {
@@ -78,8 +78,8 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect(result.claudeCliPathsByHost['host-a']).toBe('/custom/path-a');
-      expect(result.claudeCliPathsByHost['host-b']).toBe('/custom/path-b');
+      expect((result.claudeCliPathsByHost as Record<string, string>)['host-a']).toBe('/custom/path-a');
+      expect((result.claudeCliPathsByHost as Record<string, string>)['host-b']).toBe('/custom/path-b');
     });
 
     it('should preserve legacy claudeCliPath field', async () => {

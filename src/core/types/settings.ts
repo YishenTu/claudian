@@ -127,3 +127,81 @@ export interface InstructionRefineResult {
   clarification?: string;       // Agent's clarifying question (if any)
   error?: string;               // Error message (if failed)
 }
+
+/** Permission mode for tool execution. */
+export type PermissionMode = 'yolo' | 'plan' | 'normal';
+
+/** Hostname-keyed CLI paths for per-device configuration. */
+export type HostnameCliPaths = Record<string, string>;
+
+/**
+ * Application settings stored in .claude/claudian-settings.json.
+ *
+ * Provider-specific fields (model, thinkingBudget, effortLevel, etc.) use
+ * `string` here.  The active provider casts internally when it needs
+ * narrower types.
+ */
+export interface ClaudianSettings {
+  // User preferences
+  userName: string;
+
+  // Security
+  enableBlocklist: boolean;
+  allowExternalAccess: boolean;
+  blockedCommands: PlatformBlockedCommands;
+  permissionMode: PermissionMode;
+
+  // Model & thinking (provider interprets values)
+  model: string;
+  thinkingBudget: string;
+  effortLevel: string;
+  enableAutoTitleGeneration: boolean;
+  titleGenerationModel: string;
+  enableChrome: boolean;
+  enableBangBash: boolean;
+  enableOpus1M: boolean;
+  enableSonnet1M: boolean;
+
+  // Content settings
+  excludedTags: string[];
+  mediaFolder: string;
+  systemPrompt: string;
+  allowedExportPaths: string[];
+  persistentExternalContextPaths: string[];
+
+  // Environment
+  environmentVariables: string;
+  envSnippets: EnvSnippet[];
+  customContextLimits: Record<string, number>;
+
+  // UI settings
+  keyboardNavigation: KeyboardNavigationSettings;
+
+  // Internationalization
+  locale: string;
+
+  // CLI paths
+  claudeCliPath: string;
+  claudeCliPathsByHost: HostnameCliPaths;
+  loadUserClaudeSettings: boolean;
+
+  // State (provider-specific, round-tripped opaquely)
+  lastClaudeModel?: string;
+  lastCustomModel?: string;
+  lastEnvHash?: string;
+
+  // Slash commands (loaded separately)
+  slashCommands: SlashCommand[];
+
+  // UI preferences
+  maxTabs: number;
+  tabBarPosition: TabBarPosition;
+  enableAutoScroll: boolean;
+  openInMainTab: boolean;
+
+  // Slash commands
+  hiddenSlashCommands: string[];
+
+  // Allow provider-specific extension fields
+  [key: string]: unknown;
+}

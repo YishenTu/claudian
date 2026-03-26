@@ -14,12 +14,16 @@ import { Notice, Plugin } from 'obsidian';
 
 import { McpServerManager } from './core/mcp';
 import {
+  type AppAgentManager,
+  type AppPluginManager,
+  type AppStorageService,
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderCliResolver,
   type ProviderId,
   ProviderRegistry,
 } from './core/providers';
 import type {
+  ClaudianSettings,
   Conversation,
   ConversationMeta,
   SlashCommand,
@@ -31,14 +35,7 @@ import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
-import { AgentManager } from './providers/claude/agents';
-import { PluginManager } from './providers/claude/plugins';
-import { StorageService } from './providers/claude/storage';
-import {
-  type ClaudianSettings,
-  DEFAULT_SETTINGS,
-  getCliPlatformKey,
-} from './providers/claude/types';
+import type { Locale } from './i18n/types';
 import { buildCursorContext } from './utils/editor';
 import { getHostnameKey } from './utils/env';
 import { getVaultPath } from './utils/path';
@@ -50,9 +47,9 @@ import { getVaultPath } from './utils/path';
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   mcpManager: McpServerManager;
-  pluginManager: PluginManager;
-  agentManager: AgentManager;
-  storage: StorageService;
+  pluginManager: AppPluginManager;
+  agentManager: AppAgentManager;
+  storage: AppStorageService;
   cliResolver: ProviderCliResolver;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
@@ -66,13 +63,12 @@ export default class ClaudianPlugin extends Plugin {
     this.mcpManager = new McpServerManager(this.storage.mcp);
     await this.mcpManager.loadServers();
 
-    // Initialize plugin manager (reads from installed_plugins.json + settings.json)
+    // Initialize plugin and agent managers (provider-specific)
     const vaultPath = (this.app.vault.adapter as any).basePath;
-    this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
+    this.pluginManager = ProviderRegistry.createPluginManager(vaultPath, this.storage);
     await this.pluginManager.loadPlugins();
 
-    // Initialize agent manager (loads plugin agents from plugin install paths)
-    this.agentManager = new AgentManager(vaultPath, this.pluginManager);
+    this.agentManager = ProviderRegistry.createAgentManager(vaultPath, this.pluginManager);
     await this.agentManager.loadAgents();
 
     this.registerView(
@@ -234,16 +230,16 @@ export default class ClaudianPlugin extends Plugin {
   /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
     // Initialize storage service (handles migration if needed)
-    this.storage = new StorageService(this);
+    this.storage = ProviderRegistry.createStorageService(this);
     const { claudian } = await this.storage.initialize();
 
     const slashCommands = await this.storage.loadAllSlashCommands();
 
     this.settings = {
-      ...DEFAULT_SETTINGS,
+      ...ProviderRegistry.getDefaultSettings(),
       ...claudian,
       slashCommands,
-    };
+    } as ClaudianSettings;
 
     // Plan mode is ephemeral — normalize back to normal on load so the app
     // doesn't start stuck in plan mode after a restart (prePlanPermissionMode is lost)
@@ -253,25 +249,12 @@ export default class ClaudianPlugin extends Plugin {
 
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
-    // Initialize and migrate legacy CLI paths to hostname-based paths
-    this.settings.claudeCliPathsByHost ??= {};
+    // Migrate legacy CLI paths to hostname-based paths (provider-specific)
     const hostname = getHostnameKey();
-    let didMigrateCliPath = false;
-
-    if (!this.settings.claudeCliPathsByHost[hostname]) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const platformPaths = (this.settings as any).claudeCliPaths as Record<string, string> | undefined;
-      const migratedPath = platformPaths?.[getCliPlatformKey()]?.trim() || this.settings.claudeCliPath?.trim();
-
-      if (migratedPath) {
-        this.settings.claudeCliPathsByHost[hostname] = migratedPath;
-        this.settings.claudeCliPath = '';
-        didMigrateCliPath = true;
-      }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (this.settings as any).claudeCliPaths;
+    const didMigrateCliPath = ProviderRegistry.getSettingsReconciler().migrateCliPaths(
+      this.settings as unknown as Record<string, unknown>,
+      hostname,
+    );
 
     // Load all conversations from session metadata
     const allMetadata = await this.storage.sessions.listMetadata();
@@ -298,7 +281,7 @@ export default class ClaudianPlugin extends Plugin {
     }).sort(
       (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
     );
-    setLocale(this.settings.locale);
+    setLocale(this.settings.locale as Locale);
 
     const backfilledConversations = this.backfillConversationResponseTimestamps();
 

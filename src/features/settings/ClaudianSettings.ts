@@ -93,7 +93,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.addClass('claudian-settings');
 
-    setLocale(this.plugin.settings.locale);
+    setLocale(this.plugin.settings.locale as Locale);
 
     new Setting(containerEl)
       .setName(t('settings.language.name'))

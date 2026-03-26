@@ -1,5 +1,14 @@
 export { ProviderRegistry } from './ProviderRegistry';
 export {
+  type AppAgentManager,
+  type AppAgentStorage,
+  type AppCommandStorage,
+  type AppMcpStorage,
+  type AppPluginManager,
+  type AppSessionStorage,
+  type AppSkillStorage,
+  type AppStorageService,
+  type AppTabManagerState,
   type CreateChatRuntimeOptions,
   DEFAULT_CHAT_PROVIDER_ID,
   type InlineEditMode,
