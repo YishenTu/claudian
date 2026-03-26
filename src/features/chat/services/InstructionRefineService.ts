@@ -1,6 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { createCustomSpawnFunction } from '../../../core/agent/customSpawn';
 import { buildRefineSystemPrompt } from '../../../core/prompts/instructionRefine';
 import { type InstructionRefineResult, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -96,6 +97,7 @@ export class InstructionRefineService {
       settingSources: this.plugin.settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
+      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
     };
 
     if (this.sessionId) {

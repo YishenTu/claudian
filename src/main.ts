@@ -5,6 +5,10 @@
  * Manages conversation persistence and environment variable configuration.
  */
 
+// Must run before any SDK imports to patch Electron/Node.js realm incompatibility
+import { patchSetMaxListenersForElectron } from './utils/electronCompat';
+patchSetMaxListenersForElectron();
+
 import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 

@@ -1,6 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { createCustomSpawnFunction } from '../../../core/agent/customSpawn';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../../../core/prompts/titleGeneration';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
@@ -110,6 +111,7 @@ Generate a title for this conversation:`;
         ? ['user', 'project']
         : ['project'],
       persistSession: false, // Don't save title generation queries to session history
+      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
     };
 
     try {

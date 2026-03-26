@@ -1,6 +1,7 @@
 import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { createCustomSpawnFunction } from '../../core/agent/customSpawn';
 import { getInlineEditSystemPrompt } from '../../core/prompts/inlineEdit';
 import { getPathFromToolInput } from '../../core/tools/toolInput';
 import {
@@ -303,6 +304,7 @@ export class InlineEditService {
           ? [createReadOnlyHook()]
           : [createReadOnlyHook(), createVaultRestrictionHook(vaultPath)],
       },
+      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
     };
 
     if (this.sessionId) {
