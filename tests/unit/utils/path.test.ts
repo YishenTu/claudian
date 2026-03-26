@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import {
   expandHomePath,
-  findClaudeCLIPath,
   getPathAccessType,
   isPathInAllowedExportPaths,
   isPathWithinVault,

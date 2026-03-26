@@ -33,6 +33,7 @@ export interface CreateChatRuntimeOptions {
 export interface ProviderRegistration {
   capabilities: ProviderCapabilities;
   chatUIConfig: ProviderChatUIConfig;
+  settingsReconciler: ProviderSettingsReconciler;
   createRuntime: (options: Omit<CreateChatRuntimeOptions, 'providerId'>) => ChatRuntime;
   createTitleGenerationService: (plugin: ClaudianPlugin) => TitleGenerationService;
   createInstructionRefineService: (plugin: ClaudianPlugin) => InstructionRefineService;
@@ -40,6 +41,16 @@ export interface ProviderRegistration {
   createCliResolver: () => ProviderCliResolver;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
+}
+
+export interface ProviderSettingsReconciler {
+  reconcileModelWithEnvironment(
+    settings: Record<string, unknown>,
+    conversations: Conversation[],
+    envText: string,
+  ): { changed: boolean; invalidatedConversations: Conversation[] };
+
+  normalizeModelVariantSettings(settings: Record<string, unknown>): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,12 +81,8 @@ export interface ProviderPermissionModeToggleConfig {
 
 /** Static UI configuration owned by the provider (model list, reasoning, context window). */
 export interface ProviderChatUIConfig {
-  /** Model options for the selector dropdown. */
-  getModelOptions(settings: {
-    enableOpus1M?: boolean;
-    enableSonnet1M?: boolean;
-    environmentVariables?: string;
-  }): ProviderUIOption[];
+  /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
+  getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
   /** Whether the model uses adaptive reasoning (effort levels vs token budgets). */
   isAdaptiveReasoningModel(model: string): boolean;
@@ -95,11 +102,8 @@ export interface ProviderChatUIConfig {
   /** Apply model change side effects to settings (defaults, tracking). */
   applyModelDefaults(model: string, settings: unknown): void;
 
-  /** Normalize model variant based on visibility flags (e.g., 1M context toggle). */
-  normalizeModelVariant(model: string, settings: {
-    enableOpus1M?: boolean;
-    enableSonnet1M?: boolean;
-  }): string;
+  /** Normalize model variant based on visibility flags. Provider extracts what it needs from the settings bag. */
+  normalizeModelVariant(model: string, settings: Record<string, unknown>): string;
 
   /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
   getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import * as claudeModelEnv from '../../../src/providers/claude/env/claudeModelEnv';
 import * as env from '../../../src/utils/env';
 
 const {
@@ -9,15 +10,18 @@ const {
   findNodeDirectory,
   findNodeExecutable,
   formatContextLimit,
-  getCurrentModelFromEnvironment,
-  getCustomModelIds,
   getEnhancedPath,
   getMissingNodeError,
-  getModelsFromEnvironment,
   getHostnameKey,
   parseContextLimit,
   parseEnvironmentVariables,
 } = env;
+
+const {
+  getCurrentModelFromEnvironment,
+  getCustomModelIds,
+  getModelsFromEnvironment,
+} = claudeModelEnv;
 
 const isWindows = process.platform === 'win32';
 const SEP = isWindows ? ';' : ':';

@@ -21,8 +21,7 @@ export interface ToolbarSettings {
   thinkingBudget: string;
   effortLevel: string;
   permissionMode: string;
-  enableOpus1M: boolean;
-  enableSonnet1M: boolean;
+  [key: string]: unknown;
 }
 
 export interface ToolbarCallbacks {
@@ -53,8 +52,7 @@ export class ModelSelector {
     const settings = this.callbacks.getSettings();
     const uiConfig = this.callbacks.getUIConfig();
     return uiConfig.getModelOptions({
-      enableOpus1M: settings.enableOpus1M,
-      enableSonnet1M: settings.enableSonnet1M,
+      ...settings,
       environmentVariables: this.callbacks.getEnvironmentVariables?.(),
     });
   }

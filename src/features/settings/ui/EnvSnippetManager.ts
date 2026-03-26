@@ -4,7 +4,8 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 import type { EnvSnippet } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
-import { formatContextLimit, getCustomModelIds, parseContextLimit, parseEnvironmentVariables } from '../../../utils/env';
+import { getCustomModelIds } from '../../../providers/claude/env/claudeModelEnv';
+import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../../utils/env';
 import type { ClaudianView } from '../../chat/ClaudianView';
 
 export class EnvSnippetModal extends Modal {

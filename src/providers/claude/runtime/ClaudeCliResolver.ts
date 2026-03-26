@@ -7,7 +7,8 @@
 import * as fs from 'fs';
 
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
-import { expandHomePath, findClaudeCLIPath } from '../../../utils/path';
+import { expandHomePath } from '../../../utils/path';
+import { findClaudeCLIPath } from '../cli/findClaudeCLIPath';
 import { type HostnameCliPaths } from '../types';
 
 export class ClaudeCliResolver {

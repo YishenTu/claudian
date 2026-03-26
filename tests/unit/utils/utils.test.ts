@@ -2,11 +2,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from '@/utils/env';
+import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
+import { getCurrentModelFromEnvironment, getModelsFromEnvironment } from '@/providers/claude/env/claudeModelEnv';
+import { parseEnvironmentVariables } from '@/utils/env';
 import { appendMarkdownSnippet } from '@/utils/markdown';
 import {
   expandHomePath,
-  findClaudeCLIPath,
   getPathAccessType,
   getVaultPath,
   isPathInAllowedExportPaths,

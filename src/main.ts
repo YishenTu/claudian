@@ -36,13 +36,11 @@ import { PluginManager } from './providers/claude/plugins';
 import { StorageService } from './providers/claude/storage';
 import {
   type ClaudianSettings,
-  DEFAULT_CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   getCliPlatformKey,
-  normalizeVisibleModelVariant,
 } from './providers/claude/types';
 import { buildCursorContext } from './utils/editor';
-import { getCurrentModelFromEnvironment, getHostnameKey, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
+import { getHostnameKey } from './utils/env';
 import { getVaultPath } from './utils/path';
 
 /**
@@ -339,33 +337,9 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   normalizeModelVariantSettings(): boolean {
-    const { enableOpus1M, enableSonnet1M } = this.settings;
-    let changed = false;
-
-    const normalize = (model: string): string =>
-      normalizeVisibleModelVariant(model, enableOpus1M, enableSonnet1M);
-
-    const normalizedModel = normalize(this.settings.model);
-    if (this.settings.model !== normalizedModel) {
-      this.settings.model = normalizedModel;
-      changed = true;
-    }
-
-    const normalizedTitleModel = normalize(this.settings.titleGenerationModel);
-    if (this.settings.titleGenerationModel !== normalizedTitleModel) {
-      this.settings.titleGenerationModel = normalizedTitleModel;
-      changed = true;
-    }
-
-    if (this.settings.lastClaudeModel) {
-      const normalizedLastClaudeModel = normalize(this.settings.lastClaudeModel);
-      if (this.settings.lastClaudeModel !== normalizedLastClaudeModel) {
-        this.settings.lastClaudeModel = normalizedLastClaudeModel;
-        changed = true;
-      }
-    }
-
-    return changed;
+    return ProviderRegistry.getSettingsReconciler().normalizeModelVariantSettings(
+      this.settings as unknown as Record<string, unknown>,
+    );
   }
 
   /** Persists settings to storage. */
@@ -464,80 +438,15 @@ export default class ClaudianPlugin extends Plugin {
     );
   }
 
-  private getDefaultModelValues(): string[] {
-    return DEFAULT_CLAUDE_MODELS.map((m) => m.value);
-  }
-
-  private getPreferredCustomModel(envVars: Record<string, string>, customModels: { value: string }[]): string {
-    const envPreferred = getCurrentModelFromEnvironment(envVars);
-    if (envPreferred && customModels.some((m) => m.value === envPreferred)) {
-      return envPreferred;
-    }
-    return customModels[0].value;
-  }
-
-  /** Computes a hash of model and provider base URL environment variables for change detection. */
-  private computeEnvHash(envText: string): string {
-    const envVars = parseEnvironmentVariables(envText || '');
-    const modelKeys = [
-      'ANTHROPIC_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    ];
-    const providerKeys = [
-      'ANTHROPIC_BASE_URL',
-    ];
-    const allKeys = [...modelKeys, ...providerKeys];
-    const relevantPairs = allKeys
-      .filter(key => envVars[key])
-      .map(key => `${key}=${envVars[key]}`)
-      .sort()
-      .join('|');
-    return relevantPairs;
-  }
-
-  /**
-   * Reconciles model with environment.
-   * Returns { changed, invalidatedConversations } where changed indicates if
-   * settings were modified (requiring save), and invalidatedConversations lists
-   * conversations that had their sessionId cleared (also requiring save).
-   */
   private reconcileModelWithEnvironment(envText: string): {
     changed: boolean;
     invalidatedConversations: Conversation[];
   } {
-    const currentHash = this.computeEnvHash(envText);
-    const savedHash = this.settings.lastEnvHash || '';
-
-    if (currentHash === savedHash) {
-      return { changed: false, invalidatedConversations: [] };
-    }
-
-    // Hash changed - model or provider may have changed.
-    // Session invalidation is now handled per-tab by TabManager.
-    // Clear resume sessionId from all conversations since they belong to the old provider.
-    // Sessions are provider-specific (contain signed thinking blocks, etc.).
-    // providerState.providerSessionId is retained for loading SDK-stored history.
-    const invalidatedConversations: Conversation[] = [];
-    for (const conv of this.conversations) {
-      if (conv.sessionId) {
-        conv.sessionId = null;
-        invalidatedConversations.push(conv);
-      }
-    }
-
-    const envVars = parseEnvironmentVariables(envText || '');
-    const customModels = getModelsFromEnvironment(envVars);
-
-    if (customModels.length > 0) {
-      this.settings.model = this.getPreferredCustomModel(envVars, customModels);
-    } else {
-      this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
-    }
-
-    this.settings.lastEnvHash = currentHash;
-    return { changed: true, invalidatedConversations };
+    return ProviderRegistry.getSettingsReconciler().reconcileModelWithEnvironment(
+      this.settings as unknown as Record<string, unknown>,
+      this.conversations,
+      envText,
+    );
   }
 
   private generateConversationId(): string {

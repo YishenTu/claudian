@@ -12,6 +12,7 @@ import {
   type ProviderConversationHistoryService,
   type ProviderId,
   type ProviderRegistration,
+  type ProviderSettingsReconciler,
   type ProviderTaskResultInterpreter,
   type TitleGenerationService,
 } from './types';
@@ -64,6 +65,10 @@ export class ProviderRegistry {
 
   static getChatUIConfig(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderChatUIConfig {
     return getProviderRegistration(providerId).chatUIConfig;
+  }
+
+  static getSettingsReconciler(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderSettingsReconciler {
+    return getProviderRegistration(providerId).settingsReconciler;
   }
 
   static getRegisteredProviderIds(): ProviderId[] {

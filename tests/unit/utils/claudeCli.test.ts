@@ -1,13 +1,13 @@
 import * as fs from 'fs';
 import * as os from 'os';
 
+import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import { ClaudeCliResolver, resolveClaudeCliPath } from '@/providers/claude/runtime/ClaudeCliResolver';
-import { findClaudeCLIPath } from '@/utils/path';
 
 jest.mock('fs');
 jest.mock('os');
-jest.mock('@/utils/path', () => {
-  const actual = jest.requireActual('@/utils/path');
+jest.mock('@/providers/claude/cli/findClaudeCLIPath', () => {
+  const actual = jest.requireActual('@/providers/claude/cli/findClaudeCLIPath');
   return {
     ...actual,
     findClaudeCLIPath: jest.fn(),

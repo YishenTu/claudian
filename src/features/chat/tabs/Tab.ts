@@ -505,14 +505,10 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => getTabChatUIConfig(tab, plugin),
     getCapabilities: () => getTabCapabilities(tab, plugin),
-    getSettings: () => ({
-      model: plugin.settings.model,
-      thinkingBudget: plugin.settings.thinkingBudget,
-      effortLevel: plugin.settings.effortLevel,
-      permissionMode: plugin.settings.permissionMode,
-      enableOpus1M: plugin.settings.enableOpus1M,
-      enableSonnet1M: plugin.settings.enableSonnet1M,
-    }),
+    getSettings: () => {
+      const { model, thinkingBudget, effortLevel, permissionMode } = plugin.settings;
+      return { ...plugin.settings, model, thinkingBudget, effortLevel, permissionMode };
+    },
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
     onModelChange: async (model: string) => {
       const uiConfig: ProviderChatUIConfig = getTabChatUIConfig(tab, plugin);

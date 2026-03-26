@@ -7,7 +7,8 @@ import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { getCustomModelIds } from '../../providers/claude/env/claudeModelEnv';
+import { findNodeExecutable, formatContextLimit, getEnhancedPath, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { getHostnameKey } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
@@ -217,11 +218,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           dropdown.addOption('', t('settings.titleModel.auto'));
 
           const uiConfig = ProviderRegistry.getChatUIConfig();
-          const models = uiConfig.getModelOptions({
-            enableOpus1M: this.plugin.settings.enableOpus1M,
-            enableSonnet1M: this.plugin.settings.enableSonnet1M,
-            environmentVariables: this.plugin.settings.environmentVariables,
-          });
+          const models = uiConfig.getModelOptions(
+            this.plugin.settings as unknown as Record<string, unknown>,
+          );
 
           for (const model of models) {
             dropdown.addOption(model.value, model.label);

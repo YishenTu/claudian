@@ -13,6 +13,7 @@ export {
   type ProviderPermissionModeToggleConfig,
   type ProviderReasoningOption,
   type ProviderRegistration,
+  type ProviderSettingsReconciler,
   type ProviderTaskResultInterpreter,
   type ProviderTaskTerminalStatus,
   type ProviderUIOption,

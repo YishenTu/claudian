@@ -4,7 +4,8 @@ import type {
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '../../../utils/env';
+import { getModelsFromEnvironment } from '../env/claudeModelEnv';
 import {
   type ClaudeModel,
   type ClaudianSettings,
@@ -30,9 +31,10 @@ const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings) {
-    if (settings.environmentVariables) {
-      const envVars = parseEnvironmentVariables(settings.environmentVariables);
-      const customModels = getModelsFromEnvironment(envVars);
+    const envVars = settings.environmentVariables as string | undefined;
+    if (envVars) {
+      const parsed = parseEnvironmentVariables(envVars);
+      const customModels = getModelsFromEnvironment(parsed);
       if (customModels.length > 0) {
         return customModels;
       }
@@ -41,8 +43,8 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     const models = [...DEFAULT_CLAUDE_MODELS];
     return filterVisibleModelOptions(
       models,
-      settings.enableOpus1M ?? false,
-      settings.enableSonnet1M ?? false,
+      (settings.enableOpus1M as boolean) ?? false,
+      (settings.enableSonnet1M as boolean) ?? false,
     );
   },
 
@@ -85,11 +87,11 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     }
   },
 
-  normalizeModelVariant(model: string, settings): string {
+  normalizeModelVariant(model: string, settings) {
     return normalizeVisibleModelVariant(
       model,
-      settings.enableOpus1M ?? false,
-      settings.enableSonnet1M ?? false,
+      (settings.enableOpus1M as boolean) ?? false,
+      (settings.enableSonnet1M as boolean) ?? false,
     );
   },
 
