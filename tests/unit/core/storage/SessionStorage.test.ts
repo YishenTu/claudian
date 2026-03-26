@@ -118,6 +118,23 @@ describe('SessionStorage', () => {
       expect(result).toEqual({ ...metadata, providerId: 'claude' });
     });
 
+    it('preserves explicit providerId on load', async () => {
+      const metadata = {
+        id: 'session-codex',
+        providerId: 'codex',
+        title: 'Codex Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
+
+      const result = await storage.loadMetadata('session-codex');
+
+      expect(result!.providerId).toBe('codex');
+    });
+
     it('returns null on parse error', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue('invalid json');
@@ -134,6 +151,275 @@ describe('SessionStorage', () => {
       const result = await storage.loadMetadata('session-error');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('metadata migration', () => {
+    it('migrates legacy top-level providerSessionId into providerState', async () => {
+      const legacy = {
+        id: 'session-legacy-1',
+        title: 'Legacy Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        providerSessionId: 'sdk-session-abc',
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+      const result = await storage.loadMetadata('session-legacy-1');
+
+      expect(result!.providerId).toBe('claude');
+      expect((result!.providerState as any)?.providerSessionId).toBe('sdk-session-abc');
+      expect(result).not.toHaveProperty('providerSessionId');
+    });
+
+    it('migrates legacy top-level previousProviderSessionIds into providerState', async () => {
+      const legacy = {
+        id: 'session-legacy-2',
+        title: 'Legacy Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        previousProviderSessionIds: ['old-1', 'old-2'],
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+      const result = await storage.loadMetadata('session-legacy-2');
+
+      expect((result!.providerState as any)?.previousProviderSessionIds).toEqual(['old-1', 'old-2']);
+      expect(result).not.toHaveProperty('previousProviderSessionIds');
+    });
+
+    it('migrates legacy top-level forkSource into providerState', async () => {
+      const legacy = {
+        id: 'session-legacy-fork',
+        title: 'Legacy Fork',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        forkSource: { sessionId: 'parent-session', resumeAt: 'msg-uuid-123' },
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+      const result = await storage.loadMetadata('session-legacy-fork');
+
+      expect((result!.providerState as any)?.forkSource).toEqual({
+        sessionId: 'parent-session',
+        resumeAt: 'msg-uuid-123',
+      });
+      expect(result).not.toHaveProperty('forkSource');
+    });
+
+    it('migrates legacy top-level subagentData into providerState', async () => {
+      const legacy = {
+        id: 'session-legacy-subagent',
+        title: 'Legacy Subagent',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        subagentData: {
+          'task-1': { id: 'task-1', description: 'Run tests', status: 'completed', isExpanded: false, toolCalls: [] },
+        },
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+      const result = await storage.loadMetadata('session-legacy-subagent');
+
+      expect((result!.providerState as any)?.subagentData['task-1'].id).toBe('task-1');
+      expect(result).not.toHaveProperty('subagentData');
+    });
+
+    it('migrates all legacy fields together', async () => {
+      const legacy = {
+        id: 'session-legacy-all',
+        title: 'Full Legacy',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        providerSessionId: 'sdk-session-xyz',
+        previousProviderSessionIds: ['old-session'],
+        forkSource: { sessionId: 'source', resumeAt: 'uuid' },
+        subagentData: { 't1': { id: 't1', description: 'Task', status: 'completed' as const, isExpanded: false, toolCalls: [] } },
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(legacy));
+
+      const result = await storage.loadMetadata('session-legacy-all');
+
+      expect(result!.providerId).toBe('claude');
+      const ps = result!.providerState as any;
+      expect(ps.providerSessionId).toBe('sdk-session-xyz');
+      expect(ps.previousProviderSessionIds).toEqual(['old-session']);
+      expect(ps.forkSource).toEqual({ sessionId: 'source', resumeAt: 'uuid' });
+      expect(ps.subagentData.t1.id).toBe('t1');
+
+      // Legacy fields must be cleaned from the top level
+      expect(result).not.toHaveProperty('providerSessionId');
+      expect(result).not.toHaveProperty('previousProviderSessionIds');
+      expect(result).not.toHaveProperty('forkSource');
+      expect(result).not.toHaveProperty('subagentData');
+    });
+
+    it('does not overwrite existing providerState with legacy fields', async () => {
+      const metadata = {
+        id: 'session-mixed',
+        title: 'Mixed Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        providerId: 'claude',
+        providerState: { providerSessionId: 'new-session' },
+        providerSessionId: 'old-session',
+      };
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
+
+      const result = await storage.loadMetadata('session-mixed');
+
+      // Existing providerState wins over legacy fields
+      expect((result!.providerState as any)?.providerSessionId).toBe('new-session');
+    });
+
+    it('migrates legacy fields during listMetadata', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/legacy.meta.json',
+      ]);
+
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'legacy',
+        title: 'Legacy',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        providerSessionId: 'old-sdk-session',
+      }));
+
+      const metas = await storage.listMetadata();
+
+      expect(metas).toHaveLength(1);
+      expect(metas[0].providerId).toBe('claude');
+      expect((metas[0].providerState as any)?.providerSessionId).toBe('old-sdk-session');
+      expect(metas[0]).not.toHaveProperty('providerSessionId');
+    });
+  });
+
+  describe('listAllConversations - provider routing', () => {
+    it('preserves providerId from metadata', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/claude-session.meta.json',
+        '.claude/sessions/codex-session.meta.json',
+      ]);
+
+      mockAdapter.read.mockImplementation((path: string) => {
+        if (path.includes('claude-session')) {
+          return Promise.resolve(JSON.stringify({
+            id: 'claude-session',
+            providerId: 'claude',
+            title: 'Claude Session',
+            createdAt: 1700000000,
+            updatedAt: 1700001000,
+          }));
+        }
+        if (path.includes('codex-session')) {
+          return Promise.resolve(JSON.stringify({
+            id: 'codex-session',
+            providerId: 'codex',
+            title: 'Codex Session',
+            createdAt: 1700000000,
+            updatedAt: 1700002000,
+          }));
+        }
+        return Promise.resolve('{}');
+      });
+
+      const metas = await storage.listAllConversations();
+
+      expect(metas).toHaveLength(2);
+      const claudeMeta = metas.find(m => m.id === 'claude-session');
+      const codexMeta = metas.find(m => m.id === 'codex-session');
+      expect(claudeMeta!.providerId).toBe('claude');
+      expect(codexMeta!.providerId).toBe('codex');
+    });
+
+    it('defaults providerId to claude for legacy conversations', async () => {
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claude/sessions/old.meta.json',
+      ]);
+
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'old',
+        title: 'Old Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+      }));
+
+      const metas = await storage.listAllConversations();
+
+      expect(metas).toHaveLength(1);
+      expect(metas[0].providerId).toBe('claude');
+    });
+  });
+
+  describe('toSessionMetadata - round trip', () => {
+    it('round-trips providerState through save and load', async () => {
+      const conversation: Conversation = {
+        id: 'conv-roundtrip',
+        providerId: 'claude' as ProviderId,
+        title: 'Round Trip Test',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: 'sdk-session',
+        providerState: {
+          providerSessionId: 'active-session',
+          forkSource: { sessionId: 'parent', resumeAt: 'uuid-456' },
+        },
+        messages: [],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+      await storage.saveMetadata(metadata);
+
+      // Simulate loading back what was saved
+      const writtenContent = mockAdapter.write.mock.calls[0][1];
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(writtenContent);
+
+      const loaded = await storage.loadMetadata('conv-roundtrip');
+
+      expect(loaded!.providerId).toBe('claude');
+      expect((loaded!.providerState as any)?.providerSessionId).toBe('active-session');
+      expect((loaded!.providerState as any)?.forkSource).toEqual({
+        sessionId: 'parent',
+        resumeAt: 'uuid-456',
+      });
+    });
+
+    it('round-trips non-Claude providerId', async () => {
+      const conversation: Conversation = {
+        id: 'conv-codex-rt',
+        providerId: 'codex' as ProviderId,
+        title: 'Codex Round Trip',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+        sessionId: 'codex-session',
+        providerState: { codexSpecific: 'data' },
+        messages: [],
+      };
+
+      const metadata = storage.toSessionMetadata(conversation);
+      await storage.saveMetadata(metadata);
+
+      const writtenContent = mockAdapter.write.mock.calls[0][1];
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(writtenContent);
+
+      const loaded = await storage.loadMetadata('conv-codex-rt');
+
+      expect(loaded!.providerId).toBe('codex');
+      expect((loaded!.providerState as any)?.codexSpecific).toBe('data');
     });
   });
 

@@ -130,7 +130,20 @@ export interface SessionMetadata {
   resumeAtMessageId?: string;
 }
 
-/** Normalized stream chunk emitted by the active provider runtime. */
+/**
+ * Normalized stream chunk emitted by the active provider runtime.
+ *
+ * All providers must emit: text, tool_use, tool_result, error, done, usage.
+ * Provider-specific/optional variants:
+ * - thinking: only providers with extended thinking (Claude)
+ * - blocked: hook-denied tool results (Claude)
+ * - compact_boundary: /compact command (Claude)
+ * - user_message_id, user_message_sent, assistant_message_id: SDK message tracking (Claude)
+ * - context_window_update: authoritative context window from SDK result (Claude)
+ * - parentToolUseId on text/thinking/tool_use/tool_result: subagent scoping (Claude)
+ *
+ * Feature code must tolerate missing optional variants (switch default / no-op).
+ */
 export type StreamChunk =
   | { type: 'text'; content: string; parentToolUseId?: string | null }
   | { type: 'thinking'; content: string; parentToolUseId?: string | null }
@@ -146,12 +159,24 @@ export type StreamChunk =
   | { type: 'assistant_message_id'; uuid: string }
   | { type: 'context_window_update'; contextWindow: number };
 
-/** Context window usage information. */
+/**
+ * Context window usage information.
+ *
+ * `contextTokens` is the provider-computed total token count in the context window.
+ * Claude sets it to `inputTokens + cacheCreationInputTokens + cacheReadInputTokens`;
+ * other providers should set it to their equivalent total.
+ *
+ * Cache token fields are optional — only providers with prompt caching (Claude)
+ * populate them. Feature code should use `contextTokens` for display, not recompute
+ * from the cache breakdown.
+ */
 export interface UsageInfo {
   model?: string;
   inputTokens: number;
-  cacheCreationInputTokens: number;
-  cacheReadInputTokens: number;
+  /** Prompt caching: tokens used to create cache entries. Claude-specific; 0 if omitted. */
+  cacheCreationInputTokens?: number;
+  /** Prompt caching: tokens read from cache. Claude-specific; 0 if omitted. */
+  cacheReadInputTokens?: number;
   contextWindow: number;
   contextTokens: number;
   percentage: number;

@@ -216,20 +216,30 @@ If different, GUI apps like Obsidian may not find Node.js.
 ```
 src/
 ├── main.ts                      # Plugin entry point
-├── core/                        # Core infrastructure
-│   ├── agent/                   # Claude Agent SDK wrapper (ClaudianService)
-│   ├── agents/                  # Custom agent management (AgentManager)
-│   ├── commands/                # Slash command management (SlashCommandManager)
-│   ├── hooks/                   # PreToolUse/PostToolUse hooks
-│   ├── images/                  # Image caching and loading
+├── core/                        # Provider-neutral infrastructure
+│   ├── commands/                # Slash command management
 │   ├── mcp/                     # MCP server config, service, and testing
-│   ├── plugins/                 # Claude Code plugin discovery and management
-│   ├── prompts/                 # System prompts for agents
-│   ├── sdk/                     # SDK message transformation
+│   ├── providers/               # Provider registry, capabilities, boundary contracts
+│   ├── runtime/                 # ChatRuntime interface, turn/query types
 │   ├── security/                # Approval, blocklist, path validation
-│   ├── storage/                 # Distributed storage system
+│   ├── storage/                 # Generic persistence primitives
 │   ├── tools/                   # Tool constants and utilities
-│   └── types/                   # Type definitions
+│   └── types/                   # Type definitions (chat, settings, mcp, tools)
+├── providers/                   # Provider implementations
+│   └── claude/                  # Claude SDK adaptor
+│       ├── agents/              # Custom agent management (AgentManager)
+│       ├── aux/                 # Auxiliary services (title generation, inline edit)
+│       ├── history/             # Conversation history and fork state
+│       ├── hooks/               # PreToolUse/PostToolUse hooks
+│       ├── plugins/             # Claude Code plugin discovery and management
+│       ├── prompt/              # System prompts and turn encoding
+│       ├── runtime/             # ClaudeChatRuntime, CLI resolver, session manager
+│       ├── sdk/                 # SDK types and message transformation
+│       ├── security/            # Provider-specific security hooks
+│       ├── storage/             # Session metadata storage and migration
+│       ├── stream/              # Stream transforms (SDK messages → StreamChunk)
+│       ├── types/               # Claude-specific types (provider state, models)
+│       └── ui/                  # ProviderChatUIConfig (model/reasoning options)
 ├── features/                    # Feature modules
 │   ├── chat/                    # Main chat view + UI, rendering, controllers, tabs
 │   ├── inline-edit/             # Inline edit service + UI

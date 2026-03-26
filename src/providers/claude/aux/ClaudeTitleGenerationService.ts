@@ -9,6 +9,7 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../prompt';
+import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import { extractAssistantText } from './extractAssistantText';
 
 export type { TitleGenerationCallback, TitleGenerationResult };
@@ -108,6 +109,7 @@ Generate a title for this conversation:`;
         ? ['user', 'project']
         : ['project'],
       persistSession: false, // Don't save title generation queries to session history
+      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
     };
 
     try {

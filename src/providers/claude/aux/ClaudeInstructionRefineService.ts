@@ -7,6 +7,7 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { buildRefineSystemPrompt } from '../prompt';
+import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types';
 import { extractAssistantText } from './extractAssistantText';
 
@@ -95,6 +96,7 @@ export class InstructionRefineService {
       settingSources: this.plugin.settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
+      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
     };
 
     if (this.sessionId) {

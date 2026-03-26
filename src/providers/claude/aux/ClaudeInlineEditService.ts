@@ -22,6 +22,7 @@ import { appendContextFiles } from '../../../utils/context';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getPathAccessType, getVaultPath, type PathAccessType } from '../../../utils/path';
 import { getInlineEditSystemPrompt } from '../prompt';
+import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types';
 
 export type {
@@ -286,6 +287,7 @@ export class InlineEditService {
           ? [createReadOnlyHook()]
           : [createReadOnlyHook(), createVaultRestrictionHook(vaultPath)],
       },
+      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
     };
 
     if (this.sessionId) {
