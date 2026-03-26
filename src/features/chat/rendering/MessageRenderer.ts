@@ -2,6 +2,7 @@ import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
 import type { ProviderCapabilities } from '../../../core/providers';
+import { DEFAULT_CHAT_PROVIDER_ID } from '../../../core/providers';
 import { isSubagentToolName, isWriteEditTool, TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n';
@@ -49,14 +50,14 @@ export class MessageRenderer {
     this.rewindCallback = rewindCallback;
     this.forkCallback = forkCallback;
     this.getCapabilities = getCapabilities ?? (() => ({
-      providerId: 'claude',
-      supportsPersistentRuntime: true,
-      supportsNativeHistory: true,
-      supportsPlanMode: true,
-      supportsRewind: true,
-      supportsFork: true,
-      supportsProviderCommands: true,
-      reasoningControl: 'effort',
+      providerId: DEFAULT_CHAT_PROVIDER_ID,
+      supportsPersistentRuntime: false,
+      supportsNativeHistory: false,
+      supportsPlanMode: false,
+      supportsRewind: false,
+      supportsFork: false,
+      supportsProviderCommands: false,
+      reasoningControl: 'none' as const,
     }));
 
     // Register delegated click handler for file links

@@ -887,6 +887,8 @@ export class InputController {
     const renderContent = (el: HTMLElement, markdown: string) =>
       this.deps.renderer.renderContent(el, markdown);
 
+    const planPathPrefix = this.getActiveCapabilities().planPathPrefix;
+
     return new Promise<ExitPlanModeDecision | null>((resolve, reject) => {
       const inline = new InlineExitPlanMode(
         parentEl,
@@ -898,6 +900,7 @@ export class InputController {
         },
         signal,
         renderContent,
+        planPathPrefix,
       );
       this.pendingExitPlanModeInline = inline;
       try {

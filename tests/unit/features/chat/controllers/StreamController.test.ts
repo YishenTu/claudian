@@ -55,6 +55,11 @@ function createMockDeps(): StreamControllerDeps {
     getSessionId: jest.fn().mockReturnValue('session-1'),
     loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
     loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
+    getCapabilities: jest.fn().mockReturnValue({
+      providerId: 'claude',
+      supportsPlanMode: true,
+      planPathPrefix: '/.claude/plans/',
+    }),
   };
   const fileContextManager = {
     markFileBeingEdited: jest.fn(),

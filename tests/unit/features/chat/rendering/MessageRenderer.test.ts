@@ -39,6 +39,19 @@ function createMockComponent() {
   };
 }
 
+function mockCapabilities() {
+  return () => ({
+    providerId: 'claude' as const,
+    supportsPersistentRuntime: true,
+    supportsNativeHistory: true,
+    supportsPlanMode: true,
+    supportsRewind: true,
+    supportsFork: true,
+    supportsProviderCommands: true,
+    reasoningControl: 'effort' as const,
+  });
+}
+
 function createRenderer(messagesEl?: any) {
   const el = messagesEl ?? createMockEl();
   const comp = createMockComponent();
@@ -221,7 +234,7 @@ describe('MessageRenderer', () => {
   it('adds a rewind button for eligible stored user messages', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const allMessages: ChatMessage[] = [
@@ -238,7 +251,7 @@ describe('MessageRenderer', () => {
   it('does not add a rewind button when stored render is called without context', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const msg: ChatMessage = {
@@ -257,7 +270,7 @@ describe('MessageRenderer', () => {
   it('adds a rewind button for eligible streamed user messages via refreshActionButtons', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const userMsg: ChatMessage = {

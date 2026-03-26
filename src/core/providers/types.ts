@@ -19,6 +19,7 @@ export interface ProviderCapabilities {
   supportsFork: boolean;
   supportsProviderCommands: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
+  planPathPrefix?: string;
 }
 
 export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;

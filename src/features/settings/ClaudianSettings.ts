@@ -2,12 +2,12 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
+import { ProviderRegistry } from '../../core/providers';
 import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { DEFAULT_CLAUDE_MODELS, filterVisibleModelOptions } from '../../providers/claude/types';
-import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, getModelsFromEnvironment, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { findNodeExecutable, formatContextLimit, getCustomModelIds, getEnhancedPath, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { getHostnameKey } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
@@ -216,14 +216,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
           // Add "Auto" option (empty string = use default logic)
           dropdown.addOption('', t('settings.titleModel.auto'));
 
-          // Get available models from environment or defaults
-          const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
-          const customModels = getModelsFromEnvironment(envVars);
-          const models = filterVisibleModelOptions(
-            customModels.length > 0 ? customModels : [...DEFAULT_CLAUDE_MODELS],
-            this.plugin.settings.enableOpus1M,
-            this.plugin.settings.enableSonnet1M
-          );
+          const uiConfig = ProviderRegistry.getChatUIConfig();
+          const models = uiConfig.getModelOptions({
+            enableOpus1M: this.plugin.settings.enableOpus1M,
+            enableSonnet1M: this.plugin.settings.enableSonnet1M,
+            environmentVariables: this.plugin.settings.environmentVariables,
+          });
 
           for (const model of models) {
             dropdown.addOption(model.value, model.label);

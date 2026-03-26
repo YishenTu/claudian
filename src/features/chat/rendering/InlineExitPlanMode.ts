@@ -12,6 +12,7 @@ export class InlineExitPlanMode {
   private resolved = false;
   private signal?: AbortSignal;
   private renderContent?: RenderContentFn;
+  private planPathPrefix?: string;
   private planContent: string | null = null;
   private planReadError: string | null = null;
 
@@ -29,12 +30,14 @@ export class InlineExitPlanMode {
     resolve: (decision: ExitPlanModeDecision | null) => void,
     signal?: AbortSignal,
     renderContent?: RenderContentFn,
+    planPathPrefix?: string,
   ) {
     this.containerEl = containerEl;
     this.input = input;
     this.resolveCallback = resolve;
     this.signal = signal;
     this.renderContent = renderContent;
+    this.planPathPrefix = planPathPrefix;
     this.boundKeyDown = this.handleKeyDown.bind(this);
   }
 
@@ -138,7 +141,7 @@ export class InlineExitPlanMode {
     if (!planFilePath) return null;
 
     const resolved = nodePath.resolve(planFilePath).replace(/\\/g, '/');
-    if (!resolved.includes('/.claude/plans/')) {
+    if (!this.planPathPrefix || !resolved.includes(this.planPathPrefix)) {
       this.planReadError = 'path outside allowed plan directory';
       return null;
     }
