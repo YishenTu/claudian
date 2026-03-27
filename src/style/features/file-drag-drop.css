@@ -1,0 +1,64 @@
+/* File Drag and Drop - From Obsidian File Tree */
+
+/* Drop overlay for file drag-drop - inside input wrapper */
+.claudian-file-drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(var(--claudian-brand-rgb), 0.08);
+  border: 2px dashed var(--claudian-brand);
+  border-radius: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.claudian-file-drop-overlay.visible {
+  display: flex;
+  animation: claudian-drop-pulse 0.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-file-drop-overlay.visible {
+    animation: none;
+  }
+}
+
+@keyframes claudian-drop-pulse {
+  0% {
+    background: rgba(var(--claudian-brand-rgb), 0.08);
+    border-color: var(--claudian-brand);
+  }
+  50% {
+    background: rgba(var(--claudian-brand-rgb), 0.12);
+    border-color: var(--claudian-brand);
+  }
+  100% {
+    background: rgba(var(--claudian-brand-rgb), 0.08);
+    border-color: var(--claudian-brand);
+  }
+}
+
+.claudian-file-drop-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--claudian-brand);
+}
+
+.claudian-file-drop-content svg {
+  opacity: 0.8;
+  stroke-width: 2.5;
+}
+
+.claudian-file-drop-content span {
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  max-width: 200px;
+}

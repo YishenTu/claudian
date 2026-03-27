@@ -9,7 +9,7 @@ import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionD
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { appendBrowserContext, type BrowserSelectionContext } from '../../../utils/browser';
 import { appendCanvasContext, type CanvasSelectionContext } from '../../../utils/canvas';
-import { appendCurrentNote } from '../../../utils/context';
+import { appendContextFiles, appendCurrentNote } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { appendEditorContext, type EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
@@ -234,6 +234,12 @@ export class InputController {
       if (shouldSendCurrentNote && currentNotePath) {
         promptToSend = appendCurrentNote(promptToSend, currentNotePath);
         currentNoteForMessage = currentNotePath;
+      }
+
+      // Append drag-dropped file paths as <context_files>
+      const dragDropFiles = fileContextManager?.consumeContextFiles() ?? [];
+      if (dragDropFiles.length > 0) {
+        promptToSend = appendContextFiles(promptToSend, dragDropFiles);
       }
 
       // Append editor context if available

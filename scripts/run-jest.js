@@ -4,11 +4,15 @@ const path = require('path');
 
 const jestPath = require.resolve('jest/bin/jest');
 const localStorageFile = path.join(os.tmpdir(), 'claudian-localstorage');
+const projectRoot = path.resolve(__dirname, '..');
 
 const result = spawnSync(
   process.execPath,
   [`--localstorage-file=${localStorageFile}`, jestPath, ...process.argv.slice(2)],
-  { stdio: 'inherit' }
+  {
+    cwd: projectRoot,
+    stdio: 'inherit',
+  }
 );
 
 if (result.error) {

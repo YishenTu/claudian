@@ -62,6 +62,10 @@
       "expandOutput": "명령 출력 펼치기",
       "running": "실행 중...",
       "copyFailed": "클립보드에 복사하지 못했습니다"
+    },
+    "fileDrop": {
+      "notice": "컨텍스트에 {count}개 파일 추가됨",
+      "overlay": "파일을 여기에 드롭하여 컨텍스트에 추가"
     }
   },
   "settings": {

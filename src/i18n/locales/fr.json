@@ -62,6 +62,10 @@
       "expandOutput": "Développer la sortie de la commande",
       "running": "Exécution...",
       "copyFailed": "Échec de la copie dans le presse-papiers"
+    },
+    "fileDrop": {
+      "notice": "{count} fichier(s) ajouté(s) au contexte",
+      "overlay": "Déposez le fichier ici pour l'ajouter au contexte"
     }
   },
   "settings": {

@@ -62,6 +62,10 @@ const createMockImageContextManager = () => ({
   destroy: jest.fn(),
 });
 
+const createMockFileDragDropManager = () => ({
+  destroy: jest.fn(),
+});
+
 const createMockSlashCommandDropdown = () => ({
   handleKeydown: jest.fn().mockReturnValue(false),
   isVisible: jest.fn().mockReturnValue(false),
@@ -138,6 +142,7 @@ const createMockPermissionToggle = () => ({});
 // Shared mock instances (reset in beforeEach)
 let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
 let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
+let mockFileDragDropManager: ReturnType<typeof createMockFileDragDropManager>;
 let mockSlashCommandDropdown: ReturnType<typeof createMockSlashCommandDropdown>;
 let mockInstructionModeManager: ReturnType<typeof createMockInstructionModeManager>;
 let mockBangBashModeManager: ReturnType<typeof createMockBangBashModeManager>;
@@ -193,6 +198,10 @@ jest.mock('@/features/chat/ui', () => ({
   FileContextManager: jest.fn().mockImplementation(() => {
     mockFileContextManager = createMockFileContextManager();
     return mockFileContextManager;
+  }),
+  FileDragDropManager: jest.fn().mockImplementation(() => {
+    mockFileDragDropManager = createMockFileDragDropManager();
+    return mockFileDragDropManager;
   }),
   ImageContextManager: jest.fn().mockImplementation(() => {
     mockImageContextManager = createMockImageContextManager();

@@ -34,6 +34,7 @@ export function findConflictingPath(
   existingPaths: string[]
 ): PathConflict | null {
   const normalizedNew = normalizePathForComparison(newPath);
+  let firstChildConflict: PathConflict | null = null;
 
   for (const existing of existingPaths) {
     const normalizedExisting = normalizePathForComparison(existing);
@@ -43,11 +44,13 @@ export function findConflictingPath(
     }
 
     if (normalizedExisting.startsWith(normalizedNew + '/')) {
-      return { path: existing, type: 'child' };
+      if (!firstChildConflict) {
+        firstChildConflict = { path: existing, type: 'child' };
+      }
     }
   }
 
-  return null;
+  return firstChildConflict;
 }
 
 export function getFolderName(p: string): string {

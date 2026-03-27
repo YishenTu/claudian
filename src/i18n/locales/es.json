@@ -62,6 +62,10 @@
       "expandOutput": "Expandir la salida del comando",
       "running": "Ejecutando...",
       "copyFailed": "No se pudo copiar al portapapeles"
+    },
+    "fileDrop": {
+      "notice": "{count} archivo(s) añadido(s) al contexto",
+      "overlay": "Suelta el archivo aquí para añadirlo al contexto"
     }
   },
   "settings": {

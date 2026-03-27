@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { normalizePathForFilesystem } from '../../utils/path';
 import type { PluginManager } from '../plugins';
 import type { AgentDefinition } from '../types';
 import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
@@ -134,16 +135,19 @@ export class AgentManager {
   private listMarkdownFiles(dir: string): string[] {
     const files: string[] = [];
 
+    // Normalize path for filesystem to handle cross-platform path separators
+    const normalizedDir = normalizePathForFilesystem(dir);
+
     try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const entries = fs.readdirSync(normalizedDir, { withFileTypes: true });
 
       for (const entry of entries) {
         if (entry.isFile() && entry.name.endsWith('.md')) {
-          files.push(path.join(dir, entry.name));
+          files.push(path.join(normalizedDir, entry.name));
         }
       }
     } catch {
-      // Non-critical: directory may be unreadable
+      // Non-critical: directory may be unreadable or not exist
     }
 
     return files;
@@ -163,7 +167,11 @@ export class AgentManager {
       const normalizedPluginName = normalizePluginName(pluginName);
       const id = `${normalizedPluginName}:${frontmatter.name}`;
 
-      if (this.agents.find(a => a.id === id)) return null;
+      const existing = this.agents.find(a => a.id === id);
+      if (existing && existing.source !== 'builtin') return null;
+      if (existing && existing.source === 'builtin') {
+        this.agents = this.agents.filter(a => !(a.id === id && a.source === 'builtin'));
+      }
 
       return buildAgentFromFrontmatter(frontmatter, body, {
         id,
@@ -189,7 +197,11 @@ export class AgentManager {
       const { frontmatter, body } = parsed;
       const id = frontmatter.name;
 
-      if (this.agents.find(a => a.id === id)) return null;
+      const existing = this.agents.find(a => a.id === id);
+      if (existing && existing.source !== 'builtin') return null;
+      if (existing && existing.source === 'builtin') {
+        this.agents = this.agents.filter(a => !(a.id === id && a.source === 'builtin'));
+      }
 
       return buildAgentFromFrontmatter(frontmatter, body, {
         id,

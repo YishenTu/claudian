@@ -30,6 +30,7 @@ import {
   BangBashModeManager as BangBashModeManagerClass,
   createInputToolbar,
   FileContextManager,
+  FileDragDropManager,
   ImageContextManager,
   InstructionModeManager as InstructionModeManagerClass,
   NavigationSidebar,
@@ -115,6 +116,7 @@ export function createTab(options: TabCreateOptions): TabData {
     },
     ui: {
       fileContextManager: null,
+      fileDragDropManager: null,
       imageContextManager: null,
       modelSelector: null,
       thinkingBudgetSelector: null,
@@ -339,6 +341,26 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
       },
     },
     dom.contextRowEl
+  );
+
+  // File drag-drop manager - handles dragging files from Obsidian file tree
+  tab.ui.fileDragDropManager = new FileDragDropManager(
+    app,
+    dom.inputContainerEl,
+    {
+      onFilesDropped: (filePaths) => {
+        if (!tab.ui.fileContextManager) return;
+        let added = 0;
+        for (const filePath of filePaths) {
+          if (tab.ui.fileContextManager.attachFileFromPath(filePath)) {
+            added++;
+          }
+        }
+        if (added > 0) {
+          new Notice(t('chat.fileDrop.notice', { count: added }));
+        }
+      },
+    }
   );
 }
 
@@ -1082,6 +1104,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   // Cleanup UI components
   tab.controllers.inputController?.destroyResumeDropdown();
   tab.ui.fileContextManager?.destroy();
+  tab.ui.fileDragDropManager?.destroy();
+  tab.ui.fileDragDropManager = null;
   tab.ui.slashCommandDropdown?.destroy();
   tab.ui.slashCommandDropdown = null;
   tab.ui.instructionModeManager?.destroy();

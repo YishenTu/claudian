@@ -36,6 +36,10 @@ export interface SDKSessionReadResult {
   error?: string;
 }
 
+function toPosixPath(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
 /** Stored in session JSONL files. Based on Claude Agent SDK internal format. */
 export interface SDKNativeMessage {
   type: 'user' | 'assistant' | 'system' | 'result' | 'file-history-snapshot' | 'queue-operation';
@@ -92,12 +96,11 @@ export interface SDKNativeContentBlock {
  * This handles Unicode characters (Chinese, Japanese, etc.) and special chars (brackets, etc.).
  */
 export function encodeVaultPathForSDK(vaultPath: string): string {
-  const absolutePath = path.resolve(vaultPath);
-  return absolutePath.replace(/[^a-zA-Z0-9]/g, '-');
+  return toPosixPath(vaultPath).replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 export function getSDKProjectsPath(): string {
-  return path.join(os.homedir(), '.claude', 'projects');
+  return path.posix.join(toPosixPath(os.homedir()), '.claude', 'projects');
 }
 
 /** Validates a subagent agent ID to prevent path traversal attacks. */
@@ -265,7 +268,7 @@ function getSubagentSidecarPath(
   }
 
   const encodedVault = encodeVaultPathForSDK(vaultPath);
-  return path.join(
+  return path.posix.join(
     getSDKProjectsPath(),
     encodedVault,
     sessionId,
@@ -371,7 +374,7 @@ export function getSDKSessionPath(vaultPath: string, sessionId: string): string 
   }
   const projectsPath = getSDKProjectsPath();
   const encodedVault = encodeVaultPathForSDK(vaultPath);
-  return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
+  return path.posix.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
 }
 
 export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {

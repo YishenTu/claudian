@@ -62,6 +62,10 @@
       "expandOutput": "展开命令输出",
       "running": "运行中...",
       "copyFailed": "复制到剪贴板失败"
+    },
+    "fileDrop": {
+      "notice": "已添加 {count} 个文件到上下文",
+      "overlay": "拖放文件到此处添加到上下文"
     }
   },
   "settings": {

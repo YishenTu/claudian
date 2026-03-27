@@ -62,6 +62,10 @@
       "expandOutput": "Expand command output",
       "running": "Running...",
       "copyFailed": "Failed to copy to clipboard"
+    },
+    "fileDrop": {
+      "notice": "Added {count} file(s) to context",
+      "overlay": "Drop file here to add to context"
     }
   },
   "settings": {

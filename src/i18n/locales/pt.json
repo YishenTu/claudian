@@ -62,6 +62,10 @@
       "expandOutput": "Expandir a saída do comando",
       "running": "Executando...",
       "copyFailed": "Falha ao copiar para a área de transferência"
+    },
+    "fileDrop": {
+      "notice": "{count} arquivo(s) adicionado(s) ao contexto",
+      "overlay": "Solte o arquivo aqui para adicionar ao contexto"
     }
   },
   "settings": {

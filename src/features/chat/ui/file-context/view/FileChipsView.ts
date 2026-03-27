@@ -25,18 +25,36 @@ export class FileChipsView {
     this.fileIndicatorEl.remove();
   }
 
-  renderCurrentNote(filePath: string | null): void {
+  renderCurrentNote(filePath: string | null, attachedFiles: Iterable<string> = []): void {
     this.fileIndicatorEl.empty();
 
-    if (!filePath) {
+    const seen = new Set<string>();
+    const orderedPaths: string[] = [];
+
+    if (filePath) {
+      orderedPaths.push(filePath);
+      seen.add(filePath);
+    }
+
+    for (const attached of attachedFiles) {
+      if (!seen.has(attached)) {
+        orderedPaths.push(attached);
+        seen.add(attached);
+      }
+    }
+
+    if (orderedPaths.length === 0) {
       this.fileIndicatorEl.style.display = 'none';
       return;
     }
 
     this.fileIndicatorEl.style.display = 'flex';
-    this.renderFileChip(filePath, () => {
-      this.callbacks.onRemoveAttachment(filePath);
-    });
+
+    for (const path of orderedPaths) {
+      this.renderFileChip(path, () => {
+        this.callbacks.onRemoveAttachment(path);
+      });
+    }
   }
 
   private renderFileChip(filePath: string, onRemove: () => void): void {

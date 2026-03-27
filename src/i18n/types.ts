@@ -51,6 +51,8 @@ export type TranslationKey =
   | 'chat.bangBash.expandOutput'
   | 'chat.bangBash.running'
   | 'chat.bangBash.copyFailed'
+  | 'chat.fileDrop.notice'
+  | 'chat.fileDrop.overlay'
 
   // Chat - Fork
   | 'chat.fork.ariaLabel'

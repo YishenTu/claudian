@@ -40,6 +40,9 @@ export class FileContextManager {
   // Current note (shown as chip)
   private currentNotePath: string | null = null;
 
+  // Files queued via drag-drop to be appended as <context_files> on next send
+  private pendingContextFiles: Set<string> = new Set();
+
   // MCP server support
   private onMcpMentionChange: ((servers: Set<string>) => void) | null = null;
 
@@ -64,9 +67,11 @@ export class FileContextManager {
       onRemoveAttachment: (filePath) => {
         if (filePath === this.currentNotePath) {
           this.currentNotePath = null;
-          this.state.detachFile(filePath);
-          this.refreshCurrentNoteChip();
         }
+
+        this.state.detachFile(filePath);
+        this.pendingContextFiles.delete(filePath);
+        this.refreshCurrentNoteChip();
       },
       onOpenFile: async (filePath) => {
         const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -139,6 +144,7 @@ export class FileContextManager {
   /** Resets state for a new conversation. */
   resetForNewConversation() {
     this.currentNotePath = null;
+    this.pendingContextFiles.clear();
     this.state.resetForNewConversation();
     this.refreshCurrentNoteChip();
   }
@@ -146,6 +152,7 @@ export class FileContextManager {
   /** Resets state for loading an existing conversation. */
   resetForLoadedConversation(hasMessages: boolean) {
     this.currentNotePath = null;
+    this.pendingContextFiles.clear();
     this.state.resetForLoadedConversation(hasMessages);
     this.refreshCurrentNoteChip();
   }
@@ -157,6 +164,31 @@ export class FileContextManager {
       this.state.attachFile(notePath);
     }
     this.refreshCurrentNoteChip();
+  }
+
+  /**
+   * Attaches a file to the context by its path.
+   * Used by drag-drop handlers and other external sources.
+   */
+  attachFileFromPath(filePath: string): boolean {
+    const normalizedPath = this.normalizePathForVault(filePath);
+    if (!normalizedPath) return false;
+
+    // Already attached — no-op so callers can count genuinely new additions.
+    if (this.state.getAttachedFiles().has(normalizedPath)) return false;
+
+    // Don't check excluded tags for drag-dropped files - user has explicit intent
+    this.state.attachFile(normalizedPath);
+    this.pendingContextFiles.add(normalizedPath);
+    this.refreshCurrentNoteChip();
+    return true;
+  }
+
+  /** Returns drag-dropped files pending send and clears the queue. */
+  consumeContextFiles(): string[] {
+    const files = Array.from(this.pendingContextFiles);
+    this.pendingContextFiles.clear();
+    return files;
   }
 
   /** Auto-attaches the currently focused file (for new sessions). */
@@ -266,7 +298,7 @@ export class FileContextManager {
   }
 
   private refreshCurrentNoteChip(): void {
-    this.chipsView.renderCurrentNote(this.currentNotePath);
+    this.chipsView.renderCurrentNote(this.currentNotePath, this.state.getAttachedFiles());
     this.callbacks.onChipsChanged?.();
   }
 

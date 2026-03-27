@@ -62,6 +62,10 @@
       "expandOutput": "コマンド出力を展開",
       "running": "実行中...",
       "copyFailed": "クリップボードへのコピーに失敗しました"
+    },
+    "fileDrop": {
+      "notice": "{count} 個のファイルをコンテキストに追加しました",
+      "overlay": "ここにファイルをドロップしてコンテキストに追加"
     }
   },
   "settings": {

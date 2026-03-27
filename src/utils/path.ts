@@ -9,6 +9,10 @@ import type { App } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 
+function getRuntimePathApi(): typeof path.posix | typeof path.win32 {
+  return process.platform === 'win32' ? path.win32 : path.posix;
+}
+
 // ============================================
 // Vault Path
 // ============================================
@@ -123,17 +127,48 @@ export function parsePathEntries(pathValue?: string): string[] {
     return [];
   }
 
-  const delimiter = process.platform === 'win32' ? ';' : ':';
+  let rawEntries: string[];
 
-  return pathValue
-    .split(delimiter)
+  if (process.platform !== 'win32') {
+    rawEntries = pathValue.split(':');
+  } else if (/^[A-Za-z]:[\\/]/.test(pathValue) && !pathValue.includes(';')) {
+    // Single Windows absolute path entry (e.g., C:\custom\bin)
+    rawEntries = [pathValue];
+  } else if (pathValue.includes(';')) {
+    rawEntries = pathValue
+      .split(';')
+      .flatMap((segment) => {
+        // Handle mixed input like /env/bin:C:\Windows\System32
+        const splitAtDrive = segment.split(/:(?=[A-Za-z]:[\\/])/);
+        if (splitAtDrive.length > 1) return splitAtDrive;
+
+        // If still POSIX-style list in this segment, split by ':'
+        if (segment.startsWith('/') && segment.includes(':')) {
+          return segment.split(':');
+        }
+
+        return [segment];
+      });
+  } else {
+    // POSIX-style path list on Windows test/mocked environments.
+    rawEntries = pathValue.split(':');
+  }
+
+  return rawEntries
     .map(segment => stripSurroundingQuotes(segment.trim()))
     .filter(segment => {
       if (!segment) return false;
       const upper = segment.toUpperCase();
       return upper !== '$PATH' && upper !== '${PATH}' && upper !== '%PATH%';
     })
-    .map(segment => translateMsysPath(expandHomePath(segment)));
+    .map(segment => {
+      const expanded = expandHomePath(segment);
+      // Keep bare "/x" segments as-is for generic PATH parsing.
+      if (/^\/[A-Za-z]$/.test(expanded)) {
+        return expanded;
+      }
+      return translateMsysPath(expanded);
+    });
 }
 
 function dedupePaths(entries: string[]): string[] {
@@ -147,12 +182,21 @@ function dedupePaths(entries: string[]): string[] {
 }
 
 function findFirstExistingPath(entries: string[], candidates: string[]): string | null {
+  const pathApi = getRuntimePathApi();
   for (const dir of entries) {
     if (!dir) continue;
     for (const candidate of candidates) {
-      const fullPath = path.join(dir, candidate);
-      if (isExistingFile(fullPath)) {
-        return fullPath;
+      const probes = [pathApi.join(dir, candidate)];
+
+      // In cross-platform scenarios, Windows hosts may still receive POSIX entries.
+      if (process.platform === 'win32' && dir.startsWith('/')) {
+        probes.push(path.posix.join(dir, candidate));
+      }
+
+      for (const fullPath of probes) {
+        if (isExistingFile(fullPath)) {
+          return fullPath;
+        }
       }
     }
   }
@@ -172,17 +216,18 @@ function isExistingFile(filePath: string): boolean {
 }
 
 function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | null {
-  const directCandidate = path.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+  const pathApi = isWindows ? path.win32 : path.posix;
+  const directCandidate = pathApi.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
   if (isExistingFile(directCandidate)) {
     return directCandidate;
   }
 
   const baseName = path.basename(entry).toLowerCase();
   if (baseName === 'bin') {
-    const prefix = path.dirname(entry);
+    const prefix = pathApi.dirname(entry);
     const candidate = isWindows
-      ? path.join(prefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      : path.join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+      ? pathApi.join(prefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      : pathApi.join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
     if (isExistingFile(candidate)) {
       return candidate;
     }
@@ -233,11 +278,18 @@ function getNpmGlobalPrefix(): string | null {
   }
 
   if (process.platform === 'win32') {
+    const pathApi = path.win32;
     const appDataNpm = process.env.APPDATA
-      ? path.join(process.env.APPDATA, 'npm')
+      ? pathApi.join(process.env.APPDATA, 'npm')
       : null;
-    if (appDataNpm && fs.existsSync(appDataNpm)) {
-      return appDataNpm;
+    if (appDataNpm) {
+      try {
+        if (fs.existsSync(appDataNpm)) {
+          return appDataNpm;
+        }
+      } catch {
+        // Ignore inaccessible filesystem errors.
+      }
     }
   }
 
@@ -247,17 +299,23 @@ function getNpmGlobalPrefix(): string | null {
 function getNpmCliJsPaths(): string[] {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
+  const pathApi = isWindows ? path.win32 : path.posix;
   const cliJsPaths: string[] = [];
 
   if (isWindows) {
     cliJsPaths.push(
-      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      pathApi.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+    );
+
+    // npm custom prefix under home directory (cross-platform style used by some Windows setups).
+    cliJsPaths.push(
+      pathApi.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
     );
 
     const npmPrefix = getNpmGlobalPrefix();
     if (npmPrefix) {
       cliJsPaths.push(
-        path.join(npmPrefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+        pathApi.join(npmPrefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
       );
     }
 
@@ -265,23 +323,23 @@ function getNpmCliJsPaths(): string[] {
     const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
     cliJsPaths.push(
-      path.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      path.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      pathApi.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      pathApi.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
     );
 
     cliJsPaths.push(
-      path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+      pathApi.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
     );
   } else {
     cliJsPaths.push(
-      path.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      pathApi.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
       '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
       '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'
     );
 
     if (process.env.npm_config_prefix) {
       cliJsPaths.push(
-        path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
+        pathApi.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
       );
     }
   }
@@ -334,16 +392,17 @@ function resolveNvmAlias(nvmDir: string, alias: string, depth = 0): string | nul
  * against installed versions in ~/.nvm/versions/node/.
  */
 export function resolveNvmDefaultBin(home: string): string | null {
-  const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
+  const pathApi = process.platform === 'win32' ? path.win32 : path.posix;
+  const nvmDir = process.env.NVM_DIR || pathApi.join(home, '.nvm');
 
   try {
-    const alias = fs.readFileSync(path.join(nvmDir, 'alias', 'default'), 'utf8').trim();
+    const alias = fs.readFileSync(pathApi.join(nvmDir, 'alias', 'default'), 'utf8').trim();
     if (!alias) return null;
 
     const resolved = resolveNvmAlias(nvmDir, alias);
     if (!resolved) return null;
 
-    const versionsDir = path.join(nvmDir, 'versions', 'node');
+    const versionsDir = pathApi.join(nvmDir, 'versions', 'node');
     const entries = fs.readdirSync(versionsDir)
       .filter(entry => entry.startsWith('v'))
       .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
@@ -351,7 +410,7 @@ export function resolveNvmDefaultBin(home: string): string | null {
     const matched = findMatchingNvmVersion(entries, resolved);
 
     if (matched) {
-      const binDir = path.join(versionsDir, matched, 'bin');
+      const binDir = pathApi.join(versionsDir, matched, 'bin');
       if (fs.existsSync(binDir)) return binDir;
     }
   } catch {
@@ -364,6 +423,7 @@ export function resolveNvmDefaultBin(home: string): string | null {
 export function findClaudeCLIPath(pathValue?: string): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
+  const pathApi = isWindows ? path.win32 : path.posix;
 
   const customEntries = dedupePaths(parsePathEntries(pathValue));
 
@@ -374,15 +434,40 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
     }
   }
 
+  if (isWindows && pathValue && pathValue.trim()) {
+    const rawEntries = pathValue
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    for (const entry of rawEntries) {
+      const cliJsNearPath = resolveCliJsNearPathEntry(entry, true);
+      if (cliJsNearPath) {
+        return cliJsNearPath;
+      }
+
+      const base = entry.replace(/[\\/]+$/, '');
+      const candidateWin = `${base}\\node_modules\\@anthropic-ai\\claude-code\\cli.js`;
+      if (isExistingFile(candidateWin)) {
+        return candidateWin;
+      }
+
+      const candidatePosix = `${base}/node_modules/@anthropic-ai/claude-code/cli.js`;
+      if (isExistingFile(candidatePosix)) {
+        return candidatePosix;
+      }
+    }
+  }
+
   // On Windows, prefer native .exe, then cli.js. Avoid .cmd fallback
   // because it requires shell: true and breaks SDK stdio streaming.
   if (isWindows) {
     const exePaths: string[] = [
-      path.join(homeDir, '.claude', 'local', 'claude.exe'),
-      path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
-      path.join(homeDir, '.local', 'bin', 'claude.exe'),
+      pathApi.join(homeDir, '.claude', 'local', 'claude.exe'),
+      pathApi.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
+      pathApi.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
+      pathApi.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
+      pathApi.join(homeDir, '.local', 'bin', 'claude.exe'),
     ];
 
     for (const p of exePaths) {
@@ -401,26 +486,26 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   }
 
   const commonPaths: string[] = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    path.join(homeDir, '.volta', 'bin', 'claude'),
-    path.join(homeDir, '.asdf', 'shims', 'claude'),
-    path.join(homeDir, '.asdf', 'bin', 'claude'),
+    pathApi.join(homeDir, '.claude', 'local', 'claude'),
+    pathApi.join(homeDir, '.local', 'bin', 'claude'),
+    pathApi.join(homeDir, '.volta', 'bin', 'claude'),
+    pathApi.join(homeDir, '.asdf', 'shims', 'claude'),
+    pathApi.join(homeDir, '.asdf', 'bin', 'claude'),
     '/usr/local/bin/claude',
     '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-    path.join(homeDir, '.npm-global', 'bin', 'claude'),
+    pathApi.join(homeDir, 'bin', 'claude'),
+    pathApi.join(homeDir, '.npm-global', 'bin', 'claude'),
   ];
 
   const npmPrefix = getNpmGlobalPrefix();
   if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
+    commonPaths.push(pathApi.join(npmPrefix, 'bin', 'claude'));
   }
 
   // NVM: resolve default version bin when NVM_BIN env var is not available (GUI apps)
   const nvmBin = resolveNvmDefaultBin(homeDir);
   if (nvmBin) {
-    commonPaths.push(path.join(nvmBin, 'claude'));
+    commonPaths.push(pathApi.join(nvmBin, 'claude'));
   }
 
   for (const p of commonPaths) {
@@ -505,11 +590,16 @@ export function translateMsysPath(value: string): string {
     return value;
   }
 
-  // Match /c/... or /C/... (single letter drive)
-  const msysMatch = value.match(/^\/([a-zA-Z])(\/.*)?$/);
+  // Match common drive prefixes only (/c, /c/, /c/...)
+  const rootDriveMatch = value.match(/^\/([c-zC-Z])\/?$/);
+  if (rootDriveMatch) {
+    return `${rootDriveMatch[1].toUpperCase()}:${value.endsWith('/') ? '\\' : ''}`;
+  }
+
+  const msysMatch = value.match(/^\/([c-zC-Z])\/(.*)$/);
   if (msysMatch) {
     const driveLetter = msysMatch[1].toUpperCase();
-    const restOfPath = msysMatch[2] ?? '';
+    const restOfPath = `/${msysMatch[2]}`;
     // Convert forward slashes to backslashes for the rest of the path
     return `${driveLetter}:${restOfPath.replace(/\//g, '\\')}`;
   }
@@ -556,6 +646,7 @@ export function normalizePathForFilesystem(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
+  const preservePosixRoot = process.platform === 'win32' && value.startsWith('/');
   const expanded = normalizePathBeforeResolution(value);
   let normalized = expanded;
 
@@ -567,7 +658,16 @@ export function normalizePathForFilesystem(value: string): string {
     normalized = expanded;
   }
 
-  return normalizeWindowsPathPrefix(normalized);
+  const withoutPrefix = normalizeWindowsPathPrefix(normalized);
+
+  // Preserve direct POSIX-style rooted inputs (e.g. /usr/local/bin) on Windows hosts.
+  if ((preservePosixRoot || expanded.startsWith('/') || expanded.startsWith('$') || expanded.startsWith('%'))
+    && withoutPrefix.includes('\\')
+    && !/^[A-Za-z]:\\/.test(withoutPrefix)) {
+    return withoutPrefix.replace(/\\/g, '/');
+  }
+
+  return withoutPrefix;
 }
 
 /**

@@ -218,6 +218,31 @@ describe('FileContextManager', () => {
     manager.destroy();
   });
 
+  it('renders chips for attached files and removes non-current attachment chips', () => {
+    const app = createMockApp({ files: ['notes/drop.md'] });
+    const manager = new FileContextManager(
+      app,
+      containerEl as any,
+      inputEl,
+      createMockCallbacks()
+    );
+
+    expect(manager.attachFileFromPath('notes/drop.md')).toBe(true);
+
+    const chips = findAllByClass(containerEl, 'claudian-file-chip');
+    expect(chips.length).toBe(1);
+
+    const removeEls = findAllByClass(containerEl, 'claudian-file-chip-remove');
+    expect(removeEls.length).toBe(1);
+    removeEls[0].click();
+
+    expect(manager.getAttachedFiles().has('notes/drop.md')).toBe(false);
+    const indicator = findByClass(containerEl, 'claudian-file-indicator');
+    expect(indicator?.style.display).toBe('none');
+
+    manager.destroy();
+  });
+
   it('auto-attaches active file unless excluded by tag', () => {
     const fileCacheByPath = new Map<string, any>([
       ['notes/private.md', { frontmatter: { tags: ['private'] } }],

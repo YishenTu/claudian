@@ -560,7 +560,7 @@ describe('AgentManager', () => {
       // Vault has an agent file matching an init agent name
       mockFs.existsSync.mockReturnValue(true);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
-        if (dir.includes('.claude/agents')) {
+        if (dir.replace(/\\/g, '/').includes('.claude/agents')) {
           return [createMockDirent('custom.md', true)];
         }
         return [];

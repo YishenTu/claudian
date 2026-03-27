@@ -62,6 +62,10 @@
       "expandOutput": "Befehlsausgabe ausklappen",
       "running": "Wird ausgeführt...",
       "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
+    },
+    "fileDrop": {
+      "notice": "{count} Datei(en) zum Kontext hinzugefügt",
+      "overlay": "Datei hier ablegen, um zum Kontext hinzuzufügen"
     }
   },
   "settings": {
