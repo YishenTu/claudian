@@ -185,6 +185,13 @@ export interface ClaudianSettings {
   claudeCliPathsByHost: HostnameCliPaths;
   loadUserClaudeSettings: boolean;
 
+  // Provider selection
+  activeProvider: string;  // ProviderId — default provider for blank tabs and new conversations
+  codexEnabled: boolean;   // Whether the Codex provider is available
+  savedProviderModel: Partial<Record<string, string>>;
+  savedProviderEffort: Partial<Record<string, string>>;
+  savedProviderThinkingBudget: Partial<Record<string, string>>;
+
   // State (provider-specific, round-tripped opaquely)
   lastClaudeModel?: string;
   lastCustomModel?: string;

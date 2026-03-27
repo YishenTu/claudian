@@ -1,0 +1,12 @@
+{"type":"event","event":{"type":"thread.started","thread_id":"thread_def456"}}
+{"type":"event","event":{"type":"turn.started"}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_010","type":"agent_message","text":""}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_010","type":"agent_message","text":"I'll read the file and make the changes."}}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_011","type":"command_execution","command":"cat src/main.ts","aggregated_output":"","status":"in_progress"}}}
+{"type":"event","event":{"type":"item.updated","item":{"id":"item_011","type":"command_execution","command":"cat src/main.ts","aggregated_output":"import { Plugin } from 'obsidian';","status":"in_progress"}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_011","type":"command_execution","command":"cat src/main.ts","aggregated_output":"import { Plugin } from 'obsidian';\nexport default class Main extends Plugin {}","exit_code":0,"status":"completed"}}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_012","type":"file_change","changes":[{"path":"src/main.ts","kind":"update"}],"status":"completed"}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_012","type":"file_change","changes":[{"path":"src/main.ts","kind":"update"}],"status":"completed"}}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_013","type":"agent_message","text":""}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_013","type":"agent_message","text":"Done! I've updated the file."}}}
+{"type":"event","event":{"type":"turn.completed","usage":{"input_tokens":500,"cached_input_tokens":100,"output_tokens":120}}}

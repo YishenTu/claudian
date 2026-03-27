@@ -12,15 +12,17 @@ patchSetMaxListenersForElectron();
 import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
+import type { SharedAppStorage } from './core/bootstrap';
+import { DEFAULT_CLAUDIAN_SETTINGS } from './core/bootstrap';
 import { McpServerManager } from './core/mcp';
 import {
   type AppAgentManager,
   type AppPluginManager,
-  type AppStorageService,
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderCliResolver,
   type ProviderId,
   ProviderRegistry,
+  ProviderSettingsCoordinator,
 } from './core/providers';
 import type {
   ClaudianSettings,
@@ -36,6 +38,13 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
 import type { Locale } from './i18n/types';
+import {
+  type ClaudeStorageService,
+  createClaudeAgentManager,
+  createClaudeCliResolver,
+  createClaudePluginManager,
+  createClaudeStorage,
+} from './providers/claude/app';
 import { buildCursorContext } from './utils/editor';
 import { getHostnameKey } from './utils/env';
 import { getVaultPath } from './utils/path';
@@ -49,7 +58,8 @@ export default class ClaudianPlugin extends Plugin {
   mcpManager: McpServerManager;
   pluginManager: AppPluginManager;
   agentManager: AppAgentManager;
-  storage: AppStorageService;
+  storage: SharedAppStorage;
+  claudeStorage: ClaudeStorageService;
   cliResolver: ProviderCliResolver;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
@@ -57,18 +67,19 @@ export default class ClaudianPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    this.cliResolver = ProviderRegistry.createCliResolver();
+    // Claude-owned workspace services (explicit, not through provider registry)
+    this.cliResolver = createClaudeCliResolver();
 
-    // Initialize MCP manager (shared for agent + UI)
-    this.mcpManager = new McpServerManager(this.storage.mcp);
+    // Initialize MCP manager (Claude-owned storage surface)
+    this.mcpManager = new McpServerManager(this.claudeStorage.mcp);
     await this.mcpManager.loadServers();
 
-    // Initialize plugin and agent managers (provider-specific)
+    // Initialize plugin and agent managers (Claude-owned)
     const vaultPath = (this.app.vault.adapter as any).basePath;
-    this.pluginManager = ProviderRegistry.createPluginManager(vaultPath, this.storage);
+    this.pluginManager = createClaudePluginManager(vaultPath, this.claudeStorage);
     await this.pluginManager.loadPlugins();
 
-    this.agentManager = ProviderRegistry.createAgentManager(vaultPath, this.pluginManager);
+    this.agentManager = createClaudeAgentManager(vaultPath, this.pluginManager);
     await this.agentManager.loadAgents();
 
     this.registerView(
@@ -92,6 +103,14 @@ export default class ClaudianPlugin extends Plugin {
       id: 'inline-edit',
       name: 'Inline edit',
       editorCallback: async (editor: Editor, view: MarkdownView) => {
+        // Inline edit is Claude-only
+        const activeTab = this.getView()?.getActiveTab();
+        const activeProviderId = activeTab?.service?.providerId ?? activeTab?.providerId ?? this.settings.activeProvider;
+        if (activeProviderId !== 'claude') {
+          new Notice('Inline edit is only available with the Claude provider.');
+          return;
+        }
+
         const selectedText = editor.getSelection();
         const notePath = view.file?.path || 'unknown';
 
@@ -229,14 +248,18 @@ export default class ClaudianPlugin extends Plugin {
 
   /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
-    // Initialize storage service (handles migration if needed)
-    this.storage = ProviderRegistry.createStorageService(this);
+    // Initialize Claude storage (handles migration if needed)
+    this.claudeStorage = createClaudeStorage(this);
+    // The shared app storage is backed by the same StorageService instance
+    this.storage = this.claudeStorage;
+
     const { claudian } = await this.storage.initialize();
 
-    const slashCommands = await this.storage.loadAllSlashCommands();
+    // Load slash commands from Claude-owned storage
+    const slashCommands = await this.claudeStorage.loadAllSlashCommands();
 
     this.settings = {
-      ...ProviderRegistry.getDefaultSettings(),
+      ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
       slashCommands,
     } as ClaudianSettings;
@@ -247,9 +270,12 @@ export default class ClaudianPlugin extends Plugin {
       this.settings.permissionMode = 'normal';
     }
 
+    const didNormalizeProviderSelection = ProviderSettingsCoordinator.normalizeProviderSelection(
+      this.settings as unknown as Record<string, unknown>,
+    );
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
-    // Migrate legacy CLI paths to hostname-based paths (provider-specific)
+    // Migrate legacy CLI paths — intentionally Claude-only (Codex has no CLI paths)
     const hostname = getHostnameKey();
     const didMigrateCliPath = ProviderRegistry.getSettingsReconciler().migrateCliPaths(
       this.settings as unknown as Record<string, unknown>,
@@ -288,7 +314,13 @@ export default class ClaudianPlugin extends Plugin {
     this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
     const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
 
-    if (changed || didMigrateCliPath || didNormalizeModelVariants) {
+    // Project the active provider's saved model/effort/budget into top-level fields.
+    // Runs unconditionally — it's a no-op when savedProvider* maps are empty.
+    ProviderSettingsCoordinator.projectActiveProviderState(
+      this.settings as unknown as Record<string, unknown>,
+    );
+
+    if (changed || didMigrateCliPath || didNormalizeModelVariants || didNormalizeProviderSelection) {
       await this.saveSettings();
     }
 
@@ -320,13 +352,20 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   normalizeModelVariantSettings(): boolean {
-    return ProviderRegistry.getSettingsReconciler().normalizeModelVariantSettings(
+    return ProviderSettingsCoordinator.normalizeAllModelVariants(
       this.settings as unknown as Record<string, unknown>,
     );
   }
 
   /** Persists settings to storage. */
   async saveSettings() {
+    ProviderSettingsCoordinator.normalizeProviderSelection(
+      this.settings as unknown as Record<string, unknown>,
+    );
+    ProviderSettingsCoordinator.persistProjectedProviderState(
+      this.settings as unknown as Record<string, unknown>,
+    );
+
     // Save settings (excluding slashCommands which are stored separately)
     const {
       slashCommands: _,
@@ -425,7 +464,7 @@ export default class ClaudianPlugin extends Plugin {
     changed: boolean;
     invalidatedConversations: Conversation[];
   } {
-    return ProviderRegistry.getSettingsReconciler().reconcileModelWithEnvironment(
+    return ProviderSettingsCoordinator.reconcileAllProviders(
       this.settings as unknown as Record<string, unknown>,
       this.conversations,
       envText,
@@ -470,7 +509,7 @@ export default class ClaudianPlugin extends Plugin {
     providerId?: ProviderId;
     sessionId?: string;
   }): Promise<Conversation> {
-    const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+    const providerId = options?.providerId ?? this.settings.activeProvider as ProviderId;
     const sessionId = options?.sessionId;
     const conversationId = sessionId ?? this.generateConversationId();
     const conversation: Conversation = {

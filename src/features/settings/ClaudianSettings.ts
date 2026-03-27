@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
-import { ProviderRegistry } from '../../core/providers';
+import { type ProviderId, ProviderRegistry, ProviderSettingsCoordinator } from '../../core/providers';
 import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
@@ -88,6 +88,28 @@ export class ClaudianSettingTab extends PluginSettingTab {
     this.plugin.normalizeModelVariantSettings();
   }
 
+  /**
+   * Switch the active provider, saving the outgoing provider's model/effort/budget
+   * and restoring the incoming provider's values.
+   */
+  private switchActiveProvider(incoming: ProviderId): void {
+    const settings = this.plugin.settings;
+    const outgoing = settings.activeProvider as ProviderId;
+
+    if (outgoing === incoming) return;
+
+    ProviderSettingsCoordinator.persistProjectedProviderState(
+      settings as unknown as Record<string, unknown>,
+      outgoing,
+    );
+
+    settings.activeProvider = incoming;
+    ProviderSettingsCoordinator.projectProviderState(
+      settings as unknown as Record<string, unknown>,
+      incoming,
+    );
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -117,6 +139,48 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.display();
           });
       });
+
+    // -- Provider selection --
+    new Setting(containerEl)
+      .setName('Enable Codex provider')
+      .setDesc('Allow switching between Claude and Codex for new conversations.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.codexEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.codexEnabled = value;
+            if (!value) {
+              // Force active provider back to claude when disabling Codex
+              this.switchActiveProvider('claude');
+            }
+            await this.plugin.saveSettings();
+            if (!value) {
+              for (const view of this.plugin.getAllViews()) {
+                view.refreshModelSelector();
+              }
+            }
+            this.display();
+          })
+      );
+
+    if (this.plugin.settings.codexEnabled) {
+      new Setting(containerEl)
+        .setName('Active provider')
+        .setDesc('Default provider for blank tabs and new conversations. Persisted conversations always use their original provider.')
+        .addDropdown((dropdown) => {
+          dropdown.addOption('claude', 'Claude');
+          dropdown.addOption('codex', 'Codex');
+          dropdown
+            .setValue(this.plugin.settings.activeProvider)
+            .onChange(async (value: string) => {
+              this.switchActiveProvider(value as ProviderId);
+              await this.plugin.saveSettings();
+              for (const view of this.plugin.getAllViews()) {
+                view.refreshModelSelector();
+              }
+            });
+        });
+    }
 
     new Setting(containerEl).setName(t('settings.customization')).setHeading();
 
@@ -209,29 +273,33 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     if (this.plugin.settings.enableAutoTitleGeneration) {
-      new Setting(containerEl)
-        .setName(t('settings.titleModel.name'))
-        .setDesc(t('settings.titleModel.desc'))
-        .addDropdown((dropdown) => {
-          // Add "Auto" option (empty string = use default logic)
-          dropdown.addOption('', t('settings.titleModel.auto'));
+      // Title generation model setting is only relevant for Claude provider
+      const activeProvider = (this.plugin.settings.activeProvider ?? 'claude') as ProviderId;
+      if (activeProvider === 'claude') {
+        new Setting(containerEl)
+          .setName(t('settings.titleModel.name'))
+          .setDesc(t('settings.titleModel.desc'))
+          .addDropdown((dropdown) => {
+            // Add "Auto" option (empty string = use default logic)
+            dropdown.addOption('', t('settings.titleModel.auto'));
 
-          const uiConfig = ProviderRegistry.getChatUIConfig();
-          const models = uiConfig.getModelOptions(
-            this.plugin.settings as unknown as Record<string, unknown>,
-          );
+            const uiConfig = ProviderRegistry.getChatUIConfig();
+            const models = uiConfig.getModelOptions(
+              this.plugin.settings as unknown as Record<string, unknown>,
+            );
 
-          for (const model of models) {
-            dropdown.addOption(model.value, model.label);
-          }
+            for (const model of models) {
+              dropdown.addOption(model.value, model.label);
+            }
 
-          dropdown
-            .setValue(this.plugin.settings.titleGenerationModel || '')
-            .onChange(async (value) => {
-              this.plugin.settings.titleGenerationModel = value;
-              await this.plugin.saveSettings();
-            });
-        });
+            dropdown
+              .setValue(this.plugin.settings.titleGenerationModel || '')
+              .onChange(async (value) => {
+                this.plugin.settings.titleGenerationModel = value;
+                await this.plugin.saveSettings();
+              });
+          });
+      }
     }
 
     new Setting(containerEl)

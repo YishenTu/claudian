@@ -1,8 +1,7 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
-import type { ProviderCapabilities } from '../../../core/providers';
-import { DEFAULT_CHAT_PROVIDER_ID } from '../../../core/providers';
+import type { ProviderCapabilities, ProviderId } from '../../../core/providers';
 import { isSubagentToolName, isWriteEditTool, TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n';
@@ -50,7 +49,7 @@ export class MessageRenderer {
     this.rewindCallback = rewindCallback;
     this.forkCallback = forkCallback;
     this.getCapabilities = getCapabilities ?? (() => ({
-      providerId: DEFAULT_CHAT_PROVIDER_ID,
+      providerId: (plugin.settings.activeProvider ?? 'claude') as ProviderId,
       supportsPersistentRuntime: false,
       supportsNativeHistory: false,
       supportsPlanMode: false,

@@ -133,6 +133,11 @@ describe('types.ts', () => {
         openInMainTab: false,
         hiddenSlashCommands: [],
         effortLevel: 'high',
+        activeProvider: 'claude',
+        codexEnabled: false,
+        savedProviderModel: {},
+        savedProviderEffort: {},
+        savedProviderThinkingBudget: {},
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -175,6 +180,11 @@ describe('types.ts', () => {
         openInMainTab: false,
         hiddenSlashCommands: [],
         effortLevel: 'high',
+        activeProvider: 'claude',
+        codexEnabled: false,
+        savedProviderModel: {},
+        savedProviderEffort: {},
+        savedProviderThinkingBudget: {},
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -217,6 +227,11 @@ describe('types.ts', () => {
         openInMainTab: false,
         hiddenSlashCommands: [],
         effortLevel: 'high',
+        activeProvider: 'claude',
+        codexEnabled: false,
+        savedProviderModel: {},
+        savedProviderEffort: {},
+        savedProviderThinkingBudget: {},
       };
 
       expect(settings.lastClaudeModel).toBe('opus');

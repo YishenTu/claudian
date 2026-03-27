@@ -669,14 +669,28 @@ export class McpServerSelector {
   private mcpManager: McpServerManager | null = null;
   private enabledServers: Set<string> = new Set();
   private onChangeCallback: ((enabled: Set<string>) => void) | null = null;
+  private visible = true;
 
   constructor(parentEl: HTMLElement) {
     this.container = parentEl.createDiv({ cls: 'claudian-mcp-selector' });
     this.render();
   }
 
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    if (!visible) {
+      this.container.style.display = 'none';
+    } else {
+      this.updateDisplay();
+    }
+  }
+
   setMcpManager(manager: McpServerManager | null): void {
     this.mcpManager = manager;
+    if (!manager && this.enabledServers.size > 0) {
+      this.enabledServers.clear();
+      this.onChangeCallback?.(this.enabledServers);
+    }
     this.pruneEnabledServers();
     this.updateDisplay();
     this.renderDropdown();
@@ -845,8 +859,8 @@ export class McpServerSelector {
     const count = this.enabledServers.size;
     const hasServers = (this.mcpManager?.getServers().length || 0) > 0;
 
-    // Show/hide container based on whether there are servers
-    if (!hasServers) {
+    // Show/hide container based on whether there are servers and visibility
+    if (!hasServers || !this.visible) {
       this.container.style.display = 'none';
       return;
     }

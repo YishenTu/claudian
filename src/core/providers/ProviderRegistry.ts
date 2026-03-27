@@ -1,20 +1,13 @@
-import type { Plugin } from 'obsidian';
-
 import type ClaudianPlugin from '../../main';
 import { PROVIDER_REGISTRATIONS } from '../../providers';
 import type { ChatRuntime } from '../runtime';
-import type { ClaudianSettings } from '../types';
 import {
-  type AppAgentManager,
-  type AppPluginManager,
-  type AppStorageService,
   type CreateChatRuntimeOptions,
   DEFAULT_CHAT_PROVIDER_ID,
   type InlineEditService,
   type InstructionRefineService,
   type ProviderCapabilities,
   type ProviderChatUIConfig,
-  type ProviderCliResolver,
   type ProviderConversationHistoryService,
   type ProviderId,
   type ProviderRegistration,
@@ -31,6 +24,13 @@ function getProviderRegistration(providerId: ProviderId): ProviderRegistration {
   return registration;
 }
 
+/**
+ * Registry for chat-facing provider services.
+ *
+ * Bootstrap concerns (default settings, shared storage, CLI resolution,
+ * plugin/agent management) are handled explicitly in `main.ts` through
+ * `src/core/bootstrap/` and `src/providers/claude/app/`.
+ */
 export class ProviderRegistry {
   static createChatRuntime(options: CreateChatRuntimeOptions): ChatRuntime {
     const providerId = options.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
@@ -47,10 +47,6 @@ export class ProviderRegistry {
 
   static createInlineEditService(plugin: ClaudianPlugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InlineEditService {
     return getProviderRegistration(providerId).createInlineEditService(plugin);
-  }
-
-  static createCliResolver(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderCliResolver {
-    return getProviderRegistration(providerId).createCliResolver();
   }
 
   static getConversationHistoryService(
@@ -75,22 +71,6 @@ export class ProviderRegistry {
 
   static getSettingsReconciler(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderSettingsReconciler {
     return getProviderRegistration(providerId).settingsReconciler;
-  }
-
-  static getDefaultSettings(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ClaudianSettings {
-    return getProviderRegistration(providerId).defaultSettings;
-  }
-
-  static createStorageService(plugin: Plugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): AppStorageService {
-    return getProviderRegistration(providerId).createStorageService(plugin);
-  }
-
-  static createPluginManager(vaultPath: string, storage: AppStorageService, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): AppPluginManager {
-    return getProviderRegistration(providerId).createPluginManager(vaultPath, storage);
-  }
-
-  static createAgentManager(vaultPath: string, pluginManager: AppPluginManager, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): AppAgentManager {
-    return getProviderRegistration(providerId).createAgentManager(vaultPath, pluginManager);
   }
 
   static getRegisteredProviderIds(): ProviderId[] {

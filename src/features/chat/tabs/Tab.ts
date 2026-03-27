@@ -3,11 +3,11 @@ import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp';
 import {
-  DEFAULT_CHAT_PROVIDER_ID,
   type ProviderCapabilities,
   type ProviderChatUIConfig,
   type ProviderId,
   ProviderRegistry,
+  ProviderSettingsCoordinator,
 } from '../../../core/providers';
 import type { ChatRuntime } from '../../../core/runtime';
 import type { ChatMessage, Conversation, SlashCommand, StreamChunk } from '../../../core/types';
@@ -42,6 +42,14 @@ import {
 import type { TabData, TabDOMElements, TabId } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
 
+type TabProviderSettings = Record<string, unknown> & {
+  model: string;
+  thinkingBudget: string;
+  effortLevel: string;
+  permissionMode: string;
+  customContextLimits?: Record<string, number>;
+};
+
 export interface TabCreateOptions {
   plugin: ClaudianPlugin;
   mcpManager: McpServerManager;
@@ -66,7 +74,7 @@ function getStoredConversationProviderId(
     }
   }
 
-  return tab.service?.providerId ?? tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+  return tab.service?.providerId ?? tab.providerId ?? plugin.settings.activeProvider as ProviderId;
 }
 
 export function getTabProviderId(
@@ -98,6 +106,33 @@ function getTabChatUIConfig(
   return ProviderRegistry.getChatUIConfig(getTabProviderId(tab, plugin, conversation));
 }
 
+function getTabSettingsSnapshot(
+  tab: Pick<TabData, 'conversationId' | 'service' | 'providerId'>,
+  plugin: ClaudianPlugin,
+): TabProviderSettings {
+  return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    plugin.settings as unknown as Record<string, unknown>,
+    getTabProviderId(tab, plugin),
+  ) as TabProviderSettings;
+}
+
+async function updateTabProviderSettings(
+  tab: Pick<TabData, 'conversationId' | 'service' | 'providerId'>,
+  plugin: ClaudianPlugin,
+  update: (settings: TabProviderSettings) => void,
+): Promise<TabProviderSettings> {
+  const providerId = getTabProviderId(tab, plugin);
+  const snapshot = getTabSettingsSnapshot(tab, plugin);
+  update(snapshot);
+  ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+    plugin.settings as unknown as Record<string, unknown>,
+    providerId,
+    snapshot,
+  );
+  await plugin.saveSettings();
+  return snapshot;
+}
+
 function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
   const capabilities = getTabCapabilities(tab, plugin);
   tab.ui.modelSelector?.updateDisplay();
@@ -108,6 +143,25 @@ function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
     'claudian-input-plan-mode',
     plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,
   );
+}
+
+/**
+ * Hides or disables UI elements that the active provider does not support.
+ * Called after toolbar initialization and on provider switches.
+ */
+function applyProviderUIGating(tab: TabData, plugin: ClaudianPlugin): void {
+  const capabilities = getTabCapabilities(tab, plugin);
+  const isClaude = capabilities.providerId === 'claude';
+
+  // MCP UI is Claude-only (both toolbar selector and @-mention MCP suggestions)
+  if (!isClaude) {
+    tab.ui.mcpServerSelector?.clearEnabled();
+  }
+  tab.ui.mcpServerSelector?.setVisible(isClaude);
+  tab.ui.fileContextManager?.setMcpManager(isClaude ? plugin.mcpManager : null);
+
+  // Image attachments are Claude-only
+  tab.ui.imageContextManager?.setEnabled(isClaude);
 }
 
 function syncTabProviderServices(
@@ -123,11 +177,34 @@ function syncTabProviderServices(
   );
 }
 
+export function retargetBlankTabProvider(tab: TabData, plugin: ClaudianPlugin): void {
+  const activeProvider = plugin.settings.activeProvider as ProviderId;
+  const isBlankTab = !tab.conversationId && tab.state.messages.length === 0 && !tab.state.isStreaming;
+
+  if (!isBlankTab || tab.providerId === activeProvider) {
+    return;
+  }
+
+  if (tab.service && tab.service.providerId !== activeProvider) {
+    tab.service.cleanup();
+    tab.service = null;
+    tab.serviceInitialized = false;
+  }
+
+  tab.providerId = activeProvider;
+  syncTabProviderServices(tab, plugin);
+  tab.ui.slashCommandDropdown?.resetSdkSkillsCache();
+  tab.ui.modelSelector?.setReady(false);
+  refreshTabProviderUI(tab, plugin);
+  applyProviderUIGating(tab, plugin);
+}
+
 /**
  * Creates a new Tab instance with all required state.
  */
 export function createTab(options: TabCreateOptions): TabData {
   const {
+    plugin,
     containerEl,
     conversation,
     tabId,
@@ -167,7 +244,7 @@ export function createTab(options: TabCreateOptions): TabData {
   // Create initial TabData (service and controllers are lazy-initialized)
   const tab: TabData = {
     id,
-    providerId: conversation?.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
+    providerId: conversation?.providerId ?? plugin.settings.activeProvider as ProviderId,
     conversationId: conversation?.id ?? null,
     service: null,
     serviceInitialized: false,
@@ -505,16 +582,14 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => getTabChatUIConfig(tab, plugin),
     getCapabilities: () => getTabCapabilities(tab, plugin),
-    getSettings: () => {
-      const { model, thinkingBudget, effortLevel, permissionMode } = plugin.settings;
-      return { ...plugin.settings, model, thinkingBudget, effortLevel, permissionMode };
-    },
+    getSettings: () => getTabSettingsSnapshot(tab, plugin),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
     onModelChange: async (model: string) => {
       const uiConfig: ProviderChatUIConfig = getTabChatUIConfig(tab, plugin);
-      plugin.settings.model = model;
-      uiConfig.applyModelDefaults(model, plugin.settings);
-      await plugin.saveSettings();
+      const providerSettings = await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.model = model;
+        uiConfig.applyModelDefaults(model, settings);
+      });
       tab.ui.thinkingBudgetSelector?.updateDisplay();
       tab.ui.modelSelector?.updateDisplay();
       tab.ui.modelSelector?.renderOptions();
@@ -522,7 +597,10 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       // Recalculate context usage percentage for the new model's context window
       const currentUsage = tab.state.usage;
       if (currentUsage) {
-        const newContextWindow = uiConfig.getContextWindowSize(model, plugin.settings.customContextLimits);
+        const newContextWindow = uiConfig.getContextWindowSize(
+          model,
+          providerSettings.customContextLimits as Record<string, number> | undefined,
+        );
         const newPercentage = Math.min(100, Math.max(0, Math.round((currentUsage.contextTokens / newContextWindow) * 100)));
         tab.state.usage = {
           ...currentUsage,
@@ -533,12 +611,14 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
       }
     },
     onThinkingBudgetChange: async (budget: string) => {
-      (plugin.settings as unknown as Record<string, unknown>).thinkingBudget = budget;
-      await plugin.saveSettings();
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.thinkingBudget = budget;
+      });
     },
     onEffortLevelChange: async (effort: string) => {
-      (plugin.settings as unknown as Record<string, unknown>).effortLevel = effort;
-      await plugin.saveSettings();
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.effortLevel = effort;
+      });
     },
     onPermissionModeChange: async (mode: string) => {
       (plugin.settings as unknown as Record<string, unknown>).permissionMode = mode;
@@ -581,6 +661,9 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
   });
 
   refreshTabProviderUI(tab, plugin);
+
+  // Gate provider-specific UI elements
+  applyProviderUIGating(tab, plugin);
 }
 
 export interface InitializeTabUIOptions {
@@ -924,10 +1007,14 @@ export function initializeTabControllers(
         await initializeTabService(tab, plugin, mcpManager, conversation);
         setupServiceCallbacks(tab, plugin);
         refreshTabProviderUI(tab, plugin);
+        applyProviderUIGating(tab, plugin);
       },
     },
     {
-      onNewConversation: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
+      onNewConversation: () => {
+        retargetBlankTabProvider(tab, plugin);
+        ui.slashCommandDropdown?.resetSdkSkillsCache();
+      },
       onConversationLoaded: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
       onConversationSwitched: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
     }
@@ -1030,7 +1117,8 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     }
 
     // Check for # trigger first (empty input + # keystroke)
-    if (ui.instructionModeManager?.handleTriggerKey(e)) {
+    // Instruction refinement is not supported for all providers
+    if (getTabCapabilities(tab, plugin).providerId === 'claude' && ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
     }
 
@@ -1040,7 +1128,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    if (ui.instructionModeManager?.handleKeydown(e)) {
+    if (getTabCapabilities(tab, plugin).providerId === 'claude' && ui.instructionModeManager?.handleKeydown(e)) {
       return;
     }
 

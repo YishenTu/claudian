@@ -26,6 +26,7 @@
   "author": "Yishen Tu",
   "license": "MIT",
   "devDependencies": {
+    "@openai/codex-sdk": "^0.116.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^8.30.0",
@@ -39,6 +40,7 @@
     "jest-environment-jsdom": "^30.2.0",
     "obsidian": "latest",
     "ts-jest": "^29.4.6",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0"
   },
   "dependencies": {

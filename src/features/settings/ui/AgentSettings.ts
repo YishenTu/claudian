@@ -313,7 +313,7 @@ export class AgentSettings {
     let fresh: AgentDefinition | null;
     if (existingAgent) {
       try {
-        fresh = await this.plugin.storage.agents.load(existingAgent) ?? existingAgent;
+        fresh = await this.plugin.claudeStorage.agents.load(existingAgent) ?? existingAgent;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         new Notice(`Failed to load subagent "${existingAgent.name}": ${message}`);
@@ -334,14 +334,14 @@ export class AgentSettings {
   private async saveAgent(agent: AgentDefinition, existing: AgentDefinition | null): Promise<void> {
     if (existing && existing.name !== agent.name) {
       // Rename: save to new name-based path, then delete old file
-      await this.plugin.storage.agents.save({ ...agent, filePath: undefined });
+      await this.plugin.claudeStorage.agents.save({ ...agent, filePath: undefined });
       try {
-        await this.plugin.storage.agents.delete(existing);
+        await this.plugin.claudeStorage.agents.delete(existing);
       } catch {
         new Notice(t('settings.subagents.renameCleanupFailed', { name: existing.name }));
       }
     } else {
-      await this.plugin.storage.agents.save(agent);
+      await this.plugin.claudeStorage.agents.save(agent);
     }
 
     try {
@@ -358,7 +358,7 @@ export class AgentSettings {
   }
 
   private async deleteAgent(agent: AgentDefinition): Promise<void> {
-    await this.plugin.storage.agents.delete(agent);
+    await this.plugin.claudeStorage.agents.delete(agent);
 
     try {
       await this.plugin.agentManager.loadAgents();

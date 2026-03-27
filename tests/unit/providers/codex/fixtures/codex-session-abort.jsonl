@@ -1,0 +1,9 @@
+{"type":"event","event":{"type":"thread.started","thread_id":"thread_ghi789"}}
+{"type":"event","event":{"type":"turn.started"}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_020","type":"agent_message","text":""}}}
+{"type":"event","event":{"type":"item.updated","item":{"id":"item_020","type":"agent_message","text":"Starting to work on"}}}
+{"type":"event","event":{"type":"turn.failed","error":{"message":"Turn was cancelled"}}}
+{"type":"event","event":{"type":"turn.started"}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_021","type":"agent_message","text":""}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_021","type":"agent_message","text":"OK, what would you like me to do instead?"}}}
+{"type":"event","event":{"type":"turn.completed","usage":{"input_tokens":200,"cached_input_tokens":50,"output_tokens":30}}}

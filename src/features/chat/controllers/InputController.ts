@@ -101,7 +101,7 @@ export class InputController {
       return this.deps.plugin.getConversationSync(conversationId)?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
     }
 
-    return DEFAULT_CHAT_PROVIDER_ID;
+    return this.deps.plugin.settings.activeProvider as ProviderId;
   }
 
   private getActiveCapabilities(): ProviderCapabilities {
@@ -585,6 +585,11 @@ export class InputController {
       return;
     }
 
+    // Skip AI title generation for non-Claude providers (keep fallback title)
+    if (this.getActiveProviderId() !== 'claude') {
+      return;
+    }
+
     // Fire async AI title generation only if service available
     const titleService = this.deps.getTitleGenerationService();
     if (!titleService) {
@@ -661,6 +666,10 @@ export class InputController {
 
   async handleInstructionSubmit(rawInstruction: string): Promise<void> {
     const { plugin } = this.deps;
+
+    // Instruction refinement is Claude-only
+    if (this.getActiveProviderId() !== 'claude') return;
+
     const instructionRefineService = this.deps.getInstructionRefineService();
     const instructionModeManager = this.deps.getInstructionModeManager();
 

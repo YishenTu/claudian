@@ -758,12 +758,14 @@ export class ConversationController {
   async regenerateTitle(conversationId: string): Promise<void> {
     const { plugin } = this.deps;
     if (!plugin.settings.enableAutoTitleGeneration) return;
-    const titleService = this.deps.getTitleGenerationService();
-    if (!titleService) return;
 
-    // Get the full conversation from cache
+    // AI title generation is Claude-only
     const fullConv = await plugin.getConversationById(conversationId);
     if (!fullConv || fullConv.messages.length < 1) return;
+    if (fullConv.providerId && fullConv.providerId !== 'claude') return;
+
+    const titleService = this.deps.getTitleGenerationService();
+    if (!titleService) return;
 
     // Find first user message by role (not by index)
     const firstUserMsg = fullConv.messages.find(m => m.role === 'user');

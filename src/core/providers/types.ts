@@ -1,12 +1,9 @@
-import type { Plugin } from 'obsidian';
-
 import type ClaudianPlugin from '../../main';
 import type { CursorContext } from '../../utils/editor';
 import type { McpServerManager } from '../mcp';
 import type { ChatRuntime } from '../runtime';
 import type {
   AgentDefinition,
-  ClaudianSettings,
   Conversation,
   InstructionRefineResult,
   ManagedMcpServer,
@@ -38,19 +35,22 @@ export interface CreateChatRuntimeOptions {
   providerId?: ProviderId;
 }
 
+/**
+ * Chat-facing provider registration.
+ *
+ * This is intentionally limited to chat-lifecycle services.
+ * Shared bootstrap (defaults, storage) is in `src/core/bootstrap/`.
+ * Claude-only workspace services (CLI resolver, plugins, agents, commands,
+ * skills, MCP) live behind the Claude adaptor in `src/providers/claude/app/`.
+ */
 export interface ProviderRegistration {
   capabilities: ProviderCapabilities;
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
-  defaultSettings: ClaudianSettings;
   createRuntime: (options: Omit<CreateChatRuntimeOptions, 'providerId'>) => ChatRuntime;
   createTitleGenerationService: (plugin: ClaudianPlugin) => TitleGenerationService;
   createInstructionRefineService: (plugin: ClaudianPlugin) => InstructionRefineService;
   createInlineEditService: (plugin: ClaudianPlugin) => InlineEditService;
-  createCliResolver: () => ProviderCliResolver;
-  createStorageService: (plugin: Plugin) => AppStorageService;
-  createPluginManager: (vaultPath: string, storage: AppStorageService) => AppPluginManager;
-  createAgentManager: (vaultPath: string, pluginManager: AppPluginManager) => AppAgentManager;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
 }
@@ -69,7 +69,7 @@ export interface ProviderSettingsReconciler {
 }
 
 // ---------------------------------------------------------------------------
-// App-level service interfaces (provider-created, app-consumed)
+// App-level service interfaces
 // ---------------------------------------------------------------------------
 
 /** Tab manager state persisted across restarts. */
@@ -78,34 +78,21 @@ export interface AppTabManagerState {
   activeTabId: string | null;
 }
 
-/** Provider-created storage service consumed by the app layer. */
-export interface AppStorageService {
-  initialize(): Promise<{ claudian: Record<string, unknown> }>;
-  loadAllSlashCommands(): Promise<SlashCommand[]>;
-  saveClaudianSettings(settings: Record<string, unknown>): Promise<void>;
-  setTabManagerState(state: AppTabManagerState): Promise<void>;
-  getTabManagerState(): Promise<AppTabManagerState | null>;
-  getLegacyActiveConversationId(): Promise<string | null>;
-  clearLegacyActiveConversationId(): Promise<void>;
-  getPermissions(): Promise<unknown>;
-  updatePermissions(permissions: unknown): Promise<void>;
-  addAllowRule(rule: string): Promise<void>;
-  addDenyRule(rule: string): Promise<void>;
-  removePermissionRule(rule: string): Promise<void>;
-  sessions: AppSessionStorage;
-  mcp: AppMcpStorage;
-  ccSettings: unknown;
-  commands: AppCommandStorage;
-  skills: AppSkillStorage;
-  agents: AppAgentStorage;
-}
-
+/** Provider-neutral session metadata storage. */
 export interface AppSessionStorage {
   listMetadata(): Promise<SessionMetadata[]>;
   saveMetadata(meta: SessionMetadata): Promise<void>;
   deleteMetadata(id: string): Promise<void>;
   toSessionMetadata(conv: Conversation): SessionMetadata;
 }
+
+// ---------------------------------------------------------------------------
+// Claude-owned storage sub-interfaces
+//
+// These remain here as standalone types so the settings UI can reference them
+// through the Claude storage surface. They are NOT part of the shared
+// bootstrap storage contract (SharedAppStorage).
+// ---------------------------------------------------------------------------
 
 export interface AppMcpStorage {
   load(): Promise<ManagedMcpServer[]>;
@@ -129,7 +116,7 @@ export interface AppAgentStorage {
   delete(agent: AgentDefinition): Promise<void>;
 }
 
-/** Provider-created plugin manager consumed by the app layer. */
+/** Plugin manager interface (Claude-owned, consumed by app layer). */
 export interface AppPluginManager {
   loadPlugins(): Promise<void>;
   getPlugins(): PluginInfo[];
@@ -142,7 +129,7 @@ export interface AppPluginManager {
   disablePlugin(pluginId: string): Promise<void>;
 }
 
-/** Provider-created agent manager consumed by the app layer. */
+/** Agent manager interface (Claude-owned, consumed by app layer). */
 export interface AppAgentManager {
   loadAgents(): Promise<void>;
   getAvailableAgents(): AgentDefinition[];

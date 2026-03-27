@@ -1,6 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers';
 import type { RefineProgressCallback } from '../../../core/providers/types';
 import type { InstructionRefineResult } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -21,6 +22,13 @@ export class InstructionRefineService {
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
+  }
+
+  private getScopedSettings(): Record<string, unknown> {
+    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.plugin.settings as unknown as Record<string, unknown>,
+      'claude',
+    );
   }
 
   resetConversation(): void {
@@ -79,10 +87,11 @@ export class InstructionRefineService {
       return { success: false, error: missingNodeError };
     }
 
+    const settings = this.getScopedSettings();
     const options: Options = {
       cwd: vaultPath,
       systemPrompt: buildRefineSystemPrompt(this.existingInstructions),
-      model: this.plugin.settings.model,
+      model: settings.model as string,
       abortController: this.abortController,
       pathToClaudeCodeExecutable: resolvedClaudePath,
       env: {
@@ -93,7 +102,7 @@ export class InstructionRefineService {
       tools: [], // No tools needed for instruction refinement
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      settingSources: this.plugin.settings.loadUserClaudeSettings
+      settingSources: settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
       spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
@@ -103,11 +112,11 @@ export class InstructionRefineService {
       options.resume = this.sessionId;
     }
 
-    if (isAdaptiveThinkingModel(this.plugin.settings.model)) {
+    if (isAdaptiveThinkingModel(settings.model as string)) {
       options.thinking = { type: 'adaptive' };
-      options.effort = this.plugin.settings.effortLevel as EffortLevel;
+      options.effort = settings.effortLevel as EffortLevel;
     } else {
-      const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+      const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
       if (budgetConfig && budgetConfig.tokens > 0) {
         options.maxThinkingTokens = budgetConfig.tokens;
       }

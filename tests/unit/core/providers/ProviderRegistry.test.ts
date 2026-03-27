@@ -18,10 +18,6 @@ describe('ProviderRegistry', () => {
   });
 
   it('returns boundary services for the default provider', () => {
-    const cliResolver = ProviderRegistry.createCliResolver();
-    expect(cliResolver).toHaveProperty('resolve');
-    expect(cliResolver).toHaveProperty('reset');
-
     const historyService = ProviderRegistry.getConversationHistoryService();
     expect(historyService).toHaveProperty('hydrateConversationHistory');
 
@@ -41,16 +37,33 @@ describe('ProviderRegistry', () => {
     expect(uiConfig).toHaveProperty('getCustomModelIds');
   });
 
-  it('throws when the provider is not registered', () => {
-    expect(() => ProviderRegistry.createChatRuntime({
+  it('throws when an unknown provider is requested', () => {
+    expect(() => ProviderRegistry.getCapabilities(
+      'nonexistent' as any,
+    )).toThrow('Provider "nonexistent" is not registered.');
+  });
+
+  it('creates a Codex runtime', () => {
+    const runtime = ProviderRegistry.createChatRuntime({
       providerId: 'codex',
       plugin: {} as any,
       mcpManager: {} as any,
-    })).toThrow('Provider "codex" is not registered.');
+    });
+    expect(runtime.providerId).toBe('codex');
+  });
+
+  it('returns Codex capabilities', () => {
+    const caps = ProviderRegistry.getCapabilities('codex');
+    expect(caps.providerId).toBe('codex');
+    expect(caps.supportsPlanMode).toBe(false);
+    expect(caps.supportsFork).toBe(false);
+    expect(caps.supportsRewind).toBe(false);
+    expect(caps.reasoningControl).toBe('effort');
   });
 
   it('lists registered provider ids', () => {
     const ids = ProviderRegistry.getRegisteredProviderIds();
     expect(ids).toContain('claude');
+    expect(ids).toContain('codex');
   });
 });

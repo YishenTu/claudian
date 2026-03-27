@@ -28,7 +28,7 @@ describe('AgentSettings save orchestration', () => {
 
     plugin = {
       app: {},
-      storage: {
+      claudeStorage: {
         agents: {
           load: jest.fn(),
           save: saveMock,
@@ -71,7 +71,7 @@ describe('AgentSettings save orchestration', () => {
 
   it('shows notice and aborts when loading existing agent fails', async () => {
     const existing = createAgent('existing-agent', '.claude/agents/existing-agent.md');
-    plugin.storage.agents.load.mockRejectedValue(new Error('permission denied'));
+    plugin.claudeStorage.agents.load.mockRejectedValue(new Error('permission denied'));
 
     await (settings as any).openAgentModal(existing);
 

@@ -1,5 +1,9 @@
 export { ProviderRegistry } from './ProviderRegistry';
 export {
+  ProviderSettingsCoordinator,
+  type SettingsReconciliationResult,
+} from './ProviderSettingsCoordinator';
+export {
   type AppAgentManager,
   type AppAgentStorage,
   type AppCommandStorage,
@@ -7,7 +11,6 @@ export {
   type AppPluginManager,
   type AppSessionStorage,
   type AppSkillStorage,
-  type AppStorageService,
   type AppTabManagerState,
   type CreateChatRuntimeOptions,
   DEFAULT_CHAT_PROVIDER_ID,

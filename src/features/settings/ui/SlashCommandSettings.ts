@@ -395,7 +395,7 @@ export class SlashCommandSettings {
   }
 
   private storageFor(cmd: SlashCommand) {
-    return isSkill(cmd) ? this.plugin.storage.skills : this.plugin.storage.commands;
+    return isSkill(cmd) ? this.plugin.claudeStorage.skills : this.plugin.claudeStorage.commands;
   }
 
   private async saveCommand(cmd: SlashCommand, existing: SlashCommand | null): Promise<void> {
@@ -445,8 +445,8 @@ export class SlashCommandSettings {
       source: 'user',
     };
 
-    await this.plugin.storage.skills.save(skill);
-    await this.plugin.storage.commands.delete(cmd.id);
+    await this.plugin.claudeStorage.skills.save(skill);
+    await this.plugin.claudeStorage.commands.delete(cmd.id);
 
     await this.reloadCommands();
     this.render();
@@ -454,7 +454,7 @@ export class SlashCommandSettings {
   }
 
   private async reloadCommands(): Promise<void> {
-    this.plugin.settings.slashCommands = await this.plugin.storage.loadAllSlashCommands();
+    this.plugin.settings.slashCommands = await this.plugin.claudeStorage.loadAllSlashCommands();
   }
 
   public refresh(): void {

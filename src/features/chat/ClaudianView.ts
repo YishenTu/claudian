@@ -1,11 +1,11 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 
-import { ProviderRegistry } from '../../core/providers';
+import { ProviderRegistry, ProviderSettingsCoordinator } from '../../core/providers';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { LOGO_SVG } from './constants';
-import { getTabProviderId, TabBar, TabManager, updatePlanModeUI } from './tabs';
+import { getTabProviderId, retargetBlankTabProvider, TabBar, TabManager, updatePlanModeUI } from './tabs';
 import type { TabData, TabId } from './tabs/types';
 
 export class ClaudianView extends ItemView {
@@ -81,11 +81,19 @@ export class ClaudianView extends ItemView {
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
   refreshModelSelector(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      const model = this.plugin.settings.model;
+      retargetBlankTabProvider(tab, this.plugin);
       const providerId = getTabProviderId(tab, this.plugin);
+      const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+        this.plugin.settings as unknown as Record<string, unknown>,
+        providerId,
+      );
+      const model = providerSettings.model as string;
       const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
       const capabilities = ProviderRegistry.getCapabilities(providerId);
-      const contextWindow = uiConfig.getContextWindowSize(model, this.plugin.settings.customContextLimits);
+      const contextWindow = uiConfig.getContextWindowSize(
+        model,
+        providerSettings.customContextLimits as Record<string, number> | undefined,
+      );
 
       if (tab.state.usage) {
         const percentage = Math.min(100, Math.max(0, Math.round((tab.state.usage.contextTokens / contextWindow) * 100)));

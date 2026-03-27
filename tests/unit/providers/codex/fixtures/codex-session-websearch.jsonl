@@ -1,0 +1,7 @@
+{"type":"event","event":{"type":"thread.started","thread_id":"thread_jkl012"}}
+{"type":"event","event":{"type":"turn.started"}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_030","type":"web_search","query":"obsidian plugin API documentation"}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_030","type":"web_search","query":"obsidian plugin API documentation"}}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_031","type":"agent_message","text":""}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_031","type":"agent_message","text":"Based on my research, here's what I found."}}}
+{"type":"event","event":{"type":"turn.completed","usage":{"input_tokens":300,"cached_input_tokens":0,"output_tokens":50}}}

@@ -33,7 +33,7 @@ export class McpSettingsManager {
   }
 
   private async loadAndRender() {
-    this.servers = await this.plugin.storage.mcp.load();
+    this.servers = await this.plugin.claudeStorage.mcp.load();
     this.render();
   }
 
@@ -194,7 +194,7 @@ export class McpSettingsManager {
     server.disabledTools = newDisabledTools;
 
     try {
-      await this.plugin.storage.mcp.save(this.servers);
+      await this.plugin.claudeStorage.mcp.save(this.servers);
     } catch (error) {
       server.disabledTools = previous;
       throw error;
@@ -318,7 +318,7 @@ export class McpSettingsManager {
       this.servers.push(server);
     }
 
-    await this.plugin.storage.mcp.save(this.servers);
+    await this.plugin.claudeStorage.mcp.save(this.servers);
     await this.broadcastMcpReloadToAllViews();
     this.render();
     new Notice(existing ? `MCP server "${server.name}" updated` : `MCP server "${server.name}" added`);
@@ -355,7 +355,7 @@ export class McpSettingsManager {
       return;
     }
 
-    await this.plugin.storage.mcp.save(this.servers);
+    await this.plugin.claudeStorage.mcp.save(this.servers);
     await this.broadcastMcpReloadToAllViews();
     this.render();
 
@@ -368,7 +368,7 @@ export class McpSettingsManager {
 
   private async toggleServer(server: ManagedMcpServer) {
     server.enabled = !server.enabled;
-    await this.plugin.storage.mcp.save(this.servers);
+    await this.plugin.claudeStorage.mcp.save(this.servers);
     await this.broadcastMcpReloadToAllViews();
     this.render();
     new Notice(`MCP server "${server.name}" ${server.enabled ? 'enabled' : 'disabled'}`);
@@ -380,7 +380,7 @@ export class McpSettingsManager {
     }
 
     this.servers = this.servers.filter((s) => s.name !== server.name);
-    await this.plugin.storage.mcp.save(this.servers);
+    await this.plugin.claudeStorage.mcp.save(this.servers);
     await this.broadcastMcpReloadToAllViews();
     this.render();
     new Notice(`MCP server "${server.name}" deleted`);

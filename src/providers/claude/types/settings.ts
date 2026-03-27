@@ -1,9 +1,7 @@
 /** Claude provider settings and Claude Code compatibility types. */
 
-import {
-  type ClaudianSettings,
-  getDefaultBlockedCommands,
-} from '../../../core/types/settings';
+// Re-export shared defaults for backward compatibility within the Claude package
+export { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '../../../core/bootstrap/defaultSettings';
 
 /**
  * Platform-specific Claude CLI paths.
@@ -99,71 +97,8 @@ export interface CCSettings {
   [key: string]: unknown;
 }
 
-/** Default Claudian-specific settings. */
-export const DEFAULT_SETTINGS: ClaudianSettings = {
-  // User preferences
-  userName: '',
-
-  // Security
-  enableBlocklist: true,
-  allowExternalAccess: false,
-  blockedCommands: getDefaultBlockedCommands(),
-  permissionMode: 'yolo',
-
-  // Model & thinking
-  model: 'haiku',
-  thinkingBudget: 'off',
-  effortLevel: 'high',
-  enableAutoTitleGeneration: true,
-  titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  enableChrome: false,  // Disabled by default
-  enableBangBash: false,  // Disabled by default
-  enableOpus1M: false,  // Disabled by default
-  enableSonnet1M: false,  // Disabled by default
-
-  // Content settings
-  excludedTags: [],
-  mediaFolder: '',
-  systemPrompt: '',
-  allowedExportPaths: ['~/Desktop', '~/Downloads'],
-  persistentExternalContextPaths: [],
-
-  // Environment
-  environmentVariables: '',
-  envSnippets: [],
-  customContextLimits: {},
-
-  // UI settings
-  keyboardNavigation: {
-    scrollUpKey: 'w',
-    scrollDownKey: 's',
-    focusInputKey: 'i',
-  },
-
-  // Internationalization
-  locale: 'en',  // Default to English
-
-  // CLI paths
-  claudeCliPath: '',  // Legacy field (empty = not migrated)
-  claudeCliPathsByHost: {},  // Per-device paths keyed by hostname
-  loadUserClaudeSettings: true,  // Default on for compatibility
-
-  lastClaudeModel: 'haiku',
-  lastCustomModel: '',
-  lastEnvHash: '',
-
-  // Slash commands (loaded separately)
-  slashCommands: [],
-
-  // UI preferences
-  maxTabs: 3,  // Default to 3 tabs (safe resource usage)
-  tabBarPosition: 'input',  // Default to input mode (current behavior)
-  enableAutoScroll: true,  // Default to auto-scroll enabled
-  openInMainTab: false,  // Default to sidebar (current behavior)
-
-  // Slash commands
-  hiddenSlashCommands: [],  // No commands hidden by default
-};
+// Old DEFAULT_SETTINGS constant has been moved to src/core/bootstrap/defaultSettings.ts.
+// Re-exported above for backward compatibility within the Claude package.
 
 /** Default CC-compatible settings. */
 export const DEFAULT_CC_SETTINGS: CCSettings = {

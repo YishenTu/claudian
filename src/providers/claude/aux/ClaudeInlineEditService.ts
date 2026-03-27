@@ -1,6 +1,7 @@
 import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers';
 import type {
   InlineEditCursorRequest,
   InlineEditMode,
@@ -223,6 +224,13 @@ export class InlineEditService {
     this.plugin = plugin;
   }
 
+  private getScopedSettings(): Record<string, unknown> {
+    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.plugin.settings as unknown as Record<string, unknown>,
+      'claude',
+    );
+  }
+
   resetConversation(): void {
     this.sessionId = null;
   }
@@ -265,10 +273,11 @@ export class InlineEditService {
       return { success: false, error: missingNodeError };
     }
 
+    const settings = this.getScopedSettings();
     const options: Options = {
       cwd: vaultPath,
-      systemPrompt: getInlineEditSystemPrompt(this.plugin.settings.allowExternalAccess),
-      model: this.plugin.settings.model,
+      systemPrompt: getInlineEditSystemPrompt(settings.allowExternalAccess as boolean),
+      model: settings.model as string,
       abortController: this.abortController,
       pathToClaudeCodeExecutable: resolvedClaudePath,
       env: {
@@ -279,11 +288,11 @@ export class InlineEditService {
       tools: [...READ_ONLY_TOOLS],
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      settingSources: this.plugin.settings.loadUserClaudeSettings
+      settingSources: settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
       hooks: {
-        PreToolUse: this.plugin.settings.allowExternalAccess
+        PreToolUse: settings.allowExternalAccess
           ? [createReadOnlyHook()]
           : [createReadOnlyHook(), createVaultRestrictionHook(vaultPath)],
       },
@@ -294,11 +303,11 @@ export class InlineEditService {
       options.resume = this.sessionId;
     }
 
-    if (isAdaptiveThinkingModel(this.plugin.settings.model)) {
+    if (isAdaptiveThinkingModel(settings.model as string)) {
       options.thinking = { type: 'adaptive' };
-      options.effort = this.plugin.settings.effortLevel as EffortLevel;
+      options.effort = settings.effortLevel as EffortLevel;
     } else {
-      const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+      const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
       if (budgetConfig && budgetConfig.tokens > 0) {
         options.maxThinkingTokens = budgetConfig.tokens;
       }

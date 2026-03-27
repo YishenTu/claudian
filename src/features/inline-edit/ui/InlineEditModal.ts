@@ -4,8 +4,7 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import type { InlineEditMode, InlineEditService } from '../../../core/providers';
-import { DEFAULT_CHAT_PROVIDER_ID } from '../../../core/providers';
+import type { InlineEditMode, InlineEditService, ProviderId } from '../../../core/providers';
 import { ProviderRegistry } from '../../../core/providers';
 import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
@@ -294,7 +293,7 @@ class InlineEditController {
     const providerId = conversation?.providerId
       ?? activeTab?.service?.providerId
       ?? activeTab?.providerId
-      ?? DEFAULT_CHAT_PROVIDER_ID;
+      ?? plugin.settings.activeProvider as ProviderId;
     this.inlineEditService = ProviderRegistry.createInlineEditService(plugin, providerId);
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {

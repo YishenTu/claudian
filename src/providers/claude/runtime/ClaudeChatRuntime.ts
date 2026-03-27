@@ -31,6 +31,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { McpServerManager } from '../../../core/mcp';
+import { ProviderSettingsCoordinator } from '../../../core/providers';
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
@@ -58,7 +59,7 @@ import type {
   StreamChunk,
   ToolCallInfo,
 } from '../../../core/types';
-import type { PermissionMode } from '../../../core/types/settings';
+import type { ClaudianSettings, PermissionMode } from '../../../core/types/settings';
 import type ClaudianPlugin from '../../../main';
 import { stripCurrentNoteContext } from '../../../utils/context';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
@@ -408,7 +409,7 @@ export class ClaudianService implements ChatRuntime {
 
     if (resumeSessionId) {
       this.messageChannel.setSessionId(resumeSessionId);
-      this.sessionManager.setSessionId(resumeSessionId, this.plugin.settings.model);
+      this.sessionManager.setSessionId(resumeSessionId, this.getScopedSettings().model);
     }
 
     this.queryAbortController = new AbortController();
@@ -548,6 +549,13 @@ export class ClaudianService implements ChatRuntime {
   /**
    * Builds the base query options context from current state.
    */
+  private getScopedSettings(): ClaudianSettings {
+    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.plugin.settings as unknown as Record<string, unknown>,
+      this.providerId,
+    ) as unknown as ClaudianSettings;
+  }
+
   private buildQueryOptionsContext(vaultPath: string, cliPath: string): QueryOptionsContext {
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
@@ -555,7 +563,7 @@ export class ClaudianService implements ChatRuntime {
     return {
       vaultPath,
       cliPath,
-      settings: this.plugin.settings,
+      settings: this.getScopedSettings(),
       customEnv,
       enhancedPath,
       mcpManager: this.mcpManager,
@@ -726,9 +734,10 @@ export class ClaudianService implements ChatRuntime {
 
   /** @param modelOverride - Optional model override for cold-start queries */
   private getTransformOptions(modelOverride?: string) {
+    const settings = this.getScopedSettings();
     return {
-      intendedModel: modelOverride ?? this.plugin.settings.model,
-      customContextLimits: this.plugin.settings.customContextLimits,
+      intendedModel: modelOverride ?? settings.model,
+      customContextLimits: settings.customContextLimits,
     };
   }
 
@@ -1362,7 +1371,8 @@ export class ClaudianService implements ChatRuntime {
       return;
     }
 
-    const selectedModel = queryOptions?.model || this.plugin.settings.model;
+    const settings = this.getScopedSettings();
+    const selectedModel = queryOptions?.model || settings.model;
     const permissionMode = this.plugin.settings.permissionMode;
 
     // Model can always be updated dynamically
@@ -1377,7 +1387,7 @@ export class ClaudianService implements ChatRuntime {
 
     // Update thinking tokens for custom models (adaptive models don't need dynamic updates)
     if (!isAdaptiveThinkingModel(selectedModel)) {
-      const budgetConfig = THINKING_BUDGETS.find(b => b.value === this.plugin.settings.thinkingBudget);
+      const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
       const thinkingTokens = budgetConfig?.tokens ?? null;
       const currentThinking = this.currentConfig?.thinkingTokens ?? null;
       if (thinkingTokens !== currentThinking) {
@@ -1514,7 +1524,7 @@ export class ClaudianService implements ChatRuntime {
     images?: ImageAttachment[],
     queryOptions?: QueryOptions
   ): AsyncGenerator<StreamChunk> {
-    const selectedModel = queryOptions?.model || this.plugin.settings.model;
+    const selectedModel = queryOptions?.model || this.getScopedSettings().model;
 
     this.sessionManager.setPendingModel(selectedModel);
     this.vaultPath = cwd;
@@ -1686,7 +1696,7 @@ export class ClaudianService implements ChatRuntime {
       this.crashRecoveryAttempted = false;
     }
 
-    this.sessionManager.setSessionId(id, this.plugin.settings.model);
+    this.sessionManager.setSessionId(id, this.getScopedSettings().model);
 
     // Ensure query is ready with the new session ID and external contexts
     // Passing external contexts here prevents stale contexts from previous session
