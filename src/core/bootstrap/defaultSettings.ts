@@ -60,6 +60,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   claudeCliPathsByHost: {},
   codexCliPath: '',
   codexCliPathsByHost: {},
+  codexReasoningSummary: 'detailed',
   loadUserClaudeSettings: true,
 
   // Provider selection

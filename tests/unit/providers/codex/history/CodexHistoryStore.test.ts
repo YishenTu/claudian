@@ -872,6 +872,75 @@ describe('CodexHistoryStore', () => {
     });
   });
 
+  describe('parseCodexSessionContent - non-string tool output', () => {
+    it('does not crash when function_call_output has an array output (e.g. view_image)', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'turn-img' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Show me the image.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'view_image',
+            arguments: '{"path":"/tmp/cat.png"}',
+            call_id: 'call_img_1',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_img_1',
+            output: [{ type: 'input_image', image_url: 'data:image/jpeg;base64,abc' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Here is the image.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:05.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      // Should not throw and should produce messages
+      expect(messages.length).toBeGreaterThan(0);
+
+      // The tool call should be resolved
+      const assistantMsg = messages.find(
+        m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.id === 'call_img_1'),
+      );
+      expect(assistantMsg).toBeDefined();
+
+      const tc = assistantMsg!.toolCalls!.find(t => t.id === 'call_img_1');
+      expect(tc!.status).toBe('completed');
+      expect(typeof tc!.result).toBe('string');
+    });
+  });
+
   describe('parseCodexSessionContent - interrupted message granularity', () => {
     it('interrupted bubble with content sets isInterrupt on ChatMessage', () => {
       const content = [

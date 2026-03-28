@@ -1,0 +1,560 @@
+import type { StreamChunk } from '@/core/types';
+import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
+
+describe('CodexNotificationRouter', () => {
+  let router: CodexNotificationRouter;
+  let chunks: StreamChunk[];
+
+  beforeEach(() => {
+    chunks = [];
+    router = new CodexNotificationRouter((chunk) => chunks.push(chunk));
+  });
+
+  describe('text streaming', () => {
+    it('maps item/agentMessage/delta to a text chunk', () => {
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'Hello',
+      });
+
+      expect(chunks).toEqual([{ type: 'text', content: 'Hello' }]);
+    });
+
+    it('accumulates multiple deltas', () => {
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'msg1', delta: 'Hello',
+      });
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'msg1', delta: ' world',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'text', content: 'Hello' },
+        { type: 'text', content: ' world' },
+      ]);
+    });
+  });
+
+  describe('reasoning', () => {
+    it('does not emit a chunk when a reasoning item starts (deltas carry content)', () => {
+      router.handleNotification('item/started', {
+        item: { type: 'reasoning', id: 'rs1', summary: [], content: [] },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(0);
+    });
+
+    it('streams reasoning summary deltas as thinking chunks', () => {
+      router.handleNotification('item/reasoning/summaryTextDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'rs1',
+        summaryIndex: 0,
+        delta: '**Analyzing',
+      });
+      router.handleNotification('item/reasoning/summaryTextDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'rs1',
+        summaryIndex: 0,
+        delta: ' the code**',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'thinking', content: '**Analyzing' },
+        { type: 'thinking', content: ' the code**' },
+      ]);
+    });
+
+    it('ignores item/reasoning/summaryPartAdded (no-op boundary)', () => {
+      router.handleNotification('item/reasoning/summaryPartAdded', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'rs1',
+        summaryIndex: 0,
+      });
+
+      expect(chunks).toHaveLength(0);
+    });
+  });
+
+  describe('tool use', () => {
+    it('maps commandExecution item/started to tool_use chunk', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: '/bin/zsh -lc \'echo test\'',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'echo test' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        id: 'call_abc',
+        name: 'Bash',
+        input: { command: 'echo test' },
+      });
+    });
+
+    it('maps commandExecution item/completed to tool_result chunk', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: 'echo test',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'echo test' }],
+          aggregatedOutput: 'test\n',
+          exitCode: 0,
+          durationMs: 100,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        id: 'call_abc',
+        content: 'test\n',
+        isError: false,
+      });
+    });
+
+    it('marks tool_result as error when exitCode is non-zero', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: 'false',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [],
+          aggregatedOutput: 'Error: exit 1',
+          exitCode: 1,
+          durationMs: 10,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        isError: true,
+      });
+    });
+
+    it('maps fileChange item/started to tool_use chunk', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'fileChange',
+          id: 'call_fc1',
+          changes: [{ path: '/workspace/foo.ts', type: 'modify' }],
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        id: 'call_fc1',
+        name: 'apply_patch',
+      });
+    });
+  });
+
+  describe('imageView tool', () => {
+    it('maps imageView item/started to tool_use chunk', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'imageView',
+          id: 'call_img1',
+          path: '/vault/attachments/cat.png',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        id: 'call_img1',
+        name: 'Read',
+        input: { file_path: '/vault/attachments/cat.png' },
+      });
+    });
+
+    it('maps imageView item/completed to tool_result chunk', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'imageView',
+          id: 'call_img1',
+          path: '/vault/attachments/cat.png',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        id: 'call_img1',
+        isError: false,
+      });
+    });
+  });
+
+  describe('webSearch tool', () => {
+    it('maps webSearch item/started to tool_use chunk', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'webSearch',
+          id: 'ws_abc',
+          query: 'codex documentation',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        id: 'ws_abc',
+        name: 'WebSearch',
+        input: { query: 'codex documentation' },
+      });
+    });
+
+    it('maps webSearch item/completed to tool_result chunk', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'webSearch',
+          id: 'ws_abc',
+          query: 'codex documentation',
+          status: 'completed',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        id: 'ws_abc',
+        isError: false,
+      });
+    });
+
+    it('deduplicates webSearch started events for same id', () => {
+      router.handleNotification('item/started', {
+        item: { type: 'webSearch', id: 'ws_dup', query: 'first' },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('item/started', {
+        item: { type: 'webSearch', id: 'ws_dup', query: 'second' },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      const toolUseChunks = chunks.filter(c => c.type === 'tool_use');
+      expect(toolUseChunks).toHaveLength(1);
+    });
+  });
+
+  describe('collabAgentToolCall', () => {
+    it('maps collabAgentToolCall item/started to tool_use chunk', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'call_agent1',
+          tool: 'spawnAgent',
+          status: 'inProgress',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        id: 'call_agent1',
+        name: 'spawn_agent',
+      });
+    });
+
+    it('maps collabAgentToolCall item/completed to tool_result chunk', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'call_agent1',
+          tool: 'spawnAgent',
+          status: 'completed',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        id: 'call_agent1',
+        isError: false,
+      });
+    });
+  });
+
+  describe('token usage', () => {
+    it('maps thread/tokenUsage/updated to usage chunk', () => {
+      router.handleNotification('thread/tokenUsage/updated', {
+        threadId: 't1',
+        turnId: 'turn1',
+        tokenUsage: {
+          total: {
+            totalTokens: 20000,
+            inputTokens: 18000,
+            cachedInputTokens: 5000,
+            outputTokens: 2000,
+            reasoningOutputTokens: 500,
+          },
+          last: {
+            totalTokens: 10000,
+            inputTokens: 9000,
+            cachedInputTokens: 5000,
+            outputTokens: 1000,
+            reasoningOutputTokens: 200,
+          },
+          modelContextWindow: 200000,
+        },
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'usage',
+        usage: {
+          inputTokens: 18000,
+          cacheReadInputTokens: 5000,
+          cacheCreationInputTokens: 0,
+          contextWindow: 200000,
+        },
+      });
+    });
+  });
+
+  describe('turn completion', () => {
+    it('emits done on turn/completed with status completed', () => {
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toEqual([{ type: 'done' }]);
+    });
+
+    it('emits error then done on turn/completed with status failed', () => {
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: {
+          id: 'turn1',
+          items: [],
+          status: 'failed',
+          error: { message: 'Model error', codexErrorInfo: 'other', additionalDetails: null },
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'error', content: 'Model error' },
+        { type: 'done' },
+      ]);
+    });
+
+    it('emits done on turn/completed with status interrupted', () => {
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'interrupted', error: null },
+      });
+
+      expect(chunks).toEqual([{ type: 'done' }]);
+    });
+  });
+
+  describe('turn/plan/updated (update_plan tool)', () => {
+    it('emits tool_use and tool_result from plan notification', () => {
+      router.handleNotification('turn/plan/updated', {
+        threadId: 't1',
+        turnId: 'turn1',
+        explanation: null,
+        plan: [
+          { step: 'Research', status: 'inProgress' },
+          { step: 'Implement', status: 'pending' },
+          { step: 'Test', status: 'pending' },
+        ],
+      });
+
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        name: 'TodoWrite',
+        input: {
+          todos: [
+            { content: 'Research', status: 'in_progress' },
+            { content: 'Implement', status: 'pending' },
+            { content: 'Test', status: 'pending' },
+          ],
+        },
+      });
+      expect(chunks[1]).toMatchObject({
+        type: 'tool_result',
+        content: 'Plan updated',
+        isError: false,
+      });
+    });
+
+  });
+
+  describe('mcpToolCall', () => {
+    it('maps mcpToolCall item/started to tool_use chunk with server__tool name', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'mcpToolCall',
+          id: 'call_mcp1',
+          server: 'codex',
+          tool: 'list_mcp_resources',
+          status: 'inProgress',
+          arguments: {},
+          result: null,
+          error: null,
+          durationMs: null,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_use',
+        id: 'call_mcp1',
+        name: 'mcp__codex__list_mcp_resources',
+        input: {},
+      });
+    });
+
+    it('maps mcpToolCall item/completed to tool_result with content text', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'mcpToolCall',
+          id: 'call_mcp1',
+          server: 'codex',
+          tool: 'list_mcp_resources',
+          status: 'completed',
+          arguments: {},
+          result: { content: [{ type: 'text', text: '{"resources":[]}' }] },
+          error: null,
+          durationMs: 444,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        id: 'call_mcp1',
+        content: '{"resources":[]}',
+        isError: false,
+      });
+    });
+
+    it('maps failed mcpToolCall to error tool_result', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'mcpToolCall',
+          id: 'call_mcp2',
+          server: 'test',
+          tool: 'broken_tool',
+          status: 'failed',
+          arguments: {},
+          result: null,
+          error: 'Connection refused',
+          durationMs: 100,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        type: 'tool_result',
+        id: 'call_mcp2',
+        content: 'Connection refused',
+        isError: true,
+      });
+    });
+  });
+
+  describe('error notifications', () => {
+    it('emits error chunk for non-retryable error', () => {
+      router.handleNotification('error', {
+        error: { message: 'fatal error', codexErrorInfo: 'other', additionalDetails: null },
+        willRetry: false,
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([{ type: 'error', content: 'fatal error' }]);
+    });
+
+    it('does not emit error chunk for retryable errors', () => {
+      router.handleNotification('error', {
+        error: { message: 'Reconnecting... 1/5', codexErrorInfo: 'other', additionalDetails: null },
+        willRetry: true,
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toHaveLength(0);
+    });
+  });
+
+  describe('ignored notifications', () => {
+    it('ignores mcpServer/startupStatus/updated', () => {
+      router.handleNotification('mcpServer/startupStatus/updated', { name: 'test', status: 'ready' });
+      expect(chunks).toHaveLength(0);
+    });
+
+    it('ignores account/rateLimits/updated', () => {
+      router.handleNotification('account/rateLimits/updated', { rateLimits: {} });
+      expect(chunks).toHaveLength(0);
+    });
+
+    it('ignores userMessage item/started', () => {
+      router.handleNotification('item/started', {
+        item: { type: 'userMessage', id: 'u1', content: [{ type: 'text', text: 'hi' }] },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      expect(chunks).toHaveLength(0);
+    });
+  });
+});

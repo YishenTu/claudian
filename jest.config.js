@@ -11,7 +11,6 @@ const baseConfig = {
     '^@test/(.*)$': '<rootDir>/tests/$1',
     '^@anthropic-ai/claude-agent-sdk$': '<rootDir>/tests/__mocks__/claude-agent-sdk.ts',
     '^obsidian$': '<rootDir>/tests/__mocks__/obsidian.ts',
-    '^@openai/codex-sdk$': '<rootDir>/tests/__mocks__/codex-sdk.ts',
     '^@modelcontextprotocol/sdk/(.*)$': '<rootDir>/node_modules/@modelcontextprotocol/sdk/dist/cjs/$1',
   },
   transformIgnorePatterns: [

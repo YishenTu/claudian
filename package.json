@@ -26,7 +26,6 @@
   "author": "Yishen Tu",
   "license": "MIT",
   "devDependencies": {
-    "@openai/codex-sdk": "^0.116.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^8.30.0",

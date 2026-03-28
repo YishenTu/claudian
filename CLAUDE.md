@@ -9,7 +9,7 @@ Claudian - An Obsidian plugin that embeds Claude Code as a sidebar chat interfac
 - Product status: Claudian is a multi-provider product. Claude is the primary provider with full feature support. Codex is the second provider, supporting the essential chat lifecycle (send, stream, cancel, resume, history reload). Unsupported Codex features (fork, rewind, plan mode, inline edit, instructions, subagents, plugins, MCP, images) are gated in UI.
 - Architecture: `src/core/bootstrap/` provides shared app defaults and storage. `src/core/runtime/` and `src/core/providers/` provide the provider-neutral chat seam. `ProviderRegistration` is chat-facing only. `ProviderSettingsCoordinator` reconciles settings per-provider. Chat tabs/controllers depend on `ChatRuntime` and `ProviderCapabilities` for routing and feature gating.
 - Claude adaptor: `src/providers/claude/` owns runtime, prompt encoding, stream transforms, history hydration, CLI resolution, and auxiliary services. Claude-only workspace services (commands, skills, agents, plugins, MCP) are explicit in `src/providers/claude/app/`.
-- Codex adaptor: `src/providers/codex/` owns runtime (direct SDK streaming), prompt encoding, history reload (JSONL parsing), settings reconciliation, and no-op auxiliary services. Provider state: `threadId` and `sessionFilePath` in `providerState`.
+- Codex adaptor: `src/providers/codex/` owns runtime (`codex app-server` over stdio JSON-RPC), prompt encoding, history reload (JSONL parsing), settings reconciliation, and no-op auxiliary services. Runtime uses `CodexAppServerProcess` (process wrapper), `CodexRpcTransport` (JSON-RPC correlation), `CodexNotificationRouter` (stream chunk mapping), and `CodexServerRequestRouter` (approval/ask-user handling). Provider state: `threadId` and `sessionFilePath` in `providerState`.
 - `Conversation` carries `providerId` and opaque `providerState`. Claude-specific session fields are behind `ClaudeProviderState`. Codex-specific state is behind `CodexProviderState`. `StreamChunk` and `UsageInfo` are documented for provider-specific vs required variants; cache token fields are optional (Claude-specific).
 - Planning docs:
   - Target architecture: [`docs/multi-provider-architecture-plan.md`](docs/multi-provider-architecture-plan.md)
@@ -35,7 +35,7 @@ npm run test:watch # Run tests in watch mode
 | **core/bootstrap** | Shared app defaults and storage | `DEFAULT_CLAUDIAN_SETTINGS`, `SharedAppStorage` |
 | **providers/claude** | Claude SDK adaptor | `ClaudeChatRuntime`, `ClaudeQueryOptionsBuilder`, `ClaudeSessionManager`, `ClaudeMessageChannel`, `ClaudeCliResolver`, `ClaudeHistoryStore`, `ClaudeTurnEncoder`, `transformClaudeMessage`, aux services |
 | **providers/claude/app** | Claude-only workspace services | CLI resolver, plugin/agent managers, command/skill/MCP storage |
-| **providers/codex** | Codex SDK adaptor | `CodexChatRuntime`, `CodexSessionManager`, `CodexHistoryStore`, `encodeCodexTurn`, aux stubs |
+| **providers/codex** | Codex app-server adaptor | `CodexChatRuntime`, `CodexAppServerProcess`, `CodexRpcTransport`, `CodexNotificationRouter`, `CodexServerRequestRouter`, `CodexSessionManager`, `CodexHistoryStore`, `encodeCodexTurn`, aux stubs |
 | **features/chat** | Main sidebar interface | See [`src/features/chat/CLAUDE.md`](src/features/chat/CLAUDE.md) |
 | **features/inline-edit** | Inline edit modal | `InlineEditModal`, read-only tools |
 | **features/settings** | Settings tab | UI components for all settings |

@@ -1,5 +1,4 @@
-import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
 
 import { getInlineEditSystemPrompt } from '../../../core/prompt';
 import { ProviderSettingsCoordinator } from '../../../core/providers';
@@ -21,10 +20,8 @@ import {
 } from '../../../core/tools/toolNames';
 import type ClaudianPlugin from '../../../main';
 import { appendContextFiles } from '../../../utils/context';
-import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getPathAccessType, getVaultPath, type PathAccessType } from '../../../utils/path';
-import { createCustomSpawnFunction } from '../runtime/customSpawn';
-import { type EffortLevel, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types';
+import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 
 export type {
   InlineEditCursorRequest,
@@ -83,7 +80,6 @@ export function buildInlineEditPrompt(request: InlineEditRequest): string {
   if (request.mode === 'cursor') {
     prompt = buildCursorPrompt(request);
   } else {
-    // Instruction first for slash command detection
     const lineAttr = request.startLine && request.lineCount
       ? ` lines="${request.startLine}-${request.startLine + request.lineCount - 1}"`
       : '';
@@ -96,7 +92,6 @@ export function buildInlineEditPrompt(request: InlineEditRequest): string {
     ].join('\n');
   }
 
-  // User content first for slash command detection
   if (request.contextFiles && request.contextFiles.length > 0) {
     prompt = appendContextFiles(prompt, request.contextFiles);
   }
@@ -149,7 +144,6 @@ export function createVaultRestrictionHook(vaultPath: string): HookCallbackMatch
 
         const filePath = getPathFromToolInput(toolName, input.tool_input);
         if (!filePath) {
-          // Fail-closed: deny if we can't determine the path for a file tool
           return {
             continue: false,
             hookSpecificOutput: {
@@ -160,12 +154,10 @@ export function createVaultRestrictionHook(vaultPath: string): HookCallbackMatch
           };
         }
 
-        // Allows vault and ~/.claude/ paths (context/readwrite params are undefined)
         let accessType: PathAccessType;
         try {
           accessType = getPathAccessType(filePath, undefined, undefined, vaultPath);
         } catch {
-          // Fail-closed: deny if path validation throws (ENOENT, ELOOP, EPERM, etc.)
           return {
             continue: false,
             hookSpecificOutput: {
@@ -191,28 +183,6 @@ export function createVaultRestrictionHook(vaultPath: string): HookCallbackMatch
       },
     ],
   };
-}
-
-export function extractTextFromSdkMessage(message: any): string | null {
-  if (message.type === 'assistant' && message.message?.content) {
-    for (const block of message.message.content) {
-      if (block.type === 'text' && block.text) {
-        return block.text;
-      }
-    }
-  }
-
-  if (message.type === 'stream_event') {
-    const event = message.event;
-    if (event?.type === 'content_block_start' && event.content_block?.type === 'text') {
-      return event.content_block.text || null;
-    }
-    if (event?.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-      return event.delta.text || null;
-    }
-  }
-
-  return null;
 }
 
 export class InlineEditService {
@@ -245,7 +215,6 @@ export class InlineEditService {
     if (!this.sessionId) {
       return { success: false, error: 'No active conversation to continue' };
     }
-    // User content first for slash command detection
     let prompt = message;
     if (contextFiles && contextFiles.length > 0) {
       prompt = appendContextFiles(message, contextFiles);
@@ -254,86 +223,30 @@ export class InlineEditService {
   }
 
   private async sendMessage(prompt: string): Promise<InlineEditResult> {
+    const settings = this.getScopedSettings();
     const vaultPath = getVaultPath(this.plugin.app);
-    if (!vaultPath) {
-      return { success: false, error: 'Could not determine vault path' };
-    }
-
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
-    if (!resolvedClaudePath) {
-      return { success: false, error: 'Claude CLI not found. Please install Claude Code CLI.' };
-    }
 
     this.abortController = new AbortController();
 
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-    const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedClaudePath);
-    const missingNodeError = getMissingNodeError(resolvedClaudePath, enhancedPath);
-    if (missingNodeError) {
-      return { success: false, error: missingNodeError };
-    }
-
-    const settings = this.getScopedSettings();
-    const options: Options = {
-      cwd: vaultPath,
-      systemPrompt: getInlineEditSystemPrompt(settings.allowExternalAccess as boolean),
-      model: settings.model as string,
-      abortController: this.abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
-      env: {
-        ...process.env,
-        ...customEnv,
-        PATH: enhancedPath,
-      },
-      tools: [...READ_ONLY_TOOLS],
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      settingSources: settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-      hooks: {
-        PreToolUse: settings.allowExternalAccess
-          ? [createReadOnlyHook()]
-          : [createReadOnlyHook(), createVaultRestrictionHook(vaultPath)],
-      },
-      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
+    const hooks = {
+      PreToolUse: settings.allowExternalAccess
+        ? [createReadOnlyHook()]
+        : [createReadOnlyHook(), ...(vaultPath ? [createVaultRestrictionHook(vaultPath)] : [])],
     };
 
-    if (this.sessionId) {
-      options.resume = this.sessionId;
-    }
-
-    if (isAdaptiveThinkingModel(settings.model as string)) {
-      options.thinking = { type: 'adaptive' };
-      options.effort = settings.effortLevel as EffortLevel;
-    } else {
-      const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
-      if (budgetConfig && budgetConfig.tokens > 0) {
-        options.maxThinkingTokens = budgetConfig.tokens;
-      }
-    }
-
     try {
-      const response = agentQuery({ prompt, options });
-      let responseText = '';
+      const result = await runColdStartQuery({
+        plugin: this.plugin,
+        systemPrompt: getInlineEditSystemPrompt(settings.allowExternalAccess as boolean),
+        tools: [...READ_ONLY_TOOLS],
+        hooks,
+        resumeSessionId: this.sessionId ?? undefined,
+        abortController: this.abortController,
+        providerSettings: settings,
+      }, prompt);
 
-      for await (const message of response) {
-        if (this.abortController?.signal.aborted) {
-          await response.interrupt();
-          return { success: false, error: 'Cancelled' };
-        }
-
-        if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-          this.sessionId = message.session_id;
-        }
-
-        const text = extractTextFromSdkMessage(message);
-        if (text) {
-          responseText += text;
-        }
-      }
-
-      return parseInlineEditResponse(responseText);
+      this.sessionId = result.sessionId;
+      return parseInlineEditResponse(result.text);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       return { success: false, error: msg };

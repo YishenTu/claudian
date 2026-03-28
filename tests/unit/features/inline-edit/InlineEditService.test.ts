@@ -17,7 +17,6 @@ import {
   buildInlineEditPrompt,
   createReadOnlyHook,
   createVaultRestrictionHook,
-  extractTextFromSdkMessage,
   InlineEditService,
   parseInlineEditResponse,
 } from '@/providers/claude/aux/ClaudeInlineEditService';
@@ -912,73 +911,6 @@ describe('InlineEditService', () => {
       const result = await callHook(hook.hooks[0], { tool_name: 'Edit', tool_input: { file_path: 'test.md' } });
 
       expect(result.continue).toBe(false);
-    });
-  });
-
-  describe('extractTextFromMessage', () => {
-    it('should extract text from assistant message', () => {
-      const message = {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'Hello world' }],
-        },
-      };
-
-      const text = extractTextFromSdkMessage(message);
-
-      expect(text).toBe('Hello world');
-    });
-
-    it('should extract text from content_block_start stream event', () => {
-      const message = {
-        type: 'stream_event',
-        event: {
-          type: 'content_block_start',
-          content_block: { type: 'text', text: 'Starting...' },
-        },
-      };
-
-      const text = extractTextFromSdkMessage(message);
-
-      expect(text).toBe('Starting...');
-    });
-
-    it('should extract text from content_block_delta stream event', () => {
-      const message = {
-        type: 'stream_event',
-        event: {
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: ' more text' },
-        },
-      };
-
-      const text = extractTextFromSdkMessage(message);
-
-      expect(text).toBe(' more text');
-    });
-
-    it('should return null for non-text messages', () => {
-      const message = {
-        type: 'system',
-        subtype: 'init',
-      };
-
-      const text = extractTextFromSdkMessage(message);
-
-      expect(text).toBeNull();
-    });
-
-    it('should return null for thinking blocks', () => {
-      const message = {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'thinking', thinking: 'Let me think...' }],
-        },
-      };
-
-      const text = extractTextFromSdkMessage(message);
-
-      expect(text).toBeNull();
     });
   });
 

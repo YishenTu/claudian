@@ -2,7 +2,6 @@ export {
   buildInlineEditPrompt,
   createReadOnlyHook,
   createVaultRestrictionHook,
-  extractTextFromSdkMessage,
   type InlineEditCursorRequest,
   type InlineEditMode,
   type InlineEditRequest,

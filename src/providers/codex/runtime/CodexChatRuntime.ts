@@ -1,12 +1,3 @@
-import {
-  type ApprovalMode,
-  Codex,
-  type Input,
-  type ModelReasoningEffort,
-  type SandboxMode,
-  type ThreadEvent,
-  type ThreadOptions,
-} from '@openai/codex-sdk';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -32,7 +23,7 @@ import type {
   SessionUpdateResult,
   SubagentRuntimeState,
 } from '../../../core/runtime';
-import type { ChatMessage, Conversation, SlashCommand, StreamChunk, UsageInfo } from '../../../core/types';
+import type { ChatMessage, Conversation, SlashCommand, StreamChunk } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -40,27 +31,30 @@ import { CODEX_PROVIDER_CAPABILITIES } from '../capabilities';
 import { findCodexSessionFile } from '../history/CodexHistoryStore';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
 import { type CodexProviderState, getCodexState } from '../types';
-import { CodexFileTailEngine, getCodexContextWindow } from './CodexSessionFileTail';
+import { CodexAppServerProcess } from './CodexAppServerProcess';
+import type {
+  InitializeResult,
+  SandboxPolicy,
+  ThreadResumeResult,
+  ThreadStartResult,
+  TurnStartResult,
+  UserInput,
+} from './codexAppServerTypes';
+import { CodexNotificationRouter } from './CodexNotificationRouter';
+import { CodexRpcTransport } from './CodexRpcTransport';
+import { CodexServerRequestRouter } from './CodexServerRequestRouter';
 import { CodexSessionManager } from './CodexSessionManager';
 
-const DEFAULT_CONTEXT_WINDOW = 200_000;
+const SANDBOX_MAP: Record<string, { approvalPolicy: string; sandbox: string }> = {
+  yolo: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
+  normal: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+};
 
-const CODEX_SESSIONS_DIR = path.join(os.homedir(), '.codex', 'sessions');
-
-const EFFORT_MAP: Record<string, ModelReasoningEffort> = {
+const EFFORT_MAP: Record<string, string> = {
   low: 'low',
   medium: 'medium',
   high: 'high',
   xhigh: 'xhigh',
-};
-
-// Codex SDK handles approval internally in its subprocess — no approval events
-// are exposed through ThreadEvent. Using 'on-request' would cause the subprocess
-// to prompt for input we can't respond to. Both modes use 'never' approval;
-// sandbox mode provides the safety boundary instead.
-const PERMISSION_MODE_MAP: Record<string, { approvalPolicy: ApprovalMode; sandboxMode: SandboxMode }> = {
-  yolo: { approvalPolicy: 'never', sandboxMode: 'danger-full-access' },
-  normal: { approvalPolicy: 'never', sandboxMode: 'workspace-write' },
 };
 
 export class CodexChatRuntime implements ChatRuntime {
@@ -68,14 +62,22 @@ export class CodexChatRuntime implements ChatRuntime {
 
   private plugin: ClaudianPlugin;
   private session = new CodexSessionManager();
-  private codex: Codex | null = null;
-  private abortController: AbortController | null = null;
+  private process: CodexAppServerProcess | null = null;
+  private transport: CodexRpcTransport | null = null;
+  private notificationRouter: CodexNotificationRouter | null = null;
+  private serverRequestRouter = new CodexServerRequestRouter();
   private ready = false;
   private readyListeners = new Set<(ready: boolean) => void>();
-  private fileTailEngine: CodexFileTailEngine | null = null;
-  private tailPollingThreadId: string | null = null;
-  private instructionsFileDir: string | null = null;
   private clientConfigKey: string | null = null;
+  private currentTurnId: string | null = null;
+  private currentQueryThreadId: string | null = null;
+  private loadedThreadId: string | null = null;
+  private currentThreadPath: string | null = null;
+  private pendingTurnNotifications: Array<{ method: string; params: unknown }> = [];
+
+  // Chunk buffer: notifications push here, query() drains
+  private chunkBuffer: StreamChunk[] = [];
+  private chunkResolve: (() => void) | null = null;
 
   /* eslint-disable @typescript-eslint/no-unused-vars */
   private approvalCallback: ApprovalCallback | null = null;
@@ -87,6 +89,9 @@ export class CodexChatRuntime implements ChatRuntime {
   private autoTurnCallback: ((chunks: StreamChunk[]) => void) | null = null;
   private resumeCheckpoint: string | undefined;
   /* eslint-enable @typescript-eslint/no-unused-vars */
+
+  // Cancellation
+  private canceled = false;
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
@@ -117,6 +122,8 @@ export class CodexChatRuntime implements ChatRuntime {
   ): void {
     if (!conversation) {
       this.session.reset();
+      this.loadedThreadId = null;
+      this.currentThreadPath = null;
       return;
     }
 
@@ -125,6 +132,8 @@ export class CodexChatRuntime implements ChatRuntime {
 
     if (!threadId) {
       this.session.reset();
+      this.loadedThreadId = null;
+      this.currentThreadPath = null;
       return;
     }
 
@@ -140,10 +149,11 @@ export class CodexChatRuntime implements ChatRuntime {
     const promptKey = computeSystemPromptKey(promptSettings);
     const resolvedCodexPath = this.plugin.getResolvedCodexCliPath();
     const clientConfigKey = [promptKey, resolvedCodexPath ?? ''].join('::');
-    const shouldRebuild = !this.codex || options?.force === true || this.clientConfigKey !== clientConfigKey;
+    const shouldRebuild = !this.process || !this.transport || options?.force === true || this.clientConfigKey !== clientConfigKey;
 
     if (shouldRebuild) {
-      this.codex = this.createCodexClient(promptSettings, clientConfigKey, resolvedCodexPath);
+      await this.shutdownProcess();
+      await this.startAppServer(resolvedCodexPath, clientConfigKey);
     }
 
     this.setReady(true);
@@ -157,89 +167,127 @@ export class CodexChatRuntime implements ChatRuntime {
   ): AsyncGenerator<StreamChunk> {
     await this.ensureReady();
 
-    this.abortController = new AbortController();
+    this.canceled = false;
+    this.chunkBuffer = [];
+    this.chunkResolve = null;
+    this.currentQueryThreadId = null;
+    this.pendingTurnNotifications = [];
+    let inputBundle: CodexInputBundle | null = null;
 
-    const externalContextPaths = turn.request.externalContextPaths ?? queryOptions?.externalContextPaths;
-    const threadOptions = this.buildThreadOptions(queryOptions, externalContextPaths);
     const model = this.resolveModel(queryOptions);
+    const promptSettings = this.getSystemPromptSettings();
+    const promptText = buildSystemPrompt(promptSettings);
 
-    // Build SDK input (text + optional images via temp files)
-    const { input, cleanup } = createCodexInput(turn.prompt, turn.request.images);
+    // Set up notification router to push chunks
+    this.notificationRouter = new CodexNotificationRouter((chunk) => {
+      this.chunkBuffer.push(chunk);
+      if (this.chunkResolve) {
+        this.chunkResolve();
+        this.chunkResolve = null;
+      }
+    });
 
-    // Set up file-tail engine for hybrid consumption
-    const contextWindow = getCodexContextWindow(model);
-    this.fileTailEngine = new CodexFileTailEngine(CODEX_SESSIONS_DIR, contextWindow);
-    this.tailPollingThreadId = null;
-
-    const existingThreadId = this.session.getThreadId();
-    if (existingThreadId) {
-      await this.fileTailEngine.primeCursor(existingThreadId);
-    }
-
-    const thread = existingThreadId
-      ? this.codex!.resumeThread(existingThreadId, threadOptions)
-      : this.codex!.startThread(threadOptions);
-
-    let sdkUsageFallback: { input_tokens: number; cached_input_tokens: number; output_tokens: number } | null = null;
-    let sdkErrorMessage: string | null = null;
+    this.wireTransportHandlers();
 
     try {
-      const { events } = await thread.runStreamed(input, {
-        signal: this.abortController.signal,
-      });
+      // Thread lifecycle
+      const existingThreadId = this.session.getThreadId();
+      let threadId: string;
+      let threadPath: string | null = null;
 
-      if (existingThreadId) {
-        this.fileTailEngine.startPolling(existingThreadId);
-        this.tailPollingThreadId = existingThreadId;
+      if (existingThreadId && existingThreadId !== this.loadedThreadId) {
+        // Resume a persisted thread not yet loaded in this daemon
+        const resumeResult = await this.transport!.request<ThreadResumeResult>('thread/resume', {
+          threadId: existingThreadId,
+          baseInstructions: promptText,
+          persistExtendedHistory: true,
+        });
+        threadId = resumeResult.thread.id;
+        threadPath = resumeResult.thread.path;
+        this.loadedThreadId = threadId;
+      } else if (existingThreadId && existingThreadId === this.loadedThreadId) {
+        // Thread already loaded — just start a new turn
+        threadId = existingThreadId;
+      } else {
+        // New thread
+        const providerSettings = this.getProviderSettings();
+        const permissionMode = SANDBOX_MAP[providerSettings.permissionMode as string] ?? SANDBOX_MAP.normal;
+
+        const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
+          model: model ?? 'gpt-5.4',
+          cwd: getVaultPath(this.plugin.app) ?? undefined,
+          approvalPolicy: permissionMode.approvalPolicy,
+          sandbox: permissionMode.sandbox,
+          baseInstructions: promptText,
+          experimentalRawEvents: false,
+          persistExtendedHistory: true,
+        });
+        threadId = startResult.thread.id;
+        threadPath = startResult.thread.path;
+        this.loadedThreadId = threadId;
       }
 
-      for await (const event of events) {
-        // Drain file-tail events before processing SDK event
-        for (const chunk of this.fileTailEngine.collectPendingEvents()) {
-          yield chunk;
+      // Update session with thread info
+      this.session.setThread(threadId, threadPath ?? this.currentThreadPath ?? undefined);
+      if (threadPath) this.currentThreadPath = threadPath;
+      this.currentQueryThreadId = threadId;
+
+      // Build input
+      inputBundle = this.buildInput(turn.prompt, turn.request.images);
+
+      // Start turn
+      const providerSettings = this.getProviderSettings();
+      const effort = EFFORT_MAP[providerSettings.effortLevel as string] ?? 'medium';
+      const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
+      const permissionMode = SANDBOX_MAP[providerSettings.permissionMode as string] ?? SANDBOX_MAP.normal;
+      const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
+
+      const summary = (providerSettings.codexReasoningSummary as string) || 'detailed';
+
+      const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
+        threadId,
+        input: inputBundle.input,
+        model,
+        effort,
+        summary,
+        ...(sandboxPolicy ? { sandboxPolicy } : {}),
+      });
+      this.currentTurnId = turnResult.turn.id;
+      this.flushPendingTurnNotifications();
+
+      // Yield chunks until done or canceled
+      while (true) {
+        if (this.canceled) {
+          // Drain remaining chunks before exiting
+          while (this.chunkBuffer.length > 0) {
+            const chunk = this.chunkBuffer.shift()!;
+            yield chunk;
+            if (chunk.type === 'done') return;
+          }
+          yield { type: 'done' };
+          return;
         }
 
-        // SDK events: lifecycle only
-        const lifecycleChunks = this.mapLifecycleEvent(event);
-        for (const chunk of lifecycleChunks) {
-          // Capture fallback data but don't yield done/usage from SDK
-          if (chunk.type === 'error') {
-            yield chunk;
+        if (this.chunkBuffer.length === 0) {
+          await new Promise<void>((resolve) => {
+            this.chunkResolve = resolve;
+            if (this.chunkBuffer.length > 0 || this.canceled) {
+              resolve();
+              this.chunkResolve = null;
+            }
+          });
+        }
+
+        while (this.chunkBuffer.length > 0) {
+          const chunk = this.chunkBuffer.shift()!;
+          yield chunk;
+          if (chunk.type === 'done') {
+            return;
           }
         }
-
-        // Capture SDK-provided usage/error for fallback
-        if (event.type === 'turn.completed' && event.usage) {
-          sdkUsageFallback = event.usage;
-        }
-        if (event.type === 'turn.failed' && event.error) {
-          sdkErrorMessage = event.error.message;
-        }
-
-        // Drain file-tail events after processing SDK event
-        for (const chunk of this.fileTailEngine.collectPendingEvents()) {
-          yield chunk;
-        }
-      }
-
-      // Wait for file-tail to settle after SDK stream ends
-      if (this.tailPollingThreadId) {
-        await this.fileTailEngine.waitForSettle();
-        await this.fileTailEngine.stopPolling();
-        this.tailPollingThreadId = null;
-      }
-
-      // Final drain
-      for (const chunk of this.fileTailEngine.collectPendingEvents()) {
-        yield chunk;
       }
     } catch (err: unknown) {
-      if (this.fileTailEngine) {
-        await this.fileTailEngine.stopPolling();
-        this.tailPollingThreadId = null;
-      }
-
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (this.canceled) {
         yield { type: 'done' };
         return;
       }
@@ -248,23 +296,12 @@ export class CodexChatRuntime implements ChatRuntime {
       yield { type: 'done' };
       return;
     } finally {
-      cleanup();
+      inputBundle?.cleanup();
+      this.currentTurnId = null;
+      this.currentQueryThreadId = null;
+      this.pendingTurnNotifications = [];
 
-      // Fallback: emit usage if file-tail didn't
-      if (this.fileTailEngine && !this.fileTailEngine.usageEmitted && sdkUsageFallback) {
-        const usage = this.mapUsage(sdkUsageFallback, model);
-        yield { type: 'usage', usage, sessionId: this.session.getThreadId() };
-      }
-
-      // Fallback: emit done if file-tail didn't
-      if (this.fileTailEngine && !this.fileTailEngine.turnCompleteEmitted) {
-        if (sdkErrorMessage) {
-          yield { type: 'error', content: sdkErrorMessage };
-        }
-        yield { type: 'done' };
-      }
-
-      // Session file discovery (existing logic from turn.completed)
+      // Session file discovery fallback
       if (!this.session.getSessionFilePath()) {
         const threadId = this.session.getThreadId();
         if (threadId) {
@@ -274,25 +311,36 @@ export class CodexChatRuntime implements ChatRuntime {
           }
         }
       }
-
-      this.fileTailEngine = null;
-      this.tailPollingThreadId = null;
     }
   }
 
   cancel(): void {
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
+    this.canceled = true;
+    const threadId = this.session.getThreadId();
+    const turnId = this.currentTurnId;
+
+    if (this.transport && threadId && turnId) {
+      this.transport.request('turn/interrupt', { threadId, turnId }).catch(() => {
+        // best-effort
+      });
+    }
+
+    // Unblock the chunk-wait loop
+    if (this.chunkResolve) {
+      this.chunkResolve();
+      this.chunkResolve = null;
     }
   }
 
   resetSession(): void {
     this.session.reset();
-    this.codex = null;
-    this.tailPollingThreadId = null;
+    this.loadedThreadId = null;
+    this.currentThreadPath = null;
+    this.currentTurnId = null;
+    this.currentQueryThreadId = null;
+    this.pendingTurnNotifications = [];
     this.clientConfigKey = null;
-    this.cleanupInstructionsFile();
+    this.shutdownProcess().catch(() => {});
     this.setReady(false);
   }
 
@@ -315,10 +363,13 @@ export class CodexChatRuntime implements ChatRuntime {
   cleanup(): void {
     this.cancel();
     this.session.reset();
-    this.codex = null;
-    this.tailPollingThreadId = null;
+    this.loadedThreadId = null;
+    this.currentThreadPath = null;
+    this.currentTurnId = null;
+    this.currentQueryThreadId = null;
+    this.pendingTurnNotifications = [];
     this.clientConfigKey = null;
-    this.cleanupInstructionsFile();
+    this.shutdownProcess().catch(() => {});
     this.setReady(false);
     this.readyListeners.clear();
   }
@@ -332,6 +383,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
   setApprovalCallback(callback: ApprovalCallback | null): void {
     this.approvalCallback = callback;
+    this.serverRequestRouter.setApprovalCallback(callback);
   }
 
   setApprovalDismisser(dismisser: (() => void) | null): void {
@@ -340,6 +392,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
   setAskUserQuestionCallback(callback: AskUserQuestionCallback | null): void {
     this.askUserCallback = callback;
+    this.serverRequestRouter.setAskUserCallback(callback);
   }
 
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void {
@@ -363,7 +416,7 @@ export class CodexChatRuntime implements ChatRuntime {
     sessionInvalidated: boolean;
   }): SessionUpdateResult {
     const threadId = this.session.getThreadId();
-    const sessionFilePath = this.session.getSessionFilePath();
+    const sessionFilePath = this.session.getSessionFilePath() ?? this.currentThreadPath;
 
     const providerState: CodexProviderState = {
       ...(threadId ? { threadId } : {}),
@@ -410,167 +463,262 @@ export class CodexChatRuntime implements ChatRuntime {
     };
   }
 
-  private createCodexClient(
-    promptSettings: SystemPromptSettings,
-    clientConfigKey: string,
-    resolvedCodexPath: string | null,
-  ): Codex {
+  private getProviderSettings(): Record<string, unknown> {
+    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.plugin.settings as unknown as Record<string, unknown>,
+      this.providerId,
+    );
+  }
+
+  private resolveModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {
+    const providerSettings = this.getProviderSettings();
+    return queryOptions?.model ?? providerSettings.model as string | undefined;
+  }
+
+  private async startAppServer(resolvedCodexPath: string | null, clientConfigKey: string): Promise<void> {
+    const codexPath = resolvedCodexPath ?? 'codex';
+    const vaultPath = getVaultPath(this.plugin.app) ?? process.cwd();
+
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
     const baseEnv = Object.fromEntries(
       Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
     const enhancedPath = getEnhancedPath(customEnv.PATH);
 
-    const previousInstructionsFileDir = this.instructionsFileDir;
-    const previousClientConfigKey = this.clientConfigKey;
-    const previousCodex = this.codex;
+    const env: Record<string, string> = {
+      ...baseEnv,
+      ...customEnv,
+      PATH: enhancedPath,
+    };
 
-    const promptText = buildSystemPrompt(promptSettings);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-codex-instructions-'));
-    const instructionsFilePath = path.join(tempDir, 'base_instructions.md');
-    fs.writeFileSync(instructionsFilePath, promptText, 'utf8');
+    this.process = new CodexAppServerProcess(codexPath, vaultPath, env);
+    this.process.start();
 
-    try {
-      const codex = new Codex({
-        ...(resolvedCodexPath ? { codexPathOverride: resolvedCodexPath } : {}),
-        config: {
-          model_instructions_file: instructionsFilePath,
-        },
-        env: {
-          ...baseEnv,
-          ...customEnv,
-          PATH: enhancedPath,
-        },
+    this.transport = new CodexRpcTransport(this.process);
+    this.transport.start();
+
+    // Initialize
+    await this.transport.request<InitializeResult>('initialize', {
+      clientInfo: { name: 'claudian', version: '1.0.0' },
+      capabilities: { experimentalApi: true },
+    });
+
+    this.transport.notify('initialized');
+    this.clientConfigKey = clientConfigKey;
+  }
+
+  private wireTransportHandlers(): void {
+    if (!this.transport || !this.notificationRouter) return;
+
+    const router = this.notificationRouter;
+    const methods = [
+      'item/agentMessage/delta',
+      'item/started',
+      'item/completed',
+      'item/reasoning/summaryTextDelta',
+      'item/reasoning/summaryPartAdded',
+      'thread/tokenUsage/updated',
+      'turn/plan/updated',
+      'turn/completed',
+      'error',
+      'thread/started',
+      'thread/status/changed',
+      'turn/started',
+    ];
+
+    for (const method of methods) {
+      this.transport.onNotification(method, (params) => {
+        if (!this.routeNotification(method, params)) {
+          return;
+        }
+        router.handleNotification(method, params);
       });
+    }
 
-      this.instructionsFileDir = tempDir;
-      this.clientConfigKey = clientConfigKey;
+    // Server requests (approvals, ask-user)
+    const requestMethods = [
+      'item/commandExecution/requestApproval',
+      'item/fileChange/requestApproval',
+      'item/permissions/requestApproval',
+      'item/tool/requestUserInput',
+    ];
 
-      if (previousInstructionsFileDir && previousInstructionsFileDir !== tempDir) {
-        this.removeInstructionsDirectory(previousInstructionsFileDir);
-      }
-
-      return codex;
-    } catch (error) {
-      this.removeInstructionsDirectory(tempDir);
-      this.instructionsFileDir = previousInstructionsFileDir;
-      this.clientConfigKey = previousClientConfigKey;
-      this.codex = previousCodex;
-
-      const detail = error instanceof Error ? error.message : 'Unknown Codex initialization error';
-      throw new Error(
-        `Failed to initialize Codex. Install \`codex\` locally and ensure it is available on PATH, or set the Codex CLI path in settings. ${detail}`,
-      );
+    for (const method of requestMethods) {
+      this.transport.onServerRequest(method, (params) => {
+        return this.serverRequestRouter.handleServerRequest(method, params);
+      });
     }
   }
 
-  private cleanupInstructionsFile(): void {
-    if (!this.instructionsFileDir) {
+  private async shutdownProcess(): Promise<void> {
+    if (this.transport) {
+      this.transport.dispose();
+      this.transport = null;
+    }
+    if (this.process) {
+      await this.process.shutdown();
+      this.process = null;
+    }
+    this.notificationRouter = null;
+    this.currentTurnId = null;
+    this.currentQueryThreadId = null;
+    this.pendingTurnNotifications = [];
+    this.loadedThreadId = null;
+  }
+
+  private resolveExternalContextPaths(
+    turn: PreparedChatTurn,
+    queryOptions?: ChatRuntimeQueryOptions,
+  ): string[] {
+    const externalContextPaths = turn.request.externalContextPaths ?? queryOptions?.externalContextPaths ?? [];
+    return [...new Set(externalContextPaths.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+  }
+
+  private buildTurnSandboxPolicy(
+    externalContextPaths: string[],
+    sandboxMode: string,
+  ): SandboxPolicy | undefined {
+    if (sandboxMode !== 'workspace-write' || externalContextPaths.length === 0) {
+      return undefined;
+    }
+
+    const writableRoots = [
+      getVaultPath(this.plugin.app),
+      ...externalContextPaths,
+      path.join(os.homedir(), '.codex', 'memories'),
+      os.tmpdir(),
+      '/tmp',
+      process.env.TMPDIR,
+    ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+    return {
+      type: 'workspaceWrite',
+      writableRoots: [...new Set(writableRoots)],
+      readOnlyAccess: { type: 'fullAccess' },
+      networkAccess: false,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+    };
+  }
+
+  private routeNotification(
+    method: string,
+    params: unknown,
+  ): boolean {
+    const scope = this.extractNotificationScope(method, params);
+    if (!scope) {
+      return true;
+    }
+
+    if (!this.currentQueryThreadId || scope.threadId !== this.currentQueryThreadId) {
+      return false;
+    }
+
+    if (!this.currentTurnId) {
+      this.pendingTurnNotifications.push({ method, params });
+      return false;
+    }
+
+    if (scope.turnId !== this.currentTurnId) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private flushPendingTurnNotifications(): void {
+    if (!this.notificationRouter || !this.currentTurnId) {
+      this.pendingTurnNotifications = [];
       return;
     }
 
-    this.removeInstructionsDirectory(this.instructionsFileDir);
-    this.instructionsFileDir = null;
+    const pending = this.pendingTurnNotifications;
+    this.pendingTurnNotifications = [];
+
+    for (const notification of pending) {
+      const scope = this.extractNotificationScope(notification.method, notification.params);
+      if (!scope) {
+        this.notificationRouter.handleNotification(notification.method, notification.params);
+        continue;
+      }
+
+      if (
+        scope.threadId === this.currentQueryThreadId
+        && scope.turnId === this.currentTurnId
+      ) {
+        this.notificationRouter.handleNotification(notification.method, notification.params);
+      }
+    }
   }
 
-  private removeInstructionsDirectory(dirPath: string): void {
+  private extractNotificationScope(
+    method: string,
+    params: unknown,
+  ): { threadId: string; turnId: string } | null {
+    if (!params || typeof params !== 'object') {
+      return null;
+    }
+
+    const notification = params as Record<string, unknown>;
+    const threadId = typeof notification.threadId === 'string' ? notification.threadId : null;
+
+    if (method === 'turn/completed') {
+      const turn = notification.turn;
+      const turnId = turn && typeof turn === 'object' && typeof (turn as Record<string, unknown>).id === 'string'
+        ? (turn as Record<string, unknown>).id as string
+        : null;
+
+      return threadId && turnId ? { threadId, turnId } : null;
+    }
+
+    const turnId = typeof notification.turnId === 'string' ? notification.turnId : null;
+    return threadId && turnId ? { threadId, turnId } : null;
+  }
+
+  private buildInput(text: string, images?: ImageAttachment[]): CodexInputBundle {
+    const input: UserInput[] = [];
+    let tempDir: string | null = null;
+
+    const cleanup = (): void => {
+      if (!tempDir) {
+        return;
+      }
+
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    };
+
     try {
-      fs.rmSync(dirPath, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  }
+      if (images && images.length > 0) {
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-codex-images-'));
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i];
+          if (!img.mediaType.startsWith('image/')) continue;
 
-  private resolveModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {
-    const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
-      this.providerId,
-    );
-    return queryOptions?.model ?? providerSettings.model as string | undefined;
-  }
-
-  private buildThreadOptions(
-    queryOptions?: ChatRuntimeQueryOptions,
-    additionalDirectories?: string[],
-  ): ThreadOptions {
-    const vaultPath = getVaultPath(this.plugin.app);
-    const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
-      this.providerId,
-    );
-    const model = queryOptions?.model ?? providerSettings.model as string;
-    const effort = EFFORT_MAP[providerSettings.effortLevel as string] ?? 'medium';
-    const permissionMode = PERMISSION_MODE_MAP[providerSettings.permissionMode as string]
-      ?? PERMISSION_MODE_MAP.normal;
-
-    return {
-      model,
-      workingDirectory: vaultPath ?? undefined,
-      sandboxMode: permissionMode.sandboxMode,
-      modelReasoningEffort: effort,
-      approvalPolicy: permissionMode.approvalPolicy,
-      skipGitRepoCheck: true,
-      additionalDirectories,
-    };
-  }
-
-  /**
-   * SDK events now only drive lifecycle transitions.
-   * Content (text, thinking, tools) comes from file-tail.
-   */
-  private mapLifecycleEvent(event: ThreadEvent): StreamChunk[] {
-    const chunks: StreamChunk[] = [];
-
-    switch (event.type) {
-      case 'thread.started':
-        if (event.thread_id) {
-          this.session.setThread(event.thread_id);
-          if (this.fileTailEngine && !this.tailPollingThreadId) {
-            this.fileTailEngine.resetForNewTurn();
-            this.fileTailEngine.startPolling(event.thread_id);
-            this.tailPollingThreadId = event.thread_id;
-          }
+          const filename = toAttachmentFilename(img, i);
+          const filePath = path.join(tempDir, `${i + 1}-${filename}`);
+          fs.writeFileSync(filePath, Buffer.from(img.data, 'base64'));
+          input.push({ type: 'localImage', path: filePath });
         }
-        break;
+      }
 
-      case 'turn.completed':
-        // Usage and done are handled by file-tail + fallback in finally block
-        break;
+      if (text) {
+        input.push({ type: 'text', text, text_elements: [] });
+      }
 
-      case 'turn.failed':
-        // Error and done are handled by file-tail + fallback in finally block
-        break;
-
-      case 'error':
-        chunks.push({ type: 'error', content: (event as { message?: string }).message ?? 'Unknown error' });
-        break;
-
-      default:
-        break;
+      return { input, cleanup };
+    } catch (error) {
+      cleanup();
+      throw error;
     }
-
-    return chunks;
-  }
-
-  private mapUsage(
-    sdkUsage: { input_tokens: number; cached_input_tokens: number; output_tokens: number },
-    model?: string,
-  ): UsageInfo {
-    const contextTokens = sdkUsage.input_tokens + sdkUsage.cached_input_tokens;
-    const contextWindow = getCodexContextWindow(model) || DEFAULT_CONTEXT_WINDOW;
-    return {
-      inputTokens: sdkUsage.input_tokens,
-      cacheCreationInputTokens: 0,
-      cacheReadInputTokens: sdkUsage.cached_input_tokens,
-      contextWindow,
-      contextTokens,
-      percentage: contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0,
-    };
   }
 }
 
 // ---------------------------------------------------------------------------
-// Image attachment → temp file bridge
+// Image attachment helpers
 // ---------------------------------------------------------------------------
 
 interface ImageAttachment {
@@ -580,7 +728,7 @@ interface ImageAttachment {
 }
 
 interface CodexInputBundle {
-  input: Input;
+  input: UserInput[];
   cleanup: () => void;
 }
 
@@ -592,49 +740,11 @@ function toAttachmentFilename(attachment: ImageAttachment, index: number): strin
   return `${base}.${extension}`;
 }
 
-export function createCodexInput(
-  text: string,
-  images?: ImageAttachment[],
-): CodexInputBundle {
-  if (!images || images.length === 0) {
-    return { input: text, cleanup: () => {} };
-  }
-
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-codex-images-'));
-  const cleanup = () => {
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  };
-
-  try {
-    const input: Exclude<Input, string> = [];
-
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i];
-      if (!img.mediaType.startsWith('image/')) continue;
-
-      const filename = `${i + 1}-${toAttachmentFilename(img, i)}`;
-      const filePath = path.join(tempDir, filename);
-      fs.writeFileSync(filePath, Buffer.from(img.data, 'base64'));
-      input.push({ type: 'local_image', path: filePath });
-    }
-
-    if (text) {
-      input.push({ type: 'text', text });
-    }
-
-    return { input, cleanup };
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
-}
+// Re-export for backward compatibility with existing tests
+export { toAttachmentFilename as _toAttachmentFilename };
 
 // ---------------------------------------------------------------------------
-// Interrupt kind classification
+// Interrupt kind classification (preserved for history parsing)
 // ---------------------------------------------------------------------------
 
 export type CodexInterruptKind = 'user_request' | 'tool_use' | 'compaction_canceled';

@@ -12,6 +12,7 @@
 const TOOL_NAME_MAP: Record<string, string> = {
   command_execution: 'Bash',
   shell_command: 'Bash',
+  shell: 'Bash',
   exec_command: 'Bash',
   update_plan: 'TodoWrite',
   request_user_input: 'AskUserQuestion',
@@ -49,6 +50,7 @@ export function normalizeCodexToolInput(
   switch (rawName) {
     case 'command_execution':
     case 'shell_command':
+    case 'shell':
     case 'exec_command':
       return { command: (input.command ?? input.cmd ?? '') as string };
 
@@ -80,10 +82,11 @@ function normalizeUpdatePlanTodos(input: Record<string, unknown>): Array<Record<
   return plan.map((entry: unknown) => {
     if (!entry || typeof entry !== 'object') return { id: '', title: '', status: 'pending' };
     const item = entry as Record<string, unknown>;
+    const text = String(item.step ?? item.title ?? item.content ?? '');
     return {
       id: String(item.id ?? ''),
-      content: String(item.title ?? item.content ?? ''),
-      activeForm: String(item.title ?? item.content ?? ''),
+      content: text,
+      activeForm: text,
       status: String(item.status ?? 'pending'),
     };
   });

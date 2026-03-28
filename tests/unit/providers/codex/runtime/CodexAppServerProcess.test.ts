@@ -1,0 +1,181 @@
+import type { ChildProcess } from 'child_process';
+import { EventEmitter, Readable, Writable } from 'stream';
+
+jest.mock('child_process', () => ({
+  spawn: jest.fn(),
+}));
+
+import { spawn } from 'child_process';
+
+import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
+
+const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+
+function createMockProcess(): ChildProcess {
+  const proc = new EventEmitter() as unknown as ChildProcess;
+  (proc as any).stdin = new Writable({ write: (_chunk, _enc, cb) => cb() });
+  (proc as any).stdout = new Readable({ read() {} });
+  (proc as any).stderr = new Readable({ read() {} });
+  (proc as any).pid = 12345;
+  (proc as any).killed = false;
+  (proc as any).kill = jest.fn().mockReturnValue(true);
+  return proc;
+}
+
+describe('CodexAppServerProcess', () => {
+  let mockProc: ChildProcess;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockProc = createMockProcess();
+    mockSpawn.mockReturnValue(mockProc);
+  });
+
+  describe('spawn', () => {
+    it('spawns codex app-server with correct arguments', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        '/usr/bin/codex',
+        ['app-server', '--listen', 'stdio://'],
+        expect.objectContaining({
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: '/workspace',
+        }),
+      );
+    });
+
+    it('passes environment variables to the spawned process', () => {
+      const env = { OPENAI_API_KEY: 'sk-test', PATH: '/usr/bin' };
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', env);
+      server.start();
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        '/usr/bin/codex',
+        ['app-server', '--listen', 'stdio://'],
+        expect.objectContaining({
+          env,
+        }),
+      );
+    });
+  });
+
+  describe('stdio accessors', () => {
+    it('exposes stdin, stdout, and stderr from the spawned process', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      expect(server.stdin).toBe(mockProc.stdin);
+      expect(server.stdout).toBe(mockProc.stdout);
+      expect(server.stderr).toBe(mockProc.stderr);
+    });
+
+    it('throws when accessing stdio before start', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+
+      expect(() => server.stdin).toThrow();
+      expect(() => server.stdout).toThrow();
+      expect(() => server.stderr).toThrow();
+    });
+  });
+
+  describe('isAlive', () => {
+    it('returns true when process is running', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      expect(server.isAlive()).toBe(true);
+    });
+
+    it('returns false before start', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+
+      expect(server.isAlive()).toBe(false);
+    });
+
+    it('returns false after process exits', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      mockProc.emit('exit', 0, null);
+
+      expect(server.isAlive()).toBe(false);
+    });
+  });
+
+  describe('onExit', () => {
+    it('calls registered exit callback when process exits', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const exitCallback = jest.fn();
+      server.onExit(exitCallback);
+      server.start();
+
+      mockProc.emit('exit', 1, 'SIGTERM');
+
+      expect(exitCallback).toHaveBeenCalledWith(1, 'SIGTERM');
+    });
+
+    it('calls exit callback registered after start', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      const exitCallback = jest.fn();
+      server.onExit(exitCallback);
+
+      mockProc.emit('exit', 0, null);
+
+      expect(exitCallback).toHaveBeenCalledWith(0, null);
+    });
+  });
+
+  describe('shutdown', () => {
+    it('sends SIGTERM to the process', async () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      const shutdownPromise = server.shutdown();
+      mockProc.emit('exit', 0, 'SIGTERM');
+      await shutdownPromise;
+
+      expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('sends SIGKILL if process does not exit within timeout', async () => {
+      jest.useFakeTimers();
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      const shutdownPromise = server.shutdown();
+
+      // Advance past the SIGKILL timeout
+      jest.advanceTimersByTime(5_000);
+
+      // Now simulate exit after SIGKILL
+      mockProc.emit('exit', 137, 'SIGKILL');
+      await shutdownPromise;
+
+      expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(mockProc.kill).toHaveBeenCalledWith('SIGKILL');
+
+      jest.useRealTimers();
+    });
+
+    it('resolves immediately if process is not running', async () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      await server.shutdown();
+      expect(server.isAlive()).toBe(false);
+    });
+  });
+
+  describe('error handling', () => {
+    it('marks process as not alive on spawn error', () => {
+      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      server.start();
+
+      mockProc.emit('error', new Error('spawn failed'));
+
+      expect(server.isAlive()).toBe(false);
+    });
+  });
+});

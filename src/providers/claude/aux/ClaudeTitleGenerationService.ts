@@ -1,16 +1,11 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../../../core/prompt';
 import type {
   TitleGenerationCallback,
   TitleGenerationResult,
 } from '../../../core/providers/types';
 import type ClaudianPlugin from '../../../main';
-import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
-import { getVaultPath } from '../../../utils/path';
-import { createCustomSpawnFunction } from '../runtime/customSpawn';
-import { extractAssistantText } from './extractAssistantText';
+import { parseEnvironmentVariables } from '../../../utils/env';
+import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 
 export type { TitleGenerationCallback, TitleGenerationResult };
 
@@ -22,116 +17,35 @@ export class TitleGenerationService {
     this.plugin = plugin;
   }
 
-  /**
-   * Generates a title for a conversation based on the first user message.
-   * Non-blocking: calls callback when complete.
-   */
   async generateTitle(
     conversationId: string,
     userMessage: string,
     callback: TitleGenerationCallback
   ): Promise<void> {
-    const vaultPath = getVaultPath(this.plugin.app);
-    if (!vaultPath) {
-      await this.safeCallback(callback, conversationId, {
-        success: false,
-        error: 'Could not determine vault path',
-      });
-      return;
-    }
-
-    const envVars = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
-    );
-
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
-    if (!resolvedClaudePath) {
-      await this.safeCallback(callback, conversationId, {
-        success: false,
-        error: 'Claude CLI not found',
-      });
-      return;
-    }
-    const enhancedPath = getEnhancedPath(envVars.PATH, resolvedClaudePath);
-    const missingNodeError = getMissingNodeError(resolvedClaudePath, enhancedPath);
-    if (missingNodeError) {
-      await this.safeCallback(callback, conversationId, {
-        success: false,
-        error: missingNodeError,
-      });
-      return;
-    }
-
-    // Get the appropriate model with fallback chain:
-    // 1. User's titleGenerationModel setting (if set)
-    // 2. ANTHROPIC_DEFAULT_HAIKU_MODEL env var
-    // 3. claude-haiku-4-5 default
-    const titleModel =
-      this.plugin.settings.titleGenerationModel ||
-      envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
-      'claude-haiku-4-5';
-
     // Cancel any existing generation for this conversation
     const existingController = this.activeGenerations.get(conversationId);
     if (existingController) {
       existingController.abort();
     }
 
-    // Create a new local AbortController for this generation
     const abortController = new AbortController();
     this.activeGenerations.set(conversationId, abortController);
 
-    // Truncate message if too long (save tokens)
     const truncatedUser = this.truncateText(userMessage, 500);
-
-    const prompt = `User's request:
-"""
-${truncatedUser}
-"""
-
-Generate a title for this conversation:`;
-
-    const options: Options = {
-      cwd: vaultPath,
-      systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
-      model: titleModel,
-      abortController,
-      pathToClaudeCodeExecutable: resolvedClaudePath,
-      env: {
-        ...process.env,
-        ...envVars,
-        PATH: enhancedPath,
-      },
-      tools: [], // No tools needed for title generation
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      settingSources: this.plugin.settings.loadUserClaudeSettings
-        ? ['user', 'project']
-        : ['project'],
-      persistSession: false, // Don't save title generation queries to session history
-      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
-    };
+    const prompt = `User's request:\n"""\n${truncatedUser}\n"""\n\nGenerate a title for this conversation:`;
 
     try {
-      const response = agentQuery({ prompt, options });
-      let responseText = '';
+      const result = await runColdStartQuery({
+        plugin: this.plugin,
+        systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
+        tools: [],
+        model: this.resolveTitleModel(),
+        thinking: { disabled: true },
+        persistSession: false,
+        abortController,
+      }, prompt);
 
-      for await (const message of response) {
-        if (abortController.signal.aborted) {
-          await this.safeCallback(callback, conversationId, {
-            success: false,
-            error: 'Cancelled',
-          });
-          return;
-        }
-
-        const text = extractAssistantText(message);
-        if (text) {
-          responseText += text;
-        }
-      }
-
-      const title = this.parseTitle(responseText);
+      const title = this.parseTitle(result.text);
       if (title) {
         await this.safeCallback(callback, conversationId, { success: true, title });
       } else {
@@ -144,7 +58,6 @@ Generate a title for this conversation:`;
       const msg = error instanceof Error ? error.message : 'Unknown error';
       await this.safeCallback(callback, conversationId, { success: false, error: msg });
     } finally {
-      // Clean up the controller for this conversation
       this.activeGenerations.delete(conversationId);
     }
   }
@@ -156,6 +69,17 @@ Generate a title for this conversation:`;
     this.activeGenerations.clear();
   }
 
+  private resolveTitleModel(): string {
+    const envVars = parseEnvironmentVariables(
+      this.plugin.getActiveEnvironmentVariables()
+    );
+    return (
+      this.plugin.settings.titleGenerationModel ||
+      envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
+      'claude-haiku-4-5'
+    );
+  }
+
   private truncateText(text: string, maxLength: number): string {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
@@ -165,7 +89,6 @@ Generate a title for this conversation:`;
     const trimmed = responseText.trim();
     if (!trimmed) return null;
 
-    // Remove surrounding quotes if present
     let title = trimmed;
     if (
       (title.startsWith('"') && title.endsWith('"')) ||
@@ -174,10 +97,8 @@ Generate a title for this conversation:`;
       title = title.slice(1, -1);
     }
 
-    // Remove trailing punctuation
     title = title.replace(/[.!?:;,]+$/, '');
 
-    // Truncate to max 50 characters
     if (title.length > 50) {
       title = title.substring(0, 47) + '...';
     }

@@ -67,6 +67,22 @@ describe('normalizeCodexToolInput', () => {
     ]);
   });
 
+  it('normalizes update_plan with step field (real Codex format)', () => {
+    const result = normalizeCodexToolInput('update_plan', {
+      plan: [
+        { step: 'Gather requirements', status: 'in_progress' },
+        { step: 'Write code', status: 'pending' },
+        { step: 'Deploy', status: 'pending' },
+      ],
+    });
+
+    expect(result.todos).toEqual([
+      { id: '', content: 'Gather requirements', activeForm: 'Gather requirements', status: 'in_progress' },
+      { id: '', content: 'Write code', activeForm: 'Write code', status: 'pending' },
+      { id: '', content: 'Deploy', activeForm: 'Deploy', status: 'pending' },
+    ]);
+  });
+
   it('normalizes request_user_input questions', () => {
     const result = normalizeCodexToolInput('request_user_input', {
       questions: [{ question: 'Update tests?', id: 'q1' }],

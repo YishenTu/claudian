@@ -1,4 +1,4 @@
-/** Shared by title generation and instruction refine services. */
+/** Extracts text blocks from SDK assistant messages (used by all cold-start queries). */
 export function extractAssistantText(
   message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }
 ): string {

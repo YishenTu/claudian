@@ -865,6 +865,27 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.style.borderColor = 'var(--text-error)';
       }
     });
+
+    // Reasoning summary
+    const SUMMARY_OPTIONS: { value: string; label: string }[] = [
+      { value: 'concise', label: 'Concise' },
+      { value: 'detailed', label: 'Detailed' },
+      { value: 'none', label: 'Off' },
+    ];
+
+    new Setting(container)
+      .setName('Reasoning summary')
+      .setDesc('Show a summary of the model\'s reasoning process in the thinking block.')
+      .addDropdown((dropdown) => {
+        for (const opt of SUMMARY_OPTIONS) {
+          dropdown.addOption(opt.value, opt.label);
+        }
+        dropdown.setValue(this.plugin.settings.codexReasoningSummary ?? 'concise');
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.codexReasoningSummary = value;
+          await this.plugin.saveSettings();
+        });
+      });
   }
 
   // ── Shared helpers ──

@@ -63,7 +63,7 @@ interface PersistedToolCallPayload {
 interface PersistedToolCallOutputPayload {
   type: 'function_call_output' | 'custom_tool_call_output';
   call_id?: string;
-  output?: string;
+  output?: string | unknown[];
 }
 
 interface PersistedWebSearchCallPayload {
@@ -520,7 +520,12 @@ function processPersistedToolOutput(
   const callId = payload.call_id;
   if (!callId) return;
 
-  const rawOutput = payload.output ?? '';
+  // output can be a string or an array (e.g. view_image returns image objects)
+  const rawOutput = typeof payload.output === 'string'
+    ? payload.output
+    : Array.isArray(payload.output)
+      ? JSON.stringify(payload.output)
+      : '';
 
   // Cross-turn resolution: look up where the tool call was originally pushed
   const origin = ctx.toolCallToTurn.get(callId);
@@ -556,13 +561,14 @@ function processPersistedWebSearchCall(
   timestamp: number,
   ctx: PersistedParseContext,
 ): void {
-  const callId = payload.call_id;
-  if (!callId) return;
-
   const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
   const bubble = ensureAssistantBubble(turn, timestamp);
 
-  // Skip if already registered in this bubble
+  // Use call_id if present, otherwise synthesize a stable ID per bubble.
+  // Multiple web_search_call entries per turn are common (one per query);
+  // group them under a single WebSearch tool invocation.
+  const callId = payload.call_id || `web-search-${turn.id}-${turn.assistantBubbles.indexOf(bubble)}`;
+
   if (bubble.toolIndexesById.has(callId)) return;
 
   const input = normalizeCodexToolInput('web_search_call', {

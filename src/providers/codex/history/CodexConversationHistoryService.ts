@@ -4,21 +4,26 @@ import { getCodexState } from '../types';
 import { findCodexSessionFile, parseCodexSessionFile } from './CodexHistoryStore';
 
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
-  private hydratedConversationIds = new Set<string>();
+  private hydratedConversationPaths = new Map<string, string>();
 
   async hydrateConversationHistory(
     conversation: Conversation,
     _vaultPath: string | null,
   ): Promise<void> {
-    if (this.hydratedConversationIds.has(conversation.id)) {
-      return;
-    }
-
     const state = getCodexState(conversation.providerState);
     const threadId = state.threadId ?? conversation.sessionId ?? null;
     const sessionFilePath = state.sessionFilePath ?? (threadId ? findCodexSessionFile(threadId) : null);
 
     if (!sessionFilePath) {
+      this.hydratedConversationPaths.delete(conversation.id);
+      return;
+    }
+
+    const hydrationKey = `${threadId ?? ''}::${sessionFilePath}`;
+    if (
+      conversation.messages.length > 0
+      && this.hydratedConversationPaths.get(conversation.id) === hydrationKey
+    ) {
       return;
     }
 
@@ -31,11 +36,13 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     }
 
     const sdkMessages = parseCodexSessionFile(sessionFilePath);
-    if (sdkMessages.length > 0) {
-      conversation.messages = sdkMessages;
+    if (sdkMessages.length === 0) {
+      this.hydratedConversationPaths.delete(conversation.id);
+      return;
     }
 
-    this.hydratedConversationIds.add(conversation.id);
+    conversation.messages = sdkMessages;
+    this.hydratedConversationPaths.set(conversation.id, hydrationKey);
   }
 
   async deleteConversationSession(
