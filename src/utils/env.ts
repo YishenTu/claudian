@@ -338,12 +338,26 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
   return unique.join(PATH_SEPARATOR);
 }
 
-const CUSTOM_MODEL_ENV_KEYS = [
+const KNOWN_MODEL_ENV_KEYS = [
   'ANTHROPIC_MODEL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
 ] as const;
+
+export const CUSTOM_MODEL_ENV_PATTERN = /^ANTHROPIC_DEFAULT_(\w+)_MODEL$/;
+
+/** Collect all model env keys: known keys first (in priority order), then any dynamic matches. */
+export function collectModelEnvKeys(envVars: Record<string, string>): string[] {
+  const knownSet = new Set<string>(KNOWN_MODEL_ENV_KEYS);
+  const keys: string[] = [...KNOWN_MODEL_ENV_KEYS];
+  for (const key of Object.keys(envVars)) {
+    if (!knownSet.has(key) && CUSTOM_MODEL_ENV_PATTERN.test(key)) {
+      keys.push(key);
+    }
+  }
+  return keys;
+}
 
 function getModelTypeFromEnvKey(envKey: string): string {
   if (envKey === 'ANTHROPIC_MODEL') return 'model';
@@ -379,7 +393,7 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
 export function getModelsFromEnvironment(envVars: Record<string, string>): { value: string; label: string; description: string }[] {
   const modelMap = new Map<string, { types: string[]; label: string }>();
 
-  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
+  for (const envKey of collectModelEnvKeys(envVars)) {
     const type = getModelTypeFromEnvKey(envKey);
     const modelValue = envVars[envKey];
     if (modelValue) {
@@ -421,6 +435,7 @@ export function getModelsFromEnvironment(envVars: Record<string, string>): { val
 }
 
 export function getCurrentModelFromEnvironment(envVars: Record<string, string>): string | null {
+  // Known keys in priority order
   if (envVars.ANTHROPIC_MODEL) {
     return envVars.ANTHROPIC_MODEL;
   }
@@ -432,6 +447,14 @@ export function getCurrentModelFromEnvironment(envVars: Record<string, string>):
   }
   if (envVars.ANTHROPIC_DEFAULT_OPUS_MODEL) {
     return envVars.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  }
+
+  // Fall back to the first dynamic ANTHROPIC_DEFAULT_*_MODEL key found
+  const knownSet = new Set<string>(KNOWN_MODEL_ENV_KEYS);
+  for (const key of Object.keys(envVars)) {
+    if (!knownSet.has(key) && CUSTOM_MODEL_ENV_PATTERN.test(key) && envVars[key]) {
+      return envVars[key];
+    }
   }
   return null;
 }
@@ -446,7 +469,7 @@ export const MAX_CONTEXT_LIMIT = 10_000_000;
 
 export function getCustomModelIds(envVars: Record<string, string>): Set<string> {
   const modelIds = new Set<string>();
-  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
+  for (const envKey of collectModelEnvKeys(envVars)) {
     const modelId = envVars[envKey];
     if (modelId) {
       modelIds.add(modelId);

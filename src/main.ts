@@ -41,7 +41,7 @@ import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
 import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
-import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
+import { collectModelEnvKeys, getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
 import {
   deleteSDKSession,
@@ -675,12 +675,7 @@ export default class ClaudianPlugin extends Plugin {
   /** Computes a hash of model and provider base URL environment variables for change detection. */
   private computeEnvHash(envText: string): string {
     const envVars = parseEnvironmentVariables(envText || '');
-    const modelKeys = [
-      'ANTHROPIC_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    ];
+    const modelKeys = collectModelEnvKeys(envVars);
     const providerKeys = [
       'ANTHROPIC_BASE_URL',
     ];

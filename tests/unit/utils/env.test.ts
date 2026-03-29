@@ -6,6 +6,7 @@ import * as env from '../../../src/utils/env';
 
 const {
   cliPathRequiresNode,
+  collectModelEnvKeys,
   findNodeDirectory,
   findNodeExecutable,
   formatContextLimit,
@@ -969,6 +970,58 @@ describe('parseContextLimit with comma-formatted input', () => {
   });
 });
 
+describe('collectModelEnvKeys', () => {
+  it('returns only known keys when no dynamic keys present', () => {
+    const keys = collectModelEnvKeys({ ANTHROPIC_MODEL: 'test' });
+    expect(keys).toEqual([
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ]);
+  });
+
+  it('appends dynamic ANTHROPIC_DEFAULT_*_MODEL keys after known keys', () => {
+    const keys = collectModelEnvKeys({
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'mimo-model',
+      ANTHROPIC_DEFAULT_GPT_MODEL: 'gpt-model',
+    });
+    expect(keys.slice(0, 4)).toEqual([
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ]);
+    expect(keys).toContain('ANTHROPIC_DEFAULT_MIMO_MODEL');
+    expect(keys).toContain('ANTHROPIC_DEFAULT_GPT_MODEL');
+    expect(keys.length).toBe(6);
+  });
+
+  it('does not duplicate known keys even if present in envVars', () => {
+    const keys = collectModelEnvKeys({
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet',
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'mimo',
+    });
+    const sonnetCount = keys.filter(k => k === 'ANTHROPIC_DEFAULT_SONNET_MODEL').length;
+    expect(sonnetCount).toBe(1);
+    expect(keys).toContain('ANTHROPIC_DEFAULT_MIMO_MODEL');
+  });
+
+  it('ignores non-matching env vars', () => {
+    const keys = collectModelEnvKeys({
+      ANTHROPIC_API_KEY: 'secret',
+      ANTHROPIC_BASE_URL: 'https://example.com',
+      OTHER_VAR: 'value',
+    });
+    expect(keys).toEqual([
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ]);
+  });
+});
+
 describe('getCustomModelIds', () => {
   it('should return empty set when no custom models configured', () => {
     const result = getCustomModelIds({});
@@ -1039,6 +1092,26 @@ describe('getCustomModelIds', () => {
     // Note: getCustomModelIds only checks truthiness, so whitespace passes
     // This test documents the current behavior
     expect(result.has('my-haiku')).toBe(true);
+  });
+
+  it('should include dynamic ANTHROPIC_DEFAULT_*_MODEL keys', () => {
+    const result = getCustomModelIds({
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+      ANTHROPIC_DEFAULT_GPT_MODEL: 'openai/gpt-4o',
+    });
+    expect(result.size).toBe(2);
+    expect(result.has('xiaomi/mimo-v2-pro')).toBe(true);
+    expect(result.has('openai/gpt-4o')).toBe(true);
+  });
+
+  it('should include both known and dynamic keys', () => {
+    const result = getCustomModelIds({
+      ANTHROPIC_MODEL: 'custom-model',
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+    });
+    expect(result.size).toBe(2);
+    expect(result.has('custom-model')).toBe(true);
+    expect(result.has('xiaomi/mimo-v2-pro')).toBe(true);
   });
 });
 
@@ -1115,6 +1188,42 @@ describe('getModelsFromEnvironment', () => {
     expect(result).toHaveLength(1);
     expect(result[0].value).toBe('valid-model');
   });
+
+  it('discovers dynamic ANTHROPIC_DEFAULT_*_MODEL keys', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe('xiaomi/mimo-v2-pro');
+    expect(result[0].label).toBe('mimo-v2-pro');
+    expect(result[0].description).toContain('mimo');
+  });
+
+  it('includes both known and dynamic keys', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_MODEL: 'main-model',
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+      ANTHROPIC_DEFAULT_GPT_MODEL: 'openai/gpt-4o',
+    });
+    expect(result).toHaveLength(3);
+    // Known key (model) should come first due to priority
+    expect(result[0].value).toBe('main-model');
+    // Dynamic keys follow
+    const dynamicValues = result.slice(1).map(m => m.value);
+    expect(dynamicValues).toContain('xiaomi/mimo-v2-pro');
+    expect(dynamicValues).toContain('openai/gpt-4o');
+  });
+
+  it('dynamic keys appear after known keys in priority', () => {
+    const result = getModelsFromEnvironment({
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'my-haiku',
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+    });
+    expect(result).toHaveLength(2);
+    // haiku has priority 3, mimo has priority 0 — haiku first
+    expect(result[0].value).toBe('my-haiku');
+    expect(result[1].value).toBe('xiaomi/mimo-v2-pro');
+  });
 });
 
 describe('getCurrentModelFromEnvironment', () => {
@@ -1162,6 +1271,26 @@ describe('getCurrentModelFromEnvironment', () => {
       ANTHROPIC_API_KEY: 'sk-key',
       OTHER_VAR: 'value',
     })).toBeNull();
+  });
+
+  it('falls back to dynamic key when no known keys set', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+    })).toBe('xiaomi/mimo-v2-pro');
+  });
+
+  it('prefers known keys over dynamic keys', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+      ANTHROPIC_DEFAULT_MIMO_MODEL: 'xiaomi/mimo-v2-pro',
+    })).toBe('sonnet-model');
+  });
+
+  it('ignores empty dynamic key values', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_MIMO_MODEL: '',
+      ANTHROPIC_DEFAULT_GPT_MODEL: 'openai/gpt-4o',
+    })).toBe('openai/gpt-4o');
   });
 });
 
