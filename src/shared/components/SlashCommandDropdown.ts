@@ -1,41 +1,32 @@
-/**
- * Claudian - Slash command dropdown
- *
- * Dropdown UI for selecting slash commands when typing /.
- * Follows the FileContext.ts pattern for input detection and keyboard navigation.
- */
-
 import { getBuiltInCommandsForDropdown } from '../../core/commands/builtInCommands';
+import type { ProviderCommandDropdownConfig } from '../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderCommandEntry } from '../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../core/types';
 import { normalizeArgumentHint } from '../../utils/slashCommand';
 
-/**
- * SDK commands to filter out from the dropdown.
- * These are either handled differently in Claudian or don't apply.
- */
-const FILTERED_SDK_COMMANDS = new Set([
-  'context',
-  'cost',
-  'init',
-  'keybindings-help',
-  'release-notes',
-  'security-review',
-]);
+/** Internal unified item model for dropdown rendering. */
+interface DropdownItem {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  content: string;
+  displayPrefix: string;
+  insertPrefix: string;
+  isBuiltIn: boolean;
+  slashCommand?: SlashCommand;
+  providerEntry?: ProviderCommandEntry;
+}
 
 export interface SlashCommandDropdownCallbacks {
   onSelect: (command: SlashCommand) => void;
   onHide: () => void;
-  /**
-   * Callback to fetch SDK supported commands.
-   * SDK is the single source of truth for slash commands.
-   * Only available after the service is initialized (first message sent).
-   */
-  getSdkCommands?: () => Promise<SlashCommand[]>;
 }
 
 export interface SlashCommandDropdownOptions {
   fixed?: boolean;
   hiddenCommands?: Set<string>;
+  providerConfig?: ProviderCommandDropdownConfig;
+  getProviderEntries?: () => Promise<ProviderCommandEntry[]>;
 }
 
 export class SlashCommandDropdown {
@@ -45,17 +36,18 @@ export class SlashCommandDropdown {
   private callbacks: SlashCommandDropdownCallbacks;
   private enabled = true;
   private onInput: () => void;
-  private slashStartIndex = -1;
+  private triggerStartIndex = -1;
+  private activeTriggerChar = '/';
   private selectedIndex = 0;
-  private filteredCommands: SlashCommand[] = [];
+  private filteredItems: DropdownItem[] = [];
   private isFixed: boolean;
   private hiddenCommands: Set<string>;
 
-  // SDK skills cache
-  private cachedSdkSkills: SlashCommand[] = [];
-  private sdkSkillsFetched = false;
+  private providerConfig: ProviderCommandDropdownConfig | null;
+  private getProviderEntries: (() => Promise<ProviderCommandEntry[]>) | null;
+  private cachedProviderEntries: ProviderCommandEntry[] = [];
+  private providerEntriesFetched = false;
 
-  // Race condition guard for async dropdown rendering
   private requestId = 0;
 
   constructor(
@@ -69,6 +61,8 @@ export class SlashCommandDropdown {
     this.callbacks = callbacks;
     this.isFixed = options.fixed ?? false;
     this.hiddenCommands = options.hiddenCommands ?? new Set();
+    this.providerConfig = options.providerConfig ?? null;
+    this.getProviderEntries = options.getProviderEntries ?? null;
 
     this.onInput = () => this.handleInputChange();
     this.inputEl.addEventListener('input', this.onInput);
@@ -85,31 +79,58 @@ export class SlashCommandDropdown {
     this.hiddenCommands = commands;
   }
 
+  setProviderCatalog(
+    config: ProviderCommandDropdownConfig,
+    getEntries: () => Promise<ProviderCommandEntry[]>,
+  ): void {
+    this.providerConfig = config;
+    this.getProviderEntries = getEntries;
+    this.cachedProviderEntries = [];
+    this.providerEntriesFetched = false;
+    this.requestId = 0;
+  }
+
   handleInputChange(): void {
     if (!this.enabled) return;
 
     const text = this.getInputValue();
     const cursorPos = this.getCursorPosition();
     const textBeforeCursor = text.substring(0, cursorPos);
+    const triggerChars = this.providerConfig?.triggerChars ?? ['/'];
 
-    // Only show dropdown if / is at position 0
-    if (text.charAt(0) !== '/') {
+    // Scan backward from cursor for the nearest valid trigger char.
+    // Valid trigger: at position 0, or preceded by whitespace.
+    let triggerIndex = -1;
+    let triggerChar = '';
+
+    for (let i = cursorPos - 1; i >= 0; i--) {
+      const ch = textBeforeCursor.charAt(i);
+      if (/\s/.test(ch)) break;
+      if (triggerChars.includes(ch)) {
+        if (i === 0 || /\s/.test(textBeforeCursor.charAt(i - 1))) {
+          triggerIndex = i;
+          triggerChar = ch;
+        }
+        break;
+      }
+    }
+
+    if (triggerIndex === -1) {
       this.hide();
       return;
     }
 
-    const slashIndex = 0;
+    const searchText = textBeforeCursor.substring(triggerIndex + 1);
 
-    const searchText = textBeforeCursor.substring(slashIndex + 1);
-
-    // Hide if there's whitespace in the search text (command already selected)
     if (/\s/.test(searchText)) {
       this.hide();
       return;
     }
 
-    this.slashStartIndex = slashIndex;
-    this.showDropdown(searchText);
+    this.triggerStartIndex = triggerIndex;
+    this.activeTriggerChar = triggerChar;
+    const isAtPosition0 = triggerIndex === 0;
+    this.showDropdown(searchText, isAtPosition0);
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
@@ -126,7 +147,7 @@ export class SlashCommandDropdown {
         return true;
       case 'Enter':
       case 'Tab':
-        if (this.filteredCommands.length > 0) {
+        if (this.filteredItems.length > 0) {
           e.preventDefault();
           this.selectItem();
           return true;
@@ -148,7 +169,7 @@ export class SlashCommandDropdown {
     if (this.dropdownEl) {
       this.dropdownEl.removeClass('visible');
     }
-    this.slashStartIndex = -1;
+    this.triggerStartIndex = -1;
     this.callbacks.onHide();
   }
 
@@ -160,13 +181,9 @@ export class SlashCommandDropdown {
     }
   }
 
-  /**
-   * Resets the SDK skills cache.
-   * Call this when switching conversations or creating a new chat.
-   */
   resetSdkSkillsCache(): void {
-    this.cachedSdkSkills = [];
-    this.sdkSkillsFetched = false;
+    this.cachedProviderEntries = [];
+    this.providerEntriesFetched = false;
     this.requestId = 0;
   }
 
@@ -187,45 +204,27 @@ export class SlashCommandDropdown {
     this.inputEl.selectionEnd = pos;
   }
 
-  private async showDropdown(searchText: string): Promise<void> {
+  private async showDropdown(searchText: string, isAtPosition0 = true): Promise<void> {
     const currentRequest = ++this.requestId;
-
-    const builtInCommands = getBuiltInCommandsForDropdown();
     const searchLower = searchText.toLowerCase();
 
-    // Fetch SDK commands if not cached and callback is available
-    // SDK is the single source of truth for slash commands
-    // Only mark as fetched when we get non-empty results (service is ready)
-    // This allows retries when service isn't ready yet or on transient errors
-    if (!this.sdkSkillsFetched && this.callbacks.getSdkCommands) {
-      try {
-        const sdkCommands = await this.callbacks.getSdkCommands();
-        // Discard results if a newer request was made during await
-        if (currentRequest !== this.requestId) return;
-        if (sdkCommands.length > 0) {
-          this.cachedSdkSkills = sdkCommands;
-          this.sdkSkillsFetched = true;
-        }
-        // Keep sdkSkillsFetched false to allow retry on empty results
-      } catch {
-        // Keep sdkSkillsFetched false to allow retry on error
-        if (currentRequest !== this.requestId) return;
-      }
-    }
+    await this.fetchProviderEntries(currentRequest);
 
-    const allCommands = this.buildCommandList(builtInCommands);
+    if (currentRequest !== this.requestId) return;
 
-    this.filteredCommands = allCommands
-      .filter(cmd =>
-        cmd.name.toLowerCase().includes(searchLower) ||
-        cmd.description?.toLowerCase().includes(searchLower)
+    const includeBuiltIns = isAtPosition0 && this.activeTriggerChar === '/';
+    const allItems = this.buildItemList(includeBuiltIns);
+
+    this.filteredItems = allItems
+      .filter(item =>
+        item.name.toLowerCase().includes(searchLower) ||
+        item.description?.toLowerCase().includes(searchLower)
       )
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Final race condition check before rendering
     if (currentRequest !== this.requestId) return;
 
-    if (searchText.length > 0 && this.filteredCommands.length === 0) {
+    if (searchText.length > 0 && this.filteredItems.length === 0) {
       this.hide();
       return;
     }
@@ -234,39 +233,80 @@ export class SlashCommandDropdown {
     this.render();
   }
 
-  /**
-   * Builds the merged command list from built-in and SDK commands.
-   * Built-in commands have highest priority and are not subject to hiding.
-   * SDK commands are deduplicated, filtered, and respect user hiding.
-   */
-  private buildCommandList(builtInCommands: SlashCommand[]): SlashCommand[] {
-    const seenNames = new Set<string>();
-    const allCommands: SlashCommand[] = [];
+  private async fetchProviderEntries(currentRequest: number): Promise<void> {
+    if (this.providerEntriesFetched || !this.getProviderEntries) return;
 
-    // Add Claudian built-in commands first (highest priority)
-    // Built-in commands are not subject to user hiding (they are essential UI actions)
-    for (const cmd of builtInCommands) {
-      const nameLower = cmd.name.toLowerCase();
-      if (!seenNames.has(nameLower)) {
-        seenNames.add(nameLower);
-        allCommands.push(cmd);
+    try {
+      const entries = await this.getProviderEntries();
+      if (currentRequest !== this.requestId) return;
+      if (entries.length > 0) {
+        this.cachedProviderEntries = entries;
+        this.providerEntriesFetched = true;
+      }
+    } catch {
+      if (currentRequest !== this.requestId) return;
+    }
+  }
+
+  private buildItemList(includeBuiltIns: boolean): DropdownItem[] {
+    const seenNames = new Set<string>();
+    const items: DropdownItem[] = [];
+
+    if (includeBuiltIns) {
+      const builtIns = getBuiltInCommandsForDropdown(this.providerConfig?.providerId);
+      for (const cmd of builtIns) {
+        const nameLower = cmd.name.toLowerCase();
+        if (!seenNames.has(nameLower)) {
+          seenNames.add(nameLower);
+          items.push({
+            name: cmd.name,
+            description: cmd.description,
+            argumentHint: cmd.argumentHint,
+            content: cmd.content,
+            displayPrefix: '/',
+            insertPrefix: '/',
+            isBuiltIn: true,
+            slashCommand: cmd as SlashCommand,
+          });
+        }
       }
     }
 
-    for (const cmd of this.cachedSdkSkills) {
-      const nameLower = cmd.name.toLowerCase();
-      if (
-        FILTERED_SDK_COMMANDS.has(nameLower) ||
-        seenNames.has(nameLower) ||
-        this.hiddenCommands.has(nameLower)
-      ) {
+    for (const entry of this.cachedProviderEntries) {
+      const nameLower = entry.name.toLowerCase();
+      if (seenNames.has(nameLower) || this.hiddenCommands.has(nameLower)) {
         continue;
       }
       seenNames.add(nameLower);
-      allCommands.push(cmd);
+      items.push({
+        name: entry.name,
+        description: entry.description,
+        argumentHint: entry.argumentHint,
+        content: entry.content,
+        displayPrefix: entry.displayPrefix,
+        insertPrefix: entry.insertPrefix,
+        isBuiltIn: false,
+        providerEntry: entry,
+        slashCommand: {
+          id: entry.id,
+          name: entry.name,
+          description: entry.description,
+          content: entry.content,
+          argumentHint: entry.argumentHint,
+          allowedTools: entry.allowedTools,
+          model: entry.model,
+          source: entry.source,
+          kind: entry.kind,
+          disableModelInvocation: entry.disableModelInvocation,
+          userInvocable: entry.userInvocable,
+          context: entry.context,
+          agent: entry.agent,
+          hooks: entry.hooks,
+        },
+      });
     }
 
-    return allCommands;
+    return items;
   }
 
   private render(): void {
@@ -276,12 +316,12 @@ export class SlashCommandDropdown {
 
     this.dropdownEl.empty();
 
-    if (this.filteredCommands.length === 0) {
+    if (this.filteredItems.length === 0) {
       const emptyEl = this.dropdownEl.createDiv({ cls: 'claudian-slash-empty' });
       emptyEl.setText('No matching commands');
     } else {
-      for (let i = 0; i < this.filteredCommands.length; i++) {
-        const cmd = this.filteredCommands[i];
+      for (let i = 0; i < this.filteredItems.length; i++) {
+        const item = this.filteredItems[i];
         const itemEl = this.dropdownEl.createDiv({ cls: 'claudian-slash-item' });
 
         if (i === this.selectedIndex) {
@@ -289,16 +329,16 @@ export class SlashCommandDropdown {
         }
 
         const nameEl = itemEl.createSpan({ cls: 'claudian-slash-name' });
-        nameEl.setText(`/${cmd.name}`);
+        nameEl.setText(`${item.displayPrefix}${item.name}`);
 
-        if (cmd.argumentHint) {
+        if (item.argumentHint) {
           const hintEl = itemEl.createSpan({ cls: 'claudian-slash-hint' });
-          hintEl.setText(normalizeArgumentHint(cmd.argumentHint));
+          hintEl.setText(normalizeArgumentHint(item.argumentHint));
         }
 
-        if (cmd.description) {
+        if (item.description) {
           const descEl = itemEl.createDiv({ cls: 'claudian-slash-desc' });
-          descEl.setText(cmd.description);
+          descEl.setText(item.description);
         }
 
         itemEl.addEventListener('click', () => {
@@ -315,7 +355,6 @@ export class SlashCommandDropdown {
 
     this.dropdownEl.addClass('visible');
 
-    // Position for fixed mode (inline editor)
     if (this.isFixed) {
       this.positionFixed();
     }
@@ -323,13 +362,10 @@ export class SlashCommandDropdown {
 
   private createDropdownElement(): HTMLElement {
     if (this.isFixed) {
-      // For inline editor: append to containerEl with fixed positioning
-      const dropdown = this.containerEl.createDiv({
+      return this.containerEl.createDiv({
         cls: 'claudian-slash-dropdown claudian-slash-dropdown-fixed',
       });
-      return dropdown;
     } else {
-      // For chat panel: append to container with absolute positioning
       return this.containerEl.createDiv({ cls: 'claudian-slash-dropdown' });
     }
   }
@@ -343,11 +379,11 @@ export class SlashCommandDropdown {
     this.dropdownEl.style.left = `${inputRect.left}px`;
     this.dropdownEl.style.right = 'auto';
     this.dropdownEl.style.width = `${Math.max(inputRect.width, 280)}px`;
-    this.dropdownEl.style.zIndex = '10001'; // Above CM6 widgets
+    this.dropdownEl.style.zIndex = '10001';
   }
 
   private navigate(direction: number): void {
-    const maxIndex = this.filteredCommands.length - 1;
+    const maxIndex = this.filteredItems.length - 1;
     this.selectedIndex = Math.max(0, Math.min(maxIndex, this.selectedIndex + direction));
     this.updateSelection();
   }
@@ -365,21 +401,23 @@ export class SlashCommandDropdown {
   }
 
   private selectItem(): void {
-    if (this.filteredCommands.length === 0) return;
+    if (this.filteredItems.length === 0) return;
 
-    const selected = this.filteredCommands[this.selectedIndex];
+    const selected = this.filteredItems[this.selectedIndex];
     if (!selected) return;
 
     const text = this.getInputValue();
-    const beforeSlash = text.substring(0, this.slashStartIndex);
+    const beforeTrigger = text.substring(0, this.triggerStartIndex);
     const afterCursor = text.substring(this.getCursorPosition());
-    const replacement = `/${selected.name} `;
+    const replacement = `${selected.insertPrefix}${selected.name} `;
 
-    this.setInputValue(beforeSlash + replacement + afterCursor);
-    this.setCursorPosition(beforeSlash.length + replacement.length);
+    this.setInputValue(beforeTrigger + replacement + afterCursor);
+    this.setCursorPosition(beforeTrigger.length + replacement.length);
 
     this.hide();
-    this.callbacks.onSelect(selected);
+    if (selected.slashCommand) {
+      this.callbacks.onSelect(selected.slashCommand);
+    }
     this.inputEl.focus();
   }
 }

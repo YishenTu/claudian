@@ -98,7 +98,10 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenSlashCommands: [],
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
@@ -171,6 +174,100 @@ describe('InlineEditModal - openAndWait', () => {
     }
   });
 
+  it('uses provider-scoped hidden commands for Codex inline edit dropdowns', async () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = {
+      body: createMockEl('body'),
+      createElement: (tagName: string) => createMockEl(tagName),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    try {
+      const app = {
+        vault: {
+          getFiles: jest.fn().mockReturnValue([]),
+          getAllLoadedFiles: jest.fn().mockReturnValue([]),
+        },
+        workspace: {
+          getActiveViewOfType: jest.fn(),
+        },
+      } as any;
+      const plugin = {
+        settings: {
+          hiddenProviderCommands: {
+            claude: ['commit'],
+            codex: ['analyze'],
+          },
+        },
+        getConversationSync: jest.fn().mockReturnValue(null),
+        getView: jest.fn().mockReturnValue({
+          getActiveTab: jest.fn().mockReturnValue({
+            providerId: 'codex',
+            service: null,
+            conversationId: null,
+          }),
+        }),
+      } as any;
+      const editor = {} as any;
+      const view = { editor } as any;
+
+      let widgetRef: any = null;
+      const dispatch = jest.fn((transaction: any) => {
+        const effects = Array.isArray(transaction?.effects)
+          ? transaction.effects
+          : transaction?.effects
+            ? [transaction.effects]
+            : [];
+        for (const effect of effects) {
+          const widget = effect?.value?.widget;
+          if (widget && typeof widget.createInputDOM === 'function') {
+            widgetRef = widget;
+            widget.createInputDOM();
+          }
+        }
+      });
+      const editorView = {
+        state: {
+          doc: {
+            line: jest.fn(() => ({ from: 0 })),
+            lineAt: jest.fn(() => ({ from: 0 })),
+          },
+        },
+        dispatch,
+        dom: {
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+        },
+      } as any;
+
+      jest.spyOn(editorUtils, 'getEditorView').mockReturnValue(editorView);
+
+      const editContext: InlineEditContext = {
+        mode: 'cursor',
+        cursorContext: {
+          beforeCursor: '',
+          afterCursor: '',
+          isInbetween: true,
+          line: 0,
+          column: 0,
+        },
+      };
+
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+      const resultPromise = modal.openAndWait();
+
+      const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
+      const constructorCall = SlashCommandDropdown.mock.calls[0];
+      expect(Array.from(constructorCall[3].hiddenCommands)).toEqual(['analyze']);
+
+      widgetRef?.reject();
+      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
+    } finally {
+      (global as any).document = originalDocument;
+    }
+  });
+
   it('shows a single notice and degrades gracefully when getFiles throws', async () => {
     const originalDocument = (global as any).document;
     (global as any).document = {
@@ -195,7 +292,10 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenSlashCommands: [],
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
@@ -333,7 +433,10 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenSlashCommands: [],
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
@@ -434,7 +537,10 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenSlashCommands: [],
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
@@ -561,7 +667,10 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenSlashCommands: [],
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
@@ -662,7 +771,10 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenSlashCommands: [],
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;

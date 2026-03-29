@@ -72,6 +72,7 @@ const createMockSlashCommandDropdown = () => ({
   isVisible: jest.fn().mockReturnValue(false),
   hide: jest.fn(),
   resetSdkSkillsCache: jest.fn(),
+  setHiddenCommands: jest.fn(),
   setEnabled: jest.fn(),
   destroy: jest.fn(),
 });
@@ -373,7 +374,6 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       thinkingBudget: 'low',
       effortLevel: 'high',
       permissionMode: 'yolo',
-      slashCommands: [],
       keyboardNavigation: {
         scrollUpKey: 'k',
         scrollDownKey: 'j',
@@ -510,6 +510,17 @@ describe('Tab - Creation', () => {
       expect(tab.controllers.streamController).toBeNull();
       expect(tab.controllers.inputController).toBeNull();
       expect(tab.controllers.navigationController).toBeNull();
+    });
+
+    it('should derive the blank-tab provider from the default draft model', () => {
+      const plugin = createMockPlugin();
+      plugin.settings.model = 'gpt-5.4';
+
+      const tab = createTab(createMockOptions({ plugin }));
+
+      expect(tab.lifecycleState).toBe('blank');
+      expect(tab.draftModel).toBe('gpt-5.4');
+      expect(tab.providerId).toBe('codex');
     });
   });
 });
@@ -751,8 +762,7 @@ describe('Tab - Service Initialization', () => {
           thinkingBudget: 'low',
           effortLevel: 'high',
           permissionMode: 'yolo',
-          slashCommands: [],
-          keyboardNavigation: {
+              keyboardNavigation: {
             scrollUpKey: 'k',
             scrollDownKey: 'j',
             focusInputKey: 'i',
@@ -2129,25 +2139,84 @@ describe('Tab - UI Callback Wiring', () => {
       expect(wrapper).toBe(tab.dom.inputWrapper);
     });
 
-    it('should wire getSdkCommands callback when provided in options', async () => {
-      const mockSdkCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
-      const getSdkCommands = jest.fn().mockResolvedValue(mockSdkCommands);
+    it('should wire provider catalog config when provided in options', async () => {
+      const mockEntries = [{
+        id: 'cmd-review',
+        providerId: 'claude' as const,
+        kind: 'command' as const,
+        name: 'review',
+        description: 'Review code',
+        content: '',
+        scope: 'vault' as const,
+        source: 'user' as const,
+        isEditable: true,
+        isDeletable: true,
+        displayPrefix: '/',
+        insertPrefix: '/',
+      }];
+      const mockConfig = { providerId: 'claude' as const, triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' };
       const plugin = createMockPlugin();
       const options = createMockOptions({ plugin });
       const tab = createTab(options);
 
-      initializeTabUI(tab, plugin, { getSdkCommands });
+      initializeTabUI(tab, plugin, {
+        getProviderCatalogConfig: () => ({
+          config: mockConfig,
+          getEntries: jest.fn().mockResolvedValue(mockEntries),
+        }),
+      });
 
       const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
       const constructorCall = SlashCommandDropdown.mock.calls[0];
-      const callbacks = constructorCall[2]; // 3rd argument is callbacks
+      const opts = constructorCall[3]; // 4th argument is options
 
-      // Verify getSdkCommands callback is wired
-      expect(callbacks.getSdkCommands).toBe(getSdkCommands);
+      expect(opts.providerConfig).toEqual(mockConfig);
+      expect(typeof opts.getProviderEntries).toBe('function');
+    });
 
-      // Verify it returns the expected commands
-      const returnedCommands = await callbacks.getSdkCommands();
-      expect(returnedCommands).toEqual(mockSdkCommands);
+    it('should wire provider-scoped hidden commands into the slash dropdown', () => {
+      const plugin = createMockPlugin({
+        settings: {
+          excludedTags: [],
+          model: 'gpt-5.4',
+          thinkingBudget: 'low',
+          effortLevel: 'high',
+          permissionMode: 'yolo',
+          keyboardNavigation: {
+            scrollUpKey: 'k',
+            scrollDownKey: 'j',
+            focusInputKey: 'i',
+          },
+          persistentExternalContextPaths: [],
+          settingsProvider: 'claude',
+          codexEnabled: true,
+          savedProviderModel: {
+            claude: 'claude-sonnet-4-5',
+            codex: 'gpt-5.4',
+          },
+          savedProviderEffort: {
+            claude: 'high',
+            codex: 'medium',
+          },
+          savedProviderThinkingBudget: {
+            claude: 'low',
+            codex: 'off',
+          },
+          hiddenProviderCommands: {
+            claude: ['commit'],
+            codex: ['analyze'],
+          },
+        },
+      });
+      const tab = createTab(createMockOptions({ plugin }));
+
+      initializeTabUI(tab, plugin);
+
+      const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
+      const constructorCall = SlashCommandDropdown.mock.calls[0];
+      const opts = constructorCall[3];
+
+      expect(Array.from(opts.hiddenCommands)).toEqual(['analyze']);
     });
   });
 });
@@ -3098,6 +3167,174 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(tab.serviceInitialized).toBe(false);
     expect(tab.lifecycleState).toBe('blank');
   });
+
+  it('swaps dropdown provider catalog on blank tab model change', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: jest.fn().mockReturnValue([]),
+      isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+      getReasoningOptions: jest.fn().mockReturnValue([]),
+      getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
+      getContextWindowSize: jest.fn().mockReturnValue(200000),
+      isDefaultModel: jest.fn().mockReturnValue(false),
+      applyModelDefaults: jest.fn(),
+      normalizeModelVariant: jest.fn((model: string) => model),
+      getCustomModelIds: jest.fn().mockReturnValue(new Set()),
+    } as any);
+
+    const codexCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn(),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/', '$'],
+        builtInPrefix: '/',
+        skillPrefix: '$',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    const managerGetEntries = jest.fn().mockResolvedValue([
+      {
+        id: 'codex-skill-analyze',
+        providerId: 'codex',
+        kind: 'skill',
+        name: 'analyze',
+        description: 'Analyze',
+        content: 'Analyze code',
+        scope: 'vault',
+        source: 'user',
+        isEditable: true,
+        isDeletable: true,
+        displayPrefix: '$',
+        insertPrefix: '$',
+      },
+    ]);
+
+    ProviderRegistry.setCommandCatalog('codex', codexCatalog as any);
+
+    const plugin = createMockPlugin();
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin, {
+      getProviderCatalogConfig: () => (
+        tab.providerId === 'codex'
+          ? {
+            config: codexCatalog.getDropdownConfig(),
+            getEntries: managerGetEntries,
+          }
+          : null
+      ),
+    });
+
+    // Mock setProviderCatalog on the dropdown
+    const setProviderCatalogSpy = jest.fn();
+    tab.ui.slashCommandDropdown!.setProviderCatalog = setProviderCatalogSpy;
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    // Switch to Codex model → should swap catalog
+    await toolbarCallbacks.onModelChange('gpt-5.4');
+
+    expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
+    const [config, getEntries] = setProviderCatalogSpy.mock.calls[0];
+    expect(config.triggerChars).toEqual(['/', '$']);
+    expect(config.skillPrefix).toBe('$');
+    expect(typeof getEntries).toBe('function');
+    await getEntries();
+    expect(managerGetEntries).toHaveBeenCalledTimes(1);
+    expect(codexCatalog.listDropdownEntries).not.toHaveBeenCalled();
+  });
+
+  it('updates hidden commands on blank tab model change', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: jest.fn().mockReturnValue([]),
+      isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+      getReasoningOptions: jest.fn().mockReturnValue([]),
+      getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
+      getContextWindowSize: jest.fn().mockReturnValue(200000),
+      isDefaultModel: jest.fn().mockReturnValue(false),
+      applyModelDefaults: jest.fn(),
+      normalizeModelVariant: jest.fn((model: string) => model),
+      getCustomModelIds: jest.fn().mockReturnValue(new Set()),
+    } as any);
+
+    const codexCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn(),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        providerId: 'codex',
+        triggerChars: ['/', '$'],
+        builtInPrefix: '/',
+        skillPrefix: '$',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+
+    ProviderRegistry.setCommandCatalog('codex', codexCatalog as any);
+
+    const plugin = createMockPlugin({
+      settings: {
+        excludedTags: [],
+        model: 'claude-sonnet-4-5',
+        thinkingBudget: 'low',
+        effortLevel: 'high',
+        permissionMode: 'yolo',
+        keyboardNavigation: {
+          scrollUpKey: 'k',
+          scrollDownKey: 'j',
+          focusInputKey: 'i',
+        },
+        persistentExternalContextPaths: [],
+        settingsProvider: 'claude',
+        codexEnabled: true,
+        savedProviderModel: {
+          claude: 'claude-sonnet-4-5',
+          codex: 'gpt-5.4',
+        },
+        savedProviderEffort: {
+          claude: 'high',
+          codex: 'medium',
+        },
+        savedProviderThinkingBudget: {
+          claude: 'low',
+          codex: 'off',
+        },
+        hiddenProviderCommands: {
+          claude: ['commit'],
+          codex: ['analyze'],
+        },
+      },
+    });
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin);
+
+    const setProviderCatalogSpy = jest.fn();
+    const setHiddenCommandsSpy = jest.fn();
+    tab.ui.slashCommandDropdown!.setProviderCatalog = setProviderCatalogSpy;
+    tab.ui.slashCommandDropdown!.setHiddenCommands = setHiddenCommandsSpy;
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    await toolbarCallbacks.onModelChange('gpt-5.4');
+
+    expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
+    expect(setHiddenCommandsSpy).toHaveBeenCalledWith(new Set(['analyze']));
+  });
 });
 
 describe('Tab - First Send Binding', () => {
@@ -3145,7 +3382,7 @@ describe('Tab - First Send Binding', () => {
 });
 
 describe('Tab - History Bind Without Runtime', () => {
-  it('ensureServiceForConversation binds to bound_cold without starting runtime', () => {
+  it('ensureServiceForConversation binds to bound_cold without starting runtime', async () => {
     jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
     jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
@@ -3167,7 +3404,7 @@ describe('Tab - History Bind Without Runtime', () => {
       messages: [{ id: 'msg-1', role: 'user' as const, content: 'hi', timestamp: Date.now() }],
     };
 
-    ensureServiceForConversation(conversation);
+    await ensureServiceForConversation(conversation);
 
     expect(tab.lifecycleState).toBe('bound_cold');
     expect(tab.providerId).toBe('codex');
@@ -3175,6 +3412,129 @@ describe('Tab - History Bind Without Runtime', () => {
     expect(tab.draftModel).toBeNull();
     // No runtime created
     expect(tab.serviceInitialized).toBe(false);
+  });
+
+  it('ensureServiceForConversation updates hidden commands when the provider changes', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+    const codexCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn(),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        providerId: 'codex',
+        triggerChars: ['/', '$'],
+        builtInPrefix: '/',
+        skillPrefix: '$',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    const managerGetEntries = jest.fn().mockResolvedValue([
+      {
+        id: 'codex-skill-analyze',
+        providerId: 'codex',
+        kind: 'skill',
+        name: 'analyze',
+        description: 'Analyze',
+        content: 'Analyze code',
+        scope: 'vault',
+        source: 'user',
+        isEditable: true,
+        isDeletable: true,
+        displayPrefix: '$',
+        insertPrefix: '$',
+      },
+    ]);
+    ProviderRegistry.setCommandCatalog('codex', codexCatalog as any);
+
+    const plugin = createMockPlugin({
+      settings: {
+        excludedTags: [],
+        model: 'claude-sonnet-4-5',
+        thinkingBudget: 'low',
+        effortLevel: 'high',
+        permissionMode: 'yolo',
+        keyboardNavigation: {
+          scrollUpKey: 'k',
+          scrollDownKey: 'j',
+          focusInputKey: 'i',
+        },
+        persistentExternalContextPaths: [],
+        settingsProvider: 'claude',
+        codexEnabled: true,
+        savedProviderModel: {
+          claude: 'claude-sonnet-4-5',
+          codex: 'gpt-5.4',
+        },
+        savedProviderEffort: {
+          claude: 'high',
+          codex: 'medium',
+        },
+        savedProviderThinkingBudget: {
+          claude: 'low',
+          codex: 'off',
+        },
+        hiddenProviderCommands: {
+          claude: ['commit'],
+          codex: ['analyze'],
+        },
+      },
+    });
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin, {
+      getProviderCatalogConfig: () => (
+        tab.providerId === 'codex'
+          ? {
+            config: codexCatalog.getDropdownConfig(),
+            getEntries: managerGetEntries,
+          }
+          : null
+      ),
+    });
+    initializeTabControllers(
+      tab,
+      plugin,
+      {} as any,
+      createMockMcpManager(),
+      undefined,
+      undefined,
+      () => (
+        tab.providerId === 'codex'
+          ? {
+            config: codexCatalog.getDropdownConfig(),
+            getEntries: managerGetEntries,
+          }
+          : null
+      ),
+    );
+
+    const setProviderCatalogSpy = jest.fn();
+    const setHiddenCommandsSpy = jest.fn();
+    tab.ui.slashCommandDropdown!.setProviderCatalog = setProviderCatalogSpy;
+    tab.ui.slashCommandDropdown!.setHiddenCommands = setHiddenCommandsSpy;
+
+    const convCtrlModule = jest.requireMock('@/features/chat/controllers/ConversationController') as {
+      ConversationController: jest.Mock;
+    };
+    const deps = convCtrlModule.ConversationController.mock.calls.at(-1)?.[0];
+    const ensureServiceForConversation = deps?.ensureServiceForConversation;
+
+    await ensureServiceForConversation({
+      id: 'conv-history',
+      providerId: 'codex' as const,
+      messages: [{ id: 'msg-1', role: 'user' as const, content: 'hi', timestamp: Date.now() }],
+    });
+
+    expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
+    expect(setHiddenCommandsSpy).toHaveBeenCalledWith(new Set(['analyze']));
+    const [, getEntries] = setProviderCatalogSpy.mock.calls[0];
+    await getEntries();
+    expect(managerGetEntries).toHaveBeenCalledTimes(1);
+    expect(codexCatalog.listDropdownEntries).not.toHaveBeenCalled();
   });
 });
 

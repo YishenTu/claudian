@@ -1,5 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import {
   DEFAULT_MAX_TABS,
@@ -52,12 +53,18 @@ const mockGetCapabilities = jest.fn().mockReturnValue({
   supportsProviderCommands: true,
   reasoningControl: 'effort',
 });
+const mockCommandCatalogs: Record<string, any> = {};
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
     getConversationHistoryService: () => ({
       buildForkProviderState: mockBuildForkProviderState,
     }),
     getCapabilities: (...args: any[]) => mockGetCapabilities(...args),
+    getCommandCatalog: (providerId: string) => mockCommandCatalogs[providerId] ?? null,
+    setCommandCatalog: (providerId: string, catalog: any) => {
+      if (catalog) mockCommandCatalogs[providerId] = catalog;
+      else delete mockCommandCatalogs[providerId];
+    },
   },
 }));
 
@@ -855,6 +862,247 @@ describe('TabManager - SDK Commands', () => {
 
     await expect(manager.getSdkCommands(codexTab!.id)).resolves.toEqual([]);
     expect(readyClaudeService.getSupportedCommands).not.toHaveBeenCalled();
+  });
+
+  it('should resolve blank-tab SDK command provider from draftModel instead of stale providerId', async () => {
+    const claudeCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyClaudeService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(claudeCommands),
+    };
+    const manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        lifecycleState: n === 2 ? 'blank' : 'bound_cold',
+        draftModel: n === 2 ? 'gpt-5.4' : null,
+        providerId: 'claude',
+        service: n === 1 ? readyClaudeService : null,
+      }),
+    });
+
+    await manager.createTab();
+    const blankCodexTab = await manager.createTab();
+    mockGetCapabilities.mockImplementation((providerId: string) => ({
+      providerId,
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: providerId === 'claude',
+      supportsRewind: providerId === 'claude',
+      supportsFork: providerId === 'claude',
+      supportsProviderCommands: providerId === 'claude',
+      reasoningControl: providerId === 'claude' ? 'effort' : 'none',
+    }));
+
+    await expect(manager.getSdkCommands(blankCodexTab!.id)).resolves.toEqual([]);
+    expect(readyClaudeService.getSupportedCommands).not.toHaveBeenCalled();
+  });
+});
+
+describe('TabManager - Provider Command Catalog', () => {
+  const mockCatalogEntries = [
+    {
+      id: 'codex-skill-analyze', providerId: 'codex', kind: 'skill',
+      name: 'analyze', description: 'Analyze code', content: '',
+      scope: 'vault', source: 'user', isEditable: true, isDeletable: true,
+      displayPrefix: '$', insertPrefix: '$',
+    },
+  ];
+
+  const mockCatalog = {
+    listDropdownEntries: jest.fn().mockResolvedValue(mockCatalogEntries),
+    listVaultEntries: jest.fn().mockResolvedValue(mockCatalogEntries),
+    saveVaultEntry: jest.fn(),
+    deleteVaultEntry: jest.fn(),
+    setRuntimeCommands: jest.fn(),
+    getDropdownConfig: jest.fn().mockReturnValue({
+      triggerChars: ['/', '$'],
+      builtInPrefix: '/',
+      skillPrefix: '$',
+      commandPrefix: '/',
+    }),
+    refresh: jest.fn(),
+  };
+
+  afterEach(() => {
+    ProviderRegistry.setCommandCatalog('codex', undefined);
+    ProviderRegistry.setCommandCatalog('claude', undefined);
+  });
+
+  it('should pass provider catalog config to initializeTabUI for Codex tab', async () => {
+    ProviderRegistry.setCommandCatalog('codex', mockCatalog as any);
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+
+    expect(catalogConfig).not.toBeNull();
+    expect(catalogConfig.config.triggerChars).toEqual(['/', '$']);
+    expect(catalogConfig.config.skillPrefix).toBe('$');
+  });
+
+  it('should provide scan-backed entries for Codex without runtime', async () => {
+    ProviderRegistry.setCommandCatalog('codex', mockCatalog as any);
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    const entries = await catalogConfig.getEntries();
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).toBe('analyze');
+    expect(entries[0].displayPrefix).toBe('$');
+  });
+
+  it('should resolve the blank-tab catalog from draftModel instead of stale providerId', async () => {
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([
+        {
+          id: 'claude-command-test', providerId: 'claude', kind: 'command',
+          name: 'claude-only', description: 'Claude command', content: '',
+          scope: 'vault', source: 'user', isEditable: true, isDeletable: true,
+          displayPrefix: '/', insertPrefix: '/',
+        },
+      ]),
+      listVaultEntries: jest.fn().mockResolvedValue([]),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    ProviderRegistry.setCommandCatalog('claude', claudeCatalog as any);
+    ProviderRegistry.setCommandCatalog('codex', mockCatalog as any);
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-1',
+        lifecycleState: 'blank',
+        draftModel: 'gpt-5.4',
+        providerId: 'claude',
+      }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    const entries = await catalogConfig.getEntries();
+
+    expect(catalogConfig).not.toBeNull();
+    expect(catalogConfig.config.skillPrefix).toBe('$');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].providerId).toBe('codex');
+    expect(mockCatalog.listDropdownEntries).toHaveBeenCalledWith({ includeBuiltIns: false });
+    expect(claudeCatalog.listDropdownEntries).not.toHaveBeenCalled();
+  });
+
+  it('should refresh Claude runtime commands before listing catalog entries', async () => {
+    const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '', source: 'sdk' }];
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+    };
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn().mockResolvedValue([]),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    ProviderRegistry.setCommandCatalog('claude', claudeCatalog as any);
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-1',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    await catalogConfig.getEntries();
+
+    expect(readyService.getSupportedCommands).toHaveBeenCalledTimes(1);
+    expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith(supportedCommands);
+    expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith({ includeBuiltIns: false });
+  });
+
+  it('should clear Claude runtime commands when revalidation returns no commands', async () => {
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue([]),
+    };
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn().mockResolvedValue([]),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    ProviderRegistry.setCommandCatalog('claude', claudeCatalog as any);
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-1',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+
+    const tab = await manager.createTab();
+
+    await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual([]);
+    expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith([]);
+  });
+
+  it('should return null catalog config when provider has no catalog', async () => {
+    // No catalog assigned to registry for 'claude'
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'claude' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+
+    expect(catalogConfig).toBeNull();
   });
 });
 

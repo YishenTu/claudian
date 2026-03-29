@@ -1,6 +1,7 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 
+import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderId } from '../../core/providers/types';
@@ -114,13 +115,12 @@ export class ClaudianView extends ItemView {
     }
   }
 
-  /** Updates hidden slash commands on all tabs (used after settings change). */
-  updateHiddenSlashCommands(): void {
-    const hiddenCommands = new Set(
-      (this.plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase())
-    );
+  /** Updates provider-scoped hidden commands on all tabs after settings changes. */
+  updateHiddenProviderCommands(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.slashCommandDropdown?.setHiddenCommands(hiddenCommands);
+      tab.ui.slashCommandDropdown?.setHiddenCommands(
+        getHiddenProviderCommandSet(this.plugin.settings, getTabProviderId(tab, this.plugin)),
+      );
     }
   }
 

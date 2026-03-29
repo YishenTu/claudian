@@ -15,6 +15,9 @@
  * - State (merged from data.json)
  */
 
+import {
+  normalizeHiddenProviderCommands,
+} from '../../../core/providers/commands/hiddenCommands';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type { PlatformBlockedCommands } from '../../../core/types';
 import { getDefaultBlockedCommands } from '../../../core/types';
@@ -25,11 +28,19 @@ import { DEFAULT_SETTINGS } from '../types/settings';
 /** Path to Claudian settings file relative to vault root. */
 export const CLAUDIAN_SETTINGS_PATH = '.claude/claudian-settings.json';
 
-/** Fields that are loaded separately (slash commands from .claude/commands/). */
-type SeparatelyLoadedFields = 'slashCommands';
-
 /** Settings stored in .claude/claudian-settings.json. */
-export type StoredClaudianSettings = Omit<ClaudianSettings, SeparatelyLoadedFields>;
+export type StoredClaudianSettings = ClaudianSettings;
+
+function stripLegacyFields(settings: Record<string, unknown>): Record<string, unknown> {
+  const {
+    activeConversationId: _activeConversationId,
+    show1MModel: _show1MModel,
+    hiddenSlashCommands: _hiddenSlashCommands,
+    slashCommands: _slashCommands,
+    ...cleaned
+  } = settings;
+  return cleaned;
+}
 
 function normalizeCommandList(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) {
@@ -93,10 +104,22 @@ export class ClaudianSettingsStorage {
 
     const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
-    const { activeConversationId: _activeConversationId, show1MModel: _show1MModel, ...storedWithoutLegacy } = stored;
+    const hiddenProviderCommands = normalizeHiddenProviderCommands(
+      stored.hiddenProviderCommands,
+      stored.hiddenSlashCommands,
+    );
+    const storedWithoutLegacy = stripLegacyFields({
+      ...stored,
+      hiddenProviderCommands,
+    });
 
-    // Remove legacy show1MModel from persisted file (replaced by enableOpus1M/enableSonnet1M)
-    if ('show1MModel' in stored) {
+    // Remove legacy persisted fields from disk when present.
+    if (
+      'show1MModel' in stored
+      || 'slashCommands' in stored
+      || 'hiddenSlashCommands' in stored
+      || 'activeConversationId' in stored
+    ) {
       await this.adapter.write(CLAUDIAN_SETTINGS_PATH, JSON.stringify(storedWithoutLegacy, null, 2));
     }
 
@@ -114,11 +137,16 @@ export class ClaudianSettingsStorage {
       claudeCliPathsByHost: claudeHostnameCliPaths,
       codexCliPath: legacyCodexCliPath,
       codexCliPathsByHost: codexHostnameCliPaths,
+      hiddenProviderCommands,
     } as StoredClaudianSettings;
   }
 
   async save(settings: StoredClaudianSettings): Promise<void> {
-    const content = JSON.stringify(settings, null, 2);
+    const content = JSON.stringify(
+      stripLegacyFields(settings as unknown as Record<string, unknown>),
+      null,
+      2,
+    );
     await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
   }
 
@@ -147,11 +175,6 @@ export class ClaudianSettingsStorage {
    * Get default settings (excluding separately loaded fields).
    */
   private getDefaults(): StoredClaudianSettings {
-    const {
-      slashCommands: _,
-      ...defaults
-    } = DEFAULT_SETTINGS;
-
-    return defaults;
+    return DEFAULT_SETTINGS;
   }
 }

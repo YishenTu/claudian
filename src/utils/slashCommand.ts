@@ -33,6 +33,7 @@ export function validateCommandName(name: string): string | null {
 }
 
 export function isSkill(cmd: SlashCommand): boolean {
+  if (cmd.kind) return cmd.kind === 'skill';
   return cmd.id.startsWith('skill-');
 }
 

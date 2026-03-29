@@ -131,7 +131,58 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.enableSonnet1M).toBe(DEFAULT_SETTINGS.enableSonnet1M);
       expect(mockAdapter.write).toHaveBeenCalledWith(
         CLAUDIAN_SETTINGS_PATH,
-        JSON.stringify({ model: 'sonnet' }, null, 2)
+        JSON.stringify({
+          model: 'sonnet',
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
+        }, null, 2)
+      );
+    });
+
+    it('should remove legacy slashCommands from the stored file', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        model: 'sonnet',
+        slashCommands: [{ id: 'cmd-review', name: 'review', content: 'Review' }],
+      }));
+
+      const result = await storage.load();
+
+      expect('slashCommands' in result).toBe(false);
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        CLAUDIAN_SETTINGS_PATH,
+        JSON.stringify({
+          model: 'sonnet',
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
+        }, null, 2)
+      );
+    });
+
+    it('should migrate legacy hiddenSlashCommands into Claude hiddenProviderCommands', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        hiddenSlashCommands: ['commit', '/review'],
+      }));
+
+      const result = await storage.load();
+
+      expect(result.hiddenProviderCommands).toEqual({
+        claude: ['commit', 'review'],
+        codex: [],
+      });
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        CLAUDIAN_SETTINGS_PATH,
+        JSON.stringify({
+          hiddenProviderCommands: {
+            claude: ['commit', 'review'],
+            codex: [],
+          },
+        }, null, 2)
       );
     });
 
@@ -156,10 +207,8 @@ describe('ClaudianSettingsStorage', () => {
         ...DEFAULT_SETTINGS,
         model: 'claude-opus-4-5' as const,
       };
-      // Remove slashCommands as it's stored separately
-      const { slashCommands: _, ...storedSettings } = settings;
 
-      await storage.save(storedSettings);
+      await storage.save(settings);
 
       expect(mockAdapter.write).toHaveBeenCalledWith(
         CLAUDIAN_SETTINGS_PATH,
@@ -169,15 +218,24 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.model).toBe('claude-opus-4-5');
     });
 
+    it('should strip legacy slashCommands before writing', async () => {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        model: 'claude-opus-4-5' as const,
+        slashCommands: [{ id: 'cmd-review', name: 'review', content: 'Review' }],
+      } as typeof DEFAULT_SETTINGS & { slashCommands: unknown[] };
+
+      await storage.save(settings as any);
+
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+      expect(writtenContent.model).toBe('claude-opus-4-5');
+      expect(writtenContent).not.toHaveProperty('slashCommands');
+    });
+
     it('should throw on write error', async () => {
       mockAdapter.write.mockRejectedValue(new Error('Write failed'));
 
-      const settings = {
-        ...DEFAULT_SETTINGS,
-      };
-      const { slashCommands: _, ...storedSettings } = settings;
-
-      await expect(storage.save(storedSettings)).rejects.toThrow('Write failed');
+      await expect(storage.save(DEFAULT_SETTINGS)).rejects.toThrow('Write failed');
     });
   });
 

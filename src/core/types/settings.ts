@@ -1,3 +1,5 @@
+import type { ProviderId } from '../providers/types';
+
 /** Generic settings and command definitions shared across the app. */
 
 const UNIX_BLOCKED_COMMANDS = [
@@ -47,6 +49,8 @@ export interface PlatformBlockedCommands {
   unix: string[];
   windows: string[];
 }
+
+export type HiddenProviderCommands = Record<ProviderId, string[]>;
 
 export function getDefaultBlockedCommands(): PlatformBlockedCommands {
   return {
@@ -102,6 +106,7 @@ export interface SlashCommand {
   model?: string;              // Optional provider-specific model override
   content: string;             // Prompt template with placeholders
   source?: SlashCommandSource; // Origin of the command (builtin, user, plugin, sdk)
+  kind?: 'command' | 'skill';  // Explicit type — replaces id-prefix heuristic
   // Provider-owned command metadata that the UI preserves and round-trips.
   disableModelInvocation?: boolean;  // Disable model invocation for this skill
   userInvocable?: boolean;           // Whether user can invoke this skill directly
@@ -200,17 +205,14 @@ export interface ClaudianSettings {
   lastCustomModel?: string;
   lastEnvHash?: string;
 
-  // Slash commands (loaded separately)
-  slashCommands: SlashCommand[];
-
   // UI preferences
   maxTabs: number;
   tabBarPosition: TabBarPosition;
   enableAutoScroll: boolean;
   openInMainTab: boolean;
 
-  // Slash commands
-  hiddenSlashCommands: string[];
+  // Provider command visibility
+  hiddenProviderCommands: HiddenProviderCommands;
 
   // Allow provider-specific extension fields
   [key: string]: unknown;

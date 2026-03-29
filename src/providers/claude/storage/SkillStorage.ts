@@ -23,11 +23,14 @@ export class SkillStorage {
           const content = await this.adapter.read(skillPath);
           const parsed = parseSlashCommandContent(content);
 
-          skills.push(parsedToSlashCommand(parsed, {
-            id: `skill-${skillName}`,
-            name: skillName,
-            source: 'user',
-          }));
+          skills.push({
+            ...parsedToSlashCommand(parsed, {
+              id: `skill-${skillName}`,
+              name: skillName,
+              source: 'user',
+            }),
+            kind: 'skill',
+          });
         } catch {
           // Non-critical: skip malformed skill files
         }

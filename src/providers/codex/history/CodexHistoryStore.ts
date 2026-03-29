@@ -327,6 +327,7 @@ const CODEX_SYSTEM_MESSAGE_PREFIXES = [
   '# AGENTS.md instructions',
   '<environment_context>',
   '<subagent_notification>',
+  '<skill>',
 ];
 
 const CODEX_BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;

@@ -24,11 +24,12 @@ import type {
   ProviderId,
 } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
+import { HomeFileAdapter } from './core/storage/HomeFileAdapter';
+import type { VaultFileAdapter } from './core/storage/VaultFileAdapter';
 import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
-  SlashCommand,
 } from './core/types';
 import {
   VIEW_TYPE_CLAUDIAN,
@@ -45,7 +46,10 @@ import {
   createClaudePluginManager,
   createClaudeStorage,
 } from './providers/claude/app/ClaudeWorkspaceServices';
+import { ClaudeCommandCatalog } from './providers/claude/commands/ClaudeCommandCatalog';
+import { CodexSkillCatalog } from './providers/codex/commands/CodexSkillCatalog';
 import { resolveCodexCliPath } from './providers/codex/runtime/CodexBinaryLocator';
+import { CodexSkillStorage } from './providers/codex/storage/CodexSkillStorage';
 import { buildCursorContext } from './utils/editor';
 import { getHostnameKey } from './utils/env';
 import { getVaultPath } from './utils/path';
@@ -248,13 +252,9 @@ export default class ClaudianPlugin extends Plugin {
 
     const { claudian } = await this.storage.initialize();
 
-    // Load slash commands from Claude-owned storage
-    const slashCommands = await this.claudeStorage.loadAllSlashCommands();
-
     this.settings = {
       ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
-      slashCommands,
     } as ClaudianSettings;
 
     // Plan mode is ephemeral — normalize back to normal on load so the app
@@ -262,6 +262,18 @@ export default class ClaudianPlugin extends Plugin {
     if (this.settings.permissionMode === 'plan') {
       this.settings.permissionMode = 'normal';
     }
+
+    // Initialize provider command catalogs and assign to registry
+    const homeAdapter = new HomeFileAdapter();
+    ProviderRegistry.setCommandCatalog('claude',
+      new ClaudeCommandCatalog(this.claudeStorage.commands, this.claudeStorage.skills));
+    ProviderRegistry.setCommandCatalog('codex',
+      new CodexSkillCatalog(
+        new CodexSkillStorage(
+          this.claudeStorage.getAdapter(),
+          homeAdapter as unknown as VaultFileAdapter,
+        ),
+      ));
 
     const didNormalizeProviderSelection = ProviderSettingsCoordinator.normalizeProviderSelection(
       this.settings as unknown as Record<string, unknown>,
@@ -352,13 +364,7 @@ export default class ClaudianPlugin extends Plugin {
       this.settings as unknown as Record<string, unknown>,
     );
 
-    // Save settings (excluding slashCommands which are stored separately)
-    const {
-      slashCommands: _,
-      ...settingsToSave
-    } = this.settings;
-
-    await this.storage.saveClaudianSettings(settingsToSave);
+    await this.storage.saveClaudianSettings(this.settings);
   }
 
   /** Updates and persists environment variables, restarting processes to apply changes. */
@@ -682,21 +688,4 @@ export default class ClaudianPlugin extends Plugin {
     return null;
   }
 
-  /**
-   * Gets SDK supported commands from any ready service.
-   * The command list is the same for all services, so we just need one ready.
-   * Used by inline edit and other contexts that don't have direct TabManager access.
-   */
-  async getSdkCommands(): Promise<SlashCommand[]> {
-    for (const view of this.getAllViews()) {
-      const tabManager = view.getTabManager();
-      if (tabManager) {
-        const commands = await tabManager.getSdkCommands();
-        if (commands.length > 0) {
-          return commands;
-        }
-      }
-    }
-    return [];
-  }
 }

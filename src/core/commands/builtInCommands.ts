@@ -5,6 +5,8 @@
  * These are handled separately from user-defined slash commands.
  */
 
+import type { ProviderId } from '../providers/types';
+
 export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork';
 
 export interface BuiltInCommand {
@@ -16,6 +18,8 @@ export interface BuiltInCommand {
   hasArgs?: boolean;
   /** Hint for arguments shown in dropdown (e.g., "path"). */
   argumentHint?: string;
+  /** When set, only these providers show this command in the dropdown. */
+  providers?: ProviderId[];
 }
 
 export interface BuiltInCommandResult {
@@ -37,16 +41,19 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     action: 'add-dir',
     hasArgs: true,
     argumentHint: '[path/to/directory]',
+    providers: ['claude'],
   },
   {
     name: 'resume',
     description: 'Resume a previous conversation',
     action: 'resume',
+    providers: ['claude'],
   },
   {
     name: 'fork',
     description: 'Fork entire conversation to new session',
     action: 'fork',
+    providers: ['claude'],
   },
 ];
 
@@ -60,6 +67,13 @@ for (const cmd of BUILT_IN_COMMANDS) {
       commandMap.set(alias.toLowerCase(), cmd);
     }
   }
+}
+
+export function isBuiltInCommandSupported(
+  command: BuiltInCommand,
+  providerId?: ProviderId,
+): boolean {
+  return !command.providers || !providerId || command.providers.includes(providerId);
 }
 
 /**
@@ -84,21 +98,23 @@ export function detectBuiltInCommand(input: string): BuiltInCommandResult | null
 }
 
 /**
- * Gets all built-in commands for dropdown display.
- * Returns commands in a format compatible with SlashCommand interface.
+ * Gets built-in commands for dropdown display.
+ * When providerId is given, excludes commands restricted to other providers.
  */
-export function getBuiltInCommandsForDropdown(): Array<{
+export function getBuiltInCommandsForDropdown(providerId?: ProviderId): Array<{
   id: string;
   name: string;
   description: string;
   content: string;
   argumentHint?: string;
 }> {
-  return BUILT_IN_COMMANDS.map((cmd) => ({
-    id: `builtin:${cmd.name}`,
-    name: cmd.name,
-    description: cmd.description,
-    content: '', // Built-in commands don't have prompt content
-    argumentHint: cmd.argumentHint,
-  }));
+  return BUILT_IN_COMMANDS
+    .filter((cmd) => isBuiltInCommandSupported(cmd, providerId))
+    .map((cmd) => ({
+      id: `builtin:${cmd.name}`,
+      name: cmd.name,
+      description: cmd.description,
+      content: '', // Built-in commands don't have prompt content
+      argumentHint: cmd.argumentHint,
+    }));
 }

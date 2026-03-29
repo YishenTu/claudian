@@ -53,7 +53,6 @@ function createMockSettings(overrides: Partial<ClaudianSettings> = {}): Claudian
     excludedTags: [],
     environmentVariables: '',
     envSnippets: [],
-    slashCommands: [],
     keyboardNavigation: {
       scrollUpKey: 'k',
       scrollDownKey: 'j',

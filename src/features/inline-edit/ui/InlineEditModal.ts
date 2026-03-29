@@ -4,8 +4,9 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import { DEFAULT_CHAT_PROVIDER_ID, type InlineEditMode, type InlineEditService } from '../../../core/providers/types';
+import { DEFAULT_CHAT_PROVIDER_ID, type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
 import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -269,6 +270,7 @@ class InlineEditController {
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
   private selectionListener: ((e: Event) => void) | null = null;
   private isConversing = false;
+  private resolvedProviderId: ProviderId;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
   private mentionDataProvider: VaultMentionDataProvider;
@@ -290,11 +292,12 @@ class InlineEditController {
     const conversation = activeTab?.conversationId
       ? plugin.getConversationSync(activeTab.conversationId)
       : null;
-    const providerId = conversation?.providerId
+    const providerId: ProviderId = conversation?.providerId as ProviderId
       ?? activeTab?.service?.providerId
       ?? activeTab?.providerId
       ?? DEFAULT_CHAT_PROVIDER_ID;
     this.inlineEditService = ProviderRegistry.createInlineEditService(plugin, providerId);
+    this.resolvedProviderId = providerId;
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {
         new Notice('Failed to load vault files. Vault @-mentions may be unavailable.');
@@ -427,17 +430,21 @@ class InlineEditController {
     this.spinnerEl.style.display = 'none';
     inputWrap.appendChild(this.spinnerEl);
 
+    const inlineCatalog = ProviderRegistry.getCommandCatalog(this.resolvedProviderId);
     this.slashCommandDropdown = new SlashCommandDropdown(
-      document.body, // Fixed positioning
+      document.body,
       this.inputEl,
       {
         onSelect: () => {},
         onHide: () => {},
-        getSdkCommands: () => this.plugin.getSdkCommands(),
       },
       {
         fixed: true,
-        hiddenCommands: new Set((this.plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase())),
+        hiddenCommands: getHiddenProviderCommandSet(this.plugin.settings, this.resolvedProviderId),
+        ...(inlineCatalog ? {
+          providerConfig: inlineCatalog.getDropdownConfig(),
+          getProviderEntries: () => inlineCatalog.listDropdownEntries({ includeBuiltIns: false }),
+        } : {}),
       }
     );
 

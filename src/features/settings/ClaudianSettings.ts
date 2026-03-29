@@ -2,6 +2,10 @@ import * as fs from 'fs';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
+import {
+  getHiddenProviderCommands,
+  normalizeHiddenCommandList,
+} from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import type { ProviderId } from '../../core/providers/types';
 import { getCurrentPlatformKey } from '../../core/types';
@@ -14,6 +18,7 @@ import { expandHomePath } from '../../utils/path';
 import { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { AgentSettings } from './ui/AgentSettings';
+import { CodexSkillSettings } from './ui/CodexSkillSettings';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
 import { PluginSettingsManager } from './ui/PluginSettingsManager';
@@ -534,24 +539,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const slashCommandsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
     new SlashCommandSettings(slashCommandsContainer, this.plugin);
 
-    new Setting(container)
-      .setName(t('settings.hiddenSlashCommands.name'))
-      .setDesc(t('settings.hiddenSlashCommands.desc'))
-      .addTextArea((text) => {
-        text
-          .setPlaceholder(t('settings.hiddenSlashCommands.placeholder'))
-          .setValue((this.plugin.settings.hiddenSlashCommands || []).join('\n'))
-          .onChange(async (value) => {
-            this.plugin.settings.hiddenSlashCommands = value
-              .split(/\r?\n/)
-              .map((s) => s.trim().replace(/^\//, ''))
-              .filter((s) => s.length > 0);
-            await this.plugin.saveSettings();
-            this.plugin.getView()?.updateHiddenSlashCommands();
-          });
-        text.inputEl.rows = 4;
-        text.inputEl.cols = 30;
-      });
+    this.renderHiddenProviderCommandSetting(container, 'claude', {
+      name: t('settings.hiddenSlashCommands.name'),
+      desc: t('settings.hiddenSlashCommands.desc'),
+      placeholder: t('settings.hiddenSlashCommands.placeholder'),
+    });
 
     new Setting(container).setName(t('settings.subagents.name')).setHeading();
 
@@ -886,9 +878,55 @@ export class ClaudianSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
       });
+
+    // Codex Skills (vault-only)
+    const codexCatalog = ProviderRegistry.getCommandCatalog('codex');
+    if (codexCatalog) {
+      new Setting(container).setName('Codex Skills').setHeading();
+
+      const skillsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
+      skillsDesc.createEl('p', {
+        cls: 'setting-item-description',
+        text: 'Manage vault-level Codex skills stored in .codex/skills/ or .agents/skills/. Home-level skills are excluded here.',
+      });
+
+      const skillsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
+      new CodexSkillSettings(skillsContainer, codexCatalog, this.plugin.app);
+    }
+
+    this.renderHiddenProviderCommandSetting(container, 'codex', {
+      name: 'Hidden Skills',
+      desc: 'Hide specific Codex skills from the dropdown. Enter skill names without the leading $, one per line.',
+      placeholder: 'analyze\nexplain\nfix',
+    });
   }
 
   // ── Shared helpers ──
+
+  private renderHiddenProviderCommandSetting(
+    container: HTMLElement,
+    providerId: ProviderId,
+    copy: { name: string; desc: string; placeholder: string },
+  ): void {
+    new Setting(container)
+      .setName(copy.name)
+      .setDesc(copy.desc)
+      .addTextArea((text) => {
+        text
+          .setPlaceholder(copy.placeholder)
+          .setValue(getHiddenProviderCommands(this.plugin.settings, providerId).join('\n'))
+          .onChange(async (value) => {
+            this.plugin.settings.hiddenProviderCommands = {
+              ...this.plugin.settings.hiddenProviderCommands,
+              [providerId]: normalizeHiddenCommandList(value.split(/\r?\n/)),
+            };
+            await this.plugin.saveSettings();
+            this.plugin.getView()?.updateHiddenProviderCommands();
+          });
+        text.inputEl.rows = 4;
+        text.inputEl.cols = 30;
+      });
+  }
 
   private renderContextLimitsSection(): void {
     const container = this.contextLimitsContainer;

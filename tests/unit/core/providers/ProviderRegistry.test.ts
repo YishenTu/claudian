@@ -66,4 +66,48 @@ describe('ProviderRegistry', () => {
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
   });
+
+  describe('command catalogs', () => {
+    it('returns null when no catalog is assigned', () => {
+      expect(typeof ProviderRegistry.getCommandCatalog).toBe('function');
+    });
+
+    it('returns the assigned catalog for a provider', () => {
+      const mockCatalog = {
+        listDropdownEntries: jest.fn(),
+        listVaultEntries: jest.fn(),
+        saveVaultEntry: jest.fn(),
+        deleteVaultEntry: jest.fn(),
+        setRuntimeCommands: jest.fn(),
+        getDropdownConfig: jest.fn(),
+        refresh: jest.fn(),
+      };
+
+      ProviderRegistry.setCommandCatalog('claude', mockCatalog as any);
+      expect(ProviderRegistry.getCommandCatalog('claude')).toBe(mockCatalog);
+
+      // Cleanup
+      ProviderRegistry.setCommandCatalog('claude', undefined);
+    });
+
+    it('shared code accesses catalogs through registry, not provider-specific imports', () => {
+      const mockCatalog = {
+        listDropdownEntries: jest.fn(),
+        listVaultEntries: jest.fn(),
+        saveVaultEntry: jest.fn(),
+        deleteVaultEntry: jest.fn(),
+        setRuntimeCommands: jest.fn(),
+        getDropdownConfig: jest.fn(),
+        refresh: jest.fn(),
+      };
+      ProviderRegistry.setCommandCatalog('claude', mockCatalog as any);
+
+      const catalog = ProviderRegistry.getCommandCatalog('claude');
+      expect(catalog).toBe(mockCatalog);
+      expect(typeof catalog!.listDropdownEntries).toBe('function');
+      expect(typeof catalog!.getDropdownConfig).toBe('function');
+
+      ProviderRegistry.setCommandCatalog('claude', undefined);
+    });
+  });
 });

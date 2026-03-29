@@ -618,6 +618,50 @@ describe('CodexHistoryStore', () => {
       expect(messages[0].displayContent).toBeUndefined();
     });
 
+    it('should filter out skill wrapper user messages as system-injected', () => {
+      const skillText = [
+        '<skill>',
+        '<name>test</name>',
+        '<path>/Users/me/.codex/skills/test/SKILL.md</path>',
+        '---',
+        'description: testing',
+        '---',
+        '',
+        '## Task',
+        '',
+        'tell me a joke',
+        '',
+        '</skill>',
+      ].join('\n');
+
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: skillText }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Why did the skeleton...' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      // Skill wrapper is system-injected — only the assistant message should remain
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ role: 'assistant' });
+    });
+
     it('should NOT skip real user messages', () => {
       const content = [
         JSON.stringify({

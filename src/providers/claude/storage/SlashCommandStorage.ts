@@ -63,10 +63,13 @@ export class SlashCommandStorage {
 
   private parseFile(content: string, filePath: string): SlashCommand {
     const parsed = parseSlashCommandContent(content);
-    return parsedToSlashCommand(parsed, {
-      id: this.filePathToId(filePath),
-      name: this.filePathToName(filePath),
-    });
+    return {
+      ...parsedToSlashCommand(parsed, {
+        id: this.filePathToId(filePath),
+        name: this.filePathToName(filePath),
+      }),
+      kind: 'command',
+    };
   }
 
   private filePathToId(filePath: string): string {

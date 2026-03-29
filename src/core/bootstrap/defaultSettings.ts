@@ -1,3 +1,4 @@
+import { getDefaultHiddenProviderCommands } from '../providers/commands/hiddenCommands';
 import {
   type ClaudianSettings,
   getDefaultBlockedCommands,
@@ -75,15 +76,12 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   lastCustomModel: '',
   lastEnvHash: '',
 
-  // Slash commands (loaded separately)
-  slashCommands: [],
-
   // UI preferences
   maxTabs: 3,
   tabBarPosition: 'input',
   enableAutoScroll: true,
   openInMainTab: false,
 
-  // Slash commands
-  hiddenSlashCommands: [],
+  // Provider command visibility
+  hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };

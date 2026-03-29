@@ -7,6 +7,7 @@ import type { SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
+import { getTabProviderId } from './providerResolution';
 import {
   activateTab,
   createTab,
@@ -113,9 +114,9 @@ export class TabManager implements TabManagerInterface {
       },
     });
 
-    // Initialize UI components with shared SDK commands callback
+    // Initialize UI components with provider catalog
     initializeTabUI(tab, this.plugin, {
-      getSdkCommands: () => this.getSdkCommands(tab.id),
+      getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
       onProviderChanged: (providerId) => {
         this.callbacks.onTabProviderChanged?.(tab.id, providerId);
       },
@@ -129,6 +130,7 @@ export class TabManager implements TabManagerInterface {
       this.mcpManager,
       (forkContext) => this.handleForkRequest(forkContext),
       (conversationId) => this.openConversation(conversationId),
+      () => this.getProviderCatalogConfig(tab),
     );
 
     // Wire input event handlers
@@ -534,27 +536,53 @@ export class TabManager implements TabManagerInterface {
       return [];
     }
 
-    const providerId = targetTab.service?.providerId ?? targetTab.providerId;
+    const providerId = getTabProviderId(targetTab, this.plugin);
     const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
     if (!staticCapabilities.supportsProviderCommands) {
       return [];
     }
 
+    let sdkCommands: SlashCommand[] = [];
+
     const targetService = targetTab.service;
     if (targetService?.providerId === providerId && targetService.isReady()) {
-      return targetService.getSupportedCommands();
+      sdkCommands = await targetService.getSupportedCommands();
+    } else {
+      for (const tab of this.tabs.values()) {
+        if (tab.id === targetTab.id) {
+          continue;
+        }
+        if (tab.service?.providerId === providerId && tab.service.isReady()) {
+          sdkCommands = await tab.service.getSupportedCommands();
+          break;
+        }
+      }
     }
 
-    for (const tab of this.tabs.values()) {
-      if (tab.id === targetTab.id) {
-        continue;
-      }
-      if (tab.service?.providerId === providerId && tab.service.isReady()) {
-        return tab.service.getSupportedCommands();
-      }
+    const catalog = ProviderRegistry.getCommandCatalog(providerId);
+    if (catalog) {
+      catalog.setRuntimeCommands(sdkCommands);
     }
 
-    return [];
+    return sdkCommands;
+  }
+
+  // ============================================
+  // Provider Command Catalog
+  // ============================================
+
+  private getProviderCatalogConfig(tab: TabData) {
+    const providerId = getTabProviderId(tab, this.plugin);
+    const catalog = ProviderRegistry.getCommandCatalog(providerId);
+    if (!catalog) return null;
+
+    return {
+      config: catalog.getDropdownConfig(),
+      getEntries: async () => {
+        await this.getSdkCommands(tab.id);
+        return catalog.listDropdownEntries({ includeBuiltIns: false });
+      },
+    };
   }
 
   // ============================================

@@ -2,6 +2,9 @@ import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
+import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
+import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import { getProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -12,7 +15,7 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { ChatMessage, Conversation, SlashCommand, StreamChunk } from '../../../core/types';
+import type { ChatMessage, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -38,6 +41,7 @@ import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
 import { StatusPanel } from '../ui/StatusPanel';
+import { getTabProviderId } from './providerResolution';
 import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
 
@@ -86,32 +90,7 @@ export interface TabCreateOptions {
   onConversationIdChanged?: (conversationId: string | null) => void;
 }
 
-function getStoredConversationProviderId(
-  tab: TabProviderContext,
-  plugin: ClaudianPlugin,
-): ProviderId {
-  if (tab.conversationId) {
-    const conversation = plugin.getConversationSync(tab.conversationId);
-    if (conversation?.providerId) {
-      return conversation.providerId;
-    }
-  }
-
-  // For blank tabs, derive provider from draft model
-  if (tab.lifecycleState === 'blank' && tab.draftModel) {
-    return getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>);
-  }
-
-  return tab.service?.providerId ?? tab.providerId;
-}
-
-export function getTabProviderId(
-  tab: TabProviderContext,
-  plugin: ClaudianPlugin,
-  conversation?: Conversation | null,
-): ProviderId {
-  return conversation?.providerId ?? getStoredConversationProviderId(tab, plugin);
-}
+export { getTabProviderId } from './providerResolution';
 
 function getTabCapabilities(
   tab: TabProviderContext,
@@ -142,6 +121,57 @@ function getTabSettingsSnapshot(
     plugin.settings as unknown as Record<string, unknown>,
     getTabProviderId(tab, plugin),
   ) as TabProviderSettings;
+}
+
+function getTabHiddenCommands(
+  tab: TabProviderContext,
+  plugin: ClaudianPlugin,
+  conversation?: Conversation | null,
+): Set<string> {
+  return getHiddenProviderCommandSet(
+    plugin.settings,
+    getTabProviderId(tab, plugin, conversation),
+  );
+}
+
+type ProviderCatalogInfo = {
+  config: ProviderCommandDropdownConfig;
+  getEntries: () => Promise<ProviderCommandEntry[]>;
+} | null;
+
+function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
+  const catalog = ProviderRegistry.getCommandCatalog(providerId);
+  if (!catalog) {
+    return null;
+  }
+
+  return {
+    config: catalog.getDropdownConfig(),
+    getEntries: () => catalog.listDropdownEntries({ includeBuiltIns: false }),
+  };
+}
+
+function syncSlashCommandDropdownForProvider(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+  conversation?: Conversation | null,
+): void {
+  const dropdown = tab.ui.slashCommandDropdown;
+  if (!dropdown) {
+    return;
+  }
+
+  const catalogInfo = getProviderCatalogConfig?.()
+    ?? getRegistryProviderCatalogInfo(getTabProviderId(tab, plugin, conversation));
+
+  if (catalogInfo) {
+    dropdown.setProviderCatalog?.(catalogInfo.config, catalogInfo.getEntries);
+  } else {
+    dropdown.resetSdkSkillsCache();
+  }
+
+  dropdown.setHiddenCommands(getTabHiddenCommands(tab, plugin, conversation));
 }
 
 async function updateTabProviderSettings(
@@ -242,6 +272,7 @@ export function onCodexAvailabilityChanged(tab: TabData, plugin: ClaudianPlugin)
   }
 
   syncTabProviderServices(tab, plugin);
+  tab.ui.slashCommandDropdown?.setHiddenCommands(getTabHiddenCommands(tab, plugin));
   tab.ui.slashCommandDropdown?.resetSdkSkillsCache();
   refreshTabProviderUI(tab, plugin);
   applyProviderUIGating(tab, plugin);
@@ -290,13 +321,18 @@ export function createTab(options: TabCreateOptions): TabData {
   const dom = buildTabDOM(contentEl);
 
   const isBound = !!conversation?.id;
+  const draftModel = isBound ? null : (plugin.settings.model as string);
+  const initialProviderId = conversation?.providerId
+    ?? (draftModel
+      ? getProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)
+      : 'claude');
 
   // Create initial TabData (service and controllers are lazy-initialized)
   const tab: TabData = {
     id,
     lifecycleState: isBound ? 'bound_cold' : 'blank',
-    draftModel: isBound ? null : (plugin.settings.model as string),
-    providerId: conversation?.providerId ?? 'claude' as ProviderId,
+    draftModel,
+    providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
     service: null,
     serviceInitialized: false,
@@ -554,15 +590,10 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
   );
 }
 
-/**
- * Initializes slash command dropdown for a tab.
- * @param getSdkCommands Callback to get provider-scoped SDK commands for this tab.
- * @param getHiddenCommands Callback to get current hidden commands from settings.
- */
 function initializeSlashCommands(
   tab: TabData,
-  getSdkCommands?: () => Promise<SlashCommand[]>,
-  getHiddenCommands?: () => Set<string>
+  getHiddenCommands?: () => Set<string>,
+  catalogInfo?: { config: ProviderCommandDropdownConfig; getEntries: () => Promise<ProviderCommandEntry[]> } | null,
 ): void {
   const { dom } = tab;
 
@@ -572,10 +603,11 @@ function initializeSlashCommands(
     {
       onSelect: () => {},
       onHide: () => {},
-      getSdkCommands,
     },
     {
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
+      providerConfig: catalogInfo?.config,
+      getProviderEntries: catalogInfo?.getEntries,
     }
   );
 }
@@ -632,7 +664,12 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
 /**
  * Creates and wires the input toolbar for a tab.
  */
-function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin, onProviderChanged?: (providerId: ProviderId) => void): void {
+function initializeInputToolbar(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+  onProviderChanged?: (providerId: ProviderId) => void,
+): void {
   const { dom } = tab;
 
   const inputToolbar = dom.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
@@ -664,7 +701,9 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin, onProvider
         tab.draftModel = model;
         const newProvider = getProviderForModel(model, plugin.settings as unknown as Record<string, unknown>);
         tab.providerId = newProvider;
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         onProviderChanged?.(newProvider);
+
         // Update settings for the new provider
         const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
         await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -770,7 +809,7 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin, onProvider
 }
 
 export interface InitializeTabUIOptions {
-  getSdkCommands?: () => Promise<SlashCommand[]>;
+  getProviderCatalogConfig?: () => ProviderCatalogInfo;
   onProviderChanged?: (providerId: ProviderId) => void;
 }
 
@@ -800,11 +839,12 @@ export function initializeTabUI(
   dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator' });
   dom.canvasIndicatorEl.style.display = 'none';
 
-  // Initialize slash commands with shared SDK commands callback and hidden commands
+  // Initialize slash commands with provider catalog
+  const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
     tab,
-    options.getSdkCommands,
-    () => new Set((plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase()))
+    () => getTabHiddenCommands(tab, plugin),
+    catalogInfo,
   );
 
   // Initialize navigation sidebar
@@ -819,8 +859,7 @@ export function initializeTabUI(
   initializeInstructionAndTodo(tab, plugin);
 
   // Initialize input toolbar
-  initializeInputToolbar(tab, plugin, options.onProviderChanged);
-
+  initializeInputToolbar(tab, plugin, options.getProviderCatalogConfig, options.onProviderChanged);
   // Update ChatState callbacks for UI updates
   state.callbacks = {
     ...state.callbacks,
@@ -1010,6 +1049,7 @@ export function initializeTabControllers(
   mcpManager: McpServerManager,
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
   openConversation?: (conversationId: string) => Promise<void>,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
 ): void {
   const { dom, state, services, ui } = tab;
 
@@ -1109,13 +1149,13 @@ export function initializeTabControllers(
 
         if (providerChanged) {
           syncTabProviderServices(tab, plugin);
-          ui.slashCommandDropdown?.resetSdkSkillsCache();
         }
 
         // Bind session state only — runtime starts on send
         tab.conversationId = conversation?.id ?? null;
         tab.draftModel = null;
         tab.lifecycleState = conversation ? 'bound_cold' : 'blank';
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig, conversation);
 
         // If the runtime already exists for the right provider, sync it passively
         if (tab.service && tab.service.providerId === nextProviderId && conversation) {
@@ -1134,13 +1174,18 @@ export function initializeTabControllers(
       onNewConversation: () => {
         // Reset to blank state — mark service as not initialized so
         // ensureServiceInitialized re-runs the init path on next send
+        const previousProviderId = tab.providerId;
         tab.lifecycleState = 'blank';
         tab.draftModel = plugin.settings.model as string;
         tab.conversationId = null;
         tab.serviceInitialized = false;
+        tab.providerId = getTabProviderId(tab, plugin);
+        if (tab.providerId !== previousProviderId) {
+          syncTabProviderServices(tab, plugin);
+        }
         refreshTabProviderUI(tab, plugin);
         applyProviderUIGating(tab, plugin);
-        ui.slashCommandDropdown?.resetSdkSkillsCache();
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
       },
       onConversationLoaded: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
       onConversationSwitched: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),

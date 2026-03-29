@@ -1,6 +1,10 @@
 import { Notice } from 'obsidian';
 
-import { detectBuiltInCommand } from '../../../core/commands/builtInCommands';
+import {
+  type BuiltInCommand,
+  detectBuiltInCommand,
+  isBuiltInCommandSupported,
+} from '../../../core/commands/builtInCommands';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -174,7 +178,7 @@ export class InputController {
         inputEl.value = '';
         this.deps.resetInputHeight();
       }
-      await this.executeBuiltInCommand(builtInCmd.command.action, builtInCmd.args);
+      await this.executeBuiltInCommand(builtInCmd.command, builtInCmd.args);
       return;
     }
 
@@ -961,10 +965,16 @@ export class InputController {
   // Built-in Commands
   // ============================================
 
-  private async executeBuiltInCommand(action: string, args: string): Promise<void> {
+  private async executeBuiltInCommand(command: BuiltInCommand, args: string): Promise<void> {
     const { conversationController } = this.deps;
+    const providerId = this.getActiveCapabilities().providerId;
 
-    switch (action) {
+    if (!isBuiltInCommandSupported(command, providerId)) {
+      new Notice(`/${command.name} is not supported by this provider.`);
+      return;
+    }
+
+    switch (command.action) {
       case 'clear':
         await conversationController.createNew();
         break;
@@ -999,7 +1009,7 @@ export class InputController {
       }
       default:
         // Unknown command - notify user
-        new Notice(`Unknown command: ${action}`);
+        new Notice(`Unknown command: ${command.action}`);
     }
   }
 

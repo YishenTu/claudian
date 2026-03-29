@@ -118,7 +118,6 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     plugin: {
       saveSettings: jest.fn(),
       settings: {
-        slashCommands: [],
         blockedCommands: { unix: [], windows: [] },
         enableBlocklist: true,
         permissionMode: 'yolo',
@@ -957,6 +956,35 @@ describe('InputController - Message Queue', () => {
       mockNotice.mockClear();
     });
 
+    it('should reject /add-dir on codex tabs', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn(),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      deps.getAgentService = () => ({
+        ...(deps as any).mockAgentService,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          supportsPersistentRuntime: true,
+          supportsNativeHistory: true,
+          supportsPlanMode: false,
+          supportsRewind: false,
+          supportsFork: false,
+          supportsProviderCommands: false,
+          reasoningControl: 'effort',
+        }),
+      } as any);
+      inputEl.value = '/add-dir /some/path';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockExternalContextSelector.addExternalContext).not.toHaveBeenCalled();
+      expect(mockNotice).toHaveBeenCalledWith('/add-dir is not supported by this provider.');
+    });
+
     it('should show error notice when external context selector is not available', async () => {
       deps.getExternalContextSelector = () => null;
       inputEl.value = '/add-dir /some/path';
@@ -1087,6 +1115,30 @@ describe('InputController - Message Queue', () => {
         destroy: jest.fn(),
       };
       (ResumeSessionDropdown as jest.Mock).mockImplementation(() => mockDropdownInstance);
+    });
+
+    it('should reject /resume on codex tabs', async () => {
+      deps.getAgentService = () => ({
+        ...(deps as any).mockAgentService,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          supportsPersistentRuntime: true,
+          supportsNativeHistory: true,
+          supportsPlanMode: false,
+          supportsRewind: false,
+          supportsFork: false,
+          supportsProviderCommands: false,
+          reasoningControl: 'effort',
+        }),
+      } as any);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('/resume is not supported by this provider.');
+      expect(ResumeSessionDropdown).not.toHaveBeenCalled();
     });
 
     it('should show notice when no conversations exist', async () => {
@@ -1564,7 +1616,7 @@ describe('InputController - Message Queue', () => {
       // Directly call the private method since there's no public API to trigger unknown commands
       controller = new InputController(deps);
 
-      await (controller as any).executeBuiltInCommand('nonexistent-command', '');
+      await (controller as any).executeBuiltInCommand({ action: 'nonexistent-command', name: 'nonexistent-command' }, '');
 
       expect(mockNotice).toHaveBeenCalledWith('Unknown command: nonexistent-command');
     });
