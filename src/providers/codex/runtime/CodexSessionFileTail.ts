@@ -529,7 +529,7 @@ function buildUsageInfo(contextTokens: number, contextWindow: number): UsageInfo
     cacheReadInputTokens: 0,
     contextWindow,
     contextTokens,
-    percentage: contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0,
+    percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindow) * 100))) : 0,
   };
 }
 

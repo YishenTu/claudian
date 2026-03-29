@@ -915,6 +915,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
     const subagentStorage = new CodexSubagentStorage(this.plugin.claudeStorage.getAdapter());
     new CodexSubagentSettings(subagentContainer, subagentStorage, this.plugin.app);
+
+    // MCP Servers (informational)
+    new Setting(container).setName(t('settings.mcpServers.name')).setHeading();
+    const mcpNotice = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
+    const mcpDesc = mcpNotice.createEl('p', { cls: 'setting-item-description' });
+    mcpDesc.appendText('Codex manages MCP servers via its own CLI. Configure with ');
+    mcpDesc.createEl('code', { text: 'codex mcp' });
+    mcpDesc.appendText(' and they will be available in Claudian. ');
+    mcpDesc.createEl('a', {
+      text: 'Learn more',
+      href: 'https://developers.openai.com/codex/mcp',
+    });
   }
 
   // ── Shared helpers ──

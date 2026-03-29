@@ -2092,6 +2092,50 @@ describe('Tab - UI Callback Wiring', () => {
       expect(mockContextUsageMeter.update).toHaveBeenCalledWith(usage);
     });
 
+    it('should update context meter for Codex tabs on usage change', () => {
+      const getCapabilitiesSpy = jest.spyOn(ProviderRegistry, 'getCapabilities');
+      getCapabilitiesSpy.mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: false,
+        supportsRewind: false,
+        supportsFork: false,
+        supportsProviderCommands: false,
+        reasoningControl: 'none',
+      });
+
+      const options = createMockOptions({
+        conversation: {
+          id: 'conv-codex',
+          providerId: 'codex',
+          title: 'Codex Conversation',
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      });
+      const tab = createTab(options);
+      initializeTabUI(tab, options.plugin);
+
+      mockContextUsageMeter.update.mockClear();
+
+      const usage = {
+        inputTokens: 5000,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 1000,
+        contextWindow: 200000,
+        contextTokens: 6000,
+        percentage: 3,
+      };
+      tab.state.callbacks.onUsageChanged?.(usage as any);
+
+      expect(mockContextUsageMeter.update).toHaveBeenCalledWith(usage);
+
+      getCapabilitiesSpy.mockRestore();
+    });
+
     it('should wire onTodosChanged callback to update todo panel', () => {
       const options = createMockOptions();
       const tab = createTab(options);

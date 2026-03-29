@@ -376,7 +376,7 @@ describe('CodexNotificationRouter', () => {
       expect(chunks[0]).toMatchObject({
         type: 'usage',
         usage: {
-          inputTokens: 18000,
+          inputTokens: 9000,
           cacheReadInputTokens: 5000,
           cacheCreationInputTokens: 0,
           contextWindow: 200000,

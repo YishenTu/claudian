@@ -221,11 +221,8 @@ function applyProviderUIGating(tab: TabData, plugin: ClaudianPlugin): void {
   // Image attachments: Claude and Codex (Codex uses temp-file bridge)
   tab.ui.imageContextManager?.setEnabled(isClaude || capabilities.providerId === 'codex');
 
-  // Context gauge is Claude-only, and only shown when usage data exists
-  tab.ui.contextUsageMeter?.setVisible(isClaude);
-  if (isClaude) {
-    tab.ui.contextUsageMeter?.update(tab.state.usage);
-  }
+  // Context gauge: shown for any provider once usage data arrives
+  tab.ui.contextUsageMeter?.update(tab.state.usage);
 }
 
 function syncTabProviderServices(
@@ -864,9 +861,7 @@ export function initializeTabUI(
   state.callbacks = {
     ...state.callbacks,
     onUsageChanged: (usage) => {
-      if (getTabCapabilities(tab, plugin).providerId === 'claude') {
-        tab.ui.contextUsageMeter?.update(usage);
-      }
+      tab.ui.contextUsageMeter?.update(usage);
     },
     onTodosChanged: (todos) => tab.ui.statusPanel?.updateTodos(todos),
     onAutoScrollChanged: () => tab.ui.navigationSidebar?.updateVisibility(),
