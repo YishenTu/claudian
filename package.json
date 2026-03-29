@@ -45,6 +45,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.76",
     "@modelcontextprotocol/sdk": "~1.25.3",
+    "smol-toml": "^1.6.1",
     "tslib": "^2.8.1"
   }
 }

@@ -12,6 +12,7 @@ import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
+import { CodexSubagentStorage } from '../../providers/codex/storage/CodexSubagentStorage';
 import { findNodeExecutable, formatContextLimit, getEnhancedPath, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { getHostnameKey } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
@@ -19,6 +20,7 @@ import { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { AgentSettings } from './ui/AgentSettings';
 import { CodexSkillSettings } from './ui/CodexSkillSettings';
+import { CodexSubagentSettings } from './ui/CodexSubagentSettings';
 import { EnvSnippetManager } from './ui/EnvSnippetManager';
 import { McpSettingsManager } from './ui/McpSettingsManager';
 import { PluginSettingsManager } from './ui/PluginSettingsManager';
@@ -860,6 +862,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // Reasoning summary
     const SUMMARY_OPTIONS: { value: string; label: string }[] = [
+      { value: 'auto', label: 'Auto' },
       { value: 'concise', label: 'Concise' },
       { value: 'detailed', label: 'Detailed' },
       { value: 'none', label: 'Off' },
@@ -872,7 +875,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         for (const opt of SUMMARY_OPTIONS) {
           dropdown.addOption(opt.value, opt.label);
         }
-        dropdown.setValue(this.plugin.settings.codexReasoningSummary ?? 'concise');
+        dropdown.setValue(this.plugin.settings.codexReasoningSummary ?? 'detailed');
         dropdown.onChange(async (value) => {
           this.plugin.settings.codexReasoningSummary = value;
           await this.plugin.saveSettings();
@@ -899,6 +902,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       desc: 'Hide specific Codex skills from the dropdown. Enter skill names without the leading $, one per line.',
       placeholder: 'analyze\nexplain\nfix',
     });
+
+    // Codex Subagents (vault-only)
+    new Setting(container).setName('Codex Subagents').setHeading();
+
+    const subagentDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
+    subagentDesc.createEl('p', {
+      cls: 'setting-item-description',
+      text: 'Manage vault-level Codex subagents stored in .codex/agents/. Each TOML file defines one custom agent.',
+    });
+
+    const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
+    const subagentStorage = new CodexSubagentStorage(this.plugin.claudeStorage.getAdapter());
+    new CodexSubagentSettings(subagentContainer, subagentStorage, this.plugin.app);
   }
 
   // ── Shared helpers ──
