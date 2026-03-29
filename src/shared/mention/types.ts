@@ -1,5 +1,10 @@
 import type { TFile } from 'obsidian';
 
+import type {
+  AgentMentionProvider,
+  AgentMentionSource,
+} from '../../core/providers/types';
+
 export interface FileMentionItem {
   type: 'file';
   name: string;
@@ -42,7 +47,7 @@ export interface AgentMentionItem {
   /** Brief description */
   description?: string;
   /** Source of the agent */
-  source: 'plugin' | 'vault' | 'global' | 'builtin';
+  source: AgentMentionSource;
 }
 
 export interface AgentFolderMentionItem {
@@ -50,14 +55,7 @@ export interface AgentFolderMentionItem {
   name: string;
 }
 
-export interface AgentMentionProvider {
-  searchAgents: (query: string) => Array<{
-    id: string;
-    name: string;
-    description?: string;
-    source: 'plugin' | 'vault' | 'global' | 'builtin';
-  }>;
-}
+export type { AgentMentionProvider };
 
 export type MentionItem =
   | FileMentionItem

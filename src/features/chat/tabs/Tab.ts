@@ -8,6 +8,7 @@ import type { ProviderCommandEntry } from '../../../core/providers/commands/Prov
 import { getProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCapabilities,
   ProviderChatUIConfig,
@@ -18,6 +19,7 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { ChatMessage, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
+import { maybeGetClaudeWorkspaceServices } from '../../../providers/claude/app/ClaudeWorkspaceServices';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -56,26 +58,20 @@ type TabProviderSettings = Record<string, unknown> & {
 
 /**
  * Returns model options for a blank tab.
- * - Codex disabled: Claude models only
- * - Codex enabled: Claude + Codex models (grouped)
+ * Uses provider registration metadata to determine which providers are
+ * available and how they should appear in the mixed picker.
  */
 export function getBlankTabModelOptions(
   settings: Record<string, unknown>,
 ): ProviderUIOption[] {
-  const claudeConfig = ProviderRegistry.getChatUIConfig('claude');
-  const claudeIcon = claudeConfig.getProviderIcon?.() ?? undefined;
-  const claudeModels = claudeConfig.getModelOptions(settings)
-    .map(m => ({ ...m, group: 'Claude', providerIcon: claudeIcon }));
+  return ProviderRegistry.getEnabledProviderIds(settings).flatMap((providerId) => {
+    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+    const providerIcon = uiConfig.getProviderIcon?.() ?? undefined;
+    const group = ProviderRegistry.getProviderDisplayName(providerId);
 
-  if (!settings.codexEnabled) {
-    return claudeModels;
-  }
-
-  const codexConfig = ProviderRegistry.getChatUIConfig('codex');
-  const codexIcon = codexConfig.getProviderIcon?.() ?? undefined;
-  const codexModels = codexConfig.getModelOptions(settings)
-    .map(m => ({ ...m, group: 'Codex', providerIcon: codexIcon }));
-  return [...codexModels, ...claudeModels];
+    return uiConfig.getModelOptions(settings)
+      .map(model => ({ ...model, group, providerIcon }));
+  });
 }
 
 export interface TabCreateOptions {
@@ -141,7 +137,7 @@ type ProviderCatalogInfo = {
 } | null;
 
 function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
-  const catalog = ProviderRegistry.getCommandCatalog(providerId);
+  const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
   if (!catalog) {
     return null;
   }
@@ -150,6 +146,15 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
     config: catalog.getDropdownConfig(),
     getEntries: () => catalog.listDropdownEntries({ includeBuiltIns: false }),
   };
+}
+
+function getClaudeMcpManager(plugin: ClaudianPlugin): McpServerManager | null {
+  const workspaceManager = maybeGetClaudeWorkspaceServices()?.mcpManager;
+  if (workspaceManager) {
+    return workspaceManager;
+  }
+
+  return (plugin as ClaudianPlugin & { mcpManager?: McpServerManager }).mcpManager ?? null;
 }
 
 function syncSlashCommandDropdownForProvider(
@@ -213,11 +218,17 @@ function applyProviderUIGating(tab: TabData, plugin: ClaudianPlugin): void {
   const isClaude = capabilities.providerId === 'claude';
 
   // MCP UI is Claude-only (both toolbar selector and @-mention MCP suggestions)
+  const claudeMcpManager = getClaudeMcpManager(plugin);
   if (!isClaude) {
     tab.ui.mcpServerSelector?.clearEnabled();
   }
   tab.ui.mcpServerSelector?.setVisible(isClaude);
-  tab.ui.fileContextManager?.setMcpManager(isClaude ? plugin.mcpManager : null);
+  tab.ui.fileContextManager?.setMcpManager(isClaude ? claudeMcpManager : null);
+
+  // Agent @-mention: each provider sees only its own agents
+  tab.ui.fileContextManager?.setAgentService(
+    ProviderWorkspaceRegistry.getAgentMentionProvider(capabilities.providerId),
+  );
 
   // Image attachments: Claude and Codex (Codex uses temp-file bridge)
   tab.ui.imageContextManager?.setEnabled(isClaude || capabilities.providerId === 'codex');
@@ -568,8 +579,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
     },
     dom.inputContainerEl
   );
-  tab.ui.fileContextManager.setMcpManager(plugin.mcpManager);
-  tab.ui.fileContextManager.setAgentService(plugin.agentManager);
+  tab.ui.fileContextManager.setMcpManager(getClaudeMcpManager(plugin));
 
   // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(
@@ -771,7 +781,7 @@ function initializeInputToolbar(
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
 
-  tab.ui.mcpServerSelector.setMcpManager(plugin.mcpManager);
+  tab.ui.mcpServerSelector.setMcpManager(getClaudeMcpManager(plugin));
 
   // Sync @-mentions to UI selector
   tab.ui.fileContextManager?.setOnMcpMentionChange((servers) => {

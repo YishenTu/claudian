@@ -3,9 +3,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { t } from '../../../i18n/i18n';
-import type ClaudianPlugin from '../../../main';
 import { extractFirstParagraph, normalizeArgumentHint, parseSlashCommandContent, validateCommandName } from '../../../utils/slashCommand';
 
 function resolveAllowedTools(inputValue: string, parsedTools?: string[]): string[] | undefined {
@@ -300,15 +298,19 @@ export class SlashCommandModal extends Modal {
 }
 
 export class SlashCommandSettings {
+  private app: App;
   private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
   private catalog: ProviderCommandCatalog | null;
   private commands: ProviderCommandEntry[] = [];
 
-  constructor(containerEl: HTMLElement, plugin: ClaudianPlugin) {
+  constructor(
+    containerEl: HTMLElement,
+    app: App,
+    catalog: ProviderCommandCatalog | null,
+  ) {
+    this.app = app;
     this.containerEl = containerEl;
-    this.plugin = plugin;
-    this.catalog = ProviderRegistry.getCommandCatalog('claude');
+    this.catalog = catalog;
     void this.loadAndRender();
   }
 
@@ -425,7 +427,7 @@ export class SlashCommandSettings {
 
   private openCommandModal(existingCmd: ProviderCommandEntry | null): void {
     const modal = new SlashCommandModal(
-      this.plugin.app,
+      this.app,
       this.commands,
       existingCmd,
       async (cmd) => {

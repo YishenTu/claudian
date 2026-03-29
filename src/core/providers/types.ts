@@ -12,6 +12,7 @@ import type {
   SlashCommand,
   ToolCallInfo,
 } from '../types';
+import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 
 export type ProviderId = 'claude' | 'codex';
 
@@ -38,12 +39,15 @@ export interface CreateChatRuntimeOptions {
 /**
  * Chat-facing provider registration.
  *
- * This is intentionally limited to chat-lifecycle services.
+ * This is intentionally limited to chat-facing services.
  * Shared bootstrap (defaults, storage) is in `src/core/bootstrap/`.
  * Claude-only workspace services (CLI resolver, plugins, agents, commands,
  * skills, MCP) live behind the Claude adaptor in `src/providers/claude/app/`.
  */
 export interface ProviderRegistration {
+  displayName: string;
+  blankTabOrder: number;
+  isEnabled: (settings: Record<string, unknown>) => boolean;
   capabilities: ProviderCapabilities;
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
@@ -113,6 +117,17 @@ export interface AppAgentStorage {
   delete(agent: AgentDefinition): Promise<void>;
 }
 
+export type AgentMentionSource = AgentDefinition['source'];
+
+export interface AgentMentionProvider {
+  searchAgents(query: string): Array<{
+    id: string;
+    name: string;
+    description?: string;
+    source: AgentMentionSource;
+  }>;
+}
+
 /** Plugin manager interface (Claude-owned, consumed by app layer). */
 export interface AppPluginManager {
   loadPlugins(): Promise<void>;
@@ -127,7 +142,7 @@ export interface AppPluginManager {
 }
 
 /** Agent manager interface (Claude-owned, consumed by app layer). */
-export interface AppAgentManager {
+export interface AppAgentManager extends AgentMentionProvider {
   loadAgents(): Promise<void>;
   getAvailableAgents(): AgentDefinition[];
   getAgentById(id: string): AgentDefinition | undefined;
@@ -218,6 +233,22 @@ export interface ProviderCliResolver {
     environmentVariables: string,
   ): string | null;
   reset(): void;
+}
+
+export interface ProviderWorkspaceServices {
+  commandCatalog?: ProviderCommandCatalog | null;
+  agentMentionProvider?: AgentMentionProvider | null;
+  refreshAgentMentions?(): Promise<void>;
+}
+
+export interface ProviderWorkspaceInitContext {
+  plugin: ClaudianPlugin;
+}
+
+export interface ProviderWorkspaceRegistration<
+  TServices extends ProviderWorkspaceServices = ProviderWorkspaceServices,
+> {
+  initialize(context: ProviderWorkspaceInitContext): Promise<TServices>;
 }
 
 export interface ProviderConversationHistoryService {

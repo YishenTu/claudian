@@ -1,7 +1,6 @@
 import type ClaudianPlugin from '../../main';
 import { PROVIDER_REGISTRATIONS } from '../../providers';
 import type { ChatRuntime } from '../runtime/ChatRuntime';
-import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import {
   type CreateChatRuntimeOptions,
   DEFAULT_CHAT_PROVIDER_ID,
@@ -78,19 +77,15 @@ export class ProviderRegistry {
     return Object.keys(PROVIDER_REGISTRATIONS) as ProviderId[];
   }
 
-  // -- Command catalogs (assigned at plugin init, accessed by shared code) --
-
-  private static commandCatalogs: Partial<Record<ProviderId, ProviderCommandCatalog>> = {};
-
-  static setCommandCatalog(providerId: ProviderId, catalog: ProviderCommandCatalog | undefined): void {
-    if (catalog) {
-      this.commandCatalogs[providerId] = catalog;
-    } else {
-      delete this.commandCatalogs[providerId];
-    }
+  static getEnabledProviderIds(settings: Record<string, unknown>): ProviderId[] {
+    return this.getRegisteredProviderIds()
+      .filter(providerId => getProviderRegistration(providerId).isEnabled(settings))
+      .sort((a, b) => (
+        getProviderRegistration(a).blankTabOrder - getProviderRegistration(b).blankTabOrder
+      ));
   }
 
-  static getCommandCatalog(providerId: ProviderId): ProviderCommandCatalog | null {
-    return this.commandCatalogs[providerId] ?? null;
+  static getProviderDisplayName(providerId: ProviderId): string {
+    return getProviderRegistration(providerId).displayName;
   }
 }

@@ -1,6 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import {
   DEFAULT_MAX_TABS,
@@ -60,10 +60,18 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
       buildForkProviderState: mockBuildForkProviderState,
     }),
     getCapabilities: (...args: any[]) => mockGetCapabilities(...args),
+  },
+}));
+
+jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
+  ProviderWorkspaceRegistry: {
     getCommandCatalog: (providerId: string) => mockCommandCatalogs[providerId] ?? null,
-    setCommandCatalog: (providerId: string, catalog: any) => {
-      if (catalog) mockCommandCatalogs[providerId] = catalog;
-      else delete mockCommandCatalogs[providerId];
+    setServices: (providerId: string, services: any) => {
+      if (services?.commandCatalog) {
+        mockCommandCatalogs[providerId] = services.commandCatalog;
+      } else {
+        delete mockCommandCatalogs[providerId];
+      }
     },
   },
 }));
@@ -925,12 +933,12 @@ describe('TabManager - Provider Command Catalog', () => {
   };
 
   afterEach(() => {
-    ProviderRegistry.setCommandCatalog('codex', undefined);
-    ProviderRegistry.setCommandCatalog('claude', undefined);
+    ProviderWorkspaceRegistry.setServices('codex', undefined);
+    ProviderWorkspaceRegistry.setServices('claude', undefined);
   });
 
   it('should pass provider catalog config to initializeTabUI for Codex tab', async () => {
-    ProviderRegistry.setCommandCatalog('codex', mockCatalog as any);
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
 
     const manager = createManager({
       tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
@@ -947,7 +955,7 @@ describe('TabManager - Provider Command Catalog', () => {
   });
 
   it('should provide scan-backed entries for Codex without runtime', async () => {
-    ProviderRegistry.setCommandCatalog('codex', mockCatalog as any);
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
 
     const manager = createManager({
       tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
@@ -986,8 +994,8 @@ describe('TabManager - Provider Command Catalog', () => {
       }),
       refresh: jest.fn(),
     };
-    ProviderRegistry.setCommandCatalog('claude', claudeCatalog as any);
-    ProviderRegistry.setCommandCatalog('codex', mockCatalog as any);
+    ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: claudeCatalog as any });
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
 
     const manager = createManager({
       tabFactory: () => createMockTabData({
@@ -1033,7 +1041,7 @@ describe('TabManager - Provider Command Catalog', () => {
       }),
       refresh: jest.fn(),
     };
-    ProviderRegistry.setCommandCatalog('claude', claudeCatalog as any);
+    ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: claudeCatalog as any });
 
     const manager = createManager({
       tabFactory: () => createMockTabData({
@@ -1074,7 +1082,7 @@ describe('TabManager - Provider Command Catalog', () => {
       }),
       refresh: jest.fn(),
     };
-    ProviderRegistry.setCommandCatalog('claude', claudeCatalog as any);
+    ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: claudeCatalog as any });
 
     const manager = createManager({
       tabFactory: () => createMockTabData({

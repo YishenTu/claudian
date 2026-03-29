@@ -28,12 +28,10 @@ describe('AgentSettings save orchestration', () => {
 
     plugin = {
       app: {},
-      claudeStorage: {
-        agents: {
-          load: jest.fn(),
-          save: saveMock,
-          delete: deleteMock,
-        },
+      agentStorage: {
+        load: jest.fn(),
+        save: saveMock,
+        delete: deleteMock,
       },
       agentManager: {
         getAvailableAgents: jest.fn().mockReturnValue([]),
@@ -41,7 +39,11 @@ describe('AgentSettings save orchestration', () => {
       },
     };
 
-    settings = new AgentSettings(createMockEl('div') as unknown as HTMLElement, plugin);
+    settings = new AgentSettings(createMockEl('div') as unknown as HTMLElement, {
+      app: plugin.app,
+      agentManager: plugin.agentManager,
+      agentStorage: plugin.agentStorage,
+    });
   });
 
   it('renaming saves with filePath undefined, then deletes old file', async () => {
@@ -71,7 +73,7 @@ describe('AgentSettings save orchestration', () => {
 
   it('shows notice and aborts when loading existing agent fails', async () => {
     const existing = createAgent('existing-agent', '.claude/agents/existing-agent.md');
-    plugin.claudeStorage.agents.load.mockRejectedValue(new Error('permission denied'));
+    plugin.agentStorage.load.mockRejectedValue(new Error('permission denied'));
 
     await (settings as any).openAgentModal(existing);
 

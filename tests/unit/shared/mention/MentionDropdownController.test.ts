@@ -70,6 +70,12 @@ function getLatestDropdownRenderOptions(): any {
   return renderCalls[renderCalls.length - 1]?.[0];
 }
 
+function getLatestDropdownInstance(): any {
+  const { SelectableDropdown } = jest.requireMock('@/shared/components/SelectableDropdown');
+  const dropdownCtor = SelectableDropdown as jest.Mock;
+  return dropdownCtor.mock.results[dropdownCtor.mock.results.length - 1]?.value;
+}
+
 function createMockMcpService(servers: Array<{ name: string }> = []): McpMentionProvider {
   return {
     getContextSavingServers: jest.fn().mockReturnValue(servers),
@@ -145,6 +151,29 @@ describe('MentionDropdownController', () => {
         controller.handleInputChange();
         jest.advanceTimersByTime(200);
       }).not.toThrow();
+    });
+
+    it('hides an open dropdown when the agent service changes', () => {
+      const initialService = createMockAgentService([
+        { id: 'Explore', name: 'Explore', source: 'builtin' },
+      ]);
+      const replacementService = createMockAgentService([
+        { id: 'worker', name: 'worker', source: 'vault' },
+      ]);
+
+      controller.setAgentService(initialService);
+      inputEl.value = '@Agents/';
+      inputEl.selectionStart = 8;
+      controller.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const dropdownInstance = getLatestDropdownInstance();
+      expect(dropdownInstance.hide).not.toHaveBeenCalled();
+
+      controller.setAgentService(replacementService);
+
+      expect(dropdownInstance.hide).toHaveBeenCalledTimes(1);
+      expect(controller.isVisible()).toBe(false);
     });
   });
 

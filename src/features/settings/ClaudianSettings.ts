@@ -12,11 +12,11 @@ import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
-import { CodexSubagentStorage } from '../../providers/codex/storage/CodexSubagentStorage';
+import { getClaudeWorkspaceServices } from '../../providers/claude/app/ClaudeWorkspaceServices';
+import { getCodexWorkspaceServices } from '../../providers/codex/app/CodexWorkspaceServices';
 import { findNodeExecutable, formatContextLimit, getEnhancedPath, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { getHostnameKey } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
-import { ClaudianView } from '../chat/ClaudianView';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { AgentSettings } from './ui/AgentSettings';
 import { CodexSkillSettings } from './ui/CodexSkillSettings';
@@ -365,10 +365,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.plugin.settings.tabBarPosition = value;
             await this.plugin.saveSettings();
 
-            for (const leaf of this.plugin.app.workspace.getLeavesOfType('claudian-view')) {
-              if (leaf.view instanceof ClaudianView) {
-                leaf.view.updateLayoutForPosition();
-              }
+            for (const view of this.plugin.getAllViews()) {
+              view.updateLayoutForPosition();
             }
           });
       });
@@ -528,6 +526,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
   // ── Claude tab ──
 
   private renderClaudeTab(container: HTMLElement): void {
+    const claudeWorkspace = getClaudeWorkspaceServices();
+
     new Setting(container).setName(t('settings.slashCommands.name')).setHeading();
 
     const slashCommandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
@@ -539,7 +539,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     const slashCommandsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-    new SlashCommandSettings(slashCommandsContainer, this.plugin);
+    new SlashCommandSettings(
+      slashCommandsContainer,
+      this.plugin.app,
+      claudeWorkspace.commandCatalog,
+    );
 
     this.renderHiddenProviderCommandSetting(container, 'claude', {
       name: t('settings.hiddenSlashCommands.name'),
@@ -556,7 +560,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     const agentsContainer = container.createDiv({ cls: 'claudian-agents-container' });
-    new AgentSettings(agentsContainer, this.plugin);
+    new AgentSettings(agentsContainer, {
+      app: this.plugin.app,
+      agentManager: claudeWorkspace.agentManager,
+      agentStorage: claudeWorkspace.agentStorage,
+    });
 
     new Setting(container).setName(t('settings.mcpServers.name')).setHeading();
 
@@ -567,7 +575,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     const mcpContainer = container.createDiv({ cls: 'claudian-mcp-container' });
-    new McpSettingsManager(mcpContainer, this.plugin);
+    new McpSettingsManager(mcpContainer, {
+      app: this.plugin.app,
+      mcpStorage: claudeWorkspace.mcpStorage,
+      broadcastMcpReload: async () => {
+        for (const view of this.plugin.getAllViews()) {
+          await view.getTabManager()?.broadcastToAllTabs(
+            (service) => service.reloadMcpServers(),
+          );
+        }
+      },
+    });
 
     new Setting(container).setName(t('settings.plugins.name')).setHeading();
 
@@ -578,7 +596,21 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     const pluginsContainer = container.createDiv({ cls: 'claudian-plugins-container' });
-    new PluginSettingsManager(pluginsContainer, this.plugin);
+    new PluginSettingsManager(pluginsContainer, {
+      pluginManager: claudeWorkspace.pluginManager,
+      agentManager: claudeWorkspace.agentManager,
+      restartTabs: async () => {
+        const view = this.plugin.getView();
+        const tabManager = view?.getTabManager();
+        if (!tabManager) {
+          return;
+        }
+
+        await tabManager.broadcastToAllTabs(
+          async (service) => { await service.ensureReady({ force: true }); },
+        );
+      },
+    });
 
     new Setting(container).setName(t('settings.environment')).setHeading();
 
@@ -759,7 +791,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           }
           this.plugin.settings.claudeCliPathsByHost[hostnameKey] = trimmed;
           await this.plugin.saveSettings();
-          this.plugin.cliResolver?.reset();
+          claudeWorkspace.cliResolver.reset();
           const view = this.plugin.getView();
           await view?.getTabManager()?.broadcastToAllTabs(
             (service) => Promise.resolve(service.cleanup())
@@ -780,6 +812,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
   // ── Codex tab ──
 
   private renderCodexTab(container: HTMLElement): void {
+    const codexWorkspace = getCodexWorkspaceServices();
+
     const hostnameKey = getHostnameKey();
     const platformHint = process.platform === 'win32'
       ? 'Use the local `codex.exe` path from your Codex CLI installation.'
@@ -883,7 +917,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     // Codex Skills (vault-only)
-    const codexCatalog = ProviderRegistry.getCommandCatalog('codex');
+    const codexCatalog = codexWorkspace.commandCatalog;
     if (codexCatalog) {
       new Setting(container).setName('Codex Skills').setHeading();
 
@@ -913,8 +947,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-    const subagentStorage = new CodexSubagentStorage(this.plugin.claudeStorage.getAdapter());
-    new CodexSubagentSettings(subagentContainer, subagentStorage, this.plugin.app);
+    new CodexSubagentSettings(subagentContainer, codexWorkspace.subagentStorage, this.plugin.app, () => {
+      void codexWorkspace.refreshAgentMentions?.();
+    });
 
     // MCP Servers (informational)
     new Setting(container).setName(t('settings.mcpServers.name')).setHeading();

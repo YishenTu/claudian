@@ -1,15 +1,28 @@
 import { Notice, setIcon } from 'obsidian';
 
+import type {
+  AppAgentManager,
+  AppPluginManager,
+} from '../../../core/providers/types';
 import type { PluginInfo } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
+
+export interface PluginSettingsManagerDeps {
+  pluginManager: AppPluginManager;
+  agentManager: Pick<AppAgentManager, 'loadAgents'>;
+  restartTabs: () => Promise<void>;
+}
 
 export class PluginSettingsManager {
   private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
+  private pluginManager: AppPluginManager;
+  private agentManager: Pick<AppAgentManager, 'loadAgents'>;
+  private restartTabs: () => Promise<void>;
 
-  constructor(containerEl: HTMLElement, plugin: ClaudianPlugin) {
+  constructor(containerEl: HTMLElement, deps: PluginSettingsManagerDeps) {
     this.containerEl = containerEl;
-    this.plugin = plugin;
+    this.pluginManager = deps.pluginManager;
+    this.agentManager = deps.agentManager;
+    this.restartTabs = deps.restartTabs;
     this.render();
   }
 
@@ -26,7 +39,7 @@ export class PluginSettingsManager {
     setIcon(refreshBtn, 'refresh-cw');
     refreshBtn.addEventListener('click', () => this.refreshPlugins());
 
-    const plugins = this.plugin.pluginManager.getPlugins();
+    const plugins = this.pluginManager.getPlugins();
 
     if (plugins.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-plugin-empty' });
@@ -89,28 +102,22 @@ export class PluginSettingsManager {
   }
 
   private async togglePlugin(pluginId: string) {
-    const plugin = this.plugin.pluginManager.getPlugins().find(p => p.id === pluginId);
+    const plugin = this.pluginManager.getPlugins().find(p => p.id === pluginId);
     const wasEnabled = plugin?.enabled ?? false;
 
     try {
-      await this.plugin.pluginManager.togglePlugin(pluginId);
-      await this.plugin.agentManager.loadAgents();
+      await this.pluginManager.togglePlugin(pluginId);
+      await this.agentManager.loadAgents();
 
-      const view = this.plugin.getView();
-      const tabManager = view?.getTabManager();
-      if (tabManager) {
-        try {
-          await tabManager.broadcastToAllTabs(
-            async (service) => { await service.ensureReady({ force: true }); }
-          );
-        } catch {
-          new Notice('Plugin toggled, but some tabs failed to restart.');
-        }
+      try {
+        await this.restartTabs();
+      } catch {
+        new Notice('Plugin toggled, but some tabs failed to restart.');
       }
 
       new Notice(`Plugin "${pluginId}" ${wasEnabled ? 'disabled' : 'enabled'}`);
     } catch (err) {
-      await this.plugin.pluginManager.togglePlugin(pluginId);
+      await this.pluginManager.togglePlugin(pluginId);
       const message = err instanceof Error ? err.message : 'Unknown error';
       new Notice(`Failed to toggle plugin: ${message}`);
     } finally {
@@ -120,8 +127,8 @@ export class PluginSettingsManager {
 
   private async refreshPlugins() {
     try {
-      await this.plugin.pluginManager.loadPlugins();
-      await this.plugin.agentManager.loadAgents();
+      await this.pluginManager.loadPlugins();
+      await this.agentManager.loadAgents();
 
       new Notice('Plugin list refreshed');
     } catch (err) {

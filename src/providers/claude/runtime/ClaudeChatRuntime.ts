@@ -32,6 +32,10 @@ import * as path from 'path';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import type {
+  AppAgentManager,
+  AppPluginManager,
+} from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
@@ -104,6 +108,12 @@ export type {
   AskUserQuestionCallback,
 } from '../../../core/runtime/types';
 
+export interface ClaudeRuntimeServices {
+  mcpManager: McpServerManager;
+  pluginManager?: AppPluginManager;
+  agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
+}
+
 type QueryOptions = ChatRuntimeQueryOptions;
 
 function isChatMessageArray(value: unknown): value is ChatMessage[] {
@@ -119,6 +129,8 @@ function isImageAttachmentArray(value: unknown): value is ImageAttachment[] {
 export class ClaudianService implements ChatRuntime {
   readonly providerId = CLAUDE_PROVIDER_CAPABILITIES.providerId;
   private plugin: ClaudianPlugin;
+  private agentManager: Pick<AppAgentManager, 'setBuiltinAgentNames'> | null;
+  private pluginManager: AppPluginManager | null;
   private abortController: AbortController | null = null;
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
@@ -164,9 +176,30 @@ export class ClaudianService implements ChatRuntime {
   private _autoTurnSawStreamText = false;
   private _autoTurnCallback: ((chunks: StreamChunk[]) => void) | null = null;
 
-  constructor(plugin: ClaudianPlugin, mcpManager: McpServerManager) {
+  private getLegacyPluginDeps(): ClaudianPlugin & {
+    agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
+    pluginManager?: AppPluginManager;
+  } {
+    return this.plugin as ClaudianPlugin & {
+      agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
+      pluginManager?: AppPluginManager;
+    };
+  }
+
+  constructor(plugin: ClaudianPlugin, services: ClaudeRuntimeServices | McpServerManager) {
     this.plugin = plugin;
-    this.mcpManager = mcpManager;
+    const legacyPlugin = this.getLegacyPluginDeps();
+
+    if ('mcpManager' in services) {
+      this.mcpManager = services.mcpManager;
+      this.pluginManager = services.pluginManager ?? legacyPlugin.pluginManager ?? null;
+      this.agentManager = services.agentManager ?? legacyPlugin.agentManager ?? null;
+      return;
+    }
+
+    this.mcpManager = services;
+    this.pluginManager = legacyPlugin.pluginManager ?? null;
+    this.agentManager = legacyPlugin.agentManager ?? null;
   }
 
   getCapabilities() {
@@ -559,8 +592,20 @@ export class ClaudianService implements ChatRuntime {
       customEnv,
       enhancedPath,
       mcpManager: this.mcpManager,
-      pluginManager: this.plugin.pluginManager,
+      pluginManager: this.requirePluginManager(),
     };
+  }
+
+  private requirePluginManager(): AppPluginManager {
+    const pluginManager = this.pluginManager ?? this.getLegacyPluginDeps().pluginManager ?? null;
+    if (!pluginManager) {
+      throw new Error('Claude plugin manager is unavailable.');
+    }
+    return pluginManager;
+  }
+
+  private getAgentManager(): Pick<AppAgentManager, 'setBuiltinAgentNames'> | null {
+    return this.agentManager ?? this.getLegacyPluginDeps().agentManager ?? null;
   }
 
   /**
@@ -767,7 +812,7 @@ export class ClaudianService implements ChatRuntime {
         }
         this.messageChannel?.setSessionId(event.sessionId);
         if (event.agents) {
-          try { this.plugin.agentManager.setBuiltinAgentNames(event.agents); } catch { /* non-critical */ }
+          try { this.getAgentManager()?.setBuiltinAgentNames(event.agents); } catch { /* non-critical */ }
         }
         if (event.permissionMode && this.permissionModeSyncCallback) {
           try { this.permissionModeSyncCallback(event.permissionMode); } catch { /* non-critical */ }

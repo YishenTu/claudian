@@ -1,4 +1,5 @@
 import type { ProviderRegistration } from '../../core/providers/types';
+import { maybeGetClaudeWorkspaceServices } from './app/ClaudeWorkspaceServices';
 import { InlineEditService as ClaudeInlineEditService } from './aux/ClaudeInlineEditService';
 import { InstructionRefineService as ClaudeInstructionRefineService } from './aux/ClaudeInstructionRefineService';
 import { TitleGenerationService as ClaudeTitleGenerationService } from './aux/ClaudeTitleGenerationService';
@@ -10,10 +11,25 @@ import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpret
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
 
 export const claudeProviderRegistration: ProviderRegistration = {
+  displayName: 'Claude',
+  blankTabOrder: 20,
+  isEnabled: () => true,
   capabilities: CLAUDE_PROVIDER_CAPABILITIES,
   chatUIConfig: claudeChatUIConfig,
   settingsReconciler: claudeSettingsReconciler,
-  createRuntime: ({ plugin, mcpManager }) => new ClaudeChatRuntime(plugin, mcpManager),
+  createRuntime: ({ plugin, mcpManager }) => {
+    const workspace = maybeGetClaudeWorkspaceServices();
+    const resolvedMcpManager = mcpManager ?? workspace?.mcpManager;
+    if (!resolvedMcpManager) {
+      throw new Error('Claude workspace services are not initialized.');
+    }
+
+    return new ClaudeChatRuntime(plugin, {
+      mcpManager: resolvedMcpManager,
+      pluginManager: workspace?.pluginManager,
+      agentManager: workspace?.agentManager,
+    });
+  },
   createTitleGenerationService: (plugin) => new ClaudeTitleGenerationService(plugin),
   createInstructionRefineService: (plugin) => new ClaudeInstructionRefineService(plugin),
   createInlineEditService: (plugin) => new ClaudeInlineEditService(plugin),

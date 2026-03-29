@@ -273,11 +273,13 @@ export class CodexSubagentSettings {
   private storage: CodexSubagentStorage;
   private agents: CodexSubagentDefinition[] = [];
   private app?: App;
+  private onChanged?: () => void;
 
-  constructor(containerEl: HTMLElement, storage: CodexSubagentStorage, app?: App) {
+  constructor(containerEl: HTMLElement, storage: CodexSubagentStorage, app?: App, onChanged?: () => void) {
     this.containerEl = containerEl;
     this.storage = storage;
     this.app = app;
+    this.onChanged = onChanged;
     this.render();
   }
 
@@ -362,6 +364,7 @@ export class CodexSubagentSettings {
       try {
         await this.storage.delete(agent);
         await this.render();
+        this.onChanged?.();
         new Notice(`Subagent "${agent.name}" deleted`);
       } catch {
         new Notice('Failed to delete subagent');
@@ -388,6 +391,7 @@ export class CodexSubagentSettings {
           await this.storage.save(agent);
         }
         await this.render();
+        this.onChanged?.();
         new Notice(
           existing
             ? `Subagent "${agent.name}" updated`

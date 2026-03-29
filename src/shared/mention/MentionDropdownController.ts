@@ -76,6 +76,9 @@ export class MentionDropdownController {
   }
 
   setAgentService(service: AgentMentionProvider | null): void {
+    if (this.agentService !== service && this.dropdown.isVisible()) {
+      this.hide();
+    }
     this.agentService = service;
   }
 

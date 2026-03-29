@@ -1,9 +1,12 @@
 import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
+import type {
+  AppAgentManager,
+  AppAgentStorage,
+} from '../../../core/providers/types';
 import type { AgentDefinition } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import type ClaudianPlugin from '../../../main';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import { validateAgentName } from '../../../utils/agent';
 
@@ -15,19 +18,19 @@ const MODEL_OPTIONS = [
 ] as const;
 
 class AgentModal extends Modal {
-  private plugin: ClaudianPlugin;
   private existingAgent: AgentDefinition | null;
+  private getAvailableAgents: () => AgentDefinition[];
   private onSave: (agent: AgentDefinition) => Promise<void>;
 
   constructor(
     app: App,
-    plugin: ClaudianPlugin,
     existingAgent: AgentDefinition | null,
+    getAvailableAgents: () => AgentDefinition[],
     onSave: (agent: AgentDefinition) => Promise<void>
   ) {
     super(app);
-    this.plugin = plugin;
     this.existingAgent = existingAgent;
+    this.getAvailableAgents = getAvailableAgents;
     this.onSave = onSave;
   }
 
@@ -159,7 +162,7 @@ class AgentModal extends Modal {
         return;
       }
 
-      const allAgents = this.plugin.agentManager.getAvailableAgents();
+      const allAgents = this.getAvailableAgents();
       const duplicate = allAgents.find(
         a => a.id.toLowerCase() === name.toLowerCase() &&
              a.id !== this.existingAgent?.id
@@ -207,13 +210,23 @@ class AgentModal extends Modal {
   }
 }
 
-export class AgentSettings {
-  private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
+export interface AgentSettingsDeps {
+  app: App;
+  agentManager: Pick<AppAgentManager, 'getAvailableAgents' | 'loadAgents'>;
+  agentStorage: Pick<AppAgentStorage, 'load' | 'save' | 'delete'>;
+}
 
-  constructor(containerEl: HTMLElement, plugin: ClaudianPlugin) {
+export class AgentSettings {
+  private app: App;
+  private containerEl: HTMLElement;
+  private agentManager: Pick<AppAgentManager, 'getAvailableAgents' | 'loadAgents'>;
+  private agentStorage: Pick<AppAgentStorage, 'load' | 'save' | 'delete'>;
+
+  constructor(containerEl: HTMLElement, deps: AgentSettingsDeps) {
+    this.app = deps.app;
     this.containerEl = containerEl;
-    this.plugin = plugin;
+    this.agentManager = deps.agentManager;
+    this.agentStorage = deps.agentStorage;
     this.render();
   }
 
@@ -239,7 +252,7 @@ export class AgentSettings {
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => { void this.openAgentModal(null); });
 
-    const allAgents = this.plugin.agentManager.getAvailableAgents();
+    const allAgents = this.agentManager.getAvailableAgents();
     const vaultAgents = allAgents.filter(a => a.source === 'vault');
 
     if (vaultAgents.length === 0) {
@@ -286,7 +299,7 @@ export class AgentSettings {
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', async () => {
       const confirmed = await confirmDelete(
-        this.plugin.app,
+        this.app,
         t('settings.subagents.deleteConfirm', { name: agent.name })
       );
       if (!confirmed) return;
@@ -301,7 +314,7 @@ export class AgentSettings {
 
   private async refreshAgents(): Promise<void> {
     try {
-      await this.plugin.agentManager.loadAgents();
+      await this.agentManager.loadAgents();
       this.render();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -313,7 +326,7 @@ export class AgentSettings {
     let fresh: AgentDefinition | null;
     if (existingAgent) {
       try {
-        fresh = await this.plugin.claudeStorage.agents.load(existingAgent) ?? existingAgent;
+        fresh = await this.agentStorage.load(existingAgent) ?? existingAgent;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         new Notice(`Failed to load subagent "${existingAgent.name}": ${message}`);
@@ -324,9 +337,9 @@ export class AgentSettings {
     }
 
     new AgentModal(
-      this.plugin.app,
-      this.plugin,
+      this.app,
       fresh,
+      () => this.agentManager.getAvailableAgents(),
       (agent) => this.saveAgent(agent, fresh)
     ).open();
   }
@@ -334,18 +347,18 @@ export class AgentSettings {
   private async saveAgent(agent: AgentDefinition, existing: AgentDefinition | null): Promise<void> {
     if (existing && existing.name !== agent.name) {
       // Rename: save to new name-based path, then delete old file
-      await this.plugin.claudeStorage.agents.save({ ...agent, filePath: undefined });
+      await this.agentStorage.save({ ...agent, filePath: undefined });
       try {
-        await this.plugin.claudeStorage.agents.delete(existing);
+        await this.agentStorage.delete(existing);
       } catch {
         new Notice(t('settings.subagents.renameCleanupFailed', { name: existing.name }));
       }
     } else {
-      await this.plugin.claudeStorage.agents.save(agent);
+      await this.agentStorage.save(agent);
     }
 
     try {
-      await this.plugin.agentManager.loadAgents();
+      await this.agentManager.loadAgents();
     } catch {
       // Non-critical: agent list will refresh on next settings open
     }
@@ -358,10 +371,10 @@ export class AgentSettings {
   }
 
   private async deleteAgent(agent: AgentDefinition): Promise<void> {
-    await this.plugin.claudeStorage.agents.delete(agent);
+    await this.agentStorage.delete(agent);
 
     try {
-      await this.plugin.agentManager.loadAgents();
+      await this.agentManager.loadAgents();
     } catch {
       // Non-critical: agent list will refresh on next settings open
     }

@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
@@ -559,7 +560,7 @@ export class TabManager implements TabManagerInterface {
       }
     }
 
-    const catalog = ProviderRegistry.getCommandCatalog(providerId);
+    const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (catalog) {
       catalog.setRuntimeCommands(sdkCommands);
     }
@@ -573,7 +574,7 @@ export class TabManager implements TabManagerInterface {
 
   private getProviderCatalogConfig(tab: TabData) {
     const providerId = getTabProviderId(tab, this.plugin);
-    const catalog = ProviderRegistry.getCommandCatalog(providerId);
+    const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return null;
 
     return {

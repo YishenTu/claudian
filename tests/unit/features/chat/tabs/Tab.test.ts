@@ -2,6 +2,7 @@ import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
   activateTab,
@@ -362,6 +363,8 @@ jest.mock('@/utils/path', () => ({
 
 // Helper to create mock plugin
 function createMockPlugin(overrides: Record<string, any> = {}): any {
+  const claudeAgentMentionProvider = { searchAgents: jest.fn().mockReturnValue([]) };
+  const codexAgentMentionProvider = { searchAgents: jest.fn().mockReturnValue([]) };
   return {
     app: {
       vault: {
@@ -393,7 +396,8 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       },
     },
     mcpManager: { getMcpServers: jest.fn().mockReturnValue([]) },
-    agentManager: { searchAgents: jest.fn().mockReturnValue([]) },
+    agentManager: claudeAgentMentionProvider,
+    codexAgentMentionProvider,
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationSync: jest.fn().mockReturnValue(null),
     saveSettings: jest.fn().mockResolvedValue(undefined),
@@ -722,6 +726,36 @@ describe('Tab - Service Initialization', () => {
 
       expect(getChatUIConfigSpy).toHaveBeenCalledWith('codex');
       expect(getCapabilitiesSpy).toHaveBeenCalledWith('codex');
+    });
+
+    it('resolves the agent mention service through the provider-specific lookup', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+      const codexAgentMentionProvider = { searchAgents: jest.fn().mockReturnValue([]) };
+      const getAgentMentionProviderSpy = jest.spyOn(ProviderWorkspaceRegistry, 'getAgentMentionProvider')
+        .mockReturnValue(codexAgentMentionProvider as any);
+      const plugin = createMockPlugin({
+        codexAgentMentionProvider,
+      });
+      const tab = createTab(createMockOptions({
+        plugin,
+        conversation: {
+          id: 'conv-codex-agent-split',
+          providerId: 'codex',
+          title: 'Codex agent split',
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }));
+
+      initializeTabUI(tab, plugin);
+
+      expect(getAgentMentionProviderSpy).toHaveBeenCalledWith('codex');
+      expect(mockFileContextManager.setAgentService).toHaveBeenCalledWith(codexAgentMentionProvider);
     });
 
     it('falls back blank Codex draft to Claude when Codex is disabled', () => {
@@ -1225,7 +1259,7 @@ describe('Tab - UI Initialization', () => {
 
       initializeTabUI(tab, options.plugin);
 
-      expect(mockFileContextManager.setMcpManager).toHaveBeenCalledWith(options.plugin.mcpManager);
+      expect(mockFileContextManager.setMcpManager).toHaveBeenCalledWith((options.plugin as any).mcpManager);
     });
 
     it('should create ImageContextManager', () => {
@@ -1313,7 +1347,7 @@ describe('Tab - UI Initialization', () => {
 
       initializeTabUI(tab, options.plugin);
 
-      expect(mockMcpServerSelector.setMcpManager).toHaveBeenCalledWith(options.plugin.mcpManager);
+      expect(mockMcpServerSelector.setMcpManager).toHaveBeenCalledWith((options.plugin as any).mcpManager);
     });
 
     it('should wire external context selector onChange', () => {
@@ -3064,17 +3098,23 @@ describe('Tab - handleForkAll (via /fork command)', () => {
 });
 
 describe('Tab - Blank Tab Model Selector', () => {
+  afterEach(() => {
+    ProviderWorkspaceRegistry.clear();
+    jest.restoreAllMocks();
+  });
+
   it('returns Claude-only models when Codex is disabled', () => {
     const claudeModels = [
       { value: 'haiku', label: 'Haiku' },
       { value: 'sonnet', label: 'Sonnet' },
     ];
-    const codexModels = [
-      { value: 'gpt-5.4', label: 'GPT-5.4' },
-    ];
-
+    jest.spyOn(ProviderRegistry, 'getEnabledProviderIds').mockReturnValue(['claude']);
+    jest.spyOn(ProviderRegistry, 'getProviderDisplayName').mockImplementation((providerId) => (
+      providerId === 'claude' ? 'Claude' : 'Codex'
+    ));
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockImplementation((providerId?: string) => ({
-      getModelOptions: () => providerId === 'codex' ? codexModels : claudeModels,
+      getModelOptions: () => providerId === 'claude' ? claudeModels : [],
+      getProviderIcon: jest.fn().mockReturnValue(null),
     } as any));
 
     const result = getBlankTabModelOptions({ codexEnabled: false });
@@ -3090,8 +3130,13 @@ describe('Tab - Blank Tab Model Selector', () => {
       { value: 'gpt-5.4', label: 'GPT-5.4' },
     ];
 
+    jest.spyOn(ProviderRegistry, 'getEnabledProviderIds').mockReturnValue(['codex', 'claude']);
+    jest.spyOn(ProviderRegistry, 'getProviderDisplayName').mockImplementation((providerId) => (
+      providerId === 'codex' ? 'Codex' : 'Claude'
+    ));
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockImplementation((providerId?: string) => ({
       getModelOptions: () => providerId === 'codex' ? codexModels : claudeModels,
+      getProviderIcon: jest.fn().mockReturnValue(null),
     } as any));
 
     const result = getBlankTabModelOptions({ codexEnabled: true });
@@ -3258,7 +3303,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
       },
     ]);
 
-    ProviderRegistry.setCommandCatalog('codex', codexCatalog as any);
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: codexCatalog as any });
 
     const plugin = createMockPlugin();
     const tab = createTab(createMockOptions({ plugin }));
@@ -3326,7 +3371,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
       refresh: jest.fn(),
     };
 
-    ProviderRegistry.setCommandCatalog('codex', codexCatalog as any);
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: codexCatalog as any });
 
     const plugin = createMockPlugin({
       settings: {
@@ -3493,7 +3538,7 @@ describe('Tab - History Bind Without Runtime', () => {
         insertPrefix: '$',
       },
     ]);
-    ProviderRegistry.setCommandCatalog('codex', codexCatalog as any);
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: codexCatalog as any });
 
     const plugin = createMockPlugin({
       settings: {

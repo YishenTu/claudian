@@ -7,6 +7,7 @@ import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettin
 import type { ProviderId } from '../../core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
+import { maybeGetClaudeWorkspaceServices } from '../../providers/claude/app/ClaudeWorkspaceServices';
 import { getTabProviderId, onCodexAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
@@ -157,9 +158,11 @@ export class ClaudianView extends ItemView {
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
 
     // Initialize TabManager
+    const legacyPlugin = this.plugin as ClaudianPlugin & { mcpManager?: any };
+    const mcpManager = maybeGetClaudeWorkspaceServices()?.mcpManager ?? legacyPlugin.mcpManager;
     this.tabManager = new TabManager(
       this.plugin,
-      this.plugin.mcpManager,
+      mcpManager,
       this.tabContentEl,
       this,
       {

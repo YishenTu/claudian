@@ -14,18 +14,11 @@ import { Notice, Plugin } from 'obsidian';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from './core/bootstrap/defaultSettings';
 import type { SharedAppStorage } from './core/bootstrap/storage';
-import { McpServerManager } from './core/mcp/McpServerManager';
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
-import type {
-  AppAgentManager,
-  AppPluginManager,
-  ProviderCliResolver,
-  ProviderId,
-} from './core/providers/types';
+import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
+import type { ProviderId } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
-import { HomeFileAdapter } from './core/storage/HomeFileAdapter';
-import type { VaultFileAdapter } from './core/storage/VaultFileAdapter';
 import type {
   ClaudianSettings,
   Conversation,
@@ -41,15 +34,10 @@ import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import {
   type ClaudeStorageService,
-  createClaudeAgentManager,
-  createClaudeCliResolver,
-  createClaudePluginManager,
   createClaudeStorage,
+  maybeGetClaudeWorkspaceServices,
 } from './providers/claude/app/ClaudeWorkspaceServices';
-import { ClaudeCommandCatalog } from './providers/claude/commands/ClaudeCommandCatalog';
-import { CodexSkillCatalog } from './providers/codex/commands/CodexSkillCatalog';
 import { resolveCodexCliPath } from './providers/codex/runtime/CodexBinaryLocator';
-import { CodexSkillStorage } from './providers/codex/storage/CodexSkillStorage';
 import { buildCursorContext } from './utils/editor';
 import { getHostnameKey } from './utils/env';
 import { getVaultPath } from './utils/path';
@@ -60,32 +48,14 @@ import { getVaultPath } from './utils/path';
  */
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
-  mcpManager: McpServerManager;
-  pluginManager: AppPluginManager;
-  agentManager: AppAgentManager;
   storage: SharedAppStorage;
   claudeStorage: ClaudeStorageService;
-  cliResolver: ProviderCliResolver;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
 
   async onload() {
     await this.loadSettings();
-
-    // Claude-owned workspace services (explicit, not through provider registry)
-    this.cliResolver = createClaudeCliResolver();
-
-    // Initialize MCP manager (Claude-owned storage surface)
-    this.mcpManager = new McpServerManager(this.claudeStorage.mcp);
-    await this.mcpManager.loadServers();
-
-    // Initialize plugin and agent managers (Claude-owned)
-    const vaultPath = (this.app.vault.adapter as any).basePath;
-    this.pluginManager = createClaudePluginManager(vaultPath, this.claudeStorage);
-    await this.pluginManager.loadPlugins();
-
-    this.agentManager = createClaudeAgentManager(vaultPath, this.pluginManager);
-    await this.agentManager.loadAgents();
+    await ProviderWorkspaceRegistry.initializeAll(this);
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
@@ -263,18 +233,6 @@ export default class ClaudianPlugin extends Plugin {
       this.settings.permissionMode = 'normal';
     }
 
-    // Initialize provider command catalogs and assign to registry
-    const homeAdapter = new HomeFileAdapter();
-    ProviderRegistry.setCommandCatalog('claude',
-      new ClaudeCommandCatalog(this.claudeStorage.commands, this.claudeStorage.skills));
-    ProviderRegistry.setCommandCatalog('codex',
-      new CodexSkillCatalog(
-        new CodexSkillStorage(
-          this.claudeStorage.getAdapter(),
-          homeAdapter as unknown as VaultFileAdapter,
-        ),
-      ));
-
     const didNormalizeProviderSelection = ProviderSettingsCoordinator.normalizeProviderSelection(
       this.settings as unknown as Record<string, unknown>,
     );
@@ -445,7 +403,12 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   getResolvedClaudeCliPath(): string | null {
-    return this.cliResolver.resolve(
+    const cliResolver = maybeGetClaudeWorkspaceServices()?.cliResolver;
+    if (!cliResolver) {
+      return null;
+    }
+
+    return cliResolver.resolve(
       this.settings.claudeCliPathsByHost,  // Per-device paths (preferred)
       this.settings.claudeCliPath,          // Legacy path (fallback)
       this.getActiveEnvironmentVariables()

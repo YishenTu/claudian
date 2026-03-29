@@ -10,6 +10,9 @@ import { CodexChatRuntime } from './runtime/CodexChatRuntime';
 import { codexChatUIConfig } from './ui/CodexChatUIConfig';
 
 export const codexProviderRegistration: ProviderRegistration = {
+  displayName: 'Codex',
+  blankTabOrder: 10,
+  isEnabled: (settings) => settings.codexEnabled !== false,
   capabilities: CODEX_PROVIDER_CAPABILITIES,
   chatUIConfig: codexChatUIConfig,
   settingsReconciler: codexSettingsReconciler,
