@@ -1,5 +1,6 @@
 import { TFile } from 'obsidian';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import { parseTodoInput } from '../../../core/tools/todo';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
@@ -55,6 +56,7 @@ import {
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { FileContextManager } from '../ui/FileContext';
+import { calculateUsagePercentage } from '../utils/usageInfo';
 
 export interface StreamControllerDeps {
   plugin: ClaudianPlugin;
@@ -152,6 +154,10 @@ export class StreamController {
         break;
       }
 
+      case 'tool_output':
+        this.handleToolOutput(chunk, msg);
+        break;
+
       case 'blocked':
         // Flush pending tools before rendering blocked message
         this.flushPendingTools();
@@ -204,7 +210,10 @@ export class StreamController {
           break;
         }
         if (!state.ignoreUsageUpdates) {
-          state.usage = chunk.usage;
+          const activeModel = this.getActiveProviderModel();
+          state.usage = activeModel && !chunk.usage.model
+            ? { ...chunk.usage, model: activeModel }
+            : chunk.usage;
         }
         break;
       }
@@ -213,8 +222,8 @@ export class StreamController {
         // Authoritative context window from SDK result — override heuristic value
         if (state.usage && chunk.contextWindow > 0) {
           const contextWindow = chunk.contextWindow;
-          const percentage = Math.min(100, Math.max(0, Math.round((state.usage.contextTokens / contextWindow) * 100)));
-          state.usage = { ...state.usage, contextWindow, percentage };
+          const percentage = calculateUsagePercentage(state.usage.contextTokens, contextWindow);
+          state.usage = { ...state.usage, contextWindow, contextWindowIsAuthoritative: true, percentage };
         }
         break;
       }
@@ -317,6 +326,19 @@ export class StreamController {
     }
   }
 
+  private getActiveProviderModel(): string | undefined {
+    const providerId = this.deps.getAgentService?.()?.providerId;
+    if (!providerId) {
+      return undefined;
+    }
+
+    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.deps.plugin.settings as unknown as Record<string, unknown>,
+      providerId,
+    );
+    return typeof settings.model === 'string' ? settings.model : undefined;
+  }
+
   private capturePlanFilePath(input: Record<string, unknown>): void {
     const filePath = input.file_path as string | undefined;
     if (!filePath) return;
@@ -364,6 +386,26 @@ export class StreamController {
       renderToolCall(parentEl, toolCall, state.toolCallElements);
     }
     state.pendingTools.delete(toolId);
+  }
+
+  private handleToolOutput(
+    chunk: { type: 'tool_output'; id: string; content: string },
+    msg: ChatMessage,
+  ): void {
+    const { state } = this.deps;
+
+    if (state.pendingTools.has(chunk.id)) {
+      this.renderPendingTool(chunk.id);
+    }
+
+    const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
+    if (!existingToolCall) {
+      return;
+    }
+
+    existingToolCall.result = (existingToolCall.result ?? '') + chunk.content;
+    updateToolCallResult(chunk.id, existingToolCall, state.toolCallElements);
+    this.showThinkingIndicator();
   }
 
   // ============================================

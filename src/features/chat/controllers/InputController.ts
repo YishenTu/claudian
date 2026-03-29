@@ -14,7 +14,11 @@ import {
   type TitleGenerationService,
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { ApprovalCallbackOptions, ChatTurnRequest } from '../../../core/runtime/types';
+import type {
+  ApprovalCallbackOptions,
+  ApprovalDecisionOption,
+  ChatTurnRequest,
+} from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -48,6 +52,13 @@ const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
   'Allow once': 'allow',
   'Always allow': 'allow-always',
 };
+
+const DEFAULT_APPROVAL_DECISION_OPTIONS: ApprovalDecisionOption[] =
+  Object.entries(APPROVAL_OPTION_MAP).map(([label, decision]) => ({
+    label,
+    value: label,
+    decision,
+  }));
 
 export interface InputControllerDeps {
   plugin: ClaudianPlugin;
@@ -802,9 +813,25 @@ export class InputController {
 
     headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
 
-    // Always include "Always allow" — SDK callback has no toggle
-    const questionOptions = Object.keys(APPROVAL_OPTION_MAP);
-    const input = { questions: [{ question: 'Allow this action?', options: questionOptions }] };
+    const decisionOptions = approvalOptions?.decisionOptions ?? DEFAULT_APPROVAL_DECISION_OPTIONS;
+    const optionDecisionMap = new Map<string, ApprovalDecision>();
+    const questionOptions = decisionOptions.map((option, index) => {
+      const value = option.value ?? `approval-option-${index}`;
+      optionDecisionMap.set(value, option.decision);
+      return {
+        label: option.label,
+        description: option.description ?? '',
+        value,
+      };
+    });
+    const input = {
+      questions: [{
+        question: 'Allow this action?',
+        options: questionOptions,
+        isOther: false,
+        isSecret: false,
+      }],
+    };
 
     const result = await this.showInlineQuestion(
       parentEl,
@@ -817,9 +844,12 @@ export class InputController {
 
     if (!result) return 'cancel';
     const selected = Object.values(result)[0];
-    const decision = APPROVAL_OPTION_MAP[selected];
+    const selectedValue = Array.isArray(selected) ? selected[0] : selected;
+    const decision = typeof selectedValue === 'string'
+      ? optionDecisionMap.get(selectedValue)
+      : undefined;
     if (!decision) {
-      new Notice(`Unexpected approval selection: "${selected}"`);
+      new Notice(`Unexpected approval selection: "${String(selectedValue)}"`);
       return 'cancel';
     }
     return decision;
@@ -828,7 +858,7 @@ export class InputController {
   async handleAskUserQuestion(
     input: Record<string, unknown>,
     signal?: AbortSignal,
-  ): Promise<Record<string, string> | null> {
+  ): Promise<Record<string, string | string[]> | null> {
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
@@ -851,15 +881,15 @@ export class InputController {
     setPending: (inline: InlineAskUserQuestion | null) => void,
     signal?: AbortSignal,
     config?: InlineAskQuestionConfig,
-  ): Promise<Record<string, string> | null> {
+  ): Promise<Record<string, string | string[]> | null> {
     this.deps.streamController.hideThinkingIndicator();
     this.hideInputContainer(inputContainerEl);
 
-    return new Promise<Record<string, string> | null>((resolve, reject) => {
+    return new Promise<Record<string, string | string[]> | null>((resolve, reject) => {
       const inline = new InlineAskUserQuestion(
         parentEl,
         input,
-        (result: Record<string, string> | null) => {
+        (result: Record<string, string | string[]> | null) => {
           setPending(null);
           this.restoreInputContainer(inputContainerEl);
           resolve(result);
@@ -925,11 +955,15 @@ export class InputController {
     });
   }
 
-  dismissPendingApproval(): void {
+  dismissPendingApprovalPrompt(): void {
     if (this.pendingApprovalInline) {
       this.pendingApprovalInline.destroy();
       this.pendingApprovalInline = null;
     }
+  }
+
+  dismissPendingApproval(): void {
+    this.dismissPendingApprovalPrompt();
     if (this.pendingAskInline) {
       this.pendingAskInline.destroy();
       this.pendingAskInline = null;

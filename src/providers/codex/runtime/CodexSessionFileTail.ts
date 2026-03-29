@@ -71,7 +71,19 @@ export function extractResponseItemMessageText(raw: unknown): string {
 export function extractResponseItemReasoningText(raw: Record<string, unknown>): string {
   if (Array.isArray(raw.summary) && raw.summary.length > 0) {
     return raw.summary
-      .map(part => (isRecord(part) && typeof part.text === 'string' ? part.text : ''))
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        return isRecord(part) && typeof part.text === 'string' ? part.text : '';
+      })
+      .join('');
+  }
+
+  if (Array.isArray(raw.content) && raw.content.length > 0) {
+    return raw.content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        return isRecord(part) && typeof part.text === 'string' ? part.text : '';
+      })
       .join('');
   }
 
@@ -99,15 +111,22 @@ export interface SessionTailState {
   currentTurnId: string | null;
   syntheticTurnCounter: number;
   modelContextWindow: number;
+  modelContextWindowIsAuthoritative: boolean;
   lastTextByTurn: Map<string, string>;
   lastThinkingByTurn: Map<string, string>;
-  pendingUsageByTurn: Map<string, { contextTokens: number; contextWindow: number }>;
+  pendingUsageByTurn: Map<string, {
+    contextTokens: number;
+    contextWindow: number;
+    contextWindowIsAuthoritative: boolean;
+  }>;
   emittedDoneByTurn: Set<string>;
   emittedUsageByTurn: Set<string>;
   callEnrichment: Map<string, CallEnrichmentData>;
 }
 
-export function createSessionTailState(): SessionTailState {
+export function createSessionTailState(
+  fallbackContextWindow: number = DEFAULT_CONTEXT_WINDOW,
+): SessionTailState {
   return {
     responseItemState: {
       emittedToolUseIds: new Set(),
@@ -116,7 +135,8 @@ export function createSessionTailState(): SessionTailState {
     },
     currentTurnId: null,
     syntheticTurnCounter: 0,
-    modelContextWindow: DEFAULT_CONTEXT_WINDOW,
+    modelContextWindow: fallbackContextWindow,
+    modelContextWindowIsAuthoritative: false,
     lastTextByTurn: new Map(),
     lastThinkingByTurn: new Map(),
     pendingUsageByTurn: new Map(),
@@ -194,8 +214,10 @@ export function mapEventMsgEvent(
         getNonEmptyString(payload.turn_id, `synthetic-turn-${state.syntheticTurnCounter++}`),
       );
       state.currentTurnId = turnId;
-      if (typeof payload.model_context_window === 'number') {
+      state.modelContextWindowIsAuthoritative = false;
+      if (typeof payload.model_context_window === 'number' && payload.model_context_window > 0) {
         state.modelContextWindow = payload.model_context_window;
+        state.modelContextWindowIsAuthoritative = true;
       }
       return [];
     }
@@ -207,7 +229,11 @@ export function mapEventMsgEvent(
       if (!state.emittedUsageByTurn.has(turnId)) {
         const pending = state.pendingUsageByTurn.get(turnId);
         if (pending) {
-          const usage = buildUsageInfo(pending.contextTokens, pending.contextWindow);
+          const usage = buildUsageInfo(
+            pending.contextTokens,
+            pending.contextWindow,
+            pending.contextWindowIsAuthoritative,
+          );
           chunks.push({ type: 'usage', usage, sessionId });
           state.emittedUsageByTurn.add(turnId);
         }
@@ -278,6 +304,7 @@ export function mapEventMsgEvent(
       state.pendingUsageByTurn.set(turnId, {
         contextTokens: inputTokens,
         contextWindow: state.modelContextWindow,
+        contextWindowIsAuthoritative: state.modelContextWindowIsAuthoritative,
       });
       return [];
     }
@@ -522,12 +549,17 @@ export function mapResponseItemEvent(
 // Usage builder
 // ---------------------------------------------------------------------------
 
-function buildUsageInfo(contextTokens: number, contextWindow: number): UsageInfo {
+function buildUsageInfo(
+  contextTokens: number,
+  contextWindow: number,
+  contextWindowIsAuthoritative: boolean,
+): UsageInfo {
   return {
     inputTokens: contextTokens,
     cacheCreationInputTokens: 0,
     cacheReadInputTokens: 0,
     contextWindow,
+    contextWindowIsAuthoritative,
     contextTokens,
     percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindow) * 100))) : 0,
   };
@@ -542,7 +574,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export class CodexFileTailEngine {
-  private tailState: SessionTailState = createSessionTailState();
+  private tailState: SessionTailState;
   private tailSessionFile: string | null = null;
   private tailLineCursor = 0;
   private pendingEvents: StreamChunk[] = [];
@@ -559,7 +591,9 @@ export class CodexFileTailEngine {
   constructor(
     private sessionsDir: string,
     private defaultContextWindow: number,
-  ) {}
+  ) {
+    this.tailState = createSessionTailState(defaultContextWindow);
+  }
 
   get turnCompleteEmitted(): boolean {
     return this._turnCompleteEmitted;
@@ -632,7 +666,7 @@ export class CodexFileTailEngine {
   }
 
   resetForNewTurn(): void {
-    this.tailState = createSessionTailState();
+    this.tailState = createSessionTailState(this.defaultContextWindow);
     this.pendingEvents = [];
     this._turnCompleteEmitted = false;
     this._usageEmitted = false;

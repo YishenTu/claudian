@@ -149,6 +149,7 @@ export type StreamChunk =
   | { type: 'thinking'; content: string; parentToolUseId?: string | null }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown>; parentToolUseId?: string | null }
   | { type: 'tool_result'; id: string; content: string; isError?: boolean; parentToolUseId?: string | null; toolUseResult?: SDKToolUseResult }
+  | { type: 'tool_output'; id: string; content: string }
   | { type: 'error'; content: string }
   | { type: 'blocked'; content: string }
   | { type: 'done' }
@@ -178,6 +179,8 @@ export interface UsageInfo {
   /** Prompt caching: tokens read from cache. Claude-specific; 0 if omitted. */
   cacheReadInputTokens?: number;
   contextWindow: number;
+  /** True when `contextWindow` came from provider runtime data instead of a local heuristic. */
+  contextWindowIsAuthoritative?: boolean;
   contextTokens: number;
   percentage: number;
 }

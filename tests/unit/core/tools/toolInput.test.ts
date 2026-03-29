@@ -28,7 +28,7 @@ describe('extractResolvedAnswers', () => {
       foo: 'bar',
       baz: '1',
       ok: 'true',
-      choices: 'A, B',
+      choices: ['A', 'B'],
     });
   });
 
@@ -66,6 +66,12 @@ describe('extractResolvedAnswersFromResultText', () => {
   it('extracts nested Codex answer objects from JSON result text', () => {
     expect(extractResolvedAnswersFromResultText('{"answers":{"q1":{"answers":["yes"]}}}')).toEqual({
       q1: 'yes',
+    });
+  });
+
+  it('preserves multi-answer arrays from JSON result text', () => {
+    expect(extractResolvedAnswersFromResultText('{"answers":{"q1":{"answers":["yes","later"]}}}')).toEqual({
+      q1: ['yes', 'later'],
     });
   });
 

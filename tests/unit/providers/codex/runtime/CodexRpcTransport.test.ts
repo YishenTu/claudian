@@ -148,7 +148,7 @@ describe('CodexRpcTransport', () => {
       // Allow microtasks to settle
       await new Promise(r => setTimeout(r, 10));
 
-      expect(handler).toHaveBeenCalledWith({ command: 'echo test' });
+      expect(handler).toHaveBeenCalledWith(100, { command: 'echo test' });
 
       // Check that a response was sent back
       const responseLine = proc._written.find(line => {

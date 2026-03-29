@@ -1797,6 +1797,92 @@ describe('InputController - Message Queue', () => {
       await approvalPromise;
     });
 
+    it('should render provider-supplied approval options and network-specific context', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: 'curl https://api.openai.com' },
+        'Allow https access to api.openai.com',
+        {
+          networkApprovalContext: { host: 'api.openai.com', protocol: 'https' },
+          decisionOptions: [
+            { label: 'Allow once', decision: 'allow' },
+            {
+              label: 'Allow similar commands',
+              description: 'Approve and store an exec policy amendment.',
+              decision: {
+                type: 'allow-with-exec-policy-amendment',
+                execPolicyAmendment: ['curl', 'https://api.openai.com/*'],
+              },
+            },
+            { label: 'Deny', decision: 'deny' },
+          ],
+        } as any,
+      );
+
+      const descEl = parentEl.querySelector('claudian-ask-approval-desc');
+      expect(descEl?.textContent).toContain('api.openai.com');
+
+      const items = parentEl.querySelectorAll('claudian-ask-item');
+      const labels = items
+        .map((item: any) => item.querySelector('claudian-ask-item-label')?.textContent)
+        .filter(Boolean);
+      expect(labels).toEqual(expect.arrayContaining([
+        'Allow once',
+        'Allow similar commands',
+        'Deny',
+      ]));
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
+    });
+
+    it('should return provider-specific amendment decisions from supplied approval options', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: 'npm test' },
+        'Run test command',
+        {
+          decisionOptions: [
+            {
+              label: 'Allow similar commands',
+              decision: {
+                type: 'allow-with-exec-policy-amendment',
+                execPolicyAmendment: ['npm', 'test'],
+              },
+            },
+            { label: 'Deny', decision: 'deny' },
+          ],
+        } as any,
+      );
+
+      const items = parentEl.querySelectorAll('claudian-ask-item');
+      const target = items.find((item: any) => {
+        const label = item.querySelector('claudian-ask-item-label');
+        return label?.textContent === 'Allow similar commands';
+      });
+      expect(target).toBeDefined();
+      target!.click();
+
+      await expect(approvalPromise).resolves.toEqual({
+        type: 'allow-with-exec-policy-amendment',
+        execPolicyAmendment: ['npm', 'test'],
+      });
+    });
+
     it('should restore input visibility after overlapping inline prompts are dismissed', async () => {
       const parentEl = createMockEl();
       const inputContainerEl = createMockEl();

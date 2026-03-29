@@ -3,15 +3,33 @@ import type { CanvasSelectionContext } from '../../utils/canvas';
 import type { EditorSelectionContext } from '../../utils/editor';
 import type {
   ApprovalDecision,
+  ApprovalNetworkPolicyAmendment,
   Conversation,
   ExitPlanModeCallback,
   ImageAttachment,
 } from '../types';
 
+export interface ApprovalDecisionOption {
+  label: string;
+  description?: string;
+  value?: string;
+  decision: ApprovalDecision;
+}
+
+export interface ApprovalNetworkContext {
+  host: string;
+  protocol: string;
+}
+
 export interface ApprovalCallbackOptions {
   decisionReason?: string;
   blockedPath?: string;
   agentID?: string;
+  decisionOptions?: ApprovalDecisionOption[];
+  networkApprovalContext?: ApprovalNetworkContext;
+  additionalPermissions?: unknown;
+  proposedExecpolicyAmendment?: string[] | null;
+  proposedNetworkPolicyAmendments?: ApprovalNetworkPolicyAmendment[] | null;
 }
 
 export type ApprovalCallback = (
@@ -24,7 +42,7 @@ export type ApprovalCallback = (
 export type AskUserQuestionCallback = (
   input: Record<string, unknown>,
   signal?: AbortSignal,
-) => Promise<Record<string, string> | null>;
+) => Promise<Record<string, string | string[]> | null>;
 
 export interface ChatTurnRequest {
   text: string;

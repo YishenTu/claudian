@@ -41,6 +41,7 @@ import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
 import { StatusPanel } from '../ui/StatusPanel';
+import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
 import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
@@ -740,13 +741,7 @@ function initializeInputToolbar(
           model,
           providerSettings.customContextLimits as Record<string, number> | undefined,
         );
-        const newPercentage = Math.min(100, Math.max(0, Math.round((currentUsage.contextTokens / newContextWindow) * 100)));
-        tab.state.usage = {
-          ...currentUsage,
-          model,
-          contextWindow: newContextWindow,
-          percentage: newPercentage,
-        };
+        tab.state.usage = recalculateUsageForModel(currentUsage, model, newContextWindow);
       }
     },
     onThinkingBudgetChange: async (budget: string) => {
@@ -1515,7 +1510,7 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         ?? 'cancel'
     );
     tab.service.setApprovalDismisser(
-      () => tab.controllers.inputController?.dismissPendingApproval()
+      () => tab.controllers.inputController?.dismissPendingApprovalPrompt()
     );
     tab.service.setAskUserQuestionCallback(
       async (input, signal) =>

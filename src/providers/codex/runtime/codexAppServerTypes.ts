@@ -102,13 +102,15 @@ export interface TurnError {
 export type ThreadItem =
   | UserMessageItem
   | AgentMessageItem
+  | PlanItem
   | ReasoningItem
   | CommandExecutionItem
   | FileChangeItem
   | ImageViewItem
   | WebSearchItem
   | CollabAgentToolCallItem
-  | McpToolCallItem;
+  | McpToolCallItem
+  | ContextCompactionItem;
 
 export interface UserMessageItem {
   type: 'userMessage';
@@ -124,11 +126,17 @@ export interface AgentMessageItem {
   memoryCitation: unknown | null;
 }
 
+export interface PlanItem {
+  type: 'plan';
+  id: string;
+  text: string;
+}
+
 export interface ReasoningItem {
   type: 'reasoning';
   id: string;
-  summary: unknown[];
-  content: unknown[];
+  summary: string[];
+  content: string[];
 }
 
 export interface CommandExecutionItem {
@@ -205,6 +213,11 @@ export interface McpToolCallItem {
   durationMs?: number | null;
 }
 
+export interface ContextCompactionItem {
+  type: 'contextCompaction';
+  id: string;
+}
+
 // ---------------------------------------------------------------------------
 // User input
 // ---------------------------------------------------------------------------
@@ -249,14 +262,25 @@ export interface ThreadStartResult {
   reasoningEffort: string;
 }
 
-export interface SandboxPolicy {
-  type: string;
-  writableRoots: string[];
-  readOnlyAccess: { type: string };
-  networkAccess: boolean;
-  excludeTmpdirEnvVar: boolean;
-  excludeSlashTmp: boolean;
-}
+export type SandboxPolicy =
+  | { type: 'dangerFullAccess' }
+  | {
+    type: 'workspaceWrite';
+    writableRoots: string[];
+    readOnlyAccess: { type: string };
+    networkAccess: boolean;
+    excludeTmpdirEnvVar: boolean;
+    excludeSlashTmp: boolean;
+  }
+  | {
+    type: 'readOnly';
+    access: { type: string };
+    networkAccess: boolean;
+  }
+  | {
+    type: 'externalSandbox';
+    networkAccess: string;
+  };
 
 // ---------------------------------------------------------------------------
 // thread/resume
@@ -264,6 +288,9 @@ export interface SandboxPolicy {
 
 export interface ThreadResumeParams {
   threadId: string;
+  model?: string;
+  approvalPolicy?: string;
+  sandbox?: string;
   baseInstructions?: string;
   persistExtendedHistory?: boolean;
 }
@@ -277,10 +304,15 @@ export type ThreadResumeResult = ThreadStartResult;
 export interface TurnStartParams {
   threadId: string;
   input: UserInput[];
+  cwd?: string;
+  approvalPolicy?: string;
+  approvalsReviewer?: string;
   model?: string;
   effort?: string;
   summary?: 'auto' | 'concise' | 'detailed' | 'none';
-  sandboxPolicy?: SandboxPolicy;
+  sandboxPolicy?: SandboxPolicy | null;
+  personality?: string;
+  outputSchema?: unknown;
 }
 
 export interface TurnStartResult {
@@ -390,42 +422,152 @@ export interface ReasoningSummaryTextDeltaNotification {
   delta: string;
 }
 
+export interface ReasoningTextDeltaNotification {
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  contentIndex: number;
+  delta: string;
+}
+
+export interface PlanDeltaNotification {
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  delta: string;
+}
+
+export type RequestId = string | number;
+
+export interface ServerRequestResolvedNotification {
+  threadId: string;
+  requestId: RequestId;
+}
+
 // ---------------------------------------------------------------------------
 // Server requests (require client response)
 // ---------------------------------------------------------------------------
+
+// -- Command execution approval (item/commandExecution/requestApproval) ------
 
 export interface CommandApprovalRequest {
   threadId: string;
   turnId: string;
   itemId: string;
-  command: string;
-  cwd: string;
+  command: string | null;
+  cwd: string | null;
+  reason?: string | null;
+  commandActions?: CommandAction[] | null;
+  approvalId?: string | null;
+  networkApprovalContext?: {
+    host: string;
+    protocol: string;
+  } | null;
+  additionalPermissions?: AdditionalPermissionProfile | null;
+  skillMetadata?: { pathToSkillsMd: string } | null;
+  proposedExecpolicyAmendment?: string[] | null;
+  proposedNetworkPolicyAmendments?: Array<{
+    host: string;
+    action: 'allow' | 'deny';
+  }> | null;
+  availableDecisions?: CommandExecutionApprovalDecision[] | null;
 }
+
+export type CommandExecutionApprovalDecision =
+  | 'accept'
+  | 'acceptForSession'
+  | { acceptWithExecpolicyAmendment: { execpolicy_amendment: string[] } }
+  | { applyNetworkPolicyAmendment: { network_policy_amendment: { host: string; action: 'allow' | 'deny' } } }
+  | 'decline'
+  | 'cancel';
+
+export interface CommandExecutionApprovalResponse {
+  decision: CommandExecutionApprovalDecision;
+}
+
+// -- File change approval (item/fileChange/requestApproval) ------------------
 
 export interface FileChangeApprovalRequest {
   threadId: string;
   turnId: string;
   itemId: string;
-  changes: FileChangeEntry[];
+  reason?: string | null;
+  grantRoot?: string | null;
 }
+
+export type FileChangeApprovalDecision =
+  | 'accept'
+  | 'acceptForSession'
+  | 'decline'
+  | 'cancel';
+
+export interface FileChangeApprovalResponse {
+  decision: FileChangeApprovalDecision;
+}
+
+// -- Permissions approval (item/permissions/requestApproval) -----------------
+
+export interface AdditionalFileSystemPermissions {
+  read?: string[] | null;
+  write?: string[] | null;
+}
+
+export interface AdditionalNetworkPermissions {
+  enabled?: boolean | null;
+}
+
+export interface AdditionalPermissionProfile {
+  fileSystem?: AdditionalFileSystemPermissions | null;
+  network?: AdditionalNetworkPermissions | null;
+  macos?: Record<string, unknown> | null;
+}
+
+export interface RequestPermissionProfile {
+  fileSystem?: AdditionalFileSystemPermissions | null;
+  network?: AdditionalNetworkPermissions | null;
+}
+
+export interface GrantedPermissionProfile {
+  fileSystem?: AdditionalFileSystemPermissions | null;
+  network?: AdditionalNetworkPermissions | null;
+}
+
+export type PermissionGrantScope = 'turn' | 'session';
 
 export interface PermissionsApprovalRequest {
   threadId: string;
   turnId: string;
   itemId: string;
+  permissions: RequestPermissionProfile;
+  reason?: string | null;
 }
 
-export interface ApprovalResponse {
-  decision: 'accept' | 'deny' | 'alwaysAccept';
+export interface PermissionsApprovalResponse {
+  permissions: GrantedPermissionProfile;
+  scope?: PermissionGrantScope;
+}
+
+// -- Tool request user input (item/tool/requestUserInput) --------------------
+
+export interface UserInputQuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface UserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: UserInputQuestionOption[] | null;
+  isOther: boolean;
+  isSecret: boolean;
 }
 
 export interface UserInputRequest {
   threadId: string;
   turnId: string;
-  questions: Array<{
-    id: string;
-    text: string;
-  }>;
+  itemId: string;
+  questions: UserInputQuestion[];
 }
 
 export interface UserInputResponse {

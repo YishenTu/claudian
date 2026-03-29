@@ -1,13 +1,31 @@
-import type { ApprovalCallback, AskUserQuestionCallback } from '../../../core/runtime/types';
+import type {
+  ApprovalCallback,
+  ApprovalDecisionOption,
+  AskUserQuestionCallback,
+} from '../../../core/runtime/types';
+import type { ApprovalDecision } from '../../../core/types';
 import { normalizeCodexToolName } from '../normalization/codexToolNormalization';
 import type {
-  ApprovalResponse,
+  CommandApprovalRequest,
+  CommandExecutionApprovalDecision,
+  CommandExecutionApprovalResponse,
+  FileChangeApprovalDecision,
+  FileChangeApprovalRequest,
+  FileChangeApprovalResponse,
+  PermissionsApprovalRequest,
+  PermissionsApprovalResponse,
+  RequestId,
+  UserInputRequest,
   UserInputResponse,
 } from './codexAppServerTypes';
 
 export class CodexServerRequestRouter {
   private approvalCallback: ApprovalCallback | null = null;
   private askUserCallback: AskUserQuestionCallback | null = null;
+  private pendingApprovalRequests = new Map<RequestId, string>();
+  private askUserAbortController: AbortController | null = null;
+  private pendingAskUserRequestId: RequestId | null = null;
+  private pendingAskUserThreadId: string | null = null;
 
   setApprovalCallback(callback: ApprovalCallback | null): void {
     this.approvalCallback = callback;
@@ -17,89 +35,306 @@ export class CodexServerRequestRouter {
     this.askUserCallback = callback;
   }
 
-  async handleServerRequest(method: string, params: unknown): Promise<unknown> {
+  async handleServerRequest(
+    requestIdOrMethod: RequestId | string,
+    methodOrParams: string | unknown,
+    maybeParams?: unknown,
+  ): Promise<unknown> {
+    const hasExplicitRequestId = maybeParams !== undefined;
+    const requestId = hasExplicitRequestId ? requestIdOrMethod as RequestId : undefined;
+    const method = (hasExplicitRequestId ? methodOrParams : requestIdOrMethod) as string;
+    const params = (hasExplicitRequestId ? maybeParams : methodOrParams) as unknown;
+
     switch (method) {
       case 'item/commandExecution/requestApproval':
-        return this.handleCommandApproval(params as Record<string, unknown>);
+        return this.handleCommandApproval(requestId, params as CommandApprovalRequest);
 
       case 'item/fileChange/requestApproval':
-        return this.handleFileChangeApproval(params as Record<string, unknown>);
+        return this.handleFileChangeApproval(requestId, params as FileChangeApprovalRequest);
 
       case 'item/permissions/requestApproval':
-        return this.handlePermissionsApproval(params as Record<string, unknown>);
+        return this.handlePermissionsApproval(requestId, params as PermissionsApprovalRequest);
 
       case 'item/tool/requestUserInput':
-        return this.handleUserInputRequest(params as Record<string, unknown>);
+        return this.handleUserInputRequest(requestId, params as UserInputRequest);
 
       default:
         throw new Error(`Unsupported server request: ${method}`);
     }
   }
 
-  private async handleCommandApproval(params: Record<string, unknown>): Promise<ApprovalResponse> {
-    if (!this.approvalCallback) return { decision: 'deny' };
+  hasPendingApprovalRequest(requestId: RequestId, threadId: string): boolean {
+    return this.pendingApprovalRequests.get(requestId) === threadId;
+  }
 
-    const command = String(params.command ?? '');
+  private async handleCommandApproval(
+    requestId: RequestId | undefined,
+    params: CommandApprovalRequest,
+  ): Promise<CommandExecutionApprovalResponse> {
+    if (!this.approvalCallback) return { decision: 'decline' };
+
+    const command = params.command ?? '';
     const toolName = normalizeCodexToolName('command_execution');
-    const input = { command };
-    const description = `Execute: ${command}`;
+    const input = {
+      command,
+      cwd: params.cwd ?? null,
+      reason: params.reason ?? null,
+      commandActions: params.commandActions ?? null,
+      approvalId: params.approvalId ?? null,
+      networkApprovalContext: params.networkApprovalContext ?? null,
+      additionalPermissions: params.additionalPermissions ?? null,
+      skillMetadata: params.skillMetadata ?? null,
+      proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? null,
+      proposedNetworkPolicyAmendments: params.proposedNetworkPolicyAmendments ?? null,
+    };
+    const description = describeCommandApproval(params);
 
-    const decision = await this.approvalCallback(toolName, input, description, {});
-    return { decision: mapApprovalDecision(decision) };
+    if (requestId !== undefined) {
+      this.pendingApprovalRequests.set(requestId, params.threadId);
+    }
+
+    try {
+      const decision = await this.approvalCallback(toolName, input, description, {
+        ...(params.reason ? { decisionReason: params.reason } : {}),
+        ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}),
+        ...(params.additionalPermissions ? { additionalPermissions: params.additionalPermissions } : {}),
+        ...(params.proposedExecpolicyAmendment ? { proposedExecpolicyAmendment: params.proposedExecpolicyAmendment } : {}),
+        ...(params.proposedNetworkPolicyAmendments ? { proposedNetworkPolicyAmendments: params.proposedNetworkPolicyAmendments } : {}),
+        decisionOptions: buildCommandApprovalDecisionOptions(params),
+      });
+      return { decision: mapCommandApprovalDecision(decision) };
+    } finally {
+      if (requestId !== undefined) {
+        this.pendingApprovalRequests.delete(requestId);
+      }
+    }
   }
 
-  private async handleFileChangeApproval(params: Record<string, unknown>): Promise<ApprovalResponse> {
-    if (!this.approvalCallback) return { decision: 'deny' };
+  private async handleFileChangeApproval(
+    requestId: RequestId | undefined,
+    params: FileChangeApprovalRequest,
+  ): Promise<FileChangeApprovalResponse> {
+    if (!this.approvalCallback) return { decision: 'decline' };
 
-    const changes = params.changes as Array<{ path: string; type: string }> | undefined ?? [];
+    const reason = params.reason ?? undefined;
     const toolName = normalizeCodexToolName('file_change');
-    const input: Record<string, unknown> = { changes };
-    const paths = changes.map(c => c.path).join(', ');
-    const description = `File change: ${paths || 'unknown'}`;
+    const input: Record<string, unknown> = { reason: reason ?? null };
+    const description = reason ? `File change: ${reason}` : 'File change';
 
-    const decision = await this.approvalCallback(toolName, input, description, {});
-    return { decision: mapApprovalDecision(decision) };
+    if (requestId !== undefined) {
+      this.pendingApprovalRequests.set(requestId, params.threadId);
+    }
+
+    try {
+      const decision = await this.approvalCallback(toolName, input, description, {});
+      return { decision: mapFileChangeApprovalDecision(decision) };
+    } finally {
+      if (requestId !== undefined) {
+        this.pendingApprovalRequests.delete(requestId);
+      }
+    }
   }
 
-  private async handlePermissionsApproval(params: Record<string, unknown>): Promise<ApprovalResponse> {
-    if (!this.approvalCallback) return { decision: 'deny' };
+  private async handlePermissionsApproval(
+    requestId: RequestId | undefined,
+    params: PermissionsApprovalRequest,
+  ): Promise<PermissionsApprovalResponse> {
+    if (!this.approvalCallback) return { permissions: {}, scope: 'turn' };
 
+    const requestedPermissions = params.permissions as Record<string, unknown> | undefined ?? {};
+    const reason = params.reason ?? undefined;
     const toolName = 'permissions';
-    const description = 'Permission request';
+    const description = reason ? `Permission request: ${reason}` : 'Permission request';
 
-    const decision = await this.approvalCallback(toolName, params, description, {});
-    return { decision: mapApprovalDecision(decision) };
+    if (requestId !== undefined) {
+      this.pendingApprovalRequests.set(requestId, params.threadId);
+    }
+
+    let decision: ApprovalDecision;
+    try {
+      decision = await this.approvalCallback(toolName, requestedPermissions, description, {});
+    } finally {
+      if (requestId !== undefined) {
+        this.pendingApprovalRequests.delete(requestId);
+      }
+    }
+
+    if (decision === 'allow') {
+      return { permissions: requestedPermissions, scope: 'turn' };
+    }
+    if (decision === 'allow-always') {
+      return { permissions: requestedPermissions, scope: 'session' };
+    }
+
+    return { permissions: {}, scope: 'turn' };
   }
 
-  private async handleUserInputRequest(params: Record<string, unknown>): Promise<UserInputResponse> {
+  abortPendingAskUser(requestId?: RequestId, threadId?: string): boolean {
+    if (!this.askUserAbortController) {
+      return false;
+    }
+
+    if (requestId !== undefined && requestId !== this.pendingAskUserRequestId) {
+      return false;
+    }
+
+    if (threadId !== undefined && threadId !== this.pendingAskUserThreadId) {
+      return false;
+    }
+
+    this.askUserAbortController.abort();
+    this.askUserAbortController = null;
+    this.pendingAskUserRequestId = null;
+    this.pendingAskUserThreadId = null;
+    return true;
+  }
+
+  private async handleUserInputRequest(
+    requestId: RequestId | undefined,
+    params: UserInputRequest,
+  ): Promise<UserInputResponse> {
     if (!this.askUserCallback) return { answers: {} };
 
-    const questions = params.questions as Array<{ id: string; text: string }> | undefined ?? [];
+    const questions = params.questions ?? [];
     const input: Record<string, unknown> = { questions };
 
-    const userAnswers = await this.askUserCallback(input);
+    this.askUserAbortController = new AbortController();
+    this.pendingAskUserRequestId = requestId ?? null;
+    this.pendingAskUserThreadId = params.threadId;
+
+    let userAnswers: Record<string, string | string[]> | null;
+    try {
+      userAnswers = await this.askUserCallback(input, this.askUserAbortController.signal);
+    } finally {
+      this.askUserAbortController = null;
+      this.pendingAskUserRequestId = null;
+      this.pendingAskUserThreadId = null;
+    }
 
     if (!userAnswers) return { answers: {} };
 
     const answers: Record<string, { answers: string[] }> = {};
     for (const [key, value] of Object.entries(userAnswers)) {
-      answers[key] = { answers: [value] };
+      answers[key] = { answers: normalizeAnswers(value) };
     }
 
     return { answers };
   }
 }
 
-function mapApprovalDecision(decision: string): 'accept' | 'deny' | 'alwaysAccept' {
+function describeCommandApproval(params: CommandApprovalRequest): string {
+  const networkContext = params.networkApprovalContext;
+  if (networkContext) {
+    return `Allow ${networkContext.protocol} access to ${networkContext.host}`;
+  }
+
+  const command = params.command ?? '';
+  return command ? `Execute: ${command}` : 'Execute command';
+}
+
+function buildCommandApprovalDecisionOptions(
+  params: CommandApprovalRequest,
+): ApprovalDecisionOption[] {
+  const availableDecisions = params.availableDecisions ?? ['accept', 'acceptForSession', 'decline'];
+
+  return availableDecisions.map((decision) => mapDecisionOption(decision, params));
+}
+
+function mapDecisionOption(
+  decision: CommandExecutionApprovalDecision,
+  params: CommandApprovalRequest,
+): ApprovalDecisionOption {
+  if (decision === 'accept') {
+    return { label: 'Allow once', decision: 'allow' };
+  }
+  if (decision === 'acceptForSession') {
+    return { label: 'Always allow', decision: 'allow-always' };
+  }
+  if (decision === 'decline') {
+    return { label: 'Deny', decision: 'deny' };
+  }
+  if (decision === 'cancel') {
+    return { label: 'Cancel', decision: 'cancel' };
+  }
+  if ('acceptWithExecpolicyAmendment' in decision) {
+    return {
+      label: 'Allow similar commands',
+      description: 'Approve and store an exec policy amendment.',
+      decision: {
+        type: 'allow-with-exec-policy-amendment',
+        execPolicyAmendment: decision.acceptWithExecpolicyAmendment.execpolicy_amendment,
+      },
+    };
+  }
+
+  const networkPolicyAmendment = decision.applyNetworkPolicyAmendment.network_policy_amendment;
+  const host = networkPolicyAmendment.host || params.networkApprovalContext?.host || 'host';
+  const action = networkPolicyAmendment.action === 'deny' ? 'Deny' : 'Allow';
+  return {
+    label: `${action} ${host} for this session`,
+    description: `Apply a ${networkPolicyAmendment.action} rule for ${host}.`,
+    decision: {
+      type: 'apply-network-policy-amendment',
+      networkPolicyAmendment,
+    },
+  };
+}
+
+function normalizeAnswers(value: string | string[]): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item : String(item)))
+      .filter((item) => item.trim().length > 0);
+  }
+
+  return [value];
+}
+
+function mapCommandApprovalDecision(decision: ApprovalDecision): CommandExecutionApprovalDecision {
   switch (decision) {
     case 'allow':
       return 'accept';
     case 'allow-always':
-      return 'alwaysAccept';
+      return 'acceptForSession';
     case 'deny':
+      return 'decline';
     case 'cancel':
-      return 'deny';
+      return 'cancel';
     default:
-      return 'deny';
+      if (typeof decision === 'object' && decision !== null) {
+        if (decision.type === 'allow-with-exec-policy-amendment') {
+          return {
+            acceptWithExecpolicyAmendment: {
+              execpolicy_amendment: decision.execPolicyAmendment,
+            },
+          };
+        }
+        if (decision.type === 'apply-network-policy-amendment') {
+          return {
+            applyNetworkPolicyAmendment: {
+              network_policy_amendment: {
+                host: decision.networkPolicyAmendment.host,
+                action: decision.networkPolicyAmendment.action === 'deny' ? 'deny' : 'allow',
+              },
+            },
+          };
+        }
+      }
+      return 'decline';
+  }
+}
+
+function mapFileChangeApprovalDecision(decision: ApprovalDecision): FileChangeApprovalDecision {
+  switch (decision) {
+    case 'allow':
+      return 'accept';
+    case 'allow-always':
+      return 'acceptForSession';
+    case 'deny':
+      return 'decline';
+    case 'cancel':
+      return 'cancel';
+    default:
+      return 'decline';
   }
 }

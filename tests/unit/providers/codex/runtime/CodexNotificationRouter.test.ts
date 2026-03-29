@@ -70,6 +70,18 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
+    it('streams raw reasoning text deltas as thinking chunks', () => {
+      router.handleNotification('item/reasoning/textDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'rs1',
+        contentIndex: 0,
+        delta: 'Checking raw reasoning',
+      });
+
+      expect(chunks).toEqual([{ type: 'thinking', content: 'Checking raw reasoning' }]);
+    });
+
     it('ignores item/reasoning/summaryPartAdded (no-op boundary)', () => {
       router.handleNotification('item/reasoning/summaryPartAdded', {
         threadId: 't1',
@@ -181,6 +193,29 @@ describe('CodexNotificationRouter', () => {
         id: 'call_fc1',
         name: 'apply_patch',
       });
+    });
+  });
+
+  describe('plan and compaction events', () => {
+    it('streams item/plan/delta as text chunks', () => {
+      router.handleNotification('item/plan/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'plan-1',
+        delta: '- Investigate failing tests',
+      });
+
+      expect(chunks).toEqual([{ type: 'text', content: '- Investigate failing tests' }]);
+    });
+
+    it('emits compact_boundary when a context compaction item starts', () => {
+      router.handleNotification('item/started', {
+        item: { type: 'contextCompaction', id: 'compact-1' },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([{ type: 'compact_boundary' }]);
     });
   });
 
@@ -376,10 +411,13 @@ describe('CodexNotificationRouter', () => {
       expect(chunks[0]).toMatchObject({
         type: 'usage',
         usage: {
-          inputTokens: 9000,
+          inputTokens: 18000,
           cacheReadInputTokens: 5000,
           cacheCreationInputTokens: 0,
           contextWindow: 200000,
+          contextWindowIsAuthoritative: true,
+          contextTokens: 23000,
+          percentage: 12,
         },
       });
     });
@@ -557,6 +595,49 @@ describe('CodexNotificationRouter', () => {
       });
 
       expect(chunks).toHaveLength(0);
+    });
+  });
+
+  describe('command execution output delta', () => {
+    it('emits tool_output chunk for incremental command output', () => {
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'call_1',
+        delta: 'line 1\n',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'tool_output', id: 'call_1', content: 'line 1\n' },
+      ]);
+    });
+
+    it('accumulates multiple output deltas', () => {
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'call_1', delta: 'line 1\n',
+      });
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'call_1', delta: 'line 2\n',
+      });
+
+      expect(chunks).toHaveLength(2);
+      expect(chunks[0]).toEqual({ type: 'tool_output', id: 'call_1', content: 'line 1\n' });
+      expect(chunks[1]).toEqual({ type: 'tool_output', id: 'call_1', content: 'line 2\n' });
+    });
+  });
+
+  describe('file change output delta', () => {
+    it('emits tool_output chunk for incremental file change output', () => {
+      router.handleNotification('item/fileChange/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'fc_1',
+        delta: 'Applied patch to foo.ts',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'tool_output', id: 'fc_1', content: 'Applied patch to foo.ts' },
+      ]);
     });
   });
 

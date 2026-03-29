@@ -26,6 +26,46 @@ describe('CodexHistoryStore', () => {
       const textBlock = messages[0].contentBlocks?.find(b => b.type === 'text');
       expect(textBlock).toBeDefined();
     });
+
+    it('should rebuild thinking text from persisted reasoning content blocks', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-29T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Explain this.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-29T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'reasoning',
+            summary: [],
+            content: ['First thought', ' second thought'],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-29T00:00:00.002Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Done.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[1].contentBlocks).toEqual([
+        { type: 'thinking', content: 'First thought\n\nsecond thought' },
+        { type: 'text', content: 'Done.' },
+      ]);
+    });
   });
 
   describe('parseCodexSessionFile - tools session', () => {

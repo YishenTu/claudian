@@ -11,6 +11,7 @@ import { getTabProviderId, onCodexAvailabilityChanged, updatePlanModeUI } from '
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
+import { recalculateUsageForModel } from './utils/usageInfo';
 
 export class ClaudianView extends ItemView {
   private plugin: ClaudianPlugin;
@@ -100,8 +101,7 @@ export class ClaudianView extends ItemView {
       );
 
       if (tab.state.usage) {
-        const percentage = Math.min(100, Math.max(0, Math.round((tab.state.usage.contextTokens / contextWindow) * 100)));
-        tab.state.usage = { ...tab.state.usage, model, contextWindow, percentage };
+        tab.state.usage = recalculateUsageForModel(tab.state.usage, model, contextWindow);
       }
 
       tab.ui.modelSelector?.updateDisplay();

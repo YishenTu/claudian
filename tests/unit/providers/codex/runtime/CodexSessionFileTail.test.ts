@@ -181,7 +181,11 @@ describe('mapEventMsgEvent', () => {
   describe('task_complete', () => {
     it('emits pending usage then done', () => {
       const state = makeState({ currentTurnId: 'turn-1' });
-      state.pendingUsageByTurn.set('turn-1', { contextTokens: 500, contextWindow: 200_000 });
+      state.pendingUsageByTurn.set('turn-1', {
+        contextTokens: 500,
+        contextWindow: 200_000,
+        contextWindowIsAuthoritative: false,
+      });
       const payload = { type: 'task_complete' };
       const chunks = mapEventMsgEvent(payload, 'sess-1', state);
 
@@ -279,6 +283,7 @@ describe('mapEventMsgEvent', () => {
       expect(state.pendingUsageByTurn.get('turn-1')).toEqual({
         contextTokens: 13140,
         contextWindow: 200_000,
+        contextWindowIsAuthoritative: false,
       });
     });
 
@@ -295,6 +300,7 @@ describe('mapEventMsgEvent', () => {
       expect(state.pendingUsageByTurn.get('turn-1')).toEqual({
         contextTokens: 100,
         contextWindow: 200_000,
+        contextWindowIsAuthoritative: false,
       });
     });
 
@@ -314,6 +320,7 @@ describe('mapEventMsgEvent', () => {
       expect(state.pendingUsageByTurn.get('turn-1')).toEqual({
         contextTokens: 500,
         contextWindow: 258400,
+        contextWindowIsAuthoritative: true,
       });
     });
   });
@@ -329,6 +336,35 @@ describe('mapEventMsgEvent', () => {
       const state = makeState();
       mapEventMsgEvent({ type: 'task_started', turn_id: 'turn-1' }, 'sess-1', state);
       expect(state.modelContextWindow).toBe(200_000);
+    });
+
+    it('does not mark fallback context windows as authoritative', () => {
+      const state = makeState();
+      mapEventMsgEvent({ type: 'task_started', turn_id: 'turn-1' }, 'sess-1', state);
+      mapEventMsgEvent(
+        {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 500 },
+          },
+        },
+        'sess-1',
+        state,
+      );
+
+      const chunks = mapEventMsgEvent({ type: 'task_complete' }, 'sess-1', state);
+      const usageChunk = chunks.find(c => c.type === 'usage');
+
+      expect(usageChunk).toEqual({
+        type: 'usage',
+        sessionId: 'sess-1',
+        usage: expect.objectContaining({
+          contextWindow: 200_000,
+          contextWindowIsAuthoritative: false,
+          contextTokens: 500,
+          percentage: 0,
+        }),
+      });
     });
   });
 
@@ -942,6 +978,29 @@ describe('mapResponseItemEvent', () => {
 
       expect(mapResponseItemEvent(event1, 'sess-1', 0, state)).toEqual([{ type: 'thinking', content: 'Planning' }]);
       expect(mapResponseItemEvent(event2, 'sess-1', 1, state)).toEqual([{ type: 'thinking', content: ' more' }]);
+    });
+
+    it('reconstructs reasoning text from content blocks when summary is empty', () => {
+      const state = makeState({ currentTurnId: 'turn-1' });
+      const event1 = {
+        type: 'response_item',
+        payload: {
+          type: 'reasoning',
+          summary: [],
+          content: ['Raw chain'],
+        },
+      };
+      const event2 = {
+        type: 'response_item',
+        payload: {
+          type: 'reasoning',
+          summary: [],
+          content: ['Raw chain', ' of thought'],
+        },
+      };
+
+      expect(mapResponseItemEvent(event1, 'sess-1', 0, state)).toEqual([{ type: 'thinking', content: 'Raw chain' }]);
+      expect(mapResponseItemEvent(event2, 'sess-1', 1, state)).toEqual([{ type: 'thinking', content: ' of thought' }]);
     });
   });
 });

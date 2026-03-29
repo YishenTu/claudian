@@ -1,5 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import {
   TOOL_AGENT_OUTPUT,
   TOOL_CODEX_SPAWN_AGENT,
@@ -318,6 +319,20 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.usage).toEqual(usage);
     });
 
+    it('stamps the active provider model onto usage when the provider omits it', async () => {
+      const msg = createTestMessage();
+      const usage = createMockUsage({ model: undefined });
+      const providerSettingsSpy = jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot');
+      providerSettingsSpy.mockReturnValue({ model: 'gpt-5.4' } as any);
+      (deps.getAgentService!() as any).providerId = 'codex';
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toEqual({ ...usage, model: 'gpt-5.4' });
+
+      providerSettingsSpy.mockRestore();
+    });
+
     it('should ignore usage from other sessions', async () => {
       const msg = createTestMessage();
       const usage = createMockUsage();
@@ -501,6 +516,53 @@ describe('StreamController - Text Content', () => {
       expect(renderToolCall).toHaveBeenCalled();
       expect(msg.toolCalls![0].status).toBe('completed');
       expect(msg.toolCalls![0].result).toBe('file contents here');
+    });
+
+    it('should render a pending tool on tool_output and append incremental output', async () => {
+      const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'npm test' } },
+        msg
+      );
+
+      expect(deps.state.pendingTools.size).toBe(1);
+
+      await controller.handleStreamChunk(
+        { type: 'tool_output', id: 'bash-1', content: 'line 1\n' },
+        msg
+      );
+
+      expect(deps.state.pendingTools.size).toBe(0);
+      expect(renderToolCall).toHaveBeenCalled();
+      expect(updateToolCallResult).toHaveBeenCalledWith(
+        'bash-1',
+        expect.objectContaining({
+          id: 'bash-1',
+          status: 'running',
+          result: 'line 1\n',
+        }),
+        expect.any(Map)
+      );
+
+      await controller.handleStreamChunk(
+        { type: 'tool_output', id: 'bash-1', content: 'line 2\n' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].status).toBe('running');
+      expect(msg.toolCalls![0].result).toBe('line 1\nline 2\n');
+      expect(updateToolCallResult).toHaveBeenLastCalledWith(
+        'bash-1',
+        expect.objectContaining({
+          id: 'bash-1',
+          status: 'running',
+          result: 'line 1\nline 2\n',
+        }),
+        expect.any(Map)
+      );
     });
 
     it('should buffer Write tool and use createWriteEditBlock on flush', async () => {
@@ -813,6 +875,32 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({ type: 'usage', usage } as any, msg);
 
       expect(deps.state.usage).toEqual(usage);
+    });
+
+    it('marks context window updates as authoritative', async () => {
+      const msg = createTestMessage();
+      deps.state.usage = createMockUsage({
+        model: 'gpt-5.4',
+        contextWindow: 200000,
+        contextWindowIsAuthoritative: false,
+        contextTokens: 129200,
+        percentage: 65,
+      });
+
+      await controller.handleStreamChunk({ type: 'context_window_update', contextWindow: 258400 }, msg);
+
+      expect(deps.state.usage).toEqual({
+        ...createMockUsage({
+          model: 'gpt-5.4',
+          contextWindow: 200000,
+          contextWindowIsAuthoritative: false,
+          contextTokens: 129200,
+          percentage: 65,
+        }),
+        contextWindow: 258400,
+        contextWindowIsAuthoritative: true,
+        percentage: 50,
+      });
     });
 
     it('should not update usage when ignoreUsageUpdates is true', async () => {

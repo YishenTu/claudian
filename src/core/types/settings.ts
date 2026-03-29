@@ -81,8 +81,29 @@ export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): s
   return getCurrentPlatformBlockedCommands(commands);
 }
 
+export interface ApprovalExecPolicyAmendmentDecision {
+  type: 'allow-with-exec-policy-amendment';
+  execPolicyAmendment: string[];
+}
+
+export interface ApprovalNetworkPolicyAmendment {
+  host: string;
+  action: string;
+}
+
+export interface ApprovalNetworkPolicyAmendmentDecision {
+  type: 'apply-network-policy-amendment';
+  networkPolicyAmendment: ApprovalNetworkPolicyAmendment;
+}
+
 /** User decision from the approval modal. */
-export type ApprovalDecision = 'allow' | 'allow-always' | 'deny' | 'cancel';
+export type ApprovalDecision =
+  | 'allow'
+  | 'allow-always'
+  | 'deny'
+  | 'cancel'
+  | ApprovalExecPolicyAmendmentDecision
+  | ApprovalNetworkPolicyAmendmentDecision;
 
 /** Saved environment variable configuration. */
 export interface EnvSnippet {

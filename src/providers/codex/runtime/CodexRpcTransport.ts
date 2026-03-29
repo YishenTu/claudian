@@ -12,7 +12,7 @@ interface PendingRequest {
 }
 
 type NotificationHandler = (params: unknown) => void;
-type ServerRequestHandler = (params: unknown) => Promise<unknown>;
+type ServerRequestHandler = (requestId: string | number, params: unknown) => Promise<unknown>;
 
 export class CodexRpcTransport {
   private nextId = 1;
@@ -90,11 +90,11 @@ export class CodexRpcTransport {
       return; // malformed line
     }
 
-    const id = msg.id as number | undefined;
+    const id = msg.id as string | number | undefined;
     const method = msg.method as string | undefined;
 
     // Server response to our request
-    if (id !== undefined && !method) {
+    if (typeof id === 'number' && !method) {
       this.handleResponse(id, msg);
       return;
     }
@@ -132,7 +132,7 @@ export class CodexRpcTransport {
     if (handler) handler(params);
   }
 
-  private handleServerRequest(id: number, method: string, params: unknown): void {
+  private handleServerRequest(id: string | number, method: string, params: unknown): void {
     const handler = this.serverRequestHandlers.get(method);
     if (!handler) {
       this.sendRaw({
@@ -143,7 +143,7 @@ export class CodexRpcTransport {
       return;
     }
 
-    handler(params).then(
+    handler(id, params).then(
       (result) => {
         this.sendRaw({ jsonrpc: '2.0', id, result });
       },

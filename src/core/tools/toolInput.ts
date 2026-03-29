@@ -21,14 +21,15 @@ export function extractResolvedAnswers(toolUseResult: unknown): AskUserAnswers |
   return normalizeAnswersObject(r.answers);
 }
 
-function normalizeAnswerValue(value: unknown): string | undefined {
+function normalizeAnswerValue(value: unknown): string | string[] | undefined {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) {
     const normalized = value
       .map((item) => (typeof item === 'string' ? item : String(item)))
       .filter(Boolean)
-      .join(', ');
-    return normalized || undefined;
+      .filter((item) => item.length > 0);
+    if (normalized.length === 0) return undefined;
+    return normalized.length === 1 ? normalized[0] : normalized;
   }
   if (typeof value === 'object' && value !== null) {
     const record = value as Record<string, unknown>;

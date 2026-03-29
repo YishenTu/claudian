@@ -51,7 +51,8 @@ interface PersistedMessagePayload {
 
 interface PersistedReasoningPayload {
   type: 'reasoning';
-  summary?: Array<{ type?: string; text?: string }>;
+  summary?: Array<{ type?: string; text?: string } | string>;
+  content?: Array<{ type?: string; text?: string } | string>;
   text?: string;
 }
 
@@ -361,8 +362,25 @@ function extractMessageText(content: PersistedMessagePart[] | undefined): string
 function extractReasoningText(payload: PersistedReasoningPayload | PersistedEventPayload): string {
   if ('summary' in payload && Array.isArray(payload.summary) && payload.summary.length > 0) {
     return payload.summary
-      .map(part => (typeof part?.text === 'string' ? part.text : ''))
-      .join('\n')
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        return typeof part?.text === 'string' ? part.text : '';
+      })
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+  }
+
+  if ('content' in payload && Array.isArray(payload.content) && payload.content.length > 0) {
+    return payload.content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        return typeof part?.text === 'string' ? part.text : '';
+      })
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join('\n\n')
       .trim();
   }
 

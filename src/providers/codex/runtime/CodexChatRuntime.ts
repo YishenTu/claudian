@@ -35,6 +35,7 @@ import { CodexAppServerProcess } from './CodexAppServerProcess';
 import type {
   InitializeResult,
   SandboxPolicy,
+  ServerRequestResolvedNotification,
   ThreadResumeResult,
   ThreadStartResult,
   TurnStartResult,
@@ -150,7 +151,11 @@ export class CodexChatRuntime implements ChatRuntime {
     const promptKey = computeSystemPromptKey(promptSettings);
     const resolvedCodexPath = this.plugin.getResolvedCodexCliPath();
     const clientConfigKey = [promptKey, resolvedCodexPath ?? ''].join('::');
-    const shouldRebuild = !this.process || !this.transport || options?.force === true || this.clientConfigKey !== clientConfigKey;
+    const shouldRebuild = !this.process
+      || !this.transport
+      || !this.process.isAlive()
+      || options?.force === true
+      || this.clientConfigKey !== clientConfigKey;
 
     if (shouldRebuild) {
       await this.shutdownProcess();
@@ -295,8 +300,13 @@ export class CodexChatRuntime implements ChatRuntime {
 
       if (existingThreadId && existingThreadId !== this.loadedThreadId) {
         // Resume a persisted thread not yet loaded in this daemon
+        const providerSettings = this.getProviderSettings();
+        const permissionMode = SANDBOX_MAP[providerSettings.permissionMode as string] ?? SANDBOX_MAP.normal;
         const resumeResult = await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId: existingThreadId,
+          model: model ?? 'gpt-5.4',
+          approvalPolicy: permissionMode.approvalPolicy,
+          sandbox: permissionMode.sandbox,
           baseInstructions: promptText,
           persistExtendedHistory: true,
         });
@@ -356,10 +366,11 @@ export class CodexChatRuntime implements ChatRuntime {
       const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
         threadId,
         input: inputBundle.input,
+        approvalPolicy: permissionMode.approvalPolicy,
         model,
         effort,
         summary,
-        ...(sandboxPolicy ? { sandboxPolicy } : {}),
+        sandboxPolicy,
       });
       this.currentTurnId = turnResult.turn.id;
       this.flushPendingTurnNotifications();
@@ -443,6 +454,8 @@ export class CodexChatRuntime implements ChatRuntime {
 
   cancel(): void {
     this.canceled = true;
+    this.dismissAllPendingPrompts();
+
     const threadId = this.session.getThreadId();
     const turnId = this.currentTurnId;
 
@@ -571,6 +584,17 @@ export class CodexChatRuntime implements ChatRuntime {
   // Private helpers
   // -----------------------------------------------------------------------
 
+  private dismissApprovalUI(): void {
+    if (this.approvalDismisser) {
+      this.approvalDismisser();
+    }
+  }
+
+  private dismissAllPendingPrompts(): void {
+    this.dismissApprovalUI();
+    this.serverRequestRouter.abortPendingAskUser();
+  }
+
   private setReady(ready: boolean): void {
     this.ready = ready;
     for (const listener of this.readyListeners) {
@@ -642,6 +666,8 @@ export class CodexChatRuntime implements ChatRuntime {
       'item/agentMessage/delta',
       'item/started',
       'item/completed',
+      'item/plan/delta',
+      'item/reasoning/textDelta',
       'item/reasoning/summaryTextDelta',
       'item/reasoning/summaryPartAdded',
       'thread/tokenUsage/updated',
@@ -651,10 +677,17 @@ export class CodexChatRuntime implements ChatRuntime {
       'thread/started',
       'thread/status/changed',
       'turn/started',
+      'serverRequest/resolved',
+      'item/commandExecution/outputDelta',
+      'item/fileChange/outputDelta',
     ];
 
     for (const method of methods) {
       this.transport.onNotification(method, (params) => {
+        if (method === 'serverRequest/resolved') {
+          this.handleServerRequestResolved(params as ServerRequestResolvedNotification);
+          return;
+        }
         if (!this.routeNotification(method, params)) {
           return;
         }
@@ -671,8 +704,8 @@ export class CodexChatRuntime implements ChatRuntime {
     ];
 
     for (const method of requestMethods) {
-      this.transport.onServerRequest(method, (params) => {
-        return this.serverRequestRouter.handleServerRequest(method, params);
+      this.transport.onServerRequest(method, (requestId, params) => {
+        return this.serverRequestRouter.handleServerRequest(requestId, method, params);
       });
     }
   }
@@ -705,7 +738,11 @@ export class CodexChatRuntime implements ChatRuntime {
     externalContextPaths: string[],
     sandboxMode: string,
   ): SandboxPolicy | undefined {
-    if (sandboxMode !== 'workspace-write' || externalContextPaths.length === 0) {
+    if (sandboxMode === 'danger-full-access') {
+      return { type: 'dangerFullAccess' };
+    }
+
+    if (sandboxMode !== 'workspace-write') {
       return undefined;
     }
 
@@ -726,6 +763,15 @@ export class CodexChatRuntime implements ChatRuntime {
       excludeTmpdirEnvVar: false,
       excludeSlashTmp: false,
     };
+  }
+
+  private handleServerRequestResolved(params: ServerRequestResolvedNotification): void {
+    if (this.serverRequestRouter.hasPendingApprovalRequest(params.requestId, params.threadId)) {
+      this.dismissApprovalUI();
+      return;
+    }
+
+    this.serverRequestRouter.abortPendingAskUser(params.requestId, params.threadId);
   }
 
   private routeNotification(

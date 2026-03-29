@@ -8,13 +8,16 @@ import type {
   AgentMessageDeltaNotification,
   CollabAgentToolCallItem,
   CommandExecutionItem,
+  ContextCompactionItem,
   ErrorNotification,
   FileChangeItem,
   ImageViewItem,
   ItemCompletedNotification,
   ItemStartedNotification,
   McpToolCallItem,
+  PlanDeltaNotification,
   ReasoningSummaryTextDeltaNotification,
+  ReasoningTextDeltaNotification,
   TokenUsageUpdatedNotification,
   TurnCompletedNotification,
   TurnPlanUpdatedNotification,
@@ -51,7 +54,19 @@ export class CodexNotificationRouter {
       case 'item/reasoning/summaryTextDelta':
         this.onReasoningSummaryDelta(params as ReasoningSummaryTextDeltaNotification);
         break;
+      case 'item/reasoning/textDelta':
+        this.onReasoningTextDelta(params as ReasoningTextDeltaNotification);
+        break;
       case 'item/reasoning/summaryPartAdded':
+        break;
+      case 'item/plan/delta':
+        this.onPlanDelta(params as PlanDeltaNotification);
+        break;
+      case 'item/commandExecution/outputDelta':
+        this.onCommandOutputDelta(params as { itemId: string; delta: string });
+        break;
+      case 'item/fileChange/outputDelta':
+        this.onFileChangeOutputDelta(params as { itemId: string; delta: string });
         break;
       case 'thread/tokenUsage/updated':
         this.onTokenUsageUpdated(params as TokenUsageUpdatedNotification);
@@ -76,6 +91,14 @@ export class CodexNotificationRouter {
 
   private onReasoningSummaryDelta(params: ReasoningSummaryTextDeltaNotification): void {
     this.emit({ type: 'thinking', content: params.delta });
+  }
+
+  private onReasoningTextDelta(params: ReasoningTextDeltaNotification): void {
+    this.emit({ type: 'thinking', content: params.delta });
+  }
+
+  private onPlanDelta(params: PlanDeltaNotification): void {
+    this.emit({ type: 'text', content: params.delta });
   }
 
   private onItemStarted(params: ItemStartedNotification): void {
@@ -107,6 +130,10 @@ export class CodexNotificationRouter {
 
       case 'mcpToolCall':
         this.emitToolUseFromMcp(item as McpToolCallItem);
+        break;
+
+      case 'contextCompaction':
+        this.emitContextCompactionBoundary(item as ContextCompactionItem);
         break;
 
       default:
@@ -289,6 +316,10 @@ export class CodexNotificationRouter {
     });
   }
 
+  private emitContextCompactionBoundary(_item: ContextCompactionItem): void {
+    this.emit({ type: 'compact_boundary' });
+  }
+
   // -- turn/plan/updated (update_plan) ----------------------------------------
 
   private onPlanUpdated(params: TurnPlanUpdatedNotification): void {
@@ -310,18 +341,29 @@ export class CodexNotificationRouter {
     this.emit({ type: 'tool_result', id: syntheticId, content: 'Plan updated', isError: false });
   }
 
+  // -- commandExecution/outputDelta & fileChange/outputDelta ------------------
+
+  private onCommandOutputDelta(params: { itemId: string; delta: string }): void {
+    this.emit({ type: 'tool_output', id: params.itemId, content: params.delta });
+  }
+
+  private onFileChangeOutputDelta(params: { itemId: string; delta: string }): void {
+    this.emit({ type: 'tool_output', id: params.itemId, content: params.delta });
+  }
+
   // -- tokenUsage / turnCompleted / error -------------------------------------
 
   private onTokenUsageUpdated(params: TokenUsageUpdatedNotification): void {
-    const last = params.tokenUsage.last;
-    const contextTokens = last.inputTokens;
+    const total = params.tokenUsage.total;
+    const contextTokens = total.inputTokens + total.cachedInputTokens;
     const contextWindow = params.tokenUsage.modelContextWindow;
 
     const usage: UsageInfo = {
-      inputTokens: last.inputTokens,
+      inputTokens: total.inputTokens,
       cacheCreationInputTokens: 0,
-      cacheReadInputTokens: last.cachedInputTokens,
+      cacheReadInputTokens: total.cachedInputTokens,
       contextWindow,
+      contextWindowIsAuthoritative: contextWindow > 0,
       contextTokens,
       percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindow) * 100))) : 0,
     };

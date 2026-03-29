@@ -62,9 +62,11 @@ jest.mock('@/utils/env', () => ({
 import { CodexAppServerProcess as MockedProcessClass } from '@/providers/codex/runtime/CodexAppServerProcess';
 import { CodexChatRuntime } from '@/providers/codex/runtime/CodexChatRuntime';
 
+type CapturedServerRequestHandler = (requestId: string | number, params: unknown) => Promise<unknown>;
+
 // Notification handlers captured by onNotification
 let notificationHandlers: Map<string, (params: unknown) => void>;
-let serverRequestHandlers: Map<string, (params: unknown) => Promise<unknown>>;
+let serverRequestHandlers: Map<string, CapturedServerRequestHandler>;
 
 function captureHandlers(): void {
   notificationHandlers = new Map();
@@ -83,6 +85,19 @@ function captureHandlers(): void {
 function emitNotification(method: string, params: unknown): void {
   const handler = notificationHandlers.get(method);
   if (handler) handler(params);
+}
+
+async function emitServerRequest(
+  method: string,
+  requestId: string | number,
+  params: unknown,
+): Promise<unknown> {
+  const handler = serverRequestHandlers.get(method);
+  if (!handler) {
+    throw new Error(`No handler registered for ${method}`);
+  }
+
+  return handler(requestId, params);
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +234,7 @@ describe('CodexChatRuntime', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockProcessIsAlive.mockReturnValue(true);
     captureHandlers();
     setupDefaultRequestMock();
     runtime = new CodexChatRuntime(createMockPlugin());
@@ -300,6 +316,20 @@ describe('CodexChatRuntime', () => {
       await runtime.ensureReady();
       const rebuilt = await runtime.ensureReady({ force: true });
       expect(rebuilt).toBe(true);
+    });
+
+    it('rebuilds when the existing app-server process is no longer alive', async () => {
+      await runtime.ensureReady();
+      const firstCallCount = (MockedProcessClass as jest.Mock).mock.calls.length;
+
+      mockProcessIsAlive.mockReturnValue(false);
+
+      const rebuilt = await runtime.ensureReady();
+
+      expect(rebuilt).toBe(true);
+      expect((MockedProcessClass as jest.Mock).mock.calls.length).toBe(firstCallCount + 1);
+      expect(mockTransportDispose).toHaveBeenCalled();
+      expect(mockProcessShutdown).toHaveBeenCalled();
     });
   });
 
@@ -784,6 +814,169 @@ describe('CodexChatRuntime', () => {
     });
   });
 
+  describe('serverRequest/resolved lifecycle', () => {
+    it('subscribes to serverRequest/resolved notifications', async () => {
+      const gen = runtime.query(createTurn());
+      // Kick the generator to start execution
+      gen.next();
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(notificationHandlers.has('serverRequest/resolved')).toBe(true);
+
+      // Clean up generator
+      runtime.cancel();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _chunk of gen) { /* drain */ }
+    });
+
+    it('only dismisses approval UI when serverRequest/resolved matches the active request and thread', async () => {
+      const dismisser = jest.fn();
+      runtime.setApprovalDismisser(dismisser);
+      runtime.setApprovalCallback(jest.fn().mockImplementation(async () => new Promise(() => {})));
+
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-dismiss');
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            void emitServerRequest('item/commandExecution/requestApproval', 'req-live', {
+              threadId: 'thread-dismiss',
+              turnId: 'turn-dismiss',
+              itemId: 'cmd-1',
+              command: 'echo test',
+              cwd: '/test/vault',
+            });
+            emitNotification('serverRequest/resolved', {
+              threadId: 'thread-other',
+              requestId: 'req-live',
+            });
+            emitNotification('serverRequest/resolved', {
+              threadId: 'thread-dismiss',
+              requestId: 'req-stale',
+            });
+            emitNotification('turn/completed', {
+              threadId: 'thread-dismiss',
+              turn: { id: 'turn-dismiss', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-dismiss');
+        }
+        return {};
+      });
+
+      await collectChunks(runtime.query(createTurn()));
+
+      expect(dismisser).not.toHaveBeenCalled();
+
+      emitNotification('serverRequest/resolved', {
+        threadId: 'thread-dismiss',
+        requestId: 'req-live',
+      });
+
+      expect(dismisser).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('cancel dismisses approval UI', () => {
+    it('calls approvalDismisser on cancel', async () => {
+      const dismisser = jest.fn();
+      runtime.setApprovalDismisser(dismisser);
+
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-cancel-dismiss');
+        if (method === 'turn/start') return turnStartResponse('turn-cancel-dismiss');
+        if (method === 'turn/interrupt') return {};
+        return {};
+      });
+
+      const gen = runtime.query(createTurn());
+      const firstResult = gen.next();
+      await new Promise(r => setTimeout(r, 50));
+
+      runtime.cancel();
+
+      const chunks: StreamChunk[] = [];
+      const first = await firstResult;
+      if (!first.done && first.value) chunks.push(first.value);
+      for await (const chunk of gen) chunks.push(chunk);
+
+      expect(dismisser).toHaveBeenCalled();
+    });
+  });
+
+  describe('thread/resume reasserts current settings', () => {
+    it('sends approvalPolicy and sandbox on thread/resume', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'yolo' });
+      const rt = new CodexChatRuntime(plugin);
+
+      rt.syncConversationState({
+        sessionId: 'thread-resume-settings',
+        providerState: { threadId: 'thread-resume-settings', sessionFilePath: '/tmp/resume.jsonl' },
+      });
+
+      setupDefaultRequestMock('thread-resume-settings');
+      captureHandlers();
+
+      await collectChunks(rt.query(createTurn()));
+
+      const resumeCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'thread/resume',
+      );
+      expect(resumeCall).toBeDefined();
+      expect(resumeCall[1].approvalPolicy).toBe('never');
+      expect(resumeCall[1].sandbox).toBe('danger-full-access');
+
+      rt.cleanup();
+    });
+
+    it('sends model on thread/resume', async () => {
+      const plugin = createMockPlugin({ model: 'gpt-5.4-mini' });
+      const rt = new CodexChatRuntime(plugin);
+
+      rt.syncConversationState({
+        sessionId: 'thread-resume-model',
+        providerState: { threadId: 'thread-resume-model' },
+      });
+
+      setupDefaultRequestMock('thread-resume-model');
+      captureHandlers();
+
+      await collectChunks(rt.query(createTurn()));
+
+      const resumeCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'thread/resume',
+      );
+      expect(resumeCall).toBeDefined();
+      expect(resumeCall[1].model).toBe('gpt-5.4-mini');
+
+      rt.cleanup();
+    });
+
+    it('reasserts approvalPolicy and sandboxPolicy on turn/start for already-loaded threads', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'normal' });
+      const rt = new CodexChatRuntime(plugin);
+
+      await collectChunks(rt.query(createTurn('first')));
+
+      mockTransportRequest.mockClear();
+      captureHandlers();
+      setupDefaultRequestMock('thread-001', 'turn-002');
+
+      plugin.settings.permissionMode = 'yolo';
+      await collectChunks(rt.query(createTurn('second')));
+
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall).toBeDefined();
+      expect(turnStartCall[1].approvalPolicy).toBe('never');
+      expect(turnStartCall[1].sandboxPolicy).toEqual({ type: 'dangerFullAccess' });
+
+      rt.cleanup();
+    });
+  });
+
   describe('query - permission modes', () => {
     it('uses danger-full-access for yolo mode', async () => {
       const plugin = createMockPlugin({ permissionMode: 'yolo' });
@@ -826,6 +1019,36 @@ describe('CodexChatRuntime', () => {
       );
       expect(threadStartCall[1].sandbox).toBe('workspace-write');
       expect(threadStartCall[1].approvalPolicy).toBe('on-request');
+
+      rt.cleanup();
+    });
+
+    it('always sends baseline sandboxPolicy even without external context', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'normal' });
+      const rt = new CodexChatRuntime(plugin);
+
+      await collectChunks(rt.query(createTurn()));
+
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall[1].sandboxPolicy).toBeDefined();
+      expect(turnStartCall[1].sandboxPolicy.type).toBe('workspaceWrite');
+      expect(turnStartCall[1].sandboxPolicy.writableRoots).toContain('/test/vault');
+
+      rt.cleanup();
+    });
+
+    it('sends explicit dangerFullAccess sandboxPolicy in yolo mode', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'yolo' });
+      const rt = new CodexChatRuntime(plugin);
+
+      await collectChunks(rt.query(createTurn()));
+
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall[1].sandboxPolicy).toEqual({ type: 'dangerFullAccess' });
 
       rt.cleanup();
     });

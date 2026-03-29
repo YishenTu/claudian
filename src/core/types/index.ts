@@ -16,6 +16,7 @@ export {
 // Settings and command types
 export {
   type ApprovalDecision,
+  type ApprovalNetworkPolicyAmendment,
   type ClaudianSettings,
   type EnvSnippet,
   getBashToolBlockedCommands,

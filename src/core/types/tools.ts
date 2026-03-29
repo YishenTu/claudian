@@ -15,6 +15,7 @@ export interface ToolDiffData {
 export interface AskUserQuestionOption {
   label: string;
   description: string;
+  value?: string;
 }
 
 /** Parsed question for AskUserQuestion tool. */
@@ -24,10 +25,12 @@ export interface AskUserQuestionItem {
   header: string;
   options: AskUserQuestionOption[];
   multiSelect: boolean;
+  isOther?: boolean;
+  isSecret?: boolean;
 }
 
 /** User-provided answers keyed by question text or stable question id. */
-export type AskUserAnswers = Record<string, string>;
+export type AskUserAnswers = Record<string, string | string[]>;
 
 /** Tool call tracking with status and result. */
 export interface ToolCallInfo {
