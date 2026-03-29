@@ -313,17 +313,17 @@ export class CodexNotificationRouter {
   // -- tokenUsage / turnCompleted / error -------------------------------------
 
   private onTokenUsageUpdated(params: TokenUsageUpdatedNotification): void {
-    const total = params.tokenUsage.total;
-    const contextTokens = total.inputTokens + total.cachedInputTokens;
+    const last = params.tokenUsage.last;
+    const contextTokens = last.inputTokens;
     const contextWindow = params.tokenUsage.modelContextWindow;
 
     const usage: UsageInfo = {
-      inputTokens: total.inputTokens,
+      inputTokens: last.inputTokens,
       cacheCreationInputTokens: 0,
-      cacheReadInputTokens: total.cachedInputTokens,
+      cacheReadInputTokens: last.cachedInputTokens,
       contextWindow,
       contextTokens,
-      percentage: contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0,
+      percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindow) * 100))) : 0,
     };
 
     this.emit({ type: 'usage', usage, sessionId: params.threadId });
