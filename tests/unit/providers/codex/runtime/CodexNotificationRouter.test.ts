@@ -574,6 +574,96 @@ describe('CodexNotificationRouter', () => {
     });
   });
 
+  describe('plan_completed emission', () => {
+    it('emits plan_completed before done on successful plan turn with plan deltas', () => {
+      router.beginTurn({ isPlanTurn: true });
+
+      router.handleNotification('item/plan/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'plan-1', delta: 'Plan step 1',
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      const types = chunks.map(c => c.type);
+      expect(types).toContain('plan_completed');
+      expect(types).toContain('done');
+      expect(types.indexOf('plan_completed')).toBeLessThan(types.indexOf('done'));
+    });
+
+    it('does not emit plan_completed when no plan delta was seen', () => {
+      router.beginTurn({ isPlanTurn: true });
+
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.map(c => c.type)).not.toContain('plan_completed');
+      expect(chunks.map(c => c.type)).toContain('done');
+    });
+
+    it('does not emit plan_completed when turn failed', () => {
+      router.beginTurn({ isPlanTurn: true });
+
+      router.handleNotification('item/plan/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'plan-1', delta: 'Step',
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: {
+          id: 'turn1', items: [], status: 'failed',
+          error: { message: 'Error', codexErrorInfo: 'other', additionalDetails: null },
+        },
+      });
+
+      expect(chunks.map(c => c.type)).not.toContain('plan_completed');
+    });
+
+    it('does not emit plan_completed when beginTurn was called with isPlanTurn: false', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('item/plan/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'plan-1', delta: 'Step',
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.map(c => c.type)).not.toContain('plan_completed');
+    });
+
+    it('does not emit plan_completed when beginTurn was not called', () => {
+      router.handleNotification('item/plan/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'plan-1', delta: 'Step',
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.map(c => c.type)).not.toContain('plan_completed');
+    });
+
+    it('resets plan state after endTurn', () => {
+      router.beginTurn({ isPlanTurn: true });
+      router.handleNotification('item/plan/delta', {
+        threadId: 't1', turnId: 'turn1', itemId: 'plan-1', delta: 'Step',
+      });
+      router.endTurn();
+
+      // New turn without beginTurn should not emit plan_completed
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn2', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.map(c => c.type)).not.toContain('plan_completed');
+    });
+  });
+
   describe('error notifications', () => {
     it('emits error chunk for non-retryable error', () => {
       router.handleNotification('error', {

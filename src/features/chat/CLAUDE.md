@@ -7,7 +7,6 @@ Main sidebar chat interface. `ClaudianView` is a thin shell; logic lives in cont
 - Current state: chat features depend on `ChatRuntime` (provider-neutral interface). `InputController` builds structured `ChatTurnRequest` objects; prompt encoding is delegated to the runtime via `prepareTurn()`. Session bookkeeping lives in `Conversation.providerState` (opaque), managed by `ChatRuntime.buildSessionUpdates()`. Auxiliary services, history/session fallback, task-result interpretation, and chat-facing agent mention lookup are created via `ProviderRegistry`. Conversations carry `providerId` for routing and `providerState` for provider-owned data; feature code never reads provider-specific fields directly. Fork state is built via `ProviderConversationHistoryService.buildForkProviderState()`. `FileContext.ts` uses the provider-neutral `AgentMentionProvider` interface.
 - Remaining debt: plugin management and full provider-owned agent authoring/storage are still bootstrap concerns; only the chat-facing mention seam is provider-neutral.
 - Target state: chat should talk exclusively to the thin runtime facade; agent/plugin management should also go through provider-neutral contracts.
-- Execution reference: [`docs/multi-provider-execution-plan.md`](../../../docs/multi-provider-execution-plan.md)
 
 ## Architecture
 
@@ -19,12 +18,14 @@ ClaudianView (lifecycle + assembly)
 │   ├── StreamController        # Streaming, auto-scroll, abort
 │   ├── InputController         # Text input, file context, images
 │   ├── SelectionController     # Editor selection awareness
+│   ├── BrowserSelectionController # Browser view selection
+│   ├── CanvasSelectionController  # Canvas selection
 │   └── NavigationController    # Keyboard navigation (vim-style)
 ├── Services
 │   ├── SubagentManager          # Unified sync/async subagent lifecycle
 │   └── BangBashService          # Direct bash execution ("!" mode)
 │   # TitleGenerationService and InstructionRefineService are created via
-│   # ProviderRegistry and live in src/providers/claude/aux/
+│   # ProviderRegistry; each provider has its own impl in src/providers/{id}/aux/
 ├── Rendering
 │   ├── MessageRenderer         # Main rendering orchestrator
 │   ├── ToolCallRenderer        # Tool use blocks
@@ -33,7 +34,8 @@ ClaudianView (lifecycle + assembly)
 │   ├── DiffRenderer            # Inline diff display
 │   ├── TodoListRenderer        # Todo panel
 │   ├── SubagentRenderer        # Subagent status panel
-│   ├── InlineExitPlanMode      # Plan mode approval card
+│   ├── InlineExitPlanMode      # Claude plan mode approval card (tool-driven)
+│   ├── InlineCodexPlanApproval # Codex plan mode approval card (post-stream)
 │   ├── InlineAskUserQuestion   # AskUserQuestion inline card
 │   └── collapsible             # Collapsible block utility
 ├── Tabs
@@ -45,6 +47,7 @@ ClaudianView (lifecycle + assembly)
     ├── FileContext             # @-mention chips and dropdown
     ├── ImageContext            # Image attachments
     ├── StatusPanel             # Todo/command output panels container
+    ├── NavigationSidebar       # Sidebar navigation
     ├── InstructionModeManager  # "#" mode UI
     └── BangBashModeManager     # "!" bash mode UI
 ```
@@ -71,6 +74,8 @@ Current flow now routes through the runtime facade, and provider-owned services 
 | `StreamController` | Process SDK messages, auto-scroll, streaming UI state |
 | `InputController` | Input textarea, file/image attachments, slash commands |
 | `SelectionController` | Poll editor selection (250ms), CM6 decoration |
+| `BrowserSelectionController` | Observe browser view selections |
+| `CanvasSelectionController` | Observe canvas selections |
 | `NavigationController` | Vim-style keyboard navigation (j/k scroll, i focus) |
 
 ## Rendering Pipeline
@@ -82,7 +87,8 @@ Current flow now routes through the runtime facade, and provider-owned services 
 | `ThinkingBlockRenderer` | Extended thinking with collapse/expand |
 | `WriteEditRenderer` | File operations with before/after diff |
 | `DiffRenderer` | Hunked inline diffs (del/ins highlighting) |
-| `InlineExitPlanMode` | Plan mode approval card (approve/feedback/new session) |
+| `InlineExitPlanMode` | Claude plan mode approval card (approve/feedback/new session) |
+| `InlineCodexPlanApproval` | Codex plan mode approval card (implement/revise/cancel) |
 | `InlineAskUserQuestion` | AskUserQuestion inline card |
 | `TodoListRenderer` | Todo items with status icons |
 | `SubagentRenderer` | Background agent progress |
@@ -117,6 +123,7 @@ for await (const message of response) {
 - Title generation runs concurrently per-conversation (separate AbortControllers)
 - `FileContext` has nested state in `ui/file-context/state/`
 - `/compact` has a special code path: `InputController` skips context mentions so the SDK recognizes the built-in command; `ClaudeTurnEncoder` skips context appending for compact; `StreamController` handles the `compact_boundary` chunk as a standalone separator; `ClaudeHistoryStore` (in `src/providers/claude/history/`) prevents merge with adjacent assistant messages; ESC during compact produces an SDK stderr (`Compaction canceled`) that the history store maps to `isInterrupt` for persistent rendering
-- Plan mode: `EnterPlanMode` is auto-approved by the SDK (detected in stream to sync UI); `ExitPlanMode` uses a dedicated callback in `canUseTool` that bypasses normal approval flow. Shift+Tab toggles plan mode and saves/restores the previous permission mode. "Approve (new session)" stops the current session and auto-sends plan content as the first message in a fresh session.
+- Plan mode (Claude): `EnterPlanMode` is auto-approved by the SDK (detected in stream to sync UI); `ExitPlanMode` uses a dedicated callback in `canUseTool` that bypasses normal approval flow. Shift+Tab toggles plan mode and saves/restores the previous permission mode. "Approve (new session)" stops the current session and auto-sends plan content as the first message in a fresh session.
+- Plan mode (Codex): Client-driven via `collaborationMode` on `turn/start`. `CodexNotificationRouter.beginTurn()` tracks plan state per-turn. After a successful plan turn with plan deltas, a `plan_completed` control chunk triggers `InlineCodexPlanApproval` in `InputController`'s post-stream `finally` block. "Implement" restores pre-plan mode and auto-sends a follow-up. "Revise" keeps plan mode and populates feedback in the input. The approval flow is invalidation-safe: if the conversation switches or tab closes while the prompt is open, the pending promise resolves and the post-await guard exits.
 - Bang-bash mode: `!` in empty input triggers direct bash execution (bypasses Claude). `BangBashModeManager` manages input mode; `BangBashService` runs commands via `child_process.exec` (30s timeout, 1MB buffer). Output displays in `StatusPanel` command panel. ESC exits mode; Enter submits.
 - Fork conversation: `Tab.handleForkRequest()` validates eligibility (not streaming, both user and preceding assistant messages have SDK UUIDs), deep clones messages up to the fork point, then delegates to `TabManager`. `/fork` command triggers `Tab.handleForkAll()`, which forks the entire conversation (all messages, resuming at the last assistant UUID). Both handlers share `resolveForkSource()` which delegates to `ChatRuntime.resolveSessionIdForFork()` for session ID resolution. `TabManager` shows `ForkTargetModal` (new tab vs current tab), creates the fork conversation with fork metadata, and propagates title/currentNote. `ConversationController.switchTo()` hands the conversation to `ChatRuntime.syncConversationState()`, which lets the Claude implementation restore fork state before the next query. Fork titles are deduplicated across existing tabs.

@@ -13,8 +13,8 @@ describe('CODEX_PROVIDER_CAPABILITIES', () => {
     expect(CODEX_PROVIDER_CAPABILITIES.supportsNativeHistory).toBe(true);
   });
 
-  it('should not support plan mode', () => {
-    expect(CODEX_PROVIDER_CAPABILITIES.supportsPlanMode).toBe(false);
+  it('should support plan mode', () => {
+    expect(CODEX_PROVIDER_CAPABILITIES.supportsPlanMode).toBe(true);
   });
 
   it('should not support rewind', () => {

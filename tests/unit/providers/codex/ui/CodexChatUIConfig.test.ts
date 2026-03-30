@@ -89,16 +89,16 @@ describe('CodexChatUIConfig', () => {
   });
 
   describe('getPermissionModeToggle', () => {
-    it('should return yolo/safe toggle config without plan mode', () => {
+    it('should return yolo/safe toggle config with plan mode', () => {
       const toggle = codexChatUIConfig.getPermissionModeToggle!();
       expect(toggle).toEqual({
         inactiveValue: 'normal',
         inactiveLabel: 'Safe',
         activeValue: 'yolo',
         activeLabel: 'YOLO',
+        planValue: 'plan',
+        planLabel: 'Plan',
       });
-      expect(toggle).not.toHaveProperty('planValue');
-      expect(toggle).not.toHaveProperty('planLabel');
     });
   });
 });

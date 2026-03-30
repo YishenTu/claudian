@@ -2333,4 +2333,234 @@ describe('InputController - Message Queue', () => {
       expect(mockAgentService.query).toHaveBeenCalled();
     });
   });
+
+  describe('Codex plan_completed flow', () => {
+    it('opens the Codex approval UI after a successful plan turn', async () => {
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: jest.fn(),
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Here is my plan...' },
+          { type: 'plan_completed' },
+          { type: 'done' },
+        ]),
+      );
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan the migration';
+      const controller = new InputController(deps);
+
+      // showCodexPlanApproval returns null (cancelled) by default when there's no real DOM
+      await controller.sendMessage();
+
+      // The plan_completed chunk should have been consumed (not passed to StreamController)
+      expect(deps.streamController.handleStreamChunk).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'plan_completed' }),
+        expect.anything(),
+      );
+    });
+
+    it('implement restores mode and auto-sends follow-up', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+
+      let callCount = 0;
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createMockStream([
+            { type: 'text', content: 'Plan content' },
+            { type: 'plan_completed' },
+            { type: 'done' },
+          ]);
+        }
+        return createMockStream([{ type: 'done' }]);
+      });
+
+      const controller = new InputController(deps);
+
+      // Mock the showCodexPlanApproval to return 'implement'
+      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+        decision: { type: 'implement' },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this feature';
+      await controller.sendMessage();
+
+      expect(restoreFn).toHaveBeenCalled();
+      // Auto-send should have been triggered
+      expect(mockAgentService.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('revise keeps plan mode active and populates input', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'plan_completed' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+        decision: {
+          type: 'revise',
+          text: 'Add more tests',
+        },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).not.toHaveBeenCalled();
+      expect(inputEl.value).toBe('Add more tests');
+    });
+
+    it('revise does not let queued input overwrite the revision text', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        canvasContext: null,
+      };
+
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'plan_completed' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+        decision: { type: 'revise', text: 'Add more tests' },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).not.toHaveBeenCalled();
+      expect(inputEl.value).toBe('Add more tests');
+      expect(deps.state.queuedMessage).toEqual({
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        canvasContext: null,
+      });
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancel restores mode and does not auto-send', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'plan_completed' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+        decision: { type: 'cancel' },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).toHaveBeenCalled();
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('external dismissal while the approval UI is open bails out without save or restore', async () => {
+      const restoreFn = jest.fn();
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      inputContainerEl.parentElement = parentEl;
+
+      const deps = createSendableDeps({
+        getInputContainerEl: () => inputContainerEl as any,
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'plan_completed' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+
+      const sendPromise = controller.sendMessage();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect((controller as any).pendingCodexPlanApproval).not.toBeNull();
+
+      controller.dismissPendingApproval();
+      await sendPromise;
+
+      expect(restoreFn).not.toHaveBeenCalled();
+      expect(deps.conversationController.save).not.toHaveBeenCalled();
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('null decision (dismiss) restores mode and does not auto-send', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'plan_completed' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+        decision: null,
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).toHaveBeenCalled();
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+  });
 });

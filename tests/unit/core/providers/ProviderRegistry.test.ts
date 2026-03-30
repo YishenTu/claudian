@@ -55,7 +55,7 @@ describe('ProviderRegistry', () => {
   it('returns Codex capabilities', () => {
     const caps = ProviderRegistry.getCapabilities('codex');
     expect(caps.providerId).toBe('codex');
-    expect(caps.supportsPlanMode).toBe(false);
+    expect(caps.supportsPlanMode).toBe(true);
     expect(caps.supportsFork).toBe(false);
     expect(caps.supportsRewind).toBe(false);
     expect(caps.reasoningControl).toBe('effort');

@@ -41,6 +41,7 @@ export interface ConversationControllerDeps {
   getStatusPanel: () => StatusPanel | null;
   getAgentService?: () => ChatRuntime | null;
   ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
+  dismissPendingInlinePrompts?: () => void;
 }
 
 type SaveOptions = {
@@ -81,6 +82,8 @@ export class ConversationController {
     state.isCreatingConversation = true;
 
     try {
+      this.deps.dismissPendingInlinePrompts?.();
+
       if (force && state.isStreaming) {
         state.cancelRequested = true;
         state.bumpStreamGeneration();
@@ -223,6 +226,7 @@ export class ConversationController {
     state.isSwitchingConversation = true;
 
     try {
+      this.deps.dismissPendingInlinePrompts?.();
       await this.save();
 
       subagentManager.orphanAllActive();

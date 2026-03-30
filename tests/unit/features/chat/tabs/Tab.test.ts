@@ -213,6 +213,7 @@ const createMockInputController = () => ({
   handleResumeKeydown: jest.fn().mockReturnValue(false),
   isResumeDropdownVisible: jest.fn().mockReturnValue(false),
   destroyResumeDropdown: jest.fn(),
+  dismissPendingApproval: jest.fn(),
 });
 
 jest.mock('@/features/chat/ui/FileContext', () => ({
@@ -1060,7 +1061,7 @@ describe('Tab - Destruction', () => {
       const destroyTodoPanel = jest.fn();
       const destroyResumeDropdown = jest.fn();
 
-      tab.controllers.inputController = { destroyResumeDropdown } as any;
+      tab.controllers.inputController = { destroyResumeDropdown, dismissPendingApproval: jest.fn() } as any;
       tab.ui.fileContextManager = { destroy: destroyFileContext } as any;
       tab.ui.slashCommandDropdown = { destroy: destroySlashDropdown } as any;
       tab.ui.instructionModeManager = { destroy: destroyInstructionMode } as any;

@@ -37,8 +37,20 @@ const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
 export class CodexNotificationRouter {
   private seenWebSearchIds = new Set<string>();
   private planUpdateCounter = 0;
+  private isPlanTurn = false;
+  private sawPlanDelta = false;
 
   constructor(private readonly emit: ChunkEmitter) {}
+
+  beginTurn(params: { isPlanTurn: boolean }): void {
+    this.isPlanTurn = params.isPlanTurn;
+    this.sawPlanDelta = false;
+  }
+
+  endTurn(): void {
+    this.isPlanTurn = false;
+    this.sawPlanDelta = false;
+  }
 
   handleNotification(method: string, params: unknown): void {
     switch (method) {
@@ -98,6 +110,7 @@ export class CodexNotificationRouter {
   }
 
   private onPlanDelta(params: PlanDeltaNotification): void {
+    this.sawPlanDelta = true;
     this.emit({ type: 'text', content: params.delta });
   }
 
@@ -376,6 +389,10 @@ export class CodexNotificationRouter {
 
     if (turn.status === 'failed' && turn.error) {
       this.emit({ type: 'error', content: turn.error.message });
+    }
+
+    if (turn.status === 'completed' && this.isPlanTurn && this.sawPlanDelta) {
+      this.emit({ type: 'plan_completed' });
     }
 
     this.emit({ type: 'done' });

@@ -1142,6 +1142,7 @@ export function initializeTabControllers(
       getTitleGenerationService: () => services.titleGenerationService,
       getStatusPanel: () => ui.statusPanel,
       getAgentService: () => tab.service, // Use tab's service instead of plugin's
+      dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
       ensureServiceForConversation: async (conversation) => {
         const nextProviderId = getTabProviderId(tab, plugin, conversation);
         const providerChanged = tab.providerId !== nextProviderId;
@@ -1253,6 +1254,13 @@ export function initializeTabControllers(
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
       : undefined,
+    restorePrePlanPermissionModeIfNeeded: () => {
+      if (plugin.settings.permissionMode === 'plan') {
+        const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+        tab.state.prePlanPermissionMode = null;
+        updatePlanModeUI(tab, plugin, restoreMode);
+      }
+    },
   });
 
   // Navigation controller
@@ -1459,6 +1467,9 @@ export async function destroyTab(tab: TabData): Promise<void> {
   // Cleanup thinking state
   cleanupThinkingBlock(tab.state.currentThinkingState);
   tab.state.currentThinkingState = null;
+
+  // Dismiss pending inline prompts before DOM teardown
+  tab.controllers.inputController?.dismissPendingApproval();
 
   // Cleanup UI components
   tab.controllers.inputController?.destroyResumeDropdown();

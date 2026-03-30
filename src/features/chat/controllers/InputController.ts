@@ -31,6 +31,7 @@ import type { EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
+import { type CodexPlanDecision, InlineCodexPlanApproval } from '../rendering/InlineCodexPlanApproval';
 import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { setToolIcon, updateToolCallResult } from '../rendering/ToolCallRenderer';
@@ -94,6 +95,7 @@ export interface InputControllerDeps {
   ensureServiceInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
   onForkAll?: () => Promise<void>;
+  restorePrePlanPermissionModeIfNeeded?: () => void;
 }
 
 export class InputController {
@@ -101,6 +103,8 @@ export class InputController {
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
   private pendingAskInline: InlineAskUserQuestion | null = null;
   private pendingExitPlanModeInline: InlineExitPlanMode | null = null;
+  private pendingCodexPlanApproval: InlineCodexPlanApproval | null = null;
+  private pendingCodexPlanApprovalInvalidated = false;
   private activeResumeDropdown: ResumeSessionDropdown | null = null;
   private inputContainerHideDepth = 0;
 
@@ -336,6 +340,7 @@ export class InputController {
     let wasInterrupted = false;
     let wasInvalidated = false;
     let didEnqueueToSdk = false;
+    let codexPlanCompleted = false;
 
     // Lazy initialization: ensure service is ready before first query
     if (this.deps.ensureServiceInitialized) {
@@ -389,6 +394,11 @@ export class InputController {
 
         if (chunk.type === 'user_message_sent') {
           didEnqueueToSdk = true;
+          continue;
+        }
+
+        if (chunk.type === 'plan_completed') {
+          codexPlanCompleted = true;
           continue;
         }
 
@@ -468,27 +478,58 @@ export class InputController {
           }
         }
 
-        // Only clear resumeAtMessageId if enqueue succeeded; preserve checkpoint on failure for retry
-        const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
-        await conversationController.save(true, saveExtras);
+        // Codex post-stream plan approval: show UI and await decision before save/auto-send
+        let codexAutoSendContent: string | null = null;
+        let codexPlanInvalidated = false;
+        let shouldProcessQueuedMessage = true;
+        if (codexPlanCompleted && !didCancelThisTurn) {
+          const { decision, invalidated } = await this.showCodexPlanApproval();
 
-        const userMsgIndex = state.messages.indexOf(userMsg);
-        renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
+          // Re-check invalidation after async approval prompt
+          if (state.streamGeneration !== streamGeneration || invalidated) {
+            codexPlanInvalidated = true;
+          } else if (decision?.type === 'implement') {
+            this.deps.restorePrePlanPermissionModeIfNeeded?.();
+            codexAutoSendContent = 'Implement the plan.';
+          } else if (decision?.type === 'revise') {
+            // Keep plan mode active, populate input with feedback text
+            this.deps.getInputEl().value = decision.text;
+            shouldProcessQueuedMessage = false;
+          } else {
+            // cancel or null (dismissed)
+            this.deps.restorePrePlanPermissionModeIfNeeded?.();
+          }
+        }
 
-        // approve-new-session: create fresh conversation and send plan content
-        // Must be inside the invalidation guard — if the tab was closed or
-        // conversation switched, we must not create a new session on stale state.
-        const planContent = state.pendingNewSessionPlan;
-        if (planContent) {
-          state.pendingNewSessionPlan = null;
-          await conversationController.createNew();
-          this.deps.getInputEl().value = planContent;
-          this.sendMessage().catch(() => {
-            // sendMessage() handles its own errors internally; this prevents
-            // unhandled rejection if an unexpected error slips through.
-          });
-        } else {
-          this.processQueuedMessage();
+        if (!codexPlanInvalidated) {
+          // Only clear resumeAtMessageId if enqueue succeeded; preserve checkpoint on failure for retry
+          const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
+          await conversationController.save(true, saveExtras);
+
+          const userMsgIndex = state.messages.indexOf(userMsg);
+          renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
+
+          // Codex auto-implement takes precedence over both Claude approve-new-session and queued input
+          if (codexAutoSendContent) {
+            this.deps.getInputEl().value = codexAutoSendContent;
+            this.sendMessage().catch(() => {});
+          } else {
+            // approve-new-session: create fresh conversation and send plan content
+            // Must be inside the invalidation guard — if the tab was closed or
+            // conversation switched, we must not create a new session on stale state.
+            const planContent = state.pendingNewSessionPlan;
+            if (planContent) {
+              state.pendingNewSessionPlan = null;
+              await conversationController.createNew();
+              this.deps.getInputEl().value = planContent;
+              this.sendMessage().catch(() => {
+                // sendMessage() handles its own errors internally; this prevents
+                // unhandled rejection if an unexpected error slips through.
+              });
+            } else if (shouldProcessQueuedMessage) {
+              this.processQueuedMessage();
+            }
+          }
         }
       }
     }
@@ -972,7 +1013,53 @@ export class InputController {
       this.pendingExitPlanModeInline.destroy();
       this.pendingExitPlanModeInline = null;
     }
+    this.dismissPendingCodexPlanApproval(true);
     this.resetInputContainerVisibility();
+  }
+
+  private showCodexPlanApproval(): Promise<{ decision: CodexPlanDecision | null; invalidated: boolean }> {
+    const inputContainerEl = this.deps.getInputContainerEl();
+    const parentEl = inputContainerEl.parentElement;
+    if (!parentEl) {
+      return Promise.resolve({ decision: null, invalidated: false });
+    }
+
+    this.hideInputContainer(inputContainerEl);
+    this.pendingCodexPlanApprovalInvalidated = false;
+
+    return new Promise<{ decision: CodexPlanDecision | null; invalidated: boolean }>((resolve, reject) => {
+      const inline = new InlineCodexPlanApproval(
+        parentEl,
+        (decision: CodexPlanDecision | null) => {
+          const invalidated = this.pendingCodexPlanApprovalInvalidated;
+          this.pendingCodexPlanApprovalInvalidated = false;
+          this.pendingCodexPlanApproval = null;
+          this.restoreInputContainer(inputContainerEl);
+          resolve({ decision, invalidated });
+        },
+      );
+      this.pendingCodexPlanApproval = inline;
+      try {
+        inline.render();
+      } catch (err) {
+        this.pendingCodexPlanApproval = null;
+        this.pendingCodexPlanApprovalInvalidated = false;
+        this.restoreInputContainer(inputContainerEl);
+        reject(err);
+      }
+    });
+  }
+
+  private dismissPendingCodexPlanApproval(invalidated: boolean): void {
+    if (!this.pendingCodexPlanApproval) {
+      return;
+    }
+
+    if (invalidated) {
+      this.pendingCodexPlanApprovalInvalidated = true;
+    }
+    this.pendingCodexPlanApproval.destroy();
+    this.pendingCodexPlanApproval = null;
   }
 
   private hideInputContainer(inputContainerEl: HTMLElement): void {

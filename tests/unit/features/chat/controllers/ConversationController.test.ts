@@ -2321,4 +2321,27 @@ describe('ConversationController - Rewind', () => {
     const msg = mockNotice.mock.calls[0][0] as string;
     expect(msg).toContain('Save failed');
   });
+
+  describe('Inline prompt dismissal', () => {
+    it('dismisses pending inline prompts during createNew()', async () => {
+      const dismissFn = jest.fn();
+      deps = createMockDeps({ dismissPendingInlinePrompts: dismissFn });
+      controller = new ConversationController(deps);
+
+      await controller.createNew();
+
+      expect(dismissFn).toHaveBeenCalled();
+    });
+
+    it('dismisses pending inline prompts during switchTo()', async () => {
+      const dismissFn = jest.fn();
+      deps = createMockDeps({ dismissPendingInlinePrompts: dismissFn });
+      controller = new ConversationController(deps);
+      deps.state.currentConversationId = 'old-conv';
+
+      await controller.switchTo('switched-conv');
+
+      expect(dismissFn).toHaveBeenCalled();
+    });
+  });
 });

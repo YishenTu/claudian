@@ -4,7 +4,7 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   providerId: 'codex',
   supportsPersistentRuntime: true,
   supportsNativeHistory: true,
-  supportsPlanMode: false,
+  supportsPlanMode: true,
   supportsRewind: false,
   supportsFork: false,
   supportsProviderCommands: false,

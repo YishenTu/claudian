@@ -50,6 +50,7 @@ import { CodexSessionManager } from './CodexSessionManager';
 const SANDBOX_MAP: Record<string, { approvalPolicy: string; sandbox: string }> = {
   yolo: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
   normal: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+  plan: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
 };
 
 const EFFORT_MAP: Record<string, string> = {
@@ -357,20 +358,38 @@ export class CodexChatRuntime implements ChatRuntime {
       // Start turn
       const providerSettings = this.getProviderSettings();
       const effort = EFFORT_MAP[providerSettings.effortLevel as string] ?? 'medium';
+      const resolvedModel = model ?? 'gpt-5.4';
+      const isPlanMode = providerSettings.permissionMode === 'plan';
       const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
       const permissionMode = SANDBOX_MAP[providerSettings.permissionMode as string] ?? SANDBOX_MAP.normal;
       const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
 
+      const collaborationMode = isPlanMode
+        ? {
+            mode: 'plan' as const,
+            settings: {
+              model: resolvedModel,
+              reasoning_effort: effort,
+              developer_instructions: null,
+            },
+          }
+        : undefined;
+
       const summary = (providerSettings.codexReasoningSummary as string) || 'detailed';
+
+      // Configure router plan state before turn/start so buffered notifications
+      // that arrive before currentTurnId is set already see the correct state.
+      this.notificationRouter?.beginTurn({ isPlanTurn: isPlanMode });
 
       const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
         threadId,
         input: inputBundle.input,
         approvalPolicy: permissionMode.approvalPolicy,
-        model,
+        model: resolvedModel,
         effort,
         summary,
         sandboxPolicy,
+        ...(collaborationMode ? { collaborationMode } : {}),
       });
       this.currentTurnId = turnResult.turn.id;
       this.flushPendingTurnNotifications();
@@ -430,6 +449,8 @@ export class CodexChatRuntime implements ChatRuntime {
       yield { type: 'done' };
       return;
     } finally {
+      this.notificationRouter?.endTurn();
+
       if (!tailDonePromise) {
         await stopTailToolPolling().catch(() => {});
       }

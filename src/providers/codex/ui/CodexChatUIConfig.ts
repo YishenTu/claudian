@@ -31,6 +31,8 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveLabel: 'Safe',
   activeValue: 'yolo',
   activeLabel: 'YOLO',
+  planValue: 'plan',
+  planLabel: 'Plan',
 };
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;

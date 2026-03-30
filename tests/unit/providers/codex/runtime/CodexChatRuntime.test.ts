@@ -253,7 +253,7 @@ describe('CodexChatRuntime', () => {
     expect(caps.providerId).toBe('codex');
     expect(caps.supportsRewind).toBe(false);
     expect(caps.supportsFork).toBe(false);
-    expect(caps.supportsPlanMode).toBe(false);
+    expect(caps.supportsPlanMode).toBe(true);
   });
 
   it('should return empty commands', async () => {
@@ -1075,6 +1075,99 @@ describe('CodexChatRuntime', () => {
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,
       });
+    });
+  });
+
+  describe('query - plan mode (collaborationMode)', () => {
+    it('includes collaborationMode in turn/start when permissionMode is plan', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'plan' });
+      const rt = new CodexChatRuntime(plugin);
+      captureHandlers();
+      setupDefaultRequestMock();
+
+      await collectChunks(rt.query(createTurn('plan this')));
+
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall).toBeDefined();
+      expect(turnStartCall[1].collaborationMode).toEqual({
+        mode: 'plan',
+        settings: {
+          model: 'gpt-5.4',
+          reasoning_effort: 'medium',
+          developer_instructions: null,
+        },
+      });
+
+      rt.cleanup();
+    });
+
+    it('does not include collaborationMode when permissionMode is normal', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'normal' });
+      const rt = new CodexChatRuntime(plugin);
+      captureHandlers();
+      setupDefaultRequestMock();
+
+      await collectChunks(rt.query(createTurn('hello')));
+
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall).toBeDefined();
+      expect(turnStartCall[1].collaborationMode).toBeUndefined();
+
+      rt.cleanup();
+    });
+
+    it('does not include collaborationMode when permissionMode is yolo', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'yolo' });
+      const rt = new CodexChatRuntime(plugin);
+      captureHandlers();
+      setupDefaultRequestMock();
+
+      await collectChunks(rt.query(createTurn('hello')));
+
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall).toBeDefined();
+      expect(turnStartCall[1].collaborationMode).toBeUndefined();
+
+      rt.cleanup();
+    });
+
+    it('configures router beginTurn before turn/start so buffered notifications see plan state', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'plan' });
+      const rt = new CodexChatRuntime(plugin);
+      captureHandlers();
+
+      // Intercept the turn/start request to verify router state was set before it
+      let routerBeginCalledBeforeTurnStart = false;
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-plan');
+        if (method === 'turn/start') {
+          // Access the router via the runtime's private field to check beginTurn was called
+          const router = (rt as any).notificationRouter;
+          if (router && router.isPlanTurn === true) {
+            routerBeginCalledBeforeTurnStart = true;
+          }
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-plan',
+              turn: { id: 'turn-plan', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-plan');
+        }
+        return {};
+      });
+
+      await collectChunks(rt.query(createTurn('plan it')));
+      expect(routerBeginCalledBeforeTurnStart).toBe(true);
+
+      rt.cleanup();
     });
   });
 });

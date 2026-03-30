@@ -158,7 +158,8 @@ export type StreamChunk =
   | { type: 'user_message_id'; uuid: string }
   | { type: 'user_message_sent'; uuid: string }
   | { type: 'assistant_message_id'; uuid: string }
-  | { type: 'context_window_update'; contextWindow: number };
+  | { type: 'context_window_update'; contextWindow: number }
+  | { type: 'plan_completed' };
 
 /**
  * Context window usage information.

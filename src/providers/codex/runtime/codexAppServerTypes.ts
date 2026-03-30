@@ -301,6 +301,17 @@ export type ThreadResumeResult = ThreadStartResult;
 // turn/start
 // ---------------------------------------------------------------------------
 
+export interface CollaborationModeSettings {
+  model: string;
+  reasoning_effort: string | null;
+  developer_instructions: string | null;
+}
+
+export interface CollaborationMode {
+  mode: 'plan' | 'default';
+  settings: CollaborationModeSettings;
+}
+
 export interface TurnStartParams {
   threadId: string;
   input: UserInput[];
@@ -313,6 +324,7 @@ export interface TurnStartParams {
   sandboxPolicy?: SandboxPolicy | null;
   personality?: string;
   outputSchema?: unknown;
+  collaborationMode?: CollaborationMode;
 }
 
 export interface TurnStartResult {
