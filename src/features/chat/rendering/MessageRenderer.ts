@@ -155,8 +155,10 @@ export class MessageRenderer {
   }
 
   renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
-    // Render interrupt messages with special styling (not as user bubbles)
-    if (msg.isInterrupt) {
+    // Bare interrupt marker: user-role interrupts (Claude bracket markers) always render
+    // as a standalone indicator. Assistant-role interrupts (Codex partial responses)
+    // only use the bare marker when there's no content to preserve.
+    if (msg.isInterrupt && (msg.role === 'user' || !this.hasVisibleContent(msg))) {
       this.renderInterruptMessage();
       return;
     }
@@ -207,7 +209,17 @@ export class MessageRenderer {
       }
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
+      if (msg.isInterrupt) {
+        this.appendInterruptIndicator(contentEl);
+      }
     }
+  }
+
+  private hasVisibleContent(msg: ChatMessage): boolean {
+    if (msg.content && msg.content.trim().length > 0) return true;
+    if (msg.toolCalls && msg.toolCalls.length > 0) return true;
+    if (msg.contentBlocks && msg.contentBlocks.length > 0) return true;
+    return false;
   }
 
   private isRewindEligible(allMessages?: ChatMessage[], index?: number): boolean {
@@ -216,13 +228,13 @@ export class MessageRenderer {
     return !!ctx.prevAssistantUuid && ctx.hasResponse;
   }
 
-  /**
-   * Renders an interrupt indicator (stored interrupts from SDK history).
-   * Uses the same styling as streaming interrupts.
-   */
   private renderInterruptMessage(): void {
     const msgEl = this.messagesEl.createDiv({ cls: 'claudian-message claudian-message-assistant' });
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
+    this.appendInterruptIndicator(contentEl);
+  }
+
+  private appendInterruptIndicator(contentEl: HTMLElement): void {
     const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
     textEl.innerHTML = '<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>';
   }
