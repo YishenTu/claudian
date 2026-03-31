@@ -240,6 +240,9 @@
       "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",
       "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
     },
+    "providerPresets": {
+      "name": "Provider presets"
+    },
     "advanced": "Advanced",
     "enableOpus1M": {
       "name": "Opus 1M context window",

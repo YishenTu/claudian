@@ -240,6 +240,9 @@
       "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
     },
+    "providerPresets": {
+      "name": "Preajustes de proveedor"
+    },
     "advanced": "Avanzado",
     "enableOpus1M": {
       "name": "Ventana de contexto Opus 1M",

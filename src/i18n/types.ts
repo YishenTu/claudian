@@ -209,6 +209,9 @@ export type TranslationKey =
   | 'settings.customContextLimits.desc'
   | 'settings.customContextLimits.invalid'
 
+  // Settings - Provider Presets
+  | 'settings.providerPresets.name'
+
   // Settings - Advanced
   | 'settings.advanced'
   | 'settings.enableOpus1M.name'
