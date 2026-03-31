@@ -29,7 +29,7 @@ An Obsidian plugin that embeds Claude Code as an AI collaborator in your vault. 
 
 - [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (strongly recommend install Claude Code via Native Install)
 - Obsidian v1.8.9+
-- Claude subscription/API or Custom model provider that supports Anthropic API format ([Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), [GLM](https://docs.z.ai/devpack/tool/claude), [DeepSeek](https://api-docs.deepseek.com/guides/anthropic_api), etc.)
+- Claude subscription/API or Custom model provider that supports Anthropic API format ([MiniMax](https://platform.minimaxi.com), [Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), [GLM](https://docs.z.ai/devpack/tool/claude), [DeepSeek](https://api-docs.deepseek.com/guides/anthropic_api), etc.)
 - Desktop only (macOS, Linux, Windows)
 
 ## Installation
@@ -154,6 +154,7 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 
 **Environment**
 - **Custom variables**: Environment variables for Claude SDK (KEY=VALUE format, supports `export ` prefix)
+- **Provider presets**: One-click presets for popular Anthropic API-compatible providers (MiniMax, OpenRouter, DeepSeek, Kimi, GLM)
 - **Environment snippets**: Save and restore environment variable configurations
 
 **Advanced**
@@ -166,6 +167,24 @@ Use it like Claude Code—read, write, edit, search files in your vault.
 | **Vault** | Full read/write (symlink-safe via `realpath`) |
 | **Export paths** | Write-only (e.g., `~/Desktop`, `~/Downloads`) |
 | **External contexts** | Full read/write (session-only, added via folder icon) |
+
+### Custom Model Providers
+
+Claudian supports any model provider with an Anthropic-compatible API. Use the built-in **Provider presets** in Settings → Environment, or configure manually:
+
+```env
+ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
+ANTHROPIC_API_KEY=your-api-key
+ANTHROPIC_MODEL=MiniMax-M2.7
+```
+
+| Provider | Base URL | Models |
+|----------|----------|--------|
+| [MiniMax](https://platform.minimaxi.com) | `https://api.minimax.io/anthropic` | MiniMax-M2.7, MiniMax-M2.7-highspeed |
+| [OpenRouter](https://openrouter.ai) | `https://openrouter.ai/api/v1` | Multiple providers |
+| [DeepSeek](https://api-docs.deepseek.com) | `https://api.deepseek.com` | deepseek-chat |
+| [Kimi](https://platform.moonshot.ai) | `https://api.moonshot.cn` | moonshot-v1-auto |
+| [GLM](https://docs.z.ai) | `https://open.bigmodel.cn/api/paas/v4` | glm-4-plus |
 
 - **YOLO mode**: No approval prompts; all tool calls execute automatically (default)
 - **Safe mode**: Approval prompt per tool call; Bash requires exact match, file tools allow prefix match

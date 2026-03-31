@@ -240,6 +240,9 @@
       "desc": "Définissez les tailles de fenêtre de contexte pour vos modèles personnalisés. Laissez vide pour utiliser la valeur par défaut (200k tokens).",
       "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000)."
     },
+    "providerPresets": {
+      "name": "Préréglages fournisseur"
+    },
     "advanced": "Avancé",
     "enableOpus1M": {
       "name": "Fenêtre de contexte Opus 1M",

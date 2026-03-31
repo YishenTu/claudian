@@ -5,6 +5,7 @@ import type { EnvSnippet } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { formatContextLimit, getCustomModelIds, parseContextLimit, parseEnvironmentVariables } from '../../../utils/env';
+import { PROVIDER_PRESETS } from '../../../utils/providerPresets';
 import type { ClaudianView } from '../../chat/ClaudianView';
 
 export class EnvSnippetModal extends Modal {
@@ -196,6 +197,27 @@ export class EnvSnippetManager {
     setIcon(saveBtn, 'plus');
     saveBtn.addEventListener('click', () => this.saveCurrentEnv());
 
+    // Provider presets section
+    const presetsEl = this.containerEl.createDiv({ cls: 'claudian-snippet-presets' });
+    const presetsHeaderEl = presetsEl.createDiv({ cls: 'claudian-snippet-presets-header' });
+    presetsHeaderEl.createSpan({ text: t('settings.providerPresets.name'), cls: 'claudian-snippet-presets-label' });
+
+    const presetsGrid = presetsEl.createDiv({ cls: 'claudian-snippet-presets-grid' });
+
+    for (const preset of PROVIDER_PRESETS) {
+      const presetBtn = presetsGrid.createEl('button', {
+        cls: 'claudian-snippet-preset-btn',
+        attr: { 'aria-label': preset.name },
+      });
+
+      presetBtn.createSpan({ text: preset.name, cls: 'claudian-snippet-preset-name' });
+      presetBtn.createSpan({ text: preset.description, cls: 'claudian-snippet-preset-desc' });
+
+      presetBtn.addEventListener('click', async () => {
+        await this.applyProviderPreset(preset.envVars, preset.contextLimits);
+      });
+    }
+
     const snippets = this.plugin.settings.envSnippets;
 
     if (snippets.length === 0) {
@@ -327,5 +349,25 @@ export class EnvSnippetManager {
 
   public refresh() {
     this.render();
+  }
+
+  private async applyProviderPreset(envVars: string, contextLimits?: Record<string, number>) {
+    const envTextarea = document.querySelector('.claudian-settings-env-textarea') as HTMLTextAreaElement;
+    if (envTextarea) {
+      envTextarea.value = envVars;
+    }
+
+    await this.plugin.applyEnvironmentVariables(envVars);
+    if (contextLimits) {
+      this.plugin.settings.customContextLimits = {
+        ...this.plugin.settings.customContextLimits,
+        ...contextLimits,
+      };
+    }
+    await this.plugin.saveSettings();
+
+    this.onContextLimitsChange?.();
+    const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
+    view?.refreshModelSelector();
   }
 }

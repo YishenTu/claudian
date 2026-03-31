@@ -240,6 +240,9 @@
       "desc": "Legen Sie die Kontextfenstergrößen für Ihre benutzerdefinierten Modelle fest. Leer lassen für den Standardwert (200k Token).",
       "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
     },
+    "providerPresets": {
+      "name": "Anbieter-Voreinstellungen"
+    },
     "advanced": "Erweitert",
     "enableOpus1M": {
       "name": "Opus 1M Kontextfenster",
