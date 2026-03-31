@@ -145,10 +145,6 @@ export class CodexNotificationRouter {
         this.emitToolUseFromMcp(item as McpToolCallItem);
         break;
 
-      case 'contextCompaction':
-        this.emitContextCompactionBoundary(item as ContextCompactionItem);
-        break;
-
       default:
         break;
     }
@@ -180,6 +176,10 @@ export class CodexNotificationRouter {
 
       case 'mcpToolCall':
         this.emitToolResultFromMcp(item as McpToolCallItem);
+        break;
+
+      case 'contextCompaction':
+        this.emitContextCompactionBoundary(item as ContextCompactionItem);
         break;
 
       default:
@@ -393,6 +393,10 @@ export class CodexNotificationRouter {
 
     if (turn.status === 'completed' && this.isPlanTurn && this.sawPlanDelta) {
       this.emit({ type: 'plan_completed' });
+    }
+
+    if (turn.status === 'completed') {
+      this.emit({ type: 'assistant_message_id', uuid: turn.id });
     }
 
     this.emit({ type: 'done' });

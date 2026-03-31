@@ -126,14 +126,19 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-function createTurn(text = 'hello'): PreparedChatTurn {
+function createTurn(text = 'hello', overrides: Partial<PreparedChatTurn> = {}): PreparedChatTurn {
   return {
     request: { text },
     persistedContent: text,
     prompt: text,
     isCompact: false,
     mcpMentions: new Set(),
+    ...overrides,
   };
+}
+
+function createCompactTurn(): PreparedChatTurn {
+  return createTurn('/compact', { isCompact: true });
 }
 
 async function collectChunks(gen: AsyncGenerator<StreamChunk>): Promise<StreamChunk[]> {
@@ -153,7 +158,7 @@ function threadStartResponse(threadId = 'thread-001') {
       preview: '',
       ephemeral: false,
       status: { type: 'idle' },
-      turns: [],
+      turns: [] as Array<{ id: string; items: unknown[]; status: string; error: null }>,
       cwd: '/test/vault',
       cliVersion: '0.117.0',
       modelProvider: 'openai_http',
@@ -250,7 +255,7 @@ describe('CodexChatRuntime', () => {
     const caps = runtime.getCapabilities();
     expect(caps.providerId).toBe('codex');
     expect(caps.supportsRewind).toBe(false);
-    expect(caps.supportsFork).toBe(false);
+    expect(caps.supportsFork).toBe(true);
     expect(caps.supportsPlanMode).toBe(true);
   });
 
@@ -769,6 +774,21 @@ describe('CodexChatRuntime', () => {
 
       expect((result.updates.providerState as any).sessionFilePath).toBe('/tmp/rt.jsonl');
     });
+
+    it('resolveSessionIdForFork falls back to conversation.sessionId', () => {
+      expect(runtime.resolveSessionIdForFork({
+        id: 'conv-legacy',
+        providerId: 'codex',
+        title: 'Legacy Codex Conversation',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        sessionId: 'legacy-session',
+        providerState: {
+          forkSource: { sessionId: 'source-thread', resumeAt: 'turn-1' },
+        },
+        messages: [],
+      })).toBe('legacy-session');
+    });
   });
 
   describe('query - image support', () => {
@@ -1164,6 +1184,16 @@ describe('CodexChatRuntime', () => {
     });
   });
 
+  describe('query - user_message_id emission', () => {
+    it('emits user_message_id chunk after turn/start with the turn ID', async () => {
+      const chunks = await collectChunks(runtime.query(createTurn('hi')));
+
+      const uidChunk = chunks.find(c => c.type === 'user_message_id');
+      expect(uidChunk).toBeDefined();
+      expect(uidChunk).toMatchObject({ type: 'user_message_id', uuid: 'turn-001' });
+    });
+  });
+
   describe('query - plan mode (collaborationMode)', () => {
     it('includes collaborationMode in turn/start when permissionMode is plan', async () => {
       const plugin = createMockPlugin({ permissionMode: 'plan' });
@@ -1254,6 +1284,569 @@ describe('CodexChatRuntime', () => {
       expect(routerBeginCalledBeforeTurnStart).toBe(true);
 
       rt.cleanup();
+    });
+  });
+
+  describe('query - pending fork lifecycle', () => {
+    it('syncConversationState with forkSource sets pending fork without setting session', () => {
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' } },
+      });
+
+      // Session should not be set to the source thread
+      expect(runtime.getSessionId()).toBeNull();
+    });
+
+    it('first query with pending fork issues fork + resume + rollback + turn/start', async () => {
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' } },
+      });
+
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        switch (method) {
+          case 'initialize':
+            return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+          case 'thread/fork': {
+            const resp = threadStartResponse('fork-thread-1');
+            resp.thread.turns = [
+              { id: 'turn-uuid-1', items: [], status: 'completed', error: null },
+              { id: 'turn-uuid-2', items: [], status: 'completed', error: null },
+              { id: 'turn-uuid-3', items: [], status: 'completed', error: null },
+            ];
+            return resp;
+          }
+          case 'thread/resume':
+            return threadStartResponse('fork-thread-1');
+          case 'thread/rollback':
+            return { thread: { ...threadStartResponse('fork-thread-1').thread, turns: [] } };
+          case 'turn/start':
+            setTimeout(() => {
+              emitNotification('item/agentMessage/delta', {
+                threadId: 'fork-thread-1', turnId: 'fork-turn-1', itemId: 'msg1', delta: 'Forked reply',
+              });
+              emitNotification('turn/completed', {
+                threadId: 'fork-thread-1',
+                turn: { id: 'fork-turn-1', items: [], status: 'completed', error: null },
+              });
+            }, 0);
+            return turnStartResponse('fork-turn-1');
+          default:
+            return {};
+        }
+      });
+
+      captureHandlers();
+      const chunks = await collectChunks(runtime.query(createTurn('forked input')));
+
+      // Verify request sequence: fork, resume, rollback, turn/start
+      const calls = mockTransportRequest.mock.calls.map((c: any[]) => c[0]);
+      const lifecycle = calls.filter((m: string) =>
+        ['thread/fork', 'thread/resume', 'thread/rollback', 'turn/start'].includes(m),
+      );
+      expect(lifecycle).toEqual(['thread/fork', 'thread/resume', 'thread/rollback', 'turn/start']);
+
+      // Verify fork params
+      const forkCall = mockTransportRequest.mock.calls.find((c: any[]) => c[0] === 'thread/fork');
+      expect(forkCall[1].threadId).toBe('source-thread');
+
+      // Verify resume params
+      const resumeCall = mockTransportRequest.mock.calls.find((c: any[]) => c[0] === 'thread/resume');
+      expect(resumeCall[1].threadId).toBe('fork-thread-1');
+
+      // Verify rollback params (1 turn after checkpoint: turn-uuid-3)
+      const rollbackCall = mockTransportRequest.mock.calls.find((c: any[]) => c[0] === 'thread/rollback');
+      expect(rollbackCall[1].threadId).toBe('fork-thread-1');
+      expect(rollbackCall[1].numTurns).toBe(1);
+
+      expect(chunks).toContainEqual({ type: 'text', content: 'Forked reply' });
+      expect(chunks).toContainEqual({ type: 'done' });
+
+      // After fork, session should be the fork thread
+      expect(runtime.getSessionId()).toBe('fork-thread-1');
+    });
+
+    it('skips rollback when resumeAt is the last turn', async () => {
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source-thread-2', resumeAt: 'turn-uuid-last' } },
+      });
+
+      const requestSequence: string[] = [];
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        requestSequence.push(method);
+        switch (method) {
+          case 'initialize':
+            return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+          case 'thread/fork': {
+            const resp = threadStartResponse('fork-no-rb');
+            resp.thread.turns = [
+              { id: 'turn-uuid-first', items: [], status: 'completed', error: null },
+              { id: 'turn-uuid-last', items: [], status: 'completed', error: null },
+            ];
+            return resp;
+          }
+          case 'thread/resume':
+            return threadStartResponse('fork-no-rb');
+          case 'turn/start':
+            setTimeout(() => {
+              emitNotification('turn/completed', {
+                threadId: 'fork-no-rb',
+                turn: { id: 'fork-turn-nr', items: [], status: 'completed', error: null },
+              });
+            }, 0);
+            return turnStartResponse('fork-turn-nr');
+          default:
+            return {};
+        }
+      });
+
+      captureHandlers();
+      await collectChunks(runtime.query(createTurn('no rollback needed')));
+
+      // Should NOT have called thread/rollback
+      expect(requestSequence).not.toContain('thread/rollback');
+    });
+
+    it('retries the pending fork instead of starting a fresh thread after a fork failure', async () => {
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source-thread-retry', resumeAt: 'turn-uuid-2' } },
+      });
+
+      let forkAttempts = 0;
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        switch (method) {
+          case 'initialize':
+            return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+          case 'thread/fork':
+            forkAttempts += 1;
+            if (forkAttempts === 1) {
+              throw new Error('fork failed');
+            }
+            return {
+              ...threadStartResponse('fork-thread-retry'),
+              thread: {
+                ...threadStartResponse('fork-thread-retry').thread,
+                turns: [
+                  { id: 'turn-uuid-1', items: [], status: 'completed', error: null },
+                  { id: 'turn-uuid-2', items: [], status: 'completed', error: null },
+                ],
+              },
+            };
+          case 'thread/resume':
+            return threadStartResponse('fork-thread-retry');
+          case 'turn/start':
+            setTimeout(() => {
+              emitNotification('turn/completed', {
+                threadId: 'fork-thread-retry',
+                turn: { id: 'fork-turn-retry', items: [], status: 'completed', error: null },
+              });
+            }, 0);
+            return turnStartResponse('fork-turn-retry');
+          default:
+            return {};
+        }
+      });
+
+      captureHandlers();
+      const firstAttemptChunks = await collectChunks(runtime.query(createTurn('first attempt')));
+
+      expect(firstAttemptChunks).toContainEqual({ type: 'error', content: 'fork failed' });
+      expect(runtime.getSessionId()).toBeNull();
+
+      mockTransportRequest.mockClear();
+      captureHandlers();
+      const retryChunks = await collectChunks(runtime.query(createTurn('retry after fork failure')));
+
+      const retryLifecycle = mockTransportRequest.mock.calls
+        .map((call: any[]) => call[0])
+        .filter((method: string) => ['thread/fork', 'thread/resume', 'thread/start', 'turn/start'].includes(method));
+
+      expect(retryLifecycle).toEqual(['thread/fork', 'thread/resume', 'turn/start']);
+      expect(retryChunks).toContainEqual({ type: 'done' });
+      expect(runtime.getSessionId()).toBe('fork-thread-retry');
+    });
+
+    it('fails the fork when the resumeAt checkpoint is missing from the fork result', async () => {
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source-thread-missing', resumeAt: 'turn-uuid-missing' } },
+      });
+
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        switch (method) {
+          case 'initialize':
+            return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+          case 'thread/fork':
+            return {
+              ...threadStartResponse('fork-thread-missing'),
+              thread: {
+                ...threadStartResponse('fork-thread-missing').thread,
+                turns: [
+                  { id: 'turn-uuid-1', items: [], status: 'completed', error: null },
+                  { id: 'turn-uuid-2', items: [], status: 'completed', error: null },
+                ],
+              },
+            };
+          default:
+            return {};
+        }
+      });
+
+      captureHandlers();
+      const chunks = await collectChunks(runtime.query(createTurn('fork with missing checkpoint')));
+
+      expect(chunks).toContainEqual({
+        type: 'error',
+        content: 'Fork checkpoint not found: turn-uuid-missing',
+      });
+      expect(chunks).toContainEqual({ type: 'done' });
+
+      const methods = mockTransportRequest.mock.calls.map((call: any[]) => call[0]);
+      expect(methods).toContain('thread/fork');
+      expect(methods).not.toContain('thread/resume');
+      expect(methods).not.toContain('turn/start');
+      expect(runtime.getSessionId()).toBeNull();
+    });
+
+    it('buildSessionUpdates preserves forkSource after fork thread established', async () => {
+      // Simulate an established fork conversation
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' } },
+      });
+
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        switch (method) {
+          case 'initialize':
+            return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+          case 'thread/fork': {
+            const resp = threadStartResponse('fork-established');
+            resp.thread.turns = [
+              { id: 'turn-uuid-1', items: [], status: 'completed', error: null },
+              { id: 'turn-uuid-2', items: [], status: 'completed', error: null },
+            ];
+            return resp;
+          }
+          case 'thread/resume':
+            return threadStartResponse('fork-established');
+          case 'turn/start':
+            setTimeout(() => {
+              emitNotification('turn/completed', {
+                threadId: 'fork-established',
+                turn: { id: 'fork-t1', items: [], status: 'completed', error: null },
+              });
+            }, 0);
+            return turnStartResponse('fork-t1');
+          default:
+            return {};
+        }
+      });
+
+      captureHandlers();
+      await collectChunks(runtime.query(createTurn('first fork turn')));
+
+      const result = runtime.buildSessionUpdates({
+        conversation: {
+          id: 'conv-1',
+          providerId: 'codex',
+          title: 'Fork',
+          createdAt: 0,
+          updatedAt: 0,
+          sessionId: null,
+          messages: [],
+          providerState: {
+            forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' },
+          },
+        },
+        sessionInvalidated: false,
+      });
+
+      expect((result.updates.providerState as any).threadId).toBe('fork-established');
+      expect((result.updates.providerState as any).forkSource).toEqual({
+        sessionId: 'source-thread',
+        resumeAt: 'turn-uuid-2',
+      });
+    });
+
+    it('resetSession clears pending fork', () => {
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'source', resumeAt: 'turn-1' } },
+      });
+
+      runtime.resetSession();
+
+      // After reset, a normal query should start a new thread (not fork)
+      expect(runtime.getSessionId()).toBeNull();
+    });
+  });
+
+  describe('query - manual compact', () => {
+    it('calls thread/compact/start instead of turn/start for compact turns', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-compact');
+        if (method === 'thread/compact/start') {
+          setTimeout(() => {
+            emitNotification('turn/started', {
+              threadId: 'thread-compact',
+              turn: { id: 'turn-compact', items: [], status: 'inProgress', error: null },
+            });
+            emitNotification('item/started', {
+              item: { type: 'contextCompaction', id: 'compact-1' },
+              threadId: 'thread-compact',
+              turnId: 'turn-compact',
+            });
+            emitNotification('item/completed', {
+              item: { type: 'contextCompaction', id: 'compact-1' },
+              threadId: 'thread-compact',
+              turnId: 'turn-compact',
+            });
+            emitNotification('turn/completed', {
+              threadId: 'thread-compact',
+              turn: { id: 'turn-compact', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return {};
+        }
+        return {};
+      });
+
+      const chunks = await collectChunks(runtime.query(createCompactTurn()));
+
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'thread/compact/start',
+        { threadId: 'thread-compact' },
+      );
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall).toBeUndefined();
+
+      expect(chunks).toContainEqual({ type: 'compact_boundary' });
+      expect(chunks).toContainEqual({ type: 'done' });
+    });
+
+    it('creates a new thread first if none exists, then compacts', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-new-compact');
+        if (method === 'thread/compact/start') {
+          setTimeout(() => {
+            emitNotification('turn/started', {
+              threadId: 'thread-new-compact',
+              turn: { id: 'turn-c', items: [], status: 'inProgress', error: null },
+            });
+            emitNotification('item/started', {
+              item: { type: 'contextCompaction', id: 'compact-2' },
+              threadId: 'thread-new-compact',
+              turnId: 'turn-c',
+            });
+            emitNotification('turn/completed', {
+              threadId: 'thread-new-compact',
+              turn: { id: 'turn-c', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return {};
+        }
+        return {};
+      });
+
+      await collectChunks(runtime.query(createCompactTurn()));
+
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'thread/start',
+        expect.any(Object),
+      );
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'thread/compact/start',
+        { threadId: 'thread-new-compact' },
+      );
+    });
+
+    it('rejects /compact with extra arguments locally', async () => {
+      const turn = createTurn('/compact extra args', { isCompact: true });
+
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        return {};
+      });
+
+      const chunks = await collectChunks(runtime.query(turn));
+
+      expect(chunks).toContainEqual(expect.objectContaining({
+        type: 'error',
+        content: expect.stringContaining('/compact'),
+      }));
+      expect(chunks).toContainEqual({ type: 'done' });
+
+      const compactCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'thread/compact/start',
+      );
+      expect(compactCall).toBeUndefined();
+
+      const threadStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'thread/start',
+      );
+      expect(threadStartCall).toBeUndefined();
+      expect(runtime.getSessionId()).toBeNull();
+    });
+
+    it('does not call buildInput or start transcript tailing for compact', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-no-input');
+        if (method === 'thread/compact/start') {
+          setTimeout(() => {
+            emitNotification('turn/started', {
+              threadId: 'thread-no-input',
+              turn: { id: 'turn-ni', items: [], status: 'inProgress', error: null },
+            });
+            emitNotification('turn/completed', {
+              threadId: 'thread-no-input',
+              turn: { id: 'turn-ni', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return {};
+        }
+        return {};
+      });
+
+      await collectChunks(runtime.query(createCompactTurn()));
+
+      // turn/start was never called, which means buildInput was never called
+      const turnStartCall = mockTransportRequest.mock.calls.find(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCall).toBeUndefined();
+    });
+
+    it('preserves cancel semantics: cancel before turn/started does not crash', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-cancel-compact');
+        if (method === 'thread/compact/start') {
+          // Don't emit turn/started - simulating cancel before it arrives
+          return {};
+        }
+        if (method === 'turn/interrupt') return {};
+        return {};
+      });
+
+      const gen = runtime.query(createCompactTurn());
+      const firstResult = gen.next();
+      await new Promise(r => setTimeout(r, 50));
+
+      runtime.cancel();
+
+      const chunks: StreamChunk[] = [];
+      const first = await firstResult;
+      if (!first.done && first.value) chunks.push(first.value);
+      for await (const chunk of gen) chunks.push(chunk);
+
+      expect(chunks).toContainEqual({ type: 'done' });
+    });
+
+    it('preserves cancel semantics: cancel after turn/started sends turn/interrupt', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-cc2');
+        if (method === 'thread/compact/start') {
+          setTimeout(() => {
+            emitNotification('turn/started', {
+              threadId: 'thread-cc2',
+              turn: { id: 'turn-cc2', items: [], status: 'inProgress', error: null },
+            });
+          }, 0);
+          return {};
+        }
+        if (method === 'turn/interrupt') return {};
+        return {};
+      });
+
+      const gen = runtime.query(createCompactTurn());
+      const firstResult = gen.next();
+      await new Promise(r => setTimeout(r, 50));
+
+      runtime.cancel();
+
+      const chunks: StreamChunk[] = [];
+      const first = await firstResult;
+      if (!first.done && first.value) chunks.push(first.value);
+      for await (const chunk of gen) chunks.push(chunk);
+
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'turn/interrupt',
+        { threadId: 'thread-cc2', turnId: 'turn-cc2' },
+      );
+    });
+
+    it('captures thread ID after compact on a new thread', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-persist');
+        if (method === 'thread/compact/start') {
+          setTimeout(() => {
+            emitNotification('turn/started', {
+              threadId: 'thread-persist',
+              turn: { id: 'turn-p', items: [], status: 'inProgress', error: null },
+            });
+            emitNotification('turn/completed', {
+              threadId: 'thread-persist',
+              turn: { id: 'turn-p', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return {};
+        }
+        return {};
+      });
+
+      await collectChunks(runtime.query(createCompactTurn()));
+
+      expect(runtime.getSessionId()).toBe('thread-persist');
+      const result = runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false });
+      expect((result.updates.providerState as any).threadId).toBe('thread-persist');
+    });
+  });
+
+  describe('turn/started notification establishes turn ID', () => {
+    it('establishes turn ID from turn/started and flushes buffered notifications', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        if (method === 'thread/start') return threadStartResponse('thread-ts');
+        if (method === 'thread/compact/start') {
+          // Simulate: turn/started arrives first, then items, then turn/completed
+          setTimeout(() => {
+            // Item arrives BEFORE turn/started — gets buffered
+            emitNotification('item/agentMessage/delta', {
+              threadId: 'thread-ts',
+              turnId: 'turn-ts',
+              itemId: 'msg-ts',
+              delta: 'Buffered text',
+            });
+            // turn/started arrives and establishes the turn ID
+            emitNotification('turn/started', {
+              threadId: 'thread-ts',
+              turn: { id: 'turn-ts', items: [], status: 'inProgress', error: null },
+            });
+            emitNotification('turn/completed', {
+              threadId: 'thread-ts',
+              turn: { id: 'turn-ts', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return {};
+        }
+        return {};
+      });
+
+      const chunks = await collectChunks(runtime.query(createCompactTurn()));
+
+      // The buffered text should have been flushed after turn/started
+      expect(chunks).toContainEqual({ type: 'text', content: 'Buffered text' });
+      expect(chunks).toContainEqual({ type: 'done' });
     });
   });
 });

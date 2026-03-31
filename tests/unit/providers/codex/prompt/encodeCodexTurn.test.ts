@@ -118,4 +118,51 @@ describe('encodeCodexTurn', () => {
 
     expect(result.prompt).toBe('Hello');
   });
+
+  describe('compact detection', () => {
+    it('marks bare /compact as compact', () => {
+      const result = encodeCodexTurn({ text: '/compact' });
+      expect(result.isCompact).toBe(true);
+      expect(result.prompt).toBe('/compact');
+      expect(result.persistedContent).toBe('/compact');
+    });
+
+    it('marks /compact with trailing whitespace as compact', () => {
+      const result = encodeCodexTurn({ text: '/compact ' });
+      expect(result.isCompact).toBe(true);
+    });
+
+    it('marks /compact with trailing text as compact (context still skipped)', () => {
+      const result = encodeCodexTurn({ text: '/compact extra args' });
+      expect(result.isCompact).toBe(true);
+    });
+
+    it('is case-insensitive', () => {
+      const result = encodeCodexTurn({ text: '/Compact' });
+      expect(result.isCompact).toBe(true);
+    });
+
+    it('does not treat "compact this" as compact', () => {
+      const result = encodeCodexTurn({ text: 'compact this' });
+      expect(result.isCompact).toBe(false);
+    });
+
+    it('skips all context sections for compact turns', () => {
+      const request: ChatTurnRequest = {
+        text: '/compact',
+        currentNotePath: 'note.md',
+        editorSelection: { notePath: 'src/main.ts', mode: 'selection', selectedText: 'code' },
+        browserSelection: { source: 'chrome', selectedText: 'web text', url: 'https://example.com' },
+        canvasSelection: { canvasPath: 'c.canvas', nodeIds: ['n1'] },
+      };
+      const result = encodeCodexTurn(request);
+
+      expect(result.isCompact).toBe(true);
+      expect(result.prompt).toBe('/compact');
+      expect(result.prompt).not.toContain('[Current note');
+      expect(result.prompt).not.toContain('[Editor selection');
+      expect(result.prompt).not.toContain('[Browser selection');
+      expect(result.prompt).not.toContain('[Canvas selection');
+    });
+  });
 });

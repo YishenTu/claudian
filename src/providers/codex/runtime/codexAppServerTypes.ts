@@ -298,6 +298,39 @@ export interface ThreadResumeParams {
 export type ThreadResumeResult = ThreadStartResult;
 
 // ---------------------------------------------------------------------------
+// thread/fork
+// ---------------------------------------------------------------------------
+
+export interface ThreadForkParams {
+  threadId: string;
+}
+
+export type ThreadForkResult = ThreadStartResult;
+
+// ---------------------------------------------------------------------------
+// thread/rollback
+// ---------------------------------------------------------------------------
+
+export interface ThreadRollbackParams {
+  threadId: string;
+  numTurns: number;
+}
+
+export interface ThreadRollbackResult {
+  thread: Thread;
+}
+
+// ---------------------------------------------------------------------------
+// thread/compact/start
+// ---------------------------------------------------------------------------
+
+export interface ThreadCompactStartParams {
+  threadId: string;
+}
+
+export type ThreadCompactStartResult = Record<string, never>;
+
+// ---------------------------------------------------------------------------
 // turn/start
 // ---------------------------------------------------------------------------
 

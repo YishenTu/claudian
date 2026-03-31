@@ -21,8 +21,8 @@ describe('CODEX_PROVIDER_CAPABILITIES', () => {
     expect(CODEX_PROVIDER_CAPABILITIES.supportsRewind).toBe(false);
   });
 
-  it('should not support fork', () => {
-    expect(CODEX_PROVIDER_CAPABILITIES.supportsFork).toBe(false);
+  it('should support fork', () => {
+    expect(CODEX_PROVIDER_CAPABILITIES.supportsFork).toBe(true);
   });
 
   it('should not support provider commands', () => {

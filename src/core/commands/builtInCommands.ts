@@ -52,7 +52,7 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     name: 'fork',
     description: 'Fork entire conversation to new session',
     action: 'fork',
-    providers: ['claude'],
+    providers: ['claude', 'codex'],
   },
 ];
 

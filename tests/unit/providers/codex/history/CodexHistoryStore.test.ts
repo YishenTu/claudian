@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-import { parseCodexSessionContent, parseCodexSessionFile } from '@/providers/codex/history/CodexHistoryStore';
+import { parseCodexSessionContent, parseCodexSessionFile, parseCodexSessionTurns } from '@/providers/codex/history/CodexHistoryStore';
 
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 
@@ -1267,6 +1267,315 @@ describe('CodexHistoryStore', () => {
     });
   });
 
+  describe('parseCodexSessionContent - server turn-ID exposure', () => {
+    it('sets userMessageId on parsed user message when task_started has turn_id', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: '019d-uuid-turn-1' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.500Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Hello' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Hi there!' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: '019d-uuid-turn-1' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].userMessageId).toBe('019d-uuid-turn-1');
+    });
+
+    it('sets assistantMessageId on the terminal non-interrupt assistant bubble', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: '019d-uuid-turn-1' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.500Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Hello' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Hi there!' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: '019d-uuid-turn-1' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[1].assistantMessageId).toBe('019d-uuid-turn-1');
+    });
+
+    it('does NOT set assistantMessageId on interrupted assistant bubbles', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: '019d-uuid-aborted' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'event_msg',
+          payload: { type: 'agent_message', message: 'Starting...' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'turn_aborted' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].isInterrupt).toBe(true);
+      expect(messages[0].assistantMessageId).toBeUndefined();
+    });
+
+    it('sets assistantMessageId on the last non-interrupt bubble in a multi-bubble turn', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: '019d-uuid-multi' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.500Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Check files.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+            arguments: '{"command":"ls"}',
+            call_id: 'call_multi_1',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_multi_1',
+            output: 'Exit code: 0\nOutput:\nfile.txt',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Found files.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:04.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: '019d-uuid-multi' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      // user + assistant (single bubble with tool call and text)
+      const userMsg = messages.find(m => m.role === 'user');
+      expect(userMsg!.userMessageId).toBe('019d-uuid-multi');
+
+      // The last assistant message in the turn should get the checkpoint
+      const assistantMsgs = messages.filter(m => m.role === 'assistant');
+      const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
+      expect(lastAssistant.assistantMessageId).toBe('019d-uuid-multi');
+    });
+
+    it('works without task_started (no server turn ID)', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Hello' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Hi!' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].userMessageId).toBeUndefined();
+      expect(messages[1].assistantMessageId).toBeUndefined();
+    });
+  });
+
+  describe('parseCodexSessionTurns - turn-aware parsing', () => {
+    it('returns structured turns with stable turn IDs and messages', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'uuid-turn-1' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.500Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'First question' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'First answer' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: 'uuid-turn-1' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:03.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'uuid-turn-2' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:03.500Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Second question' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Second answer' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:05.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: 'uuid-turn-2' },
+        }),
+      ].join('\n');
+
+      const turns = parseCodexSessionTurns(content);
+
+      expect(turns).toHaveLength(2);
+      expect(turns[0].turnId).toBe('uuid-turn-1');
+      expect(turns[0].messages).toHaveLength(2);
+      expect(turns[0].messages[0].role).toBe('user');
+      expect(turns[0].messages[1].role).toBe('assistant');
+
+      expect(turns[1].turnId).toBe('uuid-turn-2');
+      expect(turns[1].messages).toHaveLength(2);
+    });
+
+    it('parseCodexSessionFile still works (uses parseCodexSessionTurns internally)', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'uuid-turn-flat' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.500Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Hello' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Hi!' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: 'uuid-turn-flat' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].role).toBe('user');
+      expect(messages[1].role).toBe('assistant');
+    });
+  });
+
   describe('parseCodexSessionContent - persisted mcp_tool_call', () => {
     it('restores mcp_tool_call from response_item as mcp__server__tool', () => {
       const content = [
@@ -1373,6 +1682,117 @@ describe('CodexHistoryStore', () => {
         status: 'error',
         result: 'Permission denied',
       });
+    });
+  });
+
+  describe('parseCodexSessionContent - context_compacted boundary', () => {
+    it('applies compacted replacement_history before rendering the compact boundary', () => {
+      const content = [
+        JSON.stringify({ timestamp: '2026-03-03T16:00:00.000Z', type: 'event_msg', payload: { type: 'task_started' } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Hi there!' }] } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:03.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
+        // Compaction happens here
+        JSON.stringify({
+          timestamp: '2026-03-03T16:00:04.000Z',
+          type: 'compacted',
+          payload: {
+            message: '',
+            replacement_history: [
+              {
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: '<COMPACTION_SUMMARY>\nSummary after compact' }],
+              },
+              {
+                type: 'compaction',
+                encrypted_content: 'encrypted-summary',
+              },
+            ],
+          },
+        }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:04.000Z', type: 'event_msg', payload: { type: 'context_compacted' } }),
+        // Next turn after compaction
+        JSON.stringify({ timestamp: '2026-03-03T16:00:05.000Z', type: 'event_msg', payload: { type: 'task_started' } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:06.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'continue' }] } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:07.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Continuing after compact.' }] } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:08.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages.map(m => m.content)).not.toContain('hello');
+      expect(messages.map(m => m.content)).not.toContain('Hi there!');
+      expect(messages[0]).toMatchObject({
+        role: 'user',
+        content: '<COMPACTION_SUMMARY>\nSummary after compact',
+      });
+
+      const compactMsg = messages.find(m =>
+        m.contentBlocks?.some(b => b.type === 'compact_boundary'),
+      );
+      expect(compactMsg).toBeDefined();
+      expect(compactMsg!.role).toBe('assistant');
+      expect(compactMsg!.content).toBe('');
+
+      // compact_boundary should appear after the compacted replacement history
+      const compactIdx = messages.indexOf(compactMsg!);
+      expect(compactIdx).toBeGreaterThan(0);
+
+      const beforeCompact = messages[compactIdx - 1];
+      expect(beforeCompact.role).toBe('user');
+      expect(beforeCompact.content).toBe('<COMPACTION_SUMMARY>\nSummary after compact');
+
+      const afterCompact = messages[compactIdx + 1];
+      expect(afterCompact.role).toBe('user');
+      expect(afterCompact.content).toContain('continue');
+    });
+
+    it('uses the latest compacted replacement_history when multiple compactions occur', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-03T16:00:00.000Z',
+          type: 'compacted',
+          payload: {
+            message: '',
+            replacement_history: [
+              {
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: 'First summary' }],
+              },
+            ],
+          },
+        }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:00.000Z', type: 'event_msg', payload: { type: 'context_compacted' } }),
+        JSON.stringify({
+          timestamp: '2026-03-03T16:00:01.000Z',
+          type: 'compacted',
+          payload: {
+            message: '',
+            replacement_history: [
+              {
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: 'Second summary' }],
+              },
+            ],
+          },
+        }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:01.000Z', type: 'event_msg', payload: { type: 'context_compacted' } }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toMatchObject({
+        role: 'user',
+        content: 'Second summary',
+      });
+      const compactMessages = messages.filter(m =>
+        m.contentBlocks?.some(b => b.type === 'compact_boundary'),
+      );
+      expect(compactMessages).toHaveLength(1);
     });
   });
 });

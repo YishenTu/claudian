@@ -8,6 +8,21 @@ import type { CodexSkillEntry, CodexSkillStorage } from '../storage/CodexSkillSt
 
 const CODEX_SKILL_ID_PREFIX = 'codex-skill-';
 
+const CODEX_COMPACT_COMMAND: ProviderCommandEntry = {
+  id: 'codex-builtin-compact',
+  providerId: 'codex',
+  kind: 'command',
+  name: 'compact',
+  description: 'Compact conversation history',
+  content: '',
+  scope: 'system',
+  source: 'builtin',
+  isEditable: false,
+  isDeletable: false,
+  displayPrefix: '/',
+  insertPrefix: '/',
+};
+
 function buildSkillId(skill: CodexSkillEntry): string {
   const rootKey = skill.scanRoot
     .replace(/[^a-zA-Z0-9]+/g, '-')
@@ -43,7 +58,7 @@ export class CodexSkillCatalog implements ProviderCommandCatalog {
 
   async listDropdownEntries(_context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
     const skills = await this.storage.scanAll();
-    return skills.map(skillEntryToProviderEntry);
+    return [CODEX_COMPACT_COMMAND, ...skills.map(skillEntryToProviderEntry)];
   }
 
   async listVaultEntries(): Promise<ProviderCommandEntry[]> {

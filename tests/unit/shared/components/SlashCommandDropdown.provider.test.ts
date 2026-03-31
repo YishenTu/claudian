@@ -13,7 +13,7 @@ jest.mock('@/core/commands/builtInCommands', () => ({
       { id: 'builtin:clear', name: 'clear', description: 'Start a new conversation', content: '' },
       { id: 'builtin:add-dir', name: 'add-dir', description: 'Add external context directory', content: '', argumentHint: 'path/to/directory', providers: ['claude'] },
       { id: 'builtin:resume', name: 'resume', description: 'Resume a previous conversation', content: '', providers: ['claude'] },
-      { id: 'builtin:fork', name: 'fork', description: 'Fork entire conversation to new session', content: '', providers: ['claude'] },
+      { id: 'builtin:fork', name: 'fork', description: 'Fork entire conversation to new session', content: '', providers: ['claude', 'codex'] },
     ];
     if (!providerId) return all;
     return all.filter((c: any) => !c.providers || c.providers.includes(providerId));
@@ -184,7 +184,7 @@ describe('SlashCommandDropdown - provider catalog', () => {
       dropdown.destroy();
     });
 
-    it('excludes Claude-only built-ins from Codex dropdown', async () => {
+    it('includes Codex-compatible built-ins in the Codex dropdown', async () => {
       const getProviderEntries = jest.fn().mockResolvedValue(CODEX_ENTRIES);
       const dropdown = new SlashCommandDropdown(
         containerEl, inputEl, callbacks, { providerConfig: CODEX_CONFIG, getProviderEntries }
@@ -199,7 +199,7 @@ describe('SlashCommandDropdown - provider catalog', () => {
       expect(names).toContain('/clear');
       expect(names).not.toContain('/add-dir');
       expect(names).not.toContain('/resume');
-      expect(names).not.toContain('/fork');
+      expect(names).toContain('/fork');
 
       dropdown.destroy();
     });

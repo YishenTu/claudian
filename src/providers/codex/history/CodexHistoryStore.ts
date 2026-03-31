@@ -101,6 +101,16 @@ interface PersistedEventPayload {
   message?: string;
 }
 
+interface PersistedCompactionPayload {
+  type: 'compaction';
+  encrypted_content?: string;
+}
+
+interface PersistedCompactedPayload {
+  message?: string;
+  replacement_history?: PersistedPayload[];
+}
+
 // ---------------------------------------------------------------------------
 // Multi-bubble turn model
 // ---------------------------------------------------------------------------
@@ -118,8 +128,10 @@ interface CodexAssistantBubble {
 
 interface CodexTurnState {
   id: string;
+  serverTurnId?: string;
   startedAt: number;
   completedAt?: number;
+  completed?: boolean;
   lastEventAt: number;
   userTimestamp?: number;
   userChunks: string[];
@@ -134,6 +146,7 @@ type PersistedPayload =
   | PersistedToolCallOutputPayload
   | PersistedWebSearchCallPayload
   | PersistedMcpToolCallPayload
+  | PersistedCompactionPayload
   | PersistedEventPayload
   | undefined;
 
@@ -162,6 +175,16 @@ function newTurnState(id: string, timestamp: number): CodexTurnState {
     userChunks: [],
     assistantBubbles: [],
     activeBubbleIndex: null,
+  };
+}
+
+function createPersistedParseContext(): PersistedParseContext {
+  return {
+    turns: new Map(),
+    turnOrder: [],
+    currentTurnId: null,
+    toolCallToTurn: new Map(),
+    turnCounter: 0,
   };
 }
 
@@ -744,8 +767,39 @@ function processPersistedPayload(
       processPersistedMcpToolCall(payload as PersistedMcpToolCallPayload, timestamp, ctx);
       break;
 
+    case 'compaction':
+      break;
+
     default:
       break;
+  }
+}
+
+function applyCompactedReplacementHistory(
+  payload: PersistedCompactedPayload | undefined,
+  timestamp: number,
+  ctx: PersistedParseContext,
+): void {
+  ctx.turns.clear();
+  ctx.turnOrder.length = 0;
+  ctx.currentTurnId = null;
+  ctx.toolCallToTurn.clear();
+  ctx.turnCounter = 0;
+
+  const replacementHistory = Array.isArray(payload?.replacement_history)
+    ? payload.replacement_history
+    : [];
+
+  for (const [index, item] of replacementHistory.entries()) {
+    processPersistedPayload(item, timestamp + index, index, ctx);
+  }
+
+  if (ctx.currentTurnId) {
+    const turn = ctx.turns.get(ctx.currentTurnId);
+    if (turn) {
+      closeAssistantBubble(turn);
+    }
+    ctx.currentTurnId = null;
   }
 }
 
@@ -762,9 +816,13 @@ function processEventMsg(
 
   switch (payload.type) {
     case 'task_started': {
+      const serverTurnId = typeof (payload as Record<string, unknown>).turn_id === 'string'
+        ? (payload as Record<string, unknown>).turn_id as string
+        : undefined;
       const id = nextTurnId(ctx);
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);
       turn.startedAt = timestamp;
+      if (serverTurnId) turn.serverTurnId = serverTurnId;
       ctx.currentTurnId = turn.id;
       break;
     }
@@ -774,7 +832,12 @@ function processEventMsg(
         const turn = ctx.turns.get(ctx.currentTurnId);
         if (turn) {
           turn.completedAt = timestamp;
+          turn.completed = true;
           closeAssistantBubble(turn);
+          const serverTurnId = typeof (payload as Record<string, unknown>).turn_id === 'string'
+            ? (payload as Record<string, unknown>).turn_id as string
+            : undefined;
+          if (serverTurnId && !turn.serverTurnId) turn.serverTurnId = serverTurnId;
         }
       }
       ctx.currentTurnId = null;
@@ -824,6 +887,23 @@ function processEventMsg(
       break;
     }
 
+    case 'context_compacted': {
+      // Close any active bubble so the boundary stays standalone
+      if (ctx.currentTurnId) {
+        const prevTurn = ctx.turns.get(ctx.currentTurnId);
+        if (prevTurn) closeAssistantBubble(prevTurn);
+      }
+
+      // Create a dedicated turn for the compact boundary
+      const id = nextTurnId(ctx);
+      const turn = ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);
+      const bubble = ensureAssistantBubble(turn, timestamp);
+      bubble.contentBlocks.push({ type: 'compact_boundary' });
+      closeAssistantBubble(turn);
+      ctx.currentTurnId = null;
+      break;
+    }
+
     default:
       break;
   }
@@ -853,6 +933,7 @@ function flushBubbleTurns(
         role: 'user',
         content: userText,
         ...(displayContent !== undefined ? { displayContent } : {}),
+        ...(turn.serverTurnId ? { userMessageId: turn.serverTurnId } : {}),
         timestamp: turn.userTimestamp || turn.startedAt || Date.now(),
       });
       msgIndex += 1;
@@ -869,7 +950,9 @@ function flushBubbleTurns(
       const hasThinking = thinkingText.trim().length > 0;
       const hasToolCalls = bubble.toolCalls.length > 0;
 
-      if (!hasContent && !hasThinking && !hasToolCalls) {
+      const hasCompactBoundary = bubble.contentBlocks.some(b => b.type === 'compact_boundary');
+
+      if (!hasContent && !hasThinking && !hasToolCalls && !hasCompactBoundary) {
         // Empty bubble with interrupt flag → bare interrupt marker
         if (bubble.interrupted) {
           messages.push({
@@ -922,6 +1005,14 @@ function flushBubbleTurns(
       const durationMs = lastAssistantTimestamp - turn.userTimestamp;
       const lastMsg = assistantMessages[assistantMessages.length - 1];
       lastMsg.durationSeconds = Math.round(durationMs / 1000);
+    }
+
+    // Set assistantMessageId on the terminal non-interrupt assistant bubble
+    if (turn.serverTurnId && turn.completed && assistantMessages.length > 0) {
+      const lastNonInterrupt = [...assistantMessages].reverse().find(m => !m.isInterrupt);
+      if (lastNonInterrupt) {
+        lastNonInterrupt.assistantMessageId = turn.serverTurnId;
+      }
     }
   }
 
@@ -988,7 +1079,17 @@ export function parseCodexSessionFile(filePath: string): ChatMessage[] {
   return parseCodexSessionContent(content);
 }
 
+export interface CodexParsedTurn {
+  turnId: string | null;
+  messages: ChatMessage[];
+}
+
 export function parseCodexSessionContent(content: string): ChatMessage[] {
+  const turns = parseCodexSessionTurns(content);
+  return turns.flatMap(t => t.messages);
+}
+
+export function parseCodexSessionTurns(content: string): CodexParsedTurn[] {
   const lines = content.split('\n').filter(line => line.trim());
 
   // Detect format: legacy uses type=event, modern uses event_msg/response_item
@@ -1005,13 +1106,14 @@ export function parseCodexSessionContent(content: string): ChatMessage[] {
     if (hasLegacy && hasModern) break;
   }
 
-  // Pure legacy sessions use the old flat accumulator
+  // Pure legacy sessions use the old flat accumulator (no turn-level structure)
   if (hasLegacy && !hasModern) {
-    return parseLegacySession(lines);
+    const messages = parseLegacySession(lines);
+    return messages.length > 0 ? [{ turnId: null, messages }] : [];
   }
 
-  // Modern or mixed sessions use the bubble model
-  return parseModernSession(lines);
+  // Modern or mixed sessions use the bubble model with turn-level grouping
+  return parseModernSessionTurns(lines);
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,14 +1177,8 @@ function parseLegacySession(lines: string[]): ChatMessage[] {
 // Modern (response_item + event_msg) parser — bubble model
 // ---------------------------------------------------------------------------
 
-function parseModernSession(lines: string[]): ChatMessage[] {
-  const ctx: PersistedParseContext = {
-    turns: new Map(),
-    turnOrder: [],
-    currentTurnId: null,
-    toolCallToTurn: new Map(),
-    turnCounter: 0,
-  };
+function parseModernSessionTurns(lines: string[]): CodexParsedTurn[] {
+  const ctx = createPersistedParseContext();
 
   for (const [lineIndex, line] of lines.entries()) {
     let parsed: { timestamp?: string; type?: string; event?: CodexEvent; payload?: PersistedPayload };
@@ -1105,12 +1201,65 @@ function parseModernSession(lines: string[]): ChatMessage[] {
       continue;
     }
 
+    if (parsed.type === 'compacted') {
+      applyCompactedReplacementHistory(parsed.payload as PersistedCompactedPayload | undefined, timestamp, ctx);
+      continue;
+    }
+
     if (parsed.type === 'response_item') {
       processPersistedPayload(parsed.payload, timestamp, lineIndex, ctx);
     }
   }
 
-  return flushBubbleTurns(ctx.turns, ctx.turnOrder);
+  return flushBubbleTurnsGrouped(ctx.turns, ctx.turnOrder);
+}
+
+function flushBubbleTurnsGrouped(
+  turns: Map<string, CodexTurnState>,
+  turnOrder: string[],
+): CodexParsedTurn[] {
+  const allMessages = flushBubbleTurns(turns, turnOrder);
+
+  // Group messages by their originating turn, using the turn ordering
+  // to split the flat message list into per-turn groups.
+  const result: CodexParsedTurn[] = [];
+  let messageOffset = 0;
+
+  for (const turnId of turnOrder) {
+    const turn = turns.get(turnId);
+    if (!turn) continue;
+
+    // Count expected messages from this turn:
+    // 1 user message if non-system userChunks exist
+    const userText = turn.userChunks.join('\n').trim();
+    const hasUser = userText.length > 0 && !isCodexSystemMessage(userText);
+    const userCount = hasUser ? 1 : 0;
+
+    // Count assistant messages from bubbles
+    let assistantCount = 0;
+    for (const bubble of turn.assistantBubbles) {
+      const hasContent = bubble.contentChunks.join('').trim().length > 0;
+      const hasThinking = bubble.thinkingChunks.join('').trim().length > 0;
+      const hasToolCalls = bubble.toolCalls.length > 0;
+      const hasCompactBoundary = bubble.contentBlocks.some(b => b.type === 'compact_boundary');
+      if (hasContent || hasThinking || hasToolCalls || bubble.interrupted || hasCompactBoundary) {
+        assistantCount += 1;
+      }
+    }
+
+    const totalCount = userCount + assistantCount;
+    if (totalCount === 0) continue;
+
+    const turnMessages = allMessages.slice(messageOffset, messageOffset + totalCount);
+    messageOffset += totalCount;
+
+    result.push({
+      turnId: turn.serverTurnId ?? null,
+      messages: turnMessages,
+    });
+  }
+
+  return result;
 }
 
 function processLegacyEventInModernContext(event: CodexEvent, ctx: PersistedParseContext): void {

@@ -1,6 +1,22 @@
 import type { ChatTurnRequest, PreparedChatTurn } from '../../../core/runtime/types';
 
+function isCompactCommand(text: string): boolean {
+  return /^\/compact(\s|$)/i.test(text);
+}
+
 export function encodeCodexTurn(request: ChatTurnRequest): PreparedChatTurn {
+  const isCompact = isCompactCommand(request.text);
+
+  if (isCompact) {
+    return {
+      request,
+      persistedContent: request.text,
+      prompt: request.text,
+      isCompact: true,
+      mcpMentions: new Set(),
+    };
+  }
+
   const sections: string[] = [];
   sections.push(request.text);
 

@@ -168,9 +168,9 @@ describe('builtInCommands', () => {
       expect(cmd?.providers).toEqual(['claude']);
     });
 
-    it('fork is restricted to claude', () => {
+    it('fork is available for claude and codex', () => {
       const cmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fork');
-      expect(cmd?.providers).toEqual(['claude']);
+      expect(cmd?.providers).toEqual(['claude', 'codex']);
     });
   });
 
@@ -195,13 +195,13 @@ describe('builtInCommands', () => {
       expect(names).toContain('clear');
       expect(names).toContain('add-dir');
       expect(names).not.toContain('resume');
-      expect(names).not.toContain('fork');
+      expect(names).toContain('fork');
     });
 
-    it('returns only non-restricted commands for codex provider', () => {
+    it('returns only codex-compatible commands for codex provider', () => {
       const commands = getBuiltInCommandsForDropdown('codex');
-      expect(commands.length).toBe(2);
-      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir']);
+      expect(commands.length).toBe(3);
+      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'fork']);
     });
   });
 

@@ -56,7 +56,8 @@ Home task`,
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
 
-      expect(entries).toHaveLength(2);
+      // 1 built-in (/compact) + 2 scan-backed skills
+      expect(entries).toHaveLength(3);
 
       const vaultEntry = entries.find(e => e.name === 'my-skill');
       expect(vaultEntry).toBeDefined();
@@ -233,6 +234,58 @@ Prompt`,
       expect(config.builtInPrefix).toBe('/');
       expect(config.skillPrefix).toBe('$');
       expect(config.commandPrefix).toBe('/');
+    });
+  });
+
+  describe('built-in /compact command', () => {
+    it('includes /compact in dropdown entries', async () => {
+      const adapter = createMockAdapter({});
+      const storage = new CodexSkillStorage(adapter);
+      const catalog = new CodexSkillCatalog(storage);
+
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: true });
+      const compactEntry = entries.find(e => e.name === 'compact');
+
+      expect(compactEntry).toBeDefined();
+      expect(compactEntry!.providerId).toBe('codex');
+      expect(compactEntry!.kind).toBe('command');
+      expect(compactEntry!.displayPrefix).toBe('/');
+      expect(compactEntry!.insertPrefix).toBe('/');
+      expect(compactEntry!.isEditable).toBe(false);
+      expect(compactEntry!.isDeletable).toBe(false);
+      expect(compactEntry!.source).toBe('builtin');
+    });
+
+    it('places /compact before scan-backed skills', async () => {
+      const vaultAdapter = createMockAdapter({
+        '.codex/skills/my-skill/SKILL.md': `---
+description: A skill
+---
+Prompt`,
+      });
+      const homeAdapter = createMockAdapter({});
+      const storage = new CodexSkillStorage(vaultAdapter, homeAdapter);
+      const catalog = new CodexSkillCatalog(storage);
+
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: true });
+
+      const compactIndex = entries.findIndex(e => e.name === 'compact');
+      const skillIndex = entries.findIndex(e => e.name === 'my-skill');
+
+      expect(compactIndex).toBeGreaterThanOrEqual(0);
+      expect(skillIndex).toBeGreaterThanOrEqual(0);
+      expect(compactIndex).toBeLessThan(skillIndex);
+    });
+
+    it('does not include /compact in vault entries', async () => {
+      const adapter = createMockAdapter({});
+      const storage = new CodexSkillStorage(adapter);
+      const catalog = new CodexSkillCatalog(storage);
+
+      const entries = await catalog.listVaultEntries();
+      const compactEntry = entries.find(e => e.name === 'compact');
+
+      expect(compactEntry).toBeUndefined();
     });
   });
 });

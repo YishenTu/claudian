@@ -1,7 +1,24 @@
 import type { ProviderConversationHistoryService } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
+import type { CodexProviderState } from '../types';
 import { getCodexState } from '../types';
-import { findCodexSessionFile, parseCodexSessionFile } from './CodexHistoryStore';
+import {
+  type CodexParsedTurn,
+  findCodexSessionFile,
+  parseCodexSessionFile,
+  parseCodexSessionTurns,
+} from './CodexHistoryStore';
+
+function readSessionTurns(sessionFilePath: string): CodexParsedTurn[] {
+  let content: string;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    content = require('fs').readFileSync(sessionFilePath, 'utf-8');
+  } catch {
+    return [];
+  }
+  return parseCodexSessionTurns(content);
+}
 
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedConversationPaths = new Map<string, string>();
@@ -11,6 +28,63 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     _vaultPath: string | null,
   ): Promise<void> {
     const state = getCodexState(conversation.providerState);
+
+    // Pending fork with existing in-memory messages: keep them as-is
+    if (this.isPendingForkConversation(conversation) && conversation.messages.length > 0) {
+      return;
+    }
+
+    // Pending fork without messages: hydrate from source transcript truncated at resumeAt
+    if (this.isPendingForkConversation(conversation)) {
+      const sourceSessionFile = this.resolveSourceSessionFile(state);
+      if (!sourceSessionFile) return;
+
+      const turns = readSessionTurns(sourceSessionFile);
+      const resumeAt = state.forkSource!.resumeAt;
+      const truncated = this.truncateTurnsAtCheckpoint(turns, resumeAt);
+      if (!truncated) {
+        this.hydratedConversationPaths.delete(conversation.id);
+        return;
+      }
+      conversation.messages = truncated.flatMap(t => t.messages);
+      return;
+    }
+
+    // Established fork: source prefix + fork-only turns
+    if (state.forkSource && state.threadId) {
+      const sourceSessionFile = this.resolveSourceSessionFile(state);
+      const forkSessionFile = state.sessionFilePath ?? (state.threadId ? findCodexSessionFile(state.threadId) : null);
+
+      if (sourceSessionFile && forkSessionFile) {
+        const sourceTurns = readSessionTurns(sourceSessionFile);
+        const forkTurns = readSessionTurns(forkSessionFile);
+
+        const resumeAt = state.forkSource.resumeAt;
+        const sourcePrefix = this.truncateTurnsAtCheckpoint(sourceTurns, resumeAt);
+        if (!sourcePrefix) {
+          this.hydratedConversationPaths.delete(conversation.id);
+          return;
+        }
+        const sourceTurnIds = new Set(sourceTurns.map(t => t.turnId).filter(Boolean));
+        const forkOnlyTurns = forkTurns.filter(t => !t.turnId || !sourceTurnIds.has(t.turnId));
+
+        const messages = [
+          ...sourcePrefix.flatMap(t => t.messages),
+          ...forkOnlyTurns.flatMap(t => t.messages),
+        ];
+
+        if (messages.length === 0) {
+          this.hydratedConversationPaths.delete(conversation.id);
+          return;
+        }
+
+        conversation.messages = messages;
+        this.hydratedConversationPaths.set(conversation.id, `fork::${state.threadId}`);
+        return;
+      }
+    }
+
+    // Normal hydration
     const threadId = state.threadId ?? conversation.sessionId ?? null;
     const sessionFilePath = state.sessionFilePath ?? (threadId ? findCodexSessionFile(threadId) : null);
 
@@ -55,17 +129,42 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
     if (!conversation) return null;
     const state = getCodexState(conversation.providerState);
-    return state.threadId ?? conversation.sessionId ?? null;
+    return state.threadId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
-  isPendingForkConversation(_conversation: Conversation): boolean {
-    return false;
+  isPendingForkConversation(conversation: Conversation): boolean {
+    const state = getCodexState(conversation.providerState);
+    return !!state.forkSource && !state.threadId && !conversation.sessionId;
   }
 
   buildForkProviderState(
-    _sourceSessionId: string,
-    _resumeAt: string,
+    sourceSessionId: string,
+    resumeAt: string,
   ): Record<string, unknown> {
-    return {};
+    const providerState: CodexProviderState = {
+      forkSource: { sessionId: sourceSessionId, resumeAt },
+    };
+    return providerState as Record<string, unknown>;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  private resolveSourceSessionFile(state: CodexProviderState): string | null {
+    if (!state.forkSource) return null;
+    return findCodexSessionFile(state.forkSource.sessionId);
+  }
+
+  private truncateTurnsAtCheckpoint(
+    turns: CodexParsedTurn[],
+    resumeAt: string,
+  ): CodexParsedTurn[] | null {
+    const checkpointIndex = turns.findIndex(turn => turn.turnId === resumeAt);
+    if (checkpointIndex < 0) {
+      return null;
+    }
+
+    return turns.slice(0, checkpointIndex + 1);
   }
 }

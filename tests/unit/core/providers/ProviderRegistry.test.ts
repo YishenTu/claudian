@@ -56,7 +56,7 @@ describe('ProviderRegistry', () => {
     const caps = ProviderRegistry.getCapabilities('codex');
     expect(caps.providerId).toBe('codex');
     expect(caps.supportsPlanMode).toBe(true);
-    expect(caps.supportsFork).toBe(false);
+    expect(caps.supportsFork).toBe(true);
     expect(caps.supportsRewind).toBe(false);
     expect(caps.reasoningControl).toBe('effort');
   });

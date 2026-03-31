@@ -23,11 +23,12 @@ import type {
   SessionUpdateResult,
   SubagentRuntimeState,
 } from '../../../core/runtime/types';
-import type { ChatMessage, Conversation, SlashCommand, StreamChunk } from '../../../core/types';
+import type { ChatMessage, Conversation, ForkSource, SlashCommand, StreamChunk } from '../../../core/types';
 import type { CodexSafeMode } from '../../../core/types/settings';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
+import { buildContextFromHistory } from '../../../utils/session';
 import { CODEX_PROVIDER_CAPABILITIES } from '../capabilities';
 import { findCodexSessionFile } from '../history/CodexHistoryStore';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
@@ -37,8 +38,12 @@ import type {
   InitializeResult,
   SandboxPolicy,
   ServerRequestResolvedNotification,
+  ThreadCompactStartResult,
+  ThreadForkResult,
   ThreadResumeResult,
+  ThreadRollbackResult,
   ThreadStartResult,
+  TurnStartedNotification,
   TurnStartResult,
   UserInput,
 } from './codexAppServerTypes';
@@ -102,6 +107,9 @@ export class CodexChatRuntime implements ChatRuntime {
   private resumeCheckpoint: string | undefined;
   /* eslint-enable @typescript-eslint/no-unused-vars */
 
+  // Fork state
+  private pendingFork: ForkSource | null = null;
+
   // Cancellation
   private canceled = false;
 
@@ -136,10 +144,22 @@ export class CodexChatRuntime implements ChatRuntime {
       this.session.reset();
       this.loadedThreadId = null;
       this.currentThreadPath = null;
+      this.pendingFork = null;
       return;
     }
 
     const state = getCodexState(conversation.providerState);
+
+    // Pending fork: store fork metadata, don't set the source thread as our session
+    if (state.forkSource && !state.threadId && !conversation.sessionId) {
+      this.pendingFork = state.forkSource;
+      this.session.reset();
+      this.loadedThreadId = null;
+      this.currentThreadPath = null;
+      return;
+    }
+
+    this.pendingFork = null;
     const threadId = state.threadId ?? conversation.sessionId ?? null;
 
     if (!threadId) {
@@ -177,10 +197,11 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   async *query(
-    turn: PreparedChatTurn,
+    originalTurn: PreparedChatTurn,
     _conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    let turn = originalTurn;
     await this.ensureReady();
 
     this.canceled = false;
@@ -302,13 +323,77 @@ export class CodexChatRuntime implements ChatRuntime {
 
     this.wireTransportHandlers();
 
+    const compactValidationError = this.validateCompactTurn(originalTurn);
+    if (compactValidationError) {
+      yield { type: 'error', content: compactValidationError };
+      yield { type: 'done' };
+      return;
+    }
+
     try {
       // Thread lifecycle
       const existingThreadId = this.session.getThreadId();
       let threadId: string;
       let threadPath: string | null = null;
+      let completedPendingFork = false;
 
-      if (existingThreadId && existingThreadId !== this.loadedThreadId) {
+      if (this.pendingFork) {
+        // Pending fork: fork the source thread, optionally roll back, then start a turn
+        const fork = this.pendingFork;
+
+        const forkResult = await this.transport!.request<ThreadForkResult>('thread/fork', {
+          threadId: fork.sessionId,
+        });
+        threadId = forkResult.thread.id;
+        threadPath = forkResult.thread.path;
+
+        // Compute rollback: count turns after the resumeAt checkpoint
+        const forkTurns = forkResult.thread.turns ?? [];
+        const checkpointIndex = forkTurns.findIndex(t => t.id === fork.resumeAt);
+        if (checkpointIndex < 0) {
+          throw new Error(`Fork checkpoint not found: ${fork.resumeAt}`);
+        }
+        const numTurnsToRollback = forkTurns.length - checkpointIndex - 1;
+
+        // Resume the forked thread (required before rollback and turn/start)
+        const providerSettings = this.getProviderSettings();
+        const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
+        await this.transport!.request<ThreadResumeResult>('thread/resume', {
+          threadId,
+          model: model ?? 'gpt-5.4',
+          approvalPolicy: permissionMode.approvalPolicy,
+          sandbox: permissionMode.sandbox,
+          baseInstructions: promptText,
+          persistExtendedHistory: true,
+        });
+
+        if (numTurnsToRollback > 0) {
+          await this.transport!.request<ThreadRollbackResult>('thread/rollback', {
+            threadId,
+            numTurns: numTurnsToRollback,
+          });
+        }
+
+        this.loadedThreadId = threadId;
+        completedPendingFork = true;
+
+        // Build replay suffix from conversation history after the checkpoint
+        if (_conversationHistory && _conversationHistory.length > 0) {
+          const checkpointIdx = _conversationHistory.findIndex(
+            m => m.assistantMessageId === fork.resumeAt,
+          );
+          if (checkpointIdx >= 0 && checkpointIdx < _conversationHistory.length - 1) {
+            const suffix = _conversationHistory.slice(checkpointIdx + 1);
+            const replayContext = buildContextFromHistory(suffix);
+            if (replayContext.trim()) {
+              turn = {
+                ...turn,
+                prompt: `${replayContext}\n\nUser: ${turn.prompt}`,
+              };
+            }
+          }
+        }
+      } else if (existingThreadId && existingThreadId !== this.loadedThreadId) {
         // Resume a persisted thread not yet loaded in this daemon
         const providerSettings = this.getProviderSettings();
         const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
@@ -349,71 +434,87 @@ export class CodexChatRuntime implements ChatRuntime {
       this.session.setThread(threadId, threadPath ?? this.currentThreadPath ?? undefined);
       if (threadPath) this.currentThreadPath = threadPath;
       this.currentQueryThreadId = threadId;
-
-      tailEngine = new CodexFileTailEngine(path.join(os.homedir(), '.codex', 'sessions'), 200_000);
-      tailEngine.resetForNewTurn();
-      transcriptSessionFilePath = threadPath ?? this.session.getSessionFilePath() ?? null;
-      const transcriptReady = await tailEngine.primeCursor(
-        threadId,
-        transcriptSessionFilePath ?? undefined,
-      );
-      if (transcriptReady) {
-        toolSourceMode = 'transcript';
+      if (completedPendingFork) {
+        this.pendingFork = null;
       }
 
-      // Build input
-      inputBundle = this.buildInput(turn.prompt, turn.request.images);
+      if (turn.isCompact) {
+        // --- Manual compact path: thread/compact/start ---
+        this.notificationRouter?.beginTurn({ isPlanTurn: false });
 
-      // Start turn
-      const providerSettings = this.getProviderSettings();
-      const effort = EFFORT_MAP[providerSettings.effortLevel as string] ?? 'medium';
-      const resolvedModel = model ?? 'gpt-5.4';
-      const isPlanMode = providerSettings.permissionMode === 'plan';
-      const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
-      const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
-      const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
-
-      const collaborationMode = isPlanMode
-        ? {
-            mode: 'plan' as const,
-            settings: {
-              model: resolvedModel,
-              reasoning_effort: effort,
-              developer_instructions: null,
-            },
-          }
-        : undefined;
-
-      const summary = (providerSettings.codexReasoningSummary as string) || 'detailed';
-
-      // Configure router plan state before turn/start so buffered notifications
-      // that arrive before currentTurnId is set already see the correct state.
-      this.notificationRouter?.beginTurn({ isPlanTurn: isPlanMode });
-
-      const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
-        threadId,
-        input: inputBundle.input,
-        approvalPolicy: permissionMode.approvalPolicy,
-        model: resolvedModel,
-        effort,
-        summary,
-        sandboxPolicy,
-        ...(collaborationMode ? { collaborationMode } : {}),
-      });
-      this.currentTurnId = turnResult.turn.id;
-      this.flushPendingTurnNotifications();
-
-      if (toolSourceMode === 'transcript' && tailEngine) {
-        const transcriptPollingStarted = tailEngine.startPolling(
+        await this.transport!.request<ThreadCompactStartResult>(
+          'thread/compact/start',
+          { threadId },
+        );
+        // currentTurnId will be set by turn/started notification
+      } else {
+        // --- Normal turn path ---
+        tailEngine = new CodexFileTailEngine(path.join(os.homedir(), '.codex', 'sessions'), 200_000);
+        tailEngine.resetForNewTurn();
+        transcriptSessionFilePath = threadPath ?? this.session.getSessionFilePath() ?? null;
+        const transcriptReady = await tailEngine.primeCursor(
           threadId,
           transcriptSessionFilePath ?? undefined,
         );
-        if (transcriptPollingStarted) {
-          tailDrainInterval = setInterval(() => {
-            drainTailToolChunks();
-          }, 50);
-        } else {
-          switchToLiveToolFallback();
+        if (transcriptReady) {
+          toolSourceMode = 'transcript';
+        }
+
+        // Build input
+        inputBundle = this.buildInput(turn.prompt, turn.request.images);
+
+        // Start turn
+        const providerSettings = this.getProviderSettings();
+        const effort = EFFORT_MAP[providerSettings.effortLevel as string] ?? 'medium';
+        const resolvedModel = model ?? 'gpt-5.4';
+        const isPlanMode = providerSettings.permissionMode === 'plan';
+        const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
+        const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
+        const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
+
+        const collaborationMode = isPlanMode
+          ? {
+              mode: 'plan' as const,
+              settings: {
+                model: resolvedModel,
+                reasoning_effort: effort,
+                developer_instructions: null,
+              },
+            }
+          : undefined;
+
+        const summary = (providerSettings.codexReasoningSummary as string) || 'detailed';
+
+        // Configure router plan state before turn/start so buffered notifications
+        // that arrive before currentTurnId is set already see the correct state.
+        this.notificationRouter?.beginTurn({ isPlanTurn: isPlanMode });
+
+        const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
+          threadId,
+          input: inputBundle.input,
+          approvalPolicy: permissionMode.approvalPolicy,
+          model: resolvedModel,
+          effort,
+          summary,
+          sandboxPolicy,
+          ...(collaborationMode ? { collaborationMode } : {}),
+        });
+        this.currentTurnId = turnResult.turn.id;
+        enqueueChunk({ type: 'user_message_id', uuid: turnResult.turn.id });
+        this.flushPendingTurnNotifications();
+
+        if (toolSourceMode === 'transcript' && tailEngine) {
+          const transcriptPollingStarted = tailEngine.startPolling(
+            threadId,
+            transcriptSessionFilePath ?? undefined,
+          );
+          if (transcriptPollingStarted) {
+            tailDrainInterval = setInterval(() => {
+              drainTailToolChunks();
+            }, 50);
+          } else {
+            switchToLiveToolFallback();
+          }
         }
       }
 
@@ -509,6 +610,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.currentTurnId = null;
     this.currentQueryThreadId = null;
     this.pendingTurnNotifications = [];
+    this.pendingFork = null;
     this.clientConfigKey = null;
     this.shutdownProcess().catch(() => {});
     this.setReady(false);
@@ -538,6 +640,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.currentTurnId = null;
     this.currentQueryThreadId = null;
     this.pendingTurnNotifications = [];
+    this.pendingFork = null;
     this.clientConfigKey = null;
     this.shutdownProcess().catch(() => {});
     this.setReady(false);
@@ -588,9 +691,15 @@ export class CodexChatRuntime implements ChatRuntime {
     const threadId = this.session.getThreadId();
     const sessionFilePath = this.session.getSessionFilePath() ?? this.currentThreadPath;
 
+    // Preserve forkSource from existing conversation state
+    const existingState = params.conversation
+      ? getCodexState(params.conversation.providerState)
+      : null;
+
     const providerState: CodexProviderState = {
       ...(threadId ? { threadId } : {}),
       ...(sessionFilePath ? { sessionFilePath } : {}),
+      ...(existingState?.forkSource ? { forkSource: existingState.forkSource } : {}),
     };
 
     const updates: Partial<Conversation> = {
@@ -606,8 +715,13 @@ export class CodexChatRuntime implements ChatRuntime {
     return { updates };
   }
 
-  resolveSessionIdForFork(_conversation: Conversation | null): string | null {
-    return null;
+  resolveSessionIdForFork(conversation: Conversation | null): string | null {
+    const threadId = this.session.getThreadId();
+    if (threadId) return threadId;
+
+    if (!conversation) return null;
+    const state = getCodexState(conversation.providerState);
+    return state.threadId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
   // -----------------------------------------------------------------------
@@ -814,6 +928,13 @@ export class CodexChatRuntime implements ChatRuntime {
     method: string,
     params: unknown,
   ): boolean {
+    // turn/started can establish the active turn ID when the query didn't
+    // receive one from the RPC response (e.g. thread/compact/start).
+    if (method === 'turn/started') {
+      this.handleTurnStartedNotification(params);
+      return false;
+    }
+
     const scope = this.extractNotificationScope(method, params);
     if (!scope) {
       return true;
@@ -833,6 +954,37 @@ export class CodexChatRuntime implements ChatRuntime {
     }
 
     return true;
+  }
+
+  private handleTurnStartedNotification(params: unknown): void {
+    if (!params || typeof params !== 'object') return;
+
+    const notification = params as TurnStartedNotification;
+    const threadId = notification.threadId;
+    const turnId = notification.turn?.id;
+
+    if (!threadId || !turnId) return;
+    if (threadId !== this.currentQueryThreadId) return;
+
+    // Only establish the turn ID if the current query doesn't have one yet.
+    // Normal turn/start responses already set it; this path covers
+    // thread/compact/start which returns {} without a turn.
+    if (!this.currentTurnId) {
+      this.currentTurnId = turnId;
+      this.flushPendingTurnNotifications();
+    }
+  }
+
+  private validateCompactTurn(turn: PreparedChatTurn): string | null {
+    if (!turn.isCompact) {
+      return null;
+    }
+
+    if (turn.request.text.trim() !== '/compact') {
+      return '/compact does not accept arguments';
+    }
+
+    return null;
   }
 
   private flushPendingTurnNotifications(): void {

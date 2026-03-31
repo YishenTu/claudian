@@ -6,7 +6,7 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsNativeHistory: true,
   supportsPlanMode: true,
   supportsRewind: false,
-  supportsFork: false,
+  supportsFork: true,
   supportsProviderCommands: false,
   reasoningControl: 'effort',
 });
