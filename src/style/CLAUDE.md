@@ -16,7 +16,7 @@ src/style/
 
 ## Build
 
-CSS is built into root `styles.css` via `npm run build:css` (also runs in `npm run dev`).
+CSS is built into root `styles.css` via `npm run build:css`. It is invoked by both `npm run dev` and `npm run build`.
 
 **Adding new modules**: Register in `index.css` via `@import` or the build will omit them.
 

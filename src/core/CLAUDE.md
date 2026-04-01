@@ -1,78 +1,80 @@
 # Core Infrastructure
 
-Core modules have **no feature dependencies**. Features depend on core, never the reverse.
+Core modules stay provider-neutral. Features depend on `core/`; providers implement the boundary behind it.
 
 ## Runtime Status
 
-- Current state: `core/` contains provider-neutral contracts and shared prompt templates. Provider-specific runtimes and prompts live under `src/providers/{id}/`.
-- `core/runtime/` and `core/providers/` define the chat-facing seam. `ChatRuntime` is the neutral interface; `ClaudeChatRuntime` in `src/providers/claude/runtime/` and `CodexChatRuntime` in `src/providers/codex/runtime/` are the provider implementations.
-- Claude-specific agents, plugins, SDK helpers, and workspace storage live under `src/providers/claude/`. Codex-specific skills, subagents, normalization, and workspace storage live under `src/providers/codex/`.
+- `core/runtime/` and `core/providers/` define the chat-facing seam. `ChatRuntime` is the neutral runtime interface. `src/providers/claude/runtime/` and `src/providers/codex/runtime/` provide the concrete implementations.
+- `ProviderRegistry` owns runtime and auxiliary-service factories. `ProviderWorkspaceRegistry` owns provider workspace services such as command catalogs, agent mentions, CLI resolution, MCP managers, and provider settings tabs.
+- Claude-specific agents, plugins, MCP, runtime command discovery, and storage live under `src/providers/claude/`.
+- Codex-specific skills, subagents, JSONL history hydration, session tailing, and workspace services live under `src/providers/codex/`.
 
 ## Modules
 
 | Module | Purpose | Key Files |
 |--------|---------|-----------|
-| `bootstrap/` | Shared app defaults and storage | `DEFAULT_CLAUDIAN_SETTINGS`, `SharedAppStorage` |
-| `commands/` | Built-in command actions | `builtInCommands` |
-| `mcp/` | Model Context Protocol | `McpServerManager`, `McpTester`, `McpStorageAdapter` |
+| `bootstrap/` | Shared defaults and session metadata storage | `DEFAULT_CLAUDIAN_SETTINGS`, `SessionStorage`, `storage.ts` |
+| `commands/` | Built-in cross-provider commands | `builtInCommands` |
+| `mcp/` | Provider-neutral MCP coordination | `McpServerManager`, `McpTester`, `McpStorageAdapter` |
 | `prompt/` | Shared prompt templates | `mainAgent`, `inlineEdit`, `titleGeneration`, `instructionRefine` |
-| `providers/` | Provider registry and provider-owned boundary services | `ProviderRegistry`, `ProviderSettingsCoordinator`, `ProviderWorkspaceRegistry`, `ProviderCapabilities`, `ProviderId`, `modelRouting`, history/task/CLI service contracts |
+| `providers/` | Registry, capability, and workspace-service contracts | `ProviderRegistry`, `ProviderWorkspaceRegistry`, `ProviderSettingsCoordinator`, `modelRouting`, `types` |
 | `providers/commands/` | Shared command catalog contracts | `ProviderCommandCatalog`, `ProviderCommandEntry`, `hiddenCommands` |
 | `runtime/` | Provider-neutral runtime contracts | `ChatRuntime`, `ChatTurnRequest`, `PreparedChatTurn`, `SessionUpdateResult`, approval/query types |
-| `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator` |
-| `storage/` | Generic persistence primitives | `VaultFileAdapter`, `HomeFileAdapter` |
-| `tools/` | Tool utilities | `toolNames` (incl. plan mode + runtime lifecycle tools), `toolIcons`, `toolInput`, `todo` |
-| `types/` | Type definitions | `settings`, `mcp`, `chat`, `tools`, `diff`, `agent`, `plugins` |
-
-## Refactor Guardrails
-
-- Do not add new feature-layer imports of Claude SDK types, Claude history helpers, or Claude task-result parsers.
-- New provider-neutral contracts should land in `src/core/runtime/` or `src/core/providers/`, not in feature modules.
-- Keep generic security and storage primitives in `core/`; move provider-owned hooks, prompt templates, SDK parsing, session archives, and mapping logic behind the provider boundary.
-- Auxiliary services (title generation, instruction refinement, inline edit) are created via `ProviderRegistry` factory methods, not instantiated directly in features.
+| `security/` | Permission and approval helpers | `ApprovalManager` |
+| `storage/` | Generic filesystem adapters | `VaultFileAdapter`, `HomeFileAdapter` |
+| `tools/` | Shared tool constants and formatting helpers | `toolNames`, `toolIcons`, `toolInput`, `todo` |
+| `types/` | Shared type definitions | `settings`, `mcp`, `chat`, `tools`, `diff`, `agent`, `plugins` |
 
 ## Dependency Rules
 
-```
-types/ ← (all modules can import)
-storage/ ← security/, mcp/
-providers/ ← runtime feature/adaptor selection
+```text
+types/ <- all modules
+storage/ <- bootstrap/, provider workspace services
+runtime/ + providers/ <- provider implementations
+features/ -> core contracts only
 ```
 
 ## Key Patterns
 
 ### ChatRuntime
+
 ```typescript
-// One runtime per tab (lazy init on first query)
-const runtime = ProviderRegistry.createChatRuntime({ plugin, mcpManager });
-const turn = runtime.prepareTurn(request); // Encode context
-for await (const chunk of runtime.query(turn, history)) { ... }
-runtime.cancel(); // Cancel streaming
+const runtime = ProviderRegistry.createChatRuntime({ plugin, providerId });
+const preparedTurn = runtime.prepareTurn(request);
+
+for await (const chunk of runtime.query(preparedTurn, history)) {
+  // Feature layer consumes provider-neutral StreamChunk values.
+}
 ```
 
 ### Provider Factories
+
 ```typescript
-// Aux services created via registry (not direct instantiation)
-const titleService = ProviderRegistry.createTitleGenerationService(plugin);
-const refineService = ProviderRegistry.createInstructionRefineService(plugin);
-const inlineEditService = ProviderRegistry.createInlineEditService(plugin);
+const titleService = ProviderRegistry.createTitleGenerationService(plugin, providerId);
+const refineService = ProviderRegistry.createInstructionRefineService(plugin, providerId);
+const inlineEditService = ProviderRegistry.createInlineEditService(plugin, providerId);
+```
+
+### Workspace Services
+
+```typescript
+const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
+const agentMentions = ProviderWorkspaceRegistry.getAgentMentionProvider(providerId);
+const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
 ```
 
 ### Storage
-```typescript
-// Generic vault adapter in core
-const adapter = storage.getAdapter();
 
-// Provider-owned workspace/session storage lives under src/providers/claude/storage/
-```
-
-### Security
-- `BashPathValidator`: Vault-only by default, symlink-safe via `realpath`
-- `ApprovalManager`: Permission utility functions (`buildPermissionUpdates`, `matchesRulePattern`, etc.)
+- `core/storage/` provides generic vault/home adapters only
+- Provider-owned workspace and transcript logic lives under `src/providers/claude/storage/` and `src/providers/codex/storage/`
 
 ## Gotchas
 
-- `ChatRuntime.cleanup()` must be called on tab close
-- Storage paths are encoded: non-alphanumeric → `-`
-- Plan mode uses dedicated callbacks (`exitPlanModeCallback`, `permissionModeSyncCallback`) that bypass normal approval flow in `canUseTool`. `EnterPlanMode` is auto-approved by the SDK; the stream event is detected to sync UI state.
-- Session bookkeeping lives in `Conversation.providerState` (opaque bag). `ChatRuntime.buildSessionUpdates()` manages it — features should not read or write provider-specific fields directly. Claude-specific state (`providerSessionId`, `forkSource`, `previousProviderSessionIds`) is typed as `ClaudeProviderState` behind the provider boundary.
+- `ChatRuntime.cleanup()` must run when a tab is disposed
+- `Conversation.providerState` is intentionally opaque in feature code; provider-specific fields belong behind typed provider helpers
+- Plan mode is capability-driven
+  - Claude enters and exits plan mode through provider/runtime events
+  - Codex sends `collaborationMode` on `turn/start` and uses post-stream plan approval metadata
+- Command discovery differs by provider
+  - Claude merges runtime-discovered commands with vault commands and skills
+  - Codex skill discovery comes from `CodexSkillCatalog` and does not depend on runtime command discovery
