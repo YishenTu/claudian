@@ -1,5 +1,4 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
-import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCliResolver,
@@ -12,8 +11,7 @@ import type ClaudianPlugin from '../../../main';
 import { getVaultPath } from '../../../utils/path';
 import { CodexAgentMentionProvider } from '../agents/CodexAgentMentionProvider';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
-import { resolveCodexCliPath } from '../runtime/CodexBinaryLocator';
-import { getCodexProviderSettings } from '../settings';
+import { CodexCliResolver } from '../runtime/CodexCliResolver';
 import { CodexSkillListingService } from '../skills/CodexSkillListingService';
 import { CodexSkillStorage } from '../storage/CodexSkillStorage';
 import { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
@@ -27,21 +25,7 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
 }
 
 function createCodexCliResolver(): ProviderCliResolver {
-  return {
-    resolveFromSettings(settings) {
-      const codexSettings = getCodexProviderSettings(settings);
-      const values = Object.values(codexSettings.cliPathsByHost);
-      const resolvedHostPath = values.find((value) => typeof value === 'string' && value.trim()) ?? undefined;
-      return resolveCodexCliPath(
-        resolvedHostPath,
-        codexSettings.cliPath,
-        getRuntimeEnvironmentText(settings, 'codex'),
-      );
-    },
-    reset() {
-      // No-op: Codex path resolution is stateless.
-    },
-  };
+  return new CodexCliResolver();
 }
 
 export async function createCodexWorkspaceServices(

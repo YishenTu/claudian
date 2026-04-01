@@ -252,51 +252,67 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       return null;
     };
 
+    const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
+      const error = validatePath(value);
+      if (error) {
+        validationEl.setText(error);
+        validationEl.style.display = 'block';
+        if (inputEl) {
+          inputEl.style.borderColor = 'var(--text-error)';
+        }
+        return false;
+      }
+
+      validationEl.style.display = 'none';
+      if (inputEl) {
+        inputEl.style.borderColor = '';
+      }
+      return true;
+    };
+
+    const currentValue = claudeSettings.cliPathsByHost[hostnameKey] || '';
+    const cliPathsByHost = { ...claudeSettings.cliPathsByHost };
+    let cliPathInputEl: HTMLInputElement | null = null;
+
+    const persistCliPath = async (value: string): Promise<boolean> => {
+      const isValid = updateCliPathValidation(value, cliPathInputEl ?? undefined);
+      if (!isValid) {
+        return false;
+      }
+
+      const trimmed = value.trim();
+      if (trimmed) {
+        cliPathsByHost[hostnameKey] = trimmed;
+      } else {
+        delete cliPathsByHost[hostnameKey];
+      }
+
+      updateClaudeProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
+      await context.plugin.saveSettings();
+      claudeWorkspace.cliResolver.reset();
+      const view = context.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => Promise.resolve(service.cleanup())
+      );
+      return true;
+    };
+
     cliPathSetting.addText((text) => {
       const placeholder = process.platform === 'win32'
         ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
         : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
 
-      const currentValue = claudeSettings.cliPathsByHost[hostnameKey] || '';
-
       text
         .setPlaceholder(placeholder)
         .setValue(currentValue)
         .onChange(async (value) => {
-          const error = validatePath(value);
-          if (error) {
-            validationEl.setText(error);
-            validationEl.style.display = 'block';
-            text.inputEl.style.borderColor = 'var(--text-error)';
-          } else {
-            validationEl.style.display = 'none';
-            text.inputEl.style.borderColor = '';
-          }
-
-          const trimmed = value.trim();
-          const nextCliPathsByHost = { ...claudeSettings.cliPathsByHost };
-          if (trimmed) {
-            nextCliPathsByHost[hostnameKey] = trimmed;
-          } else {
-            delete nextCliPathsByHost[hostnameKey];
-          }
-          updateClaudeProviderSettings(settingsBag, { cliPathsByHost: nextCliPathsByHost });
-          await context.plugin.saveSettings();
-          claudeWorkspace.cliResolver.reset();
-          const view = context.plugin.getView();
-          await view?.getTabManager()?.broadcastToAllTabs(
-            (service) => Promise.resolve(service.cleanup())
-          );
+          await persistCliPath(value);
         });
       text.inputEl.addClass('claudian-settings-cli-path-input');
       text.inputEl.style.width = '100%';
+      cliPathInputEl = text.inputEl;
 
-      const initialError = validatePath(currentValue);
-      if (initialError) {
-        validationEl.setText(initialError);
-        validationEl.style.display = 'block';
-        text.inputEl.style.borderColor = 'var(--text-error)';
-      }
+      updateCliPathValidation(currentValue, text.inputEl);
     });
   },
 };
