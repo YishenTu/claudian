@@ -197,16 +197,6 @@
       "name": "ユーザーClaude設定を読み込む",
       "desc": "~/.claude/settings.json を読み込みます。有効にすると、ユーザーの Claude Code 許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
-    "enableBlocklist": {
-      "name": "コマンドブラックリストを有効化",
-      "desc": "潜在的に危険なbashコマンドをブロック"
-    },
-    "blockedCommands": {
-      "name": "ブロックされたコマンド ({platform})",
-      "desc": "{platform} でブロックするパターン（1行に1つ）。正規表現をサポート。",
-      "unixName": "ブロックされたコマンド (Unix/Git Bash)",
-      "unixDesc": "Git Bashが呼び出せるため、UnixパターンもWindows上でブロックされます。"
-    },
     "claudeSafeMode": {
       "name": "Safe mode",
       "desc": "Permission mode used when the Safe toggle is active."

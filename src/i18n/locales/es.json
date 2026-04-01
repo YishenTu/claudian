@@ -197,16 +197,6 @@
       "name": "Cargar configuración de usuario Claude",
       "desc": "Carga ~/.claude/settings.json. Cuando está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
     },
-    "enableBlocklist": {
-      "name": "Habilitar lista negra de comandos",
-      "desc": "Bloquea comandos bash potencialmente peligrosos"
-    },
-    "blockedCommands": {
-      "name": "Comandos bloqueados ({platform})",
-      "desc": "Patrones a bloquear en {platform} (uno por línea). Soporta expresiones regulares.",
-      "unixName": "Comandos bloqueados (Unix/Git Bash)",
-      "unixDesc": "Los patrones Unix también se bloquean en Windows porque Git Bash puede invocarlos."
-    },
     "claudeSafeMode": {
       "name": "Safe mode",
       "desc": "Permission mode used when the Safe toggle is active."

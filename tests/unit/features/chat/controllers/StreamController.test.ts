@@ -248,7 +248,7 @@ describe('StreamController - Text Content', () => {
     });
   });
 
-  describe('Error and blocked handling', () => {
+  describe('Error and notice handling', () => {
     it('should append error message on error chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentTextEl = createMockEl();
@@ -261,12 +261,12 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.currentTextContent).toContain('Error');
     });
 
-    it('should append blocked message on blocked chunk', async () => {
+    it('should append warning notice on notice chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentTextEl = createMockEl();
 
       await controller.handleStreamChunk(
-        { type: 'blocked', content: 'Tool was blocked' },
+        { type: 'notice', content: 'Tool was blocked', level: 'warning' },
         msg
       );
 
@@ -274,28 +274,13 @@ describe('StreamController - Text Content', () => {
     });
   });
 
-  describe('assistant_message_id handling', () => {
-    it('should set assistantMessageId on message', async () => {
+  describe('context_compacted handling', () => {
+    it('should record a context_compacted block on the message', async () => {
       const msg = createTestMessage();
 
-      await controller.handleStreamChunk(
-        { type: 'assistant_message_id', uuid: 'asst-uuid-123' } as any,
-        msg
-      );
+      await controller.handleStreamChunk({ type: 'context_compacted' }, msg);
 
-      expect(msg.assistantMessageId).toBe('asst-uuid-123');
-    });
-
-    it('should overwrite previous assistantMessageId', async () => {
-      const msg = createTestMessage();
-      msg.assistantMessageId = 'old-uuid';
-
-      await controller.handleStreamChunk(
-        { type: 'assistant_message_id', uuid: 'new-uuid' } as any,
-        msg
-      );
-
-      expect(msg.assistantMessageId).toBe('new-uuid');
+      expect(msg.contentBlocks).toContainEqual({ type: 'context_compacted' });
     });
   });
 
@@ -628,7 +613,7 @@ describe('StreamController - Text Content', () => {
       );
       expect(deps.state.pendingTools.size).toBe(1);
 
-      await controller.handleStreamChunk({ type: 'blocked', content: 'Command blocked' }, msg);
+      await controller.handleStreamChunk({ type: 'notice', content: 'Command blocked', level: 'warning' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
       expect(renderToolCall).toHaveBeenCalled();
@@ -879,30 +864,19 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.usage).toEqual(usage);
     });
 
-    it('marks context window updates as authoritative', async () => {
+    it('uses authoritative usage chunks directly', async () => {
       const msg = createTestMessage();
-      deps.state.usage = createMockUsage({
+      const usage = createMockUsage({
         model: 'gpt-5.4',
-        contextWindow: 200000,
-        contextWindowIsAuthoritative: false,
-        contextTokens: 129200,
-        percentage: 65,
-      });
-
-      await controller.handleStreamChunk({ type: 'context_window_update', contextWindow: 258400 }, msg);
-
-      expect(deps.state.usage).toEqual({
-        ...createMockUsage({
-          model: 'gpt-5.4',
-          contextWindow: 200000,
-          contextWindowIsAuthoritative: false,
-          contextTokens: 129200,
-          percentage: 65,
-        }),
         contextWindow: 258400,
         contextWindowIsAuthoritative: true,
+        contextTokens: 129200,
         percentage: 50,
       });
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toEqual(usage);
     });
 
     it('should not update usage when ignoreUsageUpdates is true', async () => {
@@ -981,23 +955,6 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Subagent chunk handling', () => {
-    it('should ignore subagent chunk with text type (no-op)', async () => {
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
-        info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
-      });
-
-      await controller.handleStreamChunk(
-        { type: 'text', content: 'Subagent text', parentToolUseId: 'task-1' } as any,
-        msg
-      );
-
-      // No text appended to main message
-      expect(msg.content).toBe('');
-    });
-
     it('should handle subagent tool_result chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
@@ -1008,7 +965,7 @@ describe('StreamController - Text Content', () => {
       });
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'read-1', content: 'file content', parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_result', id: 'read-1', subagentId: 'task-1', content: 'file content' },
         msg
       );
 
@@ -1028,7 +985,7 @@ describe('StreamController - Text Content', () => {
       });
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, subagentId: 'task-1' },
         msg
       );
 
@@ -1045,7 +1002,7 @@ describe('StreamController - Text Content', () => {
       (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce(undefined);
 
       await controller.handleStreamChunk(
-        { type: 'text', content: 'orphan', parentToolUseId: 'unknown-task' } as any,
+        { type: 'subagent_tool_use', id: 'orphan-read', name: 'Read', input: { file_path: 'test.md' }, subagentId: 'unknown-task' },
         msg
       );
 
@@ -1226,7 +1183,7 @@ describe('StreamController - Text Content', () => {
 
       // Child chunk arrives with parentToolUseId - should trigger render
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, subagentId: 'task-1' },
         msg
       );
 
@@ -1257,7 +1214,7 @@ describe('StreamController - Text Content', () => {
 
       // Child chunk arrives - renderPendingTask returns null but shouldn't crash
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, subagentId: 'task-1' },
         msg
       );
 
@@ -1762,6 +1719,14 @@ describe('StreamController - Text Content', () => {
       const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
+      deps.getAgentService = () => ({
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          supportsPlanMode: true,
+          planPathPrefix: '/.codex/plans/',
+        }),
+      }) as any;
 
       const subagentState = {
         info: { id: 'spawn-1', description: 'Codex subagent', prompt: '', status: 'running', toolCalls: [] },
@@ -2128,7 +2093,7 @@ describe('StreamController - Plan Mode', () => {
       }];
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'bash-1', content: 'Command blocked by security policy' },
+        { type: 'tool_result', id: 'bash-1', content: 'Access denied by user approval' },
         msg
       );
 

@@ -55,7 +55,6 @@ import {
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { FileContextManager } from '../ui/FileContext';
-import { calculateUsagePercentage } from '../utils/usageInfo';
 
 export interface StreamControllerDeps {
   plugin: ClaudianPlugin;
@@ -96,13 +95,6 @@ export class StreamController {
 
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
     const { state } = this.deps;
-
-    // Route subagent chunks
-    if ('parentToolUseId' in chunk && chunk.parentToolUseId) {
-      await this.handleSubagentChunk(chunk, msg);
-      this.scrollToBottom();
-      return;
-    }
 
     switch (chunk.type) {
       case 'thinking':
@@ -161,14 +153,18 @@ export class StreamController {
         break;
       }
 
+      case 'subagent_tool_use':
+      case 'subagent_tool_result':
+        await this.handleSubagentChunk(chunk, msg);
+        break;
+
       case 'tool_output':
         this.handleToolOutput(chunk, msg);
         break;
 
-      case 'blocked':
-        // Flush pending tools before rendering blocked message
+      case 'notice':
         this.flushPendingTools();
-        await this.appendText(`\n\n⚠️ **Blocked:** ${chunk.content}`);
+        await this.appendText(`\n\n⚠️ **${chunk.level === 'warning' ? 'Blocked' : 'Notice'}:** ${chunk.content}`);
         break;
 
       case 'error':
@@ -182,25 +178,17 @@ export class StreamController {
         this.flushPendingTools();
         break;
 
-      case 'compact_boundary': {
+      case 'context_compacted': {
         this.flushPendingTools();
         if (state.currentThinkingState) {
           this.finalizeCurrentThinkingBlock(msg);
         }
         this.finalizeCurrentTextBlock(msg);
         msg.contentBlocks = msg.contentBlocks || [];
-        msg.contentBlocks.push({ type: 'compact_boundary' });
+        msg.contentBlocks.push({ type: 'context_compacted' });
         this.renderCompactBoundary();
         break;
       }
-
-      case 'assistant_message_id':
-        msg.assistantMessageId = chunk.uuid;
-        break;
-
-      case 'user_message_id':
-      case 'user_message_sent':
-        break;
 
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
@@ -221,16 +209,6 @@ export class StreamController {
           state.usage = activeModel && !chunk.usage.model
             ? { ...chunk.usage, model: activeModel }
             : chunk.usage;
-        }
-        break;
-      }
-
-      case 'context_window_update': {
-        // Authoritative context window from SDK result — override heuristic value
-        if (state.usage && chunk.contextWindow > 0) {
-          const contextWindow = chunk.contextWindow;
-          const percentage = calculateUsagePercentage(state.usage.contextTokens, contextWindow);
-          state.usage = { ...state.usage, contextWindow, contextWindowIsAuthoritative: true, percentage };
         }
         break;
       }
@@ -795,11 +773,11 @@ export class StreamController {
     }
   }
 
-  private async handleSubagentChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
-    if (!('parentToolUseId' in chunk) || !chunk.parentToolUseId) {
-      return;
-    }
-    const parentToolUseId = chunk.parentToolUseId;
+  private async handleSubagentChunk(
+    chunk: Extract<StreamChunk, { type: 'subagent_tool_use' | 'subagent_tool_result' }>,
+    msg: ChatMessage,
+  ): Promise<void> {
+    const parentToolUseId = chunk.subagentId;
     const { subagentManager } = this.deps;
 
     // If parent Agent call is still pending, child chunk confirms it's sync - render now
@@ -814,7 +792,7 @@ export class StreamController {
     }
 
     switch (chunk.type) {
-      case 'tool_use': {
+      case 'subagent_tool_use': {
         const toolCall: ToolCallInfo = {
           id: chunk.id,
           name: chunk.name,
@@ -827,7 +805,7 @@ export class StreamController {
         break;
       }
 
-      case 'tool_result': {
+      case 'subagent_tool_result': {
         const toolCall = subagentState.info.toolCalls.find((tc: ToolCallInfo) => tc.id === chunk.id);
         if (toolCall) {
           const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
@@ -837,10 +815,6 @@ export class StreamController {
         }
         break;
       }
-
-      case 'text':
-      case 'thinking':
-        break;
 
       default:
         break;

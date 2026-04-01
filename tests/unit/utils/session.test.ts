@@ -119,12 +119,12 @@ describe('session utilities', () => {
         name: 'Bash',
         input: { command: 'rm -rf /' },
         status: 'blocked',
-        result: 'Command blocked by security policy',
+        result: 'Access denied by user approval',
       };
 
       const result = formatToolCallForContext(toolCall);
 
-      expect(result).toBe('[Tool Bash input: command=rm -rf / status=blocked] error: Command blocked by security policy');
+      expect(result).toBe('[Tool Bash input: command=rm -rf / status=blocked] error: Access denied by user approval');
     });
 
     it('truncates long input values', () => {

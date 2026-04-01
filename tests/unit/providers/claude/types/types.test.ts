@@ -7,10 +7,6 @@ import type {
   ToolCallInfo
 } from '@/core/types';
 import {
-  getBashToolBlockedCommands,
-  getCurrentPlatformBlockedCommands,
-  getCurrentPlatformKey,
-  getDefaultBlockedCommands,
   VIEW_TYPE_CLAUDIAN
 } from '@/core/types';
 import type { ClaudianSettings } from '@/core/types/settings';
@@ -38,41 +34,8 @@ describe('types.ts', () => {
   });
 
   describe('DEFAULT_SETTINGS', () => {
-    it('should have enableBlocklist set to true by default', () => {
-      expect(DEFAULT_SETTINGS.enableBlocklist).toBe(true);
-    });
-
-    it('should have default blocked commands as platform-keyed object', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('unix');
-      expect(DEFAULT_SETTINGS.blockedCommands).toHaveProperty('windows');
-      expect(DEFAULT_SETTINGS.blockedCommands.unix).toBeInstanceOf(Array);
-      expect(DEFAULT_SETTINGS.blockedCommands.windows).toBeInstanceOf(Array);
-      expect(DEFAULT_SETTINGS.blockedCommands.unix.length).toBeGreaterThan(0);
-      expect(DEFAULT_SETTINGS.blockedCommands.windows.length).toBeGreaterThan(0);
-    });
-
-    it('should block rm -rf by default on Unix', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands.unix).toContain('rm -rf');
-    });
-
-    it('should block chmod 777 by default on Unix', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands.unix).toContain('chmod 777');
-    });
-
-    it('should block chmod -R 777 by default on Unix', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands.unix).toContain('chmod -R 777');
-    });
-
-    it('should block dangerous commands on Windows', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands.windows).toContain('Remove-Item -Recurse -Force');
-      expect(DEFAULT_SETTINGS.blockedCommands.windows).toContain('Format-Volume');
-    });
-
-    it('should only contain non-empty default blocked commands', () => {
-      expect(DEFAULT_SETTINGS.blockedCommands.unix.every((cmd) => cmd.trim().length > 0)).toBe(true);
-      expect(new Set(DEFAULT_SETTINGS.blockedCommands.unix).size).toBe(DEFAULT_SETTINGS.blockedCommands.unix.length);
-      expect(DEFAULT_SETTINGS.blockedCommands.windows.every((cmd) => cmd.trim().length > 0)).toBe(true);
-      expect(new Set(DEFAULT_SETTINGS.blockedCommands.windows).size).toBe(DEFAULT_SETTINGS.blockedCommands.windows.length);
+    it('should default to yolo permission mode', () => {
+      expect(DEFAULT_SETTINGS.permissionMode).toBe('yolo');
     });
 
     it('should have sharedEnvironmentVariables as empty string by default', () => {
@@ -96,9 +59,6 @@ describe('types.ts', () => {
     it('should be assignable with valid settings', () => {
       const settings: ClaudianSettings = {
         userName: '',
-        enableBlocklist: false,
-
-        blockedCommands: { unix: ['test'], windows: ['test-win'] },
         model: 'haiku',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
@@ -140,17 +100,13 @@ describe('types.ts', () => {
         savedProviderThinkingBudget: {},
       };
 
-      expect(settings.enableBlocklist).toBe(false);
-      expect(settings.blockedCommands).toEqual({ unix: ['test'], windows: ['test-win'] });
+      expect(settings.permissionMode).toBe('yolo');
       expect(settings.model).toBe('haiku');
     });
 
     it('should accept custom model strings', () => {
       const settings: ClaudianSettings = {
         userName: '',
-        enableBlocklist: true,
-
-        blockedCommands: { unix: [], windows: [] },
         model: 'anthropic/custom-model-v1',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
@@ -198,9 +154,6 @@ describe('types.ts', () => {
     it('should accept optional lastClaudeModel and lastCustomModel', () => {
       const settings: ClaudianSettings = {
         userName: '',
-        enableBlocklist: true,
-
-        blockedCommands: { unix: [], windows: [] },
         model: 'sonnet',
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
@@ -417,15 +370,16 @@ describe('types.ts', () => {
       if (chunk.type === 'error') expect(chunk.content).toBe('Something went wrong');
     });
 
-    it('should accept blocked type', () => {
+    it('should accept warning notice type', () => {
       const chunk: StreamChunk = {
-        type: 'blocked',
+        type: 'notice',
         content: 'Command blocked: rm -rf',
+        level: 'warning',
       };
 
-      expect(chunk.type).toBe('blocked');
+      expect(chunk.type).toBe('notice');
       // eslint-disable-next-line jest/no-conditional-expect
-      if (chunk.type === 'blocked') expect(chunk.content).toBe('Command blocked: rm -rf');
+      if (chunk.type === 'notice') expect(chunk.content).toBe('Command blocked: rm -rf');
     });
 
     it('should accept done type', () => {
@@ -526,75 +480,6 @@ describe('types.ts', () => {
 
       expect(meta.messageCount).toBe(0);
       expect(meta.preview).toBe('New conversation');
-    });
-  });
-
-  describe('Blocked commands helpers', () => {
-    describe('getDefaultBlockedCommands', () => {
-      it('returns fresh copies each call', () => {
-        const a = getDefaultBlockedCommands();
-        const b = getDefaultBlockedCommands();
-        expect(a).toEqual(b);
-        expect(a).not.toBe(b);
-        expect(a.unix).not.toBe(b.unix);
-      });
-    });
-
-    describe('getCurrentPlatformKey', () => {
-      const originalPlatform = process.platform;
-
-      afterEach(() => {
-        Object.defineProperty(process, 'platform', { value: originalPlatform });
-      });
-
-      it('returns unix for non-Windows platforms', () => {
-        Object.defineProperty(process, 'platform', { value: 'darwin' });
-        expect(getCurrentPlatformKey()).toBe('unix');
-      });
-
-      it('returns windows for win32', () => {
-        Object.defineProperty(process, 'platform', { value: 'win32' });
-        expect(getCurrentPlatformKey()).toBe('windows');
-      });
-    });
-
-    describe('getCurrentPlatformBlockedCommands', () => {
-      it('returns commands for current platform', () => {
-        const commands = getDefaultBlockedCommands();
-        const result = getCurrentPlatformBlockedCommands(commands);
-        expect(Array.isArray(result)).toBe(true);
-        expect(result.length).toBeGreaterThan(0);
-      });
-    });
-
-    describe('getBashToolBlockedCommands', () => {
-      const originalPlatform = process.platform;
-
-      afterEach(() => {
-        Object.defineProperty(process, 'platform', { value: originalPlatform });
-      });
-
-      it('returns unix commands on non-Windows', () => {
-        Object.defineProperty(process, 'platform', { value: 'darwin' });
-        const commands = getDefaultBlockedCommands();
-        const result = getBashToolBlockedCommands(commands);
-        expect(result).toEqual(commands.unix);
-      });
-
-      it('returns merged unix and windows commands on Windows', () => {
-        Object.defineProperty(process, 'platform', { value: 'win32' });
-        const commands = getDefaultBlockedCommands();
-        const result = getBashToolBlockedCommands(commands);
-        // Should contain commands from both platforms
-        for (const cmd of commands.unix) {
-          expect(result).toContain(cmd);
-        }
-        for (const cmd of commands.windows) {
-          expect(result).toContain(cmd);
-        }
-        // Should be deduplicated
-        expect(new Set(result).size).toBe(result.length);
-      });
     });
   });
 

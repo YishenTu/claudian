@@ -8,7 +8,6 @@ import {
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '../../core/providers/types';
-import { getCurrentPlatformKey } from '../../core/types';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
@@ -429,65 +428,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
     addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-session', 'settings.newSessionHotkey');
     addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-tab', 'settings.newTabHotkey');
     addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:close-current-tab', 'settings.closeTabHotkey');
-
-    new Setting(container).setName(t('settings.safety')).setHeading();
-
-    new Setting(container)
-      .setName(t('settings.enableBlocklist.name'))
-      .setDesc(t('settings.enableBlocklist.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableBlocklist)
-          .onChange(async (value) => {
-            this.plugin.settings.enableBlocklist = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    const platformKey = getCurrentPlatformKey();
-    const isWindows = platformKey === 'windows';
-    const platformLabel = isWindows ? 'Windows' : 'Unix';
-
-    new Setting(container)
-      .setName(t('settings.blockedCommands.name', { platform: platformLabel }))
-      .setDesc(t('settings.blockedCommands.desc', { platform: platformLabel }))
-      .addTextArea((text) => {
-        const placeholder = isWindows
-          ? 'del /s /q\nrd /s /q\nRemove-Item -Recurse -Force'
-          : 'rm -rf\nchmod 777\nmkfs';
-        text
-          .setPlaceholder(placeholder)
-          .setValue(this.plugin.settings.blockedCommands[platformKey].join('\n'))
-          .onChange(async (value) => {
-            this.plugin.settings.blockedCommands[platformKey] = value
-              .split(/\r?\n/)
-              .map((entry) => entry.trim())
-              .filter((entry) => entry.length > 0);
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.rows = 6;
-        text.inputEl.cols = 40;
-      });
-
-    if (isWindows) {
-      new Setting(container)
-        .setName(t('settings.blockedCommands.unixName'))
-        .setDesc(t('settings.blockedCommands.unixDesc'))
-        .addTextArea((text) => {
-          text
-            .setPlaceholder('rm -rf\nchmod 777\nmkfs')
-            .setValue(this.plugin.settings.blockedCommands.unix.join('\n'))
-            .onChange(async (value) => {
-              this.plugin.settings.blockedCommands.unix = value
-                .split(/\r?\n/)
-                .map((entry) => entry.trim())
-                .filter((entry) => entry.length > 0);
-              await this.plugin.saveSettings();
-            });
-          text.inputEl.rows = 4;
-          text.inputEl.cols = 40;
-        });
-    }
   }
 
   private renderHiddenProviderCommandSetting(

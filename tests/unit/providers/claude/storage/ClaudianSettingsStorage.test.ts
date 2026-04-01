@@ -1,10 +1,10 @@
+import '@/providers';
+
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { getDefaultBlockedCommands, type PlatformBlockedCommands } from '@/core/types';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import {
   CLAUDIAN_SETTINGS_PATH,
   ClaudianSettingsStorage,
-  normalizeBlockedCommands,
 } from '@/providers/claude/storage/ClaudianSettingsStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
@@ -54,9 +54,10 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
     });
 
-    it('should normalize blockedCommands from loaded data', async () => {
+    it('should strip legacy blocklist fields from loaded data', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
+        enableBlocklist: false,
         blockedCommands: {
           unix: ['custom-unix-cmd'],
           windows: ['custom-win-cmd'],
@@ -64,9 +65,12 @@ describe('ClaudianSettingsStorage', () => {
       }));
 
       const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect((result.blockedCommands as PlatformBlockedCommands).unix).toContain('custom-unix-cmd');
-      expect((result.blockedCommands as PlatformBlockedCommands).windows).toContain('custom-win-cmd');
+      expect('enableBlocklist' in result).toBe(false);
+      expect('blockedCommands' in result).toBe(false);
+      expect(writtenContent).not.toHaveProperty('enableBlocklist');
+      expect(writtenContent).not.toHaveProperty('blockedCommands');
     });
 
     it('should normalize claudeCliPathsByHost from loaded data', async () => {
@@ -344,98 +348,5 @@ describe('ClaudianSettingsStorage', () => {
       const writtenContent = JSON.parse(writeCall[1]);
       expect(writtenContent.providerConfigs.claude.environmentHash).toBe('abc123');
     });
-  });
-});
-
-describe('normalizeBlockedCommands', () => {
-  const defaults = getDefaultBlockedCommands();
-
-  it('should return defaults for null input', () => {
-    const result = normalizeBlockedCommands(null);
-
-    expect(result.unix).toEqual(defaults.unix);
-    expect(result.windows).toEqual(defaults.windows);
-  });
-
-  it('should return defaults for undefined input', () => {
-    const result = normalizeBlockedCommands(undefined);
-
-    expect(result.unix).toEqual(defaults.unix);
-    expect(result.windows).toEqual(defaults.windows);
-  });
-
-  it('should migrate old string[] format to platform-keyed structure', () => {
-    const oldFormat = ['custom-cmd-1', 'custom-cmd-2'];
-
-    const result = normalizeBlockedCommands(oldFormat);
-
-    expect(result.unix).toEqual(['custom-cmd-1', 'custom-cmd-2']);
-    expect(result.windows).toEqual(defaults.windows);
-  });
-
-  it('should normalize valid platform-keyed object', () => {
-    const input = {
-      unix: ['unix-cmd'],
-      windows: ['windows-cmd'],
-    };
-
-    const result = normalizeBlockedCommands(input);
-
-    expect(result.unix).toEqual(['unix-cmd']);
-    expect(result.windows).toEqual(['windows-cmd']);
-  });
-
-  it('should filter out non-string entries', () => {
-    const input = {
-      unix: ['valid', 123, null, 'also-valid'] as unknown[],
-      windows: [true, 'windows-cmd', {}] as unknown[],
-    };
-
-    const result = normalizeBlockedCommands(input);
-
-    expect(result.unix).toEqual(['valid', 'also-valid']);
-    expect(result.windows).toEqual(['windows-cmd']);
-  });
-
-  it('should trim whitespace from commands', () => {
-    const input = {
-      unix: ['  cmd1  ', 'cmd2  '],
-      windows: ['  win-cmd  '],
-    };
-
-    const result = normalizeBlockedCommands(input);
-
-    expect(result.unix).toEqual(['cmd1', 'cmd2']);
-    expect(result.windows).toEqual(['win-cmd']);
-  });
-
-  it('should filter out empty strings after trimming', () => {
-    const input = {
-      unix: ['cmd1', '   ', '', 'cmd2'],
-      windows: ['', 'win-cmd'],
-    };
-
-    const result = normalizeBlockedCommands(input);
-
-    expect(result.unix).toEqual(['cmd1', 'cmd2']);
-    expect(result.windows).toEqual(['win-cmd']);
-  });
-
-  it('should use defaults for missing platform keys', () => {
-    const input = {
-      unix: ['custom-unix'],
-      // windows is missing
-    };
-
-    const result = normalizeBlockedCommands(input);
-
-    expect(result.unix).toEqual(['custom-unix']);
-    expect(result.windows).toEqual(defaults.windows);
-  });
-
-  it('should handle non-object, non-array input', () => {
-    expect(normalizeBlockedCommands('string')).toEqual(defaults);
-    expect(normalizeBlockedCommands(123)).toEqual(defaults);
-    expect(normalizeBlockedCommands(true)).toEqual(defaults);
   });
 });

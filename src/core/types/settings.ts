@@ -1,95 +1,8 @@
-const UNIX_BLOCKED_COMMANDS = [
-  'rm -rf',
-  'chmod 777',
-  'chmod -R 777',
-];
-
-/** Platform-specific blocked commands (Windows - both CMD and PowerShell). */
-const WINDOWS_BLOCKED_COMMANDS = [
-  // CMD commands
-  'del /s /q',
-  'rd /s /q',
-  'rmdir /s /q',
-  'format',
-  'diskpart',
-  // PowerShell Remove-Item variants (full and abbreviated flags)
-  'Remove-Item -Recurse -Force',
-  'Remove-Item -Force -Recurse',
-  'Remove-Item -r -fo',
-  'Remove-Item -fo -r',
-  'Remove-Item -Recurse',
-  'Remove-Item -r',
-  // PowerShell aliases for Remove-Item
-  'ri -Recurse',
-  'ri -r',
-  'ri -Force',
-  'ri -fo',
-  'rm -r -fo',
-  'rm -Recurse',
-  'rm -Force',
-  'del -Recurse',
-  'del -Force',
-  'erase -Recurse',
-  'erase -Force',
-  // PowerShell directory removal aliases
-  'rd -Recurse',
-  'rmdir -Recurse',
-  // Dangerous disk/volume commands
-  'Format-Volume',
-  'Clear-Disk',
-  'Initialize-Disk',
-  'Remove-Partition',
-];
-
-export interface PlatformBlockedCommands {
-  unix: string[];
-  windows: string[];
-}
-
 export type HiddenProviderCommands = Record<string, string[]>;
 
-export function getDefaultBlockedCommands(): PlatformBlockedCommands {
-  return {
-    unix: [...UNIX_BLOCKED_COMMANDS],
-    windows: [...WINDOWS_BLOCKED_COMMANDS],
-  };
-}
-
-export function getCurrentPlatformKey(): keyof PlatformBlockedCommands {
-  return process.platform === 'win32' ? 'windows' : 'unix';
-}
-
-export function getCurrentPlatformBlockedCommands(commands: PlatformBlockedCommands): string[] {
-  return commands[getCurrentPlatformKey()];
-}
-
-/**
- * Get blocked commands for the Bash tool.
- *
- * On Windows, the Bash tool runs in a Git Bash/MSYS2 environment but can still
- * invoke Windows commands (e.g., via `cmd /c` or `powershell`), so both Unix
- * and Windows blocklist patterns are merged.
- */
-export function getBashToolBlockedCommands(commands: PlatformBlockedCommands): string[] {
-  if (process.platform === 'win32') {
-    return Array.from(new Set([...commands.unix, ...commands.windows]));
-  }
-  return getCurrentPlatformBlockedCommands(commands);
-}
-
-export interface ApprovalExecPolicyAmendmentDecision {
-  type: 'allow-with-exec-policy-amendment';
-  execPolicyAmendment: string[];
-}
-
-export interface ApprovalNetworkPolicyAmendment {
-  host: string;
-  action: string;
-}
-
-export interface ApprovalNetworkPolicyAmendmentDecision {
-  type: 'apply-network-policy-amendment';
-  networkPolicyAmendment: ApprovalNetworkPolicyAmendment;
+export interface ApprovalSelectionDecision {
+  type: 'select-option';
+  value: string;
 }
 
 /** User decision from the approval modal. */
@@ -98,8 +11,7 @@ export type ApprovalDecision =
   | 'allow-always'
   | 'deny'
   | 'cancel'
-  | ApprovalExecPolicyAmendmentDecision
-  | ApprovalNetworkPolicyAmendmentDecision;
+  | ApprovalSelectionDecision;
 
 /** Saved environment variable configuration. */
 export interface EnvSnippet {
@@ -175,8 +87,6 @@ export interface ClaudianSettings {
   userName: string;
 
   // Security
-  enableBlocklist: boolean;
-  blockedCommands: PlatformBlockedCommands;
   permissionMode: PermissionMode;
 
   // Model & thinking (provider interprets values)

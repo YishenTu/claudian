@@ -36,11 +36,6 @@ function createMockPluginManager() {
 // Create a mock settings object
 function createMockSettings(overrides: Partial<ClaudianSettings> = {}): ClaudianSettings {
   return {
-    enableBlocklist: true,
-    blockedCommands: {
-      unix: ['rm -rf'],
-      windows: ['Remove-Item -Recurse -Force'],
-    },
     permissions: [],
     permissionMode: 'yolo',
     claudeSafeMode: 'acceptEdits',

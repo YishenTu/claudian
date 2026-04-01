@@ -197,16 +197,6 @@
       "name": "Benutzer-Claude-Einstellungen laden",
       "desc": "Lädt ~/.claude/settings.json. Wenn aktiviert, können Benutzer-Claude-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
-    "enableBlocklist": {
-      "name": "Befehlsblockliste aktivieren",
-      "desc": "Blockiert potenziell gefährliche Bash-Befehle"
-    },
-    "blockedCommands": {
-      "name": "Blockierte Befehle ({platform})",
-      "desc": "Muster zum Blockieren auf {platform} (einer pro Zeile). Unterstützt Regex.",
-      "unixName": "Blockierte Befehle (Unix/Git Bash)",
-      "unixDesc": "Unix-Muster werden auch auf Windows blockiert, da Git Bash sie aufrufen kann."
-    },
     "claudeSafeMode": {
       "name": "Safe mode",
       "desc": "Permission mode used when the Safe toggle is active."

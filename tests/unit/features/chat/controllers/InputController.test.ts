@@ -86,6 +86,7 @@ function createMockAgentService() {
     clearApprovedPlanContent: jest.fn(),
     ensureReady: jest.fn().mockResolvedValue(true),
     getSessionId: jest.fn().mockReturnValue(null),
+    consumeTurnMetadata: jest.fn().mockReturnValue({}),
   };
 }
 
@@ -118,8 +119,6 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     plugin: {
       saveSettings: jest.fn(),
       settings: {
-        blockedCommands: { unix: [], windows: [] },
-        enableBlocklist: true,
         permissionMode: 'yolo',
         enableAutoTitleGeneration: true,
       },
@@ -2242,14 +2241,13 @@ describe('InputController - Message Queue', () => {
       expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { resumeAtMessageId: undefined });
     });
 
-    it('should clear resumeAtMessageId on save when user_message_sent is received', async () => {
+    it('should clear resumeAtMessageId on save when turn metadata reports the message was sent', async () => {
       deps = createSendableDeps();
       const { mockAgentService } = deps as any;
       mockAgentService.setResumeCheckpoint = jest.fn();
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ wasSent: true });
       mockAgentService.query = jest.fn().mockReturnValue(
         createMockStream([
-          { type: 'user_message_id', uuid: 'u-new' },
-          { type: 'user_message_sent', uuid: 'u-new' },
           { type: 'text', content: 'hi' },
           { type: 'done' },
         ])
@@ -2271,7 +2269,7 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // save(true) should include { resumeAtMessageId: undefined } because user_message_sent was received
+      // save(true) should include { resumeAtMessageId: undefined } because the turn metadata reports a sent message
       expect(deps.conversationController.save).toHaveBeenCalledWith(true, { resumeAtMessageId: undefined });
     });
 
@@ -2340,25 +2338,25 @@ describe('InputController - Message Queue', () => {
         restorePrePlanPermissionModeIfNeeded: jest.fn(),
       });
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
       mockAgentService.query = jest.fn().mockImplementation(() =>
         createMockStream([
           { type: 'text', content: 'Here is my plan...' },
-          { type: 'plan_completed' },
           { type: 'done' },
         ]),
       );
       const inputEl = deps.getInputEl();
       inputEl.value = 'Plan the migration';
       const controller = new InputController(deps);
+      const showPlanApproval = jest.spyOn(controller as any, 'showPlanApproval').mockResolvedValue({
+        decision: null,
+        invalidated: false,
+      });
 
-      // showPlanApproval returns null (cancelled) by default when there's no real DOM
       await controller.sendMessage();
 
-      // The plan_completed chunk should have been consumed (not passed to StreamController)
-      expect(deps.streamController.handleStreamChunk).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'plan_completed' }),
-        expect.anything(),
-      );
+      expect(showPlanApproval).toHaveBeenCalled();
     });
 
     it('implement restores mode and auto-sends follow-up', async () => {
@@ -2367,6 +2365,10 @@ describe('InputController - Message Queue', () => {
         restorePrePlanPermissionModeIfNeeded: restoreFn,
       });
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn()
+        .mockReturnValueOnce({ planCompleted: true, wasSent: true })
+        .mockReturnValueOnce({ wasSent: true });
 
       let callCount = 0;
       mockAgentService.query = jest.fn().mockImplementation(() => {
@@ -2374,7 +2376,6 @@ describe('InputController - Message Queue', () => {
         if (callCount === 1) {
           return createMockStream([
             { type: 'text', content: 'Plan content' },
-            { type: 'plan_completed' },
             { type: 'done' },
           ]);
         }
@@ -2392,6 +2393,7 @@ describe('InputController - Message Queue', () => {
       const inputEl = deps.getInputEl();
       inputEl.value = 'Plan this feature';
       await controller.sendMessage();
+      await new Promise(resolve => setTimeout(resolve, 0));
 
       expect(restoreFn).toHaveBeenCalled();
       // Auto-send should have been triggered
@@ -2404,10 +2406,11 @@ describe('InputController - Message Queue', () => {
         restorePrePlanPermissionModeIfNeeded: restoreFn,
       });
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
       mockAgentService.query = jest.fn().mockImplementation(() =>
         createMockStream([
           { type: 'text', content: 'Plan content' },
-          { type: 'plan_completed' },
           { type: 'done' },
         ]),
       );
@@ -2442,10 +2445,11 @@ describe('InputController - Message Queue', () => {
       };
 
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
       mockAgentService.query = jest.fn().mockImplementation(() =>
         createMockStream([
           { type: 'text', content: 'Plan content' },
-          { type: 'plan_completed' },
           { type: 'done' },
         ]),
       );
@@ -2477,10 +2481,11 @@ describe('InputController - Message Queue', () => {
         restorePrePlanPermissionModeIfNeeded: restoreFn,
       });
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
       mockAgentService.query = jest.fn().mockImplementation(() =>
         createMockStream([
           { type: 'text', content: 'Plan content' },
-          { type: 'plan_completed' },
           { type: 'done' },
         ]),
       );
@@ -2510,10 +2515,11 @@ describe('InputController - Message Queue', () => {
         restorePrePlanPermissionModeIfNeeded: restoreFn,
       });
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
       mockAgentService.query = jest.fn().mockImplementation(() =>
         createMockStream([
           { type: 'text', content: 'Plan content' },
-          { type: 'plan_completed' },
           { type: 'done' },
         ]),
       );
@@ -2541,10 +2547,11 @@ describe('InputController - Message Queue', () => {
         restorePrePlanPermissionModeIfNeeded: restoreFn,
       });
       const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
       mockAgentService.query = jest.fn().mockImplementation(() =>
         createMockStream([
           { type: 'text', content: 'Plan content' },
-          { type: 'plan_completed' },
           { type: 'done' },
         ]),
       );

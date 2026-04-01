@@ -61,8 +61,8 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       expect(plugin.settings).toBeDefined();
-      expect(plugin.settings.enableBlocklist).toBe(DEFAULT_SETTINGS.enableBlocklist);
-      expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
+      expect(plugin.settings.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
+      expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
     });
 
     // Note: With multi-tab, agentService is per-tab via TabManager, not on plugin
@@ -184,7 +184,7 @@ describe('ClaudianPlugin', () => {
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
         if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({
-            enableBlocklist: false,
+            userName: 'TestUser',
           });
         }
         return '';
@@ -192,19 +192,18 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      expect(plugin.settings.enableBlocklist).toBe(false);
-      // Should still have defaults for blockedCommands
-      expect(plugin.settings.blockedCommands).toEqual(DEFAULT_SETTINGS.blockedCommands);
+      expect(plugin.settings.userName).toBe('TestUser');
+      expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
     });
 
-    it('should normalize blockedCommands when stored value is partial', async () => {
-      // Mock claudian-settings.json exists with partial blockedCommands
+    it('should strip legacy blocklist fields when loading old settings', async () => {
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
         return path === '.claude/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
         if (path === '.claude/claudian-settings.json') {
           return JSON.stringify({
+            enableBlocklist: false,
             blockedCommands: { unix: ['rm -rf', '  '] },
           });
         }
@@ -213,8 +212,19 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      expect(plugin.settings.blockedCommands.unix).toEqual(['rm -rf']);
-      expect(plugin.settings.blockedCommands.windows).toEqual(DEFAULT_SETTINGS.blockedCommands.windows);
+      expect('enableBlocklist' in plugin.settings).toBe(false);
+      expect('blockedCommands' in plugin.settings).toBe(false);
+      expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
+        '.claude/claudian-settings.json',
+        expect.any(String),
+      );
+      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+        ([path]) => path === '.claude/claudian-settings.json',
+      );
+      expect(writeCall).toBeDefined();
+      const content = JSON.parse(writeCall[1]);
+      expect(content).not.toHaveProperty('enableBlocklist');
+      expect(content).not.toHaveProperty('blockedCommands');
     });
 
     it('should use defaults when no saved data', async () => {
@@ -264,14 +274,12 @@ describe('ClaudianPlugin', () => {
     it('should save settings to file', async () => {
       await plugin.onload();
 
-      plugin.settings.enableBlocklist = false;
-
       await plugin.saveSettings();
 
       // Claudian-specific settings should be written to .claude/claudian-settings.json
       expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
         '.claude/claudian-settings.json',
-        expect.stringContaining('"enableBlocklist": false')
+        expect.any(String)
       );
 
       // The written content should include state fields
@@ -284,6 +292,8 @@ describe('ClaudianPlugin', () => {
       expect(content).toHaveProperty('providerConfigs.claude.environmentHash');
       expect(content).toHaveProperty('providerConfigs.claude.lastModel');
       expect(content).toHaveProperty('lastCustomModel');
+      expect(content).not.toHaveProperty('enableBlocklist');
+      expect(content).not.toHaveProperty('blockedCommands');
       // Permissions are now in .claude/settings.json (CC format), not claudian-settings.json
       expect(content).not.toHaveProperty('permissions');
     });

@@ -387,21 +387,6 @@ export class InputController {
       // This prevents duplication when rebuilding context for new sessions
       const previousMessages = state.messages.slice(0, -2);
       for await (const chunk of agentService.query(preparedTurn, previousMessages)) {
-        if (chunk.type === 'user_message_id') {
-          userMsg.userMessageId = chunk.uuid;
-          continue;
-        }
-
-        if (chunk.type === 'user_message_sent') {
-          didEnqueueToSdk = true;
-          continue;
-        }
-
-        if (chunk.type === 'plan_completed') {
-          planCompleted = true;
-          continue;
-        }
-
         if (state.streamGeneration !== streamGeneration) {
           wasInvalidated = true;
           break;
@@ -417,6 +402,12 @@ export class InputController {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
     } finally {
+      const turnMetadata = agentService.consumeTurnMetadata();
+      userMsg.userMessageId = turnMetadata.userMessageId ?? userMsg.userMessageId;
+      assistantMsg.assistantMessageId = turnMetadata.assistantMessageId ?? assistantMsg.assistantMessageId;
+      didEnqueueToSdk = didEnqueueToSdk || turnMetadata.wasSent === true;
+      planCompleted = planCompleted || turnMetadata.planCompleted === true;
+
       // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks)
       state.clearFlavorTimerInterval();
 
@@ -431,7 +422,7 @@ export class InputController {
         state.cancelRequested = false;
 
         // Capture response duration before resetting state (skip for interrupted responses and compaction)
-        const hasCompactBoundary = assistantMsg.contentBlocks?.some(b => b.type === 'compact_boundary');
+        const hasCompactBoundary = assistantMsg.contentBlocks?.some(b => b.type === 'context_compacted');
         if (!didCancelThisTurn && !hasCompactBoundary) {
           const durationSeconds = state.responseStartTime
             ? Math.floor((performance.now() - state.responseStartTime) / 1000)
@@ -857,8 +848,10 @@ export class InputController {
     const decisionOptions = approvalOptions?.decisionOptions ?? DEFAULT_APPROVAL_DECISION_OPTIONS;
     const optionDecisionMap = new Map<string, ApprovalDecision>();
     const questionOptions = decisionOptions.map((option, index) => {
-      const value = option.value ?? `approval-option-${index}`;
-      optionDecisionMap.set(value, option.decision);
+      const value = option.value || `approval-option-${index}`;
+      if (option.decision) {
+        optionDecisionMap.set(value, option.decision);
+      }
       return {
         label: option.label,
         description: option.description ?? '',
@@ -886,14 +879,20 @@ export class InputController {
     if (!result) return 'cancel';
     const selected = Object.values(result)[0];
     const selectedValue = Array.isArray(selected) ? selected[0] : selected;
-    const decision = typeof selectedValue === 'string'
-      ? optionDecisionMap.get(selectedValue)
-      : undefined;
-    if (!decision) {
+    if (typeof selectedValue !== 'string') {
       new Notice(`Unexpected approval selection: "${String(selectedValue)}"`);
       return 'cancel';
     }
-    return decision;
+
+    const decision = optionDecisionMap.get(selectedValue);
+    if (decision) {
+      return decision;
+    }
+
+    return {
+      type: 'select-option',
+      value: selectedValue,
+    };
   }
 
   async handleAskUserQuestion(

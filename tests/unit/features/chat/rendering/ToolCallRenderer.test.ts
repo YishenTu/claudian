@@ -603,7 +603,6 @@ describe('ToolCallRenderer', () => {
 
   describe('isBlockedToolResult', () => {
     it.each([
-      'Blocked by blocklist: /etc/passwd',
       'Path is outside the vault',
       'Access Denied for this file',
       'User denied the action',

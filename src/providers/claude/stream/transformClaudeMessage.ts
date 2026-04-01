@@ -1,10 +1,27 @@
 import type { SDKMessage, SDKResultError } from '@anthropic-ai/claude-agent-sdk';
 
-import type { SDKToolUseResult, UsageInfo } from '../../../core/types';
+import type { SDKToolUseResult, StreamChunk, UsageInfo } from '../../../core/types';
 import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { TransformEvent } from '../sdk/types';
 import { getContextWindowSize } from '../types/models';
+
+type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
+type ToolResultFields = { id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
+
+function emitToolUse(parentToolUseId: string | null, fields: ToolUseFields): StreamChunk {
+  if (parentToolUseId === null) {
+    return { type: 'tool_use', ...fields };
+  }
+  return { type: 'subagent_tool_use', subagentId: parentToolUseId, ...fields };
+}
+
+function emitToolResult(parentToolUseId: string | null, fields: ToolResultFields): StreamChunk {
+  if (parentToolUseId === null) {
+    return { type: 'tool_result', ...fields };
+  }
+  return { type: 'subagent_tool_result', subagentId: parentToolUseId, ...fields };
+}
 
 export interface TransformOptions {
   /** The intended model from settings/query (used for context window size). */
@@ -115,7 +132,7 @@ export function* transformSDKMessage(
           permissionMode: message.permissionMode,
         };
       } else if (message.subtype === 'compact_boundary') {
-        yield { type: 'compact_boundary' };
+        yield { type: 'context_compacted' };
       }
       break;
 
@@ -130,17 +147,19 @@ export function* transformSDKMessage(
       if (message.message?.content && Array.isArray(message.message.content)) {
         for (const block of message.message.content) {
           if (block.type === 'thinking' && block.thinking) {
-            yield { type: 'thinking', content: block.thinking, parentToolUseId };
+            if (parentToolUseId === null) {
+              yield { type: 'thinking', content: block.thinking };
+            }
           } else if (block.type === 'text' && block.text && block.text.trim() !== '(no content)') {
-            yield { type: 'text', content: block.text, parentToolUseId };
+            if (parentToolUseId === null) {
+              yield { type: 'text', content: block.text };
+            }
           } else if (block.type === 'tool_use') {
-            yield {
-              type: 'tool_use',
+            yield emitToolUse(parentToolUseId, {
               id: block.id || `tool-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
               name: block.name || 'unknown',
               input: block.input || {},
-              parentToolUseId,
-            };
+            });
           }
         }
       }
@@ -178,34 +197,33 @@ export function* transformSDKMessage(
       // Check for blocked tool calls (from hook denials)
       if (isBlockedMessage(message)) {
         yield {
-          type: 'blocked',
+          type: 'notice',
           content: message._blockReason,
+          level: 'warning',
         };
         break;
       }
       // User messages can contain tool results
       if (message.tool_use_result !== undefined && message.parent_tool_use_id) {
-        yield {
-          type: 'tool_result',
+        const toolUseResult = (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined;
+        yield emitToolResult(parentToolUseId, {
           id: message.parent_tool_use_id,
           content: extractToolResultContent(message.tool_use_result, { fallbackIndent: 2 }),
           isError: false,
-          parentToolUseId,
-          toolUseResult: (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined,
-        };
+          ...(toolUseResult !== undefined ? { toolUseResult } : {}),
+        });
       }
       // Also check message.message.content for tool_result blocks
       if (message.message?.content && Array.isArray(message.message.content)) {
         for (const block of message.message.content) {
           if (block.type === 'tool_result') {
-            yield {
-              type: 'tool_result',
+            const toolUseResult = (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined;
+            yield emitToolResult(parentToolUseId, {
               id: block.tool_use_id || message.parent_tool_use_id || '',
               content: extractToolResultContent(block.content, { fallbackIndent: 2 }),
               isError: block.is_error || false,
-              parentToolUseId,
-              toolUseResult: (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined,
-            };
+              ...(toolUseResult !== undefined ? { toolUseResult } : {}),
+            });
           }
         }
       }
@@ -216,26 +234,24 @@ export function* transformSDKMessage(
       const parentToolUseId = message.parent_tool_use_id ?? null;
       const event = message.event;
       if (event?.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-        yield {
-          type: 'tool_use',
+        yield emitToolUse(parentToolUseId, {
           id: event.content_block.id || `tool-${Date.now()}`,
           name: event.content_block.name || 'unknown',
           input: event.content_block.input || {},
-          parentToolUseId,
-        };
+        });
       } else if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {
-        if (event.content_block.thinking) {
-          yield { type: 'thinking', content: event.content_block.thinking, parentToolUseId };
+        if (parentToolUseId === null && event.content_block.thinking) {
+          yield { type: 'thinking', content: event.content_block.thinking };
         }
       } else if (event?.type === 'content_block_start' && event.content_block?.type === 'text') {
-        if (event.content_block.text) {
-          yield { type: 'text', content: event.content_block.text, parentToolUseId };
+        if (parentToolUseId === null && event.content_block.text) {
+          yield { type: 'text', content: event.content_block.text };
         }
       } else if (event?.type === 'content_block_delta') {
-        if (event.delta?.type === 'thinking_delta' && event.delta.thinking) {
-          yield { type: 'thinking', content: event.delta.thinking, parentToolUseId };
-        } else if (event.delta?.type === 'text_delta' && event.delta.text) {
-          yield { type: 'text', content: event.delta.text, parentToolUseId };
+        if (parentToolUseId === null && event.delta?.type === 'thinking_delta' && event.delta.thinking) {
+          yield { type: 'thinking', content: event.delta.thinking };
+        } else if (parentToolUseId === null && event.delta?.type === 'text_delta' && event.delta.text) {
+          yield { type: 'text', content: event.delta.text };
         }
       }
       break;
@@ -257,7 +273,7 @@ export function* transformSDKMessage(
         const modelUsage = message.modelUsage as Record<string, { contextWindow?: number }>;
         const selectedEntry = selectContextWindowEntry(modelUsage, options?.intendedModel);
         if (selectedEntry) {
-          yield { type: 'context_window_update', contextWindow: selectedEntry.contextWindow };
+          yield { type: 'context_window', contextWindow: selectedEntry.contextWindow };
         }
       }
       break;

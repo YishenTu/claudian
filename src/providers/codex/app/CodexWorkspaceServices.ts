@@ -5,11 +5,14 @@ import type {
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
+import type { HomeFileAdapter } from '../../../core/storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type ClaudianPlugin from '../../../main';
+import { getVaultPath } from '../../../utils/path';
 import { CodexAgentMentionProvider } from '../agents/CodexAgentMentionProvider';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
 import { CodexCliResolver } from '../runtime/CodexCliResolver';
+import { CodexSkillListingService } from '../skills/CodexSkillListingService';
 import { CodexSkillStorage } from '../storage/CodexSkillStorage';
 import { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
 import { codexSettingsTabRenderer } from '../ui/CodexSettingsTab';
@@ -26,19 +29,22 @@ function createCodexCliResolver(): ProviderCliResolver {
 }
 
 export async function createCodexWorkspaceServices(
-  _plugin: ClaudianPlugin,
+  plugin: ClaudianPlugin,
   vaultAdapter: VaultFileAdapter,
-  homeAdapter: VaultFileAdapter,
+  homeAdapter: HomeFileAdapter,
 ): Promise<CodexWorkspaceServices> {
   const subagentStorage = new CodexSubagentStorage(vaultAdapter);
   const agentMentionProvider = new CodexAgentMentionProvider(subagentStorage);
   await agentMentionProvider.loadAgents();
 
+  const skillListProvider = new CodexSkillListingService(plugin);
   const commandCatalog = new CodexSkillCatalog(
     new CodexSkillStorage(
       vaultAdapter,
       homeAdapter,
     ),
+    skillListProvider,
+    getVaultPath(plugin.app),
   );
 
   return {
@@ -57,7 +63,7 @@ export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWork
   initialize: async ({ plugin, vaultAdapter, homeAdapter }) => createCodexWorkspaceServices(
     plugin,
     vaultAdapter,
-    homeAdapter as unknown as VaultFileAdapter,
+    homeAdapter,
   ),
 };
 

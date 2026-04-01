@@ -37,7 +37,7 @@ describe('transformSDKMessage', () => {
       expect(results).toEqual([]);
     });
 
-    it('yields compact_boundary event for compact_boundary subtype', () => {
+    it('yields context_compacted event for compact_boundary subtype', () => {
       const message = msg({
         type: 'system',
         subtype: 'compact_boundary',
@@ -46,7 +46,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'compact_boundary' },
+        { type: 'context_compacted' },
       ]);
     });
 
@@ -104,7 +104,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'text', content: 'Hello, world!', parentToolUseId: null },
+        { type: 'text', content: 'Hello, world!' },
       ]);
     });
 
@@ -121,7 +121,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'thinking', content: 'Let me think about this...', parentToolUseId: null },
+        { type: 'thinking', content: 'Let me think about this...' },
       ]);
     });
 
@@ -148,7 +148,6 @@ describe('transformSDKMessage', () => {
           id: 'tool-123',
           name: 'Read',
           input: { file_path: '/test/file.ts' },
-          parentToolUseId: null,
         },
       ]);
     });
@@ -187,18 +186,18 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toHaveLength(3);
-      expect(results[0]).toEqual({ type: 'thinking', content: 'Thinking...', parentToolUseId: null });
-      expect(results[1]).toEqual({ type: 'text', content: 'Here is my response', parentToolUseId: null });
+      expect(results[0]).toEqual({ type: 'thinking', content: 'Thinking...' });
+      expect(results[1]).toEqual({ type: 'text', content: 'Here is my response' });
       expect(results[2]).toMatchObject({ type: 'tool_use', id: 'tool-1', name: 'Read' });
     });
 
-    it('preserves parent_tool_use_id for subagent context', () => {
+    it('yields subagent_tool_use for assistant tool_use in subagent context', () => {
       const message = msg({
         type: 'assistant',
         parent_tool_use_id: 'parent-tool-abc',
         message: {
           content: [
-            { type: 'text', text: 'Subagent response' },
+            { type: 'tool_use', id: 'child-tool-1', name: 'Read', input: { file_path: 'subagent.md' } },
           ],
         },
       });
@@ -206,7 +205,13 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'text', content: 'Subagent response', parentToolUseId: 'parent-tool-abc' },
+        {
+          type: 'subagent_tool_use',
+          subagentId: 'parent-tool-abc',
+          id: 'child-tool-1',
+          name: 'Read',
+          input: { file_path: 'subagent.md' },
+        },
       ]);
     });
 
@@ -246,7 +251,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'text', content: 'Valid text', parentToolUseId: null },
+        { type: 'text', content: 'Valid text' },
       ]);
     });
 
@@ -264,7 +269,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'tool_use', id: 'tool-1', name: 'Skill', input: { skill: 'md2docx' }, parentToolUseId: null },
+        { type: 'tool_use', id: 'tool-1', name: 'Skill', input: { skill: 'md2docx' } },
       ]);
     });
 
@@ -282,7 +287,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'thinking', content: 'Valid thinking', parentToolUseId: null },
+        { type: 'thinking', content: 'Valid thinking' },
       ]);
     });
 
@@ -301,13 +306,13 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([
         { type: 'error', content: 'rate_limit' },
-        { type: 'text', content: 'Partial response', parentToolUseId: null },
+        { type: 'text', content: 'Partial response' },
       ]);
     });
   });
 
   describe('user messages', () => {
-    it('yields blocked event for blocked tool calls', () => {
+    it('yields warning notice for blocked tool calls', () => {
       const message = msg({
         type: 'user',
         _blocked: true,
@@ -317,7 +322,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'blocked', content: 'Command blocked: rm -rf /' },
+        { type: 'notice', content: 'Command blocked: rm -rf /', level: 'warning' },
       ]);
     });
 
@@ -332,11 +337,11 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([
         {
-          type: 'tool_result',
+          type: 'subagent_tool_result',
+          subagentId: 'tool-123',
           id: 'tool-123',
           content: 'File contents here',
           isError: false,
-          parentToolUseId: 'tool-123',
           toolUseResult: 'File contents here',
         },
       ]);
@@ -352,7 +357,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results.length).toBe(1);
-      expect(results[0].type).toBe('tool_result');
+      expect(results[0].type).toBe('subagent_tool_result');
       expect((results[0] as any).content).toContain('"status": "success"');
     });
 
@@ -371,11 +376,11 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([
         {
-          type: 'tool_result',
+          type: 'subagent_tool_result',
+          subagentId: 'tool-123',
           id: 'tool-123',
           content: 'Agent completed successfully.\nSaved summary to notes.md',
           isError: false,
-          parentToolUseId: 'tool-123',
           toolUseResult,
         },
       ]);
@@ -404,7 +409,6 @@ describe('transformSDKMessage', () => {
           id: 'tool-456',
           content: 'Result content',
           isError: false,
-          parentToolUseId: null,
         },
       ]);
     });
@@ -432,7 +436,6 @@ describe('transformSDKMessage', () => {
           id: 'tool-error',
           content: 'Error: File not found',
           isError: true,
-          parentToolUseId: null,
         },
       ]);
     });
@@ -462,7 +465,6 @@ describe('transformSDKMessage', () => {
           id: 'tool-agent',
           content: 'Agent completed successfully.\nNext step queued.',
           isError: false,
-          parentToolUseId: null,
         },
       ]);
     });
@@ -562,7 +564,6 @@ describe('transformSDKMessage', () => {
           id: 'stream-tool-1',
           name: 'Write',
           input: { file_path: '/test.ts' },
-          parentToolUseId: null,
         },
       ]);
     });
@@ -600,7 +601,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'thinking', content: 'Initial thinking...', parentToolUseId: null },
+        { type: 'thinking', content: 'Initial thinking...' },
       ]);
     });
 
@@ -619,7 +620,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'text', content: 'Starting response...', parentToolUseId: null },
+        { type: 'text', content: 'Starting response...' },
       ]);
     });
 
@@ -638,7 +639,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'thinking', content: 'More thinking...', parentToolUseId: null },
+        { type: 'thinking', content: 'More thinking...' },
       ]);
     });
 
@@ -657,7 +658,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'text', content: ' additional text', parentToolUseId: null },
+        { type: 'text', content: ' additional text' },
       ]);
     });
 
@@ -729,7 +730,7 @@ describe('transformSDKMessage', () => {
       expect(results).toEqual([]);
     });
 
-    it('preserves parent_tool_use_id in stream events', () => {
+    it('suppresses subagent text deltas in stream events', () => {
       const message = msg({
         type: 'stream_event',
         parent_tool_use_id: 'subagent-parent',
@@ -744,9 +745,7 @@ describe('transformSDKMessage', () => {
 
       const results = [...transformSDKMessage(message)];
 
-      expect(results).toEqual([
-        { type: 'text', content: 'Subagent stream text', parentToolUseId: 'subagent-parent' },
-      ]);
+      expect(results).toEqual([]);
     });
 
     it('handles missing event property', () => {
@@ -761,7 +760,7 @@ describe('transformSDKMessage', () => {
   });
 
   describe('result messages', () => {
-    it('yields context_window_update for successful result messages with modelUsage', () => {
+    it('yields context_window for successful result messages with modelUsage', () => {
       const message = msg({
         type: 'result',
         modelUsage: {
@@ -781,11 +780,11 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'context_window_update', contextWindow: 200000 },
+        { type: 'context_window', contextWindow: 200000 },
       ]);
     });
 
-    it('yields error and context_window_update for failed result messages', () => {
+    it('yields error and context_window for failed result messages', () => {
       const message = msg({
         type: 'result',
         subtype: 'error_max_turns',
@@ -796,11 +795,11 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([
         { type: 'error', content: 'Hit maximum turn limit' },
-        { type: 'context_window_update', contextWindow: 200000 },
+        { type: 'context_window', contextWindow: 200000 },
       ]);
     });
 
-    it('yields context_window_update with 1M for [1m] models', () => {
+    it('yields context_window with 1M for [1m] models', () => {
       const message = msg({
         type: 'result',
         modelUsage: {
@@ -820,7 +819,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'context_window_update', contextWindow: 1000000 },
+        { type: 'context_window', contextWindow: 1000000 },
       ]);
     });
 
@@ -854,7 +853,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message, { intendedModel: 'custom-main-model' })];
 
       expect(results).toEqual([
-        { type: 'context_window_update', contextWindow: 200000 },
+        { type: 'context_window', contextWindow: 200000 },
       ]);
     });
 
@@ -888,7 +887,7 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message, { intendedModel: 'opus[1m]' })];
 
       expect(results).toEqual([
-        { type: 'context_window_update', contextWindow: 1000000 },
+        { type: 'context_window', contextWindow: 1000000 },
       ]);
     });
 

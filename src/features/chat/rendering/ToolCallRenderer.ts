@@ -725,7 +725,6 @@ export function renderTodoWriteResult(
 
 export function isBlockedToolResult(content: string, isError?: boolean): boolean {
   const lower = content.toLowerCase();
-  if (lower.includes('blocked by blocklist')) return true;
   if (lower.includes('outside the vault')) return true;
   if (lower.includes('access denied')) return true;
   if (lower.includes('user denied')) return true;

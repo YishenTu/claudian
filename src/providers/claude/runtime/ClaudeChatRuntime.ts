@@ -13,10 +13,8 @@
 
 import type {
   CanUseTool,
-  McpServerConfig,
   Options,
   PermissionMode as SDKPermissionMode,
-  PermissionResult,
   Query,
   RewindFilesResult,
   SDKMessage,
@@ -24,11 +22,7 @@ import type {
   SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
 import { Notice } from 'obsidian';
-import * as os from 'os';
-import * as path from 'path';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -40,24 +34,22 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
+  AutoTurnResult,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
   ChatRuntimeQueryOptions,
+  ChatTurnMetadata,
   ChatTurnRequest,
   PreparedChatTurn,
   SessionUpdateResult,
 } from '../../../core/runtime/types';
-import {
-  getActionDescription,
-} from '../../../core/security/ApprovalManager';
-import { TOOL_ASK_USER_QUESTION, TOOL_ENTER_PLAN_MODE, TOOL_EXIT_PLAN_MODE, TOOL_SKILL } from '../../../core/tools/toolNames';
+import { TOOL_ENTER_PLAN_MODE, TOOL_SKILL } from '../../../core/tools/toolNames';
 import type {
   ApprovalDecision,
   ChatMessage,
   Conversation,
   ExitPlanModeCallback,
-  ExitPlanModeDecision,
   ImageAttachment,
   SlashCommand,
   StreamChunk,
@@ -76,15 +68,14 @@ import {
 } from '../../../utils/session';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
-import { createBlocklistHook } from '../hooks/SecurityHooks';
 import { createStopSubagentHook, type SubagentHookState } from '../hooks/SubagentHooks';
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
-import { isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
-import { buildPermissionUpdates } from '../security/ClaudePermissionUpdates';
+import { isContextWindowEvent, isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
 import { getClaudeProviderSettings } from '../settings';
 import { transformSDKMessage } from '../stream/transformClaudeMessage';
-import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types/models';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
+import { createClaudeApprovalCallback } from './ClaudeApprovalHandler';
+import { applyClaudeDynamicUpdates } from './ClaudeDynamicUpdates';
 import { MessageChannel } from './ClaudeMessageChannel';
 import {
   type ColdStartQueryContext,
@@ -92,14 +83,18 @@ import {
   QueryOptionsBuilder,
   type QueryOptionsContext,
 } from './ClaudeQueryOptionsBuilder';
+import { executeClaudeRewind } from './ClaudeRewindService';
 import { SessionManager } from './ClaudeSessionManager';
+import {
+  buildClaudePromptWithImages,
+  buildClaudeSDKUserMessage,
+} from './ClaudeUserMessageFactory';
 import {
   type ClosePersistentQueryOptions,
   createResponseHandler,
   isTurnCompleteMessage,
   type PersistentQueryConfig,
   type ResponseHandler,
-  type UserContentBlock,
 } from './types';
 
 export type { ApprovalDecision };
@@ -111,8 +106,8 @@ export type {
 
 export interface ClaudeRuntimeServices {
   mcpManager: McpServerManager;
-  pluginManager?: AppPluginManager;
-  agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
+  pluginManager: AppPluginManager;
+  agentManager: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
 }
 
 type QueryOptions = ChatRuntimeQueryOptions;
@@ -175,7 +170,9 @@ export class ClaudianService implements ChatRuntime {
   // Auto-triggered turn handling (e.g., task-notification delivery by the SDK)
   private _autoTurnBuffer: StreamChunk[] = [];
   private _autoTurnSawStreamText = false;
-  private _autoTurnCallback: ((chunks: StreamChunk[]) => void) | null = null;
+  private _autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
+  private turnMetadata: ChatTurnMetadata = {};
+  private bufferedUsageChunk: StreamChunk & { type: 'usage' } | null = null;
 
   private getLegacyPluginDeps(): ClaudianPlugin & {
     agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
@@ -211,6 +208,13 @@ export class ClaudianService implements ChatRuntime {
     return encodeClaudeTurn(request, this.mcpManager);
   }
 
+  consumeTurnMetadata(): ChatTurnMetadata {
+    const metadata = { ...this.turnMetadata };
+    this.turnMetadata = {};
+    this.bufferedUsageChunk = null;
+    return metadata;
+  }
+
   onReadyStateChange(listener: (ready: boolean) => void): () => void {
     this.readyStateListeners.add(listener);
     try {
@@ -236,6 +240,46 @@ export class ClaudianService implements ChatRuntime {
         // Ignore listener errors
       }
     }
+  }
+
+  private resetTurnMetadata(): void {
+    this.turnMetadata = {};
+    this.bufferedUsageChunk = null;
+  }
+
+  private recordTurnMetadata(update: Partial<ChatTurnMetadata>): void {
+    this.turnMetadata = {
+      ...this.turnMetadata,
+      ...update,
+    };
+  }
+
+  private bufferUsageChunk(chunk: Extract<StreamChunk, { type: 'usage' }>): Extract<StreamChunk, { type: 'usage' }> {
+    this.bufferedUsageChunk = chunk;
+    return chunk;
+  }
+
+  private updateBufferedUsageContextWindow(contextWindow: number): Extract<StreamChunk, { type: 'usage' }> | null {
+    if (!this.bufferedUsageChunk || contextWindow <= 0) {
+      return null;
+    }
+
+    const usage = this.bufferedUsageChunk.usage;
+    const percentage = Math.min(
+      100,
+      Math.max(0, Math.round((usage.contextTokens / contextWindow) * 100)),
+    );
+    const nextChunk: Extract<StreamChunk, { type: 'usage' }> = {
+      ...this.bufferedUsageChunk,
+      usage: {
+        ...usage,
+        contextWindow,
+        contextWindowIsAuthoritative: true,
+        percentage,
+      },
+    };
+    this.bufferedUsageChunk = nextChunk;
+    return nextChunk;
   }
 
   setPendingResumeAt(uuid: string | undefined): void {
@@ -641,14 +685,7 @@ export class ClaudianService implements ChatRuntime {
    * Hooks need access to `this` for dynamic settings, so they're built here.
    */
   private buildHooks() {
-    const blocklistHook = createBlocklistHook(() => ({
-      blockedCommands: this.plugin.settings.blockedCommands,
-      enableBlocklist: this.plugin.settings.enableBlocklist,
-    }));
-
     const hooks: Options['hooks'] = {};
-
-    hooks.PreToolUse = [blocklistHook];
 
     // Always register subagent hooks — closures resolve provider at execution time
     // so hooks work even when provider is set after the persistent query starts.
@@ -795,6 +832,16 @@ export class ClaudianService implements ChatRuntime {
         if (event.permissionMode && this.permissionModeSyncCallback) {
           try { this.permissionModeSyncCallback(event.permissionMode); } catch { /* non-critical */ }
         }
+      } else if (isContextWindowEvent(event)) {
+        const usageChunk = this.updateBufferedUsageContextWindow(event.contextWindow);
+        if (!usageChunk) {
+          continue;
+        }
+        if (handler) {
+          handler.onChunk(usageChunk);
+        } else {
+          this._autoTurnBuffer.push(usageChunk);
+        }
       } else if (isStreamChunk(event)) {
         // Dedup: SDK delivers text via stream_events (incremental) AND the assistant message
         // (complete). Skip the assistant message text if stream text was already seen.
@@ -817,27 +864,21 @@ export class ClaudianService implements ChatRuntime {
           }
         }
 
+        const normalizedChunk = event.type === 'usage'
+          ? this.bufferUsageChunk({ ...event, sessionId: this.sessionManager.getSessionId() })
+          : event;
+
         if (handler) {
-          // Add sessionId to usage chunks (consistent with cold-start path)
-          if (event.type === 'usage') {
-            handler.onChunk({ ...event, sessionId: this.sessionManager.getSessionId() });
-          } else {
-            handler.onChunk(event);
-          }
+          handler.onChunk(normalizedChunk);
         } else {
           // No handler — buffer for auto-triggered turn (e.g., task-notification delivery)
-          this._autoTurnBuffer.push(event);
+          this._autoTurnBuffer.push(normalizedChunk);
         }
       }
     }
 
     if (message.type === 'assistant' && message.uuid) {
-      const uuidChunk: StreamChunk = { type: 'assistant_message_id', uuid: message.uuid };
-      if (handler) {
-        handler.onChunk(uuidChunk);
-      } else {
-        this._autoTurnBuffer.push(uuidChunk);
-      }
+      this.recordTurnMetadata({ assistantMessageId: message.uuid });
     }
 
     // Check for turn completion
@@ -857,9 +898,10 @@ export class ClaudianService implements ChatRuntime {
 
         // Flush buffered chunks from auto-triggered turn (no handler was registered)
         const chunks = [...this._autoTurnBuffer];
+        const metadata = this.consumeTurnMetadata();
         this._autoTurnBuffer = [];
         try {
-          this._autoTurnCallback?.(chunks);
+          this._autoTurnCallback?.({ chunks, metadata });
         } catch {
           new Notice('Background task completed, but the result could not be rendered.');
         }
@@ -1182,6 +1224,8 @@ export class ClaudianService implements ChatRuntime {
     cliPath: string,
     queryOptions?: QueryOptions
   ): AsyncGenerator<StreamChunk> {
+    this.resetTurnMetadata();
+
     if (!this.persistentQuery || !this.messageChannel) {
       // Fallback to cold-start if persistent query not available
       yield* this.queryViaSDK(prompt, vaultPath, cliPath, images, queryOptions);
@@ -1219,8 +1263,6 @@ export class ClaudianService implements ChatRuntime {
     }
 
     const message = this.buildSDKUserMessage(prompt, images);
-
-    yield { type: 'user_message_id', uuid: message.uuid! };
 
     // Create a promise-based handler to yield chunks
     // Use a mutable state object to work around TypeScript's control flow analysis
@@ -1279,8 +1321,10 @@ export class ClaudianService implements ChatRuntime {
         }
         throw error;
       }
-
-      yield { type: 'user_message_sent', uuid: message.uuid! };
+      this.recordTurnMetadata({
+        userMessageId: message.uuid ?? undefined,
+        wasSent: true,
+      });
 
       // Yield chunks as they arrive
       while (!state.done) {
@@ -1322,51 +1366,11 @@ export class ClaudianService implements ChatRuntime {
   }
 
   private buildSDKUserMessage(prompt: string, images?: ImageAttachment[]): SDKUserMessage {
-    const sessionId = this.sessionManager.getSessionId() || '';
-
-    if (!images || images.length === 0) {
-      return {
-        type: 'user',
-        message: {
-          role: 'user',
-          content: prompt,
-        },
-        parent_tool_use_id: null,
-        session_id: sessionId,
-        uuid: randomUUID(),
-      };
-    }
-
-    const content: UserContentBlock[] = [];
-
-    for (const image of images) {
-      content.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: image.mediaType,
-          data: image.data,
-        },
-      });
-    }
-
-    if (prompt.trim()) {
-      content.push({
-        type: 'text',
-        text: prompt,
-      });
-    }
-
-    return {
-      type: 'user',
-      message: {
-        role: 'user',
-        content,
-      },
-      parent_tool_use_id: null,
-      session_id: sessionId,
-      uuid: randomUUID(),
-    };
+    return buildClaudeSDKUserMessage(
+      prompt,
+      this.sessionManager.getSessionId() || '',
+      images,
+    );
   }
 
   /**
@@ -1377,116 +1381,36 @@ export class ClaudianService implements ChatRuntime {
     restartOptions?: ClosePersistentQueryOptions,
     allowRestart = true
   ): Promise<void> {
-    if (!this.persistentQuery) return;
-
-    if (!this.vaultPath) {
-      return;
-    }
-    const cliPath = this.plugin.getResolvedProviderCliPath('claude');
-    if (!cliPath) {
-      return;
-    }
-
-    const settings = this.getScopedSettings();
-    const selectedModel = queryOptions?.model || settings.model;
-    const permissionMode = this.plugin.settings.permissionMode;
-
-    // Model can always be updated dynamically
-    if (this.currentConfig && selectedModel !== this.currentConfig.model) {
-      try {
-        await this.persistentQuery.setModel(selectedModel);
-        this.currentConfig.model = selectedModel;
-      } catch {
-        new Notice('Failed to update model');
-      }
-    }
-
-    // Update thinking tokens for custom models (adaptive models don't need dynamic updates)
-    if (!isAdaptiveThinkingModel(selectedModel)) {
-      const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
-      const thinkingTokens = budgetConfig?.tokens ?? null;
-      const currentThinking = this.currentConfig?.thinkingTokens ?? null;
-      if (thinkingTokens !== currentThinking) {
-        try {
-          await this.persistentQuery.setMaxThinkingTokens(thinkingTokens);
+    await applyClaudeDynamicUpdates(
+      {
+        getPersistentQuery: () => this.persistentQuery,
+        getCurrentConfig: () => this.currentConfig,
+        mutateCurrentConfig: (mutate) => {
           if (this.currentConfig) {
-            this.currentConfig.thinkingTokens = thinkingTokens;
+            mutate(this.currentConfig);
           }
-        } catch {
-          new Notice('Failed to update thinking budget');
-        }
-      }
-    }
-
-    // Update permission mode if the effective SDK mode changed.
-    // Compares resolved SDK modes so that changing claudeSafeMode while
-    // remaining in 'normal' triggers an update.
-    if (this.currentConfig) {
-      const sdkMode = this.resolveSDKPermissionMode(permissionMode);
-      const currentSdkMode = this.currentConfig.sdkPermissionMode ?? null;
-      if (sdkMode !== currentSdkMode) {
-        try {
-          await this.persistentQuery.setPermissionMode(sdkMode);
-          this.currentConfig.permissionMode = permissionMode;
-          this.currentConfig.sdkPermissionMode = sdkMode;
-        } catch {
-          new Notice('Failed to update permission mode');
-        }
-      } else {
-        // Sync the coarse mode even when SDK mode didn't change
-        this.currentConfig.permissionMode = permissionMode;
-        this.currentConfig.sdkPermissionMode = sdkMode;
-      }
-    }
-
-    // Update MCP servers if changed
-    const mcpMentions = queryOptions?.mcpMentions || new Set<string>();
-    const uiEnabledServers = queryOptions?.enabledMcpServers || new Set<string>();
-    const combinedMentions = new Set([...mcpMentions, ...uiEnabledServers]);
-    const mcpServers = this.mcpManager.getActiveServers(combinedMentions);
-    // Include full config in key so config changes (not just name changes) trigger update
-    const mcpServersKey = JSON.stringify(mcpServers);
-
-    if (this.currentConfig && mcpServersKey !== this.currentConfig.mcpServersKey) {
-      // Convert to McpServerConfig format
-      const serverConfigs: Record<string, McpServerConfig> = {};
-      for (const [name, config] of Object.entries(mcpServers)) {
-        serverConfigs[name] = config as McpServerConfig;
-      }
-      try {
-        await this.persistentQuery.setMcpServers(serverConfigs);
-        this.currentConfig.mcpServersKey = mcpServersKey;
-      } catch {
-        new Notice('Failed to update MCP servers');
-      }
-    }
-
-    // Track external context paths (used by hooks and for restart detection)
-    const newExternalContextPaths = queryOptions?.externalContextPaths || [];
-    this.currentExternalContextPaths = newExternalContextPaths;
-
-    // Check for config changes that require restart
-    if (!allowRestart) {
-      return;
-    }
-
-    // Check if restart is needed using the valid cliPath we already have
-    const newConfig = this.buildPersistentQueryConfig(this.vaultPath, cliPath, newExternalContextPaths);
-    if (!this.needsRestart(newConfig)) {
-      return;
-    }
-
-    // Restart is needed - use force to ensure query is closed even if CLI becomes unavailable
-    const restarted = await this.ensureReady({
-      externalContextPaths: newExternalContextPaths,
-      preserveHandlers: restartOptions?.preserveHandlers,
-      force: true,
-    });
-
-    // After restart, apply dynamic updates to the new process
-    if (restarted && this.persistentQuery) {
-      await this.applyDynamicUpdates(queryOptions, restartOptions, false);
-    }
+        },
+        getVaultPath: () => this.vaultPath,
+        getCliPath: () => this.plugin.getResolvedProviderCliPath('claude'),
+        getScopedSettings: () => this.getScopedSettings(),
+        getPermissionMode: () => this.plugin.settings.permissionMode,
+        resolveSDKPermissionMode: (mode) => this.resolveSDKPermissionMode(mode),
+        mcpManager: this.mcpManager,
+        buildPersistentQueryConfig: (vaultPath, cliPath, externalContextPaths) =>
+          this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths),
+        needsRestart: (newConfig) => this.needsRestart(newConfig),
+        ensureReady: (options) => this.ensureReady(options),
+        setCurrentExternalContextPaths: (paths) => {
+          this.currentExternalContextPaths = paths;
+        },
+        notifyFailure: (message) => {
+          new Notice(message);
+        },
+      },
+      queryOptions,
+      restartOptions,
+      allowRestart,
+    );
   }
 
   private isStreamTextEvent(message: SDKMessage): boolean {
@@ -1503,42 +1427,7 @@ export class ClaudianService implements ChatRuntime {
   }
 
   private buildPromptWithImages(prompt: string, images?: ImageAttachment[]): string | AsyncGenerator<any> {
-    if (!images || images.length === 0) {
-      return prompt;
-    }
-
-    const content: UserContentBlock[] = [];
-
-    // Images before text (Claude recommendation for best quality)
-    for (const image of images) {
-      content.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: image.mediaType,
-          data: image.data,
-        },
-      });
-    }
-
-    if (prompt.trim()) {
-      content.push({
-        type: 'text',
-        text: prompt,
-      });
-    }
-
-    async function* messageGenerator() {
-      yield {
-        type: 'user',
-        message: {
-          role: 'user',
-          content,
-        },
-      };
-    }
-
-    return messageGenerator();
+    return buildClaudePromptWithImages(prompt, images);
   }
 
   private async *queryViaSDK(
@@ -1548,6 +1437,7 @@ export class ClaudianService implements ChatRuntime {
     images?: ImageAttachment[],
     queryOptions?: QueryOptions
   ): AsyncGenerator<StreamChunk> {
+    this.resetTurnMetadata();
     const selectedModel = queryOptions?.model || this.getScopedSettings().model;
 
     this.sessionManager.setPendingModel(selectedModel);
@@ -1584,6 +1474,7 @@ export class ClaudianService implements ChatRuntime {
     let sawStreamText = false;
     try {
       const response = agentQuery({ prompt: queryPrompt, options });
+      this.recordTurnMetadata({ wasSent: true });
       let streamSessionId: string | null = this.sessionManager.getSessionId();
 
       for await (const message of response) {
@@ -1599,16 +1490,25 @@ export class ClaudianService implements ChatRuntime {
           if (isSessionInitEvent(event)) {
             this.sessionManager.captureSession(event.sessionId);
             streamSessionId = event.sessionId;
+          } else if (isContextWindowEvent(event)) {
+            const usageChunk = this.updateBufferedUsageContextWindow(event.contextWindow);
+            if (usageChunk) {
+              yield usageChunk;
+            }
           } else if (isStreamChunk(event)) {
             if (message.type === 'assistant' && sawStreamText && event.type === 'text') {
               continue;
             }
             if (event.type === 'usage') {
-              yield { ...event, sessionId: streamSessionId };
+              yield this.bufferUsageChunk({ ...event, sessionId: streamSessionId });
             } else {
               yield event;
             }
           }
+        }
+
+        if (message.type === 'assistant' && message.uuid) {
+          this.recordTurnMetadata({ assistantMessageId: message.uuid });
         }
 
         if (message.type === 'result') {
@@ -1750,178 +1650,16 @@ export class ClaudianService implements ChatRuntime {
     return this.persistentQuery.rewindFiles(userMessageId, { dryRun });
   }
 
-  private resolveRewindFilePath(filePath: string): string {
-    if (path.isAbsolute(filePath)) {
-      return filePath;
-    }
-    if (this.vaultPath) {
-      return path.join(this.vaultPath, filePath);
-    }
-    return filePath;
-  }
-
-  private async createRewindBackup(filesChanged: string[] | undefined): Promise<{
-    restore: () => Promise<void>;
-    cleanup: () => Promise<void>;
-  } | null> {
-    if (!filesChanged || filesChanged.length === 0) {
-      return null;
-    }
-
-    const backupRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'claudian-rewind-'));
-
-    type BackupEntry =
-      | { originalPath: string; existedBefore: false }
-      | { originalPath: string; existedBefore: true; kind: 'file' | 'dir'; backupPath: string }
-      | { originalPath: string; existedBefore: true; kind: 'symlink'; symlinkTarget: string };
-
-    const entries: BackupEntry[] = [];
-
-    const copyDir = async (from: string, to: string): Promise<void> => {
-      await fs.promises.mkdir(to, { recursive: true });
-      const dirents = await fs.promises.readdir(from, { withFileTypes: true });
-      for (const dirent of dirents) {
-        const srcPath = path.join(from, dirent.name);
-        const destPath = path.join(to, dirent.name);
-
-        if (dirent.isDirectory()) {
-          await copyDir(srcPath, destPath);
-          continue;
-        }
-
-        if (dirent.isSymbolicLink()) {
-          const target = await fs.promises.readlink(srcPath);
-          await fs.promises.symlink(target, destPath);
-          continue;
-        }
-
-        if (dirent.isFile()) {
-          await fs.promises.copyFile(srcPath, destPath);
-        }
-      }
-    };
-
-    const backupPathForIndex = (i: number) => path.join(backupRoot, String(i));
-
-    for (let i = 0; i < filesChanged.length; i++) {
-      const originalPath = this.resolveRewindFilePath(filesChanged[i]);
-
-      try {
-        const stats = await fs.promises.lstat(originalPath);
-
-        if (stats.isSymbolicLink()) {
-          const target = await fs.promises.readlink(originalPath);
-          entries.push({ originalPath, existedBefore: true, kind: 'symlink', symlinkTarget: target });
-          continue;
-        }
-
-        const backupPath = backupPathForIndex(i);
-
-        if (stats.isDirectory()) {
-          await copyDir(originalPath, backupPath);
-          entries.push({ originalPath, existedBefore: true, kind: 'dir', backupPath });
-          continue;
-        }
-
-        if (stats.isFile()) {
-          await fs.promises.copyFile(originalPath, backupPath);
-          entries.push({ originalPath, existedBefore: true, kind: 'file', backupPath });
-          continue;
-        }
-
-        // Unsupported file type; treat as non-existent for rollback purposes.
-        entries.push({ originalPath, existedBefore: false });
-      } catch (error) {
-        const err = error as NodeJS.ErrnoException;
-        if (err && err.code === 'ENOENT') {
-          entries.push({ originalPath, existedBefore: false });
-          continue;
-        }
-
-        await fs.promises.rm(backupRoot, { recursive: true, force: true });
-        throw error;
-      }
-    }
-
-    const restore = async () => {
-      const errors: unknown[] = [];
-
-      for (const entry of entries) {
-        try {
-          if (!entry.existedBefore) {
-            await fs.promises.rm(entry.originalPath, { recursive: true, force: true });
-            continue;
-          }
-
-          await fs.promises.rm(entry.originalPath, { recursive: true, force: true });
-          await fs.promises.mkdir(path.dirname(entry.originalPath), { recursive: true });
-
-          if (entry.kind === 'symlink') {
-            await fs.promises.symlink(entry.symlinkTarget, entry.originalPath);
-            continue;
-          }
-
-          if (entry.kind === 'dir') {
-            await copyDir(entry.backupPath, entry.originalPath);
-            continue;
-          }
-
-          await fs.promises.copyFile(entry.backupPath, entry.originalPath);
-        } catch (error) {
-          errors.push(error);
-        }
-      }
-
-      if (errors.length > 0) {
-        throw new Error(`Failed to restore ${errors.length} file(s) after rewind failure.`);
-      }
-    };
-
-    const cleanup = async () => {
-      await fs.promises.rm(backupRoot, { recursive: true, force: true });
-    };
-
-    return { restore, cleanup };
-  }
-
   async rewind(userMessageId: string, assistantMessageId: string): Promise<ChatRewindResult> {
-    // SDK only returns filesChanged/insertions/deletions on dry runs
-    const preview = await this.rewindFiles(userMessageId, true);
-    if (!preview.canRewind) return preview;
-
-    const backup = await this.createRewindBackup(preview.filesChanged);
-
-    try {
-      const result = await this.rewindFiles(userMessageId);
-      if (!result.canRewind) {
-        await backup?.restore();
-        this.closePersistentQuery('rewind failed');
-        return result;
-      }
-
-      this.pendingResumeAt = assistantMessageId;
-      this.closePersistentQuery('rewind');
-      return {
-        ...result,
-        filesChanged: preview.filesChanged,
-        insertions: preview.insertions,
-        deletions: preview.deletions,
-      };
-    } catch (error) {
-      try {
-        await backup?.restore();
-      } catch (rollbackError) {
-        this.closePersistentQuery('rewind failed');
-        throw new Error(
-          `Rewind failed and files could not be fully restored: ${rollbackError instanceof Error ? rollbackError.message : 'Unknown error'}`
-        );
-      }
-
-      this.closePersistentQuery('rewind failed');
-      throw new Error(`Rewind failed but files were restored: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      await backup?.cleanup();
-    }
+    return executeClaudeRewind(userMessageId, {
+      assistantMessageId,
+      rewindFiles: this.rewindFiles.bind(this),
+      closePersistentQuery: (reason) => this.closePersistentQuery(reason),
+      setPendingResumeAt: (resumeAt) => {
+        this.pendingResumeAt = resumeAt;
+      },
+      vaultPath: this.vaultPath,
+    });
   }
 
   setApprovalCallback(callback: ApprovalCallback | null) {
@@ -1948,109 +1686,25 @@ export class ClaudianService implements ChatRuntime {
     this._subagentStateProvider = getState;
   }
 
-  setAutoTurnCallback(callback: ((chunks: StreamChunk[]) => void) | null): void {
+  setAutoTurnCallback(callback: ((result: AutoTurnResult) => void) | null): void {
     this._autoTurnCallback = callback;
   }
 
   private createApprovalCallback(): CanUseTool {
-    return async (toolName, input, options): Promise<PermissionResult> => {
-      if (this.currentAllowedTools !== null) {
-        if (!this.currentAllowedTools.includes(toolName) && toolName !== TOOL_SKILL) {
-          const allowedList = this.currentAllowedTools.length > 0
-            ? ` Allowed tools: ${this.currentAllowedTools.join(', ')}.`
-            : ' No tools are allowed for this query type.';
-          return {
-            behavior: 'deny',
-            message: `Tool "${toolName}" is not allowed for this query.${allowedList}`,
-          };
+    return createClaudeApprovalCallback({
+      getAllowedTools: () => this.currentAllowedTools,
+      getApprovalCallback: () => this.approvalCallback,
+      getAskUserQuestionCallback: () => this.askUserQuestionCallback,
+      getExitPlanModeCallback: () => this.exitPlanModeCallback,
+      getPermissionMode: () => this.plugin.settings.permissionMode,
+      resolveSDKPermissionMode: (mode) => this.resolveSDKPermissionMode(mode),
+      syncPermissionMode: (mode, sdkMode) => {
+        if (this.currentConfig) {
+          this.currentConfig.permissionMode = mode;
+          this.currentConfig.sdkPermissionMode = sdkMode;
         }
-      }
-
-      // ExitPlanMode uses a dedicated callback — bypasses normal approval flow
-      if (toolName === TOOL_EXIT_PLAN_MODE && this.exitPlanModeCallback) {
-        try {
-          const decision: ExitPlanModeDecision | null = await this.exitPlanModeCallback(input, options.signal);
-          if (decision === null) {
-            return { behavior: 'deny', message: 'User cancelled.', interrupt: true };
-          }
-          if (decision.type === 'feedback') {
-            return { behavior: 'deny', message: decision.text, interrupt: false };
-          }
-          // Callback already restored plugin.settings.permissionMode
-          const sdkMode = this.resolveSDKPermissionMode(this.plugin.settings.permissionMode);
-          // Sync config so applyDynamicUpdates doesn't re-send
-          if (this.currentConfig) {
-            this.currentConfig.permissionMode = this.plugin.settings.permissionMode;
-            this.currentConfig.sdkPermissionMode = sdkMode;
-          }
-          return {
-            behavior: 'allow',
-            updatedInput: input,
-            updatedPermissions: [
-              { type: 'setMode', mode: sdkMode, destination: 'session' },
-            ],
-          };
-        } catch (error) {
-          return {
-            behavior: 'deny',
-            message: `Failed to handle plan mode exit: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            interrupt: true,
-          };
-        }
-      }
-
-      // AskUserQuestion uses a dedicated callback — bypasses normal approval flow
-      if (toolName === TOOL_ASK_USER_QUESTION && this.askUserQuestionCallback) {
-        try {
-          const answers = await this.askUserQuestionCallback(input, options.signal);
-          if (answers === null) {
-            return { behavior: 'deny', message: 'User declined to answer.', interrupt: true };
-          }
-          return { behavior: 'allow', updatedInput: { ...input, answers } };
-        } catch (error) {
-          return {
-            behavior: 'deny',
-            message: `Failed to get user answers: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            interrupt: true,
-          };
-        }
-      }
-
-      // No pre-check — SDK already checked permanent rules before calling canUseTool
-      if (!this.approvalCallback) {
-        return { behavior: 'deny', message: 'No approval handler available.' };
-      }
-
-      try {
-        const { decisionReason, blockedPath, agentID } = options;
-        const description = getActionDescription(toolName, input);
-        const decision = await this.approvalCallback(
-          toolName, input, description,
-          { decisionReason, blockedPath, agentID }
-        );
-
-        if (decision === 'cancel') {
-          return { behavior: 'deny', message: 'User interrupted.', interrupt: true };
-        }
-
-        if (decision === 'allow' || decision === 'allow-always') {
-          const updatedPermissions = buildPermissionUpdates(
-            toolName, input, decision, options.suggestions
-          );
-          return { behavior: 'allow', updatedInput: input, updatedPermissions };
-        }
-
-        return { behavior: 'deny', message: 'User denied this action.', interrupt: false };
-      } catch (error) {
-        // Don't interrupt session — the deny message is sufficient for Claude
-        // to try an alternative approach or ask the user.
-        return {
-          behavior: 'deny',
-          message: `Approval request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          interrupt: false,
-        };
-      }
-    };
+      },
+    });
   }
 
   private resolveSDKPermissionMode(mode: PermissionMode): SDKPermissionMode {

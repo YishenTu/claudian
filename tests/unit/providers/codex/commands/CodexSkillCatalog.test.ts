@@ -1,6 +1,11 @@
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { CodexSkillCatalog } from '@/providers/codex/commands/CodexSkillCatalog';
-import { CodexSkillStorage } from '@/providers/codex/storage/CodexSkillStorage';
+import type { SkillMetadata } from '@/providers/codex/runtime/codexAppServerTypes';
+import type { CodexSkillListProvider } from '@/providers/codex/skills/CodexSkillListingService';
+import {
+  CodexSkillStorage,
+  createCodexSkillPersistenceKey,
+} from '@/providers/codex/storage/CodexSkillStorage';
 
 function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter {
   return {
@@ -35,29 +40,41 @@ function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter
   } as unknown as VaultFileAdapter;
 }
 
+function createMockSkillListProvider(
+  skills: SkillMetadata[] = [],
+): CodexSkillListProvider {
+  return {
+    listSkills: jest.fn().mockResolvedValue(skills),
+    invalidate: jest.fn(),
+  };
+}
+
 describe('CodexSkillCatalog', () => {
   describe('listDropdownEntries', () => {
-    it('returns scan-backed entries without runtime dependency', async () => {
-      const vaultAdapter = createMockAdapter({
-        '.codex/skills/my-skill/SKILL.md': `---
-description: A Codex skill
----
-Do codex things`,
-      });
-      const homeAdapter = createMockAdapter({
-        '.codex/skills/home-skill/SKILL.md': `---
-description: Home skill
----
-Home task`,
-      });
-
-      const storage = new CodexSkillStorage(vaultAdapter, homeAdapter);
-      const catalog = new CodexSkillCatalog(storage);
+    it('returns skills from app-server metadata instead of directory scans', async () => {
+      const storage = new CodexSkillStorage(createMockAdapter({}), createMockAdapter({}));
+      const listProvider = createMockSkillListProvider([
+        {
+          name: 'my-skill',
+          description: 'A Codex skill',
+          path: '/test/vault/.codex/skills/my-skill/SKILL.md',
+          scope: 'repo',
+          enabled: true,
+        },
+        {
+          name: 'home-skill',
+          description: 'Home skill',
+          path: '/Users/test/.codex/skills/home-skill/SKILL.md',
+          scope: 'user',
+          enabled: true,
+        },
+      ]);
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
 
-      // 1 built-in (/compact) + 2 scan-backed skills
-      expect(entries).toHaveLength(3);
+      expect(entries).toHaveLength(2);
+      expect(entries.some(e => e.name === 'compact')).toBe(false);
 
       const vaultEntry = entries.find(e => e.name === 'my-skill');
       expect(vaultEntry).toBeDefined();
@@ -67,50 +84,99 @@ Home task`,
       expect(vaultEntry!.displayPrefix).toBe('$');
       expect(vaultEntry!.insertPrefix).toBe('$');
       expect(vaultEntry!.source).toBe('user');
-      expect(vaultEntry!.persistenceKey).toBe('.codex/skills');
-      expect(vaultEntry!.id).toBe('codex-skill-codex-skills-my-skill');
+      expect(vaultEntry!.content).toBe('');
+      expect(vaultEntry!.persistenceKey).toBe(
+        createCodexSkillPersistenceKey({
+          rootId: 'vault-codex',
+          currentName: 'my-skill',
+        }),
+      );
+      expect(vaultEntry!.id).toBe('codex-skill-vault-codex-my-skill');
 
       const homeEntry = entries.find(e => e.name === 'home-skill');
       expect(homeEntry).toBeDefined();
       expect(homeEntry!.scope).toBe('user');
       expect(homeEntry!.isEditable).toBe(false);
       expect(homeEntry!.isDeletable).toBe(false);
-      expect(homeEntry!.persistenceKey).toBe('.codex/skills');
-      expect(homeEntry!.id).toBe('codex-skill-codex-skills-home-skill');
+      expect(homeEntry!.persistenceKey).toBeUndefined();
+    });
+
+    it('omits disabled skills from dropdown entries', async () => {
+      const storage = new CodexSkillStorage(createMockAdapter({}), createMockAdapter({}));
+      const listProvider = createMockSkillListProvider([
+        {
+          name: 'enabled-skill',
+          description: 'Enabled',
+          path: '/test/vault/.codex/skills/enabled-skill/SKILL.md',
+          scope: 'repo',
+          enabled: true,
+        },
+        {
+          name: 'disabled-skill',
+          description: 'Disabled',
+          path: '/test/vault/.codex/skills/disabled-skill/SKILL.md',
+          scope: 'repo',
+          enabled: false,
+        },
+      ]);
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
+
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+
+      expect(entries.map(entry => entry.name)).toEqual(['enabled-skill']);
     });
   });
 
   describe('listVaultEntries', () => {
-    it('returns only vault-level skills', async () => {
+    it('returns only managed repo-level skills and loads stored content', async () => {
       const vaultAdapter = createMockAdapter({
         '.codex/skills/vault-skill/SKILL.md': `---
 description: Vault
 ---
 Prompt`,
       });
-      const homeAdapter = createMockAdapter({
-        '.codex/skills/home-skill/SKILL.md': `---
-description: Home
----
-Prompt`,
-      });
-
-      const storage = new CodexSkillStorage(vaultAdapter, homeAdapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const storage = new CodexSkillStorage(vaultAdapter, createMockAdapter({}));
+      const listProvider = createMockSkillListProvider([
+        {
+          name: 'vault-skill',
+          description: 'Vault',
+          path: '/test/vault/.codex/skills/vault-skill/SKILL.md',
+          scope: 'repo',
+          enabled: true,
+        },
+        {
+          name: 'home-skill',
+          description: 'Home',
+          path: '/Users/test/.codex/skills/home-skill/SKILL.md',
+          scope: 'user',
+          enabled: true,
+        },
+        {
+          name: 'other-repo-skill',
+          description: 'Other repo',
+          path: '/test/vault/scripts/skills/other-repo-skill/SKILL.md',
+          scope: 'repo',
+          enabled: true,
+        },
+      ]);
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
 
       const entries = await catalog.listVaultEntries();
 
       expect(entries).toHaveLength(1);
       expect(entries[0].name).toBe('vault-skill');
       expect(entries[0].scope).toBe('vault');
+      expect(entries[0].content).toBe('Prompt');
     });
+
   });
 
   describe('saveVaultEntry', () => {
     it('saves through storage to vault .codex/skills', async () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const listProvider = createMockSkillListProvider();
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
 
       await catalog.saveVaultEntry({
         id: 'codex-skill-new',
@@ -125,6 +191,10 @@ Prompt`,
         isDeletable: true,
         displayPrefix: '$',
         insertPrefix: '$',
+        persistenceKey: createCodexSkillPersistenceKey({
+          rootId: 'vault-codex',
+          currentName: 'old-skill',
+        }),
       });
 
       expect(adapter.ensureFolder).toHaveBeenCalledWith('.codex/skills/new-skill');
@@ -132,12 +202,14 @@ Prompt`,
         '.codex/skills/new-skill/SKILL.md',
         expect.stringContaining('Do things'),
       );
+      expect(adapter.delete).toHaveBeenCalledWith('.codex/skills/old-skill/SKILL.md');
+      expect(listProvider.invalidate).toHaveBeenCalled();
     });
 
     it('preserves .agents storage root when editing an existing .agents skill', async () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const catalog = new CodexSkillCatalog(storage, createMockSkillListProvider(), '/test/vault');
 
       await catalog.saveVaultEntry({
         id: 'codex-skill-agent',
@@ -152,7 +224,10 @@ Prompt`,
         isDeletable: true,
         displayPrefix: '$',
         insertPrefix: '$',
-        persistenceKey: '.agents/skills',
+        persistenceKey: createCodexSkillPersistenceKey({
+          rootId: 'vault-agents',
+          currentName: 'agent',
+        }),
       });
 
       expect(adapter.ensureFolder).toHaveBeenCalledWith('.agents/skills/agent');
@@ -172,7 +247,8 @@ description: Target
 Prompt`,
       });
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const listProvider = createMockSkillListProvider();
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
 
       await catalog.deleteVaultEntry({
         id: 'codex-skill-target',
@@ -190,6 +266,7 @@ Prompt`,
       });
 
       expect(adapter.delete).toHaveBeenCalledWith('.codex/skills/target/SKILL.md');
+      expect(listProvider.invalidate).toHaveBeenCalled();
     });
 
     it('deletes from .agents when the persistence key points there', async () => {
@@ -200,7 +277,7 @@ description: Target
 Prompt`,
       });
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const catalog = new CodexSkillCatalog(storage, createMockSkillListProvider(), '/test/vault');
 
       await catalog.deleteVaultEntry({
         id: 'codex-skill-target',
@@ -215,7 +292,10 @@ Prompt`,
         isDeletable: true,
         displayPrefix: '$',
         insertPrefix: '$',
-        persistenceKey: '.agents/skills',
+        persistenceKey: createCodexSkillPersistenceKey({
+          rootId: 'vault-agents',
+          currentName: 'target',
+        }),
       });
 
       expect(adapter.delete).toHaveBeenCalledWith('.agents/skills/target/SKILL.md');
@@ -226,7 +306,7 @@ Prompt`,
     it('returns Codex-specific config with $ for skills', () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const catalog = new CodexSkillCatalog(storage, createMockSkillListProvider(), '/test/vault');
 
       const config = catalog.getDropdownConfig();
 
@@ -237,11 +317,25 @@ Prompt`,
     });
   });
 
+  describe('refresh', () => {
+    it('forces an app-server reload instead of relying on scans', async () => {
+      const adapter = createMockAdapter({});
+      const storage = new CodexSkillStorage(adapter);
+      const listProvider = createMockSkillListProvider([]);
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
+
+      await catalog.refresh();
+
+      expect(listProvider.invalidate).toHaveBeenCalledTimes(1);
+      expect(listProvider.listSkills).toHaveBeenCalledWith({ forceReload: true });
+    });
+  });
+
   describe('built-in /compact command', () => {
     it('includes /compact in dropdown entries', async () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const catalog = new CodexSkillCatalog(storage, createMockSkillListProvider(), '/test/vault');
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: true });
       const compactEntry = entries.find(e => e.name === 'compact');
@@ -257,15 +351,17 @@ Prompt`,
     });
 
     it('places /compact before scan-backed skills', async () => {
-      const vaultAdapter = createMockAdapter({
-        '.codex/skills/my-skill/SKILL.md': `---
-description: A skill
----
-Prompt`,
-      });
-      const homeAdapter = createMockAdapter({});
-      const storage = new CodexSkillStorage(vaultAdapter, homeAdapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const storage = new CodexSkillStorage(createMockAdapter({}), createMockAdapter({}));
+      const listProvider = createMockSkillListProvider([
+        {
+          name: 'my-skill',
+          description: 'A skill',
+          path: '/test/vault/.codex/skills/my-skill/SKILL.md',
+          scope: 'repo',
+          enabled: true,
+        },
+      ]);
+      const catalog = new CodexSkillCatalog(storage, listProvider, '/test/vault');
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: true });
 
@@ -280,7 +376,7 @@ Prompt`,
     it('does not include /compact in vault entries', async () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSkillStorage(adapter);
-      const catalog = new CodexSkillCatalog(storage);
+      const catalog = new CodexSkillCatalog(storage, createMockSkillListProvider(), '/test/vault');
 
       const entries = await catalog.listVaultEntries();
       const compactEntry = entries.find(e => e.name === 'compact');

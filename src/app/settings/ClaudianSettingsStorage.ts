@@ -13,10 +13,8 @@ import type {
   EnvironmentScope,
   EnvSnippet,
   HiddenProviderCommands,
-  PlatformBlockedCommands,
   ProviderConfigMap,
 } from '../../core/types/settings';
-import { getDefaultBlockedCommands } from '../../core/types/settings';
 import {
   getClaudeProviderSettings,
   updateClaudeProviderSettings,
@@ -59,6 +57,8 @@ function stripLegacyFields(settings: Record<string, unknown>): Record<string, un
     slashCommands: _slashCommands,
     allowExternalAccess: _allowExternalAccess,
     allowedExportPaths: _allowedExportPaths,
+    enableBlocklist: _enableBlocklist,
+    blockedCommands: _blockedCommands,
     claudeSafeMode: _claudeSafeMode,
     codexSafeMode: _codexSafeMode,
     claudeCliPath: _claudeCliPath,
@@ -79,38 +79,6 @@ function stripLegacyFields(settings: Record<string, unknown>): Record<string, un
     ...cleaned
   } = settings;
   return cleaned;
-}
-
-function normalizeCommandList(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) {
-    return [...fallback];
-  }
-
-  return value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-}
-
-export function normalizeBlockedCommands(value: unknown): PlatformBlockedCommands {
-  const defaults = getDefaultBlockedCommands();
-
-  if (Array.isArray(value)) {
-    return {
-      unix: normalizeCommandList(value, defaults.unix),
-      windows: [...defaults.windows],
-    };
-  }
-
-  if (!value || typeof value !== 'object') {
-    return defaults;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  return {
-    unix: normalizeCommandList(candidate.unix, defaults.unix),
-    windows: normalizeCommandList(candidate.windows, defaults.windows),
-  };
 }
 
 function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
@@ -229,10 +197,8 @@ export class ClaudianSettingsStorage {
       ...legacyProviderSettings,
     });
 
-    const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
     const legacyNormalized = {
       ...storedWithoutLegacy,
-      blockedCommands,
       sharedEnvironmentVariables: getSharedEnvironmentVariables(legacyProviderSettings),
       envSnippets,
       hiddenProviderCommands,
@@ -261,6 +227,8 @@ export class ClaudianSettingsStorage {
       || 'activeConversationId' in stored
       || 'allowExternalAccess' in stored
       || 'allowedExportPaths' in stored
+      || 'enableBlocklist' in stored
+      || 'blockedCommands' in stored
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
     ) {
       await this.save(merged);

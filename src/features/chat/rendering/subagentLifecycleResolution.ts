@@ -1,12 +1,8 @@
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import type { ProviderSubagentLifecycleAdapter } from '../../../core/providers/types';
-import type { ProviderId } from '../../../core/providers/types';
+import type { ProviderId, ProviderSubagentLifecycleAdapter } from '../../../core/providers/types';
 
 /**
- * Resolves the lifecycle adapter for a given tool name, falling back to other
- * registered providers when the active provider's adapter doesn't own the tool.
- *
- * Shared by StreamController (live streaming) and MessageRenderer (stored replay).
+ * Resolves the lifecycle adapter owned by the active provider.
  */
 export function resolveSubagentLifecycleAdapter(
   activeProviderId: ProviderId,
@@ -18,20 +14,7 @@ export function resolveSubagentLifecycleAdapter(
     return activeAdapter;
   }
 
-  if (activeAdapter && adapterOwnsTool(activeAdapter, toolName)) {
-    return activeAdapter;
-  }
-
-  for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
-    if (providerId === activeProviderId) continue;
-
-    const adapter = ProviderRegistry.getSubagentLifecycleAdapter(providerId);
-    if (adapter && adapterOwnsTool(adapter, toolName)) {
-      return adapter;
-    }
-  }
-
-  return null;
+  return activeAdapter && adapterOwnsTool(activeAdapter, toolName) ? activeAdapter : null;
 }
 
 function adapterOwnsTool(adapter: ProviderSubagentLifecycleAdapter, toolName: string): boolean {

@@ -18,7 +18,8 @@ import {
   DEFAULT_CHAT_PROVIDER_ID,
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { ChatMessage, Conversation, StreamChunk } from '../../../core/types';
+import type { AutoTurnResult } from '../../../core/runtime/types';
+import type { ChatMessage, Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -1567,8 +1568,8 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         hasRunning: tab.services.subagentManager.hasRunningSubagents(),
       })
     );
-    tab.service.setAutoTurnCallback((chunks: StreamChunk[]) => {
-      renderAutoTriggeredTurn(tab, chunks);
+    tab.service.setAutoTurnCallback((result: AutoTurnResult) => {
+      renderAutoTriggeredTurn(tab, result);
     });
     tab.service.setPermissionModeSyncCallback((sdkMode) => {
       let mode: string;
@@ -1595,22 +1596,20 @@ function generateMessageId(): string {
  * Renders an auto-triggered turn (e.g., agent response to task-notification)
  * that arrives after the main handler has completed.
  */
-function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
+function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): void {
   if (!tab.dom.contentEl.isConnected) {
     return;
   }
 
+  const { chunks, metadata } = result;
   const hasToolActivity = chunks.some(
     chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result'
   );
   let textContent = '';
-  let assistantMessageId: string | undefined;
 
   for (const chunk of chunks) {
     if (chunk.type === 'text') {
       textContent += chunk.content;
-    } else if (chunk.type === 'assistant_message_id') {
-      assistantMessageId = chunk.uuid;
     }
   }
 
@@ -1619,12 +1618,12 @@ function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
   const content = textContent.trim() || '(background task completed)';
 
   const assistantMsg: ChatMessage = {
-    id: assistantMessageId ?? generateMessageId(),
+    id: metadata.assistantMessageId ?? generateMessageId(),
     role: 'assistant',
     content,
     timestamp: Date.now(),
     contentBlocks: [{ type: 'text', content }],
-    ...(assistantMessageId && { assistantMessageId }),
+    ...(metadata.assistantMessageId && { assistantMessageId: metadata.assistantMessageId }),
   };
 
   tab.state.addMessage(assistantMsg);

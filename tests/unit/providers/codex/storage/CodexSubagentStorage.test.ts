@@ -2,6 +2,8 @@ import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import {
   CODEX_AGENTS_PATH,
   CodexSubagentStorage,
+  createCodexSubagentPersistenceKey,
+  parseCodexSubagentPersistenceKey,
   parseSubagentToml,
   serializeSubagentToml,
 } from '@/providers/codex/storage/CodexSubagentStorage';
@@ -62,7 +64,9 @@ describe('parseSubagentToml', () => {
     expect(result!.name).toBe('reviewer');
     expect(result!.description).toBe('PR reviewer focused on correctness.');
     expect(result!.developerInstructions).toContain('Review code like an owner.');
-    expect(result!.filePath).toBe('.codex/agents/reviewer.toml');
+    expect(result!.persistenceKey).toBe(
+      createCodexSubagentPersistenceKey({ fileName: 'reviewer.toml' }),
+    );
   });
 
   it('parses all optional fields', () => {
@@ -255,7 +259,7 @@ describe('CodexSubagentStorage', () => {
         name: 'reviewer',
         description: '',
         developerInstructions: '',
-        filePath: '.codex/agents/reviewer.toml',
+        persistenceKey: createCodexSubagentPersistenceKey({ fileName: 'reviewer.toml' }),
       });
 
       expect(agent).not.toBeNull();
@@ -293,7 +297,7 @@ describe('CodexSubagentStorage', () => {
       );
     });
 
-    it('uses existing filePath if valid', async () => {
+    it('preserves the existing backing file when the name is unchanged', async () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSubagentStorage(adapter);
 
@@ -301,7 +305,11 @@ describe('CodexSubagentStorage', () => {
         name: 'reviewer',
         description: 'Reviews code.',
         developerInstructions: 'Review carefully.',
-        filePath: '.codex/agents/my-reviewer.toml',
+      }, {
+        name: 'reviewer',
+        description: 'Reviews code.',
+        developerInstructions: 'Review carefully.',
+        persistenceKey: createCodexSubagentPersistenceKey({ fileName: 'my-reviewer.toml' }),
       });
 
       expect(adapter.write).toHaveBeenCalledWith(
@@ -310,21 +318,26 @@ describe('CodexSubagentStorage', () => {
       );
     });
 
-    it('falls back to name-based path if filePath is outside agents dir', async () => {
+    it('renames the backing file when the agent name changes', async () => {
       const adapter = createMockAdapter({});
       const storage = new CodexSubagentStorage(adapter);
 
       await storage.save({
+        name: 'renamed-reviewer',
+        description: 'Reviews code.',
+        developerInstructions: 'Review carefully.',
+      }, {
         name: 'reviewer',
         description: 'Reviews code.',
         developerInstructions: 'Review carefully.',
-        filePath: '/some/other/path.toml',
+        persistenceKey: createCodexSubagentPersistenceKey({ fileName: 'my-reviewer.toml' }),
       });
 
       expect(adapter.write).toHaveBeenCalledWith(
-        '.codex/agents/reviewer.toml',
+        '.codex/agents/renamed-reviewer.toml',
         expect.any(String),
       );
+      expect(adapter.delete).toHaveBeenCalledWith('.codex/agents/my-reviewer.toml');
     });
   });
 
@@ -339,10 +352,24 @@ describe('CodexSubagentStorage', () => {
         name: 'reviewer',
         description: '',
         developerInstructions: '',
-        filePath: '.codex/agents/reviewer.toml',
+        persistenceKey: createCodexSubagentPersistenceKey({ fileName: 'reviewer.toml' }),
       });
 
       expect(adapter.delete).toHaveBeenCalledWith('.codex/agents/reviewer.toml');
+    });
+  });
+
+  describe('persistence keys', () => {
+    it('round-trips file identity without exposing the storage path', () => {
+      const key = createCodexSubagentPersistenceKey({ fileName: 'reviewer.toml' });
+
+      expect(parseCodexSubagentPersistenceKey(key)).toEqual({ fileName: 'reviewer.toml' });
+    });
+
+    it('parses legacy relative file paths for backward compatibility', () => {
+      expect(parseCodexSubagentPersistenceKey('.codex/agents/reviewer.toml')).toEqual({
+        fileName: 'reviewer.toml',
+      });
     });
   });
 });

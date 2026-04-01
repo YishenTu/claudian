@@ -70,7 +70,7 @@ describe('CodexServerRequestRouter', () => {
       expect(result).toEqual({ decision: 'cancel' });
     });
 
-    it('passes through network and amendment metadata to the approval callback', async () => {
+    it('passes through network metadata and generic decision options to the approval callback', async () => {
       mockApprovalCallback.mockResolvedValue('allow');
 
       await router.handleServerRequest(
@@ -111,8 +111,6 @@ describe('CodexServerRequestRouter', () => {
         expect.stringContaining('api.openai.com'),
         expect.objectContaining({
           networkApprovalContext: { host: 'api.openai.com', protocol: 'https' },
-          proposedExecpolicyAmendment: ['curl', 'https://api.openai.com/*'],
-          proposedNetworkPolicyAmendments: [{ host: 'api.openai.com', action: 'allow' }],
           decisionOptions: expect.arrayContaining([
             expect.objectContaining({ label: expect.any(String) }),
           ]),
@@ -120,10 +118,14 @@ describe('CodexServerRequestRouter', () => {
       );
     });
 
-    it('returns an execpolicy amendment decision when selected by the callback', async () => {
+    it('returns an execpolicy amendment decision when selected by option value', async () => {
       mockApprovalCallback.mockResolvedValue({
-        type: 'allow-with-exec-policy-amendment',
-        execPolicyAmendment: ['npm', 'test'],
+        type: 'select-option',
+        value: JSON.stringify({
+          acceptWithExecpolicyAmendment: {
+            execpolicy_amendment: ['npm', 'test'],
+          },
+        }),
       } as any);
 
       const result = await router.handleServerRequest(
@@ -140,10 +142,14 @@ describe('CodexServerRequestRouter', () => {
       });
     });
 
-    it('returns a network policy amendment decision when selected by the callback', async () => {
+    it('returns a network policy amendment decision when selected by option value', async () => {
       mockApprovalCallback.mockResolvedValue({
-        type: 'apply-network-policy-amendment',
-        networkPolicyAmendment: { host: 'api.openai.com', action: 'allow' },
+        type: 'select-option',
+        value: JSON.stringify({
+          applyNetworkPolicyAmendment: {
+            network_policy_amendment: { host: 'api.openai.com', action: 'allow' },
+          },
+        }),
       } as any);
 
       const result = await router.handleServerRequest(

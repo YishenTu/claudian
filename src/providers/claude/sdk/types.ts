@@ -7,4 +7,9 @@ export interface SessionInitEvent {
   permissionMode?: string;
 }
 
-export type TransformEvent = StreamChunk | SessionInitEvent;
+export interface ContextWindowEvent {
+  type: 'context_window';
+  contextWindow: number;
+}
+
+export type TransformEvent = StreamChunk | SessionInitEvent | ContextWindowEvent;

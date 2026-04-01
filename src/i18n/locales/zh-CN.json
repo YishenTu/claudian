@@ -197,16 +197,6 @@
       "name": "加载用户 Claude 设置",
       "desc": "加载 ~/.claude/settings.json。启用后，用户的 Claude Code 权限规则可能绕过安全模式。"
     },
-    "enableBlocklist": {
-      "name": "启用命令黑名单",
-      "desc": "阻止潜在危险的 bash 命令"
-    },
-    "blockedCommands": {
-      "name": "阻止的命令 ({platform})",
-      "desc": "在 {platform} 上阻止的模式（每行一个）。支持正则表达式。",
-      "unixName": "阻止的命令 (Unix/Git Bash)",
-      "unixDesc": "Unix 模式在 Windows 上也会被阻止，因为 Git Bash 可以调用它们。"
-    },
     "claudeSafeMode": {
       "name": "Safe mode",
       "desc": "Permission mode used when the Safe toggle is active."

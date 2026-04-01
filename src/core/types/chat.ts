@@ -33,7 +33,7 @@ export type ContentBlock =
   | { type: 'tool_use'; toolId: string }
   | { type: 'thinking'; content: string; durationSeconds?: number }
   | { type: 'subagent'; subagentId: string; mode?: SubagentMode }
-  | { type: 'compact_boundary' };
+  | { type: 'context_compacted' };
 
 /** Chat message with content, tool calls, and attachments. */
 export interface ChatMessage {
@@ -130,32 +130,23 @@ export interface SessionMetadata {
  * Normalized stream chunk emitted by the active provider runtime.
  *
  * All providers must emit: text, tool_use, tool_result, error, done, usage.
- * Provider-specific/optional variants:
- * - thinking: only providers with extended thinking (Claude)
- * - blocked: hook-denied tool results (Claude)
- * - compact_boundary: /compact command (Claude)
- * - user_message_id, user_message_sent, assistant_message_id: SDK message tracking (Claude)
- * - context_window_update: authoritative context window from SDK result (Claude)
- * - parentToolUseId on text/thinking/tool_use/tool_result: subagent scoping (Claude)
- *
- * Feature code must tolerate missing optional variants (switch default / no-op).
+ * Provider-specific behavior must be normalized before reaching this contract.
+ * Providers may keep provider-native turn metadata internally and expose it via
+ * runtime methods instead of encoding it as stream-control chunks.
  */
 export type StreamChunk =
-  | { type: 'text'; content: string; parentToolUseId?: string | null }
-  | { type: 'thinking'; content: string; parentToolUseId?: string | null }
-  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown>; parentToolUseId?: string | null }
-  | { type: 'tool_result'; id: string; content: string; isError?: boolean; parentToolUseId?: string | null; toolUseResult?: SDKToolUseResult }
+  | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult }
   | { type: 'tool_output'; id: string; content: string }
   | { type: 'error'; content: string }
-  | { type: 'blocked'; content: string }
+  | { type: 'notice'; content: string; level?: 'info' | 'warning' }
   | { type: 'done' }
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
-  | { type: 'compact_boundary' }
-  | { type: 'user_message_id'; uuid: string }
-  | { type: 'user_message_sent'; uuid: string }
-  | { type: 'assistant_message_id'; uuid: string }
-  | { type: 'context_window_update'; contextWindow: number }
-  | { type: 'plan_completed' };
+  | { type: 'context_compacted' }
+  | { type: 'subagent_tool_use'; subagentId: string; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'subagent_tool_result'; subagentId: string; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
 
 /**
  * Context window usage information.

@@ -16,19 +16,13 @@ export {
 // Settings and command types
 export {
   type ApprovalDecision,
-  type ApprovalNetworkPolicyAmendment,
   type ClaudianSettings,
   type EnvironmentScope,
   type EnvSnippet,
-  getBashToolBlockedCommands,
-  getCurrentPlatformBlockedCommands,
-  getCurrentPlatformKey,
-  getDefaultBlockedCommands,
   type HostnameCliPaths,
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
   type PermissionMode,
-  type PlatformBlockedCommands,
   type SlashCommand,
   type TabBarPosition,
 } from './settings';

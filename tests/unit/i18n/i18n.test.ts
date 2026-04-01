@@ -21,8 +21,8 @@ describe('i18n', () => {
 
     it('returns string with parameter interpolation', () => {
       // Use a key that has placeholders
-      const result = t('settings.blockedCommands.name' as TranslationKey, { platform: 'Unix' });
-      expect(result).toBe('Blocked commands (Unix)');
+      const result = t('chat.rewind.notice' as TranslationKey, { count: 2 });
+      expect(result).toBe('Rewound: 2 file(s) reverted');
     });
 
     it('returns key for missing translation in English', () => {
@@ -61,14 +61,14 @@ describe('i18n', () => {
 
     it('replaces placeholders with params', () => {
       // Use a key with {param} placeholders
-      const result = t('settings.blockedCommands.desc' as TranslationKey, { platform: 'Windows' });
-      expect(result).toContain('Windows');
+      const result = t('chat.fork.failed' as TranslationKey, { error: 'Network timeout' });
+      expect(result).toBe('Fork failed: Network timeout');
     });
 
     it('keeps placeholder if param not provided', () => {
       // Use a key with placeholders but don't provide the param
-      const result = t('settings.blockedCommands.name' as TranslationKey, {});
-      expect(result).toBe('Blocked commands ({platform})');
+      const result = t('chat.rewind.notice' as TranslationKey, {});
+      expect(result).toBe('Rewound: {count} file(s) reverted');
     });
   });
 

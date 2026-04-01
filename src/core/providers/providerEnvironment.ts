@@ -1,5 +1,6 @@
 import { parseEnvironmentVariables } from '../../utils/env';
 import { getProviderConfig, setProviderConfig } from './providerConfig';
+import { ProviderRegistry } from './ProviderRegistry';
 import type { ProviderId } from './types';
 
 export type EnvironmentScope = 'shared' | `provider:${string}`;
@@ -35,11 +36,6 @@ const SHARED_ENVIRONMENT_KEYS = new Set([
   'TEMP',
 ]);
 
-const PROVIDER_ENV_NAMESPACE_PATTERNS: Record<ProviderId, RegExp[]> = {
-  claude: [/^ANTHROPIC_/i, /^CLAUDE_/i],
-  codex: [/^OPENAI_/i, /^CODEX_/i],
-};
-
 function resolveScopeProviderId(scope: EnvironmentScope): ProviderId | null {
   return scope.startsWith('provider:') ? scope.slice('provider:'.length) : null;
 }
@@ -54,7 +50,8 @@ function classifyEnvironmentKey(key: string): EnvironmentKeyOwnership {
     return { type: 'shared-known' };
   }
 
-  for (const [providerId, patterns] of Object.entries(PROVIDER_ENV_NAMESPACE_PATTERNS)) {
+  for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+    const patterns = ProviderRegistry.getEnvironmentKeyPatterns(providerId);
     if (patterns.some((pattern) => pattern.test(normalized))) {
       return { type: 'provider', providerId };
     }

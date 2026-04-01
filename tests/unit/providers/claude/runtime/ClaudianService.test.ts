@@ -51,8 +51,6 @@ describe('ClaudianService', () => {
         model: 'claude-3-5-sonnet',
         permissionMode: 'ask' as const,
         thinkingBudget: 0,
-        blockedCommands: [],
-        enableBlocklist: false,
         mediaFolder: 'claudian-media',
         systemPrompt: '',
         loadUserClaudeSettings: false,
@@ -1280,9 +1278,12 @@ describe('ClaudianService', () => {
       });
 
       expect(autoTurnCallback).toHaveBeenCalledTimes(1);
-      expect(autoTurnCallback).toHaveBeenCalledWith([
-        expect.objectContaining({ type: 'text', content: 'Fresh auto-turn text' }),
-      ]);
+      expect(autoTurnCallback).toHaveBeenCalledWith({
+        chunks: [
+          expect.objectContaining({ type: 'text', content: 'Fresh auto-turn text' }),
+        ],
+        metadata: {},
+      });
     });
 
     it('should notify when auto-turn callback rendering fails', async () => {
@@ -2387,14 +2388,6 @@ describe('ClaudianService', () => {
         'test', undefined, '/mock/vault/path', '/usr/local/bin/claude'
       );
 
-      // Consume the user_message_id chunk yielded before handler registration
-      const firstChunk = await gen.next();
-      expect(firstChunk.value.type).toBe('user_message_id');
-
-      // Consume the user_message_sent chunk yielded after enqueue succeeds
-      const sentChunk = await gen.next();
-      expect(sentChunk.value.type).toBe('user_message_sent');
-
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -2442,15 +2435,7 @@ describe('ClaudianService', () => {
         'test', undefined, '/mock/vault/path', '/usr/local/bin/claude'
       );
 
-      // Consume the user_message_id chunk yielded before handler registration
-      const uuidChunk = await gen.next();
-      expect(uuidChunk.value.type).toBe('user_message_id');
-
       const chunks: any[] = [];
-      // Consume the user_message_sent chunk yielded after enqueue succeeds
-      const sentChunk = await gen.next();
-      expect(sentChunk.value.type).toBe('user_message_sent');
-
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -2507,14 +2492,6 @@ describe('ClaudianService', () => {
       const gen = (service as any).queryViaPersistent(
         'test', undefined, '/mock/vault/path', '/usr/local/bin/claude'
       );
-
-      // Consume the user_message_id chunk yielded before handler registration
-      const uuidChunk = await gen.next();
-      expect(uuidChunk.value.type).toBe('user_message_id');
-
-      // Consume the user_message_sent chunk yielded after enqueue succeeds
-      const sentChunk = await gen.next();
-      expect(sentChunk.value.type).toBe('user_message_sent');
 
       const iterPromise = gen.next();
       await new Promise(resolve => setTimeout(resolve, 10));

@@ -1,3 +1,4 @@
+import type { ChatTurnMetadata } from '../../../core/runtime/types';
 import type { StreamChunk, UsageInfo } from '../../../core/types';
 import {
   normalizeCodexToolInput,
@@ -25,6 +26,7 @@ import type {
 } from './codexAppServerTypes';
 
 type ChunkEmitter = (chunk: StreamChunk) => void;
+type TurnMetadataListener = (update: Partial<ChatTurnMetadata>) => void;
 
 const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
   spawnAgent: 'spawn_agent',
@@ -40,7 +42,10 @@ export class CodexNotificationRouter {
   private isPlanTurn = false;
   private sawPlanDelta = false;
 
-  constructor(private readonly emit: ChunkEmitter) {}
+  constructor(
+    private readonly emit: ChunkEmitter,
+    private readonly onTurnMetadata?: TurnMetadataListener,
+  ) {}
 
   beginTurn(params: { isPlanTurn: boolean }): void {
     this.isPlanTurn = params.isPlanTurn;
@@ -328,7 +333,7 @@ export class CodexNotificationRouter {
   }
 
   private emitContextCompactionBoundary(_item: ContextCompactionItem): void {
-    this.emit({ type: 'compact_boundary' });
+    this.emit({ type: 'context_compacted' });
   }
 
   // -- turn/plan/updated (update_plan) ----------------------------------------
@@ -385,12 +390,11 @@ export class CodexNotificationRouter {
       this.emit({ type: 'error', content: turn.error.message });
     }
 
-    if (turn.status === 'completed' && this.isPlanTurn && this.sawPlanDelta) {
-      this.emit({ type: 'plan_completed' });
-    }
-
     if (turn.status === 'completed') {
-      this.emit({ type: 'assistant_message_id', uuid: turn.id });
+      this.onTurnMetadata?.({
+        assistantMessageId: turn.id,
+        ...(this.isPlanTurn && this.sawPlanDelta ? { planCompleted: true } : {}),
+      });
     }
 
     this.emit({ type: 'done' });

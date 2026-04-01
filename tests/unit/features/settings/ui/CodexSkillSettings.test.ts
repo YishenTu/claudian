@@ -1,6 +1,9 @@
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
-import { AGENTS_VAULT_SKILLS_PATH, CODEX_VAULT_SKILLS_PATH } from '@/providers/codex/storage/CodexSkillStorage';
+import {
+  type CodexSkillRootId,
+  createCodexSkillPersistenceKey,
+} from '@/providers/codex/storage/CodexSkillStorage';
 import { CodexSkillModal, CodexSkillSettings } from '@/providers/codex/ui/CodexSkillSettings';
 
 function makeEntry(name: string, scope: 'vault' | 'user' = 'vault'): ProviderCommandEntry {
@@ -143,12 +146,17 @@ describe('CodexSkillModal', () => {
       await modal.getTestInputs().triggerSave();
 
       expect(savedEntries).toHaveLength(1);
-      expect(savedEntries[0].persistenceKey).toBe(CODEX_VAULT_SKILLS_PATH);
+      expect(savedEntries[0].persistenceKey).toBe(
+        createCodexSkillPersistenceKey({ rootId: 'vault-codex' }),
+      );
     });
 
     it('preserves existing persistenceKey when editing', async () => {
       const existing = makeEntry('existing-skill');
-      existing.persistenceKey = AGENTS_VAULT_SKILLS_PATH;
+      existing.persistenceKey = createCodexSkillPersistenceKey({
+        rootId: 'vault-agents',
+        currentName: 'existing-skill',
+      });
 
       const savedEntries: ProviderCommandEntry[] = [];
       const modal = new CodexSkillModal(
@@ -165,7 +173,12 @@ describe('CodexSkillModal', () => {
       await modal.getTestInputs().triggerSave();
 
       expect(savedEntries).toHaveLength(1);
-      expect(savedEntries[0].persistenceKey).toBe(AGENTS_VAULT_SKILLS_PATH);
+      expect(savedEntries[0].persistenceKey).toBe(
+        createCodexSkillPersistenceKey({
+          rootId: 'vault-agents',
+          currentName: 'existing-skill',
+        }),
+      );
     });
 
     it('allows changing directory via dropdown', async () => {
@@ -181,12 +194,14 @@ describe('CodexSkillModal', () => {
       const { nameInput, contentArea, setDirectory } = modal.getTestInputs();
       nameInput.value = 'new-skill';
       contentArea.value = 'Content here';
-      setDirectory(AGENTS_VAULT_SKILLS_PATH);
+      setDirectory('vault-agents' as CodexSkillRootId);
 
       await modal.getTestInputs().triggerSave();
 
       expect(savedEntries).toHaveLength(1);
-      expect(savedEntries[0].persistenceKey).toBe(AGENTS_VAULT_SKILLS_PATH);
+      expect(savedEntries[0].persistenceKey).toBe(
+        createCodexSkillPersistenceKey({ rootId: 'vault-agents' }),
+      );
     });
   });
 });
@@ -254,6 +269,26 @@ describe('CodexSkillSettings', () => {
       await settings.deleteEntry(entries[0]);
 
       expect(catalog.deleteVaultEntry).toHaveBeenCalledWith(entries[0]);
+    });
+  });
+
+  describe('refresh', () => {
+    it('refreshes through the catalog and re-renders vault entries', async () => {
+      const container = createMockContainer();
+      const catalog = createMockCatalog([makeEntry('test-skill')]);
+
+      const settings = new CodexSkillSettings(container, catalog);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      (catalog.refresh as jest.Mock).mockClear();
+      (catalog.listVaultEntries as jest.Mock).mockClear();
+      (catalog.listDropdownEntries as jest.Mock).mockClear();
+
+      await settings.refresh();
+
+      expect(catalog.refresh).toHaveBeenCalledTimes(1);
+      expect(catalog.listVaultEntries).toHaveBeenCalledTimes(1);
+      expect(catalog.listDropdownEntries).not.toHaveBeenCalled();
     });
   });
 });

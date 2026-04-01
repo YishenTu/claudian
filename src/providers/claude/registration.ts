@@ -1,5 +1,5 @@
 import type { ProviderRegistration } from '../../core/providers/types';
-import { maybeGetClaudeWorkspaceServices } from './app/ClaudeWorkspaceServices';
+import { getClaudeWorkspaceServices } from './app/ClaudeWorkspaceServices';
 import { InlineEditService as ClaudeInlineEditService } from './aux/ClaudeInlineEditService';
 import { InstructionRefineService as ClaudeInstructionRefineService } from './aux/ClaudeInstructionRefineService';
 import { TitleGenerationService as ClaudeTitleGenerationService } from './aux/ClaudeTitleGenerationService';
@@ -15,10 +15,11 @@ export const claudeProviderRegistration: ProviderRegistration = {
   blankTabOrder: 20,
   isEnabled: () => true,
   capabilities: CLAUDE_PROVIDER_CAPABILITIES,
+  environmentKeyPatterns: [/^ANTHROPIC_/i, /^CLAUDE_/i],
   chatUIConfig: claudeChatUIConfig,
   settingsReconciler: claudeSettingsReconciler,
   createRuntime: ({ plugin }) => {
-    const workspace = maybeGetClaudeWorkspaceServices();
+    const workspace = getClaudeWorkspaceServices();
     const resolvedMcpManager = workspace?.mcpManager;
     if (!resolvedMcpManager) {
       throw new Error('Claude workspace services are not initialized.');

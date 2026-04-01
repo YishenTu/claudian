@@ -793,6 +793,55 @@ describe('CodexChatRuntime', () => {
   });
 
   describe('query - image support', () => {
+    it('attaches structured skill inputs for explicit $skill references', async () => {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-skill'),
+        'skills/list': (params: Record<string, unknown>) => {
+          expect(params.cwds).toEqual(['/test/vault']);
+          return {
+            data: [
+              {
+                cwd: '/test/vault',
+                skills: [
+                  {
+                    name: 'analyze',
+                    description: 'Analyze code',
+                    path: '/test/vault/.codex/skills/analyze/SKILL.md',
+                    scope: 'repo',
+                    enabled: true,
+                  },
+                ],
+                errors: [],
+              },
+            ],
+          };
+        },
+        'turn/start': () => {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-skill',
+              turn: { id: 'turn-skill', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-skill');
+        },
+      }));
+
+      await collectChunks(runtime.query(createTurn('$analyze inspect this repo')));
+
+      expect(findCall('skills/list')).toBeDefined();
+      expect(findCall('turn/start')?.[1]?.input).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'text', text: '$analyze inspect this repo' }),
+          expect.objectContaining({
+            type: 'skill',
+            name: 'analyze',
+            path: '/test/vault/.codex/skills/analyze/SKILL.md',
+          }),
+        ]),
+      );
+    });
+
     it('converts image attachments to localImage inputs', async () => {
       const turn = createTurn('describe this');
       turn.request.images = [
@@ -1152,12 +1201,13 @@ describe('CodexChatRuntime', () => {
   });
 
   describe('query - user_message_id emission', () => {
-    it('emits user_message_id chunk after turn/start with the turn ID', async () => {
-      const chunks = await collectChunks(runtime.query(createTurn('hi')));
+    it('records user message metadata after turn/start', async () => {
+      await collectChunks(runtime.query(createTurn('hi')));
 
-      const uidChunk = chunks.find(c => c.type === 'user_message_id');
-      expect(uidChunk).toBeDefined();
-      expect(uidChunk).toMatchObject({ type: 'user_message_id', uuid: 'turn-001' });
+      expect(runtime.consumeTurnMetadata()).toMatchObject({
+        userMessageId: 'turn-001',
+        wasSent: true,
+      });
     });
   });
 
@@ -1583,7 +1633,7 @@ describe('CodexChatRuntime', () => {
       const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeUndefined();
 
-      expect(chunks).toContainEqual({ type: 'compact_boundary' });
+      expect(chunks).toContainEqual({ type: 'context_compacted' });
       expect(chunks).toContainEqual({ type: 'done' });
     });
 

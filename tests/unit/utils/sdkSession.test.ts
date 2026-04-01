@@ -631,7 +631,7 @@ describe('sdkSession', () => {
       expect(chatMsg!.role).toBe('assistant');
       expect(chatMsg!.content).toBe('');
       expect(chatMsg!.timestamp).toBe(new Date('2024-06-15T12:00:00Z').getTime());
-      expect(chatMsg!.contentBlocks).toEqual([{ type: 'compact_boundary' }]);
+      expect(chatMsg!.contentBlocks).toEqual([{ type: 'context_compacted' }]);
     });
 
     it('generates ID for compact_boundary without uuid', () => {
@@ -1027,7 +1027,7 @@ describe('sdkSession', () => {
       expect(result.messages[2].role).toBe('user');
       expect(result.messages[2].displayContent).toBe('/compact');
       expect(result.messages[3].role).toBe('assistant');
-      expect(result.messages[3].contentBlocks).toEqual([{ type: 'compact_boundary' }]);
+      expect(result.messages[3].contentBlocks).toEqual([{ type: 'context_compacted' }]);
     });
 
     it('renders compact cancellation stderr as interrupt (not filtered)', async () => {

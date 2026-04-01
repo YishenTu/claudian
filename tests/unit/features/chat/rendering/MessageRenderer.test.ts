@@ -46,11 +46,11 @@ function createMockComponent() {
   };
 }
 
-function mockCapabilities() {
+function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
   return () => ({
-    providerId: 'claude' as const,
+    providerId,
     supportsPersistentRuntime: true,
-    supportsNativeHistory: true,
+    supportsNativeHistory: providerId === 'claude',
     supportsPlanMode: true,
     supportsRewind: true,
     supportsFork: true,
@@ -62,14 +62,24 @@ function mockCapabilities() {
   });
 }
 
-function createRenderer(messagesEl?: any) {
+function createRenderer(messagesEl?: any, providerId: 'claude' | 'codex' = 'claude') {
   const el = messagesEl ?? createMockEl();
   const comp = createMockComponent();
   const plugin = {
     app: {},
     settings: { mediaFolder: '' },
   };
-  return { renderer: new MessageRenderer(plugin as any, comp as any, el), messagesEl: el };
+  return {
+    renderer: new MessageRenderer(
+      plugin as any,
+      comp as any,
+      el,
+      undefined,
+      undefined,
+      mockCapabilities(providerId),
+    ),
+    messagesEl: el,
+  };
 }
 
 describe('MessageRenderer', () => {
@@ -1144,7 +1154,7 @@ describe('MessageRenderer', () => {
   describe('Task tool rendering - error and running status', () => {
     it('renders Task tool with error status as subagent with status error', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
+      const { renderer } = createRenderer(messagesEl, 'codex');
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1182,7 +1192,7 @@ describe('MessageRenderer', () => {
 
     it('renders Task tool with running status (default case in switch)', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
+      const { renderer } = createRenderer(messagesEl, 'codex');
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1255,7 +1265,7 @@ describe('MessageRenderer', () => {
 
     it('renders Codex spawn_agent with the same prompt and result recovered on reload', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
+      const { renderer } = createRenderer(messagesEl, 'codex');
 
       (renderStoredSubagent as jest.Mock).mockClear();
 

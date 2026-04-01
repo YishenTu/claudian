@@ -1,5 +1,10 @@
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { CodexSkillStorage } from '@/providers/codex/storage/CodexSkillStorage';
+import {
+  CodexSkillStorage,
+  createCodexSkillPersistenceKey,
+  parseCodexSkillPersistenceKey,
+  resolveCodexSkillLocationFromPath,
+} from '@/providers/codex/storage/CodexSkillStorage';
 
 function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter {
   return {
@@ -57,7 +62,7 @@ Do codex things`,
       expect(skills[0].description).toBe('A Codex skill');
       expect(skills[0].content).toBe('Do codex things');
       expect(skills[0].provenance).toBe('vault');
-      expect(skills[0].scanRoot).toBe('.codex/skills');
+      expect(skills[0].rootId).toBe('vault-codex');
     });
 
     it('scans skills from vault .agents/skills', async () => {
@@ -74,7 +79,7 @@ Agent task`,
       expect(skills).toHaveLength(1);
       expect(skills[0].name).toBe('agent-skill');
       expect(skills[0].provenance).toBe('vault');
-      expect(skills[0].scanRoot).toBe('.agents/skills');
+      expect(skills[0].rootId).toBe('vault-agents');
     });
 
     it('scans skills from home .codex/skills and .agents/skills', async () => {
@@ -184,7 +189,7 @@ Task`,
         name: 'agent-skill',
         description: 'Agent skill',
         content: 'Do the thing',
-        scanRoot: '.agents/skills',
+        rootId: 'vault-agents',
       });
 
       expect(adapter.ensureFolder).toHaveBeenCalledWith('.agents/skills/agent-skill');
@@ -192,6 +197,36 @@ Task`,
         '.agents/skills/agent-skill/SKILL.md',
         expect.stringContaining('Do the thing'),
       );
+    });
+  });
+
+  describe('load', () => {
+    it('loads a managed vault skill by location', async () => {
+      const adapter = createMockAdapter({
+        '.agents/skills/agent-skill/SKILL.md': `---
+description: Agent skill
+---
+Do the thing`,
+      });
+      const storage = new CodexSkillStorage(adapter);
+
+      const skill = await storage.load({ name: 'agent-skill', rootId: 'vault-agents' });
+
+      expect(skill).toEqual({
+        name: 'agent-skill',
+        description: 'Agent skill',
+        content: 'Do the thing',
+        provenance: 'vault',
+        rootId: 'vault-agents',
+      });
+    });
+
+    it('returns null when the skill file is missing', async () => {
+      const storage = new CodexSkillStorage(createMockAdapter({}));
+
+      await expect(
+        storage.load({ name: 'missing-skill', rootId: 'vault-codex' }),
+      ).resolves.toBeNull();
     });
   });
 
@@ -205,7 +240,7 @@ Prompt`,
       });
       const storage = new CodexSkillStorage(adapter);
 
-      await storage.delete('target');
+      await storage.delete({ name: 'target', rootId: 'vault-codex' });
 
       expect(adapter.delete).toHaveBeenCalledWith('.codex/skills/target/SKILL.md');
       expect(adapter.deleteFolder).toHaveBeenCalledWith('.codex/skills/target');
@@ -220,10 +255,88 @@ Prompt`,
       });
       const storage = new CodexSkillStorage(adapter);
 
-      await storage.delete('target', '.agents/skills');
+      await storage.delete({ name: 'target', rootId: 'vault-agents' });
 
       expect(adapter.delete).toHaveBeenCalledWith('.agents/skills/target/SKILL.md');
       expect(adapter.deleteFolder).toHaveBeenCalledWith('.agents/skills/target');
+    });
+
+    it('removes the previous directory after a rename', async () => {
+      const adapter = createMockAdapter({});
+      const storage = new CodexSkillStorage(adapter);
+
+      await storage.save({
+        name: 'renamed-skill',
+        description: 'Updated',
+        content: 'Prompt',
+        rootId: 'vault-agents',
+        previousLocation: {
+          name: 'original-skill',
+          rootId: 'vault-codex',
+        },
+      });
+
+      expect(adapter.write).toHaveBeenCalledWith(
+        '.agents/skills/renamed-skill/SKILL.md',
+        expect.any(String),
+      );
+      expect(adapter.delete).toHaveBeenCalledWith('.codex/skills/original-skill/SKILL.md');
+      expect(adapter.deleteFolder).toHaveBeenCalledWith('.codex/skills/original-skill');
+    });
+  });
+
+  describe('persistence keys', () => {
+    it('round-trips root identity and current name', () => {
+      const key = createCodexSkillPersistenceKey({
+        rootId: 'vault-agents',
+        currentName: 'my-skill',
+      });
+
+      expect(parseCodexSkillPersistenceKey(key)).toEqual({
+        rootId: 'vault-agents',
+        currentName: 'my-skill',
+      });
+    });
+
+    it('parses legacy raw-root persistence keys', () => {
+      expect(parseCodexSkillPersistenceKey('.codex/skills')).toEqual({
+        rootId: 'vault-codex',
+      });
+    });
+  });
+
+  describe('resolveCodexSkillLocationFromPath', () => {
+    it('resolves .codex skill paths inside the vault', () => {
+      expect(
+        resolveCodexSkillLocationFromPath(
+          '/test/vault/.codex/skills/review/SKILL.md',
+          '/test/vault',
+        ),
+      ).toEqual({
+        name: 'review',
+        rootId: 'vault-codex',
+      });
+    });
+
+    it('resolves .agents skill paths inside the vault', () => {
+      expect(
+        resolveCodexSkillLocationFromPath(
+          '/test/vault/.agents/skills/review/SKILL.md',
+          '/test/vault',
+        ),
+      ).toEqual({
+        name: 'review',
+        rootId: 'vault-agents',
+      });
+    });
+
+    it('returns null for unmanaged skill paths', () => {
+      expect(
+        resolveCodexSkillLocationFromPath(
+          '/test/vault/scripts/skills/review/SKILL.md',
+          '/test/vault',
+        ),
+      ).toBeNull();
     });
   });
 });

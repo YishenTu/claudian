@@ -80,6 +80,10 @@ export class ProviderRegistry {
     return this.getProviderRegistration(providerId).capabilities;
   }
 
+  static getEnvironmentKeyPatterns(providerId: ProviderId): RegExp[] {
+    return this.getProviderRegistration(providerId).environmentKeyPatterns ?? [];
+  }
+
   static getChatUIConfig(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderChatUIConfig {
     return this.getProviderRegistration(providerId).chatUIConfig;
   }

@@ -1,6 +1,6 @@
 // Local protocol subset for Codex app-server stdio JSON-RPC.
 // Field names match the wire format (camelCase).
-// Probed against codex-cli 0.117.0 on 2026-03-28.
+// Probed against codex-cli 0.118.0 on 2026-04-01.
 
 // ---------------------------------------------------------------------------
 // JSON-RPC base
@@ -233,7 +233,64 @@ export interface LocalImageInput {
   path: string;
 }
 
-export type UserInput = TextInput | LocalImageInput;
+export interface SkillInput {
+  type: 'skill';
+  name: string;
+  path: string;
+}
+
+export interface MentionInput {
+  type: 'mention';
+  name: string;
+  path: string;
+}
+
+export type UserInput = TextInput | LocalImageInput | SkillInput | MentionInput;
+
+// ---------------------------------------------------------------------------
+// skills/list
+// ---------------------------------------------------------------------------
+
+export type SkillScope = 'user' | 'repo' | 'system' | 'admin';
+
+export interface SkillInterface {
+  displayName?: string;
+  shortDescription?: string;
+}
+
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  interface?: SkillInterface;
+  path: string;
+  scope: SkillScope;
+  enabled: boolean;
+}
+
+export interface SkillErrorInfo {
+  path: string;
+  message: string;
+}
+
+export interface SkillsListEntry {
+  cwd: string;
+  skills: SkillMetadata[];
+  errors: SkillErrorInfo[];
+}
+
+export interface SkillsListParams {
+  cwds?: string[];
+  forceReload?: boolean;
+  perCwdExtraUserRoots?: Array<{
+    cwd: string;
+    extraUserRoots: string[];
+  }> | null;
+}
+
+export interface SkillsListResult {
+  data: SkillsListEntry[];
+}
 
 // ---------------------------------------------------------------------------
 // thread/start

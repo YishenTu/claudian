@@ -1,4 +1,5 @@
 import type { CodexSubagentStorage } from '@/providers/codex/storage/CodexSubagentStorage';
+import { createCodexSubagentPersistenceKey } from '@/providers/codex/storage/CodexSubagentStorage';
 import type { CodexSubagentDefinition } from '@/providers/codex/types/subagent';
 import {
   CodexSubagentSettings,
@@ -11,7 +12,7 @@ function makeAgent(name: string, overrides: Partial<CodexSubagentDefinition> = {
     name,
     description: `${name} description`,
     developerInstructions: `${name} instructions`,
-    filePath: `.codex/agents/${name}.toml`,
+    persistenceKey: createCodexSubagentPersistenceKey({ fileName: `${name}.toml` }),
     ...overrides,
   };
 }

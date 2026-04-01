@@ -218,7 +218,7 @@ class CodexSubagentModal extends Modal {
 
       const duplicate = this.allAgents.find(
         a => a.name.toLowerCase() === name.toLowerCase() &&
-             a.filePath !== this.existing?.filePath,
+             a.persistenceKey !== this.existing?.persistenceKey,
       );
       if (duplicate) {
         new Notice(`A subagent named "${name}" already exists`);
@@ -233,7 +233,7 @@ class CodexSubagentModal extends Modal {
         model: this._modelInput.value.trim() || undefined,
         modelReasoningEffort: this._reasoningEffort || undefined,
         sandboxMode: this._sandboxMode || undefined,
-        filePath: this.existing?.filePath,
+        persistenceKey: this.existing?.persistenceKey,
         extraFields: this.existing?.extraFields,
       };
 
@@ -380,16 +380,7 @@ export class CodexSubagentSettings {
       existing,
       this.agents,
       async (agent) => {
-        if (existing && existing.name !== agent.name) {
-          await this.storage.save({ ...agent, filePath: undefined });
-          try {
-            await this.storage.delete(existing);
-          } catch {
-            new Notice(`Warning: could not remove old file for "${existing.name}"`);
-          }
-        } else {
-          await this.storage.save(agent);
-        }
+        await this.storage.save(agent, existing);
         await this.render();
         this.onChanged?.();
         new Notice(

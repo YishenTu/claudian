@@ -6,7 +6,8 @@ export interface CodexSubagentDefinition {
   model?: string;
   modelReasoningEffort?: string;
   sandboxMode?: string;
-  filePath?: string;
+  /** Opaque storage token preserved across edits/deletes. */
+  persistenceKey?: string;
   /** Preserves unrecognized TOML keys for round-trip fidelity. */
   extraFields?: Record<string, unknown>;
 }

@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { AgentDefinition } from '../../../core/types';
+import type { AgentDefinition, AgentFrontmatter } from '../../../core/types';
 import type { PluginManager } from '../plugins/PluginManager';
 import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
 
@@ -70,13 +70,13 @@ export class AgentManager {
   async loadAgents(): Promise<void> {
     this.agents = [];
 
-    // 0. Add built-in agents first (from init message or fallback)
-    this.agents.push(...this.builtinAgentNames.map(makeBuiltinAgent));
+    for (const name of this.builtinAgentNames) {
+      this.addAgent(makeBuiltinAgent(name));
+    }
 
-    // Each category is independently try-caught so one failure doesn't block others
-    try { await this.loadPluginAgents(); } catch { /* non-critical */ }
-    try { await this.loadVaultAgents(); } catch { /* non-critical */ }
-    try { await this.loadGlobalAgents(); } catch { /* non-critical */ }
+    try { this.loadPluginAgents(); } catch { /* non-critical */ }
+    try { this.loadVaultAgents(); } catch { /* non-critical */ }
+    try { this.loadGlobalAgents(); } catch { /* non-critical */ }
   }
 
   getAvailableAgents(): AgentDefinition[] {
@@ -97,38 +97,38 @@ export class AgentManager {
     );
   }
 
-  private async loadPluginAgents(): Promise<void> {
+  private loadPluginAgents(): void {
     for (const plugin of this.pluginManager.getPlugins()) {
       if (!plugin.enabled) continue;
 
       const agentsDir = path.join(plugin.installPath, PLUGIN_AGENTS_DIR);
       if (!fs.existsSync(agentsDir)) continue;
 
-      for (const filePath of this.listMarkdownFiles(agentsDir)) {
-        const agent = await this.parsePluginAgentFromFile(filePath, plugin.name);
-        if (agent) this.agents.push(agent);
-      }
+      this.loadAgentsFromFiles(
+        this.listMarkdownFiles(agentsDir),
+        (filePath) => this.parsePluginAgentFromFile(filePath, plugin.name),
+      );
     }
   }
 
-  private async loadVaultAgents(): Promise<void> {
-    await this.loadAgentsFromDirectory(path.join(this.vaultPath, VAULT_AGENTS_DIR), 'vault');
+  private loadVaultAgents(): void {
+    this.loadAgentsFromDirectory(path.join(this.vaultPath, VAULT_AGENTS_DIR), 'vault');
   }
 
-  private async loadGlobalAgents(): Promise<void> {
-    await this.loadAgentsFromDirectory(GLOBAL_AGENTS_DIR, 'global');
+  private loadGlobalAgents(): void {
+    this.loadAgentsFromDirectory(GLOBAL_AGENTS_DIR, 'global');
   }
 
-  private async loadAgentsFromDirectory(
+  private loadAgentsFromDirectory(
     dir: string,
     source: 'vault' | 'global'
-  ): Promise<void> {
+  ): void {
     if (!fs.existsSync(dir)) return;
 
-    for (const filePath of this.listMarkdownFiles(dir)) {
-      const agent = await this.parseAgentFromFile(filePath, source);
-      if (agent) this.agents.push(agent);
-    }
+    this.loadAgentsFromFiles(
+      this.listMarkdownFiles(dir),
+      (filePath) => this.parseAgentFromFile(filePath, source),
+    );
   }
 
   private listMarkdownFiles(dir: string): string[] {
@@ -149,53 +149,75 @@ export class AgentManager {
     return files;
   }
 
-  private async parsePluginAgentFromFile(
+  private parsePluginAgentFromFile(
     filePath: string,
     pluginName: string
-  ): Promise<AgentDefinition | null> {
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const parsed = parseAgentFile(content);
-
-      if (!parsed) return null;
-
-      const { frontmatter, body } = parsed;
-      const normalizedPluginName = normalizePluginName(pluginName);
-      const id = `${normalizedPluginName}:${frontmatter.name}`;
-
-      if (this.agents.find(a => a.id === id)) return null;
-
-      return buildAgentFromFrontmatter(frontmatter, body, {
+  ): AgentDefinition | null {
+    return this.parseAgentDefinition(
+      filePath,
+      (agentName) => `${normalizePluginName(pluginName)}:${agentName}`,
+      (frontmatter, body, id) => buildAgentFromFrontmatter(frontmatter, body, {
         id,
         source: 'plugin',
         pluginName,
         filePath,
-      });
-    } catch {
-      return null;
+      }),
+    );
+  }
+
+  private parseAgentFromFile(
+    filePath: string,
+    source: 'vault' | 'global'
+  ): AgentDefinition | null {
+    return this.parseAgentDefinition(
+      filePath,
+      (agentName) => agentName,
+      (frontmatter, body, id) => buildAgentFromFrontmatter(frontmatter, body, {
+        id,
+        source,
+        filePath,
+      }),
+    );
+  }
+
+  private loadAgentsFromFiles(
+    filePaths: string[],
+    loadAgent: (filePath: string) => AgentDefinition | null,
+  ): void {
+    for (const filePath of filePaths) {
+      this.addAgent(loadAgent(filePath));
     }
   }
 
-  private async parseAgentFromFile(
+  private addAgent(agent: AgentDefinition | null): void {
+    if (!agent) {
+      return;
+    }
+    if (this.agents.some(existing => existing.id === agent.id)) {
+      return;
+    }
+    this.agents.push(agent);
+  }
+
+  private parseAgentDefinition(
     filePath: string,
-    source: 'vault' | 'global'
-  ): Promise<AgentDefinition | null> {
+    buildId: (agentName: string) => string,
+    buildAgent: (
+      frontmatter: AgentFrontmatter,
+      body: string,
+      id: string,
+    ) => AgentDefinition,
+  ): AgentDefinition | null {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       const parsed = parseAgentFile(content);
 
-      if (!parsed) return null;
+      if (!parsed) {
+        return null;
+      }
 
       const { frontmatter, body } = parsed;
-      const id = frontmatter.name;
-
-      if (this.agents.find(a => a.id === id)) return null;
-
-      return buildAgentFromFrontmatter(frontmatter, body, {
-        id,
-        source,
-        filePath,
-      });
+      return buildAgent(frontmatter, body, buildId(frontmatter.name));
     } catch {
       return null;
     }

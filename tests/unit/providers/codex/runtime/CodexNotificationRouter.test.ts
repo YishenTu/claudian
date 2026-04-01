@@ -4,10 +4,15 @@ import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotifica
 describe('CodexNotificationRouter', () => {
   let router: CodexNotificationRouter;
   let chunks: StreamChunk[];
+  let turnMetadata: Array<Record<string, unknown>>;
 
   beforeEach(() => {
     chunks = [];
-    router = new CodexNotificationRouter((chunk) => chunks.push(chunk));
+    turnMetadata = [];
+    router = new CodexNotificationRouter(
+      (chunk) => chunks.push(chunk),
+      (update) => turnMetadata.push(update),
+    );
   });
 
   describe('text streaming', () => {
@@ -208,7 +213,7 @@ describe('CodexNotificationRouter', () => {
       expect(chunks).toEqual([{ type: 'text', content: '- Investigate failing tests' }]);
     });
 
-    it('does not emit compact_boundary when a context compaction item starts', () => {
+    it('does not emit context_compacted when a context compaction item starts', () => {
       router.handleNotification('item/started', {
         item: { type: 'contextCompaction', id: 'compact-1' },
         threadId: 't1',
@@ -218,14 +223,14 @@ describe('CodexNotificationRouter', () => {
       expect(chunks).toEqual([]);
     });
 
-    it('emits compact_boundary when a context compaction item completes', () => {
+    it('emits context_compacted when a context compaction item completes', () => {
       router.handleNotification('item/completed', {
         item: { type: 'contextCompaction', id: 'compact-1' },
         threadId: 't1',
         turnId: 'turn1',
       });
 
-      expect(chunks).toEqual([{ type: 'compact_boundary' }]);
+      expect(chunks).toEqual([{ type: 'context_compacted' }]);
     });
   });
 
@@ -434,16 +439,14 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('turn completion', () => {
-    it('emits assistant_message_id then done on turn/completed with status completed', () => {
+    it('records assistant turn metadata then emits done on completion', () => {
       router.handleNotification('turn/completed', {
         threadId: 't1',
         turn: { id: 'turn1', items: [], status: 'completed', error: null },
       });
 
-      expect(chunks).toEqual([
-        { type: 'assistant_message_id', uuid: 'turn1' },
-        { type: 'done' },
-      ]);
+      expect(turnMetadata).toContainEqual({ assistantMessageId: 'turn1' });
+      expect(chunks).toEqual([{ type: 'done' }]);
     });
 
     it('emits error then done on turn/completed with status failed', () => {
@@ -588,7 +591,7 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('plan_completed emission', () => {
-    it('emits plan_completed before done on successful plan turn with plan deltas', () => {
+    it('records plan completion metadata before done on successful plan turn with plan deltas', () => {
       router.beginTurn({ isPlanTurn: true });
 
       router.handleNotification('item/plan/delta', {
@@ -599,10 +602,8 @@ describe('CodexNotificationRouter', () => {
         turn: { id: 'turn1', items: [], status: 'completed', error: null },
       });
 
-      const types = chunks.map(c => c.type);
-      expect(types).toContain('plan_completed');
-      expect(types).toContain('done');
-      expect(types.indexOf('plan_completed')).toBeLessThan(types.indexOf('done'));
+      expect(turnMetadata).toContainEqual(expect.objectContaining({ planCompleted: true }));
+      expect(chunks.map(c => c.type)).toContain('done');
     });
 
     it('does not emit plan_completed when no plan delta was seen', () => {
@@ -765,23 +766,19 @@ describe('CodexNotificationRouter', () => {
     });
   });
 
-  describe('assistant_message_id emission', () => {
-    it('emits assistant_message_id before done on completed turn', () => {
+  describe('assistant metadata emission', () => {
+    it('records assistant metadata before done on completed turn', () => {
       router.handleNotification('turn/completed', {
         threadId: 't1',
         turn: { id: 'turn-uuid-123', items: [], status: 'completed', error: null },
       });
 
       const types = chunks.map(c => c.type);
-      expect(types).toContain('assistant_message_id');
       expect(types).toContain('done');
-      expect(types.indexOf('assistant_message_id')).toBeLessThan(types.indexOf('done'));
-
-      const aidChunk = chunks.find(c => c.type === 'assistant_message_id');
-      expect(aidChunk).toMatchObject({ type: 'assistant_message_id', uuid: 'turn-uuid-123' });
+      expect(turnMetadata).toContainEqual({ assistantMessageId: 'turn-uuid-123' });
     });
 
-    it('does NOT emit assistant_message_id on failed turn', () => {
+    it('does NOT record assistant metadata on failed turn', () => {
       router.handleNotification('turn/completed', {
         threadId: 't1',
         turn: {
@@ -792,16 +789,16 @@ describe('CodexNotificationRouter', () => {
         },
       });
 
-      expect(chunks.map(c => c.type)).not.toContain('assistant_message_id');
+      expect(turnMetadata).toEqual([]);
     });
 
-    it('does NOT emit assistant_message_id on interrupted turn', () => {
+    it('does NOT record assistant metadata on interrupted turn', () => {
       router.handleNotification('turn/completed', {
         threadId: 't1',
         turn: { id: 'turn-interrupted-1', items: [], status: 'interrupted', error: null },
       });
 
-      expect(chunks.map(c => c.type)).not.toContain('assistant_message_id');
+      expect(turnMetadata).toEqual([]);
     });
   });
 });

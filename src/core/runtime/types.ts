@@ -3,17 +3,17 @@ import type { CanvasSelectionContext } from '../../utils/canvas';
 import type { EditorSelectionContext } from '../../utils/editor';
 import type {
   ApprovalDecision,
-  ApprovalNetworkPolicyAmendment,
   Conversation,
   ExitPlanModeCallback,
   ImageAttachment,
+  StreamChunk,
 } from '../types';
 
 export interface ApprovalDecisionOption {
   label: string;
   description?: string;
-  value?: string;
-  decision: ApprovalDecision;
+  value: string;
+  decision?: ApprovalDecision;
 }
 
 export interface ApprovalNetworkContext {
@@ -28,8 +28,6 @@ export interface ApprovalCallbackOptions {
   decisionOptions?: ApprovalDecisionOption[];
   networkApprovalContext?: ApprovalNetworkContext;
   additionalPermissions?: unknown;
-  proposedExecpolicyAmendment?: string[] | null;
-  proposedNetworkPolicyAmendments?: ApprovalNetworkPolicyAmendment[] | null;
 }
 
 export type ApprovalCallback = (
@@ -98,6 +96,18 @@ export interface ChatRewindResult {
 
 export interface SubagentRuntimeState {
   hasRunning: boolean;
+}
+
+export interface ChatTurnMetadata {
+  userMessageId?: string;
+  assistantMessageId?: string;
+  wasSent?: boolean;
+  planCompleted?: boolean;
+}
+
+export interface AutoTurnResult {
+  chunks: StreamChunk[];
+  metadata: ChatTurnMetadata;
 }
 
 export type {

@@ -1222,9 +1222,12 @@ describe('Tab - Service Callbacks', () => {
     it('renders tool-only auto-triggered turns with a placeholder assistant message', () => {
       const { addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
 
-      autoTurnCallback([
-        { type: 'tool_result', tool_use_id: 'task-1', content: 'done' },
-      ]);
+      autoTurnCallback({
+        chunks: [
+          { type: 'tool_result', id: 'task-1', content: 'done' },
+        ],
+        metadata: {},
+      });
 
       expect(addMessageSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1240,9 +1243,12 @@ describe('Tab - Service Callbacks', () => {
       const { tab, addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
 
       (tab.dom.contentEl as any).isConnected = false;
-      autoTurnCallback([
-        { type: 'text', content: 'Background result' },
-      ]);
+      autoTurnCallback({
+        chunks: [
+          { type: 'text', content: 'Background result' },
+        ],
+        metadata: {},
+      });
 
       expect(addMessageSpy).not.toHaveBeenCalled();
       expect(renderStoredMessage).not.toHaveBeenCalled();

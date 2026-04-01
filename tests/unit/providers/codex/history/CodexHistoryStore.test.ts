@@ -1574,6 +1574,76 @@ describe('CodexHistoryStore', () => {
       expect(messages[0].role).toBe('user');
       expect(messages[1].role).toBe('assistant');
     });
+
+    it('preserves legacy item content inside mixed modern transcripts', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'uuid-turn-mixed' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.100Z',
+          type: 'event',
+          event: {
+            type: 'item.updated',
+            item: {
+              id: 'legacy-msg-1',
+              type: 'agent_message',
+              text: 'Legacy streamed answer',
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.200Z',
+          type: 'event',
+          event: {
+            type: 'item.started',
+            item: {
+              id: 'legacy-cmd-1',
+              type: 'command_execution',
+              command: 'pwd',
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.300Z',
+          type: 'event',
+          event: {
+            type: 'item.completed',
+            item: {
+              id: 'legacy-cmd-1',
+              type: 'command_execution',
+              aggregated_output: '/workspace',
+              exit_code: 0,
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: 'uuid-turn-mixed' },
+        }),
+      ].join('\n');
+
+      const turns = parseCodexSessionTurns(content);
+
+      expect(turns).toHaveLength(1);
+      expect(turns[0].turnId).toBe('uuid-turn-mixed');
+      expect(turns[0].messages).toHaveLength(1);
+      expect(turns[0].messages[0]).toMatchObject({
+        role: 'assistant',
+        content: 'Legacy streamed answer',
+      });
+      expect(turns[0].messages[0].toolCalls).toEqual([
+        expect.objectContaining({
+          id: 'legacy-cmd-1',
+          name: 'Bash',
+          status: 'completed',
+          result: '/workspace',
+        }),
+      ]);
+    });
   });
 
   describe('parseCodexSessionContent - persisted mcp_tool_call', () => {
@@ -1729,13 +1799,13 @@ describe('CodexHistoryStore', () => {
       });
 
       const compactMsg = messages.find(m =>
-        m.contentBlocks?.some(b => b.type === 'compact_boundary'),
+        m.contentBlocks?.some(b => b.type === 'context_compacted'),
       );
       expect(compactMsg).toBeDefined();
       expect(compactMsg!.role).toBe('assistant');
       expect(compactMsg!.content).toBe('');
 
-      // compact_boundary should appear after the compacted replacement history
+      // context_compacted should appear after the compacted replacement history
       const compactIdx = messages.indexOf(compactMsg!);
       expect(compactIdx).toBeGreaterThan(0);
 
@@ -1790,7 +1860,7 @@ describe('CodexHistoryStore', () => {
         content: 'Second summary',
       });
       const compactMessages = messages.filter(m =>
-        m.contentBlocks?.some(b => b.type === 'compact_boundary'),
+        m.contentBlocks?.some(b => b.type === 'context_compacted'),
       );
       expect(compactMessages).toHaveLength(1);
     });

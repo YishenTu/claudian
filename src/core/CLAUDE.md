@@ -19,7 +19,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `providers/` | Provider registry and provider-owned boundary services | `ProviderRegistry`, `ProviderSettingsCoordinator`, `ProviderWorkspaceRegistry`, `ProviderCapabilities`, `ProviderId`, `modelRouting`, history/task/CLI service contracts |
 | `providers/commands/` | Shared command catalog contracts | `ProviderCommandCatalog`, `ProviderCommandEntry`, `hiddenCommands` |
 | `runtime/` | Provider-neutral runtime contracts | `ChatRuntime`, `ChatTurnRequest`, `PreparedChatTurn`, `SessionUpdateResult`, approval/query types |
-| `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
+| `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator` |
 | `storage/` | Generic persistence primitives | `VaultFileAdapter`, `HomeFileAdapter` |
 | `tools/` | Tool utilities | `toolNames` (incl. plan mode + runtime lifecycle tools), `toolIcons`, `toolInput`, `todo` |
 | `types/` | Type definitions | `settings`, `mcp`, `chat`, `tools`, `diff`, `agent`, `plugins` |
@@ -69,7 +69,6 @@ const adapter = storage.getAdapter();
 ### Security
 - `BashPathValidator`: Vault-only by default, symlink-safe via `realpath`
 - `ApprovalManager`: Permission utility functions (`buildPermissionUpdates`, `matchesRulePattern`, etc.)
-- `BlocklistChecker`: Platform-specific dangerous commands
 
 ## Gotchas
 

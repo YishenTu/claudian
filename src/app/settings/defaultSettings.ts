@@ -1,16 +1,11 @@
 import { getDefaultHiddenProviderCommands } from '../../core/providers/commands/hiddenCommands';
-import {
-  type ClaudianSettings,
-  getDefaultBlockedCommands,
-} from '../../core/types/settings';
+import { type ClaudianSettings } from '../../core/types/settings';
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '../../providers/claude/settings';
 import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '../../providers/codex/settings';
 
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
 
-  enableBlocklist: true,
-  blockedCommands: getDefaultBlockedCommands(),
   permissionMode: 'yolo',
 
   model: 'haiku',

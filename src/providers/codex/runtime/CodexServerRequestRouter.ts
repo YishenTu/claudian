@@ -98,8 +98,6 @@ export class CodexServerRequestRouter {
         ...(params.reason ? { decisionReason: params.reason } : {}),
         ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}),
         ...(params.additionalPermissions ? { additionalPermissions: params.additionalPermissions } : {}),
-        ...(params.proposedExecpolicyAmendment ? { proposedExecpolicyAmendment: params.proposedExecpolicyAmendment } : {}),
-        ...(params.proposedNetworkPolicyAmendments ? { proposedNetworkPolicyAmendments: params.proposedNetworkPolicyAmendments } : {}),
         decisionOptions: buildCommandApprovalDecisionOptions(params),
       });
       return { decision: mapCommandApprovalDecision(decision) };
@@ -245,25 +243,22 @@ function mapDecisionOption(
   params: CommandApprovalRequest,
 ): ApprovalDecisionOption {
   if (decision === 'accept') {
-    return { label: 'Allow once', decision: 'allow' };
+    return { label: 'Allow once', value: 'allow-once', decision: 'allow' };
   }
   if (decision === 'acceptForSession') {
-    return { label: 'Always allow', decision: 'allow-always' };
+    return { label: 'Always allow', value: 'allow-always', decision: 'allow-always' };
   }
   if (decision === 'decline') {
-    return { label: 'Deny', decision: 'deny' };
+    return { label: 'Deny', value: 'deny', decision: 'deny' };
   }
   if (decision === 'cancel') {
-    return { label: 'Cancel', decision: 'cancel' };
+    return { label: 'Cancel', value: 'cancel', decision: 'cancel' };
   }
   if ('acceptWithExecpolicyAmendment' in decision) {
     return {
       label: 'Allow similar commands',
       description: 'Approve and store an exec policy amendment.',
-      decision: {
-        type: 'allow-with-exec-policy-amendment',
-        execPolicyAmendment: decision.acceptWithExecpolicyAmendment.execpolicy_amendment,
-      },
+      value: encodeCommandApprovalDecision(decision),
     };
   }
 
@@ -273,10 +268,7 @@ function mapDecisionOption(
   return {
     label: `${action} ${host} for this session`,
     description: `Apply a ${networkPolicyAmendment.action} rule for ${host}.`,
-    decision: {
-      type: 'apply-network-policy-amendment',
-      networkPolicyAmendment,
-    },
+    value: encodeCommandApprovalDecision(decision),
   };
 }
 
@@ -301,23 +293,10 @@ function mapCommandApprovalDecision(decision: ApprovalDecision): CommandExecutio
     case 'cancel':
       return 'cancel';
     default:
-      if (typeof decision === 'object' && decision !== null) {
-        if (decision.type === 'allow-with-exec-policy-amendment') {
-          return {
-            acceptWithExecpolicyAmendment: {
-              execpolicy_amendment: decision.execPolicyAmendment,
-            },
-          };
-        }
-        if (decision.type === 'apply-network-policy-amendment') {
-          return {
-            applyNetworkPolicyAmendment: {
-              network_policy_amendment: {
-                host: decision.networkPolicyAmendment.host,
-                action: decision.networkPolicyAmendment.action === 'deny' ? 'deny' : 'allow',
-              },
-            },
-          };
+      if (typeof decision === 'object' && decision !== null && decision.type === 'select-option') {
+        const decoded = decodeCommandApprovalDecision(decision.value);
+        if (decoded) {
+          return decoded;
         }
       }
       return 'decline';
@@ -336,5 +315,17 @@ function mapFileChangeApprovalDecision(decision: ApprovalDecision): FileChangeAp
       return 'cancel';
     default:
       return 'decline';
+  }
+}
+
+function encodeCommandApprovalDecision(decision: CommandExecutionApprovalDecision): string {
+  return JSON.stringify(decision);
+}
+
+function decodeCommandApprovalDecision(value: string): CommandExecutionApprovalDecision | null {
+  try {
+    return JSON.parse(value) as CommandExecutionApprovalDecision;
+  } catch {
+    return null;
   }
 }

@@ -13,10 +13,12 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
+  AutoTurnResult,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
   ChatRuntimeQueryOptions,
+  ChatTurnMetadata,
   ChatTurnRequest,
   ExitPlanModeCallback,
   PreparedChatTurn,
@@ -25,19 +27,28 @@ import type {
 } from '../../../core/runtime/types';
 import type { ChatMessage, Conversation, ForkSource, SlashCommand, StreamChunk } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
-import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { buildContextFromHistory } from '../../../utils/session';
 import { CODEX_PROVIDER_CAPABILITIES } from '../capabilities';
 import { findCodexSessionFile } from '../history/CodexHistoryStore';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
 import { type CodexSafeMode, getCodexProviderSettings } from '../settings';
+import {
+  extractExplicitCodexSkillNames,
+  findPreferredCodexSkillByName,
+} from '../skills/CodexSkillListingService';
 import { type CodexProviderState, getCodexState } from '../types';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
+import {
+  buildCodexAppServerEnvironment,
+  getCodexAppServerWorkingDirectory,
+  initializeCodexAppServerTransport,
+} from './codexAppServerSupport';
 import type {
-  InitializeResult,
   SandboxPolicy,
   ServerRequestResolvedNotification,
+  SkillInput,
+  SkillsListResult,
   ThreadCompactStartResult,
   ThreadForkResult,
   ThreadResumeResult,
@@ -103,7 +114,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private subagentHookProvider: (() => SubagentRuntimeState) | null = null;
-  private autoTurnCallback: ((chunks: StreamChunk[]) => void) | null = null;
+  private autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
   private resumeCheckpoint: string | undefined;
   /* eslint-enable @typescript-eslint/no-unused-vars */
 
@@ -112,6 +123,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
   // Cancellation
   private canceled = false;
+  private turnMetadata: ChatTurnMetadata = {};
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
@@ -123,6 +135,12 @@ export class CodexChatRuntime implements ChatRuntime {
 
   prepareTurn(request: ChatTurnRequest): PreparedChatTurn {
     return encodeCodexTurn(request);
+  }
+
+  consumeTurnMetadata(): ChatTurnMetadata {
+    const metadata = { ...this.turnMetadata };
+    this.turnMetadata = {};
+    return metadata;
   }
 
   onReadyStateChange(listener: (ready: boolean) => void): () => void {
@@ -201,6 +219,7 @@ export class CodexChatRuntime implements ChatRuntime {
     _conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    this.resetTurnMetadata();
     let turn = originalTurn;
     await this.ensureReady();
 
@@ -305,21 +324,24 @@ export class CodexChatRuntime implements ChatRuntime {
     };
 
     // Set up notification router to push chunks
-    this.notificationRouter = new CodexNotificationRouter((chunk) => {
-      syncTailPollingState();
+    this.notificationRouter = new CodexNotificationRouter(
+      (chunk) => {
+        syncTailPollingState();
 
-      if (toolSourceMode === 'transcript') {
-        if (chunk.type === 'tool_use' || chunk.type === 'tool_result') {
-          return;
+        if (toolSourceMode === 'transcript') {
+          if (chunk.type === 'tool_use' || chunk.type === 'tool_result') {
+            return;
+          }
+          if (chunk.type === 'done') {
+            flushTailToolsBeforeDone();
+            return;
+          }
         }
-        if (chunk.type === 'done') {
-          flushTailToolsBeforeDone();
-          return;
-        }
-      }
 
-      enqueueChunk(chunk);
-    });
+        enqueueChunk(chunk);
+      },
+      (update) => this.recordTurnMetadata(update),
+    );
 
     this.wireTransportHandlers();
 
@@ -442,6 +464,7 @@ export class CodexChatRuntime implements ChatRuntime {
           'thread/compact/start',
           { threadId },
         );
+        this.recordTurnMetadata({ wasSent: true });
         // currentTurnId will be set by turn/started notification
       } else {
         // --- Normal turn path ---
@@ -457,7 +480,8 @@ export class CodexChatRuntime implements ChatRuntime {
         }
 
         // Build input
-        inputBundle = this.buildInput(turn.prompt, turn.request.images);
+        const skillInputs = await this.resolveSkillInputs(turn.request.text);
+        inputBundle = this.buildInput(turn.prompt, turn.request.images, skillInputs);
 
         // Start turn
         const providerSettings = this.getProviderSettings();
@@ -496,7 +520,10 @@ export class CodexChatRuntime implements ChatRuntime {
           ...(collaborationMode ? { collaborationMode } : {}),
         });
         this.currentTurnId = turnResult.turn.id;
-        enqueueChunk({ type: 'user_message_id', uuid: turnResult.turn.id });
+        this.recordTurnMetadata({
+          userMessageId: turnResult.turn.id,
+          wasSent: true,
+        });
         this.flushPendingTurnNotifications();
 
         if (toolSourceMode === 'transcript' && tailEngine) {
@@ -615,6 +642,17 @@ export class CodexChatRuntime implements ChatRuntime {
     return this.ready;
   }
 
+  private resetTurnMetadata(): void {
+    this.turnMetadata = {};
+  }
+
+  private recordTurnMetadata(update: Partial<ChatTurnMetadata>): void {
+    this.turnMetadata = {
+      ...this.turnMetadata,
+      ...update,
+    };
+  }
+
   async getSupportedCommands(): Promise<SlashCommand[]> {
     return [];
   }
@@ -658,7 +696,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.subagentHookProvider = getState;
   }
 
-  setAutoTurnCallback(callback: ((chunks: StreamChunk[]) => void) | null): void {
+  setAutoTurnCallback(callback: ((result: AutoTurnResult) => void) | null): void {
     this.autoTurnCallback = callback;
   }
 
@@ -769,19 +807,8 @@ export class CodexChatRuntime implements ChatRuntime {
 
   private async startAppServer(resolvedCodexPath: string | null, clientConfigKey: string): Promise<void> {
     const codexPath = resolvedCodexPath ?? 'codex';
-    const vaultPath = getVaultPath(this.plugin.app) ?? process.cwd();
-
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables(this.providerId));
-    const baseEnv = Object.fromEntries(
-      Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-    );
-    const enhancedPath = getEnhancedPath(customEnv.PATH);
-
-    const env: Record<string, string> = {
-      ...baseEnv,
-      ...customEnv,
-      PATH: enhancedPath,
-    };
+    const vaultPath = getCodexAppServerWorkingDirectory(this.plugin);
+    const env = buildCodexAppServerEnvironment(this.plugin, this.providerId);
 
     this.process = new CodexAppServerProcess(codexPath, vaultPath, env);
     this.process.start();
@@ -789,13 +816,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.transport = new CodexRpcTransport(this.process);
     this.transport.start();
 
-    // Initialize
-    await this.transport.request<InitializeResult>('initialize', {
-      clientInfo: { name: 'claudian', version: '1.0.0' },
-      capabilities: { experimentalApi: true },
-    });
-
-    this.transport.notify('initialized');
+    await initializeCodexAppServerTransport(this.transport);
     this.clientConfigKey = clientConfigKey;
   }
 
@@ -1035,7 +1056,40 @@ export class CodexChatRuntime implements ChatRuntime {
     return threadId && turnId ? { threadId, turnId } : null;
   }
 
-  private buildInput(text: string, images?: ImageAttachment[]): CodexInputBundle {
+  private async resolveSkillInputs(text: string): Promise<SkillInput[]> {
+    const skillNames = extractExplicitCodexSkillNames(text);
+    if (skillNames.length === 0 || !this.transport) {
+      return [];
+    }
+
+    try {
+      const cwd = getCodexAppServerWorkingDirectory(this.plugin);
+      const result = await this.transport.request<SkillsListResult>('skills/list', {
+        cwds: [cwd],
+      });
+      const skills = result.data.find(entry => entry.cwd === cwd)?.skills ?? result.data[0]?.skills ?? [];
+      const resolvedInputs: SkillInput[] = [];
+
+      for (const skillName of skillNames) {
+        const resolvedSkill = findPreferredCodexSkillByName(skills, skillName);
+        if (!resolvedSkill) {
+          continue;
+        }
+
+        resolvedInputs.push({
+          type: 'skill',
+          name: resolvedSkill.name,
+          path: resolvedSkill.path,
+        });
+      }
+
+      return resolvedInputs;
+    } catch {
+      return [];
+    }
+  }
+
+  private buildInput(text: string, images?: ImageAttachment[], skills?: SkillInput[]): CodexInputBundle {
     const input: UserInput[] = [];
     let tempDir: string | null = null;
 
@@ -1067,6 +1121,10 @@ export class CodexChatRuntime implements ChatRuntime {
 
       if (text) {
         input.push({ type: 'text', text, text_elements: [] });
+      }
+
+      if (skills && skills.length > 0) {
+        input.push(...skills);
       }
 
       return { input, cleanup };

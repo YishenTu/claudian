@@ -3,12 +3,12 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import { validateCommandName } from '../../../utils/slashCommand';
-import { AGENTS_VAULT_SKILLS_PATH, CODEX_VAULT_SKILLS_PATH } from '../storage/CodexSkillStorage';
-
-const DIRECTORY_OPTIONS: { value: string; label: string }[] = [
-  { value: CODEX_VAULT_SKILLS_PATH, label: '.codex/skills' },
-  { value: AGENTS_VAULT_SKILLS_PATH, label: '.agents/skills' },
-];
+import {
+  CODEX_SKILL_ROOT_OPTIONS,
+  type CodexSkillRootId,
+  createCodexSkillPersistenceKey,
+  parseCodexSkillPersistenceKey,
+} from '../storage/CodexSkillStorage';
 
 export class CodexSkillModal extends Modal {
   private existing: ProviderCommandEntry | null;
@@ -17,7 +17,7 @@ export class CodexSkillModal extends Modal {
   private _nameInput!: HTMLInputElement;
   private _descInput!: HTMLInputElement;
   private _contentArea!: HTMLTextAreaElement;
-  private _selectedDirectory: string;
+  private _selectedRootId: CodexSkillRootId;
   private _triggerSave!: () => Promise<void>;
 
   constructor(
@@ -28,7 +28,7 @@ export class CodexSkillModal extends Modal {
     super(app);
     this.existing = existing;
     this.onSave = onSave;
-    this._selectedDirectory = existing?.persistenceKey ?? CODEX_VAULT_SKILLS_PATH;
+    this._selectedRootId = parseCodexSkillPersistenceKey(existing?.persistenceKey)?.rootId ?? 'vault-codex';
   }
 
   /** Exposed for unit tests only. */
@@ -37,7 +37,7 @@ export class CodexSkillModal extends Modal {
       nameInput: this._nameInput,
       descInput: this._descInput,
       contentArea: this._contentArea,
-      setDirectory: (dir: string) => { this._selectedDirectory = dir; },
+      setDirectory: (rootId: CodexSkillRootId) => { this._selectedRootId = rootId; },
       triggerSave: this._triggerSave,
     };
   }
@@ -52,11 +52,11 @@ export class CodexSkillModal extends Modal {
       .setName('Directory')
       .setDesc('Where to store the skill')
       .addDropdown(dropdown => {
-        for (const opt of DIRECTORY_OPTIONS) {
-          dropdown.addOption(opt.value, opt.label);
+        for (const opt of CODEX_SKILL_ROOT_OPTIONS) {
+          dropdown.addOption(opt.id, opt.label);
         }
-        dropdown.setValue(this._selectedDirectory);
-        dropdown.onChange(value => { this._selectedDirectory = value; });
+        dropdown.setValue(this._selectedRootId);
+        dropdown.onChange(value => { this._selectedRootId = value as CodexSkillRootId; });
       });
 
     new Setting(contentEl)
@@ -114,7 +114,10 @@ export class CodexSkillModal extends Modal {
         isDeletable: true,
         displayPrefix: '$',
         insertPrefix: '$',
-        persistenceKey: this._selectedDirectory,
+        persistenceKey: createCodexSkillPersistenceKey({
+          rootId: this._selectedRootId,
+          ...(this.existing?.name ? { currentName: this.existing.name } : {}),
+        }),
       };
 
       try {
@@ -165,6 +168,11 @@ export class CodexSkillSettings {
     await this.render();
   }
 
+  async refresh(): Promise<void> {
+    await this.catalog.refresh();
+    await this.render();
+  }
+
   async render(): Promise<void> {
     this.containerEl.empty();
 
@@ -178,6 +186,13 @@ export class CodexSkillSettings {
     headerEl.createSpan({ text: 'Codex Skills', cls: 'claudian-sp-label' });
 
     const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
+    const refreshBtn = actionsEl.createEl('button', {
+      cls: 'claudian-settings-action-btn',
+      attr: { 'aria-label': 'Refresh' },
+    });
+    setIcon(refreshBtn, 'refresh-cw');
+    refreshBtn.addEventListener('click', () => { void this.refresh(); });
+
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
       attr: { 'aria-label': 'Add' },
@@ -247,9 +262,6 @@ export class CodexSkillSettings {
       existing,
       async (entry) => {
         await this.catalog.saveVaultEntry(entry);
-        if (existing && existing.name !== entry.name) {
-          await this.catalog.deleteVaultEntry(existing);
-        }
         await this.render();
         new Notice(`Codex skill "$${entry.name}" ${existing ? 'updated' : 'created'}`);
       }

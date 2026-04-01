@@ -7,6 +7,37 @@ import {
 } from '../types/subagent';
 
 export const CODEX_AGENTS_PATH = '.codex/agents';
+const SUBAGENT_PERSISTENCE_PREFIX = 'codex-subagent';
+
+export interface CodexSubagentLocation {
+  fileName: string;
+}
+
+export function createCodexSubagentPersistenceKey(
+  location: CodexSubagentLocation,
+): string {
+  return `${SUBAGENT_PERSISTENCE_PREFIX}:${encodeURIComponent(location.fileName)}`;
+}
+
+export function parseCodexSubagentPersistenceKey(
+  persistenceKey?: string,
+): CodexSubagentLocation | null {
+  if (!persistenceKey) {
+    return null;
+  }
+
+  if (persistenceKey.startsWith(`${CODEX_AGENTS_PATH}/`) && persistenceKey.endsWith('.toml')) {
+    return { fileName: persistenceKey.slice(CODEX_AGENTS_PATH.length + 1) };
+  }
+
+  const [prefix, encodedFileName] = persistenceKey.split(':');
+  if (prefix !== SUBAGENT_PERSISTENCE_PREFIX || !encodedFileName) {
+    return null;
+  }
+
+  const fileName = decodeURIComponent(encodedFileName);
+  return fileName.endsWith('.toml') ? { fileName } : null;
+}
 
 export class CodexSubagentStorage {
   constructor(
@@ -18,7 +49,7 @@ export class CodexSubagentStorage {
   }
 
   async load(agent: CodexSubagentDefinition): Promise<CodexSubagentDefinition | null> {
-    const filePath = this.resolvePath(agent);
+    const filePath = this.resolveCurrentPath(agent);
     try {
       if (!(await this.vaultAdapter.exists(filePath))) return null;
       const content = await this.vaultAdapter.read(filePath);
@@ -28,22 +59,40 @@ export class CodexSubagentStorage {
     }
   }
 
-  async save(agent: CodexSubagentDefinition): Promise<void> {
-    const filePath = this.resolvePath(agent);
+  async save(agent: CodexSubagentDefinition, previous?: CodexSubagentDefinition | null): Promise<void> {
+    const filePath = this.resolveTargetPath(agent, previous);
+    const previousPath = previous ? this.resolveCurrentPath(previous) : null;
     await this.vaultAdapter.ensureFolder(CODEX_AGENTS_PATH);
     const content = serializeSubagentToml(agent);
     await this.vaultAdapter.write(filePath, content);
+
+    if (previousPath && previousPath !== filePath) {
+      await this.vaultAdapter.delete(previousPath);
+    }
   }
 
   async delete(agent: CodexSubagentDefinition): Promise<void> {
-    const filePath = this.resolvePath(agent);
+    const filePath = this.resolveCurrentPath(agent);
     await this.vaultAdapter.delete(filePath);
   }
 
-  private resolvePath(agent: CodexSubagentDefinition): string {
-    if (agent.filePath && agent.filePath.startsWith(CODEX_AGENTS_PATH)) {
-      return agent.filePath;
+  private resolveCurrentPath(agent: CodexSubagentDefinition): string {
+    const persistedLocation = parseCodexSubagentPersistenceKey(agent.persistenceKey);
+    if (persistedLocation) {
+      return `${CODEX_AGENTS_PATH}/${persistedLocation.fileName}`;
     }
+
+    return `${CODEX_AGENTS_PATH}/${agent.name}.toml`;
+  }
+
+  private resolveTargetPath(
+    agent: CodexSubagentDefinition,
+    previous?: CodexSubagentDefinition | null,
+  ): string {
+    if (previous && previous.name === agent.name) {
+      return this.resolveCurrentPath(previous);
+    }
+
     return `${CODEX_AGENTS_PATH}/${agent.name}.toml`;
   }
 
@@ -97,7 +146,11 @@ export function parseSubagentToml(
     name,
     description,
     developerInstructions,
-    filePath,
+    persistenceKey: createCodexSubagentPersistenceKey({
+      fileName: filePath.startsWith(`${CODEX_AGENTS_PATH}/`)
+        ? filePath.slice(CODEX_AGENTS_PATH.length + 1)
+        : filePath.split('/').pop() ?? filePath,
+    }),
   };
 
   if (typeof parsed.model === 'string') {

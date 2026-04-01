@@ -197,16 +197,6 @@
       "name": "Загружать пользовательские настройки Claude",
       "desc": "Загружает ~/.claude/settings.json. При включении пользовательские правила разрешений Claude Code могут обходить безопасный режим."
     },
-    "enableBlocklist": {
-      "name": "Включить черный список команд",
-      "desc": "Блокировать потенциально опасные bash команды"
-    },
-    "blockedCommands": {
-      "name": "Заблокированные команды ({platform})",
-      "desc": "Шаблоны для блокировки на {platform} (по одному в строке). Поддерживаются регулярные выражения.",
-      "unixName": "Заблокированные команды (Unix/Git Bash)",
-      "unixDesc": "Unix шаблоны также блокируются на Windows, так как Git Bash может их вызывать."
-    },
     "claudeSafeMode": {
       "name": "Safe mode",
       "desc": "Permission mode used when the Safe toggle is active."

@@ -134,34 +134,11 @@ export class QueryOptionsBuilder {
   }
 
   static buildPersistentQueryOptions(ctx: PersistentQueryContext): Options {
-    const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
-    const permissionMode = ctx.settings.permissionMode;
-
-    const systemPrompt = buildSystemPrompt({
-      mediaFolder: ctx.settings.mediaFolder,
-      customPrompt: ctx.settings.systemPrompt,
-      vaultPath: ctx.vaultPath,
-      userName: ctx.settings.userName,
-    });
-
-    const options: Options = {
-      cwd: ctx.vaultPath,
-      systemPrompt,
-      model: ctx.settings.model,
-      abortController: ctx.abortController,
-      pathToClaudeCodeExecutable: ctx.cliPath,
-      settingSources: claudeSettings.loadUserSettings
-        ? ['user', 'project']
-        : ['project'],
-      env: {
-        ...process.env,
-        ...ctx.customEnv,
-        PATH: ctx.enhancedPath,
-      },
-      includePartialMessages: true,
-    };
-
-    QueryOptionsBuilder.applyExtraArgs(options, claudeSettings.enableChrome);
+    const { options, claudeSettings } = QueryOptionsBuilder.buildBaseOptions(
+      ctx,
+      ctx.settings.model,
+      ctx.abortController,
+    );
 
     options.disallowedTools = [
       ...ctx.mcpManager.getAllDisallowedMcpTools(),
@@ -169,7 +146,12 @@ export class QueryOptionsBuilder {
       ...DISABLED_BUILTIN_SUBAGENTS,
     ];
 
-    QueryOptionsBuilder.applyPermissionMode(options, permissionMode, claudeSettings.safeMode, ctx.canUseTool);
+    QueryOptionsBuilder.applyPermissionMode(
+      options,
+      ctx.settings.permissionMode,
+      claudeSettings.safeMode,
+      ctx.canUseTool,
+    );
     QueryOptionsBuilder.applyThinking(options, ctx.settings, ctx.settings.model);
     options.hooks = ctx.hooks;
 
@@ -189,42 +171,16 @@ export class QueryOptionsBuilder {
       options.additionalDirectories = ctx.externalContextPaths;
     }
 
-    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
-
     return options;
   }
 
   static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
-    const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
-    const permissionMode = ctx.settings.permissionMode;
-
     const selectedModel = ctx.modelOverride ?? ctx.settings.model;
-    const systemPrompt = buildSystemPrompt({
-      mediaFolder: ctx.settings.mediaFolder,
-      customPrompt: ctx.settings.systemPrompt,
-      vaultPath: ctx.vaultPath,
-      userName: ctx.settings.userName,
-    });
-
-    const options: Options = {
-      cwd: ctx.vaultPath,
-      systemPrompt,
-      model: selectedModel,
-      abortController: ctx.abortController,
-      pathToClaudeCodeExecutable: ctx.cliPath,
-      // User settings may contain permission rules that bypass Claudian's permission system
-      settingSources: claudeSettings.loadUserSettings
-        ? ['user', 'project']
-        : ['project'],
-      env: {
-        ...process.env,
-        ...ctx.customEnv,
-        PATH: ctx.enhancedPath,
-      },
-      includePartialMessages: true,
-    };
-
-    QueryOptionsBuilder.applyExtraArgs(options, claudeSettings.enableChrome);
+    const { options, claudeSettings } = QueryOptionsBuilder.buildBaseOptions(
+      ctx,
+      selectedModel,
+      ctx.abortController,
+    );
 
     const mcpMentions = ctx.mcpMentions || new Set<string>();
     const uiEnabledServers = ctx.enabledMcpServers || new Set<string>();
@@ -242,7 +198,12 @@ export class QueryOptionsBuilder {
       ...DISABLED_BUILTIN_SUBAGENTS,
     ];
 
-    QueryOptionsBuilder.applyPermissionMode(options, permissionMode, claudeSettings.safeMode, ctx.canUseTool);
+    QueryOptionsBuilder.applyPermissionMode(
+      options,
+      ctx.settings.permissionMode,
+      claudeSettings.safeMode,
+      ctx.canUseTool,
+    );
     options.hooks = ctx.hooks;
     QueryOptionsBuilder.applyThinking(options, ctx.settings, ctx.modelOverride ?? ctx.settings.model);
 
@@ -257,8 +218,6 @@ export class QueryOptionsBuilder {
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
       options.additionalDirectories = ctx.externalContextPaths;
     }
-
-    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
 
     return options;
   }
@@ -294,6 +253,39 @@ export class QueryOptionsBuilder {
     if (enableChrome) {
       options.extraArgs = { ...options.extraArgs, chrome: null };
     }
+  }
+
+  private static buildBaseOptions(
+    ctx: QueryOptionsContext,
+    model: string,
+    abortController?: AbortController,
+  ): { options: Options; claudeSettings: ReturnType<typeof getClaudeProviderSettings> } {
+    const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
+    const systemPromptSettings: SystemPromptSettings = {
+      mediaFolder: ctx.settings.mediaFolder,
+      customPrompt: ctx.settings.systemPrompt,
+      vaultPath: ctx.vaultPath,
+      userName: ctx.settings.userName,
+    };
+    const options: Options = {
+      cwd: ctx.vaultPath,
+      systemPrompt: buildSystemPrompt(systemPromptSettings),
+      model,
+      abortController,
+      pathToClaudeCodeExecutable: ctx.cliPath,
+      settingSources: claudeSettings.loadUserSettings ? ['user', 'project'] : ['project'],
+      env: {
+        ...process.env,
+        ...ctx.customEnv,
+        PATH: ctx.enhancedPath,
+      },
+      includePartialMessages: true,
+    };
+
+    QueryOptionsBuilder.applyExtraArgs(options, claudeSettings.enableChrome);
+    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
+
+    return { options, claudeSettings };
   }
 
   private static applyThinking(

@@ -15,14 +15,6 @@ import * as path from 'path';
 
 // Mock fs module
 jest.mock('fs');
-jest.mock('@/core/types', () => {
-  const actual = jest.requireActual('@/core/types');
-  return {
-    __esModule: true,
-    ...actual,
-    getCurrentPlatformBlockedCommands: (commands: { unix: string[] }) => commands.unix,
-  };
-});
 
 // Now import after all mocks are set up
 import { buildResultErrorMessage } from '@test/helpers/sdkMessages';
@@ -100,22 +92,6 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
 
   const mockPlugin = {
     settings: {
-      enableBlocklist: true,
-      blockedCommands: {
-        unix: [
-          'rm -rf',
-          'rm -r /',
-          'chmod 777',
-          'chmod -R 777',
-          'mkfs',
-          'dd if=',
-          '> /dev/sd',
-        ],
-        windows: [
-          'Remove-Item -Recurse -Force',
-          'Format-Volume',
-        ],
-      },
       permissions: [], // Legacy field (for backwards compat tests)
       permissionMode: 'yolo',
       loadUserClaudeSettings: false,
@@ -172,129 +148,6 @@ describe('ClaudianService', () => {
   afterEach(() => {
     // Clean up persistent query to prevent test hangs
     service.cleanup();
-  });
-
-  describe('shouldBlockCommand', () => {
-    it('should block dangerous rm commands', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'rm -rf /' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('delete everything')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeDefined();
-      expect(blockedChunk?.content).toContain('rm -rf');
-    });
-
-    it('should block chmod 777 commands', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'chmod 777 /etc/passwd' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('change permissions')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeDefined();
-      expect(blockedChunk?.content).toContain('chmod 777');
-    });
-
-    it('should allow safe commands when blocklist is enabled', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'ls -la' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('list files')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeUndefined();
-
-      const toolUseChunk = chunks.find((c) => c.type === 'tool_use');
-      expect(toolUseChunk).toBeDefined();
-    });
-
-    it('should not block commands when blocklist is disabled', async () => {
-      mockPlugin = createMockPlugin({ enableBlocklist: false });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'rm -rf /' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('delete everything')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeUndefined();
-
-      const toolUseChunk = chunks.find((c) => c.type === 'tool_use');
-      expect(toolUseChunk).toBeDefined();
-    });
-
-    it('should block mkfs commands', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'mkfs.ext4 /dev/sda1' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('format disk')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeDefined();
-      expect(blockedChunk?.content).toContain('mkfs');
-    });
-
-    it('should block dd if= commands', async () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'dd if=/dev/zero of=/dev/sda' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('wipe disk')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeDefined();
-      expect(blockedChunk?.content).toContain('dd if=');
-    });
   });
 
   describe('findClaudeCLI', () => {
@@ -603,7 +456,7 @@ describe('ClaudianService', () => {
         chunks.push(chunk);
       }
 
-      const toolResultChunk = chunks.find((c) => c.type === 'tool_result');
+      const toolResultChunk = chunks.find((c) => c.type === 'subagent_tool_result');
       expect(toolResultChunk).toBeDefined();
       expect(toolResultChunk?.content).toBe('File contents here');
       expect(toolResultChunk?.id).toBe('read-tool-1');
@@ -1006,54 +859,6 @@ describe('ClaudianService', () => {
         (c) => c.type === 'error' && c.content.includes('vault path')
       );
       expect(errorChunk).toBeDefined();
-    });
-  });
-
-  describe('regex pattern matching in blocklist', () => {
-    it('should handle regex patterns in blocklist', async () => {
-      mockPlugin = createMockPlugin({
-        blockedCommands: { unix: ['rm\\s+-rf', 'chmod\\s+7{3}'], windows: [] },
-      });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'rm   -rf /home' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('delete')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeDefined();
-    });
-
-    it('should fallback to includes for invalid regex', async () => {
-      mockPlugin = createMockPlugin({
-        blockedCommands: { unix: ['[invalid regex'], windows: [] },
-      });
-      service = new ClaudianService(mockPlugin, createMockMcpManager());
-
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-
-      setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'test-session' },
-        createAssistantWithToolUse('Bash', { command: 'something with [invalid regex inside' }),
-        { type: 'result' },
-      ]);
-
-      const chunks: any[] = [];
-      for await (const chunk of service.query('test')) {
-        chunks.push(chunk);
-      }
-
-      const blockedChunk = chunks.find((c) => c.type === 'blocked');
-      expect(blockedChunk).toBeDefined();
     });
   });
 

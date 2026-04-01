@@ -55,6 +55,7 @@ export interface ProviderRegistration {
   blankTabOrder: number;
   isEnabled: (settings: Record<string, unknown>) => boolean;
   capabilities: ProviderCapabilities;
+  environmentKeyPatterns?: RegExp[];
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
   createRuntime: (options: Omit<CreateChatRuntimeOptions, 'providerId'>) => ChatRuntime;

@@ -16,6 +16,7 @@ export const codexProviderRegistration: ProviderRegistration = {
   blankTabOrder: 10,
   isEnabled: (settings) => getCodexProviderSettings(settings).enabled,
   capabilities: CODEX_PROVIDER_CAPABILITIES,
+  environmentKeyPatterns: [/^OPENAI_/i, /^CODEX_/i],
   chatUIConfig: codexChatUIConfig,
   settingsReconciler: codexSettingsReconciler,
   createRuntime: ({ plugin }) => new CodexChatRuntime(plugin),

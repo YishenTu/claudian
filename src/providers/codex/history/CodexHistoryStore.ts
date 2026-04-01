@@ -111,6 +111,13 @@ interface PersistedCompactedPayload {
   replacement_history?: PersistedPayload[];
 }
 
+interface ParsedSessionRecord {
+  timestamp: number;
+  type?: string;
+  event?: CodexEvent;
+  payload?: PersistedPayload;
+}
+
 // ---------------------------------------------------------------------------
 // Multi-bubble turn model
 // ---------------------------------------------------------------------------
@@ -248,6 +255,13 @@ function appendUniqueChunk(chunks: string[], value: string): void {
   chunks.push(trimmed);
 }
 
+function replaceLatestChunk(chunks: string[], value: string): void {
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  chunks.length = 0;
+  chunks.push(trimmed);
+}
+
 function appendUserChunk(turn: CodexTurnState, value: string, timestamp: number): void {
   const chunkCountBefore = turn.userChunks.length;
   appendUniqueChunk(turn.userChunks, value);
@@ -345,6 +359,28 @@ function parseTimestamp(value: unknown): number {
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseSessionRecord(line: string): ParsedSessionRecord | null {
+  let parsed: {
+    timestamp?: string;
+    type?: string;
+    event?: CodexEvent;
+    payload?: PersistedPayload;
+  };
+
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+
+  return {
+    timestamp: parseTimestamp(parsed.timestamp),
+    type: parsed.type,
+    event: parsed.event,
+    payload: parsed.payload,
+  };
 }
 
 const CODEX_SYSTEM_MESSAGE_PREFIXES = [
@@ -560,7 +596,7 @@ function processPersistedToolCall(
 
   ctx.toolCallToTurn.set(callId, {
     turnId: turn.id,
-    bubbleIndex: turn.assistantBubbles.indexOf(bubble),
+    bubbleIndex: turn.activeBubbleIndex!,
   });
 }
 
@@ -689,7 +725,7 @@ function processPersistedMcpToolCall(
 
   ctx.toolCallToTurn.set(callId, {
     turnId: turn.id,
-    bubbleIndex: turn.assistantBubbles.indexOf(bubble),
+    bubbleIndex: turn.activeBubbleIndex!,
   });
 }
 
@@ -895,7 +931,7 @@ function processEventMsg(
       const id = nextTurnId(ctx);
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);
       const bubble = ensureAssistantBubble(turn, timestamp);
-      bubble.contentBlocks.push({ type: 'compact_boundary' });
+      bubble.contentBlocks.push({ type: 'context_compacted' });
       closeAssistantBubble(turn);
       ctx.currentTurnId = null;
       break;
@@ -910,110 +946,96 @@ function processEventMsg(
 // Flush multi-bubble turns to ChatMessage[]
 // ---------------------------------------------------------------------------
 
-function flushBubbleTurns(
-  turns: Map<string, CodexTurnState>,
-  turnOrder: string[],
-): ChatMessage[] {
+function flushBubbleTurnMessages(
+  turn: CodexTurnState,
+  msgIndex: number,
+): { messages: ChatMessage[]; nextMsgIndex: number } {
   const messages: ChatMessage[] = [];
-  let msgIndex = 0;
 
-  for (const turnId of turnOrder) {
-    const turn = turns.get(turnId);
-    if (!turn) continue;
+  const userText = turn.userChunks.join('\n').trim();
+  if (userText && !isCodexSystemMessage(userText)) {
+    const displayContent = extractCodexDisplayContent(userText);
+    messages.push({
+      id: `codex-msg-${msgIndex}`,
+      role: 'user',
+      content: userText,
+      ...(displayContent !== undefined ? { displayContent } : {}),
+      ...(turn.serverTurnId ? { userMessageId: turn.serverTurnId } : {}),
+      timestamp: turn.userTimestamp || turn.startedAt || Date.now(),
+    });
+    msgIndex += 1;
+  }
 
-    // Emit user message from userChunks
-    const userText = turn.userChunks.join('\n').trim();
-    if (userText && !isCodexSystemMessage(userText)) {
-      const displayContent = extractCodexDisplayContent(userText);
-      messages.push({
-        id: `codex-msg-${msgIndex}`,
-        role: 'user',
-        content: userText,
-        ...(displayContent !== undefined ? { displayContent } : {}),
-        ...(turn.serverTurnId ? { userMessageId: turn.serverTurnId } : {}),
-        timestamp: turn.userTimestamp || turn.startedAt || Date.now(),
-      });
-      msgIndex += 1;
-    }
+  let lastAssistantTimestamp = 0;
+  const assistantMessages: ChatMessage[] = [];
 
-    // Track last assistant timestamp across all bubbles for duration calculation
-    let lastAssistantTimestamp = 0;
-    const assistantMessages: ChatMessage[] = [];
+  for (const bubble of turn.assistantBubbles) {
+    const contentText = bubble.contentChunks.join('\n\n');
+    const thinkingText = bubble.thinkingChunks.join('\n\n');
+    const hasContent = contentText.trim().length > 0;
+    const hasThinking = thinkingText.trim().length > 0;
+    const hasToolCalls = bubble.toolCalls.length > 0;
+    const hasCompactBoundary = bubble.contentBlocks.some(b => b.type === 'context_compacted');
 
-    for (const bubble of turn.assistantBubbles) {
-      const contentText = bubble.contentChunks.join('\n\n');
-      const thinkingText = bubble.thinkingChunks.join('\n\n');
-      const hasContent = contentText.trim().length > 0;
-      const hasThinking = thinkingText.trim().length > 0;
-      const hasToolCalls = bubble.toolCalls.length > 0;
-
-      const hasCompactBoundary = bubble.contentBlocks.some(b => b.type === 'compact_boundary');
-
-      if (!hasContent && !hasThinking && !hasToolCalls && !hasCompactBoundary) {
-        // Empty bubble with interrupt flag → bare interrupt marker
-        if (bubble.interrupted) {
-          messages.push({
-            id: `codex-msg-${msgIndex}`,
-            role: 'assistant',
-            content: '',
-            timestamp: bubble.startedAt || turn.startedAt || Date.now(),
-            isInterrupt: true,
-          });
-          msgIndex += 1;
-        }
-        continue;
-      }
-
-      // Build content blocks
-      const contentBlocks: ContentBlock[] = [];
-      if (hasThinking) {
-        contentBlocks.push({ type: 'thinking', content: thinkingText.trim() });
-      }
-      contentBlocks.push(...bubble.contentBlocks);
-      if (hasContent) {
-        contentBlocks.push({ type: 'text', content: contentText.trim() });
-      }
-
-      const msg: ChatMessage = {
-        id: `codex-msg-${msgIndex}`,
-        role: 'assistant',
-        content: contentText.trim(),
-        timestamp: bubble.startedAt || turn.startedAt || Date.now(),
-        toolCalls: hasToolCalls ? bubble.toolCalls : undefined,
-        contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
-      };
-
-      // Interrupted bubble with content → isInterrupt: true
+    if (!hasContent && !hasThinking && !hasToolCalls && !hasCompactBoundary) {
       if (bubble.interrupted) {
-        msg.isInterrupt = true;
+        messages.push({
+          id: `codex-msg-${msgIndex}`,
+          role: 'assistant',
+          content: '',
+          timestamp: bubble.startedAt || turn.startedAt || Date.now(),
+          isInterrupt: true,
+        });
+        msgIndex += 1;
       }
-
-      if (bubble.lastEventAt > lastAssistantTimestamp) {
-        lastAssistantTimestamp = bubble.lastEventAt;
-      }
-
-      assistantMessages.push(msg);
-      messages.push(msg);
-      msgIndex += 1;
+      continue;
     }
 
-    // Attach response duration to the last assistant message of the turn
-    if (assistantMessages.length > 0 && turn.userTimestamp && lastAssistantTimestamp > turn.userTimestamp) {
-      const durationMs = lastAssistantTimestamp - turn.userTimestamp;
-      const lastMsg = assistantMessages[assistantMessages.length - 1];
-      lastMsg.durationSeconds = Math.round(durationMs / 1000);
+    const contentBlocks: ContentBlock[] = [];
+    if (hasThinking) {
+      contentBlocks.push({ type: 'thinking', content: thinkingText.trim() });
+    }
+    contentBlocks.push(...bubble.contentBlocks);
+    if (hasContent) {
+      contentBlocks.push({ type: 'text', content: contentText.trim() });
     }
 
-    // Set assistantMessageId on the terminal non-interrupt assistant bubble
-    if (turn.serverTurnId && turn.completed && assistantMessages.length > 0) {
-      const lastNonInterrupt = [...assistantMessages].reverse().find(m => !m.isInterrupt);
-      if (lastNonInterrupt) {
-        lastNonInterrupt.assistantMessageId = turn.serverTurnId;
-      }
+    const msg: ChatMessage = {
+      id: `codex-msg-${msgIndex}`,
+      role: 'assistant',
+      content: contentText.trim(),
+      timestamp: bubble.startedAt || turn.startedAt || Date.now(),
+      toolCalls: hasToolCalls ? bubble.toolCalls : undefined,
+      contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
+    };
+
+    if (bubble.interrupted) {
+      msg.isInterrupt = true;
+    }
+
+    if (bubble.lastEventAt > lastAssistantTimestamp) {
+      lastAssistantTimestamp = bubble.lastEventAt;
+    }
+
+    assistantMessages.push(msg);
+    messages.push(msg);
+    msgIndex += 1;
+  }
+
+  if (assistantMessages.length > 0 && turn.userTimestamp && lastAssistantTimestamp > turn.userTimestamp) {
+    const durationMs = lastAssistantTimestamp - turn.userTimestamp;
+    const lastMsg = assistantMessages[assistantMessages.length - 1];
+    lastMsg.durationSeconds = Math.round(durationMs / 1000);
+  }
+
+  if (turn.serverTurnId && turn.completed && assistantMessages.length > 0) {
+    const lastNonInterrupt = [...assistantMessages].reverse().find(m => !m.isInterrupt);
+    if (lastNonInterrupt) {
+      lastNonInterrupt.assistantMessageId = turn.serverTurnId;
     }
   }
 
-  return messages;
+  return { messages, nextMsgIndex: msgIndex };
 }
 
 // ---------------------------------------------------------------------------
@@ -1087,49 +1109,41 @@ export function parseCodexSessionContent(content: string): ChatMessage[] {
 }
 
 export function parseCodexSessionTurns(content: string): CodexParsedTurn[] {
-  const lines = content.split('\n').filter(line => line.trim());
+  const records = content
+    .split('\n')
+    .filter(line => line.trim())
+    .map(parseSessionRecord)
+    .filter((record): record is ParsedSessionRecord => record !== null);
 
   // Detect format: legacy uses type=event, modern uses event_msg/response_item
   let hasLegacy = false;
   let hasModern = false;
-  for (const line of lines) {
-    if (line.includes('"type":"event"') || line.includes('"type": "event"')) {
-      hasLegacy = true;
-    }
-    if (line.includes('"type":"event_msg"') || line.includes('"type":"response_item"')
-        || line.includes('"type": "event_msg"') || line.includes('"type": "response_item"')) {
-      hasModern = true;
-    }
+  for (const record of records) {
+    if (record.type === 'event') hasLegacy = true;
+    else if (record.type === 'event_msg' || record.type === 'response_item' || record.type === 'compacted') hasModern = true;
     if (hasLegacy && hasModern) break;
   }
 
   // Pure legacy sessions use the old flat accumulator (no turn-level structure)
   if (hasLegacy && !hasModern) {
-    const messages = parseLegacySession(lines);
+    const messages = parseLegacySession(records);
     return messages.length > 0 ? [{ turnId: null, messages }] : [];
   }
 
   // Modern or mixed sessions use the bubble model with turn-level grouping
-  return parseModernSessionTurns(lines);
+  return parseModernSessionTurns(records);
 }
 
 // ---------------------------------------------------------------------------
 // Legacy (event wrapper) parser — preserved for backward compat
 // ---------------------------------------------------------------------------
 
-function parseLegacySession(lines: string[]): ChatMessage[] {
+function parseLegacySession(records: ParsedSessionRecord[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   let turn = newTurn();
   let msgIndex = 0;
 
-  for (const line of lines) {
-    let parsed: { timestamp?: string; type?: string; event?: CodexEvent };
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
+  for (const parsed of records) {
     if (parsed.type === 'event' && parsed.event) {
       const event = parsed.event;
 
@@ -1174,22 +1188,15 @@ function parseLegacySession(lines: string[]): ChatMessage[] {
 // Modern (response_item + event_msg) parser — bubble model
 // ---------------------------------------------------------------------------
 
-function parseModernSessionTurns(lines: string[]): CodexParsedTurn[] {
+function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTurn[] {
   const ctx = createPersistedParseContext();
 
-  for (const [lineIndex, line] of lines.entries()) {
-    let parsed: { timestamp?: string; type?: string; event?: CodexEvent; payload?: PersistedPayload };
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    const timestamp = parseTimestamp(parsed.timestamp);
+  for (const [lineIndex, parsed] of records.entries()) {
+    const timestamp = parsed.timestamp;
 
     // Legacy event records can appear in mixed sessions
     if (parsed.type === 'event' && parsed.event) {
-      processLegacyEventInModernContext(parsed.event, ctx);
+      processLegacyEventInModernContext(parsed.event, timestamp, ctx);
       continue;
     }
 
@@ -1215,40 +1222,15 @@ function flushBubbleTurnsGrouped(
   turns: Map<string, CodexTurnState>,
   turnOrder: string[],
 ): CodexParsedTurn[] {
-  const allMessages = flushBubbleTurns(turns, turnOrder);
-
-  // Group messages by their originating turn, using the turn ordering
-  // to split the flat message list into per-turn groups.
   const result: CodexParsedTurn[] = [];
   let messageOffset = 0;
 
   for (const turnId of turnOrder) {
     const turn = turns.get(turnId);
     if (!turn) continue;
-
-    // Count expected messages from this turn:
-    // 1 user message if non-system userChunks exist
-    const userText = turn.userChunks.join('\n').trim();
-    const hasUser = userText.length > 0 && !isCodexSystemMessage(userText);
-    const userCount = hasUser ? 1 : 0;
-
-    // Count assistant messages from bubbles
-    let assistantCount = 0;
-    for (const bubble of turn.assistantBubbles) {
-      const hasContent = bubble.contentChunks.join('').trim().length > 0;
-      const hasThinking = bubble.thinkingChunks.join('').trim().length > 0;
-      const hasToolCalls = bubble.toolCalls.length > 0;
-      const hasCompactBoundary = bubble.contentBlocks.some(b => b.type === 'compact_boundary');
-      if (hasContent || hasThinking || hasToolCalls || bubble.interrupted || hasCompactBoundary) {
-        assistantCount += 1;
-      }
-    }
-
-    const totalCount = userCount + assistantCount;
-    if (totalCount === 0) continue;
-
-    const turnMessages = allMessages.slice(messageOffset, messageOffset + totalCount);
-    messageOffset += totalCount;
+    const { messages: turnMessages, nextMsgIndex } = flushBubbleTurnMessages(turn, messageOffset);
+    if (turnMessages.length === 0) continue;
+    messageOffset = nextMsgIndex;
 
     result.push({
       turnId: turn.serverTurnId ?? null,
@@ -1259,11 +1241,192 @@ function flushBubbleTurnsGrouped(
   return result;
 }
 
-function processLegacyEventInModernContext(event: CodexEvent, ctx: PersistedParseContext): void {
+function findToolCallOrigin(
+  ctx: PersistedParseContext,
+  callId: string,
+): ToolCallInfo | null {
+  const origin = ctx.toolCallToTurn.get(callId);
+  if (!origin) {
+    return null;
+  }
+
+  const turn = ctx.turns.get(origin.turnId);
+  if (!turn || origin.bubbleIndex >= turn.assistantBubbles.length) {
+    return null;
+  }
+
+  return turn.assistantBubbles[origin.bubbleIndex].toolCalls.find(tool => tool.id === callId) ?? null;
+}
+
+function trackToolCallOrigin(
+  ctx: PersistedParseContext,
+  callId: string,
+  turn: CodexTurnState,
+): void {
+  ctx.toolCallToTurn.set(callId, {
+    turnId: turn.id,
+    bubbleIndex: turn.activeBubbleIndex!,
+  });
+}
+
+function ensureModernLegacyToolCall(
+  ctx: PersistedParseContext,
+  timestamp: number,
+  item: CodexItem,
+  build: () => ToolCallInfo,
+): ToolCallInfo {
+  const existing = findToolCallOrigin(ctx, item.id);
+  if (existing) {
+    return existing;
+  }
+
+  const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
+  const bubble = ensureAssistantBubble(turn, timestamp);
+  const toolCall = build();
+  pushToolInvocation(bubble, toolCall);
+  trackToolCallOrigin(ctx, item.id, turn);
+  return toolCall;
+}
+
+function processLegacyItemInModernContext(
+  eventType: string,
+  item: CodexItem,
+  timestamp: number,
+  ctx: PersistedParseContext,
+): void {
+  switch (item.type) {
+    case 'agent_message': {
+      if ((eventType === 'item.updated' || eventType === 'item.completed') && item.text) {
+        const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
+        const bubble = ensureAssistantBubble(turn, timestamp);
+        replaceLatestChunk(bubble.contentChunks, item.text);
+      }
+      break;
+    }
+
+    case 'reasoning': {
+      if ((eventType === 'item.updated' || eventType === 'item.completed') && item.text) {
+        const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
+        const bubble = ensureAssistantBubble(turn, timestamp);
+        replaceLatestChunk(bubble.thinkingChunks, item.text);
+      }
+      break;
+    }
+
+    case 'command_execution': {
+      if (eventType === 'item.started') {
+        ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+          id: item.id,
+          name: normalizeCodexToolName(item.type),
+          input: normalizeCodexToolInput(item.type, { command: item.command ?? '' }),
+          status: 'running',
+        }));
+        break;
+      }
+
+      if (eventType === 'item.completed') {
+        const toolCall = ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+          id: item.id,
+          name: normalizeCodexToolName(item.type),
+          input: normalizeCodexToolInput(item.type, { command: item.command ?? '' }),
+          status: 'running',
+        }));
+        const rawOutput = item.aggregated_output ?? '';
+        toolCall.result = normalizeCodexToolResult(toolCall.name, rawOutput);
+        toolCall.status = item.exit_code === 0 ? 'completed' : 'error';
+      }
+      break;
+    }
+
+    case 'file_change': {
+      if (eventType !== 'item.started' && eventType !== 'item.completed') {
+        break;
+      }
+
+      const changes = item.changes ?? [];
+      const toolCall = ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+        id: item.id,
+        name: normalizeCodexToolName('file_change'),
+        input: { changes },
+        status: 'running',
+      }));
+
+      if (eventType === 'item.completed') {
+        const paths = changes.map(change => `${change.kind}: ${change.path}`).join(', ');
+        toolCall.result = paths ? `Applied: ${paths}` : 'Applied';
+        toolCall.status = item.status === 'completed' ? 'completed' : 'error';
+      }
+      break;
+    }
+
+    case 'web_search': {
+      if (eventType === 'item.started') {
+        ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+          id: item.id,
+          name: normalizeCodexToolName(item.type),
+          input: normalizeCodexToolInput(item.type, { query: item.query ?? '' }),
+          status: 'running',
+        }));
+        break;
+      }
+
+      if (eventType === 'item.completed') {
+        const toolCall = ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+          id: item.id,
+          name: normalizeCodexToolName(item.type),
+          input: normalizeCodexToolInput(item.type, { query: item.query ?? '' }),
+          status: 'running',
+        }));
+        toolCall.result = 'Search complete';
+        toolCall.status = 'completed';
+      }
+      break;
+    }
+
+    case 'mcp_tool_call': {
+      if (eventType === 'item.started') {
+        ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+          id: item.id,
+          name: `mcp__${item.server ?? ''}__${item.tool ?? ''}`,
+          input: {},
+          status: 'running',
+        }));
+        break;
+      }
+
+      if (eventType === 'item.completed') {
+        const toolCall = ensureModernLegacyToolCall(ctx, timestamp, item, () => ({
+          id: item.id,
+          name: `mcp__${item.server ?? ''}__${item.tool ?? ''}`,
+          input: {},
+          status: 'running',
+        }));
+        toolCall.status = item.status === 'completed' ? 'completed' : 'error';
+        toolCall.result = item.status === 'completed' ? 'Completed' : 'Failed';
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+function processLegacyEventInModernContext(
+  event: CodexEvent,
+  timestamp: number,
+  ctx: PersistedParseContext,
+): void {
   switch (event.type) {
     case 'turn.started': {
+      if (ctx.currentTurnId) {
+        const previousTurn = ctx.turns.get(ctx.currentTurnId);
+        if (previousTurn) {
+          closeAssistantBubble(previousTurn);
+        }
+      }
       const id = nextTurnId(ctx);
-      ensureTurn(ctx.turns, ctx.turnOrder, id, null, 0);
+      ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);
       ctx.currentTurnId = id;
       break;
     }
@@ -1281,7 +1444,7 @@ function processLegacyEventInModernContext(event: CodexEvent, ctx: PersistedPars
       if (ctx.currentTurnId) {
         const turn = ctx.turns.get(ctx.currentTurnId);
         if (turn) {
-          const bubble = ensureAssistantBubble(turn, 0);
+          const bubble = ensureAssistantBubble(turn, timestamp);
           bubble.interrupted = true;
           closeAssistantBubble(turn);
         }
@@ -1289,6 +1452,14 @@ function processLegacyEventInModernContext(event: CodexEvent, ctx: PersistedPars
       ctx.currentTurnId = null;
       break;
     }
+
+    case 'item.started':
+    case 'item.updated':
+    case 'item.completed':
+      if (event.item) {
+        processLegacyItemInModernContext(event.type, event.item, timestamp, ctx);
+      }
+      break;
 
     default:
       break;
