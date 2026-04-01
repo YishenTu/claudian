@@ -1,3 +1,5 @@
+import '@/providers';
+
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,
@@ -35,7 +37,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
+    getResolvedProviderCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -275,7 +277,7 @@ describe('InlineEditService', () => {
     });
 
     it('should return error when claude CLI not found', async () => {
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+      mockPlugin.getResolvedProviderCliPath.mockReturnValue(null);
 
       const result = await service.editText({
         mode: 'selection',

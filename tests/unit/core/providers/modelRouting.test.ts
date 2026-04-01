@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { getProviderForModel } from '@/core/providers/modelRouting';
 
 describe('getProviderForModel', () => {

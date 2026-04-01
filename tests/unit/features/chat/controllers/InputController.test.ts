@@ -2351,7 +2351,7 @@ describe('InputController - Message Queue', () => {
       inputEl.value = 'Plan the migration';
       const controller = new InputController(deps);
 
-      // showCodexPlanApproval returns null (cancelled) by default when there's no real DOM
+      // showPlanApproval returns null (cancelled) by default when there's no real DOM
       await controller.sendMessage();
 
       // The plan_completed chunk should have been consumed (not passed to StreamController)
@@ -2383,8 +2383,8 @@ describe('InputController - Message Queue', () => {
 
       const controller = new InputController(deps);
 
-      // Mock the showCodexPlanApproval to return 'implement'
-      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+      // Mock the showPlanApproval to return 'implement'
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
         decision: { type: 'implement' },
         invalidated: false,
       });
@@ -2413,7 +2413,7 @@ describe('InputController - Message Queue', () => {
       );
 
       const controller = new InputController(deps);
-      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
         decision: {
           type: 'revise',
           text: 'Add more tests',
@@ -2451,7 +2451,7 @@ describe('InputController - Message Queue', () => {
       );
 
       const controller = new InputController(deps);
-      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
         decision: { type: 'revise', text: 'Add more tests' },
         invalidated: false,
       });
@@ -2486,7 +2486,7 @@ describe('InputController - Message Queue', () => {
       );
 
       const controller = new InputController(deps);
-      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
         decision: { type: 'cancel' },
         invalidated: false,
       });
@@ -2525,7 +2525,7 @@ describe('InputController - Message Queue', () => {
       const sendPromise = controller.sendMessage();
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect((controller as any).pendingCodexPlanApproval).not.toBeNull();
+      expect((controller as any).pendingPlanApproval).not.toBeNull();
 
       controller.dismissPendingApproval();
       await sendPromise;
@@ -2550,7 +2550,7 @@ describe('InputController - Message Queue', () => {
       );
 
       const controller = new InputController(deps);
-      (controller as any).showCodexPlanApproval = jest.fn().mockResolvedValue({
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
         decision: null,
         invalidated: false,
       });

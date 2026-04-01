@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 
 describe('ProviderWorkspaceRegistry', () => {

@@ -766,7 +766,7 @@ export class ConversationController {
     const { plugin } = this.deps;
     if (!plugin.settings.enableAutoTitleGeneration) return;
 
-    // AI title generation is Claude-only
+    // Title generation is delegated to the active provider service
     const fullConv = await plugin.getConversationById(conversationId);
     if (!fullConv || fullConv.messages.length < 1) return;
 

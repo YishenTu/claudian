@@ -4,7 +4,7 @@ import type { TodoItem } from '../../../core/tools/todo';
 import { getToolIcon, MCP_ICON_MARKER } from '../../../core/tools/toolIcons';
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
-  isCodexAgentLifecycleTool,
+  isAgentLifecycleTool,
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
@@ -90,8 +90,8 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
     case TOOL_WRITE_STDIN:
       return getWriteStdinSummary(input);
     default:
-      if (isCodexAgentLifecycleTool(name)) {
-        return getCodexLifecycleSummary(name, input);
+      if (isAgentLifecycleTool(name)) {
+        return getAgentLifecycleSummary(name, input);
       }
       return '';
   }
@@ -152,8 +152,8 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       return summary ? `write_stdin: ${summary}` : 'write_stdin';
     }
     default:
-      if (isCodexAgentLifecycleTool(name)) {
-        const summary = getCodexLifecycleSummary(name, input);
+      if (isAgentLifecycleTool(name)) {
+        const summary = getAgentLifecycleSummary(name, input);
         return summary ? `${name}: ${summary}` : name;
       }
       return name;
@@ -196,7 +196,7 @@ function getWriteStdinSummary(input: Record<string, unknown>): string {
   return sessionId ? `#${String(sessionId)}` : '';
 }
 
-function getCodexLifecycleSummary(name: string, input: Record<string, unknown>): string {
+function getAgentLifecycleSummary(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case 'spawn_agent': {
       const msg = typeof input.message === 'string' ? input.message : '';
@@ -593,7 +593,7 @@ function renderApplyPatchExpanded(
   container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
 }
 
-function renderCodexLifecycleExpanded(container: HTMLElement, result: string): void {
+function renderAgentLifecycleExpanded(container: HTMLElement, result: string): void {
   // Try to parse as JSON for structured display
   const trimmed = result.trim();
   if (trimmed.startsWith('{')) {
@@ -624,8 +624,8 @@ export function renderExpandedContent(
 
   const resolvedResult = result ?? '';
 
-  if (isCodexAgentLifecycleTool(toolName)) {
-    renderCodexLifecycleExpanded(container, resolvedResult);
+  if (isAgentLifecycleTool(toolName)) {
+    renderAgentLifecycleExpanded(container, resolvedResult);
     return;
   }
 

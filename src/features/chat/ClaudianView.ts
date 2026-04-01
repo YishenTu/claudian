@@ -4,11 +4,10 @@ import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
-import type { ProviderId } from '../../core/providers/types';
+import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
-import { maybeGetClaudeWorkspaceServices } from '../../providers/claude/app/ClaudeWorkspaceServices';
-import { getTabProviderId, onCodexAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
+import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
@@ -87,7 +86,7 @@ export class ClaudianView extends ItemView {
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
   refreshModelSelector(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      onCodexAvailabilityChanged(tab, this.plugin);
+      onProviderAvailabilityChanged(tab, this.plugin);
       const providerId = getTabProviderId(tab, this.plugin);
       const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
         this.plugin.settings as unknown as Record<string, unknown>,
@@ -158,11 +157,8 @@ export class ClaudianView extends ItemView {
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
 
     // Initialize TabManager
-    const legacyPlugin = this.plugin as ClaudianPlugin & { mcpManager?: any };
-    const mcpManager = maybeGetClaudeWorkspaceServices()?.mcpManager ?? legacyPlugin.mcpManager;
     this.tabManager = new TabManager(
       this.plugin,
-      mcpManager,
       this.tabContentEl,
       this,
       {
@@ -246,7 +242,7 @@ export class ClaudianView extends ItemView {
 
     // Logo (hidden when 2+ tabs) — populated by syncHeaderLogo()
     this.logoEl = this.titleSlotEl.createSpan({ cls: 'claudian-logo' });
-    this.syncHeaderLogo('claude');
+    this.syncHeaderLogo(DEFAULT_CHAT_PROVIDER_ID);
 
     // Title text (hidden in header mode when 2+ tabs)
     this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
@@ -440,7 +436,7 @@ export class ClaudianView extends ItemView {
   private syncProviderBrandColor(): void {
     if (!this.viewContainerEl) return;
     const activeTab = this.tabManager?.getActiveTab();
-    const providerId = activeTab ? getTabProviderId(activeTab, this.plugin) : 'claude';
+    const providerId = activeTab ? getTabProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
     this.viewContainerEl.dataset.provider = providerId;
     this.syncHeaderLogo(providerId);
   }

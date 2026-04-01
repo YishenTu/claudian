@@ -81,6 +81,7 @@ import { createStopSubagentHook, type SubagentHookState } from '../hooks/Subagen
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import { isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
 import { buildPermissionUpdates } from '../security/ClaudePermissionUpdates';
+import { getClaudeProviderSettings } from '../settings';
 import { transformSDKMessage } from '../stream/transformClaudeMessage';
 import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types/models';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
@@ -373,7 +374,7 @@ export class ClaudianService implements ChatRuntime {
     // Case 1: Not running → try to start
     if (!this.persistentQuery) {
       if (!vaultPath) return false;
-      const cliPath = this.plugin.getResolvedClaudeCliPath();
+      const cliPath = this.plugin.getResolvedProviderCliPath('claude');
       if (!cliPath) return false;
       await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
       return true;
@@ -384,7 +385,7 @@ export class ClaudianService implements ChatRuntime {
     if (options?.force) {
       this.closePersistentQuery('forced restart', { preserveHandlers: options.preserveHandlers });
       if (!vaultPath) return false;
-      const cliPath = this.plugin.getResolvedClaudeCliPath();
+      const cliPath = this.plugin.getResolvedProviderCliPath('claude');
       if (!cliPath) return false;
       await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
       return true;
@@ -393,7 +394,7 @@ export class ClaudianService implements ChatRuntime {
     // Case 3: Check if config changed → restart if needed
     // We need vaultPath and cliPath to build config for comparison
     if (!vaultPath) return false;
-    const cliPath = this.plugin.getResolvedClaudeCliPath();
+    const cliPath = this.plugin.getResolvedProviderCliPath('claude');
     if (!cliPath) return false;
 
     const newConfig = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
@@ -401,7 +402,7 @@ export class ClaudianService implements ChatRuntime {
       // Close FIRST, then try to start new one (allows fallback if CLI unavailable)
       this.closePersistentQuery('config changed', { preserveHandlers: options?.preserveHandlers });
       // Re-check CLI path as it might have changed during close
-      const cliPathAfterClose = this.plugin.getResolvedClaudeCliPath();
+      const cliPathAfterClose = this.plugin.getResolvedProviderCliPath('claude');
       if (cliPathAfterClose) {
         await this.startPersistentQuery(vaultPath, cliPathAfterClose, effectiveSessionId, externalContextPaths);
         return true;
@@ -1012,7 +1013,7 @@ export class ClaudianService implements ChatRuntime {
       return;
     }
 
-    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
+    const resolvedClaudePath = this.plugin.getResolvedProviderCliPath('claude');
     if (!resolvedClaudePath) {
       yield { type: 'error', content: 'Claude CLI not found. Please install Claude Code CLI.' };
       return;
@@ -1381,7 +1382,7 @@ export class ClaudianService implements ChatRuntime {
     if (!this.vaultPath) {
       return;
     }
-    const cliPath = this.plugin.getResolvedClaudeCliPath();
+    const cliPath = this.plugin.getResolvedProviderCliPath('claude');
     if (!cliPath) {
       return;
     }
@@ -2055,7 +2056,7 @@ export class ClaudianService implements ChatRuntime {
   private resolveSDKPermissionMode(mode: PermissionMode): SDKPermissionMode {
     return QueryOptionsBuilder.resolveClaudeSdkPermissionMode(
       mode,
-      this.plugin.settings.claudeSafeMode,
+      getClaudeProviderSettings(this.plugin.settings as unknown as Record<string, unknown>).safeMode,
     ) as SDKPermissionMode;
   }
 }

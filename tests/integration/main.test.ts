@@ -282,7 +282,7 @@ describe('ClaudianPlugin', () => {
       const content = JSON.parse(writeCall[1]);
       expect(content).not.toHaveProperty('activeConversationId');
       expect(content).toHaveProperty('lastEnvHash');
-      expect(content).toHaveProperty('lastClaudeModel');
+      expect(content).toHaveProperty('providerConfigs.claude.lastModel');
       expect(content).toHaveProperty('lastCustomModel');
       // Permissions are now in .claude/settings.json (CC format), not claudian-settings.json
       expect(content).not.toHaveProperty('permissions');

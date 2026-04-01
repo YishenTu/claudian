@@ -12,6 +12,8 @@
 import type { App, Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../../../app/settings/ClaudianSettingsStorage';
+import { SESSIONS_PATH, SessionStorage } from '../../../core/bootstrap/SessionStorage';
 import { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   SlashCommand,
@@ -23,12 +25,7 @@ import {
 } from '../types/settings';
 import { AGENTS_PATH, AgentVaultStorage } from './AgentVaultStorage';
 import { CCSettingsStorage } from './CCSettingsStorage';
-import {
-  ClaudianSettingsStorage,
-  type StoredClaudianSettings,
-} from './ClaudianSettingsStorage';
 import { McpStorage } from './McpStorage';
-import { SESSIONS_PATH, SessionStorage } from './SessionStorage';
 import { SKILLS_PATH, SkillStorage } from './SkillStorage';
 import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 
@@ -59,10 +56,10 @@ export class StorageService {
   private plugin: Plugin;
   private app: App;
 
-  constructor(plugin: Plugin) {
+  constructor(plugin: Plugin, adapter?: VaultFileAdapter) {
     this.plugin = plugin;
     this.app = plugin.app;
-    this.adapter = new VaultFileAdapter(this.app);
+    this.adapter = adapter ?? new VaultFileAdapter(this.app);
     this.ccSettings = new CCSettingsStorage(this.adapter);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.commands = new SlashCommandStorage(this.adapter);

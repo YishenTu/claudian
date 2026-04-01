@@ -2,7 +2,7 @@ import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 
 import type { AgentDefinition } from '@/core/types';
-import { AgentSettings } from '@/features/settings/ui/AgentSettings';
+import { AgentSettings } from '@/providers/claude/ui/AgentSettings';
 
 function createAgent(name: string, filePath?: string): AgentDefinition {
   return {

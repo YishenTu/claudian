@@ -2,8 +2,8 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import { AGENTS_VAULT_SKILLS_PATH, CODEX_VAULT_SKILLS_PATH } from '../../../providers/codex/storage/CodexSkillStorage';
 import { validateCommandName } from '../../../utils/slashCommand';
+import { AGENTS_VAULT_SKILLS_PATH, CODEX_VAULT_SKILLS_PATH } from '../storage/CodexSkillStorage';
 
 const DIRECTORY_OPTIONS: { value: string; label: string }[] = [
   { value: CODEX_VAULT_SKILLS_PATH, label: '.codex/skills' },

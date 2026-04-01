@@ -1,12 +1,14 @@
+import '@/providers';
+
 import { createMockEl } from '@test/helpers/mockElement';
 
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import {
   TOOL_AGENT_OUTPUT,
-  TOOL_CODEX_SPAWN_AGENT,
-  TOOL_CODEX_WAIT_AGENT,
+  TOOL_SPAWN_AGENT,
   TOOL_TASK,
   TOOL_TODO_WRITE,
+  TOOL_WAIT_AGENT,
 } from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
@@ -1771,7 +1773,7 @@ describe('StreamController - Text Content', () => {
         {
           type: 'tool_use',
           id: 'spawn-1',
-          name: TOOL_CODEX_SPAWN_AGENT,
+          name: TOOL_SPAWN_AGENT,
           input: { message: 'Inspect utils.ts and return the final patch summary.', model: 'gpt-5.4-mini' },
         },
         msg,
@@ -1790,7 +1792,7 @@ describe('StreamController - Text Content', () => {
         {
           type: 'tool_use',
           id: 'wait-1',
-          name: TOOL_CODEX_WAIT_AGENT,
+          name: TOOL_WAIT_AGENT,
           input: { targets: ['agent-1'], timeout_ms: 30000 },
         },
         msg,

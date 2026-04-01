@@ -284,6 +284,32 @@ function applySubagentData(
   }
 }
 
+function buildPersistedSubagentData(messages: ChatMessage[]): Record<string, SubagentInfo> {
+  const result: Record<string, SubagentInfo> = {};
+
+  for (const msg of messages) {
+    if (msg.role !== 'assistant' || !msg.toolCalls) continue;
+
+    for (const toolCall of msg.toolCalls) {
+      if (!isSubagentToolName(toolCall.name) || !toolCall.subagent) continue;
+      result[toolCall.subagent.id] = toolCall.subagent;
+    }
+  }
+
+  return result;
+}
+
+function sanitizeProviderState(
+  providerState: ClaudeProviderState,
+): Record<string, unknown> | undefined {
+  const sanitizedEntries = Object.entries(providerState).filter(([, value]) => value !== undefined);
+  if (sanitizedEntries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(sanitizedEntries);
+}
+
 export class ClaudeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedConversationIds = new Set<string>();
 
@@ -305,6 +331,23 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       forkSource: { sessionId: sourceSessionId, resumeAt } satisfies ForkSource,
     };
     return state as Record<string, unknown>;
+  }
+
+  buildPersistedProviderState(
+    conversation: Conversation,
+  ): Record<string, unknown> | undefined {
+    const providerState: ClaudeProviderState = {
+      ...getClaudeState(conversation.providerState),
+    };
+
+    const subagentData = buildPersistedSubagentData(conversation.messages);
+    if (Object.keys(subagentData).length > 0) {
+      providerState.subagentData = subagentData;
+    } else {
+      delete providerState.subagentData;
+    }
+
+    return sanitizeProviderState(providerState);
   }
 
   async hydrateConversationHistory(

@@ -24,7 +24,6 @@ import type {
   SubagentRuntimeState,
 } from '../../../core/runtime/types';
 import type { ChatMessage, Conversation, ForkSource, SlashCommand, StreamChunk } from '../../../core/types';
-import type { CodexSafeMode } from '../../../core/types/settings';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -32,6 +31,7 @@ import { buildContextFromHistory } from '../../../utils/session';
 import { CODEX_PROVIDER_CAPABILITIES } from '../capabilities';
 import { findCodexSessionFile } from '../history/CodexHistoryStore';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
+import { type CodexSafeMode, getCodexProviderSettings } from '../settings';
 import { type CodexProviderState, getCodexState } from '../types';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import type {
@@ -179,7 +179,7 @@ export class CodexChatRuntime implements ChatRuntime {
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     const promptSettings = this.getSystemPromptSettings();
     const promptKey = computeSystemPromptKey(promptSettings);
-    const resolvedCodexPath = this.plugin.getResolvedCodexCliPath();
+    const resolvedCodexPath = this.plugin.getResolvedProviderCliPath('codex');
     const clientConfigKey = [promptKey, resolvedCodexPath ?? ''].join('::');
     const shouldRebuild = !this.process
       || !this.transport
@@ -357,7 +357,10 @@ export class CodexChatRuntime implements ChatRuntime {
 
         // Resume the forked thread (required before rollback and turn/start)
         const providerSettings = this.getProviderSettings();
-        const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
+        const permissionMode = resolveCodexSandboxConfig(
+          providerSettings.permissionMode as string,
+          getCodexProviderSettings(providerSettings).safeMode,
+        );
         await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId,
           model: model ?? 'gpt-5.4',
@@ -396,7 +399,10 @@ export class CodexChatRuntime implements ChatRuntime {
       } else if (existingThreadId && existingThreadId !== this.loadedThreadId) {
         // Resume a persisted thread not yet loaded in this daemon
         const providerSettings = this.getProviderSettings();
-        const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
+        const permissionMode = resolveCodexSandboxConfig(
+          providerSettings.permissionMode as string,
+          getCodexProviderSettings(providerSettings).safeMode,
+        );
         const resumeResult = await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId: existingThreadId,
           model: model ?? 'gpt-5.4',
@@ -414,7 +420,10 @@ export class CodexChatRuntime implements ChatRuntime {
       } else {
         // New thread
         const providerSettings = this.getProviderSettings();
-        const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
+        const permissionMode = resolveCodexSandboxConfig(
+          providerSettings.permissionMode as string,
+          getCodexProviderSettings(providerSettings).safeMode,
+        );
 
         const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
           model: model ?? 'gpt-5.4',
@@ -469,7 +478,10 @@ export class CodexChatRuntime implements ChatRuntime {
         const resolvedModel = model ?? 'gpt-5.4';
         const isPlanMode = providerSettings.permissionMode === 'plan';
         const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
-        const permissionMode = resolveCodexSandboxConfig(providerSettings.permissionMode as string, this.plugin.settings.codexSafeMode);
+        const permissionMode = resolveCodexSandboxConfig(
+          providerSettings.permissionMode as string,
+          getCodexProviderSettings(providerSettings).safeMode,
+        );
         const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
 
         const collaborationMode = isPlanMode
@@ -483,7 +495,7 @@ export class CodexChatRuntime implements ChatRuntime {
             }
           : undefined;
 
-        const summary = (providerSettings.codexReasoningSummary as string) || 'detailed';
+        const summary = getCodexProviderSettings(providerSettings).reasoningSummary;
 
         // Configure router plan state before turn/start so buffered notifications
         // that arrive before currentTurnId is set already see the correct state.

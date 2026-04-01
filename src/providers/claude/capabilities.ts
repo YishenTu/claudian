@@ -8,6 +8,9 @@ export const CLAUDE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Obje
   supportsRewind: true,
   supportsFork: true,
   supportsProviderCommands: true,
+  supportsImageAttachments: true,
+  supportsInstructionMode: true,
+  supportsMcpTools: true,
   reasoningControl: 'effort',
   planPathPrefix: '/.claude/plans/',
 });

@@ -40,7 +40,7 @@ function createMockPlugin(overrides?: Partial<ColdStartQueryConfig['plugin']>) {
   return {
     app: {},
     settings: {},
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/mock/claude'),
+    getResolvedProviderCliPath: jest.fn().mockReturnValue('/mock/claude'),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
     ...overrides,
   } as unknown as ColdStartQueryConfig['plugin'];
@@ -99,7 +99,7 @@ describe('runColdStartQuery', () => {
 
     it('throws when CLI path is null', async () => {
       const plugin = createMockPlugin({
-        getResolvedClaudeCliPath: jest.fn().mockReturnValue(null),
+        getResolvedProviderCliPath: jest.fn().mockReturnValue(null),
       });
 
       await expect(

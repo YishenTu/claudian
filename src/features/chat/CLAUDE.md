@@ -35,7 +35,7 @@ ClaudianView (lifecycle + assembly)
 │   ├── TodoListRenderer        # Todo panel
 │   ├── SubagentRenderer        # Subagent status panel
 │   ├── InlineExitPlanMode      # Claude plan mode approval card (tool-driven)
-│   ├── InlineCodexPlanApproval # Codex plan mode approval card (post-stream)
+│   ├── InlinePlanApproval # Plan completion approval card (post-stream)
 │   ├── InlineAskUserQuestion   # AskUserQuestion inline card
 │   └── collapsible             # Collapsible block utility
 ├── Tabs
@@ -88,7 +88,7 @@ Current flow now routes through the runtime facade, and provider-owned services 
 | `WriteEditRenderer` | File operations with before/after diff |
 | `DiffRenderer` | Hunked inline diffs (del/ins highlighting) |
 | `InlineExitPlanMode` | Claude plan mode approval card (approve/feedback/new session) |
-| `InlineCodexPlanApproval` | Codex plan mode approval card (implement/revise/cancel) |
+| `InlinePlanApproval` | Plan completion approval card (implement/revise/cancel) |
 | `InlineAskUserQuestion` | AskUserQuestion inline card |
 | `TodoListRenderer` | Todo items with status icons |
 | `SubagentRenderer` | Background agent progress |
@@ -125,6 +125,6 @@ for await (const message of response) {
 - `/compact` has a special code path: `InputController` skips context mentions so the SDK recognizes the built-in command; `ClaudeTurnEncoder` skips context appending for compact; `StreamController` handles the `compact_boundary` chunk as a standalone separator; `ClaudeHistoryStore` (in `src/providers/claude/history/`) prevents merge with adjacent assistant messages; ESC during compact produces an SDK stderr (`Compaction canceled`) that the history store maps to `isInterrupt` for persistent rendering
 - `/compact` (Codex): `encodeCodexTurn` detects `/compact` and sets `isCompact: true`, skipping all context. `CodexChatRuntime.query()` routes compact turns to `thread/compact/start` instead of `turn/start`. The turn ID is established via `turn/started` notification (not the RPC response). Bare `/compact` only — extra arguments emit a local error before any thread-side effect. The live separator is emitted when the `contextCompaction` item completes. Auto-compaction was already supported via `contextCompaction` item. History reload applies persisted `compacted.replacement_history` and renders the durable `context_compacted` boundary marker.
 - Plan mode (Claude): `EnterPlanMode` is auto-approved by the SDK (detected in stream to sync UI); `ExitPlanMode` uses a dedicated callback in `canUseTool` that bypasses normal approval flow. Shift+Tab toggles plan mode and saves/restores the previous permission mode. "Approve (new session)" stops the current session and auto-sends plan content as the first message in a fresh session.
-- Plan mode (Codex): Client-driven via `collaborationMode` on `turn/start`. `CodexNotificationRouter.beginTurn()` tracks plan state per-turn. After a successful plan turn with plan deltas, a `plan_completed` control chunk triggers `InlineCodexPlanApproval` in `InputController`'s post-stream `finally` block. "Implement" restores pre-plan mode and auto-sends a follow-up. "Revise" keeps plan mode and populates feedback in the input. The approval flow is invalidation-safe: if the conversation switches or tab closes while the prompt is open, the pending promise resolves and the post-await guard exits.
+- Plan mode (Codex): Client-driven via `collaborationMode` on `turn/start`. `CodexNotificationRouter.beginTurn()` tracks plan state per-turn. After a successful plan turn with plan deltas, a `plan_completed` control chunk triggers `InlinePlanApproval` in `InputController`'s post-stream `finally` block. "Implement" restores pre-plan mode and auto-sends a follow-up. "Revise" keeps plan mode and populates feedback in the input. The approval flow is invalidation-safe: if the conversation switches or tab closes while the prompt is open, the pending promise resolves and the post-await guard exits.
 - Bang-bash mode: `!` in empty input triggers direct bash execution (bypasses Claude). `BangBashModeManager` manages input mode; `BangBashService` runs commands via `child_process.exec` (30s timeout, 1MB buffer). Output displays in `StatusPanel` command panel. ESC exits mode; Enter submits.
 - Fork conversation: `Tab.handleForkRequest()` validates eligibility (not streaming, both user and preceding assistant messages have SDK UUIDs), deep clones messages up to the fork point, then delegates to `TabManager`. `/fork` command triggers `Tab.handleForkAll()`, which forks the entire conversation (all messages, resuming at the last assistant UUID). Both handlers share `resolveForkSource()` which delegates to `ChatRuntime.resolveSessionIdForFork()` for session ID resolution. `TabManager` shows `ForkTargetModal` (new tab vs current tab), creates the fork conversation with fork metadata, and propagates title/currentNote. `ConversationController.switchTo()` hands the conversation to `ChatRuntime.syncConversationState()`, which lets the Claude implementation restore fork state before the next query. Fork titles are deduplicated across existing tabs.

@@ -31,8 +31,8 @@ import type { EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
-import { type CodexPlanDecision, InlineCodexPlanApproval } from '../rendering/InlineCodexPlanApproval';
 import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
+import { InlinePlanApproval,type PlanApprovalDecision } from '../rendering/InlinePlanApproval';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { setToolIcon, updateToolCallResult } from '../rendering/ToolCallRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
@@ -103,8 +103,8 @@ export class InputController {
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
   private pendingAskInline: InlineAskUserQuestion | null = null;
   private pendingExitPlanModeInline: InlineExitPlanMode | null = null;
-  private pendingCodexPlanApproval: InlineCodexPlanApproval | null = null;
-  private pendingCodexPlanApprovalInvalidated = false;
+  private pendingPlanApproval: InlinePlanApproval | null = null;
+  private pendingPlanApprovalInvalidated = false;
   private activeResumeDropdown: ResumeSessionDropdown | null = null;
   private inputContainerHideDepth = 0;
 
@@ -340,7 +340,7 @@ export class InputController {
     let wasInterrupted = false;
     let wasInvalidated = false;
     let didEnqueueToSdk = false;
-    let codexPlanCompleted = false;
+    let planCompleted = false;
 
     // Lazy initialization: ensure service is ready before first query
     if (this.deps.ensureServiceInitialized) {
@@ -398,7 +398,7 @@ export class InputController {
         }
 
         if (chunk.type === 'plan_completed') {
-          codexPlanCompleted = true;
+          planCompleted = true;
           continue;
         }
 
@@ -478,19 +478,19 @@ export class InputController {
           }
         }
 
-        // Codex post-stream plan approval: show UI and await decision before save/auto-send
-        let codexAutoSendContent: string | null = null;
-        let codexPlanInvalidated = false;
+        // Provider-agnostic post-plan approval: show UI and await decision before save/auto-send
+        let planAutoSendContent: string | null = null;
+        let planApprovalInvalidated = false;
         let shouldProcessQueuedMessage = true;
-        if (codexPlanCompleted && !didCancelThisTurn) {
-          const { decision, invalidated } = await this.showCodexPlanApproval();
+        if (planCompleted && !didCancelThisTurn) {
+          const { decision, invalidated } = await this.showPlanApproval();
 
           // Re-check invalidation after async approval prompt
           if (state.streamGeneration !== streamGeneration || invalidated) {
-            codexPlanInvalidated = true;
+            planApprovalInvalidated = true;
           } else if (decision?.type === 'implement') {
             this.deps.restorePrePlanPermissionModeIfNeeded?.();
-            codexAutoSendContent = 'Implement the plan.';
+            planAutoSendContent = 'Implement the plan.';
           } else if (decision?.type === 'revise') {
             // Keep plan mode active, populate input with feedback text
             this.deps.getInputEl().value = decision.text;
@@ -501,7 +501,7 @@ export class InputController {
           }
         }
 
-        if (!codexPlanInvalidated) {
+        if (!planApprovalInvalidated) {
           // Only clear resumeAtMessageId if enqueue succeeded; preserve checkpoint on failure for retry
           const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
           await conversationController.save(true, saveExtras);
@@ -509,9 +509,9 @@ export class InputController {
           const userMsgIndex = state.messages.indexOf(userMsg);
           renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
 
-          // Codex auto-implement takes precedence over both Claude approve-new-session and queued input
-          if (codexAutoSendContent) {
-            this.deps.getInputEl().value = codexAutoSendContent;
+          // Auto-implement takes precedence over both approve-new-session and queued input
+          if (planAutoSendContent) {
+            this.deps.getInputEl().value = planAutoSendContent;
             this.sendMessage().catch(() => {});
           } else {
             // approve-new-session: create fresh conversation and send plan content
@@ -1013,11 +1013,11 @@ export class InputController {
       this.pendingExitPlanModeInline.destroy();
       this.pendingExitPlanModeInline = null;
     }
-    this.dismissPendingCodexPlanApproval(true);
+    this.dismissPendingPlanApproval(true);
     this.resetInputContainerVisibility();
   }
 
-  private showCodexPlanApproval(): Promise<{ decision: CodexPlanDecision | null; invalidated: boolean }> {
+  private showPlanApproval(): Promise<{ decision: PlanApprovalDecision | null; invalidated: boolean }> {
     const inputContainerEl = this.deps.getInputContainerEl();
     const parentEl = inputContainerEl.parentElement;
     if (!parentEl) {
@@ -1025,41 +1025,41 @@ export class InputController {
     }
 
     this.hideInputContainer(inputContainerEl);
-    this.pendingCodexPlanApprovalInvalidated = false;
+    this.pendingPlanApprovalInvalidated = false;
 
-    return new Promise<{ decision: CodexPlanDecision | null; invalidated: boolean }>((resolve, reject) => {
-      const inline = new InlineCodexPlanApproval(
+    return new Promise<{ decision: PlanApprovalDecision | null; invalidated: boolean }>((resolve, reject) => {
+      const inline = new InlinePlanApproval(
         parentEl,
-        (decision: CodexPlanDecision | null) => {
-          const invalidated = this.pendingCodexPlanApprovalInvalidated;
-          this.pendingCodexPlanApprovalInvalidated = false;
-          this.pendingCodexPlanApproval = null;
+        (decision: PlanApprovalDecision | null) => {
+          const invalidated = this.pendingPlanApprovalInvalidated;
+          this.pendingPlanApprovalInvalidated = false;
+          this.pendingPlanApproval = null;
           this.restoreInputContainer(inputContainerEl);
           resolve({ decision, invalidated });
         },
       );
-      this.pendingCodexPlanApproval = inline;
+      this.pendingPlanApproval = inline;
       try {
         inline.render();
       } catch (err) {
-        this.pendingCodexPlanApproval = null;
-        this.pendingCodexPlanApprovalInvalidated = false;
+        this.pendingPlanApproval = null;
+        this.pendingPlanApprovalInvalidated = false;
         this.restoreInputContainer(inputContainerEl);
         reject(err);
       }
     });
   }
 
-  private dismissPendingCodexPlanApproval(invalidated: boolean): void {
-    if (!this.pendingCodexPlanApproval) {
+  private dismissPendingPlanApproval(invalidated: boolean): void {
+    if (!this.pendingPlanApproval) {
       return;
     }
 
     if (invalidated) {
-      this.pendingCodexPlanApprovalInvalidated = true;
+      this.pendingPlanApprovalInvalidated = true;
     }
-    this.pendingCodexPlanApproval.destroy();
-    this.pendingCodexPlanApproval = null;
+    this.pendingPlanApproval.destroy();
+    this.pendingPlanApproval = null;
   }
 
   private hideInputContainer(inputContainerEl: HTMLElement): void {

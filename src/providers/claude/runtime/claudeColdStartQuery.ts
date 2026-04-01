@@ -6,6 +6,7 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { extractAssistantText } from '../aux/extractAssistantText';
+import { getClaudeProviderSettings } from '../settings';
 import { type EffortLevel, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';
 
@@ -55,7 +56,7 @@ export async function runColdStartQuery(
     throw new Error('Could not determine vault path');
   }
 
-  const resolvedClaudePath = config.plugin.getResolvedClaudeCliPath();
+  const resolvedClaudePath = config.plugin.getResolvedProviderCliPath('claude');
   if (!resolvedClaudePath) {
     throw new Error('Claude CLI not found');
   }
@@ -75,6 +76,7 @@ export async function runColdStartQuery(
       config.plugin.settings as unknown as Record<string, unknown>,
       'claude',
     );
+  const claudeSettings = getClaudeProviderSettings(settings);
 
   const selectedModel = config.model ?? (settings.model as string);
 
@@ -91,7 +93,7 @@ export async function runColdStartQuery(
     },
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
-    settingSources: settings.loadUserClaudeSettings
+    settingSources: claudeSettings.loadUserSettings
       ? ['user', 'project']
       : ['project'],
     spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),

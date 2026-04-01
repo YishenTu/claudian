@@ -4,7 +4,7 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 
 ## Runtime Status
 
-- Current state: `core/` contains provider-neutral contracts and shared prompt templates. Provider-specific runtimes live under `src/providers/{id}/`.
+- Current state: `core/` contains provider-neutral contracts and shared prompt templates. Provider-specific runtimes and prompts live under `src/providers/{id}/`.
 - `core/runtime/` and `core/providers/` define the chat-facing seam. `ChatRuntime` is the neutral interface; `ClaudeChatRuntime` in `src/providers/claude/runtime/` and `CodexChatRuntime` in `src/providers/codex/runtime/` are the provider implementations.
 - Claude-specific agents, plugins, SDK helpers, and workspace storage live under `src/providers/claude/`. Codex-specific skills, subagents, normalization, and workspace storage live under `src/providers/codex/`.
 
@@ -15,13 +15,13 @@ Core modules have **no feature dependencies**. Features depend on core, never th
 | `bootstrap/` | Shared app defaults and storage | `DEFAULT_CLAUDIAN_SETTINGS`, `SharedAppStorage` |
 | `commands/` | Built-in command actions | `builtInCommands` |
 | `mcp/` | Model Context Protocol | `McpServerManager`, `McpTester`, `McpStorageAdapter` |
-| `prompt/` | Shared prompt templates | `mainAgent`, `claudeToolUseAppendix`, `inlineEdit`, `titleGeneration`, `instructionRefine` |
+| `prompt/` | Shared prompt templates | `mainAgent`, `inlineEdit`, `titleGeneration`, `instructionRefine` |
 | `providers/` | Provider registry and provider-owned boundary services | `ProviderRegistry`, `ProviderSettingsCoordinator`, `ProviderWorkspaceRegistry`, `ProviderCapabilities`, `ProviderId`, `modelRouting`, history/task/CLI service contracts |
 | `providers/commands/` | Shared command catalog contracts | `ProviderCommandCatalog`, `ProviderCommandEntry`, `hiddenCommands` |
 | `runtime/` | Provider-neutral runtime contracts | `ChatRuntime`, `ChatTurnRequest`, `PreparedChatTurn`, `SessionUpdateResult`, approval/query types |
 | `security/` | Access control | `ApprovalManager` (permission utilities), `BashPathValidator`, `BlocklistChecker` |
 | `storage/` | Generic persistence primitives | `VaultFileAdapter`, `HomeFileAdapter` |
-| `tools/` | Tool utilities | `toolNames` (incl. plan mode + Codex-native tools), `toolIcons`, `toolInput`, `todo` |
+| `tools/` | Tool utilities | `toolNames` (incl. plan mode + runtime lifecycle tools), `toolIcons`, `toolInput`, `todo` |
 | `types/` | Type definitions | `settings`, `mcp`, `chat`, `tools`, `diff`, `agent`, `plugins` |
 
 ## Refactor Guardrails

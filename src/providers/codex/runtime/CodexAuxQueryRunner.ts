@@ -156,7 +156,7 @@ export class CodexAuxQueryRunner {
   }
 
   private async startProcess(): Promise<void> {
-    const codexPath = this.plugin.getResolvedCodexCliPath() ?? 'codex';
+    const codexPath = this.plugin.getResolvedProviderCliPath('codex') ?? 'codex';
     const vaultPath = getVaultPath(this.plugin.app) ?? process.cwd();
 
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());

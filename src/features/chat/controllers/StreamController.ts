@@ -1,12 +1,16 @@
 import { TFile } from 'obsidian';
 
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import {
+  DEFAULT_CHAT_PROVIDER_ID,
+  type ProviderId,
+  type ProviderSubagentLifecycleAdapter,
+} from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import { parseTodoInput } from '../../../core/tools/todo';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
-  isCodexSubagentHiddenTool,
-  isCodexSubagentSpawnTool,
   isEditTool,
   isSubagentToolName,
   isWriteEditTool,
@@ -21,11 +25,6 @@ import {
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
-import {
-  buildCodexSubagentInfo,
-  extractCodexSpawnResult,
-  extractCodexWaitResult,
-} from '../../../providers/codex/normalization/codexSubagentNormalization';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
@@ -75,12 +74,52 @@ export class StreamController {
 
   private deps: StreamControllerDeps;
 
-  // Codex collab agent tracking (spawn_agent → wait_agent → close_agent lifecycle)
-  private codexSubagentStates = new Map<string, SubagentState>();  // spawn callId → SubagentState
-  private codexAgentIdToSpawnId = new Map<string, string>();       // agentId → spawn callId
+  // Provider lifecycle agent tracking (spawn → wait/close lifecycle)
+  private lifecycleSubagentStates = new Map<string, SubagentState>(); // spawn callId → SubagentState
+  private lifecycleAgentIdToSpawnId = new Map<string, string>();      // agentId → spawn callId
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
+  }
+
+  private getActiveProviderId(): ProviderId {
+    return this.deps.getAgentService?.()?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+  }
+
+  private getSubagentLifecycleAdapter(toolName?: string): ProviderSubagentLifecycleAdapter | null {
+    const activeProviderId = this.getActiveProviderId();
+    const activeAdapter = ProviderRegistry.getSubagentLifecycleAdapter(activeProviderId);
+    const matchesTool = (adapter: ProviderSubagentLifecycleAdapter | null): boolean => {
+      if (!adapter || !toolName) {
+        return !!adapter && !toolName;
+      }
+
+      return adapter.isSpawnTool(toolName)
+        || adapter.isHiddenTool(toolName)
+        || adapter.isWaitTool(toolName)
+        || adapter.isCloseTool(toolName);
+    };
+
+    if (matchesTool(activeAdapter)) {
+      return activeAdapter;
+    }
+
+    if (!toolName) {
+      return activeAdapter;
+    }
+
+    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+      if (providerId === activeProviderId) {
+        continue;
+      }
+
+      const adapter = ProviderRegistry.getSubagentLifecycleAdapter(providerId);
+      if (matchesTool(adapter)) {
+        return adapter;
+      }
+    }
+
+    return null;
   }
 
   // ============================================
@@ -135,13 +174,13 @@ export class StreamController {
           break;
         }
 
-        // Codex collab agent: render spawn_agent as subagent block, hide wait/close
-        if (isCodexSubagentSpawnTool(chunk.name)) {
-          this.handleCodexSpawnAgent(chunk, msg);
+        const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(chunk.name);
+        if (subagentLifecycleAdapter?.isSpawnTool(chunk.name)) {
+          this.handleProviderSubagentSpawn(chunk, msg, subagentLifecycleAdapter);
           break;
         }
-        if (isCodexSubagentHiddenTool(chunk.name)) {
-          this.handleCodexHiddenAgentTool(chunk, msg);
+        if (subagentLifecycleAdapter?.isHiddenTool(chunk.name)) {
+          this.handleProviderHiddenSubagentTool(chunk, msg);
           break;
         }
 
@@ -409,12 +448,13 @@ export class StreamController {
   }
 
   // ============================================
-  // Codex Collab Agent (spawn_agent → wait_agent → close_agent)
+  // Provider lifecycle subagents (spawn → wait/close)
   // ============================================
 
-  private handleCodexSpawnAgent(
+  private handleProviderSubagentSpawn(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
-    msg: ChatMessage
+    msg: ChatMessage,
+    adapter: ProviderSubagentLifecycleAdapter,
   ): void {
     const { state } = this.deps;
 
@@ -433,17 +473,17 @@ export class StreamController {
     // Render as subagent block immediately
     if (state.currentContentEl) {
       this.flushPendingTools();
-      const subagentInfo = buildCodexSubagentInfo(toolCall, msg.toolCalls);
+      const subagentInfo = adapter.buildSubagentInfo(toolCall, msg.toolCalls);
 
       const subagentState = createSubagentBlock(state.currentContentEl, chunk.id, {
         description: subagentInfo.description,
         prompt: subagentInfo.prompt,
       });
-      this.codexSubagentStates.set(chunk.id, subagentState);
+      this.lifecycleSubagentStates.set(chunk.id, subagentState);
     }
   }
 
-  private handleCodexHiddenAgentTool(
+  private handleProviderHiddenSubagentTool(
     chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
     msg: ChatMessage
   ): void {
@@ -460,28 +500,30 @@ export class StreamController {
   }
 
   /**
-   * Handles tool_result for Codex collab agent lifecycle tools.
+   * Handles tool_result for provider lifecycle subagent tools.
    * Returns true if the result was consumed (caller should return early).
    */
-  private handleCodexSubagentResult(
+  private handleProviderSubagentResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean },
     msg: ChatMessage
   ): boolean {
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (!existingToolCall) return false;
 
-    // spawn_agent result: extract agent_id and nickname, update description
-    if (isCodexSubagentSpawnTool(existingToolCall.name)) {
+    const adapter = this.getSubagentLifecycleAdapter(existingToolCall.name);
+    if (!adapter) return false;
+
+    if (adapter.isSpawnTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
       existingToolCall.result = chunk.content;
 
-      const spawnResult = extractCodexSpawnResult(chunk.content);
+      const spawnResult = adapter.extractSpawnResult(chunk.content);
       if (spawnResult.agentId) {
-        this.codexAgentIdToSpawnId.set(spawnResult.agentId, chunk.id);
+        this.lifecycleAgentIdToSpawnId.set(spawnResult.agentId, chunk.id);
       }
 
-      const subagentInfo = buildCodexSubagentInfo(existingToolCall, msg.toolCalls ?? []);
-      const subagentState = this.codexSubagentStates.get(chunk.id);
+      const subagentInfo = adapter.buildSubagentInfo(existingToolCall, msg.toolCalls ?? []);
+      const subagentState = this.lifecycleSubagentStates.get(chunk.id);
       if (subagentState) {
         subagentState.info.description = subagentInfo.description;
         subagentState.info.prompt = subagentInfo.prompt;
@@ -500,38 +542,19 @@ export class StreamController {
       return true;
     }
 
-    // wait_agent / wait result: extract completion text, finalize subagent
-    if (existingToolCall.name === 'wait_agent' || existingToolCall.name === 'wait') {
+    if (adapter.isWaitTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
       existingToolCall.result = chunk.content;
 
-      const waitResult = extractCodexWaitResult(chunk.content);
-      const spawnIds = new Set<string>();
-      for (const agentId of Object.keys(waitResult.statuses)) {
-        const spawnId = this.codexAgentIdToSpawnId.get(agentId);
-        if (spawnId) {
-          spawnIds.add(spawnId);
-        }
-      }
-      const targets = Array.isArray(existingToolCall.input.targets)
-        ? existingToolCall.input.targets
-        : Array.isArray(existingToolCall.input.ids)
-          ? existingToolCall.input.ids
-          : [];
-      for (const target of targets) {
-        if (typeof target !== 'string') continue;
-        const spawnId = this.codexAgentIdToSpawnId.get(target);
-        if (spawnId) {
-          spawnIds.add(spawnId);
-        }
-      }
-
-      for (const spawnId of spawnIds) {
+      for (const spawnId of adapter.resolveSpawnToolIds(
+        existingToolCall,
+        this.lifecycleAgentIdToSpawnId,
+      )) {
         const spawnToolCall = msg.toolCalls?.find(tc => tc.id === spawnId);
-        const subagentState = this.codexSubagentStates.get(spawnId);
+        const subagentState = this.lifecycleSubagentStates.get(spawnId);
         if (!spawnToolCall || !subagentState) continue;
 
-        const subagentInfo = buildCodexSubagentInfo(spawnToolCall, msg.toolCalls ?? []);
+        const subagentInfo = adapter.buildSubagentInfo(spawnToolCall, msg.toolCalls ?? []);
         subagentState.info.description = subagentInfo.description;
         subagentState.info.prompt = subagentInfo.prompt;
 
@@ -546,8 +569,7 @@ export class StreamController {
       return true;
     }
 
-    // close_agent result: just update status
-    if (existingToolCall.name === 'close_agent') {
+    if (adapter.isCloseTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
       existingToolCall.result = chunk.content;
       return true;
@@ -586,8 +608,7 @@ export class StreamController {
       return;
     }
 
-    // Codex subagent: spawn_agent result → extract agent_id; wait_agent result → finalize
-    if (this.handleCodexSubagentResult(chunk, msg)) {
+    if (this.handleProviderSubagentResult(chunk, msg)) {
       this.showThinkingIndicator();
       return;
     }
@@ -640,7 +661,7 @@ export class StreamController {
         this.notifyVaultFileChange(existingToolCall.input);
       }
 
-      // Codex apply_patch: refresh each changed file path
+      // Runtime apply_patch: refresh each changed file path
       if (!chunk.isError && !isBlocked && existingToolCall.name === TOOL_APPLY_PATCH) {
         this.notifyApplyPatchFileChanges(existingToolCall.input);
       }
@@ -1242,7 +1263,7 @@ export class StreamController {
     }, 200);
   }
 
-  /** Refreshes vault for each file path in a Codex apply_patch changes array or patch text. */
+  /** Refreshes vault for each file path in an apply_patch changes array or patch text. */
   private notifyApplyPatchFileChanges(input: Record<string, unknown>): void {
     const notified = new Set<string>();
 

@@ -1,36 +1,58 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
+  ProviderCliResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
-import { HomeFileAdapter } from '../../../core/storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type ClaudianPlugin from '../../../main';
 import { CodexAgentMentionProvider } from '../agents/CodexAgentMentionProvider';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
+import { resolveCodexCliPath } from '../runtime/CodexBinaryLocator';
+import { getCodexProviderSettings } from '../settings';
 import { CodexSkillStorage } from '../storage/CodexSkillStorage';
 import { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
+import { codexSettingsTabRenderer } from '../ui/CodexSettingsTab';
 
 export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   subagentStorage: CodexSubagentStorage;
   commandCatalog: ProviderCommandCatalog;
   agentMentionProvider: CodexAgentMentionProvider;
+  cliResolver: ProviderCliResolver;
+}
+
+function createCodexCliResolver(): ProviderCliResolver {
+  return {
+    resolveFromSettings(settings, environmentVariables) {
+      const codexSettings = getCodexProviderSettings(settings);
+      const values = Object.values(codexSettings.cliPathsByHost);
+      const resolvedHostPath = values.find((value) => typeof value === 'string' && value.trim()) ?? undefined;
+      return resolveCodexCliPath(
+        resolvedHostPath,
+        codexSettings.cliPath,
+        environmentVariables,
+      );
+    },
+    reset() {
+      // No-op: Codex path resolution is stateless.
+    },
+  };
 }
 
 export async function createCodexWorkspaceServices(
-  plugin: ClaudianPlugin,
+  _plugin: ClaudianPlugin,
+  vaultAdapter: VaultFileAdapter,
+  homeAdapter: VaultFileAdapter,
 ): Promise<CodexWorkspaceServices> {
-  const vaultAdapter = plugin.claudeStorage.getAdapter();
   const subagentStorage = new CodexSubagentStorage(vaultAdapter);
   const agentMentionProvider = new CodexAgentMentionProvider(subagentStorage);
   await agentMentionProvider.loadAgents();
 
-  const homeAdapter = new HomeFileAdapter();
   const commandCatalog = new CodexSkillCatalog(
     new CodexSkillStorage(
       vaultAdapter,
-      homeAdapter as unknown as VaultFileAdapter,
+      homeAdapter,
     ),
   );
 
@@ -38,6 +60,8 @@ export async function createCodexWorkspaceServices(
     subagentStorage,
     commandCatalog,
     agentMentionProvider,
+    cliResolver: createCodexCliResolver(),
+    settingsTabRenderer: codexSettingsTabRenderer,
     refreshAgentMentions: async () => {
       await agentMentionProvider.loadAgents();
     },
@@ -45,7 +69,11 @@ export async function createCodexWorkspaceServices(
 }
 
 export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWorkspaceServices> = {
-  initialize: async ({ plugin }) => createCodexWorkspaceServices(plugin),
+  initialize: async ({ plugin, vaultAdapter, homeAdapter }) => createCodexWorkspaceServices(
+    plugin,
+    vaultAdapter,
+    homeAdapter as unknown as VaultFileAdapter,
+  ),
 };
 
 export function maybeGetCodexWorkspaceServices(): CodexWorkspaceServices | null {

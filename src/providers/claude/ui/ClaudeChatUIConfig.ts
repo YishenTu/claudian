@@ -5,9 +5,9 @@ import type {
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import type { ClaudianSettings } from '../../../core/types/settings';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { getCustomModelIds, getModelsFromEnvironment } from '../env/claudeModelEnv';
+import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   type ClaudeModel,
   DEFAULT_CLAUDE_MODELS,
@@ -47,11 +47,16 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     }
 
     const models = [...DEFAULT_CLAUDE_MODELS];
+    const claudeSettings = getClaudeProviderSettings(settings);
     return filterVisibleModelOptions(
       models,
-      (settings.enableOpus1M as boolean) ?? false,
-      (settings.enableSonnet1M as boolean) ?? false,
+      claudeSettings.enableOpus1M,
+      claudeSettings.enableSonnet1M,
     );
+  },
+
+  ownsModel(model: string, settings: Record<string, unknown>): boolean {
+    return this.getModelOptions(settings).some((option: ProviderUIOption) => option.value === model);
   },
 
   isAdaptiveReasoningModel(model: string): boolean {
@@ -81,23 +86,24 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   applyModelDefaults(model: string, settings: unknown): void {
-    const s = settings as ClaudianSettings;
     if (DEFAULT_CLAUDE_MODELS.some(m => m.value === model)) {
-      s.thinkingBudget = DEFAULT_THINKING_BUDGET[model as ClaudeModel];
+      const target = settings as Record<string, unknown>;
+      target.thinkingBudget = DEFAULT_THINKING_BUDGET[model as ClaudeModel];
       if (isAdaptiveThinkingModel(model)) {
-        s.effortLevel = DEFAULT_EFFORT_LEVEL[model as ClaudeModel] ?? 'high';
+        target.effortLevel = DEFAULT_EFFORT_LEVEL[model as ClaudeModel] ?? 'high';
       }
-      s.lastClaudeModel = model;
+      updateClaudeProviderSettings(target, { lastModel: model });
     } else {
-      s.lastCustomModel = model;
+      (settings as Record<string, unknown>).lastCustomModel = model;
     }
   },
 
   normalizeModelVariant(model: string, settings) {
+    const claudeSettings = getClaudeProviderSettings(settings);
     return normalizeVisibleModelVariant(
       model,
-      (settings.enableOpus1M as boolean) ?? false,
-      (settings.enableSonnet1M as boolean) ?? false,
+      claudeSettings.enableOpus1M,
+      claudeSettings.enableSonnet1M,
     );
   },
 
@@ -107,6 +113,10 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
 
   getPermissionModeToggle() {
     return CLAUDE_PERMISSION_MODE_TOGGLE;
+  },
+
+  isBangBashEnabled(settings) {
+    return getClaudeProviderSettings(settings).enableBangBash;
   },
 
   getProviderIcon() {

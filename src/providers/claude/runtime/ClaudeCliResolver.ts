@@ -10,6 +10,7 @@ import type { HostnameCliPaths } from '../../../core/types/settings';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { findClaudeCLIPath } from '../cli/findClaudeCLIPath';
+import { getClaudeProviderSettings } from '../settings';
 
 export class ClaudeCliResolver {
   private resolvedPath: string | null = null;
@@ -21,19 +22,18 @@ export class ClaudeCliResolver {
 
   /**
    * Resolves CLI path with priority: hostname-specific -> legacy -> auto-detect.
-   * @param hostnamePaths Per-device CLI paths keyed by hostname (preferred)
-   * @param legacyPath Legacy claudeCliPath (for backwards compatibility)
+   * @param settings Full app settings bag
    * @param envText Environment variables text
    */
-  resolve(
-    hostnamePaths: HostnameCliPaths | undefined,
-    legacyPath: string | undefined,
-    envText: string
+  resolveFromSettings(
+    settings: Record<string, unknown>,
+    envText: string,
   ): string | null {
     const hostnameKey = this.cachedHostname;
+    const claudeSettings = getClaudeProviderSettings(settings);
 
-    const hostnamePath = (hostnamePaths?.[hostnameKey] ?? '').trim();
-    const normalizedLegacy = (legacyPath ?? '').trim();
+    const hostnamePath = (claudeSettings.cliPathsByHost[hostnameKey] ?? '').trim();
+    const normalizedLegacy = claudeSettings.cliPath.trim();
     const normalizedEnv = envText ?? '';
 
     if (
@@ -53,6 +53,24 @@ export class ClaudeCliResolver {
     return this.resolvedPath;
   }
 
+  resolve(
+    hostnamePaths: HostnameCliPaths | undefined,
+    legacyPath: string | undefined,
+    envText: string,
+  ): string | null {
+    return this.resolveFromSettings(
+      {
+        providerConfigs: {
+          claude: {
+            cliPath: legacyPath ?? '',
+            cliPathsByHost: hostnamePaths ?? {},
+          },
+        },
+      },
+      envText,
+    );
+  }
+
   reset(): void {
     this.resolvedPath = null;
     this.lastHostnamePath = '';
@@ -70,7 +88,7 @@ export class ClaudeCliResolver {
 export function resolveClaudeCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
-  envText: string
+  envText: string,
 ): string | null {
   const trimmedHostname = (hostnamePath ?? '').trim();
   if (trimmedHostname) {

@@ -6,13 +6,15 @@ import { CodexTitleGenerationService } from './aux/CodexTitleGenerationService';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
+import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
 import { CodexChatRuntime } from './runtime/CodexChatRuntime';
+import { getCodexProviderSettings } from './settings';
 import { codexChatUIConfig } from './ui/CodexChatUIConfig';
 
 export const codexProviderRegistration: ProviderRegistration = {
   displayName: 'Codex',
   blankTabOrder: 10,
-  isEnabled: (settings) => settings.codexEnabled !== false,
+  isEnabled: (settings) => getCodexProviderSettings(settings).enabled,
   capabilities: CODEX_PROVIDER_CAPABILITIES,
   chatUIConfig: codexChatUIConfig,
   settingsReconciler: codexSettingsReconciler,
@@ -22,4 +24,5 @@ export const codexProviderRegistration: ProviderRegistration = {
   createInlineEditService: (plugin) => new CodexInlineEditService(plugin),
   historyService: new CodexConversationHistoryService(),
   taskResultInterpreter: new CodexTaskResultInterpreter(),
+  subagentLifecycleAdapter: codexSubagentLifecycleAdapter,
 };

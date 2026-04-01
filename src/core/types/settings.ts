@@ -1,5 +1,3 @@
-import type { ProviderId } from '../providers/types';
-
 /** Generic settings and command definitions shared across the app. */
 
 const UNIX_BLOCKED_COMMANDS = [
@@ -50,7 +48,7 @@ export interface PlatformBlockedCommands {
   windows: string[];
 }
 
-export type HiddenProviderCommands = Record<ProviderId, string[]>;
+export type HiddenProviderCommands = Record<string, string[]>;
 
 export function getDefaultBlockedCommands(): PlatformBlockedCommands {
   return {
@@ -157,14 +155,11 @@ export interface InstructionRefineResult {
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'plan' | 'normal';
 
-/** What "Safe" means for the Claude provider. */
-export type ClaudeSafeMode = 'acceptEdits' | 'default';
-
-/** What "Safe" means for the Codex provider. */
-export type CodexSafeMode = 'workspace-write' | 'read-only';
-
 /** Hostname-keyed CLI paths for per-device configuration. */
 export type HostnameCliPaths = Record<string, string>;
+
+/** Opaque provider-owned settings bags keyed by provider id. */
+export type ProviderConfigMap = Partial<Record<string, Record<string, unknown>>>;
 
 /**
  * Application settings stored in .claude/claudian-settings.json.
@@ -181,8 +176,6 @@ export interface ClaudianSettings {
   enableBlocklist: boolean;
   blockedCommands: PlatformBlockedCommands;
   permissionMode: PermissionMode;
-  claudeSafeMode: ClaudeSafeMode;
-  codexSafeMode: CodexSafeMode;
 
   // Model & thinking (provider interprets values)
   model: string;
@@ -190,10 +183,6 @@ export interface ClaudianSettings {
   effortLevel: string;
   enableAutoTitleGeneration: boolean;
   titleGenerationModel: string;
-  enableChrome: boolean;
-  enableBangBash: boolean;
-  enableOpus1M: boolean;
-  enableSonnet1M: boolean;
 
   // Content settings
   excludedTags: string[];
@@ -212,23 +201,16 @@ export interface ClaudianSettings {
   // Internationalization
   locale: string;
 
-  // CLI paths
-  claudeCliPath: string;
-  claudeCliPathsByHost: HostnameCliPaths;
-  codexCliPath?: string;
-  codexCliPathsByHost?: HostnameCliPaths;
-  codexReasoningSummary?: string;  // 'auto' | 'concise' | 'detailed' | 'none'
-  loadUserClaudeSettings: boolean;
+  // Provider-owned settings
+  providerConfigs: ProviderConfigMap;
 
   // Provider selection
   settingsProvider: string;  // ProviderId — which provider's model/effort/budget is projected to top-level fields
-  codexEnabled: boolean;     // Whether the Codex provider is available
   savedProviderModel: Partial<Record<string, string>>;
   savedProviderEffort: Partial<Record<string, string>>;
   savedProviderThinkingBudget: Partial<Record<string, string>>;
 
   // State (provider-specific, round-tripped opaquely)
-  lastClaudeModel?: string;
   lastCustomModel?: string;
   lastEnvHash?: string;
 

@@ -1,7 +1,6 @@
 import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
@@ -15,11 +14,13 @@ import type {
   ProviderId,
   ProviderUIOption,
 } from '../../../core/providers/types';
+import {
+  DEFAULT_CHAT_PROVIDER_ID,
+} from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { ChatMessage, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
-import { maybeGetClaudeWorkspaceServices } from '../../../providers/claude/app/ClaudeWorkspaceServices';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -93,7 +94,6 @@ function resolveBlankTabModel(
 
 export interface TabCreateOptions {
   plugin: ClaudianPlugin;
-  mcpManager: McpServerManager;
 
   containerEl: HTMLElement;
   conversation?: Conversation;
@@ -167,13 +167,8 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
   };
 }
 
-function getClaudeMcpManager(plugin: ClaudianPlugin): McpServerManager | null {
-  const workspaceManager = maybeGetClaudeWorkspaceServices()?.mcpManager;
-  if (workspaceManager) {
-    return workspaceManager;
-  }
-
-  return (plugin as ClaudianPlugin & { mcpManager?: McpServerManager }).mcpManager ?? null;
+function getProviderMcpManager(providerId: ProviderId) {
+  return ProviderWorkspaceRegistry.getMcpServerManager(providerId);
 }
 
 function syncSlashCommandDropdownForProvider(
@@ -234,25 +229,21 @@ function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
  */
 function applyProviderUIGating(tab: TabData, plugin: ClaudianPlugin): void {
   const capabilities = getTabCapabilities(tab, plugin);
-  const isClaude = capabilities.providerId === 'claude';
+  const mcpManager = capabilities.supportsMcpTools
+    ? getProviderMcpManager(capabilities.providerId)
+    : null;
 
-  // MCP UI is Claude-only (both toolbar selector and @-mention MCP suggestions)
-  const claudeMcpManager = getClaudeMcpManager(plugin);
-  if (!isClaude) {
+  if (!capabilities.supportsMcpTools) {
     tab.ui.mcpServerSelector?.clearEnabled();
   }
-  tab.ui.mcpServerSelector?.setVisible(isClaude);
-  tab.ui.fileContextManager?.setMcpManager(isClaude ? claudeMcpManager : null);
+  tab.ui.mcpServerSelector?.setVisible(capabilities.supportsMcpTools);
+  tab.ui.fileContextManager?.setMcpManager(mcpManager);
 
-  // Agent @-mention: each provider sees only its own agents
   tab.ui.fileContextManager?.setAgentService(
     ProviderWorkspaceRegistry.getAgentMentionProvider(capabilities.providerId),
   );
 
-  // Image attachments: Claude and Codex (Codex uses temp-file bridge)
-  tab.ui.imageContextManager?.setEnabled(isClaude || capabilities.providerId === 'codex');
-
-  // Context gauge: shown for any provider once usage data arrives
+  tab.ui.imageContextManager?.setEnabled(capabilities.supportsImageAttachments);
   tab.ui.contextUsageMeter?.update(tab.state.usage);
 }
 
@@ -271,24 +262,24 @@ function syncTabProviderServices(
 }
 
 /**
- * Called when Codex availability changes. If a blank tab has a Codex draft
- * model and Codex was just disabled, falls back to Claude default model.
- * Refreshes model selector options for all blank tabs.
+ * Called when provider availability changes. If a blank tab targets a provider
+ * that is now disabled, it falls back to the first enabled provider's default
+ * blank-tab model. Refreshes model selector options for all blank tabs.
  */
-export function onCodexAvailabilityChanged(tab: TabData, plugin: ClaudianPlugin): void {
+export function onProviderAvailabilityChanged(tab: TabData, plugin: ClaudianPlugin): void {
   if (tab.lifecycleState !== 'blank') return;
 
-  const codexEnabled = !!plugin.settings.codexEnabled;
+  const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
+  const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
 
-  // If Codex disabled and blank tab has a Codex draft model, fall back
-  if (!codexEnabled && tab.draftModel) {
-    const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
+  if (tab.draftModel) {
     const draftProvider = getProviderForModel(tab.draftModel, settingsSnapshot);
-    if (draftProvider === 'codex') {
-      const claudeModels = ProviderRegistry.getChatUIConfig('claude')
+    if (!enabledProviderIds.includes(draftProvider)) {
+      const fallbackProviderId = enabledProviderIds[0] ?? DEFAULT_CHAT_PROVIDER_ID;
+      const fallbackModels = ProviderRegistry.getChatUIConfig(fallbackProviderId)
         .getModelOptions(settingsSnapshot);
-      tab.draftModel = claudeModels[0]?.value ?? 'haiku';
-      tab.providerId = 'claude';
+      tab.draftModel = fallbackModels[0]?.value ?? tab.draftModel;
+      tab.providerId = fallbackProviderId;
     }
   }
 
@@ -353,7 +344,7 @@ export function createTab(options: TabCreateOptions): TabData {
   const initialProviderId = conversation?.providerId
     ?? (draftModel
       ? getProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)
-      : 'claude');
+      : DEFAULT_CHAT_PROVIDER_ID);
 
   // Create initial TabData (service and controllers are lazy-initialized)
   const tab: TabData = {
@@ -500,14 +491,24 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 export async function initializeTabService(
   tab: TabData,
   plugin: ClaudianPlugin,
-  mcpManager: McpServerManager,
+  conversationOverride?: Conversation | null,
+): Promise<void>;
+export async function initializeTabService(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  legacyArg: unknown,
   conversationOverride?: Conversation | null,
 ): Promise<void> {
   if (tab.lifecycleState === 'closing') {
     return;
   }
 
-  const conversation = conversationOverride ?? (
+  const resolvedConversationOverride =
+    legacyArg === null || isConversationLike(legacyArg)
+      ? legacyArg
+      : conversationOverride;
+
+  const conversation = resolvedConversationOverride ?? (
     tab.conversationId
       ? await plugin.getConversationById(tab.conversationId)
       : null
@@ -529,7 +530,7 @@ export async function initializeTabService(
     tab.service = null;
     tab.serviceInitialized = false;
 
-    const runtime = ProviderRegistry.createChatRuntime({ plugin, mcpManager, providerId });
+    const runtime = ProviderRegistry.createChatRuntime({ plugin, providerId });
     service = runtime;
     unsubscribeReadyState = runtime.onReadyStateChange(() => {});
     tab.dom.eventCleanups.push(() => unsubscribeReadyState?.());
@@ -573,6 +574,13 @@ export async function initializeTabService(
   }
 }
 
+function isConversationLike(value: unknown): value is Conversation {
+  return !!value
+    && typeof value === 'object'
+    && typeof (value as Conversation).id === 'string'
+    && Array.isArray((value as Conversation).messages);
+}
+
 /**
  * Initializes file and image context managers for a tab.
  */
@@ -598,7 +606,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
     },
     dom.inputContainerEl
   );
-  tab.ui.fileContextManager.setMcpManager(getClaudeMcpManager(plugin));
+  tab.ui.fileContextManager.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
   // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(
@@ -657,7 +665,7 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
   );
 
   // Bang bash mode (! command execution)
-  if (plugin.settings.enableBangBash) {
+  if (isBangBashEnabled(plugin.settings as unknown as Record<string, unknown>)) {
     const vaultPath = getVaultPath(plugin.app);
     if (vaultPath) {
       const enhancedPath = getEnhancedPath();
@@ -688,6 +696,12 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
   tab.ui.statusPanel.mount(dom.statusPanelContainerEl);
 }
 
+function isBangBashEnabled(settings: Record<string, unknown>): boolean {
+  return ProviderRegistry.getEnabledProviderIds(settings).some((providerId) => (
+    ProviderRegistry.getChatUIConfig(providerId).isBangBashEnabled?.(settings) ?? false
+  ));
+}
+
 /**
  * Creates and wires the input toolbar for a tab.
  */
@@ -703,7 +717,9 @@ function initializeInputToolbar(
 
   // Blank-tab UI config wrapper that returns mixed model options
   const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
-    const draftProvider = tab.draftModel ? getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>) : 'claude';
+    const draftProvider = tab.draftModel
+      ? getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>)
+      : DEFAULT_CHAT_PROVIDER_ID;
     const baseConfig = ProviderRegistry.getChatUIConfig(draftProvider);
     return {
       ...baseConfig,
@@ -800,7 +816,7 @@ function initializeInputToolbar(
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
 
-  tab.ui.mcpServerSelector.setMcpManager(getClaudeMcpManager(plugin));
+  tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
   // Sync @-mentions to UI selector
   tab.ui.fileContextManager?.setOnMcpMentionChange((servers) => {
@@ -1065,11 +1081,39 @@ export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
   component: Component,
-  mcpManager: McpServerManager,
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
   openConversation?: (conversationId: string) => Promise<void>,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
+): void;
+export function initializeTabControllers(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  component: Component,
+  legacyArg: unknown,
+  forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
+  openConversation?: (conversationId: string) => Promise<void>,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+): void;
+export function initializeTabControllers(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  component: Component,
+  legacyArgOrForkRequest?: unknown,
+  arg5?: unknown,
+  arg6?: unknown,
+  arg7?: unknown,
 ): void {
+  const hasLegacyArg = legacyArgOrForkRequest !== undefined && typeof legacyArgOrForkRequest !== 'function';
+  const forkRequestCallback = (
+    hasLegacyArg ? arg5 : legacyArgOrForkRequest
+  ) as ((forkContext: ForkContext) => Promise<void>) | undefined;
+  const openConversation = (
+    hasLegacyArg ? arg6 : arg5
+  ) as ((conversationId: string) => Promise<void>) | undefined;
+  const getProviderCatalogConfig = (
+    hasLegacyArg ? arg7 : arg6
+  ) as (() => ProviderCatalogInfo) | undefined;
+
   const { dom, state, services, ui } = tab;
 
   // Create renderer
@@ -1257,7 +1301,7 @@ export function initializeTabControllers(
           tab.providerId = derivedProvider;
         }
 
-        await initializeTabService(tab, plugin, mcpManager);
+        await initializeTabService(tab, plugin);
         setupServiceCallbacks(tab, plugin);
 
         // Transition: lock model selector to bound provider
@@ -1330,7 +1374,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
 
     // Check for # trigger first (empty input + # keystroke)
     // Instruction refinement is not supported for all providers
-    if (getTabCapabilities(tab, plugin).providerId === 'claude' && ui.instructionModeManager?.handleTriggerKey(e)) {
+    if (getTabCapabilities(tab, plugin).supportsInstructionMode && ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
     }
 
@@ -1340,7 +1384,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    if (getTabCapabilities(tab, plugin).providerId === 'claude' && ui.instructionModeManager?.handleKeydown(e)) {
+    if (getTabCapabilities(tab, plugin).supportsInstructionMode && ui.instructionModeManager?.handleKeydown(e)) {
       return;
     }
 

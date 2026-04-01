@@ -1,4 +1,5 @@
 import type { AppSessionStorage, AppTabManagerState } from '../providers/types';
+import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 
 /**
  * Minimal shared app storage contract.
@@ -15,4 +16,5 @@ export interface SharedAppStorage {
   setTabManagerState(state: AppTabManagerState): Promise<void>;
   getTabManagerState(): Promise<AppTabManagerState | null>;
   sessions: AppSessionStorage;
+  getAdapter(): VaultFileAdapter;
 }

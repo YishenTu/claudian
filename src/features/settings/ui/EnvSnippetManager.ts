@@ -79,7 +79,7 @@ export class EnvSnippetModal extends Modal {
       contextLimitInputs.clear();
 
       const envVars = parseEnvironmentVariables(envVarsEl.value);
-      const uniqueModelIds = ProviderRegistry.getChatUIConfig().getCustomModelIds(envVars);
+      const uniqueModelIds = ProviderRegistry.getCustomModelIds(envVars);
 
       if (uniqueModelIds.size === 0) {
         contextLimitsContainer.style.display = 'none';

@@ -1,4 +1,4 @@
-import { TOOL_CODEX_SPAWN_AGENT, TOOL_CODEX_WAIT_AGENT } from '@/core/tools/toolNames';
+import { TOOL_SPAWN_AGENT, TOOL_WAIT_AGENT } from '@/core/tools/toolNames';
 import type { ToolCallInfo } from '@/core/types';
 import {
   buildCodexSubagentInfo,
@@ -32,7 +32,7 @@ describe('codexSubagentNormalization', () => {
   it('builds completed subagent info from spawn and wait tools', () => {
     const spawnTool: ToolCallInfo = {
       id: 'spawn-1',
-      name: TOOL_CODEX_SPAWN_AGENT,
+      name: TOOL_SPAWN_AGENT,
       input: {
         message: 'Inspect the code and patch the bug.',
         model: 'gpt-5.4-mini',
@@ -42,7 +42,7 @@ describe('codexSubagentNormalization', () => {
     };
     const waitTool: ToolCallInfo = {
       id: 'wait-1',
-      name: TOOL_CODEX_WAIT_AGENT,
+      name: TOOL_WAIT_AGENT,
       input: { targets: ['agent-1'], timeout_ms: 30_000 },
       status: 'completed',
       result: '{"status":{"agent-1":{"completed":"Patched the bug and ran the tests."}},"timed_out":false}',
@@ -63,7 +63,7 @@ describe('codexSubagentNormalization', () => {
   it('keeps the subagent running after spawn completes but before wait resolves', () => {
     const spawnTool: ToolCallInfo = {
       id: 'spawn-1',
-      name: TOOL_CODEX_SPAWN_AGENT,
+      name: TOOL_SPAWN_AGENT,
       input: { message: 'Do work', model: 'gpt-5.4-mini' },
       status: 'completed',
       result: '{"agent_id":"agent-1","nickname":"Zeno"}',

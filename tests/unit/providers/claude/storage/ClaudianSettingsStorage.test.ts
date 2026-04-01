@@ -1,11 +1,13 @@
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getDefaultBlockedCommands, type PlatformBlockedCommands } from '@/core/types';
+import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import {
   CLAUDIAN_SETTINGS_PATH,
   ClaudianSettingsStorage,
   normalizeBlockedCommands,
 } from '@/providers/claude/storage/ClaudianSettingsStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
+import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 const mockAdapter = {
   exists: jest.fn(),
@@ -78,8 +80,8 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect((result.claudeCliPathsByHost as Record<string, string>)['host-a']).toBe('/custom/path-a');
-      expect((result.claudeCliPathsByHost as Record<string, string>)['host-b']).toBe('/custom/path-b');
+      expect(getClaudeProviderSettings(result).cliPathsByHost['host-a']).toBe('/custom/path-a');
+      expect(getClaudeProviderSettings(result).cliPathsByHost['host-b']).toBe('/custom/path-b');
     });
 
     it('should preserve legacy claudeCliPath field', async () => {
@@ -90,7 +92,7 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect(result.claudeCliPath).toBe('/legacy/path');
+      expect(getClaudeProviderSettings(result).cliPath).toBe('/legacy/path');
     });
 
     it('should normalize codexCliPathsByHost from loaded data', async () => {
@@ -104,8 +106,8 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect((result.codexCliPathsByHost as Record<string, string>)['host-a']).toBe('/custom/codex-a');
-      expect((result.codexCliPathsByHost as Record<string, string>)['host-b']).toBe('/custom/codex-b');
+      expect(getCodexProviderSettings(result).cliPathsByHost['host-a']).toBe('/custom/codex-a');
+      expect(getCodexProviderSettings(result).cliPathsByHost['host-b']).toBe('/custom/codex-b');
     });
 
     it('should preserve legacy codexCliPath field', async () => {
@@ -116,7 +118,7 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
 
-      expect(result.codexCliPath).toBe('/legacy/codex');
+      expect(getCodexProviderSettings(result).cliPath).toBe('/legacy/codex');
     });
 
     it('should remove legacy show1MModel from the stored file', async () => {
@@ -127,18 +129,14 @@ describe('ClaudianSettingsStorage', () => {
       }));
 
       const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(result.enableSonnet1M).toBe(DEFAULT_SETTINGS.enableSonnet1M);
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
-        JSON.stringify({
-          model: 'sonnet',
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
-        }, null, 2)
+      expect(getClaudeProviderSettings(result).enableSonnet1M).toBe(
+        getClaudeProviderSettings(DEFAULT_SETTINGS).enableSonnet1M,
       );
+      expect(writtenContent.model).toBe('sonnet');
+      expect(writtenContent.hiddenProviderCommands).toEqual({});
+      expect(writtenContent).not.toHaveProperty('show1MModel');
     });
 
     it('should remove legacy slashCommands from the stored file', async () => {
@@ -149,18 +147,12 @@ describe('ClaudianSettingsStorage', () => {
       }));
 
       const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect('slashCommands' in result).toBe(false);
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
-        JSON.stringify({
-          model: 'sonnet',
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
-        }, null, 2)
-      );
+      expect(writtenContent.model).toBe('sonnet');
+      expect(writtenContent.hiddenProviderCommands).toEqual({});
+      expect(writtenContent).not.toHaveProperty('slashCommands');
     });
 
     it('should migrate legacy hiddenSlashCommands into Claude hiddenProviderCommands', async () => {
@@ -170,20 +162,14 @@ describe('ClaudianSettingsStorage', () => {
       }));
 
       const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(result.hiddenProviderCommands).toEqual({
         claude: ['commit', 'review'],
-        codex: [],
       });
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
-        JSON.stringify({
-          hiddenProviderCommands: {
-            claude: ['commit', 'review'],
-            codex: [],
-          },
-        }, null, 2)
-      );
+      expect(writtenContent.hiddenProviderCommands).toEqual({
+        claude: ['commit', 'review'],
+      });
     });
 
     it('should throw on JSON parse error', async () => {
@@ -284,7 +270,7 @@ describe('ClaudianSettingsStorage', () => {
 
       const writeCall = mockAdapter.write.mock.calls[0];
       const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.lastClaudeModel).toBe('claude-sonnet-4-5');
+      expect(writtenContent.providerConfigs.claude.lastModel).toBe('claude-sonnet-4-5');
       // lastCustomModel keeps its default value (empty string)
     });
 

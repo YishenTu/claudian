@@ -1,7 +1,9 @@
+import type { ProviderSubagentLifecycleAdapter } from '../../../core/providers/types';
 import {
-  TOOL_CODEX_SPAWN_AGENT,
-  TOOL_CODEX_WAIT,
-  TOOL_CODEX_WAIT_AGENT,
+  TOOL_CLOSE_AGENT,
+  TOOL_SPAWN_AGENT,
+  TOOL_WAIT,
+  TOOL_WAIT_AGENT,
 } from '../../../core/tools/toolNames';
 import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
 
@@ -96,7 +98,7 @@ function resolveCodexWaitCompletion(
   siblingToolCalls: ToolCallInfo[],
 ): { status: SubagentInfo['status']; result?: string } {
   for (const toolCall of siblingToolCalls) {
-    if (toolCall.name !== TOOL_CODEX_WAIT && toolCall.name !== TOOL_CODEX_WAIT_AGENT) {
+    if (toolCall.name !== TOOL_WAIT && toolCall.name !== TOOL_WAIT_AGENT) {
       continue;
     }
 
@@ -168,5 +170,58 @@ export function buildCodexSubagentInfo(
 }
 
 export function isCodexSubagentSpawnToolCall(toolCall: ToolCallInfo): boolean {
-  return toolCall.name === TOOL_CODEX_SPAWN_AGENT;
+  return toolCall.name === TOOL_SPAWN_AGENT;
 }
+
+export const codexSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
+  isHiddenTool(name: string): boolean {
+    return name === TOOL_WAIT || name === TOOL_WAIT_AGENT || name === TOOL_CLOSE_AGENT;
+  },
+  isSpawnTool(name: string): boolean {
+    return name === TOOL_SPAWN_AGENT;
+  },
+  isWaitTool(name: string): boolean {
+    return name === TOOL_WAIT || name === TOOL_WAIT_AGENT;
+  },
+  isCloseTool(name: string): boolean {
+    return name === TOOL_CLOSE_AGENT;
+  },
+  resolveSpawnToolIds(
+    waitToolCall,
+    agentIdToSpawnId,
+  ): string[] {
+    const spawnIds = new Set<string>();
+    const waitResult = extractCodexWaitResult(waitToolCall.result);
+
+    for (const agentId of Object.keys(waitResult.statuses)) {
+      const spawnId = agentIdToSpawnId.get(agentId);
+      if (spawnId) {
+        spawnIds.add(spawnId);
+      }
+    }
+
+    const targets = Array.isArray(waitToolCall.input.targets)
+      ? waitToolCall.input.targets
+      : Array.isArray(waitToolCall.input.ids)
+        ? waitToolCall.input.ids
+        : [];
+    for (const target of targets) {
+      if (typeof target !== 'string') continue;
+      const spawnId = agentIdToSpawnId.get(target);
+      if (spawnId) {
+        spawnIds.add(spawnId);
+      }
+    }
+
+    return [...spawnIds];
+  },
+  buildSubagentInfo(spawnToolCall, siblingToolCalls = []): SubagentInfo {
+    return buildCodexSubagentInfo(spawnToolCall, siblingToolCalls);
+  },
+  extractSpawnResult(raw: string | undefined) {
+    return extractCodexSpawnResult(raw);
+  },
+  extractWaitResult(raw: string | undefined) {
+    return extractCodexWaitResult(raw);
+  },
+};

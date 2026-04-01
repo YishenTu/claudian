@@ -8,5 +8,8 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsRewind: false,
   supportsFork: true,
   supportsProviderCommands: false,
+  supportsImageAttachments: true,
+  supportsInstructionMode: false,
+  supportsMcpTools: false,
   reasoningControl: 'effort',
 });

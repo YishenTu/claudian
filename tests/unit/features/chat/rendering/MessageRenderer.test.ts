@@ -1,10 +1,12 @@
+import '@/providers';
+
 import { createMockEl } from '@test/helpers/mockElement';
 
 import {
   TOOL_AGENT_OUTPUT,
-  TOOL_CODEX_SPAWN_AGENT,
-  TOOL_CODEX_WAIT_AGENT,
+  TOOL_SPAWN_AGENT,
   TOOL_TASK,
+  TOOL_WAIT_AGENT,
 } from '@/core/tools/toolNames';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -53,6 +55,9 @@ function mockCapabilities() {
     supportsRewind: true,
     supportsFork: true,
     supportsProviderCommands: true,
+    supportsImageAttachments: true,
+    supportsInstructionMode: true,
+    supportsMcpTools: true,
     reasoningControl: 'effort' as const,
   });
 }
@@ -1262,7 +1267,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'spawn-1',
-            name: TOOL_CODEX_SPAWN_AGENT,
+            name: TOOL_SPAWN_AGENT,
             input: {
               message: 'Inspect utils.ts and return the final patch summary.',
               model: 'gpt-5.4-mini',
@@ -1272,7 +1277,7 @@ describe('MessageRenderer', () => {
           } as any,
           {
             id: 'wait-1',
-            name: TOOL_CODEX_WAIT_AGENT,
+            name: TOOL_WAIT_AGENT,
             input: { targets: ['agent-1'], timeout_ms: 30000 },
             status: 'completed',
             result: '{"status":{"agent-1":{"completed":"Patched utils.ts and verified imports."}},"timed_out":false}',

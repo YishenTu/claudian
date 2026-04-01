@@ -1,3 +1,5 @@
+import '@/providers';
+
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -117,7 +119,7 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(
       'OPENAI_API_KEY=test-key\nOPENAI_BASE_URL=https://example.test/v1',
     ),
-    getResolvedCodexCliPath: jest.fn().mockReturnValue('/usr/local/bin/codex'),
+    getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/codex'),
     app: {
       vault: {
         adapter: { basePath: '/test/vault' },

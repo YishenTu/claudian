@@ -1,3 +1,5 @@
+import '@/providers';
+
 /**
  * Tests for the model-driven multi-provider tab lifecycle.
  *
@@ -11,7 +13,6 @@
  * - duplicate-owner prevention
  * - provider lock after bind
  */
-
 import { getProviderForModel } from '@/core/providers/modelRouting';
 
 describe('Tab Lifecycle - Model-Driven Provider Routing', () => {

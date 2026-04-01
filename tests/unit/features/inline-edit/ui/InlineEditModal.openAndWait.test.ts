@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 

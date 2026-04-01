@@ -1,3 +1,5 @@
+import '@/providers';
+
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,
@@ -143,7 +145,7 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
     _ccPermissions: ccPermissions,
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/mock/claude'),
+    getResolvedProviderCliPath: jest.fn().mockReturnValue('/mock/claude'),
     // Mock getView to return null (tests don't have real view)
     // This allows optional chaining to work safely
     getView: jest.fn().mockReturnValue(null),
@@ -297,7 +299,7 @@ describe('ClaudianService', () => {
 
   describe('findClaudeCLI', () => {
     beforeEach(() => {
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+      mockPlugin.getResolvedProviderCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
           undefined,  // Hostname path (not used in tests)
           mockPlugin.settings.claudeCliPath,
@@ -352,7 +354,7 @@ describe('ClaudianService', () => {
     it('should use custom CLI path when valid file is specified', async () => {
       const customPath = '/custom/path/to/claude';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+      mockPlugin.getResolvedProviderCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
           undefined,  // Hostname path (not used in tests)
           mockPlugin.settings.claudeCliPath,
@@ -383,7 +385,7 @@ describe('ClaudianService', () => {
     it('should fall back to auto-detection when custom path is a directory', async () => {
       const customPath = '/custom/path/to/directory';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+      mockPlugin.getResolvedProviderCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
           undefined,  // Hostname path (not used in tests)
           mockPlugin.settings.claudeCliPath,
@@ -419,7 +421,7 @@ describe('ClaudianService', () => {
     it('should fall back to auto-detection when custom path does not exist', async () => {
       const customPath = '/nonexistent/path/claude';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+      mockPlugin.getResolvedProviderCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
           undefined,  // Hostname path (not used in tests)
           mockPlugin.settings.claudeCliPath,
@@ -455,7 +457,7 @@ describe('ClaudianService', () => {
     it('should fall back to auto-detection when custom path stat fails', async () => {
       const customPath = '/custom/path/to/claude';
       mockPlugin = createMockPlugin({ claudeCliPath: customPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+      mockPlugin.getResolvedProviderCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
           undefined,  // Hostname path (not used in tests)
           mockPlugin.settings.claudeCliPath,
@@ -501,7 +503,7 @@ describe('ClaudianService', () => {
       const firstPath = '/custom/path/to/claude-1';
       const secondPath = '/custom/path/to/claude-2';
       mockPlugin = createMockPlugin({ claudeCliPath: firstPath });
-      mockPlugin.getResolvedClaudeCliPath.mockImplementation(() =>
+      mockPlugin.getResolvedProviderCliPath.mockImplementation(() =>
         resolveClaudeCliPath(
           undefined,  // Hostname path (not used in tests)
           mockPlugin.settings.claudeCliPath,
@@ -1357,7 +1359,7 @@ describe('ClaudianService', () => {
   describe('session expiration recovery flow', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
+      mockPlugin.getResolvedProviderCliPath.mockReturnValue('/mock/claude');
     });
 
     it('should rebuild history and retry without resume on session expiration', async () => {
@@ -1518,7 +1520,7 @@ describe('ClaudianService', () => {
   describe('image prompt and hydration', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
+      mockPlugin.getResolvedProviderCliPath.mockReturnValue('/mock/claude');
     });
 
     it('should return plain prompt when no valid images', () => {
@@ -1610,7 +1612,7 @@ describe('ClaudianService', () => {
   describe('remaining business branches', () => {
     beforeEach(() => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue('/mock/claude');
+      mockPlugin.getResolvedProviderCliPath.mockReturnValue('/mock/claude');
     });
 
     it('yields error when session retry also fails', async () => {
@@ -1841,8 +1843,8 @@ describe('ClaudianService', () => {
       mockPlugin.settings.systemPrompt = 'restart-required';
 
       // Allow query + applyDynamicUpdates, then fail restart due to missing CLI path
-      mockPlugin.getResolvedClaudeCliPath.mockReset();
-      mockPlugin.getResolvedClaudeCliPath
+      mockPlugin.getResolvedProviderCliPath.mockReset();
+      mockPlugin.getResolvedProviderCliPath
         .mockReturnValueOnce('/mock/claude')
         .mockReturnValueOnce('/mock/claude')
         .mockReturnValueOnce(null);

@@ -1,9 +1,9 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
 import {
-  type CodexPlanDecision,
-  InlineCodexPlanApproval,
-} from '@/features/chat/rendering/InlineCodexPlanApproval';
+  InlinePlanApproval,
+  type PlanApprovalDecision,
+} from '@/features/chat/rendering/InlinePlanApproval';
 
 beforeAll(() => {
   globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -13,14 +13,14 @@ beforeAll(() => {
 });
 
 function createApproval(): {
-  approval: InlineCodexPlanApproval;
-  resolve: jest.Mock<void, [CodexPlanDecision | null]>;
+  approval: InlinePlanApproval;
+  resolve: jest.Mock<void, [PlanApprovalDecision | null]>;
   container: ReturnType<typeof createMockEl>;
   fireKey: (key: string) => void;
 } {
   const container = createMockEl();
-  const resolve = jest.fn<void, [CodexPlanDecision | null]>();
-  const approval = new InlineCodexPlanApproval(container as any, resolve);
+  const resolve = jest.fn<void, [PlanApprovalDecision | null]>();
+  const approval = new InlinePlanApproval(container as any, resolve);
   approval.render();
 
   // The component binds keydown to rootEl via addEventListener.
@@ -38,7 +38,7 @@ function createApproval(): {
   return { approval, resolve, container, fireKey };
 }
 
-describe('InlineCodexPlanApproval', () => {
+describe('InlinePlanApproval', () => {
   describe('decisions', () => {
     it('resolves with implement when Enter on first item (default focus)', () => {
       const { resolve, fireKey } = createApproval();

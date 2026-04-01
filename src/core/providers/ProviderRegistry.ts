@@ -1,5 +1,4 @@
 import type ClaudianPlugin from '../../main';
-import { PROVIDER_REGISTRATIONS } from '../../providers';
 import type { ChatRuntime } from '../runtime/ChatRuntime';
 import {
   type CreateChatRuntimeOptions,
@@ -12,80 +11,150 @@ import {
   type ProviderId,
   type ProviderRegistration,
   type ProviderSettingsReconciler,
+  type ProviderSubagentLifecycleAdapter,
   type ProviderTaskResultInterpreter,
   type TitleGenerationService,
 } from './types';
-
-function getProviderRegistration(providerId: ProviderId): ProviderRegistration {
-  const registration = PROVIDER_REGISTRATIONS[providerId];
-  if (!registration) {
-    throw new Error(`Provider "${providerId}" is not registered.`);
-  }
-  return registration;
-}
 
 /**
  * Registry for chat-facing provider services.
  *
  * Bootstrap concerns (default settings, shared storage, CLI resolution,
- * plugin/agent management) are handled explicitly in `main.ts` through
- * `src/core/bootstrap/` and `src/providers/claude/app/`.
+ * workspace command/agent services) are composed explicitly in `main.ts`
+ * through `src/core/bootstrap/` and `src/providers/<id>/app/`.
  */
 export class ProviderRegistry {
+  private static registrations: Partial<Record<ProviderId, ProviderRegistration>> = {};
+
+  static register(
+    providerId: ProviderId,
+    registration: ProviderRegistration,
+  ): void {
+    this.registrations[providerId] = registration;
+  }
+
+  private static getProviderRegistration(providerId: ProviderId): ProviderRegistration {
+    const registration = this.registrations[providerId];
+    if (!registration) {
+      throw new Error(`Provider "${providerId}" is not registered.`);
+    }
+    return registration;
+  }
+
   static createChatRuntime(options: CreateChatRuntimeOptions): ChatRuntime {
     const providerId = options.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
-    return getProviderRegistration(providerId).createRuntime(options);
+    return this.getProviderRegistration(providerId).createRuntime(options);
   }
 
   static createTitleGenerationService(plugin: ClaudianPlugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): TitleGenerationService {
-    return getProviderRegistration(providerId).createTitleGenerationService(plugin);
+    return this.getProviderRegistration(providerId).createTitleGenerationService(plugin);
   }
 
   static createInstructionRefineService(plugin: ClaudianPlugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InstructionRefineService {
-    return getProviderRegistration(providerId).createInstructionRefineService(plugin);
+    return this.getProviderRegistration(providerId).createInstructionRefineService(plugin);
   }
 
   static createInlineEditService(plugin: ClaudianPlugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InlineEditService {
-    return getProviderRegistration(providerId).createInlineEditService(plugin);
+    return this.getProviderRegistration(providerId).createInlineEditService(plugin);
   }
 
   static getConversationHistoryService(
     providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID,
   ): ProviderConversationHistoryService {
-    return getProviderRegistration(providerId).historyService;
+    return this.getProviderRegistration(providerId).historyService;
   }
 
   static getTaskResultInterpreter(
     providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID,
   ): ProviderTaskResultInterpreter {
-    return getProviderRegistration(providerId).taskResultInterpreter;
+    return this.getProviderRegistration(providerId).taskResultInterpreter;
+  }
+
+  static getSubagentLifecycleAdapter(
+    providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID,
+  ): ProviderSubagentLifecycleAdapter | null {
+    return this.getProviderRegistration(providerId).subagentLifecycleAdapter ?? null;
   }
 
   static getCapabilities(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderCapabilities {
-    return getProviderRegistration(providerId).capabilities;
+    return this.getProviderRegistration(providerId).capabilities;
   }
 
   static getChatUIConfig(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderChatUIConfig {
-    return getProviderRegistration(providerId).chatUIConfig;
+    return this.getProviderRegistration(providerId).chatUIConfig;
   }
 
   static getSettingsReconciler(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderSettingsReconciler {
-    return getProviderRegistration(providerId).settingsReconciler;
+    return this.getProviderRegistration(providerId).settingsReconciler;
   }
 
   static getRegisteredProviderIds(): ProviderId[] {
-    return Object.keys(PROVIDER_REGISTRATIONS) as ProviderId[];
+    return Object.keys(this.registrations) as ProviderId[];
   }
 
   static getEnabledProviderIds(settings: Record<string, unknown>): ProviderId[] {
     return this.getRegisteredProviderIds()
-      .filter(providerId => getProviderRegistration(providerId).isEnabled(settings))
+      .filter(providerId => this.getProviderRegistration(providerId).isEnabled(settings))
       .sort((a, b) => (
-        getProviderRegistration(a).blankTabOrder - getProviderRegistration(b).blankTabOrder
+        this.getProviderRegistration(a).blankTabOrder - this.getProviderRegistration(b).blankTabOrder
       ));
   }
 
   static getProviderDisplayName(providerId: ProviderId): string {
-    return getProviderRegistration(providerId).displayName;
+    return this.getProviderRegistration(providerId).displayName;
+  }
+
+  static isEnabled(providerId: ProviderId, settings: Record<string, unknown>): boolean {
+    return this.getProviderRegistration(providerId).isEnabled(settings);
+  }
+
+  static resolveSettingsProviderId(settings: Record<string, unknown>): ProviderId {
+    const current = settings.settingsProvider;
+    if (typeof current === 'string') {
+      const currentProvider = current as ProviderId;
+      if (
+        this.getRegisteredProviderIds().includes(currentProvider)
+        && this.isEnabled(currentProvider, settings)
+      ) {
+        return currentProvider;
+      }
+    }
+
+    if (this.isEnabled(DEFAULT_CHAT_PROVIDER_ID, settings)) {
+      return DEFAULT_CHAT_PROVIDER_ID;
+    }
+
+    return this.getEnabledProviderIds(settings)[0] ?? DEFAULT_CHAT_PROVIDER_ID;
+  }
+
+  static resolveProviderForModel(
+    model: string,
+    settings: Record<string, unknown> = {},
+  ): ProviderId {
+    for (const providerId of this.getRegisteredProviderIds()) {
+      if (providerId === DEFAULT_CHAT_PROVIDER_ID) {
+        continue;
+      }
+
+      if (this.getChatUIConfig(providerId).ownsModel(model, settings)) {
+        return providerId;
+      }
+    }
+
+    if (this.getChatUIConfig(DEFAULT_CHAT_PROVIDER_ID).ownsModel(model, settings)) {
+      return DEFAULT_CHAT_PROVIDER_ID;
+    }
+
+    return DEFAULT_CHAT_PROVIDER_ID;
+  }
+
+  static getCustomModelIds(envVars: Record<string, string>): Set<string> {
+    const ids = new Set<string>();
+    for (const providerId of this.getRegisteredProviderIds()) {
+      for (const modelId of this.getChatUIConfig(providerId).getCustomModelIds(envVars)) {
+        ids.add(modelId);
+      }
+    }
+    return ids;
   }
 }

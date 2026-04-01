@@ -17,9 +17,9 @@ export const claudeProviderRegistration: ProviderRegistration = {
   capabilities: CLAUDE_PROVIDER_CAPABILITIES,
   chatUIConfig: claudeChatUIConfig,
   settingsReconciler: claudeSettingsReconciler,
-  createRuntime: ({ plugin, mcpManager }) => {
+  createRuntime: ({ plugin }) => {
     const workspace = maybeGetClaudeWorkspaceServices();
-    const resolvedMcpManager = mcpManager ?? workspace?.mcpManager;
+    const resolvedMcpManager = workspace?.mcpManager;
     if (!resolvedMcpManager) {
       throw new Error('Claude workspace services are not initialized.');
     }

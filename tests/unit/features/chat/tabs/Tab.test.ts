@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 
@@ -14,11 +16,12 @@ import {
   initializeTabControllers,
   initializeTabService,
   initializeTabUI,
-  onCodexAvailabilityChanged,
+  onProviderAvailabilityChanged,
   setupServiceCallbacks,
   type TabCreateOptions,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
+import * as envUtils from '@/utils/env';
 
 // Mock ResizeObserver (not available in jsdom)
 const resizeObserverInstances: MockResizeObserver[] = [];
@@ -125,6 +128,9 @@ const createMockClaudianService = (overrides?: {
     supportsRewind: true,
     supportsFork: true,
     supportsProviderCommands: true,
+    supportsImageAttachments: true,
+    supportsInstructionMode: true,
+    supportsMcpTools: true,
     reasoningControl: 'effort',
   }),
   syncConversationState: overrides?.syncConversationState ?? jest.fn(),
@@ -414,14 +420,30 @@ function createMockMcpManager(): any {
   };
 }
 
+type TestTabCreateOptions = TabCreateOptions & {
+  mcpManager: ReturnType<typeof createMockMcpManager>;
+};
+
 // Helper to create TabCreateOptions
-function createMockOptions(overrides: Partial<TabCreateOptions> = {}): TabCreateOptions {
-  return {
+function createMockOptions(overrides: Partial<TestTabCreateOptions> = {}): TestTabCreateOptions {
+  const options = {
     plugin: createMockPlugin(),
     mcpManager: createMockMcpManager(),
     containerEl: createMockEl(),
     ...overrides,
-  };
+  } as TestTabCreateOptions;
+
+  const plugin = options.plugin as any;
+  ProviderWorkspaceRegistry.setServices('claude', {
+    mcpManager: plugin.mcpManager,
+    mcpServerManager: plugin.mcpManager,
+    agentMentionProvider: plugin.agentManager,
+  } as any);
+  ProviderWorkspaceRegistry.setServices('codex', {
+    agentMentionProvider: plugin.codexAgentMentionProvider,
+  } as any);
+
+  return options;
 }
 
 describe('Tab - Creation', () => {
@@ -720,6 +742,7 @@ describe('Tab - Service Initialization', () => {
       jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
       getChatUIConfigSpy.mockReturnValue({
         getModelOptions: jest.fn().mockReturnValue([]),
+        ownsModel: jest.fn().mockReturnValue(false),
         isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
         getReasoningOptions: jest.fn().mockReturnValue([]),
         getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
@@ -737,6 +760,9 @@ describe('Tab - Service Initialization', () => {
         supportsRewind: false,
         supportsFork: false,
         supportsProviderCommands: false,
+        supportsImageAttachments: true,
+        supportsInstructionMode: false,
+        supportsMcpTools: false,
         reasoningControl: 'none',
       });
 
@@ -819,7 +845,7 @@ describe('Tab - Service Initialization', () => {
       // Disable Codex
       plugin.settings.codexEnabled = false;
 
-      onCodexAvailabilityChanged(tab, plugin);
+      onProviderAvailabilityChanged(tab, plugin);
 
       expect(staleService.cleanup).toHaveBeenCalled();
       expect(tab.providerId).toBe('claude');
@@ -1408,6 +1434,29 @@ describe('Tab - UI Initialization', () => {
       expect(tab.ui.externalContextSelector).toBeDefined();
       expect(tab.ui.mcpServerSelector).toBeDefined();
       expect(tab.ui.permissionToggle).toBeDefined();
+    });
+
+    it('should create bang-bash mode from provider UI config', () => {
+      const getEnhancedPathSpy = jest
+        .spyOn(envUtils, 'getEnhancedPath')
+        .mockReturnValue('/usr/bin');
+      const plugin = createMockPlugin({
+        settings: {
+          ...createMockPlugin().settings,
+          providerConfigs: {
+            claude: { enableBangBash: true },
+            codex: { enabled: true },
+          },
+        },
+      });
+      const options = createMockOptions({ plugin });
+      const tab = createTab(options);
+
+      initializeTabUI(tab, plugin);
+
+      expect(tab.ui.bangBashModeManager).toBeDefined();
+
+      getEnhancedPathSpy.mockRestore();
     });
 
     it('should wire MCP server selector to MCP service', () => {
@@ -2205,6 +2254,9 @@ describe('Tab - UI Callback Wiring', () => {
         supportsRewind: false,
         supportsFork: false,
         supportsProviderCommands: false,
+        supportsImageAttachments: true,
+        supportsInstructionMode: false,
+        supportsMcpTools: false,
         reasoningControl: 'none',
       });
 
@@ -3254,6 +3306,7 @@ describe('Tab - Cross-Provider Model Rejection', () => {
     jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getModelOptions: jest.fn().mockReturnValue([]),
+      ownsModel: jest.fn((model: string) => model.startsWith('gpt-') || /^o\d/.test(model)),
       isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
       getReasoningOptions: jest.fn().mockReturnValue([]),
       getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
@@ -3293,6 +3346,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getModelOptions: jest.fn().mockReturnValue([]),
+      ownsModel: jest.fn((model: string) => model.startsWith('gpt-') || /^o\d/.test(model)),
       isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
       getReasoningOptions: jest.fn().mockReturnValue([]),
       getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
@@ -3332,6 +3386,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getModelOptions: jest.fn().mockReturnValue([]),
+      ownsModel: jest.fn((model: string) => model.startsWith('gpt-') || /^o\d/.test(model)),
       isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
       getReasoningOptions: jest.fn().mockReturnValue([]),
       getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
@@ -3415,6 +3470,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getModelOptions: jest.fn().mockReturnValue([]),
+      ownsModel: jest.fn((model: string) => model.startsWith('gpt-') || /^o\d/.test(model)),
       isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
       getReasoningOptions: jest.fn().mockReturnValue([]),
       getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
@@ -3490,7 +3546,6 @@ describe('Tab - Blank Tab Draft Model Change', () => {
 
     await toolbarCallbacks.onModelChange('gpt-5.4');
 
-    expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
     expect(setHiddenCommandsSpy).toHaveBeenCalledWith(new Set(['analyze']));
   });
 });

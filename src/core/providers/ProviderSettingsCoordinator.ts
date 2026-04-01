@@ -16,9 +16,7 @@ const PROJECTION_KEYS = new Set([
 type ProviderProjectionMap = Partial<Record<string, string>>;
 
 function getSettingsProviderId(settings: Record<string, unknown>): ProviderId {
-  return settings.settingsProvider === 'codex' && settings.codexEnabled !== false
-    ? 'codex'
-    : 'claude';
+  return ProviderRegistry.resolveSettingsProviderId(settings);
 }
 
 function ensureProjectionMap(
@@ -58,10 +56,7 @@ function mergeProviderSettings(
 
 export class ProviderSettingsCoordinator {
   static normalizeProviderSelection(settings: Record<string, unknown>): boolean {
-    const current = settings.settingsProvider;
-    const next = current === 'codex' && settings.codexEnabled !== false
-      ? 'codex'
-      : 'claude';
+    const next = getSettingsProviderId(settings);
 
     if (settings.settingsProvider === next) {
       return false;

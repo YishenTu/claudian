@@ -14,6 +14,7 @@ import {
   VIEW_TYPE_CLAUDIAN
 } from '@/core/types';
 import type { ClaudianSettings } from '@/core/types/settings';
+import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import {
   CONTEXT_WINDOW_1M,
   CONTEXT_WINDOW_STANDARD,
@@ -83,7 +84,7 @@ describe('types.ts', () => {
     });
 
     it('should have lastClaudeModel set to haiku by default', () => {
-      expect(DEFAULT_SETTINGS.lastClaudeModel).toBe('haiku');
+      expect(getClaudeProviderSettings(DEFAULT_SETTINGS).lastModel).toBe('haiku');
     });
 
     it('should have lastCustomModel as empty string by default', () => {
@@ -115,6 +116,7 @@ describe('types.ts', () => {
         persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'en',
+        providerConfigs: {},
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
@@ -166,6 +168,7 @@ describe('types.ts', () => {
         persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'zh-CN',
+        providerConfigs: {},
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
@@ -217,6 +220,7 @@ describe('types.ts', () => {
         persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         locale: 'en',
+        providerConfigs: {},
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,

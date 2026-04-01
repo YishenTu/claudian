@@ -1,7 +1,7 @@
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
-import { CodexSkillModal, CodexSkillSettings } from '@/features/settings/ui/CodexSkillSettings';
 import { AGENTS_VAULT_SKILLS_PATH, CODEX_VAULT_SKILLS_PATH } from '@/providers/codex/storage/CodexSkillStorage';
+import { CodexSkillModal, CodexSkillSettings } from '@/providers/codex/ui/CodexSkillSettings';
 
 function makeEntry(name: string, scope: 'vault' | 'user' = 'vault'): ProviderCommandEntry {
   return {

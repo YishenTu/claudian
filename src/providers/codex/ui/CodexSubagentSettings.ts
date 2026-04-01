@@ -1,9 +1,9 @@
 import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
-import type { CodexSubagentStorage } from '../../../providers/codex/storage/CodexSubagentStorage';
-import type { CodexSubagentDefinition } from '../../../providers/codex/types/subagent';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
+import type { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
+import type { CodexSubagentDefinition } from '../types/subagent';
 
 const REASONING_EFFORT_OPTIONS = [
   { value: '', label: 'Inherit' },

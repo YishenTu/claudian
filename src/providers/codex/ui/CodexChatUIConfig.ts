@@ -37,6 +37,10 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
+function looksLikeCodexModel(model: string): boolean {
+  return /^gpt-/i.test(model) || /^o\d/i.test(model);
+}
+
 export const codexChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
     const envVars = settings.environmentVariables as string | undefined;
@@ -53,6 +57,14 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
       }
     }
     return [...CODEX_MODELS];
+  },
+
+  ownsModel(model: string, settings: Record<string, unknown>): boolean {
+    if (this.getModelOptions(settings).some((option: ProviderUIOption) => option.value === model)) {
+      return true;
+    }
+
+    return looksLikeCodexModel(model);
   },
 
   isAdaptiveReasoningModel(): boolean {

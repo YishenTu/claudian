@@ -1,10 +1,20 @@
+import '@/providers';
+
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 
 describe('ProviderRegistry', () => {
+  beforeEach(() => {
+    ProviderWorkspaceRegistry.clear();
+    ProviderWorkspaceRegistry.setServices('claude', {
+      mcpManager: {} as any,
+      mcpServerManager: {} as any,
+    } as any);
+  });
+
   it('creates a runtime with the default provider id', () => {
     const runtime = ProviderRegistry.createChatRuntime({
       plugin: {} as any,
-      mcpManager: {} as any,
     });
 
     expect(runtime.providerId).toBe('claude');
@@ -47,7 +57,6 @@ describe('ProviderRegistry', () => {
     const runtime = ProviderRegistry.createChatRuntime({
       providerId: 'codex',
       plugin: {} as any,
-      mcpManager: {} as any,
     });
     expect(runtime.providerId).toBe('codex');
   });
@@ -68,8 +77,16 @@ describe('ProviderRegistry', () => {
   });
 
   it('filters enabled provider ids using registration metadata', () => {
-    expect(ProviderRegistry.getEnabledProviderIds({ codexEnabled: false })).toEqual(['claude']);
-    expect(ProviderRegistry.getEnabledProviderIds({ codexEnabled: true })).toEqual(['codex', 'claude']);
+    expect(ProviderRegistry.getEnabledProviderIds({
+      providerConfigs: {
+        codex: { enabled: false },
+      },
+    })).toEqual(['claude']);
+    expect(ProviderRegistry.getEnabledProviderIds({
+      providerConfigs: {
+        codex: { enabled: true },
+      },
+    })).toEqual(['codex', 'claude']);
   });
 
   it('returns the display name from provider registration metadata', () => {

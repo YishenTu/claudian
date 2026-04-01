@@ -1,13 +1,13 @@
-export type CodexPlanDecision =
+export type PlanApprovalDecision =
   | { type: 'implement' }
   | { type: 'revise'; text: string }
   | { type: 'cancel' };
 
 const HINTS_TEXT = 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Esc to cancel';
 
-export class InlineCodexPlanApproval {
+export class InlinePlanApproval {
   private containerEl: HTMLElement;
-  private resolveCallback: (decision: CodexPlanDecision | null) => void;
+  private resolveCallback: (decision: PlanApprovalDecision | null) => void;
   private resolved = false;
 
   private rootEl!: HTMLElement;
@@ -19,7 +19,7 @@ export class InlineCodexPlanApproval {
 
   constructor(
     containerEl: HTMLElement,
-    resolve: (decision: CodexPlanDecision | null) => void,
+    resolve: (decision: PlanApprovalDecision | null) => void,
   ) {
     this.containerEl = containerEl;
     this.resolveCallback = resolve;
@@ -172,7 +172,7 @@ export class InlineCodexPlanApproval {
     }
   }
 
-  private handleResolve(decision: CodexPlanDecision | null): void {
+  private handleResolve(decision: PlanApprovalDecision | null): void {
     if (!this.resolved) {
       this.resolved = true;
       this.rootEl?.removeEventListener('keydown', this.boundKeyDown);

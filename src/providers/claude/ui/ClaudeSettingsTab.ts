@@ -1,0 +1,317 @@
+import * as fs from 'fs';
+import { Setting } from 'obsidian';
+
+import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
+import { EnvSnippetManager } from '../../../features/settings/ui/EnvSnippetManager';
+import { McpSettingsManager } from '../../../features/settings/ui/McpSettingsManager';
+import { t } from '../../../i18n/i18n';
+import { getHostnameKey } from '../../../utils/env';
+import { expandHomePath } from '../../../utils/path';
+import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
+import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
+import { AgentSettings } from './AgentSettings';
+import { PluginSettingsManager } from './PluginSettingsManager';
+import { SlashCommandSettings } from './SlashCommandSettings';
+
+export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
+  render(container, context) {
+    const claudeWorkspace = getClaudeWorkspaceServices();
+    const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
+    const claudeSettings = getClaudeProviderSettings(settingsBag);
+
+    new Setting(container).setName(t('settings.safety')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.claudeSafeMode.name'))
+      .setDesc(t('settings.claudeSafeMode.desc'))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('acceptEdits', 'acceptEdits')
+          .addOption('default', 'default')
+          .setValue(claudeSettings.safeMode)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(
+              settingsBag,
+              { safeMode: value as 'acceptEdits' | 'default' },
+            );
+            await context.plugin.saveSettings();
+          });
+      });
+
+    new Setting(container).setName(t('settings.slashCommands.name')).setHeading();
+
+    const slashCommandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
+    const descP = slashCommandsDesc.createEl('p', { cls: 'setting-item-description' });
+    descP.appendText(t('settings.slashCommands.desc') + ' ');
+    descP.createEl('a', {
+      text: 'Learn more',
+      href: 'https://code.claude.com/docs/en/skills',
+    });
+
+    const slashCommandsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
+    new SlashCommandSettings(
+      slashCommandsContainer,
+      context.plugin.app,
+      claudeWorkspace.commandCatalog,
+    );
+
+    context.renderHiddenProviderCommandSetting(container, 'claude', {
+      name: t('settings.hiddenSlashCommands.name'),
+      desc: t('settings.hiddenSlashCommands.desc'),
+      placeholder: t('settings.hiddenSlashCommands.placeholder'),
+    });
+
+    new Setting(container).setName(t('settings.subagents.name')).setHeading();
+
+    const agentsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
+    agentsDesc.createEl('p', {
+      text: t('settings.subagents.desc'),
+      cls: 'setting-item-description',
+    });
+
+    const agentsContainer = container.createDiv({ cls: 'claudian-agents-container' });
+    new AgentSettings(agentsContainer, {
+      app: context.plugin.app,
+      agentManager: claudeWorkspace.agentManager,
+      agentStorage: claudeWorkspace.agentStorage,
+    });
+
+    new Setting(container).setName(t('settings.mcpServers.name')).setHeading();
+
+    const mcpDesc = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
+    mcpDesc.createEl('p', {
+      text: t('settings.mcpServers.desc'),
+      cls: 'setting-item-description',
+    });
+
+    const mcpContainer = container.createDiv({ cls: 'claudian-mcp-container' });
+    new McpSettingsManager(mcpContainer, {
+      app: context.plugin.app,
+      mcpStorage: claudeWorkspace.mcpStorage,
+      broadcastMcpReload: async () => {
+        for (const view of context.plugin.getAllViews()) {
+          await view.getTabManager()?.broadcastToAllTabs(
+            (service) => service.reloadMcpServers(),
+          );
+        }
+      },
+    });
+
+    new Setting(container).setName(t('settings.plugins.name')).setHeading();
+
+    const pluginsDesc = container.createDiv({ cls: 'claudian-plugin-settings-desc' });
+    pluginsDesc.createEl('p', {
+      text: t('settings.plugins.desc'),
+      cls: 'setting-item-description',
+    });
+
+    const pluginsContainer = container.createDiv({ cls: 'claudian-plugins-container' });
+    new PluginSettingsManager(pluginsContainer, {
+      pluginManager: claudeWorkspace.pluginManager,
+      agentManager: claudeWorkspace.agentManager,
+      restartTabs: async () => {
+        const view = context.plugin.getView();
+        const tabManager = view?.getTabManager();
+        if (!tabManager) {
+          return;
+        }
+
+        await tabManager.broadcastToAllTabs(
+          async (service) => { await service.ensureReady({ force: true }); },
+        );
+      },
+    });
+
+    new Setting(container).setName(t('settings.environment')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.customVariables.name'))
+      .setDesc(t('settings.customVariables.desc'))
+      .addTextArea((text) => {
+        text
+          .setPlaceholder('ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model')
+          .setValue(context.plugin.settings.environmentVariables);
+        text.inputEl.rows = 6;
+        text.inputEl.cols = 50;
+        text.inputEl.addClass('claudian-settings-env-textarea');
+        text.inputEl.addEventListener('blur', async () => {
+          await context.plugin.applyEnvironmentVariables(text.inputEl.value);
+          context.renderCustomContextLimits(contextLimitsContainer);
+        });
+      });
+
+    const contextLimitsContainer = container.createDiv({ cls: 'claudian-context-limits-container' });
+    context.renderCustomContextLimits(contextLimitsContainer);
+
+    const envSnippetsContainer = container.createDiv({ cls: 'claudian-env-snippets-container' });
+    new EnvSnippetManager(envSnippetsContainer, context.plugin, () => {
+      context.renderCustomContextLimits(contextLimitsContainer);
+    });
+
+    new Setting(container).setName(t('settings.safety')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.loadUserSettings.name'))
+      .setDesc(t('settings.loadUserSettings.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.loadUserSettings)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, { loadUserSettings: value });
+            await context.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container).setName(t('settings.advanced')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.enableOpus1M.name'))
+      .setDesc(t('settings.enableOpus1M.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.enableOpus1M)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, { enableOpus1M: value });
+            context.plugin.normalizeModelVariantSettings();
+            await context.plugin.saveSettings();
+            context.refreshModelSelectors();
+          })
+      );
+
+    new Setting(container)
+      .setName(t('settings.enableSonnet1M.name'))
+      .setDesc(t('settings.enableSonnet1M.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.enableSonnet1M)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, { enableSonnet1M: value });
+            context.plugin.normalizeModelVariantSettings();
+            await context.plugin.saveSettings();
+            context.refreshModelSelectors();
+          })
+      );
+
+    new Setting(container)
+      .setName(t('settings.enableChrome.name'))
+      .setDesc(t('settings.enableChrome.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.enableChrome)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, { enableChrome: value });
+            await context.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container)
+      .setName(t('settings.enableBangBash.name'))
+      .setDesc(t('settings.enableBangBash.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.enableBangBash)
+          .onChange(async (value) => {
+            bangBashValidationEl.style.display = 'none';
+            if (value) {
+              const { findNodeExecutable, getEnhancedPath } = await import('../../../utils/env');
+              const nodePath = findNodeExecutable(getEnhancedPath());
+              if (!nodePath) {
+                bangBashValidationEl.setText(t('settings.enableBangBash.validation.noNode'));
+                bangBashValidationEl.style.display = 'block';
+                toggle.setValue(false);
+                return;
+              }
+            }
+            updateClaudeProviderSettings(settingsBag, { enableBangBash: value });
+            await context.plugin.saveSettings();
+          })
+      );
+
+    const bangBashValidationEl = container.createDiv({ cls: 'claudian-bang-bash-validation' });
+    bangBashValidationEl.style.color = 'var(--text-error)';
+    bangBashValidationEl.style.fontSize = '0.85em';
+    bangBashValidationEl.style.marginTop = '-0.5em';
+    bangBashValidationEl.style.marginBottom = '0.5em';
+    bangBashValidationEl.style.display = 'none';
+
+    const hostnameKey = getHostnameKey();
+    const platformDesc = process.platform === 'win32'
+      ? t('settings.cliPath.descWindows')
+      : t('settings.cliPath.descUnix');
+    const cliPathDescription = `${t('settings.cliPath.desc')} ${platformDesc}`;
+
+    const cliPathSetting = new Setting(container)
+      .setName(`${t('settings.cliPath.name')} (${hostnameKey})`)
+      .setDesc(cliPathDescription);
+
+    const validationEl = container.createDiv({ cls: 'claudian-cli-path-validation' });
+    validationEl.style.color = 'var(--text-error)';
+    validationEl.style.fontSize = '0.85em';
+    validationEl.style.marginTop = '-0.5em';
+    validationEl.style.marginBottom = '0.5em';
+    validationEl.style.display = 'none';
+
+    const validatePath = (value: string): string | null => {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      const expandedPath = expandHomePath(trimmed);
+
+      if (!fs.existsSync(expandedPath)) {
+        return t('settings.cliPath.validation.notExist');
+      }
+      const stat = fs.statSync(expandedPath);
+      if (!stat.isFile()) {
+        return t('settings.cliPath.validation.isDirectory');
+      }
+      return null;
+    };
+
+    cliPathSetting.addText((text) => {
+      const placeholder = process.platform === 'win32'
+        ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
+        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+
+      const currentValue = claudeSettings.cliPathsByHost[hostnameKey] || '';
+
+      text
+        .setPlaceholder(placeholder)
+        .setValue(currentValue)
+        .onChange(async (value) => {
+          const error = validatePath(value);
+          if (error) {
+            validationEl.setText(error);
+            validationEl.style.display = 'block';
+            text.inputEl.style.borderColor = 'var(--text-error)';
+          } else {
+            validationEl.style.display = 'none';
+            text.inputEl.style.borderColor = '';
+          }
+
+          const trimmed = value.trim();
+          const nextCliPathsByHost = { ...claudeSettings.cliPathsByHost };
+          if (trimmed) {
+            nextCliPathsByHost[hostnameKey] = trimmed;
+          } else {
+            delete nextCliPathsByHost[hostnameKey];
+          }
+          updateClaudeProviderSettings(settingsBag, { cliPathsByHost: nextCliPathsByHost });
+          await context.plugin.saveSettings();
+          claudeWorkspace.cliResolver.reset();
+          const view = context.plugin.getView();
+          await view?.getTabManager()?.broadcastToAllTabs(
+            (service) => Promise.resolve(service.cleanup())
+          );
+        });
+      text.inputEl.addClass('claudian-settings-cli-path-input');
+      text.inputEl.style.width = '100%';
+
+      const initialError = validatePath(currentValue);
+      if (initialError) {
+        validationEl.setText(initialError);
+        validationEl.style.display = 'block';
+        text.inputEl.style.borderColor = 'var(--text-error)';
+      }
+    });
+  },
+};

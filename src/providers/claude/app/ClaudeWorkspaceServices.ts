@@ -24,6 +24,7 @@ import type {
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
+import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type { SlashCommand } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { AgentManager } from '../agents/AgentManager';
@@ -31,6 +32,7 @@ import { ClaudeCommandCatalog } from '../commands/ClaudeCommandCatalog';
 import { PluginManager } from '../plugins/PluginManager';
 import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
 import { StorageService } from '../storage/StorageService';
+import { claudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 /**
  * Full Claude storage surface.
@@ -53,8 +55,11 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   agentMentionProvider: AppAgentManager;
 }
 
-export function createClaudeStorage(plugin: Plugin): ClaudeStorageService {
-  return new StorageService(plugin);
+export function createClaudeStorage(
+  plugin: Plugin,
+  adapter?: VaultFileAdapter,
+): ClaudeStorageService {
+  return new StorageService(plugin, adapter);
 }
 
 export function createClaudeCliResolver(): ProviderCliResolver {
@@ -85,8 +90,10 @@ export async function loadAllSlashCommands(claudeStorage: ClaudeStorageService):
 
 export async function createClaudeWorkspaceServices(
   plugin: ClaudianPlugin,
+  adapter: VaultFileAdapter,
 ): Promise<ClaudeWorkspaceServices> {
-  const claudeStorage = plugin.claudeStorage;
+  const claudeStorage = createClaudeStorage(plugin, adapter);
+  await claudeStorage.ensureDirectories();
   const cliResolver = createClaudeCliResolver();
   const mcpStorage = getClaudeMcpStorage(claudeStorage);
   const mcpManager = new McpServerManager(mcpStorage);
@@ -109,12 +116,14 @@ export async function createClaudeWorkspaceServices(
     claudeStorage,
     cliResolver,
     mcpStorage,
+    mcpServerManager: mcpManager,
     mcpManager,
     pluginManager,
     agentStorage,
     agentManager,
     commandCatalog,
     agentMentionProvider: agentManager,
+    settingsTabRenderer: claudeSettingsTabRenderer,
     refreshAgentMentions: async () => {
       await agentManager.loadAgents();
     },
@@ -122,7 +131,7 @@ export async function createClaudeWorkspaceServices(
 }
 
 export const claudeWorkspaceRegistration: ProviderWorkspaceRegistration<ClaudeWorkspaceServices> = {
-  initialize: async ({ plugin }) => createClaudeWorkspaceServices(plugin),
+  initialize: async ({ plugin, vaultAdapter }) => createClaudeWorkspaceServices(plugin, vaultAdapter),
 };
 
 export function maybeGetClaudeWorkspaceServices(): ClaudeWorkspaceServices | null {

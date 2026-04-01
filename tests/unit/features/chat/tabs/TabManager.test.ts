@@ -51,6 +51,9 @@ const mockGetCapabilities = jest.fn().mockReturnValue({
   supportsRewind: true,
   supportsFork: true,
   supportsProviderCommands: true,
+  supportsImageAttachments: true,
+  supportsInstructionMode: true,
+  supportsMcpTools: true,
   reasoningControl: 'effort',
 });
 const mockCommandCatalogs: Record<string, any> = {};
@@ -60,6 +63,9 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
       buildForkProviderState: mockBuildForkProviderState,
     }),
     getCapabilities: (...args: any[]) => mockGetCapabilities(...args),
+    resolveProviderForModel: (model: string) => (
+      model.startsWith('gpt-') || /^o\d/.test(model) ? 'codex' : 'claude'
+    ),
   },
 }));
 
@@ -1757,7 +1763,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
 
     let capturedForkCallback: any;
     mockInitializeTabControllers.mockImplementation(
-      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+      (_tab: any, _plugin: any, _view: any, forkCb: any) => {
         capturedForkCallback = forkCb;
       }
     );
@@ -1808,7 +1814,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
       });
     });
     mockInitializeTabControllers.mockImplementation(
-      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+      (_tab: any, _plugin: any, _view: any, forkCb: any) => {
         capturedForkCallback = forkCb;
       }
     );
@@ -1839,7 +1845,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
 
     let capturedForkCallback: any;
     mockInitializeTabControllers.mockImplementation(
-      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+      (_tab: any, _plugin: any, _view: any, forkCb: any) => {
         capturedForkCallback = forkCb;
       }
     );

@@ -1,20 +1,14 @@
 import type ClaudianPlugin from '../../main';
-import { PROVIDER_WORKSPACE_REGISTRATIONS } from '../../providers';
+import { HomeFileAdapter } from '../storage/HomeFileAdapter';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import type {
   AgentMentionProvider,
+  ProviderCliResolver,
   ProviderId,
+  ProviderSettingsTabRenderer,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from './types';
-
-function getWorkspaceRegistration(providerId: ProviderId): ProviderWorkspaceRegistration {
-  const registration = PROVIDER_WORKSPACE_REGISTRATIONS[providerId];
-  if (!registration) {
-    throw new Error(`Provider workspace "${providerId}" is not registered.`);
-  }
-  return registration;
-}
 
 /**
  * Registry for provider-owned workspace/bootstrap services.
@@ -24,13 +18,37 @@ function getWorkspaceRegistration(providerId: ProviderId): ProviderWorkspaceRegi
  * provider-specific storage adaptors.
  */
 export class ProviderWorkspaceRegistry {
+  private static registrations: Partial<Record<ProviderId, ProviderWorkspaceRegistration>> = {};
   private static services: Partial<Record<ProviderId, ProviderWorkspaceServices>> = {};
 
+  static register(
+    providerId: ProviderId,
+    registration: ProviderWorkspaceRegistration,
+  ): void {
+    this.registrations[providerId] = registration;
+  }
+
+  private static getWorkspaceRegistration(providerId: ProviderId): ProviderWorkspaceRegistration {
+    const registration = this.registrations[providerId];
+    if (!registration) {
+      throw new Error(`Provider workspace "${providerId}" is not registered.`);
+    }
+    return registration;
+  }
+
   static async initializeAll(plugin: ClaudianPlugin): Promise<void> {
-    const providerIds = Object.keys(PROVIDER_WORKSPACE_REGISTRATIONS) as ProviderId[];
+    const providerIds = Object.keys(this.registrations) as ProviderId[];
+    const storage = plugin.storage;
+    const vaultAdapter = storage.getAdapter();
+    const homeAdapter = new HomeFileAdapter();
 
     for (const providerId of providerIds) {
-      this.services[providerId] = await getWorkspaceRegistration(providerId).initialize({ plugin });
+      this.services[providerId] = await this.getWorkspaceRegistration(providerId).initialize({
+        plugin,
+        storage,
+        vaultAdapter,
+        homeAdapter,
+      });
     }
   }
 
@@ -75,5 +93,17 @@ export class ProviderWorkspaceRegistry {
 
   static async refreshAgentMentions(providerId: ProviderId): Promise<void> {
     await this.getServices(providerId)?.refreshAgentMentions?.();
+  }
+
+  static getCliResolver(providerId: ProviderId): ProviderCliResolver | null {
+    return this.getServices(providerId)?.cliResolver ?? null;
+  }
+
+  static getMcpServerManager(providerId: ProviderId) {
+    return this.getServices(providerId)?.mcpServerManager ?? null;
+  }
+
+  static getSettingsTabRenderer(providerId: ProviderId): ProviderSettingsTabRenderer | null {
+    return this.getServices(providerId)?.settingsTabRenderer ?? null;
   }
 }

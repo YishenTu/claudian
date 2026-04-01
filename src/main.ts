@@ -9,10 +9,13 @@
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
 patchSetMaxListenersForElectron();
 
+import './providers';
+
 import type { Editor, MarkdownView } from 'obsidian';
 import { Notice, Plugin } from 'obsidian';
 
-import { DEFAULT_CLAUDIAN_SETTINGS } from './core/bootstrap/defaultSettings';
+import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
+import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
@@ -32,14 +35,7 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
-import {
-  type ClaudeStorageService,
-  createClaudeStorage,
-  maybeGetClaudeWorkspaceServices,
-} from './providers/claude/app/ClaudeWorkspaceServices';
-import { resolveCodexCliPath } from './providers/codex/runtime/CodexBinaryLocator';
 import { buildCursorContext } from './utils/editor';
-import { getHostnameKey } from './utils/env';
 import { getVaultPath } from './utils/path';
 
 /**
@@ -49,7 +45,6 @@ import { getVaultPath } from './utils/path';
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   storage: SharedAppStorage;
-  claudeStorage: ClaudeStorageService;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
 
@@ -215,11 +210,7 @@ export default class ClaudianPlugin extends Plugin {
 
   /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
-    // Initialize Claude storage
-    this.claudeStorage = createClaudeStorage(this);
-    // The shared app storage is backed by the same StorageService instance
-    this.storage = this.claudeStorage;
-
+    this.storage = new SharedStorageService(this);
     const { claudian } = await this.storage.initialize();
 
     this.settings = {
@@ -402,24 +393,14 @@ export default class ClaudianPlugin extends Plugin {
     return this.runtimeEnvironmentVariables;
   }
 
-  getResolvedClaudeCliPath(): string | null {
-    const cliResolver = maybeGetClaudeWorkspaceServices()?.cliResolver;
+  getResolvedProviderCliPath(providerId: ProviderId): string | null {
+    const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
     if (!cliResolver) {
       return null;
     }
 
-    return cliResolver.resolve(
-      this.settings.claudeCliPathsByHost,  // Per-device paths (preferred)
-      this.settings.claudeCliPath,          // Legacy path (fallback)
-      this.getActiveEnvironmentVariables()
-    );
-  }
-
-  getResolvedCodexCliPath(): string | null {
-    const hostname = getHostnameKey();
-    return resolveCodexCliPath(
-      this.settings.codexCliPathsByHost?.[hostname],
-      this.settings.codexCliPath,
+    return cliResolver.resolveFromSettings(
+      this.settings as unknown as Record<string, unknown>,
       this.getActiveEnvironmentVariables(),
     );
   }
@@ -473,7 +454,7 @@ export default class ClaudianPlugin extends Plugin {
     providerId?: ProviderId;
     sessionId?: string;
   }): Promise<Conversation> {
-    const providerId = options?.providerId ?? 'claude' as ProviderId;
+    const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
     const sessionId = options?.sessionId;
     const conversationId = sessionId ?? this.generateConversationId();
     const conversation: Conversation = {

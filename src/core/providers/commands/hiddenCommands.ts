@@ -37,10 +37,7 @@ export function normalizeHiddenCommandList(value: unknown): string[] {
 }
 
 export function getDefaultHiddenProviderCommands(): HiddenProviderCommands {
-  return {
-    claude: [],
-    codex: [],
-  };
+  return {};
 }
 
 export function normalizeHiddenProviderCommands(
@@ -52,15 +49,28 @@ export function normalizeHiddenProviderCommands(
   if (!value || typeof value !== 'object') {
     return {
       ...defaults,
-      claude: normalizeHiddenCommandList(legacyClaudeCommands),
+      ...(normalizeHiddenCommandList(legacyClaudeCommands).length > 0
+        ? { claude: normalizeHiddenCommandList(legacyClaudeCommands) }
+        : {}),
     };
   }
 
-  const candidate = value as Partial<Record<ProviderId, unknown>>;
-  return {
-    claude: normalizeHiddenCommandList(candidate.claude ?? legacyClaudeCommands),
-    codex: normalizeHiddenCommandList(candidate.codex),
-  };
+  const candidate = value as Partial<Record<ProviderId | string, unknown>>;
+  const normalized: HiddenProviderCommands = {};
+
+  for (const [providerId, commands] of Object.entries(candidate)) {
+    const next = normalizeHiddenCommandList(commands);
+    if (next.length > 0) {
+      normalized[providerId] = next;
+    }
+  }
+
+  const legacyCommands = normalizeHiddenCommandList(legacyClaudeCommands);
+  if (legacyCommands.length > 0 && !normalized.claude) {
+    normalized.claude = legacyCommands;
+  }
+
+  return normalized;
 }
 
 export function getHiddenProviderCommands(

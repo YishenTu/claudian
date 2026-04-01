@@ -1,6 +1,7 @@
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
+import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { DEFAULT_CLAUDE_MODELS, normalizeVisibleModelVariant } from '../types/models';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment } from './claudeModelEnv';
 
@@ -62,12 +63,15 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
-    const enableOpus1M = settings.enableOpus1M as boolean;
-    const enableSonnet1M = settings.enableSonnet1M as boolean;
+    const claudeSettings = getClaudeProviderSettings(settings);
     let changed = false;
 
     const normalize = (model: string): string =>
-      normalizeVisibleModelVariant(model, enableOpus1M, enableSonnet1M);
+      normalizeVisibleModelVariant(
+        model,
+        claudeSettings.enableOpus1M,
+        claudeSettings.enableSonnet1M,
+      );
 
     const model = settings.model as string;
     const normalizedModel = normalize(model);
@@ -85,11 +89,11 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
       }
     }
 
-    const lastClaudeModel = settings.lastClaudeModel as string | undefined;
+    const lastClaudeModel = claudeSettings.lastModel;
     if (lastClaudeModel) {
       const normalizedLastClaudeModel = normalize(lastClaudeModel);
       if (lastClaudeModel !== normalizedLastClaudeModel) {
-        settings.lastClaudeModel = normalizedLastClaudeModel;
+        updateClaudeProviderSettings(settings, { lastModel: normalizedLastClaudeModel });
         changed = true;
       }
     }

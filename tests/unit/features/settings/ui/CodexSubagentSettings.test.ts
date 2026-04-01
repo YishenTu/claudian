@@ -1,10 +1,10 @@
+import type { CodexSubagentStorage } from '@/providers/codex/storage/CodexSubagentStorage';
+import type { CodexSubagentDefinition } from '@/providers/codex/types/subagent';
 import {
   CodexSubagentSettings,
   validateCodexNicknameCandidates,
   validateCodexSubagentName,
-} from '@/features/settings/ui/CodexSubagentSettings';
-import type { CodexSubagentStorage } from '@/providers/codex/storage/CodexSubagentStorage';
-import type { CodexSubagentDefinition } from '@/providers/codex/types/subagent';
+} from '@/providers/codex/ui/CodexSubagentSettings';
 
 function makeAgent(name: string, overrides: Partial<CodexSubagentDefinition> = {}): CodexSubagentDefinition {
   return {

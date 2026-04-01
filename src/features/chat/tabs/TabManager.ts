@@ -1,6 +1,5 @@
 import { Notice } from 'obsidian';
 
-import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
@@ -34,12 +33,17 @@ import {
   type TabManagerViewHost,
 } from './types';
 
+function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
+  return !!value
+    && typeof value === 'object'
+    && 'getTabManager' in (value as Record<string, unknown>);
+}
+
 /**
  * TabManager coordinates multiple chat tabs.
  */
 export class TabManager implements TabManagerInterface {
   private plugin: ClaudianPlugin;
-  private mcpManager: McpServerManager;
   private containerEl: HTMLElement;
   private view: TabManagerViewHost;
 
@@ -61,16 +65,36 @@ export class TabManager implements TabManagerInterface {
 
   constructor(
     plugin: ClaudianPlugin,
-    mcpManager: McpServerManager,
     containerEl: HTMLElement,
     view: TabManagerViewHost,
-    callbacks: TabManagerCallbacks = {}
+    callbacks?: TabManagerCallbacks,
+  );
+  constructor(
+    plugin: ClaudianPlugin,
+    legacyArg: unknown,
+    containerEl: HTMLElement,
+    view: TabManagerViewHost,
+    callbacks?: TabManagerCallbacks,
+  );
+  constructor(
+    plugin: ClaudianPlugin,
+    arg2: HTMLElement | unknown,
+    arg3: HTMLElement | TabManagerViewHost,
+    arg4?: TabManagerViewHost | TabManagerCallbacks,
+    arg5: TabManagerCallbacks = {},
   ) {
     this.plugin = plugin;
-    this.mcpManager = mcpManager;
-    this.containerEl = containerEl;
-    this.view = view;
-    this.callbacks = callbacks;
+
+    if (isTabManagerViewHost(arg3)) {
+      this.containerEl = arg2 as HTMLElement;
+      this.view = arg3;
+      this.callbacks = (arg4 as TabManagerCallbacks | undefined) ?? {};
+      return;
+    }
+
+    this.containerEl = arg3 as HTMLElement;
+    this.view = arg4 as TabManagerViewHost;
+    this.callbacks = arg5;
   }
 
   // ============================================
@@ -101,7 +125,6 @@ export class TabManager implements TabManagerInterface {
 
     const tab = createTab({
       plugin: this.plugin,
-      mcpManager: this.mcpManager,
       containerEl: this.containerEl,
       conversation: conversation ?? undefined,
       tabId,
@@ -130,12 +153,10 @@ export class TabManager implements TabManagerInterface {
       },
     });
 
-    // Initialize controllers (pass mcpManager for lazy service initialization)
     initializeTabControllers(
       tab,
       this.plugin,
       this.view,
-      this.mcpManager,
       (forkContext) => this.handleForkRequest(forkContext),
       (conversationId) => this.openConversation(conversationId),
       () => this.getProviderCatalogConfig(tab),

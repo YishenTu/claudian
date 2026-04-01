@@ -1,7 +1,10 @@
 import type ClaudianPlugin from '../../main';
 import type { CursorContext } from '../../utils/editor';
+import type { SharedAppStorage } from '../bootstrap/storage';
 import type { McpServerManager } from '../mcp/McpServerManager';
 import type { ChatRuntime } from '../runtime/ChatRuntime';
+import type { HomeFileAdapter } from '../storage/HomeFileAdapter';
+import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AgentDefinition,
   Conversation,
@@ -10,11 +13,12 @@ import type {
   PluginInfo,
   SessionMetadata,
   SlashCommand,
+  SubagentInfo,
   ToolCallInfo,
 } from '../types';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 
-export type ProviderId = 'claude' | 'codex';
+export type ProviderId = string;
 
 export interface ProviderCapabilities {
   providerId: ProviderId;
@@ -24,6 +28,9 @@ export interface ProviderCapabilities {
   supportsRewind: boolean;
   supportsFork: boolean;
   supportsProviderCommands: boolean;
+  supportsImageAttachments: boolean;
+  supportsInstructionMode: boolean;
+  supportsMcpTools: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
   planPathPrefix?: string;
 }
@@ -32,7 +39,6 @@ export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
 
 export interface CreateChatRuntimeOptions {
   plugin: ClaudianPlugin;
-  mcpManager: McpServerManager;
   providerId?: ProviderId;
 }
 
@@ -41,8 +47,8 @@ export interface CreateChatRuntimeOptions {
  *
  * This is intentionally limited to chat-facing services.
  * Shared bootstrap (defaults, storage) is in `src/core/bootstrap/`.
- * Claude-only workspace services (CLI resolver, plugins, agents, commands,
- * skills, MCP) live behind the Claude adaptor in `src/providers/claude/app/`.
+ * Provider-owned workspace services (CLI resolution, commands, agents,
+ * MCP, settings tabs) live behind `src/providers/<id>/app/`.
  */
 export interface ProviderRegistration {
   displayName: string;
@@ -57,6 +63,7 @@ export interface ProviderRegistration {
   createInlineEditService: (plugin: ClaudianPlugin) => InlineEditService;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
+  subagentLifecycleAdapter?: ProviderSubagentLifecycleAdapter;
 }
 
 export interface ProviderSettingsReconciler {
@@ -88,11 +95,12 @@ export interface AppSessionStorage {
 }
 
 // ---------------------------------------------------------------------------
-// Claude-owned storage sub-interfaces
+// Provider-owned workspace sub-interfaces
 //
-// These remain here as standalone types so the settings UI can reference them
-// through the Claude storage surface. They are NOT part of the shared
-// bootstrap storage contract (SharedAppStorage).
+// These remain here as standalone types so app-level settings/chat code can
+// depend on stable provider workspace contracts without importing concrete
+// provider implementations. They are NOT part of the shared bootstrap storage
+// contract (`SharedAppStorage`).
 // ---------------------------------------------------------------------------
 
 export interface AppMcpStorage {
@@ -128,7 +136,7 @@ export interface AgentMentionProvider {
   }>;
 }
 
-/** Plugin manager interface (Claude-owned, consumed by app layer). */
+/** Provider plugin manager interface consumed by the app layer. */
 export interface AppPluginManager {
   loadPlugins(): Promise<void>;
   getPlugins(): PluginInfo[];
@@ -141,7 +149,7 @@ export interface AppPluginManager {
   disablePlugin(pluginId: string): Promise<void>;
 }
 
-/** Agent manager interface (Claude-owned, consumed by app layer). */
+/** Provider agent manager interface consumed by the app layer. */
 export interface AppAgentManager extends AgentMentionProvider {
   loadAgents(): Promise<void>;
   getAvailableAgents(): AgentDefinition[];
@@ -191,6 +199,9 @@ export interface ProviderChatUIConfig {
   /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
+  /** Whether this provider owns the given model id. */
+  ownsModel(model: string, settings: Record<string, unknown>): boolean;
+
   /** Whether the model uses adaptive reasoning (effort levels vs token budgets). */
   isAdaptiveReasoningModel(model: string): boolean;
 
@@ -218,6 +229,9 @@ export interface ProviderChatUIConfig {
   /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
   getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
 
+  /** Whether the provider enables the shared bang-bash input mode. */
+  isBangBashEnabled?(settings: Record<string, unknown>): boolean;
+
   /** SVG icon for the provider (shown next to model names in selectors). */
   getProviderIcon?(): ProviderIconSvg | null;
 }
@@ -227,9 +241,8 @@ export interface ProviderChatUIConfig {
 // ---------------------------------------------------------------------------
 
 export interface ProviderCliResolver {
-  resolve(
-    hostnamePaths: Record<string, string> | undefined,
-    legacyPath: string | undefined,
+  resolveFromSettings(
+    settings: Record<string, unknown>,
     environmentVariables: string,
   ): string | null;
   reset(): void;
@@ -238,11 +251,32 @@ export interface ProviderCliResolver {
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   agentMentionProvider?: AgentMentionProvider | null;
+  cliResolver?: ProviderCliResolver | null;
+  mcpServerManager?: McpServerManager | null;
+  settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   refreshAgentMentions?(): Promise<void>;
+}
+
+export interface ProviderSettingsTabRendererContext {
+  plugin: ClaudianPlugin;
+  renderHiddenProviderCommandSetting(
+    container: HTMLElement,
+    providerId: ProviderId,
+    copy: { name: string; desc: string; placeholder: string },
+  ): void;
+  refreshModelSelectors(): void;
+  renderCustomContextLimits(container: HTMLElement): void;
+}
+
+export interface ProviderSettingsTabRenderer {
+  render(container: HTMLElement, context: ProviderSettingsTabRendererContext): void;
 }
 
 export interface ProviderWorkspaceInitContext {
   plugin: ClaudianPlugin;
+  storage: SharedAppStorage;
+  vaultAdapter: VaultFileAdapter;
+  homeAdapter: HomeFileAdapter;
 }
 
 export interface ProviderWorkspaceRegistration<
@@ -264,6 +298,8 @@ export interface ProviderConversationHistoryService {
   isPendingForkConversation(conversation: Conversation): boolean;
   /** Builds opaque provider state for a forked conversation. */
   buildForkProviderState(sourceSessionId: string, resumeAt: string): Record<string, unknown>;
+  /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
+  buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
 }
 
 export type ProviderTaskTerminalStatus = Extract<ToolCallInfo['status'], 'completed' | 'error'>;
@@ -277,6 +313,39 @@ export interface ProviderTaskResultInterpreter {
     fallbackStatus: ProviderTaskTerminalStatus,
   ): ProviderTaskTerminalStatus;
   extractTagValue(payload: string, tagName: string): string | null;
+}
+
+export interface ProviderSubagentLaunchResult {
+  agentId?: string;
+  nickname?: string;
+}
+
+export interface ProviderSubagentWaitStatus {
+  completed?: string;
+  error?: string;
+  failed?: string;
+}
+
+export interface ProviderSubagentWaitResult {
+  statuses: Record<string, ProviderSubagentWaitStatus>;
+  timedOut: boolean;
+}
+
+export interface ProviderSubagentLifecycleAdapter {
+  isHiddenTool(name: string): boolean;
+  isSpawnTool(name: string): boolean;
+  isWaitTool(name: string): boolean;
+  isCloseTool(name: string): boolean;
+  resolveSpawnToolIds(
+    waitToolCall: ToolCallInfo,
+    agentIdToSpawnId: ReadonlyMap<string, string>,
+  ): string[];
+  buildSubagentInfo(
+    spawnToolCall: ToolCallInfo,
+    siblingToolCalls?: ToolCallInfo[],
+  ): SubagentInfo;
+  extractSpawnResult(raw: string | undefined): ProviderSubagentLaunchResult;
+  extractWaitResult(raw: string | undefined): ProviderSubagentWaitResult;
 }
 
 // ---------------------------------------------------------------------------

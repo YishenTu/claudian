@@ -147,6 +147,20 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     return providerState as Record<string, unknown>;
   }
 
+  buildPersistedProviderState(
+    conversation: Conversation,
+  ): Record<string, unknown> | undefined {
+    const providerState = {
+      ...getCodexState(conversation.providerState),
+    };
+    const sanitizedEntries = Object.entries(providerState).filter(([, value]) => value !== undefined);
+    if (sanitizedEntries.length === 0) {
+      return undefined;
+    }
+
+    return Object.fromEntries(sanitizedEntries);
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------

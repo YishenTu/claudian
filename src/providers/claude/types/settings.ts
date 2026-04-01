@@ -1,7 +1,7 @@
 /** Claude provider settings and Claude Code compatibility types. */
 
 // Re-export shared defaults for backward compatibility within the Claude package
-export { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '../../../core/bootstrap/defaultSettings';
+export { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '../../../app/settings/defaultSettings';
 
 /**
  * CC-compatible permission rule string.
@@ -57,7 +57,7 @@ export interface CCSettings {
   [key: string]: unknown;
 }
 
-// Old DEFAULT_SETTINGS constant has been moved to src/core/bootstrap/defaultSettings.ts.
+// Old DEFAULT_SETTINGS constant has been moved to src/app/settings/defaultSettings.ts.
 // Re-exported above for backward compatibility within the Claude package.
 
 /** Default CC-compatible settings. */

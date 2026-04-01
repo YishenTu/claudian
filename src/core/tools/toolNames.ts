@@ -26,42 +26,42 @@ export const TOOL_WRITE = 'Write' as const;
 export const TOOL_ENTER_PLAN_MODE = 'EnterPlanMode' as const;
 export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
 
-// Codex-native tools (not mapped to Claude equivalents)
+// Runtime-managed tools exposed through provider adapters.
 export const TOOL_APPLY_PATCH = 'apply_patch' as const;
 export const TOOL_WRITE_STDIN = 'write_stdin' as const;
-export const TOOL_CODEX_SPAWN_AGENT = 'spawn_agent' as const;
-export const TOOL_CODEX_SEND_INPUT = 'send_input' as const;
-export const TOOL_CODEX_WAIT = 'wait' as const;
-export const TOOL_CODEX_WAIT_AGENT = 'wait_agent' as const;
-export const TOOL_CODEX_RESUME_AGENT = 'resume_agent' as const;
-export const TOOL_CODEX_CLOSE_AGENT = 'close_agent' as const;
+export const TOOL_SPAWN_AGENT = 'spawn_agent' as const;
+export const TOOL_SEND_INPUT = 'send_input' as const;
+export const TOOL_WAIT = 'wait' as const;
+export const TOOL_WAIT_AGENT = 'wait_agent' as const;
+export const TOOL_RESUME_AGENT = 'resume_agent' as const;
+export const TOOL_CLOSE_AGENT = 'close_agent' as const;
 
-export const CODEX_AGENT_LIFECYCLE_TOOLS = [
-  TOOL_CODEX_SPAWN_AGENT,
-  TOOL_CODEX_SEND_INPUT,
-  TOOL_CODEX_WAIT,
-  TOOL_CODEX_WAIT_AGENT,
-  TOOL_CODEX_RESUME_AGENT,
-  TOOL_CODEX_CLOSE_AGENT,
+export const AGENT_LIFECYCLE_TOOLS = [
+  TOOL_SPAWN_AGENT,
+  TOOL_SEND_INPUT,
+  TOOL_WAIT,
+  TOOL_WAIT_AGENT,
+  TOOL_RESUME_AGENT,
+  TOOL_CLOSE_AGENT,
 ] as const;
 
-export function isCodexAgentLifecycleTool(name: string): boolean {
-  return (CODEX_AGENT_LIFECYCLE_TOOLS as readonly string[]).includes(name);
+export function isAgentLifecycleTool(name: string): boolean {
+  return (AGENT_LIFECYCLE_TOOLS as readonly string[]).includes(name);
 }
 
-/** Tools that should be hidden from rendering when a Codex subagent block is shown. */
-export const CODEX_SUBAGENT_HIDDEN_TOOLS = [
-  TOOL_CODEX_WAIT,
-  TOOL_CODEX_WAIT_AGENT,
-  TOOL_CODEX_CLOSE_AGENT,
+/** Tools that should be hidden from rendering when a provider subagent block is shown. */
+export const SUBAGENT_HIDDEN_TOOLS = [
+  TOOL_WAIT,
+  TOOL_WAIT_AGENT,
+  TOOL_CLOSE_AGENT,
 ] as const;
 
-export function isCodexSubagentSpawnTool(name: string): boolean {
-  return name === TOOL_CODEX_SPAWN_AGENT;
+export function isSubagentSpawnTool(name: string): boolean {
+  return name === TOOL_SPAWN_AGENT;
 }
 
-export function isCodexSubagentHiddenTool(name: string): boolean {
-  return (CODEX_SUBAGENT_HIDDEN_TOOLS as readonly string[]).includes(name);
+export function isSubagentHiddenTool(name: string): boolean {
+  return (SUBAGENT_HIDDEN_TOOLS as readonly string[]).includes(name);
 }
 
 // These tools resolve via dedicated callbacks (not content-based), so their

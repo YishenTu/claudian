@@ -1,3 +1,5 @@
+import '@/providers';
+
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
@@ -59,7 +61,7 @@ describe('ClaudianService', () => {
         enableAutoTitleGeneration: true,
         titleGenerationModel: 'claude-3-5-haiku',
       },
-      getResolvedClaudeCliPath: jest.fn().mockReturnValue('/usr/local/bin/claude'),
+      getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/claude'),
       getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
       pluginManager: {
         getPluginsKey: jest.fn().mockReturnValue(''),
@@ -325,7 +327,7 @@ describe('ClaudianService', () => {
       expect(startPersistentQuerySpy).toHaveBeenCalledTimes(1);
 
       // Now make CLI unavailable
-      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockReturnValue(null);
+      (mockPlugin.getResolvedProviderCliPath as jest.Mock).mockReturnValue(null);
 
       // Force restart should close but fail to start new one
       const result = await service.ensureReady({ force: true });
@@ -350,7 +352,7 @@ describe('ClaudianService', () => {
       // Make CLI unavailable after the config change detection
       // In Case 3, CLI is checked once before needsRestart, then again after close
       let cliCallCount = 0;
-      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockImplementation(() => {
+      (mockPlugin.getResolvedProviderCliPath as jest.Mock).mockImplementation(() => {
         cliCallCount++;
         // First call (for config check) returns valid path
         // Second call (after close, for restart) returns null
@@ -1451,7 +1453,7 @@ describe('ClaudianService', () => {
 
     it('should not restart when allowRestart is false', async () => {
       // Change something that would trigger restart
-      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockReturnValue('/new/path/to/claude');
+      (mockPlugin.getResolvedProviderCliPath as jest.Mock).mockReturnValue('/new/path/to/claude');
 
       const ensureReadySpy = jest.spyOn(service, 'ensureReady');
 
@@ -1523,7 +1525,7 @@ describe('ClaudianService', () => {
     });
 
     it('should yield error when CLI path is not available', async () => {
-      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockReturnValue(null);
+      (mockPlugin.getResolvedProviderCliPath as jest.Mock).mockReturnValue(null);
 
       const chunks = await collectChunks(service.query('hello'));
 
@@ -1962,7 +1964,7 @@ describe('ClaudianService', () => {
     it('should return early when cliPath is null', async () => {
       (service as any).persistentQuery = { setModel: jest.fn() };
       (service as any).vaultPath = '/vault';
-      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockReturnValue(null);
+      (mockPlugin.getResolvedProviderCliPath as jest.Mock).mockReturnValue(null);
 
       const setModelSpy = (service as any).persistentQuery.setModel;
 
@@ -2006,7 +2008,7 @@ describe('ClaudianService', () => {
       };
 
       // Change CLI path to trigger restart
-      (mockPlugin.getResolvedClaudeCliPath as jest.Mock).mockReturnValue('/new/path/to/claude');
+      (mockPlugin.getResolvedProviderCliPath as jest.Mock).mockReturnValue('/new/path/to/claude');
 
       // Mock ensureReady to return true (restarted)
       const ensureReadySpy = jest.spyOn(service, 'ensureReady').mockResolvedValue(true);

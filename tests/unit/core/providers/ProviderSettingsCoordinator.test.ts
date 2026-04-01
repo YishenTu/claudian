@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { Conversation } from '@/core/types';
@@ -7,7 +9,9 @@ describe('ProviderSettingsCoordinator', () => {
     it('falls back to claude when codex is disabled', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
-        codexEnabled: false,
+        providerConfigs: {
+          codex: { enabled: false },
+        },
       };
 
       const changed = ProviderSettingsCoordinator.normalizeProviderSelection(settings);
@@ -19,7 +23,9 @@ describe('ProviderSettingsCoordinator', () => {
     it('falls back to claude for unknown providers', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'mystery-provider',
-        codexEnabled: true,
+        providerConfigs: {
+          codex: { enabled: true },
+        },
       };
 
       const changed = ProviderSettingsCoordinator.normalizeProviderSelection(settings);
@@ -31,7 +37,9 @@ describe('ProviderSettingsCoordinator', () => {
     it('returns false when already normalized (no-op)', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
-        codexEnabled: false,
+        providerConfigs: {
+          codex: { enabled: false },
+        },
       };
       expect(ProviderSettingsCoordinator.normalizeProviderSelection(settings)).toBe(false);
     });
@@ -85,6 +93,9 @@ describe('ProviderSettingsCoordinator', () => {
     it('projects saved model/effort/budget for the settings provider', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
+        providerConfigs: {
+          codex: { enabled: true },
+        },
         model: 'haiku',
         effortLevel: 'high',
         thinkingBudget: 'off',
@@ -154,6 +165,9 @@ describe('ProviderSettingsCoordinator', () => {
     it('stores the current top-level projection for the settings provider', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
+        providerConfigs: {
+          codex: { enabled: true },
+        },
         model: 'gpt-5.4',
         effortLevel: 'low',
         thinkingBudget: 'off',
@@ -179,6 +193,9 @@ describe('ProviderSettingsCoordinator', () => {
     it('seeds a provider projection from provider defaults when no saved values exist', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
+        providerConfigs: {
+          codex: { enabled: true },
+        },
         environmentVariables: '',
         model: 'haiku',
         effortLevel: 'high',
@@ -205,6 +222,9 @@ describe('ProviderSettingsCoordinator', () => {
 
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
+        providerConfigs: {
+          codex: { enabled: true },
+        },
         model: 'haiku',
         effortLevel: 'high',
         thinkingBudget: 'off',

@@ -1,3 +1,5 @@
+import '@/providers';
+
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,
@@ -22,7 +24,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
+    getResolvedProviderCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -269,7 +271,7 @@ describe('TitleGenerationService', () => {
     });
 
     it('should fail when Claude CLI is not found', async () => {
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+      mockPlugin.getResolvedProviderCliPath.mockReturnValue(null);
 
       const callback = jest.fn();
       await service.generateTitle('conv-123', 'test', callback);
