@@ -1,4 +1,5 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
+import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCliResolver,
@@ -24,14 +25,14 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
 
 function createCodexCliResolver(): ProviderCliResolver {
   return {
-    resolveFromSettings(settings, environmentVariables) {
+    resolveFromSettings(settings) {
       const codexSettings = getCodexProviderSettings(settings);
       const values = Object.values(codexSettings.cliPathsByHost);
       const resolvedHostPath = values.find((value) => typeof value === 'string' && value.trim()) ?? undefined;
       return resolveCodexCliPath(
         resolvedHostPath,
         codexSettings.cliPath,
-        environmentVariables,
+        getRuntimeEnvironmentText(settings, 'codex'),
       );
     },
     reset() {

@@ -51,7 +51,7 @@ describe('ProviderSettingsCoordinator', () => {
       const claudeConv = { providerId: 'claude', messages: [] } as unknown as Conversation;
       const conversations = [claudeConv];
 
-      const result = ProviderSettingsCoordinator.reconcileAllProviders(settings, conversations, '');
+      const result = ProviderSettingsCoordinator.reconcileAllProviders(settings, conversations);
 
       expect(result).toHaveProperty('changed');
       expect(result).toHaveProperty('invalidatedConversations');
@@ -68,13 +68,12 @@ describe('ProviderSettingsCoordinator', () => {
       const otherConv = { providerId: 'codex', messages: [] } as unknown as Conversation;
       const settings: Record<string, unknown> = { model: 'haiku' };
 
-      ProviderSettingsCoordinator.reconcileAllProviders(settings, [claudeConv, otherConv], '');
+      ProviderSettingsCoordinator.reconcileAllProviders(settings, [claudeConv, otherConv]);
 
       // Claude reconciler should only receive claude conversations
       expect(reconcileSpy).toHaveBeenCalledWith(
         settings,
         [claudeConv],
-        '',
       );
 
       reconcileSpy.mockRestore();
@@ -194,9 +193,11 @@ describe('ProviderSettingsCoordinator', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
         providerConfigs: {
-          codex: { enabled: true },
+          codex: {
+            enabled: true,
+            environmentVariables: '',
+          },
         },
-        environmentVariables: '',
         model: 'haiku',
         effortLevel: 'high',
         thinkingBudget: 'off',
@@ -223,7 +224,10 @@ describe('ProviderSettingsCoordinator', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
         providerConfigs: {
-          codex: { enabled: true },
+          codex: {
+            enabled: true,
+            environmentVariables: 'OPENAI_MODEL=gpt-5.4',
+          },
         },
         model: 'haiku',
         effortLevel: 'high',
@@ -233,11 +237,7 @@ describe('ProviderSettingsCoordinator', () => {
         savedProviderThinkingBudget: { claude: 'off', codex: 'off' },
       };
 
-      const result = ProviderSettingsCoordinator.reconcileAllProviders(
-        settings,
-        [codexConv],
-        'OPENAI_MODEL=gpt-5.4',
-      );
+      const result = ProviderSettingsCoordinator.reconcileAllProviders(settings, [codexConv]);
 
       expect(result.changed).toBe(true);
       expect(codexConv.sessionId).toBeNull();

@@ -70,7 +70,6 @@ export interface ProviderSettingsReconciler {
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
-    envText: string,
   ): { changed: boolean; invalidatedConversations: Conversation[] };
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean;
@@ -241,10 +240,7 @@ export interface ProviderChatUIConfig {
 // ---------------------------------------------------------------------------
 
 export interface ProviderCliResolver {
-  resolveFromSettings(
-    settings: Record<string, unknown>,
-    environmentVariables: string,
-  ): string | null;
+  resolveFromSettings(settings: Record<string, unknown>): string | null;
   reset(): void;
 }
 
@@ -265,7 +261,7 @@ export interface ProviderSettingsTabRendererContext {
     copy: { name: string; desc: string; placeholder: string },
   ): void;
   refreshModelSelectors(): void;
-  renderCustomContextLimits(container: HTMLElement): void;
+  renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void;
 }
 
 export interface ProviderSettingsTabRenderer {

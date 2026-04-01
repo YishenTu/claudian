@@ -18,6 +18,7 @@ export {
   type ApprovalDecision,
   type ApprovalNetworkPolicyAmendment,
   type ClaudianSettings,
+  type EnvironmentScope,
   type EnvSnippet,
   getBashToolBlockedCommands,
   getCurrentPlatformBlockedCommands,

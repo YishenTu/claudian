@@ -75,8 +75,8 @@ describe('types.ts', () => {
       expect(new Set(DEFAULT_SETTINGS.blockedCommands.windows).size).toBe(DEFAULT_SETTINGS.blockedCommands.windows.length);
     });
 
-    it('should have environmentVariables as empty string by default', () => {
-      expect(DEFAULT_SETTINGS.environmentVariables).toBe('');
+    it('should have sharedEnvironmentVariables as empty string by default', () => {
+      expect(DEFAULT_SETTINGS.sharedEnvironmentVariables).toBe('');
     });
 
     it('should have envSnippets as empty array by default', () => {
@@ -108,7 +108,7 @@ describe('types.ts', () => {
         codexSafeMode: 'workspace-write',
         excludedTags: [],
         mediaFolder: '',
-        environmentVariables: '',
+        sharedEnvironmentVariables: '',
         envSnippets: [],
         customContextLimits: {},
         systemPrompt: '',
@@ -160,7 +160,7 @@ describe('types.ts', () => {
         codexSafeMode: 'workspace-write',
         excludedTags: ['private'],
         mediaFolder: 'attachments',
-        environmentVariables: 'API_KEY=test',
+        sharedEnvironmentVariables: 'API_KEY=test',
         envSnippets: [],
         customContextLimits: {},
         systemPrompt: '',
@@ -212,7 +212,7 @@ describe('types.ts', () => {
         codexSafeMode: 'workspace-write',
         excludedTags: [],
         mediaFolder: '',
-        environmentVariables: '',
+        sharedEnvironmentVariables: '',
         envSnippets: [],
         customContextLimits: {},
         systemPrompt: '',

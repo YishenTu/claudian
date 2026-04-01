@@ -62,7 +62,7 @@ export async function runColdStartQuery(
   }
 
   const customEnv = parseEnvironmentVariables(
-    config.plugin.getActiveEnvironmentVariables()
+    config.plugin.getActiveEnvironmentVariables('claude')
   );
   const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedClaudePath);
 

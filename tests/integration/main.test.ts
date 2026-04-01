@@ -281,7 +281,7 @@ describe('ClaudianPlugin', () => {
       expect(writeCall).toBeDefined();
       const content = JSON.parse(writeCall[1]);
       expect(content).not.toHaveProperty('activeConversationId');
-      expect(content).toHaveProperty('lastEnvHash');
+      expect(content).toHaveProperty('providerConfigs.claude.environmentHash');
       expect(content).toHaveProperty('providerConfigs.claude.lastModel');
       expect(content).toHaveProperty('lastCustomModel');
       // Permissions are now in .claude/settings.json (CC format), not claudian-settings.json
@@ -292,18 +292,17 @@ describe('ClaudianPlugin', () => {
   describe('applyEnvironmentVariables', () => {
     it('updates runtime env vars when changed', async () => {
       await plugin.onload();
-      (plugin as any).runtimeEnvironmentVariables = 'A=1';
 
-      await plugin.applyEnvironmentVariables('A=2');
-      expect((plugin as any).runtimeEnvironmentVariables).toBe('A=2');
+      await plugin.applyEnvironmentVariables('shared', 'A=2');
+      expect(plugin.getEnvironmentVariablesForScope('shared')).toBe('A=2');
 
-      await plugin.applyEnvironmentVariables('A=3');
-      expect((plugin as any).runtimeEnvironmentVariables).toBe('A=3');
+      await plugin.applyEnvironmentVariables('shared', 'A=3');
+      expect(plugin.getEnvironmentVariablesForScope('shared')).toBe('A=3');
 
       // No change - should not update
-      const currentEnv = (plugin as any).runtimeEnvironmentVariables;
-      await plugin.applyEnvironmentVariables('A=3');
-      expect((plugin as any).runtimeEnvironmentVariables).toBe(currentEnv);
+      const currentEnv = plugin.getEnvironmentVariablesForScope('shared');
+      await plugin.applyEnvironmentVariables('shared', 'A=3');
+      expect(plugin.getEnvironmentVariablesForScope('shared')).toBe(currentEnv);
     });
 
     it('invalidates sessions when env hash changes', async () => {
@@ -313,7 +312,7 @@ describe('ClaudianPlugin', () => {
       const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata');
       saveMetadataSpy.mockClear();
 
-      await plugin.applyEnvironmentVariables('ANTHROPIC_MODEL=claude-sonnet-4-5');
+      await plugin.applyEnvironmentVariables('provider:claude', 'ANTHROPIC_MODEL=claude-sonnet-4-5');
 
       const updated = await plugin.getConversationById(conv.id);
       expect(updated?.sessionId).toBeNull();
@@ -325,12 +324,14 @@ describe('ClaudianPlugin', () => {
 
       // Mock getView to return a view with tabManager
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
-      const mockBroadcast = jest.fn().mockImplementation(async (fn) => {
-        await fn({ ensureReady: mockEnsureReady });
-      });
       const mockTabManager = {
-        broadcastToAllTabs: mockBroadcast,
-        getAllTabs: jest.fn().mockReturnValue([]),
+        getAllTabs: jest.fn().mockReturnValue([{
+          providerId: 'claude',
+          state: { isStreaming: false },
+          serviceInitialized: true,
+          service: { ensureReady: mockEnsureReady },
+          ui: { externalContextSelector: { getExternalContexts: jest.fn().mockReturnValue([]) } },
+        }]),
       };
       const mockView = {
         getTabManager: jest.fn().mockReturnValue(mockTabManager),
@@ -339,9 +340,8 @@ describe('ClaudianPlugin', () => {
       jest.spyOn(plugin, 'getView').mockReturnValue(mockView as any);
 
       // Change env but not in a way that affects model
-      await plugin.applyEnvironmentVariables('SOME_VAR=value');
+      await plugin.applyEnvironmentVariables('shared', 'SOME_VAR=value');
 
-      expect(mockBroadcast).toHaveBeenCalled();
       expect(mockEnsureReady).toHaveBeenCalledWith({ force: true });
     });
   });

@@ -6,6 +6,7 @@
 
 import * as fs from 'fs';
 
+import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../../core/types/settings';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
@@ -23,18 +24,14 @@ export class ClaudeCliResolver {
   /**
    * Resolves CLI path with priority: hostname-specific -> legacy -> auto-detect.
    * @param settings Full app settings bag
-   * @param envText Environment variables text
    */
-  resolveFromSettings(
-    settings: Record<string, unknown>,
-    envText: string,
-  ): string | null {
+  resolveFromSettings(settings: Record<string, unknown>): string | null {
     const hostnameKey = this.cachedHostname;
     const claudeSettings = getClaudeProviderSettings(settings);
 
     const hostnamePath = (claudeSettings.cliPathsByHost[hostnameKey] ?? '').trim();
     const normalizedLegacy = claudeSettings.cliPath.trim();
-    const normalizedEnv = envText ?? '';
+    const normalizedEnv = getRuntimeEnvironmentText(settings, 'claude');
 
     if (
       this.resolvedPath &&
@@ -58,17 +55,15 @@ export class ClaudeCliResolver {
     legacyPath: string | undefined,
     envText: string,
   ): string | null {
-    return this.resolveFromSettings(
-      {
-        providerConfigs: {
-          claude: {
-            cliPath: legacyPath ?? '',
-            cliPathsByHost: hostnamePaths ?? {},
-          },
+    return this.resolveFromSettings({
+      sharedEnvironmentVariables: envText,
+      providerConfigs: {
+        claude: {
+          cliPath: legacyPath ?? '',
+          cliPathsByHost: hostnamePaths ?? {},
         },
       },
-      envText,
-    );
+    });
   }
 
   reset(): void {

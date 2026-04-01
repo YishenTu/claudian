@@ -15,14 +15,15 @@ describe('codexSettingsReconciler', () => {
 
     const settings: Record<string, unknown> = {
       model: 'gpt-5.4',
-      lastCodexEnvHash: '',
+      providerConfigs: {
+        codex: {
+          environmentVariables: 'OPENAI_MODEL=gpt-5.4',
+          environmentHash: '',
+        },
+      },
     };
 
-    const result = codexSettingsReconciler.reconcileModelWithEnvironment(
-      settings,
-      [conversation],
-      'OPENAI_MODEL=gpt-5.4',
-    );
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
 
     expect(result.changed).toBe(true);
     expect(conversation.sessionId).toBeNull();
@@ -33,17 +34,18 @@ describe('codexSettingsReconciler', () => {
   it('restores a built-in model when OPENAI_MODEL is removed', () => {
     const settings: Record<string, unknown> = {
       model: 'my-custom-model',
-      lastCodexEnvHash: 'OPENAI_MODEL=my-custom-model',
+      providerConfigs: {
+        codex: {
+          environmentVariables: '',
+          environmentHash: 'OPENAI_MODEL=my-custom-model',
+        },
+      },
     };
 
-    const result = codexSettingsReconciler.reconcileModelWithEnvironment(
-      settings,
-      [],
-      '',
-    );
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
 
     expect(result.changed).toBe(true);
     expect(settings.model).toBe('gpt-5.4-mini');
-    expect(settings.lastCodexEnvHash).toBe('');
+    expect((settings.providerConfigs as any).codex.environmentHash).toBe('');
   });
 });

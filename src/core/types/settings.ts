@@ -109,6 +109,7 @@ export interface EnvSnippet {
   name: string;
   description: string;
   envVars: string;
+  scope?: EnvironmentScope;
   contextLimits?: Record<string, number>;  // Optional: context limits for custom models
 }
 
@@ -155,6 +156,9 @@ export interface InstructionRefineResult {
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'plan' | 'normal';
 
+/** Scope for environment variable storage and snippets. */
+export type EnvironmentScope = 'shared' | `provider:${string}`;
+
 /** Hostname-keyed CLI paths for per-device configuration. */
 export type HostnameCliPaths = Record<string, string>;
 
@@ -191,7 +195,7 @@ export interface ClaudianSettings {
   persistentExternalContextPaths: string[];
 
   // Environment
-  environmentVariables: string;
+  sharedEnvironmentVariables: string;
   envSnippets: EnvSnippet[];
   customContextLimits: Record<string, number>;
 
@@ -212,7 +216,6 @@ export interface ClaudianSettings {
 
   // State (provider-specific, round-tripped opaquely)
   lastCustomModel?: string;
-  lastEnvHash?: string;
 
   // UI preferences
   maxTabs: number;

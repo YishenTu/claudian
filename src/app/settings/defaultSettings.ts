@@ -24,7 +24,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   systemPrompt: '',
   persistentExternalContextPaths: [],
 
-  environmentVariables: '',
+  sharedEnvironmentVariables: '',
   envSnippets: [],
   customContextLimits: {},
 
@@ -47,7 +47,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   savedProviderThinkingBudget: {},
 
   lastCustomModel: '',
-  lastEnvHash: '',
 
   maxTabs: 3,
   tabBarPosition: 'input',

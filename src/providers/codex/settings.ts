@@ -1,4 +1,5 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
+import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
@@ -10,6 +11,8 @@ export interface CodexProviderSettings {
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
   reasoningSummary: CodexReasoningSummary;
+  environmentVariables: string;
+  environmentHash: string;
 }
 
 export const DEFAULT_CODEX_PROVIDER_SETTINGS: Readonly<CodexProviderSettings> = Object.freeze({
@@ -18,6 +21,8 @@ export const DEFAULT_CODEX_PROVIDER_SETTINGS: Readonly<CodexProviderSettings> = 
   cliPath: '',
   cliPathsByHost: {},
   reasoningSummary: 'detailed',
+  environmentVariables: '',
+  environmentHash: '',
 });
 
 function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
@@ -53,6 +58,12 @@ export function getCodexProviderSettings(
     reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)
       ?? (settings.codexReasoningSummary as CodexReasoningSummary | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.reasoningSummary,
+    environmentVariables: (config.environmentVariables as string | undefined)
+      ?? getProviderEnvironmentVariables(settings, 'codex')
+      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.environmentVariables,
+    environmentHash: (config.environmentHash as string | undefined)
+      ?? (settings.lastCodexEnvHash as string | undefined)
+      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.environmentHash,
   };
 }
 

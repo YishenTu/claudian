@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
+import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
@@ -59,6 +60,17 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             context.refreshModelSelectors();
           })
       );
+
+    renderEnvironmentSettingsSection({
+      container,
+      plugin: context.plugin,
+      scope: 'provider:codex',
+      heading: t('settings.environment'),
+      name: 'Codex environment',
+      desc: 'Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings.',
+      placeholder: 'OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=gpt-5.4\nCODEX_SANDBOX=workspace-write',
+      renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'codex'),
+    });
 
     const currentValue = codexSettings.cliPathsByHost[hostnameKey] || '';
 

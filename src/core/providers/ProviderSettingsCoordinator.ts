@@ -171,13 +171,24 @@ export class ProviderSettingsCoordinator {
   static reconcileAllProviders(
     settings: Record<string, unknown>,
     conversations: Conversation[],
-    envText: string,
+  ): SettingsReconciliationResult {
+    return this.reconcileProviders(
+      settings,
+      conversations,
+      ProviderRegistry.getRegisteredProviderIds(),
+    );
+  }
+
+  static reconcileProviders(
+    settings: Record<string, unknown>,
+    conversations: Conversation[],
+    providerIds: ProviderId[],
   ): SettingsReconciliationResult {
     let anyChanged = false;
     const allInvalidated: Conversation[] = [];
     const settingsProvider = getSettingsProviderId(settings);
 
-    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+    for (const providerId of providerIds) {
       const reconciler = ProviderRegistry.getSettingsReconciler(providerId);
       const providerConversations = conversations.filter(c => c.providerId === providerId);
       const targetSettings = providerId === settingsProvider
@@ -191,7 +202,6 @@ export class ProviderSettingsCoordinator {
       const { changed, invalidatedConversations } = reconciler.reconcileModelWithEnvironment(
         targetSettings,
         providerConversations,
-        envText,
       );
 
       if (changed) anyChanged = true;

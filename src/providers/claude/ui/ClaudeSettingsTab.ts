@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
-import { EnvSnippetManager } from '../../../features/settings/ui/EnvSnippetManager';
+import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import { McpSettingsManager } from '../../../features/settings/ui/McpSettingsManager';
 import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
@@ -122,30 +122,15 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       },
     });
 
-    new Setting(container).setName(t('settings.environment')).setHeading();
-
-    new Setting(container)
-      .setName(t('settings.customVariables.name'))
-      .setDesc(t('settings.customVariables.desc'))
-      .addTextArea((text) => {
-        text
-          .setPlaceholder('ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model')
-          .setValue(context.plugin.settings.environmentVariables);
-        text.inputEl.rows = 6;
-        text.inputEl.cols = 50;
-        text.inputEl.addClass('claudian-settings-env-textarea');
-        text.inputEl.addEventListener('blur', async () => {
-          await context.plugin.applyEnvironmentVariables(text.inputEl.value);
-          context.renderCustomContextLimits(contextLimitsContainer);
-        });
-      });
-
-    const contextLimitsContainer = container.createDiv({ cls: 'claudian-context-limits-container' });
-    context.renderCustomContextLimits(contextLimitsContainer);
-
-    const envSnippetsContainer = container.createDiv({ cls: 'claudian-env-snippets-container' });
-    new EnvSnippetManager(envSnippetsContainer, context.plugin, () => {
-      context.renderCustomContextLimits(contextLimitsContainer);
+    renderEnvironmentSettingsSection({
+      container,
+      plugin: context.plugin,
+      scope: 'provider:claude',
+      heading: t('settings.environment'),
+      name: t('settings.customVariables.name'),
+      desc: 'Claude-owned runtime variables only. Use this for ANTHROPIC_* and Claude-specific toggles.',
+      placeholder: 'ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model\nCLAUDE_CODE_USE_BEDROCK=1',
+      renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'claude'),
     });
 
     new Setting(container).setName(t('settings.safety')).setHeading();

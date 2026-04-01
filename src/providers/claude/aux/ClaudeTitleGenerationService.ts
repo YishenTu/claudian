@@ -71,7 +71,7 @@ export class TitleGenerationService {
 
   private resolveTitleModel(): string {
     const envVars = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables()
+      this.plugin.getActiveEnvironmentVariables('claude')
     );
     return (
       this.plugin.settings.titleGenerationModel ||

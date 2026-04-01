@@ -1,3 +1,4 @@
+import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
@@ -27,10 +28,10 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
-    envText: string,
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
+    const envText = getRuntimeEnvironmentText(settings, 'claude');
     const currentHash = computeEnvHash(envText);
-    const savedHash = (settings.lastEnvHash as string) || '';
+    const savedHash = getClaudeProviderSettings(settings).environmentHash;
 
     if (currentHash === savedHash) {
       return { changed: false, invalidatedConversations: [] };
@@ -58,7 +59,7 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
       settings.model = DEFAULT_CLAUDE_MODELS[0].value;
     }
 
-    settings.lastEnvHash = currentHash;
+    updateClaudeProviderSettings(settings, { environmentHash: currentHash });
     return { changed: true, invalidatedConversations };
   },
 

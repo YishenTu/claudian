@@ -1,3 +1,4 @@
+import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import type {
   ProviderChatUIConfig,
   ProviderIconSvg,
@@ -5,7 +6,6 @@ import type {
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
 
 const OPENAI_ICON: ProviderIconSvg = {
   viewBox: '-1 -.1 949.1 959.8',
@@ -43,17 +43,14 @@ function looksLikeCodexModel(model: string): boolean {
 
 export const codexChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
-    const envVars = settings.environmentVariables as string | undefined;
-    if (envVars) {
-      const parsed = parseEnvironmentVariables(envVars);
-      if (parsed.OPENAI_MODEL) {
-        const customModel = parsed.OPENAI_MODEL;
-        if (!CODEX_MODEL_SET.has(customModel)) {
-          return [
-            { value: customModel, label: customModel, description: 'Custom (env)' },
-            ...CODEX_MODELS,
-          ];
-        }
+    const envVars = getRuntimeEnvironmentVariables(settings, 'codex');
+    if (envVars.OPENAI_MODEL) {
+      const customModel = envVars.OPENAI_MODEL;
+      if (!CODEX_MODEL_SET.has(customModel)) {
+        return [
+          { value: customModel, label: customModel, description: 'Custom (env)' },
+          ...CODEX_MODELS,
+        ];
       }
     }
     return [...CODEX_MODELS];

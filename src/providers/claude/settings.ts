@@ -1,4 +1,5 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
+import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
 
 export type ClaudeSafeMode = 'acceptEdits' | 'default';
@@ -13,6 +14,8 @@ export interface ClaudeProviderSettings {
   enableOpus1M: boolean;
   enableSonnet1M: boolean;
   lastModel: string;
+  environmentVariables: string;
+  environmentHash: string;
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
@@ -25,6 +28,8 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   enableOpus1M: false,
   enableSonnet1M: false,
   lastModel: 'haiku',
+  environmentVariables: '',
+  environmentHash: '',
 });
 
 function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
@@ -72,6 +77,12 @@ export function getClaudeProviderSettings(
     lastModel: (config.lastModel as string | undefined)
       ?? (settings.lastClaudeModel as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.lastModel,
+    environmentVariables: (config.environmentVariables as string | undefined)
+      ?? getProviderEnvironmentVariables(settings, 'claude')
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentVariables,
+    environmentHash: (config.environmentHash as string | undefined)
+      ?? (settings.lastEnvHash as string | undefined)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
   };
 }
 

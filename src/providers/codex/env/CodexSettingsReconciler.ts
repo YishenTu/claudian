@@ -1,6 +1,8 @@
+import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
+import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
 import { getCodexState } from '../types';
 import { codexChatUIConfig } from '../ui/CodexChatUIConfig';
 
@@ -19,10 +21,10 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
-    envText: string,
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
+    const envText = getRuntimeEnvironmentText(settings, 'codex');
     const currentHash = computeCodexEnvHash(envText);
-    const savedHash = (settings.lastCodexEnvHash as string) || '';
+    const savedHash = getCodexProviderSettings(settings).environmentHash;
 
     if (currentHash === savedHash) {
       return { changed: false, invalidatedConversations: [] };
@@ -49,7 +51,7 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
       settings.model = codexChatUIConfig.getModelOptions({})[0]?.value ?? 'gpt-5.4';
     }
 
-    settings.lastCodexEnvHash = currentHash;
+    updateCodexProviderSettings(settings, { environmentHash: currentHash });
     return { changed: true, invalidatedConversations };
   },
 

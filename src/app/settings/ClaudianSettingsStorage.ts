@@ -2,9 +2,16 @@ import {
   normalizeHiddenCommandList,
   normalizeHiddenProviderCommands,
 } from '../../core/providers/commands/hiddenCommands';
+import {
+  getSharedEnvironmentVariables,
+  inferEnvironmentSnippetScope,
+  resolveEnvironmentSnippetScope,
+} from '../../core/providers/providerEnvironment';
 import type { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import type {
   ClaudianSettings,
+  EnvironmentScope,
+  EnvSnippet,
   HiddenProviderCommands,
   PlatformBlockedCommands,
   ProviderConfigMap,
@@ -39,6 +46,9 @@ const LEGACY_TOP_LEVEL_PROVIDER_FIELDS = [
   'enableBangBash',
   'enableOpus1M',
   'enableSonnet1M',
+  'environmentVariables',
+  'lastEnvHash',
+  'lastCodexEnvHash',
 ] as const;
 
 function stripLegacyFields(settings: Record<string, unknown>): Record<string, unknown> {
@@ -63,6 +73,9 @@ function stripLegacyFields(settings: Record<string, unknown>): Record<string, un
     enableBangBash: _enableBangBash,
     enableOpus1M: _enableOpus1M,
     enableSonnet1M: _enableSonnet1M,
+    environmentVariables: _environmentVariables,
+    lastEnvHash: _lastEnvHash,
+    lastCodexEnvHash: _lastCodexEnvHash,
     ...cleaned
   } = settings;
   return cleaned;
@@ -114,6 +127,64 @@ function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
   return result;
 }
 
+function isEnvironmentScope(value: unknown): value is EnvironmentScope {
+  return value === 'shared' || (typeof value === 'string' && value.startsWith('provider:'));
+}
+
+function normalizeContextLimits(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const result: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'number' && Number.isFinite(entry) && entry > 0) {
+      result[key] = entry;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function normalizeEnvSnippets(value: unknown): EnvSnippet[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const snippets: EnvSnippet[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    if (
+      typeof candidate.id !== 'string'
+      || typeof candidate.name !== 'string'
+      || typeof candidate.description !== 'string'
+      || typeof candidate.envVars !== 'string'
+    ) {
+      continue;
+    }
+
+    snippets.push({
+      id: candidate.id,
+      name: candidate.name,
+      description: candidate.description,
+      envVars: candidate.envVars,
+      scope: resolveEnvironmentSnippetScope(
+        candidate.envVars,
+        isEnvironmentScope(candidate.scope)
+          ? candidate.scope
+          : inferEnvironmentSnippetScope(candidate.envVars),
+      ),
+      contextLimits: normalizeContextLimits(candidate.contextLimits),
+    });
+  }
+
+  return snippets;
+}
+
 function hasLegacyTopLevelProviderFields(stored: Record<string, unknown>): boolean {
   return LEGACY_TOP_LEVEL_PROVIDER_FIELDS.some((key) => key in stored);
 }
@@ -147,6 +218,7 @@ export class ClaudianSettingsStorage {
       normalizeHiddenProviderCommands(stored.hiddenProviderCommands),
       stored.hiddenSlashCommands,
     );
+    const envSnippets = normalizeEnvSnippets(stored.envSnippets);
     const providerConfigs = normalizeProviderConfigs(stored.providerConfigs);
     const legacyProviderSettings = {
       ...stored,
@@ -161,6 +233,8 @@ export class ClaudianSettingsStorage {
     const legacyNormalized = {
       ...storedWithoutLegacy,
       blockedCommands,
+      sharedEnvironmentVariables: getSharedEnvironmentVariables(legacyProviderSettings),
+      envSnippets,
       hiddenProviderCommands,
       providerConfigs,
     };
@@ -187,6 +261,7 @@ export class ClaudianSettingsStorage {
       || 'activeConversationId' in stored
       || 'allowExternalAccess' in stored
       || 'allowedExportPaths' in stored
+      || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
     ) {
       await this.save(merged);
     }
@@ -227,7 +302,12 @@ export class ClaudianSettingsStorage {
   }
 
   async setLastEnvHash(hash: string): Promise<void> {
-    await this.update({ lastEnvHash: hash });
+    const current = await this.load();
+    updateClaudeProviderSettings(
+      current as unknown as Record<string, unknown>,
+      { environmentHash: hash },
+    );
+    await this.save(current);
   }
 
   private getDefaults(): StoredClaudianSettings {

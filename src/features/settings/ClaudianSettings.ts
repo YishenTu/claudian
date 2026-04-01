@@ -14,6 +14,7 @@ import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
+import { renderEnvironmentSettingsSection } from './ui/EnvironmentSettingsSection';
 
 type SettingsTabId = 'general' | ProviderId;
 
@@ -151,7 +152,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             view.refreshModelSelector();
           }
         },
-        renderCustomContextLimits: (target) => this.renderCustomContextLimits(target),
+        renderCustomContextLimits: (target, providerId) => this.renderCustomContextLimits(target, providerId),
       });
     }
   }
@@ -242,6 +243,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.cols = 50;
         text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
       });
+
+    renderEnvironmentSettingsSection({
+      container,
+      plugin: this.plugin,
+      scope: 'shared',
+      heading: t('settings.environment'),
+      name: 'Shared environment',
+      desc: 'Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables.',
+      placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
+      renderCustomContextLimits: (target) => this.renderCustomContextLimits(target),
+    });
 
     new Setting(container)
       .setName(t('settings.enableAutoScroll.name'))
@@ -503,11 +515,22 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
   }
 
-  private renderCustomContextLimits(container: HTMLElement): void {
+  private renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void {
     container.empty();
 
-    const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
-    const uniqueModelIds = ProviderRegistry.getCustomModelIds(envVars);
+    const uniqueModelIds = new Set<string>();
+    const providerIds = providerId
+      ? [providerId]
+      : ProviderRegistry.getRegisteredProviderIds();
+
+    for (const targetProviderId of providerIds) {
+      const envVars = parseEnvironmentVariables(
+        this.plugin.getActiveEnvironmentVariables(targetProviderId),
+      );
+      for (const modelId of ProviderRegistry.getChatUIConfig(targetProviderId).getCustomModelIds(envVars)) {
+        uniqueModelIds.add(modelId);
+      }
+    }
 
     if (uniqueModelIds.size === 0) {
       return;

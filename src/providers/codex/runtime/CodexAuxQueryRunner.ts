@@ -159,7 +159,7 @@ export class CodexAuxQueryRunner {
     const codexPath = this.plugin.getResolvedProviderCliPath('codex') ?? 'codex';
     const vaultPath = getVaultPath(this.plugin.app) ?? process.cwd();
 
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables('codex'));
     const baseEnv = Object.fromEntries(
       Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );

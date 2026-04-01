@@ -1,3 +1,4 @@
+import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import type {
   ProviderChatUIConfig,
   ProviderIconSvg,
@@ -5,7 +6,6 @@ import type {
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
 import { getCustomModelIds, getModelsFromEnvironment } from '../env/claudeModelEnv';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
@@ -37,13 +37,11 @@ const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings) {
-    const envVars = settings.environmentVariables as string | undefined;
-    if (envVars) {
-      const parsed = parseEnvironmentVariables(envVars);
-      const customModels = getModelsFromEnvironment(parsed);
-      if (customModels.length > 0) {
-        return customModels;
-      }
+    const customModels = getModelsFromEnvironment(
+      getRuntimeEnvironmentVariables(settings, 'claude'),
+    );
+    if (customModels.length > 0) {
+      return customModels;
     }
 
     const models = [...DEFAULT_CLAUDE_MODELS];

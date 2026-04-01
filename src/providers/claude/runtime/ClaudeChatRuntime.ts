@@ -583,7 +583,7 @@ export class ClaudianService implements ChatRuntime {
   }
 
   private buildQueryOptionsContext(vaultPath: string, cliPath: string): QueryOptionsContext {
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables(this.providerId));
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
 
     return {
@@ -1019,7 +1019,7 @@ export class ClaudianService implements ChatRuntime {
       return;
     }
 
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
+    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables(this.providerId));
     const enhancedPath = getEnhancedPath(customEnv.PATH, resolvedClaudePath);
     const missingNodeError = getMissingNodeError(resolvedClaudePath, enhancedPath);
     if (missingNodeError) {

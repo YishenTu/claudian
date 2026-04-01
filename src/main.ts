@@ -17,6 +17,11 @@ import { Notice, Plugin } from 'obsidian';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
+import {
+  getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
+  getRuntimeEnvironmentText,
+  setEnvironmentVariablesForScope,
+} from './core/providers/providerEnvironment';
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
@@ -30,6 +35,7 @@ import type {
 import {
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
+import type { EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
@@ -46,7 +52,6 @@ export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   storage: SharedAppStorage;
   private conversations: Conversation[] = [];
-  private runtimeEnvironmentVariables = '';
 
   async onload() {
     await this.loadSettings();
@@ -258,8 +263,7 @@ export default class ClaudianPlugin extends Plugin {
 
     const backfilledConversations = this.backfillConversationResponseTimestamps();
 
-    this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment();
 
     // Project the active provider's saved model/effort/budget into top-level fields.
     // Runs unconditionally — it's a no-op when savedProvider* maps are empty.
@@ -317,20 +321,35 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   /** Updates and persists environment variables, restarting processes to apply changes. */
-  async applyEnvironmentVariables(envText: string): Promise<void> {
-    const envChanged = envText !== this.runtimeEnvironmentVariables;
+  async applyEnvironmentVariables(scope: EnvironmentScope, envText: string): Promise<void> {
+    await this.applyEnvironmentVariablesBatch([{ scope, envText }]);
+  }
 
-    this.settings.environmentVariables = envText;
+  async applyEnvironmentVariablesBatch(
+    updates: Array<{ scope: EnvironmentScope; envText: string }>,
+  ): Promise<void> {
+    const settingsBag = this.settings as unknown as Record<string, unknown>;
+    const nextEnvironmentByScope = new Map<EnvironmentScope, string>();
+    for (const update of updates) {
+      nextEnvironmentByScope.set(update.scope, update.envText);
+    }
 
-    if (!envChanged) {
+    const changedScopes: EnvironmentScope[] = [];
+    for (const [scope, envText] of nextEnvironmentByScope) {
+      const currentValue = getScopedEnvironmentVariables(settingsBag, scope);
+      if (currentValue !== envText) {
+        changedScopes.push(scope);
+      }
+      setEnvironmentVariablesForScope(settingsBag, scope, envText);
+    }
+
+    if (changedScopes.length === 0) {
       await this.saveSettings();
       return;
     }
 
-    // Update runtime env vars so new processes use them
-    this.runtimeEnvironmentVariables = envText;
-
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(envText);
+    const affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(affectedProviderIds);
     await this.saveSettings();
 
     if (invalidatedConversations.length > 0) {
@@ -345,7 +364,11 @@ export default class ClaudianPlugin extends Plugin {
     const tabManager = view?.getTabManager();
 
     if (tabManager) {
-      for (const tab of tabManager.getAllTabs()) {
+      const affectedTabs = tabManager.getAllTabs().filter((tab) => (
+        affectedProviderIds.includes(tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID)
+      ));
+
+      for (const tab of affectedTabs) {
         if (tab.state.isStreaming) {
           tab.controllers.inputController?.cancelStreaming();
         }
@@ -353,7 +376,7 @@ export default class ClaudianPlugin extends Plugin {
 
       let failedTabs = 0;
       if (changed) {
-        for (const tab of tabManager.getAllTabs()) {
+        for (const tab of affectedTabs) {
           if (!tab.service || !tab.serviceInitialized) {
             continue;
           }
@@ -366,21 +389,25 @@ export default class ClaudianPlugin extends Plugin {
           }
         }
       } else {
-        // Restart initialized tabs to pick up env changes
-        try {
-          await tabManager.broadcastToAllTabs(
-            async (service) => { await service.ensureReady({ force: true }); }
-          );
-        } catch {
-          failedTabs++;
+        for (const tab of affectedTabs) {
+          if (!tab.service || !tab.serviceInitialized) {
+            continue;
+          }
+          try {
+            await tab.service.ensureReady({ force: true });
+          } catch {
+            failedTabs++;
+          }
         }
       }
       if (failedTabs > 0) {
-        new Notice(`Environment changes applied, but ${failedTabs} tab(s) failed to restart.`);
+        new Notice(`Environment changes applied, but ${failedTabs} affected tab(s) failed to restart.`);
       }
     }
 
-    view?.refreshModelSelector();
+    for (const openView of this.getAllViews()) {
+      openView.refreshModelSelector();
+    }
 
     const noticeText = changed
       ? 'Environment variables applied. Sessions will be rebuilt on next message.'
@@ -389,8 +416,22 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */
-  getActiveEnvironmentVariables(): string {
-    return this.runtimeEnvironmentVariables;
+  getActiveEnvironmentVariables(
+    providerId: ProviderId = ProviderRegistry.resolveSettingsProviderId(
+      this.settings as unknown as Record<string, unknown>,
+    ),
+  ): string {
+    return getRuntimeEnvironmentText(
+      this.settings as unknown as Record<string, unknown>,
+      providerId,
+    );
+  }
+
+  getEnvironmentVariablesForScope(scope: EnvironmentScope): string {
+    return getScopedEnvironmentVariables(
+      this.settings as unknown as Record<string, unknown>,
+      scope,
+    );
   }
 
   getResolvedProviderCliPath(providerId: ProviderId): string | null {
@@ -399,21 +440,39 @@ export default class ClaudianPlugin extends Plugin {
       return null;
     }
 
-    return cliResolver.resolveFromSettings(
-      this.settings as unknown as Record<string, unknown>,
-      this.getActiveEnvironmentVariables(),
-    );
+    return cliResolver.resolveFromSettings(this.settings as unknown as Record<string, unknown>);
   }
 
-  private reconcileModelWithEnvironment(envText: string): {
+  private reconcileModelWithEnvironment(providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds()): {
     changed: boolean;
     invalidatedConversations: Conversation[];
   } {
-    return ProviderSettingsCoordinator.reconcileAllProviders(
+    return ProviderSettingsCoordinator.reconcileProviders(
       this.settings as unknown as Record<string, unknown>,
       this.conversations,
-      envText,
+      providerIds,
     );
+  }
+
+  private getAffectedEnvironmentProviders(scopes: EnvironmentScope[]): ProviderId[] {
+    const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
+    const affectedProviderIds = new Set<ProviderId>();
+
+    for (const scope of scopes) {
+      if (scope === 'shared') {
+        for (const providerId of registeredProviderIds) {
+          affectedProviderIds.add(providerId);
+        }
+        continue;
+      }
+
+      const providerId = scope.slice('provider:'.length) as ProviderId;
+      if (registeredProviderIds.has(providerId)) {
+        affectedProviderIds.add(providerId);
+      }
+    }
+
+    return Array.from(affectedProviderIds);
   }
 
   private generateConversationId(): string {

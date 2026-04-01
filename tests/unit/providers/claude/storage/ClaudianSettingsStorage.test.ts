@@ -192,6 +192,32 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
+    it('normalizes stale scoped mixed env snippets back to unscoped on load', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        envSnippets: [{
+          id: 'snippet-1',
+          name: 'Mixed snippet',
+          description: '',
+          envVars: 'PATH=/usr/local/bin\nANTHROPIC_MODEL=claude-custom',
+          scope: 'shared',
+        }],
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.envSnippets).toEqual([{
+        id: 'snippet-1',
+        name: 'Mixed snippet',
+        description: '',
+        envVars: 'PATH=/usr/local/bin\nANTHROPIC_MODEL=claude-custom',
+        scope: undefined,
+        contextLimits: undefined,
+      }]);
+      expect(writtenContent.envSnippets[0].scope).toBeUndefined();
+    });
+
     it('should throw on JSON parse error', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue('invalid json');
@@ -316,7 +342,7 @@ describe('ClaudianSettingsStorage', () => {
 
       const writeCall = mockAdapter.write.mock.calls[0];
       const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.lastEnvHash).toBe('abc123');
+      expect(writtenContent.providerConfigs.claude.environmentHash).toBe('abc123');
     });
   });
 });
