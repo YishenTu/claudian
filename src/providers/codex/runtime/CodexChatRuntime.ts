@@ -356,11 +356,7 @@ export class CodexChatRuntime implements ChatRuntime {
         const numTurnsToRollback = forkTurns.length - checkpointIndex - 1;
 
         // Resume the forked thread (required before rollback and turn/start)
-        const providerSettings = this.getProviderSettings();
-        const permissionMode = resolveCodexSandboxConfig(
-          providerSettings.permissionMode as string,
-          getCodexProviderSettings(providerSettings).safeMode,
-        );
+        const permissionMode = this.resolveSandboxConfig();
         await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId,
           model: model ?? 'gpt-5.4',
@@ -398,11 +394,7 @@ export class CodexChatRuntime implements ChatRuntime {
         }
       } else if (existingThreadId && existingThreadId !== this.loadedThreadId) {
         // Resume a persisted thread not yet loaded in this daemon
-        const providerSettings = this.getProviderSettings();
-        const permissionMode = resolveCodexSandboxConfig(
-          providerSettings.permissionMode as string,
-          getCodexProviderSettings(providerSettings).safeMode,
-        );
+        const permissionMode = this.resolveSandboxConfig();
         const resumeResult = await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId: existingThreadId,
           model: model ?? 'gpt-5.4',
@@ -419,12 +411,7 @@ export class CodexChatRuntime implements ChatRuntime {
         threadId = existingThreadId;
       } else {
         // New thread
-        const providerSettings = this.getProviderSettings();
-        const permissionMode = resolveCodexSandboxConfig(
-          providerSettings.permissionMode as string,
-          getCodexProviderSettings(providerSettings).safeMode,
-        );
-
+        const permissionMode = this.resolveSandboxConfig();
         const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
           model: model ?? 'gpt-5.4',
           cwd: getVaultPath(this.plugin.app) ?? undefined,
@@ -478,10 +465,7 @@ export class CodexChatRuntime implements ChatRuntime {
         const resolvedModel = model ?? 'gpt-5.4';
         const isPlanMode = providerSettings.permissionMode === 'plan';
         const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
-        const permissionMode = resolveCodexSandboxConfig(
-          providerSettings.permissionMode as string,
-          getCodexProviderSettings(providerSettings).safeMode,
-        );
+        const permissionMode = this.resolveSandboxConfig();
         const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
 
         const collaborationMode = isPlanMode
@@ -616,16 +600,7 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   resetSession(): void {
-    this.session.reset();
-    this.loadedThreadId = null;
-    this.currentThreadPath = null;
-    this.currentTurnId = null;
-    this.currentQueryThreadId = null;
-    this.pendingTurnNotifications = [];
-    this.pendingFork = null;
-    this.clientConfigKey = null;
-    this.shutdownProcess().catch(() => {});
-    this.setReady(false);
+    this.teardownState();
   }
 
   getSessionId(): string | null {
@@ -646,16 +621,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
   cleanup(): void {
     this.cancel();
-    this.session.reset();
-    this.loadedThreadId = null;
-    this.currentThreadPath = null;
-    this.currentTurnId = null;
-    this.currentQueryThreadId = null;
-    this.pendingTurnNotifications = [];
-    this.pendingFork = null;
-    this.clientConfigKey = null;
-    this.shutdownProcess().catch(() => {});
-    this.setReady(false);
+    this.teardownState();
     this.readyListeners.clear();
   }
 
@@ -740,6 +706,19 @@ export class CodexChatRuntime implements ChatRuntime {
   // Private helpers
   // -----------------------------------------------------------------------
 
+  private teardownState(): void {
+    this.session.reset();
+    this.loadedThreadId = null;
+    this.currentThreadPath = null;
+    this.currentTurnId = null;
+    this.currentQueryThreadId = null;
+    this.pendingTurnNotifications = [];
+    this.pendingFork = null;
+    this.clientConfigKey = null;
+    this.shutdownProcess().catch(() => {});
+    this.setReady(false);
+  }
+
   private dismissApprovalUI(): void {
     if (this.approvalDismisser) {
       this.approvalDismisser();
@@ -778,6 +757,14 @@ export class CodexChatRuntime implements ChatRuntime {
   private resolveModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {
     const providerSettings = this.getProviderSettings();
     return queryOptions?.model ?? providerSettings.model as string | undefined;
+  }
+
+  private resolveSandboxConfig(): { approvalPolicy: string; sandbox: string } {
+    const providerSettings = this.getProviderSettings();
+    return resolveCodexSandboxConfig(
+      providerSettings.permissionMode as string,
+      getCodexProviderSettings(providerSettings).safeMode,
+    );
   }
 
   private async startAppServer(resolvedCodexPath: string | null, clientConfigKey: string): Promise<void> {
@@ -1113,7 +1100,6 @@ function toAttachmentFilename(attachment: ImageAttachment, index: number): strin
   return `${base}.${extension}`;
 }
 
-// Re-export for backward compatibility with existing tests
 export { toAttachmentFilename as _toAttachmentFilename };
 
 // ---------------------------------------------------------------------------

@@ -150,15 +150,9 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   buildPersistedProviderState(
     conversation: Conversation,
   ): Record<string, unknown> | undefined {
-    const providerState = {
-      ...getCodexState(conversation.providerState),
-    };
-    const sanitizedEntries = Object.entries(providerState).filter(([, value]) => value !== undefined);
-    if (sanitizedEntries.length === 0) {
-      return undefined;
-    }
-
-    return Object.fromEntries(sanitizedEntries);
+    const entries = Object.entries(getCodexState(conversation.providerState))
+      .filter(([, value]) => value !== undefined);
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
   }
 
   // ---------------------------------------------------------------------------

@@ -1,15 +1,3 @@
-/**
- * QueryOptionsBuilder - SDK Options Construction
- *
- * Extracts options-building logic from ClaudianService for:
- * - Persistent query options (warm path)
- * - Cold-start query options
- * - Configuration change detection
- *
- * Design: Static builder methods that take a context object containing
- * all required dependencies (settings, managers, paths).
- */
-
 import type {
   CanUseTool,
   Options,
@@ -40,80 +28,42 @@ import {
   UNSUPPORTED_SDK_TOOLS,
 } from './types';
 
-/**
- * Context required for building SDK options.
- * Passed to builder methods to avoid direct dependencies on ClaudianService.
- */
 export interface QueryOptionsContext {
-  /** Absolute path to the vault root. */
   vaultPath: string;
-  /** Path to the Claude CLI executable. */
   cliPath: string;
-  /** Current plugin settings. */
   settings: ClaudianSettings;
-  /** Parsed environment variables (from settings). */
   customEnv: Record<string, string>;
-  /** Enhanced PATH with CLI directories. */
   enhancedPath: string;
-  /** MCP server manager for server configuration. */
   mcpManager: McpServerManager;
-  /** Plugin manager for Claude Code plugins. */
   pluginManager: AppPluginManager;
 }
 
-/**
- * Additional context for persistent query options.
- */
 export interface PersistentQueryContext extends QueryOptionsContext {
-  /** AbortController for the query. */
   abortController?: AbortController;
-  /** Session resume state (sessionId required; sessionAt and fork only meaningful with a session). */
   resume?: {
     sessionId: string;
-    /** Assistant checkpoint ID for SDK resumeSessionAt after rewind. */
     sessionAt?: string;
-    /** Fork the session (non-destructive branch). */
     fork?: boolean;
   };
-  /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
-  /** Pre-built hooks array. */
   hooks: Options['hooks'];
-  /** External context paths for additionalDirectories SDK option. */
   externalContextPaths?: string[];
 }
 
-/**
- * Additional context for cold-start query options.
- */
 export interface ColdStartQueryContext extends QueryOptionsContext {
-  /** AbortController for the query. */
   abortController?: AbortController;
-  /** Session ID for resuming a conversation. */
   sessionId?: string;
-  /** Optional model override for cold-start queries. */
   modelOverride?: string;
-  /** Approval callback for normal mode. */
   canUseTool?: CanUseTool;
-  /** Pre-built hooks array. */
   hooks: Options['hooks'];
-  /** MCP server @-mentions from the query. */
   mcpMentions?: Set<string>;
-  /** MCP servers enabled via UI selector. */
   enabledMcpServers?: Set<string>;
-  /** Allowed tools restriction (undefined = no restriction). */
   allowedTools?: string[];
-  /** Whether the query has editor context. */
   hasEditorContext: boolean;
-  /** External context paths for additionalDirectories SDK option. */
   externalContextPaths?: string[];
 }
 
-/** Static builder for SDK Options and configuration objects. */
 export class QueryOptionsBuilder {
-  /**
-   * Some changes (model, thinking tokens) can be updated dynamically; others require restart.
-   */
   static needsRestart(
     currentConfig: PersistentQueryConfig | null,
     newConfig: PersistentQueryConfig
@@ -143,7 +93,6 @@ export class QueryOptionsBuilder {
     return false;
   }
 
-  /** Builds configuration snapshot for restart detection. */
   static buildPersistentQueryConfig(
     ctx: QueryOptionsContext,
     externalContextPaths?: string[]
@@ -164,11 +113,7 @@ export class QueryOptionsBuilder {
       claudeSettings.safeMode,
     );
 
-    // Compute disallowedToolsKey from all disabled MCP tools (pre-registered upfront)
-    const allDisallowedTools = ctx.mcpManager.getAllDisallowedMcpTools();
-    const disallowedToolsKey = allDisallowedTools.join('|');
-
-    // Compute pluginsKey from active plugins
+    const disallowedToolsKey = ctx.mcpManager.getAllDisallowedMcpTools().join('|');
     const pluginsKey = ctx.pluginManager.getPluginsKey();
 
     return {
@@ -188,7 +133,6 @@ export class QueryOptionsBuilder {
     };
   }
 
-  /** Builds SDK options for the persistent query. */
   static buildPersistentQueryOptions(ctx: PersistentQueryContext): Options {
     const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
     const permissionMode = ctx.settings.permissionMode;
@@ -250,7 +194,6 @@ export class QueryOptionsBuilder {
     return options;
   }
 
-  /** Builds SDK options for a cold-start query. */
   static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
     const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
     const permissionMode = ctx.settings.permissionMode;
@@ -320,14 +263,6 @@ export class QueryOptionsBuilder {
     return options;
   }
 
-  /**
-   * Always sets allowDangerouslySkipPermissions: true to enable dynamic
-   * switching between permission modes without requiring a process restart.
-   */
-  /**
-   * Resolve the SDK permission mode from Claudian's permission mode and safe mode setting.
-   * Shared by option construction and live session updates.
-   */
   static resolveClaudeSdkPermissionMode(
     permissionMode: PermissionMode,
     claudeSafeMode: ClaudeSafeMode = 'acceptEdits',

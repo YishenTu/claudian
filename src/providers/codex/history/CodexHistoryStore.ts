@@ -382,29 +382,25 @@ function extractMessageText(content: PersistedMessagePart[] | undefined): string
     .join('');
 }
 
+function joinTextParts(parts: Array<{ text?: string } | string>): string {
+  return parts
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      return typeof part?.text === 'string' ? part.text : '';
+    })
+    .map(part => part.trim())
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+}
+
 function extractReasoningText(payload: PersistedReasoningPayload | PersistedEventPayload): string {
   if ('summary' in payload && Array.isArray(payload.summary) && payload.summary.length > 0) {
-    return payload.summary
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        return typeof part?.text === 'string' ? part.text : '';
-      })
-      .map(part => part.trim())
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
+    return joinTextParts(payload.summary);
   }
 
   if ('content' in payload && Array.isArray(payload.content) && payload.content.length > 0) {
-    return payload.content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        return typeof part?.text === 'string' ? part.text : '';
-      })
-      .map(part => part.trim())
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
+    return joinTextParts(payload.content);
   }
 
   return typeof payload.text === 'string' ? payload.text.trim() : '';
@@ -807,6 +803,11 @@ function applyCompactedReplacementHistory(
 // event_msg processing
 // ---------------------------------------------------------------------------
 
+function extractServerTurnId(payload: PersistedEventPayload): string | undefined {
+  const turnId = (payload as Record<string, unknown>).turn_id;
+  return typeof turnId === 'string' ? turnId : undefined;
+}
+
 function processEventMsg(
   payload: PersistedEventPayload,
   timestamp: number,
@@ -816,9 +817,7 @@ function processEventMsg(
 
   switch (payload.type) {
     case 'task_started': {
-      const serverTurnId = typeof (payload as Record<string, unknown>).turn_id === 'string'
-        ? (payload as Record<string, unknown>).turn_id as string
-        : undefined;
+      const serverTurnId = extractServerTurnId(payload);
       const id = nextTurnId(ctx);
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);
       turn.startedAt = timestamp;
@@ -834,9 +833,7 @@ function processEventMsg(
           turn.completedAt = timestamp;
           turn.completed = true;
           closeAssistantBubble(turn);
-          const serverTurnId = typeof (payload as Record<string, unknown>).turn_id === 'string'
-            ? (payload as Record<string, unknown>).turn_id as string
-            : undefined;
+          const serverTurnId = extractServerTurnId(payload);
           if (serverTurnId && !turn.serverTurnId) turn.serverTurnId = serverTurnId;
         }
       }

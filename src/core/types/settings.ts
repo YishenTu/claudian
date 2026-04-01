@@ -1,5 +1,3 @@
-/** Generic settings and command definitions shared across the app. */
-
 const UNIX_BLOCKED_COMMANDS = [
   'rm -rf',
   'chmod 777',

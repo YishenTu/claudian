@@ -1178,7 +1178,7 @@ describe('Tab - Destruction', () => {
 
 describe('Tab - Service Callbacks', () => {
   describe('setupServiceCallbacks', () => {
-    it('renders tool-only auto-triggered turns with a placeholder assistant message', () => {
+    function setupAutoTurnTest() {
       const plugin = createMockPlugin();
       const tab = createTab(createMockOptions({ plugin }));
       const addMessageSpy = jest.spyOn(tab.state, 'addMessage');
@@ -1191,10 +1191,7 @@ describe('Tab - Service Callbacks', () => {
         configurable: true,
       });
 
-      tab.renderer = {
-        renderStoredMessage,
-        scrollToBottom,
-      } as any;
+      tab.renderer = { renderStoredMessage, scrollToBottom } as any;
       tab.controllers.inputController = {
         handleApprovalRequest: jest.fn(),
         dismissPendingApproval: jest.fn(),
@@ -1219,6 +1216,12 @@ describe('Tab - Service Callbacks', () => {
       setupServiceCallbacks(tab, plugin);
 
       const autoTurnCallback = service.setAutoTurnCallback.mock.calls[0][0];
+      return { tab, addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback };
+    }
+
+    it('renders tool-only auto-triggered turns with a placeholder assistant message', () => {
+      const { addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
+
       autoTurnCallback([
         { type: 'tool_result', tool_use_id: 'task-1', content: 'done' },
       ]);
@@ -1234,46 +1237,8 @@ describe('Tab - Service Callbacks', () => {
     });
 
     it('skips auto-triggered rendering after the tab DOM is detached', () => {
-      const plugin = createMockPlugin();
-      const tab = createTab(createMockOptions({ plugin }));
-      const addMessageSpy = jest.spyOn(tab.state, 'addMessage');
-      const renderStoredMessage = jest.fn();
-      const scrollToBottom = jest.fn();
+      const { tab, addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
 
-      Object.defineProperty(tab.dom.contentEl, 'isConnected', {
-        value: true,
-        writable: true,
-        configurable: true,
-      });
-
-      tab.renderer = {
-        renderStoredMessage,
-        scrollToBottom,
-      } as any;
-      tab.controllers.inputController = {
-        handleApprovalRequest: jest.fn(),
-        dismissPendingApproval: jest.fn(),
-        handleAskUserQuestion: jest.fn(),
-        handleExitPlanMode: jest.fn(),
-      } as any;
-      tab.services.subagentManager = {
-        hasRunningSubagents: jest.fn().mockReturnValue(false),
-      } as any;
-
-      const service = {
-        setApprovalCallback: jest.fn(),
-        setApprovalDismisser: jest.fn(),
-        setAskUserQuestionCallback: jest.fn(),
-        setExitPlanModeCallback: jest.fn(),
-        setSubagentHookProvider: jest.fn(),
-        setAutoTurnCallback: jest.fn(),
-        setPermissionModeSyncCallback: jest.fn(),
-      };
-      tab.service = service as any;
-
-      setupServiceCallbacks(tab, plugin);
-
-      const autoTurnCallback = service.setAutoTurnCallback.mock.calls[0][0];
       (tab.dom.contentEl as any).isConnected = false;
       autoTurnCallback([
         { type: 'text', content: 'Background result' },
@@ -1665,6 +1630,29 @@ describe('Tab - Event Handler Behavior', () => {
     mockSelectionController = createMockSelectionController();
   });
 
+  // Wire up a tab with all UI managers and controllers needed for keydown tests,
+  // then return the tab + a helper to fire keydown events.
+  function setupKeydownTab(overrides?: {
+    bangBashManager?: typeof mockBangBashModeManager;
+  }) {
+    const options = createMockOptions();
+    const tab = createTab(options);
+
+    tab.ui.bangBashModeManager = (overrides?.bangBashManager ?? mockBangBashModeManager) as any;
+    tab.ui.instructionModeManager = mockInstructionModeManager as any;
+    tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
+    tab.ui.fileContextManager = mockFileContextManager as any;
+    tab.controllers.inputController = mockInputController as any;
+    tab.controllers.selectionController = mockSelectionController as any;
+
+    wireTabInputEvents(tab, options.plugin);
+
+    const listeners = (tab.dom.inputEl as any).getEventListeners();
+    const fireKeydown = (event: Record<string, any>) => listeners.get('keydown')[0](event);
+
+    return { tab, options, listeners, fireKeydown };
+  }
+
   describe('wireTabInputEvents - keydown handlers', () => {
     it('should not pass keydown events to other handlers when bang-bash mode is active', () => {
       const options = createMockOptions();
@@ -1740,98 +1728,42 @@ describe('Tab - Event Handler Behavior', () => {
     });
 
     it('should handle instruction mode trigger key', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      // Set up UI managers
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
-      // Make instruction mode handle the trigger
       mockInstructionModeManager.handleTriggerKey.mockReturnValueOnce(true);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      // Simulate keydown
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
-      const event = { key: '#', preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown({ key: '#', preventDefault: jest.fn() });
 
       expect(mockInstructionModeManager.handleTriggerKey).toHaveBeenCalled();
     });
 
     it('should handle instruction mode keydown', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
-      // Make instruction mode handle keydown
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValueOnce(true);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
-      const event = { key: 'Tab', preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown({ key: 'Tab', preventDefault: jest.fn() });
 
       expect(mockInstructionModeManager.handleKeydown).toHaveBeenCalled();
     });
 
     it('should handle slash command dropdown keydown', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValueOnce(true);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
-      const event = { key: 'ArrowDown', preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown({ key: 'ArrowDown', preventDefault: jest.fn() });
 
       expect(mockSlashCommandDropdown.handleKeydown).toHaveBeenCalled();
     });
 
     it('should handle resume dropdown keydown', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockInputController.handleResumeKeydown.mockReturnValueOnce(true);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
-      const event = { key: 'ArrowDown', preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown({ key: 'ArrowDown', preventDefault: jest.fn() });
 
       expect(mockInputController.handleResumeKeydown).toHaveBeenCalled();
       expect(mockSlashCommandDropdown.handleKeydown).not.toHaveBeenCalled();
@@ -1839,157 +1771,84 @@ describe('Tab - Event Handler Behavior', () => {
     });
 
     it('should handle file context mention keydown', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValueOnce(true);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
-      const event = { key: 'ArrowUp', preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown({ key: 'ArrowUp', preventDefault: jest.fn() });
 
       expect(mockFileContextManager.handleMentionKeydown).toHaveBeenCalled();
     });
 
     it('should cancel streaming on Escape when streaming', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-      tab.state.isStreaming = true;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { tab, fireKeydown } = setupKeydownTab();
+      tab.state.isStreaming = true;
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
       const event = { key: 'Escape', isComposing: false, preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
       expect(mockInputController.cancelStreaming).toHaveBeenCalled();
     });
 
     it('should not cancel streaming on Escape when isComposing (IME)', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-      tab.state.isStreaming = true;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { tab, fireKeydown } = setupKeydownTab();
+      tab.state.isStreaming = true;
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
       const event = { key: 'Escape', isComposing: true, preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown(event);
 
       expect(event.preventDefault).not.toHaveBeenCalled();
       expect(mockInputController.cancelStreaming).not.toHaveBeenCalled();
     });
 
     it('should send message on Enter (without Shift)', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
       const event = { key: 'Enter', shiftKey: false, isComposing: false, preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown(event);
 
       expect(event.preventDefault).toHaveBeenCalled();
       expect(mockInputController.sendMessage).toHaveBeenCalled();
     });
 
     it('should not send message on Shift+Enter (newline)', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
       const event = { key: 'Enter', shiftKey: true, isComposing: false, preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown(event);
 
       expect(event.preventDefault).not.toHaveBeenCalled();
       expect(mockInputController.sendMessage).not.toHaveBeenCalled();
     });
 
     it('should not send message on Enter when isComposing (IME)', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.ui.instructionModeManager = mockInstructionModeManager as any;
-      tab.ui.slashCommandDropdown = mockSlashCommandDropdown as any;
-      tab.ui.fileContextManager = mockFileContextManager as any;
-      tab.controllers.inputController = mockInputController as any;
-      tab.controllers.selectionController = mockSelectionController as any;
-
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
       mockSlashCommandDropdown.handleKeydown.mockReturnValue(false);
       mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { fireKeydown } = setupKeydownTab();
 
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.inputEl as any).getEventListeners();
-      const keydownHandler = listeners.get('keydown')[0];
       const event = { key: 'Enter', shiftKey: false, isComposing: true, preventDefault: jest.fn() };
-      keydownHandler(event);
+      fireKeydown(event);
 
       expect(event.preventDefault).not.toHaveBeenCalled();
       expect(mockInputController.sendMessage).not.toHaveBeenCalled();

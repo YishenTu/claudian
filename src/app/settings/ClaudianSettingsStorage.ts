@@ -153,21 +153,13 @@ export class ClaudianSettingsStorage {
       hiddenProviderCommands,
       providerConfigs,
     };
-    const storedWithoutLegacy = stripLegacyFields({
-      ...legacyProviderSettings,
-    });
-
-    const blockedCommands = normalizeBlockedCommands(stored.blockedCommands);
-    const legacyNormalized = {
-      ...storedWithoutLegacy,
-      blockedCommands,
-      hiddenProviderCommands,
-      providerConfigs,
-    };
 
     const merged = {
       ...this.getDefaults(),
-      ...legacyNormalized,
+      ...stripLegacyFields(legacyProviderSettings),
+      blockedCommands: normalizeBlockedCommands(stored.blockedCommands),
+      hiddenProviderCommands,
+      providerConfigs,
     } as StoredClaudianSettings;
 
     updateClaudeProviderSettings(

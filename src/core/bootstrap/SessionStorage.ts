@@ -32,8 +32,7 @@ export class SessionStorage {
       }
 
       const content = await this.adapter.read(filePath);
-      const raw = JSON.parse(content) as SessionMetadata;
-      return raw;
+      return JSON.parse(content) as SessionMetadata;
     } catch {
       return null;
     }

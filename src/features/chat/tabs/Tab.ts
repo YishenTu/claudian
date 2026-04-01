@@ -313,21 +313,13 @@ export function createTab(options: TabCreateOptions): TabData {
 
   const id = tabId ?? generateTabId();
 
-  // Create per-tab content container (hidden by default)
   const contentEl = containerEl.createDiv({ cls: 'claudian-tab-content' });
   contentEl.style.display = 'none';
 
-  // Create ChatState with callbacks
   const state = new ChatState({
-    onStreamingStateChanged: (isStreaming) => {
-      onStreamingChanged?.(isStreaming);
-    },
-    onAttentionChanged: (needsAttention) => {
-      onAttentionChanged?.(needsAttention);
-    },
-    onConversationChanged: (conversationId) => {
-      onConversationIdChanged?.(conversationId);
-    },
+    onStreamingStateChanged: onStreamingChanged,
+    onAttentionChanged: onAttentionChanged,
+    onConversationChanged: onConversationIdChanged,
   });
 
   // Create subagent manager with no-op callback.
@@ -336,7 +328,6 @@ export function createTab(options: TabCreateOptions): TabData {
   // because StreamController doesn't exist until controllers are initialized.
   const subagentManager = new SubagentManager(() => {});
 
-  // Create DOM structure
   const dom = buildTabDOM(contentEl);
 
   const isBound = !!conversation?.id;
@@ -346,7 +337,6 @@ export function createTab(options: TabCreateOptions): TabData {
       ? getProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)
       : DEFAULT_CHAT_PROVIDER_ID);
 
-  // Create initial TabData (service and controllers are lazy-initialized)
   const tab: TabData = {
     id,
     lifecycleState: isBound ? 'bound_cold' : 'blank',
@@ -429,30 +419,14 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
  * Builds the DOM structure for a tab.
  */
 function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
-  // Messages wrapper (for scroll-to-bottom button positioning)
   const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
-
-  // Messages area (inside wrapper)
   const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
-
-  // Welcome message placeholder
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
-
-  // Status panel container (fixed between messages and input)
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
-
-  // Input container
   const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
-
-  // Nav row (for tab badges and header icons, populated by ClaudianView)
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
-
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
-
-  // Context row inside input wrapper (file chips + selection indicator)
   const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
-
-  // Input textarea
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
     attr: {
@@ -496,19 +470,25 @@ export async function initializeTabService(
 export async function initializeTabService(
   tab: TabData,
   plugin: ClaudianPlugin,
-  legacyArg: unknown,
+  _legacyArg: unknown,
   conversationOverride?: Conversation | null,
+): Promise<void>;
+export async function initializeTabService(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  argOrOverride?: unknown,
+  maybeOverride?: Conversation | null,
 ): Promise<void> {
   if (tab.lifecycleState === 'closing') {
     return;
   }
 
-  const resolvedConversationOverride =
-    legacyArg === null || isConversationLike(legacyArg)
-      ? legacyArg
-      : conversationOverride;
+  // Support legacy 4-arg call sites (3rd arg was previously an MCP manager)
+  const conversationOverride = isConversationLike(argOrOverride)
+    ? argOrOverride
+    : (argOrOverride === null ? null : maybeOverride);
 
-  const conversation = resolvedConversationOverride ?? (
+  const conversation = conversationOverride ?? (
     tab.conversationId
       ? await plugin.getConversationById(tab.conversationId)
       : null
@@ -546,13 +526,14 @@ export async function initializeTabService(
       runtime.syncConversationState(conversation, externalContextPaths);
     }
 
+    // Re-check after async operations — tab may have been closed during init
     if ((tab as TabData).lifecycleState === 'closing') {
       unsubscribeReadyState?.();
       service?.cleanup();
       return;
     }
 
-    // Only set tab state after successful initialization
+
     tab.providerId = providerId;
     tab.service = service;
     tab.serviceInitialized = true;
@@ -581,9 +562,6 @@ function isConversationLike(value: unknown): value is Conversation {
     && Array.isArray((value as Conversation).messages);
 }
 
-/**
- * Initializes file and image context managers for a tab.
- */
 function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
   const { dom } = tab;
   const app = plugin.app;
@@ -868,15 +846,12 @@ export function initializeTabUI(
   dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
 
-  // Browser selection indicator
   dom.browserIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-browser-selection-indicator' });
   dom.browserIndicatorEl.style.display = 'none';
 
-  // Canvas selection indicator
   dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator' });
   dom.canvasIndicatorEl.style.display = 'none';
 
-  // Initialize slash commands with provider catalog
   const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
     tab,
@@ -884,7 +859,6 @@ export function initializeTabUI(
     catalogInfo,
   );
 
-  // Initialize navigation sidebar
   if (dom.messagesEl.parentElement) {
     tab.ui.navigationSidebar = new NavigationSidebar(
       dom.messagesEl.parentElement,
@@ -892,12 +866,9 @@ export function initializeTabUI(
     );
   }
 
-  // Initialize instruction mode and todo panel
   initializeInstructionAndTodo(tab, plugin);
-
-  // Initialize input toolbar
   initializeInputToolbar(tab, plugin, options.getProviderCatalogConfig, options.onProviderChanged);
-  // Update ChatState callbacks for UI updates
+
   state.callbacks = {
     ...state.callbacks,
     onUsageChanged: (usage) => {
@@ -1085,11 +1056,12 @@ export function initializeTabControllers(
   openConversation?: (conversationId: string) => Promise<void>,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
 ): void;
+/** @deprecated Legacy 7-arg overload — 4th arg was previously an MCP manager. */
 export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
   component: Component,
-  legacyArg: unknown,
+  _legacyArg: unknown,
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
   openConversation?: (conversationId: string) => Promise<void>,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
@@ -1098,21 +1070,19 @@ export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
   component: Component,
-  legacyArgOrForkRequest?: unknown,
+  arg4?: unknown,
   arg5?: unknown,
   arg6?: unknown,
   arg7?: unknown,
 ): void {
-  const hasLegacyArg = legacyArgOrForkRequest !== undefined && typeof legacyArgOrForkRequest !== 'function';
-  const forkRequestCallback = (
-    hasLegacyArg ? arg5 : legacyArgOrForkRequest
-  ) as ((forkContext: ForkContext) => Promise<void>) | undefined;
-  const openConversation = (
-    hasLegacyArg ? arg6 : arg5
-  ) as ((conversationId: string) => Promise<void>) | undefined;
-  const getProviderCatalogConfig = (
-    hasLegacyArg ? arg7 : arg6
-  ) as (() => ProviderCatalogInfo) | undefined;
+  // Support legacy 7-arg call sites (4th arg was previously an MCP manager)
+  const isLegacy = arg4 !== undefined && typeof arg4 !== 'function';
+  const forkRequestCallback = (isLegacy ? arg5 : arg4) as
+    ((forkContext: ForkContext) => Promise<void>) | undefined;
+  const openConversation = (isLegacy ? arg6 : arg5) as
+    ((conversationId: string) => Promise<void>) | undefined;
+  const getProviderCatalogConfig = (isLegacy ? arg7 : arg6) as
+    (() => ProviderCatalogInfo) | undefined;
 
   const { dom, state, services, ui } = tab;
 
@@ -1138,7 +1108,6 @@ export function initializeTabControllers(
     dom.contentEl,
   );
 
-  // Browser selection controller
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
     dom.browserIndicatorEl!,
@@ -1147,7 +1116,6 @@ export function initializeTabControllers(
     () => autoResizeTextarea(dom.inputEl)
   );
 
-  // Canvas selection controller
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
     plugin.app,
     dom.canvasIndicatorEl!,
@@ -1156,7 +1124,6 @@ export function initializeTabControllers(
     () => autoResizeTextarea(dom.inputEl)
   );
 
-  // Stream controller
   tab.controllers.streamController = new StreamController({
     plugin,
     state,
@@ -1173,7 +1140,6 @@ export function initializeTabControllers(
   // this callback handles message persistence.
   services.subagentManager.setCallback(
     (subagent) => {
-      // Update messages (DOM already updated by manager)
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
 
       // During active stream, regular end-of-turn save captures latest state.
@@ -1185,7 +1151,6 @@ export function initializeTabControllers(
     }
   );
 
-  // Conversation controller
   tab.controllers.conversationController = new ConversationController(
     {
       plugin,
@@ -1256,8 +1221,6 @@ export function initializeTabControllers(
     }
   );
 
-  // Input controller - needs the tab's service
-
   tab.controllers.inputController = new InputController({
     plugin,
     state,
@@ -1283,12 +1246,9 @@ export function initializeTabControllers(
     resetInputHeight: () => {
       // Per-tab input height is managed by CSS, no dynamic adjustment needed
     },
-    // Override to use tab's service instead of plugin.agentService
     getAgentService: () => tab.service,
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(tab, plugin),
-    // Lazy initialization: ensure service is ready before first query
-    // initializeTabService() handles session ID resolution from tab.conversationId
     ensureServiceInitialized: async () => {
       if (tab.serviceInitialized && tab.lifecycleState === 'bound_active') {
         return true;
@@ -1326,7 +1286,6 @@ export function initializeTabControllers(
     },
   });
 
-  // Navigation controller
   tab.controllers.navigationController = new NavigationController({
     getMessagesEl: () => dom.messagesEl,
     getInputEl: () => dom.inputEl,
@@ -1364,7 +1323,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     }
   };
 
-  // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
     if (ui.bangBashModeManager?.isActive()) {
       ui.bangBashModeManager.handleKeydown(e);
@@ -1372,13 +1330,10 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    // Check for # trigger first (empty input + # keystroke)
-    // Instruction refinement is not supported for all providers
     if (getTabCapabilities(tab, plugin).supportsInstructionMode && ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
     }
 
-    // Check for ! trigger (empty input + ! keystroke)
     if (ui.bangBashModeManager?.handleTriggerKey(e)) {
       syncBangBashSuppression();
       return;
@@ -1407,7 +1362,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    // Enter: Send message
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       void controllers.inputController?.sendMessage();
@@ -1416,7 +1370,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   dom.inputEl.addEventListener('keydown', keydownHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
-  // Input change handler (includes auto-resize)
   const inputHandler = () => {
     if (!ui.bangBashModeManager?.isActive()) {
       ui.fileContextManager?.handleInputChange();
@@ -1424,7 +1377,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     ui.instructionModeManager?.handleInputChange();
     ui.bangBashModeManager?.handleInputChange();
     syncBangBashSuppression();
-    // Auto-resize textarea based on content
     autoResizeTextarea(dom.inputEl);
   };
   dom.inputEl.addEventListener('input', inputHandler);
@@ -1513,28 +1465,22 @@ export function deactivateTab(tab: TabData): void {
  * Made async to ensure proper cleanup ordering.
  */
 export async function destroyTab(tab: TabData): Promise<void> {
-  // Transition to closing state
   tab.lifecycleState = 'closing';
 
-  // Stop polling
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
   tab.controllers.browserSelectionController?.stop();
   tab.controllers.browserSelectionController?.clear();
   tab.controllers.canvasSelectionController?.stop();
   tab.controllers.canvasSelectionController?.clear();
-
-  // Cleanup navigation controller
   tab.controllers.navigationController?.dispose();
 
-  // Cleanup thinking state
   cleanupThinkingBlock(tab.state.currentThinkingState);
   tab.state.currentThinkingState = null;
 
   // Dismiss pending inline prompts before DOM teardown
   tab.controllers.inputController?.dismissPendingApproval();
 
-  // Cleanup UI components
   tab.controllers.inputController?.destroyResumeDropdown();
   tab.ui.fileContextManager?.destroy();
   tab.ui.slashCommandDropdown?.destroy();
@@ -1553,21 +1499,17 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.navigationSidebar?.destroy();
   tab.ui.navigationSidebar = null;
 
-  // Cleanup subagents
   tab.services.subagentManager.orphanAllActive();
   tab.services.subagentManager.clear();
 
-  // Remove event listeners to prevent memory leaks
   for (const cleanup of tab.dom.eventCleanups) {
     cleanup();
   }
   tab.dom.eventCleanups.length = 0;
 
-  // Cleanup the tab runtime before removing the DOM tree.
+  // Clean up runtime before removing DOM
   tab.service?.cleanup();
   tab.service = null;
-
-  // Remove DOM element
   tab.dom.contentEl.remove();
 }
 

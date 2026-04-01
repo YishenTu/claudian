@@ -39,14 +39,6 @@ export interface ColdStartQueryResult {
   sessionId: string | null;
 }
 
-/**
- * Runs a one-shot cold-start query against the Claude SDK.
- *
- * Handles vault/CLI resolution, env setup, Options construction,
- * stream iteration, session capture, and abort handling.
- *
- * Throws on infrastructure errors or SDK failures.
- */
 export async function runColdStartQuery(
   config: ColdStartQueryConfig,
   prompt: string,
@@ -115,7 +107,6 @@ export async function runColdStartQuery(
     options.resume = config.resumeSessionId;
   }
 
-  // Apply thinking configuration
   if (!config.thinking?.disabled) {
     if (isAdaptiveThinkingModel(selectedModel)) {
       options.thinking = { type: 'adaptive' };

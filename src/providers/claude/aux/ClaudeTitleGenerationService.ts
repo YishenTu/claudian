@@ -7,7 +7,7 @@ import type ClaudianPlugin from '../../../main';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 
-export type { TitleGenerationCallback, TitleGenerationResult };
+export type { TitleGenerationResult };
 
 export class TitleGenerationService {
   private plugin: ClaudianPlugin;

@@ -2,10 +2,6 @@ interface ToolResultContentOptions {
   fallbackIndent?: number;
 }
 
-/**
- * Agent/Subagent tool results can arrive as text blocks instead of a plain string.
- * Keep streaming and history parsing aligned so live output matches reloaded output.
- */
 export function extractToolResultContent(
   content: unknown,
   options?: ToolResultContentOptions

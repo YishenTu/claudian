@@ -6,10 +6,6 @@ export interface ApplyPatchFileDiff extends ToolDiffData {
   movedTo?: string;
 }
 
-/**
- * Convert SDK structuredPatch hunks to DiffLine[].
- * Each line in the hunk is prefixed with '+' (insert), '-' (delete), or ' ' (context).
- */
 export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
   const result: DiffLine[] = [];
 
@@ -123,12 +119,6 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
   return fileDiffs;
 }
 
-/**
- * Extracts ToolDiffData from an SDK toolUseResult object.
- *
- * Primary: Use structuredPatch hunks from the SDK result.
- * Fallback: Compute diff from tool input (Edit: old/new string, Write: content as inserts).
- */
 export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
   const filePath = (toolCall.input.file_path as string) || 'file';
 
@@ -146,11 +136,6 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
   return diffFromToolInput(toolCall, filePath);
 }
 
-/**
- * Computes diff data from tool input when structuredPatch is unavailable or empty.
- * Edit: old_string lines as deletes, new_string lines as inserts.
- * Write: all content lines as inserts (file create/full rewrite).
- */
 export function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffData | undefined {
   if (toolCall.name === 'Edit') {
     const oldStr = toolCall.input.old_string;
@@ -214,11 +199,12 @@ function buildApplyPatchFileDiff(current: {
     diffLines.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
   }
 
-  return {
+  const result: ApplyPatchFileDiff = {
     filePath: current.filePath,
     operation: current.operation,
-    ...(current.movedTo ? { movedTo: current.movedTo } : {}),
     diffLines,
     stats: countLineChanges(diffLines),
   };
+  if (current.movedTo) result.movedTo = current.movedTo;
+  return result;
 }

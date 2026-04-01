@@ -1,14 +1,3 @@
-/**
- * StorageService - Main coordinator for distributed storage system.
- *
- * Manages:
- * - CC settings in .claude/settings.json (CC-compatible, shareable)
- * - Claudian settings in .claude/claudian-settings.json (Claudian-specific)
- * - Slash commands in .claude/commands/*.md
- * - Chat sessions in .claude/sessions/*.jsonl
- * - MCP configs in .claude/mcp.json
- */
-
 import type { App, Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
@@ -29,17 +18,10 @@ import { McpStorage } from './McpStorage';
 import { SKILLS_PATH, SkillStorage } from './SkillStorage';
 import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 
-/** Base path for all Claudian storage. */
 export const CLAUDE_PATH = '.claude';
 
-/**
- * Combined settings for the application.
- * Merges CC settings (permissions) with Claudian settings.
- */
 export interface CombinedSettings {
-  /** CC-compatible settings (permissions, etc.) */
   cc: CCSettings;
-  /** Claudian-specific settings */
   claudian: StoredClaudianSettings;
 }
 
@@ -112,9 +94,6 @@ export class StorageService {
     return this.ccSettings.addDenyRule(createPermissionRule(rule));
   }
 
-  /**
-   * Remove a permission rule from all lists.
-   */
   async removePermissionRule(rule: string): Promise<void> {
     return this.ccSettings.removeRule(createPermissionRule(rule));
   }
@@ -131,9 +110,6 @@ export class StorageService {
     return this.claudianSettings.load();
   }
 
-  /**
-   * Get tab manager state from data.json with runtime validation.
-   */
   async getTabManagerState(): Promise<TabManagerPersistedState | null> {
     try {
       const data = await this.plugin.loadData();
@@ -146,10 +122,6 @@ export class StorageService {
     }
   }
 
-  /**
-   * Validates and sanitizes tab manager state from storage.
-   * Returns null if the data is invalid or corrupted.
-   */
   private validateTabManagerState(data: unknown): TabManagerPersistedState | null {
     if (!data || typeof data !== 'object') {
       return null;
@@ -197,10 +169,6 @@ export class StorageService {
   }
 }
 
-/**
- * Persisted state for the tab manager.
- * Stored in data.json (machine-specific, not shared).
- */
 export interface TabManagerPersistedState {
   openTabs: Array<{ tabId: string; conversationId: string | null }>;
   activeTabId: string | null;

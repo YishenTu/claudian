@@ -42,18 +42,16 @@ export class HomeFileAdapter implements Pick<VaultFileAdapter,
   }
 
   async delete(p: string): Promise<void> {
-    const full = this.resolve(p);
-    if (await this.exists(p)) {
-      await fs.promises.unlink(full);
+    try {
+      await fs.promises.unlink(this.resolve(p));
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
   }
 
   async deleteFolder(p: string): Promise<void> {
     try {
-      const full = this.resolve(p);
-      if (await this.exists(p)) {
-        await fs.promises.rmdir(full);
-      }
+      await fs.promises.rmdir(this.resolve(p));
     } catch {
       // Non-critical
     }

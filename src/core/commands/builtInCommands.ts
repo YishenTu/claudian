@@ -71,23 +71,15 @@ for (const cmd of BUILT_IN_COMMANDS) {
   }
 }
 
-function resolveSupportContext(
-  context?: BuiltInCommandSupportContext,
+function resolveCapabilities(
+  context: BuiltInCommandSupportContext,
 ): Pick<ProviderCapabilities, BuiltInCommandCapability> | null {
-  if (!context) {
-    return null;
-  }
-
   if (typeof context !== 'string') {
     return context;
   }
 
   try {
-    const capabilities = ProviderRegistry.getCapabilities(context);
-    return {
-      supportsNativeHistory: capabilities.supportsNativeHistory,
-      supportsFork: capabilities.supportsFork,
-    };
+    return ProviderRegistry.getCapabilities(context);
   } catch {
     return null;
   }
@@ -97,15 +89,11 @@ export function isBuiltInCommandSupported(
   command: BuiltInCommand,
   context?: BuiltInCommandSupportContext,
 ): boolean {
-  if (!command.requiredCapability) {
+  if (!command.requiredCapability || !context) {
     return true;
   }
 
-  if (!context) {
-    return true;
-  }
-
-  const capabilities = resolveSupportContext(context);
+  const capabilities = resolveCapabilities(context);
   return capabilities ? capabilities[command.requiredCapability] : false;
 }
 

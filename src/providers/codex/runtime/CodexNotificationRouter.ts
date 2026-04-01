@@ -75,10 +75,8 @@ export class CodexNotificationRouter {
         this.onPlanDelta(params as PlanDeltaNotification);
         break;
       case 'item/commandExecution/outputDelta':
-        this.onCommandOutputDelta(params as { itemId: string; delta: string });
-        break;
       case 'item/fileChange/outputDelta':
-        this.onFileChangeOutputDelta(params as { itemId: string; delta: string });
+        this.onOutputDelta(params as { itemId: string; delta: string });
         break;
       case 'thread/tokenUsage/updated':
         this.onTokenUsageUpdated(params as TokenUsageUpdatedNotification);
@@ -354,13 +352,9 @@ export class CodexNotificationRouter {
     this.emit({ type: 'tool_result', id: syntheticId, content: 'Plan updated', isError: false });
   }
 
-  // -- commandExecution/outputDelta & fileChange/outputDelta ------------------
+  // -- outputDelta (commandExecution + fileChange) ----------------------------
 
-  private onCommandOutputDelta(params: { itemId: string; delta: string }): void {
-    this.emit({ type: 'tool_output', id: params.itemId, content: params.delta });
-  }
-
-  private onFileChangeOutputDelta(params: { itemId: string; delta: string }): void {
+  private onOutputDelta(params: { itemId: string; delta: string }): void {
     this.emit({ type: 'tool_output', id: params.itemId, content: params.delta });
   }
 

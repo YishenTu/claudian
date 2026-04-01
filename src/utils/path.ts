@@ -1,17 +1,7 @@
-/**
- * Claudian - Path Utilities
- *
- * Path resolution, validation, and access control for vault operations.
- */
-
 import * as fs from 'fs';
 import type { App } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
-
-// ============================================
-// Vault Path
-// ============================================
 
 export function getVaultPath(app: App): string | null {
   const adapter = app.vault.adapter;
@@ -20,10 +10,6 @@ export function getVaultPath(app: App): string | null {
   }
   return null;
 }
-
-// ============================================
-// Home Path Expansion
-// ============================================
 
 function getEnvValue(key: string): string | undefined {
   const hasKey = (name: string) => Object.prototype.hasOwnProperty.call(process.env, name);
@@ -86,10 +72,6 @@ function expandEnvironmentVariables(value: string): string {
   return expanded;
 }
 
-/**
- * Expands home directory notation to absolute path.
- * Handles both ~/path and ~\path formats.
- */
 export function expandHomePath(p: string): string {
   const expanded = expandEnvironmentVariables(p);
   if (expanded === '~') {
@@ -103,10 +85,6 @@ export function expandHomePath(p: string): string {
   }
   return expanded;
 }
-
-// ============================================
-// Claude CLI Detection
-// ============================================
 
 function stripSurroundingQuotes(value: string): string {
   if (
@@ -137,10 +115,6 @@ export function parsePathEntries(pathValue?: string): string[] {
 }
 
 
-/**
- * Resolves an nvm alias to a version string by following the alias chain.
- * e.g., "default" → "lts/*" → "lts/jod" → "v22.18.0" → "22"
- */
 const NVM_LATEST_INSTALLED_ALIASES = new Set(['node', 'stable']);
 
 function isNvmBuiltInLatestAlias(alias: string): boolean {
@@ -162,7 +136,6 @@ function findMatchingNvmVersion(entries: string[], resolvedAlias: string): strin
 function resolveNvmAlias(nvmDir: string, alias: string, depth = 0): string | null {
   if (depth > 5) return null;
 
-  // If it looks like a version already (e.g., "v22.18.0" or "22"), return it
   if (/^\d/.test(alias) || alias.startsWith('v')) return alias;
   if (isNvmBuiltInLatestAlias(alias)) return alias;
 
@@ -176,11 +149,8 @@ function resolveNvmAlias(nvmDir: string, alias: string, depth = 0): string | nul
   }
 }
 
-/**
- * Resolves the bin directory for nvm's default Node version from the filesystem.
- * GUI apps don't have NVM_BIN set, so we read ~/.nvm/alias/default and match
- * against installed versions in ~/.nvm/versions/node/.
- */
+// GUI apps don't have NVM_BIN set, so we resolve nvm's default alias
+// from the filesystem and match against installed versions.
 export function resolveNvmDefaultBin(home: string): string | null {
   const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
 
@@ -203,22 +173,14 @@ export function resolveNvmDefaultBin(home: string): string | null {
       if (fs.existsSync(binDir)) return binDir;
     }
   } catch {
-    // Expected when nvm is not installed
+    // nvm not installed
   }
 
   return null;
 }
 
-// ============================================
-// Path Resolution
-// ============================================
-
-/**
- * Best-effort realpath that stays symlink-aware even when the target does not exist.
- *
- * If the full path doesn't exist, resolve the nearest existing ancestor via realpath
- * and then re-append the remaining path segments.
- */
+// Best-effort realpath: if the full path doesn't exist, resolve the nearest
+// existing ancestor and re-append the remaining segments.
 function resolveRealPath(p: string): string {
   const realpathFn = (fs.realpathSync.native ?? fs.realpathSync) as (path: fs.PathLike) => string;
 
@@ -239,7 +201,7 @@ function resolveRealPath(p: string): string {
             : resolvedExisting;
         }
       } catch {
-        // Ignore and keep walking up the directory tree.
+        // Keep walking up
       }
 
       const parent = path.dirname(current);
@@ -253,39 +215,25 @@ function resolveRealPath(p: string): string {
   }
 }
 
-/**
- * Translates MSYS/Git Bash paths to Windows paths.
- * E.g., /c/Users/... → C:\Users\...
- *
- * This must be called BEFORE path.resolve() or path.isAbsolute() checks,
- * as those functions don't recognize MSYS-style drive paths.
- */
+// Translates MSYS/Git Bash paths (/c/Users/...) to Windows paths (C:\Users\...).
+// Must be called before path.resolve() or path.isAbsolute().
 export function translateMsysPath(value: string): string {
   if (process.platform !== 'win32') {
     return value;
   }
 
-  // Match /c/... or /C/... (single letter drive)
   const msysMatch = value.match(/^\/([a-zA-Z])(\/.*)?$/);
   if (msysMatch) {
     const driveLetter = msysMatch[1].toUpperCase();
     const restOfPath = msysMatch[2] ?? '';
-    // Convert forward slashes to backslashes for the rest of the path
     return `${driveLetter}:${restOfPath.replace(/\//g, '\\')}`;
   }
 
   return value;
 }
 
-/**
- * Normalizes a path for cross-platform use before resolution.
- * Handles MSYS path translation and home directory expansion.
- * Call this before path.resolve() or path.isAbsolute() checks.
- */
 function normalizePathBeforeResolution(p: string): string {
-  // First expand environment variables and home path
   const expanded = expandHomePath(p);
-  // Then translate MSYS paths on Windows (must happen before path.resolve)
   return translateMsysPath(expanded);
 }
 
@@ -294,7 +242,6 @@ function normalizeWindowsPathPrefix(value: string): string {
     return value;
   }
 
-  // First translate MSYS/Git Bash paths
   const normalized = translateMsysPath(value);
 
   if (normalized.startsWith('\\\\?\\UNC\\')) {
@@ -308,10 +255,6 @@ function normalizeWindowsPathPrefix(value: string): string {
   return normalized;
 }
 
-/**
- * Normalizes a path for filesystem operations (expand env/home, translate MSYS, strip Windows prefixes).
- * This is the main entry point for path normalization before file operations.
- */
 export function normalizePathForFilesystem(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
@@ -330,10 +273,6 @@ export function normalizePathForFilesystem(value: string): string {
   return normalizeWindowsPathPrefix(normalized);
 }
 
-/**
- * Normalizes a path for comparison (case-insensitive on Windows, slashes normalized, trailing slash removed).
- * This is the main entry point for path comparisons and should be used consistently across modules.
- */
 export function normalizePathForComparison(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
@@ -355,10 +294,6 @@ export function normalizePathForComparison(value: string): string {
 
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
-
-// ============================================
-// Path Access Control
-// ============================================
 
 export function isPathWithinDirectory(
   candidatePath: string,

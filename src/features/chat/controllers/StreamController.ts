@@ -1,6 +1,5 @@
 import { TFile } from 'obsidian';
 
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -30,6 +29,7 @@ import { extractDiffData } from '../../../utils/diff';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import { FLAVOR_TEXTS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import { resolveSubagentLifecycleAdapter } from '../rendering/subagentLifecycleResolution';
 import {
   createSubagentBlock,
   finalizeSubagentBlock,
@@ -87,39 +87,7 @@ export class StreamController {
   }
 
   private getSubagentLifecycleAdapter(toolName?: string): ProviderSubagentLifecycleAdapter | null {
-    const activeProviderId = this.getActiveProviderId();
-    const activeAdapter = ProviderRegistry.getSubagentLifecycleAdapter(activeProviderId);
-    const matchesTool = (adapter: ProviderSubagentLifecycleAdapter | null): boolean => {
-      if (!adapter || !toolName) {
-        return !!adapter && !toolName;
-      }
-
-      return adapter.isSpawnTool(toolName)
-        || adapter.isHiddenTool(toolName)
-        || adapter.isWaitTool(toolName)
-        || adapter.isCloseTool(toolName);
-    };
-
-    if (matchesTool(activeAdapter)) {
-      return activeAdapter;
-    }
-
-    if (!toolName) {
-      return activeAdapter;
-    }
-
-    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
-      if (providerId === activeProviderId) {
-        continue;
-      }
-
-      const adapter = ProviderRegistry.getSubagentLifecycleAdapter(providerId);
-      if (matchesTool(adapter)) {
-        return adapter;
-      }
-    }
-
-    return null;
+    return resolveSubagentLifecycleAdapter(this.getActiveProviderId(), toolName);
   }
 
   // ============================================

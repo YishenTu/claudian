@@ -1,7 +1,3 @@
-/**
- * Tool-related type definitions.
- */
-
 import type { DiffLine, DiffStats } from './diff';
 
 /** Diff data for Write/Edit tool operations (pre-computed from SDK structuredPatch). */

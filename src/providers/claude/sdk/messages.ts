@@ -2,7 +2,6 @@ import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
-/** Runtime-only extension for blocked user messages (hook denials). */
 export type BlockedUserMessage = SDKUserMessage & {
   _blocked: true;
   _blockReason: string;
