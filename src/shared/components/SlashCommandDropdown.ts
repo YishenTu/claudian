@@ -4,7 +4,6 @@ import type { ProviderCommandEntry } from '../../core/providers/commands/Provide
 import type { SlashCommand } from '../../core/types';
 import { normalizeArgumentHint } from '../../utils/slashCommand';
 
-/** Internal unified item model for dropdown rendering. */
 interface DropdownItem {
   name: string;
   description?: string;

@@ -68,23 +68,22 @@ export function extractResponseItemMessageText(raw: unknown): string {
     .join('');
 }
 
+function extractTextFromParts(parts: unknown[]): string {
+  return parts
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      return isRecord(part) && typeof part.text === 'string' ? part.text : '';
+    })
+    .join('');
+}
+
 export function extractResponseItemReasoningText(raw: Record<string, unknown>): string {
   if (Array.isArray(raw.summary) && raw.summary.length > 0) {
-    return raw.summary
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        return isRecord(part) && typeof part.text === 'string' ? part.text : '';
-      })
-      .join('');
+    return extractTextFromParts(raw.summary);
   }
 
   if (Array.isArray(raw.content) && raw.content.length > 0) {
-    return raw.content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        return isRecord(part) && typeof part.text === 'string' ? part.text : '';
-      })
-      .join('');
+    return extractTextFromParts(raw.content);
   }
 
   return typeof raw.text === 'string' ? raw.text : '';
@@ -144,6 +143,26 @@ export function createSessionTailState(
     emittedUsageByTurn: new Set(),
     callEnrichment: new Map(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Delta emission helper
+// ---------------------------------------------------------------------------
+
+function emitDelta(
+  fullText: string,
+  lastSeenMap: Map<string, string>,
+  turnId: string,
+  chunkType: 'text' | 'thinking',
+): StreamChunk[] {
+  if (!fullText) return [];
+
+  const lastSeen = lastSeenMap.get(turnId) ?? '';
+  if (fullText.length <= lastSeen.length) return [];
+
+  const delta = fullText.slice(lastSeen.length);
+  lastSeenMap.set(turnId, fullText);
+  return [{ type: chunkType, content: delta }];
 }
 
 // ---------------------------------------------------------------------------
@@ -269,27 +288,13 @@ export function mapEventMsgEvent(
         : typeof payload.message === 'string'
           ? payload.message
           : '';
-      if (!fullText) return [];
-
-      const lastText = state.lastTextByTurn.get(turnId) ?? '';
-      if (fullText.length <= lastText.length) return [];
-
-      const delta = fullText.slice(lastText.length);
-      state.lastTextByTurn.set(turnId, fullText);
-      return [{ type: 'text', content: delta }];
+      return emitDelta(fullText, state.lastTextByTurn, turnId, 'text');
     }
 
     case 'agent_reasoning': {
       const turnId = resolveTurnId(state, undefined);
       const fullText = typeof payload.text === 'string' ? payload.text : '';
-      if (!fullText) return [];
-
-      const lastThinking = state.lastThinkingByTurn.get(turnId) ?? '';
-      if (fullText.length <= lastThinking.length) return [];
-
-      const delta = fullText.slice(lastThinking.length);
-      state.lastThinkingByTurn.set(turnId, fullText);
-      return [{ type: 'thinking', content: delta }];
+      return emitDelta(fullText, state.lastThinkingByTurn, turnId, 'thinking');
     }
 
     case 'token_count': {
@@ -382,27 +387,13 @@ export function mapResponseItemEvent(
 
       const turnId = resolveTurnId(state, undefined);
       const fullText = extractResponseItemMessageText(payload.content);
-      if (!fullText) return [];
-
-      const lastText = state.lastTextByTurn.get(turnId) ?? '';
-      if (fullText.length <= lastText.length) return [];
-
-      const delta = fullText.slice(lastText.length);
-      state.lastTextByTurn.set(turnId, fullText);
-      return [{ type: 'text', content: delta }];
+      return emitDelta(fullText, state.lastTextByTurn, turnId, 'text');
     }
 
     case 'reasoning': {
       const turnId = resolveTurnId(state, undefined);
       const fullText = extractResponseItemReasoningText(payload);
-      if (!fullText) return [];
-
-      const lastThinking = state.lastThinkingByTurn.get(turnId) ?? '';
-      if (fullText.length <= lastThinking.length) return [];
-
-      const delta = fullText.slice(lastThinking.length);
-      state.lastThinkingByTurn.set(turnId, fullText);
-      return [{ type: 'thinking', content: delta }];
+      return emitDelta(fullText, state.lastThinkingByTurn, turnId, 'thinking');
     }
 
     case 'function_call':

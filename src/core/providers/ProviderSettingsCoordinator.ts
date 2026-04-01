@@ -164,10 +164,7 @@ export class ProviderSettingsCoordinator {
     }
   }
 
-  /**
-   * Reconcile settings for all registered providers.
-   * Each provider's reconciler only processes its own conversations.
-   */
+  /** Each provider's reconciler only processes its own conversations. */
   static reconcileAllProviders(
     settings: Record<string, unknown>,
     conversations: Conversation[],
@@ -204,8 +201,8 @@ export class ProviderSettingsCoordinator {
         providerConversations,
       );
 
-      if (changed) anyChanged = true;
       if (changed) {
+        anyChanged = true;
         this.persistProjectedProviderState(targetSettings, providerId);
         if (providerId !== settingsProvider) {
           mergeProviderSettings(settings, targetSettings);
@@ -217,9 +214,6 @@ export class ProviderSettingsCoordinator {
     return { changed: anyChanged, invalidatedConversations: allInvalidated };
   }
 
-  /**
-   * Normalize model variants for all registered providers.
-   */
   static normalizeAllModelVariants(settings: Record<string, unknown>): boolean {
     let anyChanged = false;
     const settingsProvider = getSettingsProviderId(settings);

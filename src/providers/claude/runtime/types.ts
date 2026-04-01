@@ -1,7 +1,3 @@
-/**
- * Types and constants for the ClaudianService module.
- */
-
 import type {
   PermissionMode as SDKPermissionMode,
   SDKMessage,
@@ -28,19 +24,16 @@ export interface ImageContentBlock {
 
 export type UserContentBlock = TextContentBlock | ImageContentBlock;
 
-/** Overflow: newest message is dropped with a warning. */
 export const MESSAGE_CHANNEL_CONFIG = {
   MAX_QUEUED_MESSAGES: 8, // Memory protection from rapid user input
   MAX_MERGED_CHARS: 12000, // ~3k tokens — batch size under context limits
 } as const;
 
-/** Pending message in the queue (text-only for merging). */
 export interface PendingTextMessage {
   type: 'text';
   content: string;
 }
 
-/** Pending message with attachments (cannot be merged). */
 export interface PendingAttachmentMessage {
   type: 'attachment';
   message: SDKUserMessage;
@@ -52,20 +45,6 @@ export interface ClosePersistentQueryOptions {
   preserveHandlers?: boolean;
 }
 
-/**
- * Handler for routing stream chunks to the appropriate query caller.
- *
- * Lifecycle:
- * 1. Created: Handler is registered via registerResponseHandler() when a query starts
- * 2. Receiving: Chunks arrive via onChunk(), sawAnyChunk and sawStreamText track state
- * 3. Terminated: Exactly one of onDone() or onError() is called when the turn ends
- *
- * Invariants:
- * - Only one handler is active at a time (MessageChannel enforces single-turn)
- * - After onDone()/onError(), the handler is unregistered and should not receive more chunks
- * - sawAnyChunk is used for crash recovery (restart if no chunks seen before error)
- * - sawStreamText prevents duplicate text from non-streamed assistant messages
- */
 export interface ResponseHandler {
   readonly id: string;
   onChunk: (chunk: StreamChunk) => void;
@@ -102,7 +81,6 @@ export function createResponseHandler(options: ResponseHandlerOptions): Response
   };
 }
 
-/** Tracked configuration for detecting changes that require restart. */
 export interface PersistentQueryConfig {
   model: string | null;
   thinkingTokens: number | null;
@@ -116,7 +94,7 @@ export interface PersistentQueryConfig {
   externalContextPaths: string[];
   settingSources: string;
   claudeCliPath: string;
-  enableChrome: boolean;  // Whether --chrome flag is passed to CLI
+  enableChrome: boolean;
 }
 
 export interface SessionState {

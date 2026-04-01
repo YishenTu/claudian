@@ -1,9 +1,3 @@
-/**
- * Claudian - Claude CLI resolver
- *
- * Shared resolver for Claude CLI path detection across services.
- */
-
 import * as fs from 'fs';
 
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
@@ -18,7 +12,6 @@ export class ClaudeCliResolver {
   private lastHostnamePath = '';
   private lastLegacyPath = '';
   private lastEnvText = '';
-  // Cache hostname since it doesn't change during a session
   private readonly cachedHostname = getHostnameKey();
 
   /**
@@ -74,47 +67,28 @@ export class ClaudeCliResolver {
   }
 }
 
-/**
- * Resolves CLI path with fallback chain.
- * @param hostnamePath Hostname-specific path for this device (preferred)
- * @param legacyPath Legacy claudeCliPath (backwards compatibility)
- * @param envText Environment variables text
- */
+function resolveConfiguredPath(rawPath: string | undefined): string | null {
+  const trimmed = (rawPath ?? '').trim();
+  if (!trimmed) return null;
+  try {
+    const expanded = expandHomePath(trimmed);
+    if (fs.existsSync(expanded) && fs.statSync(expanded).isFile()) {
+      return expanded;
+    }
+  } catch {
+    // Fall through
+  }
+  return null;
+}
+
 export function resolveClaudeCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
   envText: string,
 ): string | null {
-  const trimmedHostname = (hostnamePath ?? '').trim();
-  if (trimmedHostname) {
-    try {
-      const expandedPath = expandHomePath(trimmedHostname);
-      if (fs.existsSync(expandedPath)) {
-        const stat = fs.statSync(expandedPath);
-        if (stat.isFile()) {
-          return expandedPath;
-        }
-      }
-    } catch {
-      // Fall through to next resolution method
-    }
-  }
-
-  const trimmedLegacy = (legacyPath ?? '').trim();
-  if (trimmedLegacy) {
-    try {
-      const expandedPath = expandHomePath(trimmedLegacy);
-      if (fs.existsSync(expandedPath)) {
-        const stat = fs.statSync(expandedPath);
-        if (stat.isFile()) {
-          return expandedPath;
-        }
-      }
-    } catch {
-      // Fall through to auto-detect
-    }
-  }
-
-  const customEnv = parseEnvironmentVariables(envText || '');
-  return findClaudeCLIPath(customEnv.PATH);
+  return (
+    resolveConfiguredPath(hostnamePath) ??
+    resolveConfiguredPath(legacyPath) ??
+    findClaudeCLIPath(parseEnvironmentVariables(envText || '').PATH)
+  );
 }

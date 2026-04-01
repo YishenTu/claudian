@@ -1,17 +1,3 @@
-/**
- * CCSettingsStorage - Handles CC-compatible settings.json read/write.
- *
- * Manages the .claude/settings.json file in Claude Code compatible format.
- * This file is shared with Claude Code CLI for interoperability.
- *
- * Only CC-compatible fields are stored here:
- * - permissions (allow/deny/ask)
- * - model (optional override)
- * - env (optional environment variables)
- *
- * Claudian-specific settings go in claudian-settings.json.
- */
-
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   CCPermissions,
@@ -20,10 +6,8 @@ import type {
 } from '../types/settings';
 import { DEFAULT_CC_PERMISSIONS, DEFAULT_CC_SETTINGS } from '../types/settings';
 
-/** Path to CC settings file relative to vault root. */
 export const CC_SETTINGS_PATH = '.claude/settings.json';
 
-/** Schema URL for CC settings. */
 const CC_SETTINGS_SCHEMA = 'https://json.schemastore.org/claude-code-settings.json';
 
 function normalizeRuleList(value: unknown): PermissionRule[] {
@@ -48,21 +32,9 @@ function normalizePermissions(permissions: unknown): CCPermissions {
   };
 }
 
-/**
- * Storage for CC-compatible settings.
- *
- * Note: Permission update methods (addAllowRule, addDenyRule, etc.) use a
- * read-modify-write pattern. Concurrent calls may race and lose updates.
- * In practice this is fine since user interactions are sequential.
- */
 export class CCSettingsStorage {
   constructor(private adapter: VaultFileAdapter) { }
 
-  /**
-   * Load CC settings from .claude/settings.json.
-   * Returns default settings if file doesn't exist.
-   * Throws if file exists but cannot be read or parsed.
-   */
   async load(): Promise<CCSettings> {
     if (!(await this.adapter.exists(CC_SETTINGS_PATH))) {
       return { ...DEFAULT_CC_SETTINGS };
@@ -78,12 +50,8 @@ export class CCSettingsStorage {
     };
   }
 
-  /**
-   * Save CC settings to .claude/settings.json.
-   * Preserves unknown fields for CC compatibility.
-   */
   async save(settings: CCSettings): Promise<void> {
-    // Load existing to preserve CC-specific fields we don't manage
+    // Preserve CC-specific fields we don't manage
     let existing: Record<string, unknown> = {};
     if (await this.adapter.exists(CC_SETTINGS_PATH)) {
       try {
@@ -148,9 +116,6 @@ export class CCSettingsStorage {
     }
   }
 
-  /**
-   * Remove a rule from all lists.
-   */
   async removeRule(rule: PermissionRule): Promise<void> {
     const permissions = await this.getPermissions();
     permissions.allow = permissions.allow?.filter(r => r !== rule);
@@ -159,22 +124,11 @@ export class CCSettingsStorage {
     await this.updatePermissions(permissions);
   }
 
-  /**
-   * Get enabled plugins map from CC settings.
-   * Returns empty object if not set.
-   */
   async getEnabledPlugins(): Promise<Record<string, boolean>> {
     const settings = await this.load();
     return settings.enabledPlugins ?? {};
   }
 
-  /**
-   * Set plugin enabled state.
-   * Writes to .claude/settings.json so CLI respects the state.
-   *
-   * @param pluginId - Full plugin ID (e.g., "plugin-name@source")
-   * @param enabled - true to enable, false to disable
-   */
   async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
     const settings = await this.load();
     const enabledPlugins = settings.enabledPlugins ?? {};
@@ -185,10 +139,6 @@ export class CCSettingsStorage {
     await this.save(settings);
   }
 
-  /**
-   * Get list of plugin IDs that are explicitly enabled.
-   * Used for PluginManager initialization.
-   */
   async getExplicitlyEnabledPluginIds(): Promise<string[]> {
     const enabledPlugins = await this.getEnabledPlugins();
     return Object.entries(enabledPlugins)
@@ -196,11 +146,6 @@ export class CCSettingsStorage {
       .map(([id]) => id);
   }
 
-  /**
-   * Check if a plugin is explicitly disabled.
-   * Returns true only if the plugin is set to false.
-   * Returns false if not set (inherits from global) or set to true.
-   */
   async isPluginDisabled(pluginId: string): Promise<boolean> {
     const enabledPlugins = await this.getEnabledPlugins();
     return enabledPlugins[pluginId] === false;

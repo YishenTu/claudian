@@ -7,11 +7,8 @@ import {
 } from '../../../core/prompt/inlineEdit';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
-  InlineEditCursorRequest,
-  InlineEditMode,
   InlineEditRequest,
   InlineEditResult,
-  InlineEditSelectionRequest,
 } from '../../../core/providers/types';
 import {
   isReadOnlyTool,
@@ -21,13 +18,7 @@ import type ClaudianPlugin from '../../../main';
 import { appendContextFiles } from '../../../utils/context';
 import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 
-export type {
-  InlineEditCursorRequest,
-  InlineEditMode,
-  InlineEditRequest,
-  InlineEditResult,
-  InlineEditSelectionRequest,
-};
+export type { InlineEditRequest };
 
 export function createReadOnlyHook(): HookCallbackMatcher {
   return {

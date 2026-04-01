@@ -146,17 +146,12 @@ export class ClaudianView extends ItemView {
     this.viewContainerEl.empty();
     this.viewContainerEl.addClass('claudian-container');
 
-    // Build header (logo only, tab bar and actions moved to nav row)
     const header = this.viewContainerEl.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
 
-    // Build nav row content (tab badges + header actions)
     this.navRowContent = this.buildNavRowContent();
-
-    // Tab content container (TabManager will populate this)
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
 
-    // Initialize TabManager
     this.tabManager = new TabManager(
       this.plugin,
       this.tabContentEl,
@@ -192,40 +187,28 @@ export class ClaudianView extends ItemView {
       }
     );
 
-    // Wire up view-level event handlers
     this.wireEventHandlers();
-
-    // Restore tabs from persisted state or create default tab
     await this.restoreOrCreateTabs();
-
-    // Set initial provider brand color
     this.syncProviderBrandColor();
-
-    // Apply initial layout based on tabBarPosition setting
     this.updateLayoutForPosition();
   }
 
   async onClose() {
-    // Cancel any pending tab bar update
     if (this.pendingTabBarUpdate !== null) {
       cancelAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
     }
 
-    // Cleanup event refs
     for (const ref of this.eventRefs) {
       this.plugin.app.vault.offref(ref);
     }
     this.eventRefs = [];
 
-    // Persist tab state before cleanup (immediate, not debounced)
     await this.persistTabStateImmediate();
 
-    // Destroy tab manager and all tabs
     await this.tabManager?.destroy();
     this.tabManager = null;
 
-    // Cleanup tab bar
     this.tabBar?.destroy();
     this.tabBar = null;
   }

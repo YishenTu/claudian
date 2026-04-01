@@ -1,7 +1,3 @@
-/**
- * Chat and conversation type definitions.
- */
-
 import type { ProviderId } from '../providers/types';
 import type { SDKToolUseResult } from './diff';
 import type { SubagentMode, ToolCallInfo } from './tools';

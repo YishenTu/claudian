@@ -230,6 +230,25 @@ function setupDefaultRequestMock(
   });
 }
 
+// Find a specific RPC method call from transport request mock
+function findCall(method: string) {
+  return mockTransportRequest.mock.calls.find((c: any[]) => c[0] === method) as any;
+}
+
+// Build a request handler that returns the initialize response for all methods,
+// with overrides for specific methods. Every handler gets the initialize case for free.
+function buildRequestHandler(
+  handlers: Record<string, (...args: any[]) => any>,
+): (method: string, ...args: any[]) => Promise<any> {
+  const initResponse = { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+  return async (method: string, ...args: any[]) => {
+    if (method === 'initialize') return initResponse;
+    const handler = handlers[method];
+    if (handler) return handler(...args);
+    return {};
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -365,9 +384,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn()));
 
-      const threadStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const threadStartCall = findCall('thread/start');
       expect(threadStartCall).toBeDefined();
       expect(threadStartCall[1].baseInstructions).toContain('Be helpful.');
 
@@ -398,16 +415,12 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(runtime.query(createTurn()));
 
-      const resumeCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/resume',
-      );
+      const resumeCall = findCall('thread/resume');
       expect(resumeCall).toBeDefined();
       expect(resumeCall[1].threadId).toBe('thread-existing');
       expect(resumeCall[1].baseInstructions).toBeDefined();
 
-      const startCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const startCall = findCall('thread/start');
       expect(startCall).toBeUndefined();
     });
 
@@ -424,12 +437,8 @@ describe('CodexChatRuntime', () => {
       // Second query on same thread should skip both start and resume
       await collectChunks(runtime.query(createTurn('second')));
 
-      const startCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
-      const resumeCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/resume',
-      );
+      const startCall = findCall('thread/start');
+      const resumeCall = findCall('thread/resume');
       expect(startCall).toBeUndefined();
       expect(resumeCall).toBeUndefined();
     });
@@ -453,10 +462,9 @@ describe('CodexChatRuntime', () => {
     });
 
     it('yields tool_use and tool_result from item notifications', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-tools');
-        if (method === 'turn/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-tools'),
+        'turn/start': () => {
           setTimeout(() => {
             emitNotification('item/started', {
               item: {
@@ -498,9 +506,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return turnStartResponse('turn-tools');
-        }
-        return {};
-      });
+        },
+      }));
 
       const chunks = await collectChunks(runtime.query(createTurn()));
 
@@ -522,16 +529,13 @@ describe('CodexChatRuntime', () => {
       const sessionFilePath = path.join(tmpDir, 'thread-tail.jsonl');
       fs.writeFileSync(sessionFilePath, '');
 
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') {
-          return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        }
-        if (method === 'thread/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => {
           const response = threadStartResponse('thread-tail');
           response.thread.path = sessionFilePath;
           return response;
-        }
-        if (method === 'turn/start') {
+        },
+        'turn/start': () => {
           setTimeout(() => {
             fs.appendFileSync(
               sessionFilePath,
@@ -598,9 +602,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return turnStartResponse('turn-tail');
-        }
-        return {};
-      });
+        },
+      }));
 
       try {
         const chunks = await collectChunks(runtime.query(createTurn()));
@@ -624,10 +627,9 @@ describe('CodexChatRuntime', () => {
     }, 10000);
 
     it('emits error then done on failed turn', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-fail');
-        if (method === 'turn/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-fail'),
+        'turn/start': () => {
           setTimeout(() => {
             emitNotification('turn/completed', {
               threadId: 'thread-fail',
@@ -640,9 +642,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return turnStartResponse('turn-fail');
-        }
-        return {};
-      });
+        },
+      }));
 
       const chunks = await collectChunks(runtime.query(createTurn()));
 
@@ -718,13 +719,11 @@ describe('CodexChatRuntime', () => {
 
   describe('cancel', () => {
     it('sends turn/interrupt with current threadId and turnId', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-cancel');
-        if (method === 'turn/start') return turnStartResponse('turn-cancel');
-        if (method === 'turn/interrupt') return {};
-        return {};
-      });
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-cancel'),
+        'turn/start': () => turnStartResponse('turn-cancel'),
+        'turn/interrupt': () => ({}),
+      }));
 
       const gen = runtime.query(createTurn());
       // Kick the generator so it enters the chunk-waiting loop
@@ -802,9 +801,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(runtime.query(turn));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
       const input = turnStartCall[1].input;
       expect(input).toEqual(
@@ -823,9 +820,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(runtime.query(turn));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       const imageInput = turnStartCall?.[1]?.input?.find((item: Record<string, unknown>) => item.type === 'localImage');
 
       expect(imageInput).toBeDefined();
@@ -854,10 +849,9 @@ describe('CodexChatRuntime', () => {
       runtime.setApprovalDismisser(dismisser);
       runtime.setApprovalCallback(jest.fn().mockImplementation(async () => new Promise(() => {})));
 
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-dismiss');
-        if (method === 'turn/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-dismiss'),
+        'turn/start': () => {
           setTimeout(() => {
             void emitServerRequest('item/commandExecution/requestApproval', 'req-live', {
               threadId: 'thread-dismiss',
@@ -880,9 +874,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return turnStartResponse('turn-dismiss');
-        }
-        return {};
-      });
+        },
+      }));
 
       await collectChunks(runtime.query(createTurn()));
 
@@ -902,13 +895,11 @@ describe('CodexChatRuntime', () => {
       const dismisser = jest.fn();
       runtime.setApprovalDismisser(dismisser);
 
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-cancel-dismiss');
-        if (method === 'turn/start') return turnStartResponse('turn-cancel-dismiss');
-        if (method === 'turn/interrupt') return {};
-        return {};
-      });
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-cancel-dismiss'),
+        'turn/start': () => turnStartResponse('turn-cancel-dismiss'),
+        'turn/interrupt': () => ({}),
+      }));
 
       const gen = runtime.query(createTurn());
       const firstResult = gen.next();
@@ -940,9 +931,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn()));
 
-      const resumeCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/resume',
-      );
+      const resumeCall = findCall('thread/resume');
       expect(resumeCall).toBeDefined();
       expect(resumeCall[1].approvalPolicy).toBe('never');
       expect(resumeCall[1].sandbox).toBe('danger-full-access');
@@ -964,9 +953,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn()));
 
-      const resumeCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/resume',
-      );
+      const resumeCall = findCall('thread/resume');
       expect(resumeCall).toBeDefined();
       expect(resumeCall[1].model).toBe('gpt-5.4-mini');
 
@@ -986,9 +973,7 @@ describe('CodexChatRuntime', () => {
       plugin.settings.permissionMode = 'yolo';
       await collectChunks(rt.query(createTurn('second')));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
       expect(turnStartCall[1].approvalPolicy).toBe('never');
       expect(turnStartCall[1].sandboxPolicy).toEqual({ type: 'dangerFullAccess' });
@@ -1004,9 +989,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(yoloRuntime.query(createTurn()));
 
-      const threadStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const threadStartCall = findCall('thread/start');
       expect(threadStartCall[1].sandbox).toBe('danger-full-access');
       expect(threadStartCall[1].approvalPolicy).toBe('never');
 
@@ -1019,9 +1002,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(safeRuntime.query(createTurn()));
 
-      const threadStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const threadStartCall = findCall('thread/start');
       expect(threadStartCall[1].sandbox).toBe('workspace-write');
       expect(threadStartCall[1].approvalPolicy).toBe('on-request');
 
@@ -1034,9 +1015,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn()));
 
-      const threadStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const threadStartCall = findCall('thread/start');
       expect(threadStartCall[1].sandbox).toBe('workspace-write');
       expect(threadStartCall[1].approvalPolicy).toBe('on-request');
 
@@ -1049,9 +1028,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn()));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall[1].sandboxPolicy).toBeDefined();
       expect(turnStartCall[1].sandboxPolicy.type).toBe('workspaceWrite');
       expect(turnStartCall[1].sandboxPolicy.writableRoots).toContain('/test/vault');
@@ -1065,9 +1042,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn()));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall[1].sandboxPolicy).toEqual({ type: 'dangerFullAccess' });
 
       rt.cleanup();
@@ -1079,9 +1054,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(runtime.query(turn));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
 
       expect(turnStartCall[1].sandboxPolicy).toMatchObject({
         type: 'workspaceWrite',
@@ -1113,9 +1086,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn('resume')));
 
-      const resumeCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/resume',
-      );
+      const resumeCall = findCall('thread/resume');
       expect(resumeCall).toBeDefined();
       expect(resumeCall[1].sandbox).toBe('read-only');
       expect(resumeCall[1].approvalPolicy).toBe('on-request');
@@ -1132,9 +1103,7 @@ describe('CodexChatRuntime', () => {
       const turn = createTurn('hello');
       await collectChunks(rt.query(turn));
 
-      const threadStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const threadStartCall = findCall('thread/start');
       expect(threadStartCall[1].sandbox).toBe('read-only');
       expect(threadStartCall[1].approvalPolicy).toBe('on-request');
     });
@@ -1148,9 +1117,7 @@ describe('CodexChatRuntime', () => {
       const turn = createTurn('hello');
       await collectChunks(rt.query(turn));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall[1].sandboxPolicy).toEqual({
         type: 'readOnly',
         access: { type: 'fullAccess' },
@@ -1171,9 +1138,7 @@ describe('CodexChatRuntime', () => {
       plugin.settings.codexSafeMode = 'read-only';
       await collectChunks(rt.query(createTurn('second')));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
       expect(turnStartCall[1].approvalPolicy).toBe('on-request');
       expect(turnStartCall[1].sandboxPolicy).toEqual({
@@ -1205,9 +1170,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn('plan this')));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
       expect(turnStartCall[1].collaborationMode).toEqual({
         mode: 'plan',
@@ -1229,9 +1192,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn('hello')));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
       expect(turnStartCall[1].collaborationMode).toBeUndefined();
 
@@ -1246,9 +1207,7 @@ describe('CodexChatRuntime', () => {
 
       await collectChunks(rt.query(createTurn('hello')));
 
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
       expect(turnStartCall[1].collaborationMode).toBeUndefined();
 
@@ -1350,15 +1309,15 @@ describe('CodexChatRuntime', () => {
       expect(lifecycle).toEqual(['thread/fork', 'thread/resume', 'thread/rollback', 'turn/start']);
 
       // Verify fork params
-      const forkCall = mockTransportRequest.mock.calls.find((c: any[]) => c[0] === 'thread/fork');
+      const forkCall = findCall('thread/fork');
       expect(forkCall[1].threadId).toBe('source-thread');
 
       // Verify resume params
-      const resumeCall = mockTransportRequest.mock.calls.find((c: any[]) => c[0] === 'thread/resume');
+      const resumeCall = findCall('thread/resume');
       expect(resumeCall[1].threadId).toBe('fork-thread-1');
 
       // Verify rollback params (1 turn after checkpoint: turn-uuid-3)
-      const rollbackCall = mockTransportRequest.mock.calls.find((c: any[]) => c[0] === 'thread/rollback');
+      const rollbackCall = findCall('thread/rollback');
       expect(rollbackCall[1].threadId).toBe('fork-thread-1');
       expect(rollbackCall[1].numTurns).toBe(1);
 
@@ -1588,10 +1547,9 @@ describe('CodexChatRuntime', () => {
 
   describe('query - manual compact', () => {
     it('calls thread/compact/start instead of turn/start for compact turns', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-compact');
-        if (method === 'thread/compact/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-compact'),
+        'thread/compact/start': () => {
           setTimeout(() => {
             emitNotification('turn/started', {
               threadId: 'thread-compact',
@@ -1613,9 +1571,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return {};
-        }
-        return {};
-      });
+        },
+      }));
 
       const chunks = await collectChunks(runtime.query(createCompactTurn()));
 
@@ -1623,9 +1580,7 @@ describe('CodexChatRuntime', () => {
         'thread/compact/start',
         { threadId: 'thread-compact' },
       );
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeUndefined();
 
       expect(chunks).toContainEqual({ type: 'compact_boundary' });
@@ -1633,10 +1588,9 @@ describe('CodexChatRuntime', () => {
     });
 
     it('creates a new thread first if none exists, then compacts', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-new-compact');
-        if (method === 'thread/compact/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-new-compact'),
+        'thread/compact/start': () => {
           setTimeout(() => {
             emitNotification('turn/started', {
               threadId: 'thread-new-compact',
@@ -1653,9 +1607,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return {};
-        }
-        return {};
-      });
+        },
+      }));
 
       await collectChunks(runtime.query(createCompactTurn()));
 
@@ -1672,10 +1625,7 @@ describe('CodexChatRuntime', () => {
     it('rejects /compact with extra arguments locally', async () => {
       const turn = createTurn('/compact extra args', { isCompact: true });
 
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        return {};
-      });
+      mockTransportRequest.mockImplementation(buildRequestHandler({}));
 
       const chunks = await collectChunks(runtime.query(turn));
 
@@ -1685,23 +1635,18 @@ describe('CodexChatRuntime', () => {
       }));
       expect(chunks).toContainEqual({ type: 'done' });
 
-      const compactCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/compact/start',
-      );
+      const compactCall = findCall('thread/compact/start');
       expect(compactCall).toBeUndefined();
 
-      const threadStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'thread/start',
-      );
+      const threadStartCall = findCall('thread/start');
       expect(threadStartCall).toBeUndefined();
       expect(runtime.getSessionId()).toBeNull();
     });
 
     it('does not call buildInput or start transcript tailing for compact', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-no-input');
-        if (method === 'thread/compact/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-no-input'),
+        'thread/compact/start': () => {
           setTimeout(() => {
             emitNotification('turn/started', {
               threadId: 'thread-no-input',
@@ -1713,30 +1658,23 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return {};
-        }
-        return {};
-      });
+        },
+      }));
 
       await collectChunks(runtime.query(createCompactTurn()));
 
       // turn/start was never called, which means buildInput was never called
-      const turnStartCall = mockTransportRequest.mock.calls.find(
-        (call: any[]) => call[0] === 'turn/start',
-      );
+      const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeUndefined();
     });
 
     it('preserves cancel semantics: cancel before turn/started does not crash', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-cancel-compact');
-        if (method === 'thread/compact/start') {
-          // Don't emit turn/started - simulating cancel before it arrives
-          return {};
-        }
-        if (method === 'turn/interrupt') return {};
-        return {};
-      });
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-cancel-compact'),
+        // Don't emit turn/started - simulating cancel before it arrives
+        'thread/compact/start': () => ({}),
+        'turn/interrupt': () => ({}),
+      }));
 
       const gen = runtime.query(createCompactTurn());
       const firstResult = gen.next();
@@ -1753,10 +1691,9 @@ describe('CodexChatRuntime', () => {
     });
 
     it('preserves cancel semantics: cancel after turn/started sends turn/interrupt', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-cc2');
-        if (method === 'thread/compact/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-cc2'),
+        'thread/compact/start': () => {
           setTimeout(() => {
             emitNotification('turn/started', {
               threadId: 'thread-cc2',
@@ -1764,10 +1701,9 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return {};
-        }
-        if (method === 'turn/interrupt') return {};
-        return {};
-      });
+        },
+        'turn/interrupt': () => ({}),
+      }));
 
       const gen = runtime.query(createCompactTurn());
       const firstResult = gen.next();
@@ -1787,10 +1723,9 @@ describe('CodexChatRuntime', () => {
     });
 
     it('captures thread ID after compact on a new thread', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-persist');
-        if (method === 'thread/compact/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-persist'),
+        'thread/compact/start': () => {
           setTimeout(() => {
             emitNotification('turn/started', {
               threadId: 'thread-persist',
@@ -1802,9 +1737,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return {};
-        }
-        return {};
-      });
+        },
+      }));
 
       await collectChunks(runtime.query(createCompactTurn()));
 
@@ -1816,10 +1750,9 @@ describe('CodexChatRuntime', () => {
 
   describe('turn/started notification establishes turn ID', () => {
     it('establishes turn ID from turn/started and flushes buffered notifications', async () => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
-        if (method === 'initialize') return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
-        if (method === 'thread/start') return threadStartResponse('thread-ts');
-        if (method === 'thread/compact/start') {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-ts'),
+        'thread/compact/start': () => {
           // Simulate: turn/started arrives first, then items, then turn/completed
           setTimeout(() => {
             // Item arrives BEFORE turn/started — gets buffered
@@ -1840,9 +1773,8 @@ describe('CodexChatRuntime', () => {
             });
           }, 0);
           return {};
-        }
-        return {};
-      });
+        },
+      }));
 
       const chunks = await collectChunks(runtime.query(createCompactTurn()));
 

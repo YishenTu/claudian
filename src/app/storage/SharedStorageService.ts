@@ -1,7 +1,7 @@
-import type { App, Plugin } from 'obsidian';
+import type { Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import { SESSIONS_PATH,SessionStorage } from '../../core/bootstrap/SessionStorage';
+import { SESSIONS_PATH, SessionStorage } from '../../core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from '../../core/bootstrap/storage';
 import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
@@ -14,12 +14,10 @@ export class SharedStorageService implements SharedAppStorage {
 
   private adapter: VaultFileAdapter;
   private plugin: Plugin;
-  private app: App;
 
   constructor(plugin: Plugin) {
     this.plugin = plugin;
-    this.app = plugin.app;
-    this.adapter = new VaultFileAdapter(this.app);
+    this.adapter = new VaultFileAdapter(plugin.app);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.sessions = new SessionStorage(this.adapter);
   }

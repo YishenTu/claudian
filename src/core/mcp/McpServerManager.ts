@@ -1,9 +1,3 @@
-/**
- * McpServerManager - Core MCP server configuration management.
- *
- * Infrastructure layer for loading, filtering, and querying MCP server configurations.
- */
-
 import { extractMcpMentions, transformMcpMentions } from '../../utils/mcp';
 import type { ManagedMcpServer, McpServerConfig } from '../types';
 

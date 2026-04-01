@@ -141,10 +141,6 @@ export class ProviderRegistry {
       }
     }
 
-    if (this.getChatUIConfig(DEFAULT_CHAT_PROVIDER_ID).ownsModel(model, settings)) {
-      return DEFAULT_CHAT_PROVIDER_ID;
-    }
-
     return DEFAULT_CHAT_PROVIDER_ID;
   }
 

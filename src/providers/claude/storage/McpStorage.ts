@@ -1,22 +1,3 @@
-/**
- * McpStorage - Handles .claude/mcp.json read/write
- *
- * MCP server configurations are stored in Claude Code-compatible format
- * with optional Claudian-specific metadata in _claudian field.
- *
- * File format:
- * {
- *   "mcpServers": {
- *     "server-name": { "command": "...", "args": [...] }
- *   },
- *   "_claudian": {
- *     "servers": {
- *       "server-name": { "enabled": true, "contextSaving": true, "disabledTools": ["tool"], "description": "..." }
- *     }
- *   }
- * }
- */
-
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   ManagedMcpConfigFile,
@@ -25,7 +6,6 @@ import type {
 } from '../../../core/types';
 import { DEFAULT_MCP_SERVER, isValidMcpServerConfig } from '../../../core/types';
 
-/** Path to MCP config file relative to vault root. */
 export const MCP_CONFIG_PATH = '.claude/mcp.json';
 
 export class McpStorage {

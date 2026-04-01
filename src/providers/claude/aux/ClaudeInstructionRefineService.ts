@@ -4,8 +4,6 @@ import type { InstructionRefineResult } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 
-export type { RefineProgressCallback };
-
 export class InstructionRefineService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;

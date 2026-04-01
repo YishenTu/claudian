@@ -1,11 +1,3 @@
-/**
- * Custom spawn logic for Claude Agent SDK.
- *
- * Provides a custom spawn function that resolves the full path to Node.js
- * instead of relying on PATH lookup. This fixes issues in GUI apps (like Obsidian)
- * where the minimal PATH doesn't include Node.js.
- */
-
 import type { SpawnedProcess, SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 

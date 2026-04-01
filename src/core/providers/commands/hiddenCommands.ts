@@ -1,5 +1,4 @@
-import type { HiddenProviderCommands } from '../../types/settings';
-import type { ClaudianSettings } from '../../types/settings';
+import type { ClaudianSettings, HiddenProviderCommands } from '../../types/settings';
 import type { ProviderId } from '../types';
 
 function normalizeHiddenCommandName(value: string): string {

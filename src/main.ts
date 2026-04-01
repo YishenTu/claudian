@@ -1,10 +1,3 @@
-/**
- * Claudian - Obsidian plugin entry point
- *
- * Registers the sidebar chat view, settings tab, and commands.
- * Manages conversation persistence and environment variable configuration.
- */
-
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
 patchSetMaxListenersForElectron();
@@ -44,10 +37,6 @@ import type { Locale } from './i18n/types';
 import { buildCursorContext } from './utils/editor';
 import { getVaultPath } from './utils/path';
 
-/**
- * Main plugin class for Claudian.
- * Handles plugin lifecycle, settings persistence, and conversation management.
- */
 export default class ClaudianPlugin extends Plugin {
   settings: ClaudianSettings;
   storage: SharedAppStorage;
@@ -169,7 +158,6 @@ export default class ClaudianPlugin extends Plugin {
         if (!checking) {
           const activeTabId = tabManager.getActiveTabId();
           if (activeTabId) {
-            // When closing the last tab, TabManager will create a new empty one
             tabManager.closeTab(activeTabId);
           }
         }
@@ -213,7 +201,6 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
     this.storage = new SharedStorageService(this);
     const { claudian } = await this.storage.initialize();
@@ -234,7 +221,6 @@ export default class ClaudianPlugin extends Plugin {
     );
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
-    // Load all conversations from session metadata
     const allMetadata = await this.storage.sessions.listMetadata();
     this.conversations = allMetadata.map(meta => {
       const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
@@ -248,7 +234,7 @@ export default class ClaudianPlugin extends Plugin {
         lastResponseAt: meta.lastResponseAt,
         sessionId: resumeSessionId,
         providerState: meta.providerState,
-        messages: [], // Messages are in SDK storage, loaded on demand
+        messages: [],
         currentNote: meta.currentNote,
         externalContextPaths: meta.externalContextPaths,
         enabledMcpServers: meta.enabledMcpServers,
@@ -265,8 +251,6 @@ export default class ClaudianPlugin extends Plugin {
 
     const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment();
 
-    // Project the active provider's saved model/effort/budget into top-level fields.
-    // Runs unconditionally — it's a no-op when savedProvider* maps are empty.
     ProviderSettingsCoordinator.projectActiveProviderState(
       this.settings as unknown as Record<string, unknown>,
     );
@@ -275,7 +259,6 @@ export default class ClaudianPlugin extends Plugin {
       await this.saveSettings();
     }
 
-    // Persist backfilled and invalidated conversations
     const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
     for (const conv of conversationsToSave) {
       await this.storage.sessions.saveMetadata(
@@ -308,7 +291,6 @@ export default class ClaudianPlugin extends Plugin {
     );
   }
 
-  /** Persists settings to storage. */
   async saveSettings() {
     ProviderSettingsCoordinator.normalizeProviderSelection(
       this.settings as unknown as Record<string, unknown>,
@@ -503,12 +485,6 @@ export default class ClaudianPlugin extends Plugin {
       .hydrateConversationHistory(conversation, getVaultPath(this.app));
   }
 
-  /**
-   * Creates a new conversation and sets it as active.
-   *
-   * New conversations always use SDK-native storage.
-   * The session ID may be captured after the first SDK response.
-   */
   async createConversation(options?: {
     providerId?: ProviderId;
     sessionId?: string;
@@ -527,7 +503,6 @@ export default class ClaudianPlugin extends Plugin {
     };
 
     this.conversations.unshift(conversation);
-    // Save new conversation (metadata only - SDK handles messages)
     await this.storage.sessions.saveMetadata(
       this.storage.sessions.toSessionMetadata(conversation)
     );
@@ -535,11 +510,6 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  /**
-   * Switches to an existing conversation by ID.
-   *
-   * For native sessions, loads messages from SDK storage if not already loaded.
-   */
   async switchConversation(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
@@ -562,7 +532,6 @@ export default class ClaudianPlugin extends Plugin {
 
     await this.storage.sessions.deleteMetadata(id);
 
-    // Notify all views/tabs that have this conversation open
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;
@@ -576,7 +545,6 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /** Renames a conversation. */
   async renameConversation(id: string, title: string): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return;
@@ -614,11 +582,6 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /**
-   * Gets a conversation by ID from the in-memory cache.
-   *
-   * For native sessions, loads messages from SDK storage if not already loaded.
-   */
   async getConversationById(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id) || null;
 
@@ -629,20 +592,14 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  /**
-   * Gets a conversation by ID without loading SDK messages.
-   * Use this for UI code that only needs metadata (title, etc.).
-   */
   getConversationSync(id: string): Conversation | null {
     return this.conversations.find(c => c.id === id) || null;
   }
 
-  /** Finds an existing empty conversation (no messages). */
   findEmptyConversation(): Conversation | null {
     return this.conversations.find(c => c.messages.length === 0) || null;
   }
 
-  /** Returns conversation metadata list for the history dropdown. */
   getConversationList(): ConversationMeta[] {
     return this.conversations.map(c => ({
       id: c.id,
@@ -657,7 +614,6 @@ export default class ClaudianPlugin extends Plugin {
     }));
   }
 
-  /** Returns the active Claudian view from workspace, if open. */
   getView(): ClaudianView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     if (leaves.length > 0) {
@@ -666,16 +622,11 @@ export default class ClaudianPlugin extends Plugin {
     return null;
   }
 
-  /** Returns all open Claudian views in the workspace. */
   getAllViews(): ClaudianView[] {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     return leaves.map(leaf => leaf.view as ClaudianView);
   }
 
-  /**
-   * Checks if a conversation is open in any Claudian view.
-   * Returns the view and tab if found, null otherwise.
-   */
   findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();

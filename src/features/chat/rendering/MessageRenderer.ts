@@ -1,7 +1,6 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities } from '../../../core/providers/types';
 import {
   isSubagentToolName,
@@ -15,6 +14,7 @@ import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { findRewindContext } from '../rewind';
+import { resolveSubagentLifecycleAdapter } from './subagentLifecycleResolution';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -77,39 +77,7 @@ export class MessageRenderer {
   }
 
   private getSubagentLifecycleAdapter(toolName?: string) {
-    const activeProviderId = this.getCapabilities().providerId;
-    const activeAdapter = ProviderRegistry.getSubagentLifecycleAdapter(activeProviderId);
-    const matchesTool = (adapter: ReturnType<typeof ProviderRegistry.getSubagentLifecycleAdapter>) => {
-      if (!adapter || !toolName) {
-        return !!adapter && !toolName;
-      }
-
-      return adapter.isSpawnTool(toolName)
-        || adapter.isHiddenTool(toolName)
-        || adapter.isWaitTool(toolName)
-        || adapter.isCloseTool(toolName);
-    };
-
-    if (matchesTool(activeAdapter)) {
-      return activeAdapter;
-    }
-
-    if (!toolName) {
-      return activeAdapter;
-    }
-
-    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
-      if (providerId === activeProviderId) {
-        continue;
-      }
-
-      const adapter = ProviderRegistry.getSubagentLifecycleAdapter(providerId);
-      if (matchesTool(adapter)) {
-        return adapter;
-      }
-    }
-
-    return null;
+    return resolveSubagentLifecycleAdapter(this.getCapabilities().providerId, toolName);
   }
 
   // ============================================
