@@ -48,6 +48,49 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       return null;
     };
 
+    const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
+      const error = validatePath(value);
+      if (error) {
+        validationEl.setText(error);
+        validationEl.style.display = 'block';
+        if (inputEl) {
+          inputEl.style.borderColor = 'var(--text-error)';
+        }
+        return false;
+      }
+
+      validationEl.style.display = 'none';
+      if (inputEl) {
+        inputEl.style.borderColor = '';
+      }
+      return true;
+    };
+
+    const cliPathsByHost = { ...codexSettings.cliPathsByHost };
+    let cliPathInputEl: HTMLInputElement | null = null;
+
+    const persistCliPath = async (value: string): Promise<boolean> => {
+      const isValid = updateCliPathValidation(value, cliPathInputEl ?? undefined);
+      if (!isValid) {
+        return false;
+      }
+
+      const trimmed = value.trim();
+      if (trimmed) {
+        cliPathsByHost[hostnameKey] = trimmed;
+      } else {
+        delete cliPathsByHost[hostnameKey];
+      }
+
+      updateCodexProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
+      await context.plugin.saveSettings();
+      const view = context.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => Promise.resolve(service.cleanup())
+      );
+      return true;
+    };
+
     new Setting(container)
       .setName('Enable Codex provider')
       .setDesc('When enabled, Codex models appear in the model selector for new conversations. Existing Codex sessions are preserved.')
@@ -67,7 +110,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       scope: 'provider:codex',
       heading: t('settings.environment'),
       name: 'Codex environment',
-      desc: 'Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings.',
+      desc: 'Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section.',
       placeholder: 'OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=gpt-5.4\nCODEX_SANDBOX=workspace-write',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'codex'),
     });
@@ -83,39 +126,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         .setPlaceholder(placeholder)
         .setValue(currentValue)
         .onChange(async (value) => {
-          const error = validatePath(value);
-          if (error) {
-            validationEl.setText(error);
-            validationEl.style.display = 'block';
-            text.inputEl.style.borderColor = 'var(--text-error)';
-          } else {
-            validationEl.style.display = 'none';
-            text.inputEl.style.borderColor = '';
-          }
-
-          const trimmed = value.trim();
-          const nextCliPathsByHost = { ...codexSettings.cliPathsByHost };
-          if (trimmed) {
-            nextCliPathsByHost[hostnameKey] = trimmed;
-          } else {
-            delete nextCliPathsByHost[hostnameKey];
-          }
-          updateCodexProviderSettings(settingsBag, { cliPathsByHost: nextCliPathsByHost });
-          await context.plugin.saveSettings();
-          const view = context.plugin.getView();
-          await view?.getTabManager()?.broadcastToAllTabs(
-            (service) => Promise.resolve(service.cleanup())
-          );
+          await persistCliPath(value);
         });
       text.inputEl.addClass('claudian-settings-cli-path-input');
       text.inputEl.style.width = '100%';
+      cliPathInputEl = text.inputEl;
 
-      const initialError = validatePath(currentValue);
-      if (initialError) {
-        validationEl.setText(initialError);
-        validationEl.style.display = 'block';
-        text.inputEl.style.borderColor = 'var(--text-error)';
-      }
+      updateCliPathValidation(currentValue, text.inputEl);
     });
 
     new Setting(container)
