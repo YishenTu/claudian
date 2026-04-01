@@ -42,17 +42,9 @@ export function getDefaultHiddenProviderCommands(): HiddenProviderCommands {
 
 export function normalizeHiddenProviderCommands(
   value: unknown,
-  legacyClaudeCommands?: unknown,
 ): HiddenProviderCommands {
-  const defaults = getDefaultHiddenProviderCommands();
-
   if (!value || typeof value !== 'object') {
-    return {
-      ...defaults,
-      ...(normalizeHiddenCommandList(legacyClaudeCommands).length > 0
-        ? { claude: normalizeHiddenCommandList(legacyClaudeCommands) }
-        : {}),
-    };
+    return getDefaultHiddenProviderCommands();
   }
 
   const candidate = value as Partial<Record<ProviderId | string, unknown>>;
@@ -63,11 +55,6 @@ export function normalizeHiddenProviderCommands(
     if (next.length > 0) {
       normalized[providerId] = next;
     }
-  }
-
-  const legacyCommands = normalizeHiddenCommandList(legacyClaudeCommands);
-  if (legacyCommands.length > 0 && !normalized.claude) {
-    normalized.claude = legacyCommands;
   }
 
   return normalized;

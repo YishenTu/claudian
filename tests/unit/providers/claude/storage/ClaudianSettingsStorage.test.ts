@@ -172,6 +172,26 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
+    it('should not override explicit provider hidden commands with legacy hiddenSlashCommands', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        hiddenProviderCommands: {
+          claude: ['existing'],
+        },
+        hiddenSlashCommands: ['commit', '/review'],
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.hiddenProviderCommands).toEqual({
+        claude: ['existing'],
+      });
+      expect(writtenContent.hiddenProviderCommands).toEqual({
+        claude: ['existing'],
+      });
+    });
+
     it('should throw on JSON parse error', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue('invalid json');

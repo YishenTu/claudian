@@ -11,12 +11,15 @@ jest.mock('@/core/commands/builtInCommands', () => ({
   getBuiltInCommandsForDropdown: jest.fn((providerId?: string) => {
     const all = [
       { id: 'builtin:clear', name: 'clear', description: 'Start a new conversation', content: '' },
-      { id: 'builtin:add-dir', name: 'add-dir', description: 'Add external context directory', content: '', argumentHint: 'path/to/directory', providers: ['claude'] },
-      { id: 'builtin:resume', name: 'resume', description: 'Resume a previous conversation', content: '', providers: ['claude'] },
-      { id: 'builtin:fork', name: 'fork', description: 'Fork entire conversation to new session', content: '', providers: ['claude', 'codex'] },
+      { id: 'builtin:add-dir', name: 'add-dir', description: 'Add external context directory', content: '', argumentHint: 'path/to/directory' },
+      { id: 'builtin:resume', name: 'resume', description: 'Resume a previous conversation', content: '', supportsNativeHistory: true },
+      { id: 'builtin:fork', name: 'fork', description: 'Fork entire conversation to new session', content: '', supportsFork: true },
     ];
     if (!providerId) return all;
-    return all.filter((c: any) => !c.providers || c.providers.includes(providerId));
+    if (providerId === 'codex') {
+      return all;
+    }
+    return all;
   }),
 }));
 
@@ -197,8 +200,8 @@ describe('SlashCommandDropdown - provider catalog', () => {
 
       const names = getRenderedCommandNames(containerEl);
       expect(names).toContain('/clear');
-      expect(names).not.toContain('/add-dir');
-      expect(names).not.toContain('/resume');
+      expect(names).toContain('/add-dir');
+      expect(names).toContain('/resume');
       expect(names).toContain('/fork');
 
       dropdown.destroy();

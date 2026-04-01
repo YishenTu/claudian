@@ -1,7 +1,11 @@
-import { normalizeHiddenProviderCommands } from '../../core/providers/commands/hiddenCommands';
+import {
+  normalizeHiddenCommandList,
+  normalizeHiddenProviderCommands,
+} from '../../core/providers/commands/hiddenCommands';
 import type { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import type {
   ClaudianSettings,
+  HiddenProviderCommands,
   PlatformBlockedCommands,
   ProviderConfigMap,
 } from '../../core/types/settings';
@@ -114,6 +118,21 @@ function hasLegacyTopLevelProviderFields(stored: Record<string, unknown>): boole
   return LEGACY_TOP_LEVEL_PROVIDER_FIELDS.some((key) => key in stored);
 }
 
+function mergeLegacyClaudeHiddenCommands(
+  hiddenProviderCommands: HiddenProviderCommands,
+  legacyHiddenSlashCommands: unknown,
+): HiddenProviderCommands {
+  const legacyCommands = normalizeHiddenCommandList(legacyHiddenSlashCommands);
+  if (legacyCommands.length === 0 || hiddenProviderCommands.claude) {
+    return hiddenProviderCommands;
+  }
+
+  return {
+    ...hiddenProviderCommands,
+    claude: legacyCommands,
+  };
+}
+
 export class ClaudianSettingsStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
@@ -124,8 +143,8 @@ export class ClaudianSettingsStorage {
 
     const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
     const stored = JSON.parse(content) as Record<string, unknown>;
-    const hiddenProviderCommands = normalizeHiddenProviderCommands(
-      stored.hiddenProviderCommands,
+    const hiddenProviderCommands = mergeLegacyClaudeHiddenCommands(
+      normalizeHiddenProviderCommands(stored.hiddenProviderCommands),
       stored.hiddenSlashCommands,
     );
     const providerConfigs = normalizeProviderConfigs(stored.providerConfigs);

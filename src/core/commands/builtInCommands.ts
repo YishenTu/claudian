@@ -5,9 +5,12 @@
  * These are handled separately from user-defined slash commands.
  */
 
-import type { ProviderId } from '../providers/types';
+import { ProviderRegistry } from '../providers/ProviderRegistry';
+import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
 export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork';
+type BuiltInCommandCapability = 'supportsNativeHistory' | 'supportsFork';
+type BuiltInCommandSupportContext = ProviderId | Pick<ProviderCapabilities, BuiltInCommandCapability>;
 
 export interface BuiltInCommand {
   name: string;
@@ -18,8 +21,8 @@ export interface BuiltInCommand {
   hasArgs?: boolean;
   /** Hint for arguments shown in dropdown (e.g., "path"). */
   argumentHint?: string;
-  /** When set, only these providers show this command in the dropdown. */
-  providers?: ProviderId[];
+  /** When set, provider capabilities must expose this feature. */
+  requiredCapability?: BuiltInCommandCapability;
 }
 
 export interface BuiltInCommandResult {
@@ -46,13 +49,13 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     name: 'resume',
     description: 'Resume a previous conversation',
     action: 'resume',
-    providers: ['claude'],
+    requiredCapability: 'supportsNativeHistory',
   },
   {
     name: 'fork',
     description: 'Fork entire conversation to new session',
     action: 'fork',
-    providers: ['claude', 'codex'],
+    requiredCapability: 'supportsFork',
   },
 ];
 
@@ -68,11 +71,42 @@ for (const cmd of BUILT_IN_COMMANDS) {
   }
 }
 
+function resolveSupportContext(
+  context?: BuiltInCommandSupportContext,
+): Pick<ProviderCapabilities, BuiltInCommandCapability> | null {
+  if (!context) {
+    return null;
+  }
+
+  if (typeof context !== 'string') {
+    return context;
+  }
+
+  try {
+    const capabilities = ProviderRegistry.getCapabilities(context);
+    return {
+      supportsNativeHistory: capabilities.supportsNativeHistory,
+      supportsFork: capabilities.supportsFork,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function isBuiltInCommandSupported(
   command: BuiltInCommand,
-  providerId?: ProviderId,
+  context?: BuiltInCommandSupportContext,
 ): boolean {
-  return !command.providers || !providerId || command.providers.includes(providerId);
+  if (!command.requiredCapability) {
+    return true;
+  }
+
+  if (!context) {
+    return true;
+  }
+
+  const capabilities = resolveSupportContext(context);
+  return capabilities ? capabilities[command.requiredCapability] : false;
 }
 
 /**
@@ -100,7 +134,7 @@ export function detectBuiltInCommand(input: string): BuiltInCommandResult | null
  * Gets built-in commands for dropdown display.
  * When providerId is given, excludes commands restricted to other providers.
  */
-export function getBuiltInCommandsForDropdown(providerId?: ProviderId): Array<{
+export function getBuiltInCommandsForDropdown(context?: BuiltInCommandSupportContext): Array<{
   id: string;
   name: string;
   description: string;
@@ -108,7 +142,7 @@ export function getBuiltInCommandsForDropdown(providerId?: ProviderId): Array<{
   argumentHint?: string;
 }> {
   return BUILT_IN_COMMANDS
-    .filter((cmd) => isBuiltInCommandSupported(cmd, providerId))
+    .filter((cmd) => isBuiltInCommandSupported(cmd, context))
     .map((cmd) => ({
       id: `builtin:${cmd.name}`,
       name: cmd.name,
