@@ -23,6 +23,7 @@ export class SelectionController {
   private focusScopeEl: HTMLElement;
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
+  private ownViewType: string | null;
   private storedSelection: StoredSelection | null = null;
   private inputHandoffGraceUntil: number | null = null;
   private pollInterval: number | null = null;
@@ -37,7 +38,8 @@ export class SelectionController {
     inputEl: HTMLElement,
     contextRowEl: HTMLElement,
     onVisibilityChange?: () => void,
-    focusScopeEl?: HTMLElement
+    focusScopeEl?: HTMLElement,
+    ownViewType?: string
   ) {
     this.app = app;
     this.indicatorEl = indicatorEl;
@@ -45,6 +47,7 @@ export class SelectionController {
     this.focusScopeEl = focusScopeEl ?? inputEl;
     this.contextRowEl = contextRowEl;
     this.onVisibilityChange = onVisibilityChange ?? null;
+    this.ownViewType = ownViewType ?? null;
   }
 
   start(): void {
@@ -245,8 +248,18 @@ export class SelectionController {
 
   private isFocusWithinChatSidebar(): boolean {
     const activeElement = this.getActiveElement(this.focusScopeEl.ownerDocument) as Node | null;
-    return activeElement !== null
-      && (activeElement === this.focusScopeEl || this.focusScopeEl.contains(activeElement));
+    if (activeElement !== null
+      && (activeElement === this.focusScopeEl || this.focusScopeEl.contains(activeElement))) {
+      return true;
+    }
+    if (this.ownViewType) {
+      const activeLeaf = (this.app.workspace as any).activeLeaf
+        ?? this.app.workspace.getMostRecentLeaf?.();
+      if (activeLeaf?.view?.getViewType?.() === this.ownViewType) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private isNativeEditorSelectionVisible(sel: StoredSelection): boolean {
