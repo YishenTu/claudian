@@ -4,7 +4,7 @@ import { Notice } from 'obsidian';
 import { ClaudianService } from '../../../core/agent';
 import type { McpServerManager } from '../../../core/mcp';
 import type { ChatMessage, ClaudeModel, Conversation, EffortLevel, PermissionMode, SlashCommand, StreamChunk, ThinkingBudget } from '../../../core/types';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_EFFORT_LEVEL, DEFAULT_THINKING_BUDGET, getContextWindowSize, isAdaptiveThinkingModel } from '../../../core/types';
+import { DEFAULT_CLAUDE_MODELS, DEFAULT_EFFORT_LEVEL, DEFAULT_THINKING_BUDGET, getContextWindowSize, isAdaptiveThinkingModel,VIEW_TYPE_CLAUDIAN } from '../../../core/types';
 import { t } from '../../../i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -755,6 +755,7 @@ export function initializeTabControllers(
     dom.contextRowEl,
     () => autoResizeTextarea(dom.inputEl),
     dom.contentEl,
+    VIEW_TYPE_CLAUDIAN,
   );
 
   // Browser selection controller
