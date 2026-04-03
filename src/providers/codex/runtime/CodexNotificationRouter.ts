@@ -7,6 +7,7 @@ import {
 } from '../normalization/codexToolNormalization';
 import type {
   AgentMessageDeltaNotification,
+  AgentMessageItem,
   CollabAgentToolCallItem,
   CommandExecutionItem,
   ContextCompactionItem,
@@ -22,6 +23,8 @@ import type {
   TokenUsageUpdatedNotification,
   TurnCompletedNotification,
   TurnPlanUpdatedNotification,
+  UserInput,
+  UserMessageItem,
   WebSearchItem,
 } from './codexAppServerTypes';
 
@@ -41,6 +44,9 @@ export class CodexNotificationRouter {
   private planUpdateCounter = 0;
   private isPlanTurn = false;
   private sawPlanDelta = false;
+  private startedUserMessageIds = new Set<string>();
+  private startedAgentMessageIds = new Set<string>();
+  private agentMessageDeltaIds = new Set<string>();
 
   constructor(
     private readonly emit: ChunkEmitter,
@@ -50,11 +56,17 @@ export class CodexNotificationRouter {
   beginTurn(params: { isPlanTurn: boolean }): void {
     this.isPlanTurn = params.isPlanTurn;
     this.sawPlanDelta = false;
+    this.startedUserMessageIds.clear();
+    this.startedAgentMessageIds.clear();
+    this.agentMessageDeltaIds.clear();
   }
 
   endTurn(): void {
     this.isPlanTurn = false;
     this.sawPlanDelta = false;
+    this.startedUserMessageIds.clear();
+    this.startedAgentMessageIds.clear();
+    this.agentMessageDeltaIds.clear();
   }
 
   handleNotification(method: string, params: unknown): void {
@@ -101,6 +113,7 @@ export class CodexNotificationRouter {
   }
 
   private onAgentMessageDelta(params: AgentMessageDeltaNotification): void {
+    this.agentMessageDeltaIds.add(params.itemId);
     this.emit({ type: 'text', content: params.delta });
   }
 
@@ -121,6 +134,14 @@ export class CodexNotificationRouter {
     const item = params.item;
 
     switch (item.type) {
+      case 'userMessage':
+        this.emitUserMessageBoundary(item as UserMessageItem);
+        break;
+
+      case 'agentMessage':
+        this.emitAgentMessageBoundary(item as AgentMessageItem);
+        break;
+
       case 'reasoning':
         break;
 
@@ -157,6 +178,16 @@ export class CodexNotificationRouter {
     const item = params.item;
 
     switch (item.type) {
+      case 'userMessage':
+        if (!this.startedUserMessageIds.has(item.id)) {
+          this.emitUserMessageBoundary(item as UserMessageItem);
+        }
+        break;
+
+      case 'agentMessage':
+        this.completeAgentMessage(item as AgentMessageItem);
+        break;
+
       case 'commandExecution':
         this.emitToolResultFromCommand(item as CommandExecutionItem);
         break;
@@ -334,6 +365,47 @@ export class CodexNotificationRouter {
 
   private emitContextCompactionBoundary(_item: ContextCompactionItem): void {
     this.emit({ type: 'context_compacted' });
+  }
+
+  private emitUserMessageBoundary(item: UserMessageItem): void {
+    if (this.startedUserMessageIds.has(item.id)) {
+      return;
+    }
+
+    this.startedUserMessageIds.add(item.id);
+    this.emit({
+      type: 'user_message_start',
+      itemId: item.id,
+      content: this.extractUserMessageText(item.content),
+    });
+  }
+
+  private emitAgentMessageBoundary(item: AgentMessageItem): void {
+    if (this.startedAgentMessageIds.has(item.id)) {
+      return;
+    }
+
+    this.startedAgentMessageIds.add(item.id);
+    this.emit({ type: 'assistant_message_start', itemId: item.id });
+  }
+
+  private completeAgentMessage(item: AgentMessageItem): void {
+    if (!this.startedAgentMessageIds.has(item.id)) {
+      this.emitAgentMessageBoundary(item);
+    }
+
+    if (this.agentMessageDeltaIds.has(item.id) || !item.text) {
+      return;
+    }
+
+    this.emit({ type: 'text', content: item.text });
+  }
+
+  private extractUserMessageText(content: UserInput[]): string {
+    return content
+      .map((part) => (part.type === 'text' ? part.text : ''))
+      .filter((text) => text.length > 0)
+      .join('\n\n');
   }
 
   // -- turn/plan/updated (update_plan) ----------------------------------------

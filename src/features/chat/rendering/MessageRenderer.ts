@@ -64,6 +64,7 @@ export class MessageRenderer {
       supportsImageAttachments: false,
       supportsInstructionMode: false,
       supportsMcpTools: false,
+      supportsTurnSteer: false,
       reasoningControl: 'none' as const,
     }));
 
@@ -128,6 +129,51 @@ export class MessageRenderer {
 
     this.scrollToBottom();
     return msgEl;
+  }
+
+  updateLiveUserMessage(msg: ChatMessage): void {
+    if (msg.role !== 'user') {
+      return;
+    }
+
+    const msgEl = this.liveMessageEls.get(msg.id)
+      ?? this.messagesEl.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null;
+    if (!msgEl) {
+      return;
+    }
+
+    const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement | null;
+    if (!contentEl) {
+      return;
+    }
+
+    contentEl.empty();
+
+    const textToShow = msg.displayContent ?? msg.content;
+    if (textToShow) {
+      const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+      void this.renderContent(textEl, textToShow);
+    }
+
+    const toolbar = msgEl.querySelector('.claudian-user-msg-actions') as HTMLElement | null;
+    if (toolbar) {
+      toolbar.querySelectorAll('.claudian-user-msg-copy-btn').forEach((el) => el.remove());
+    }
+
+    if (textToShow) {
+      this.addUserCopyButton(msgEl, textToShow);
+    }
+  }
+
+  removeMessage(messageId: string): void {
+    const msgEl = this.liveMessageEls.get(messageId)
+      ?? this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
+    if (!msgEl) {
+      return;
+    }
+
+    msgEl.remove();
+    this.liveMessageEls.delete(messageId);
   }
 
   // ============================================

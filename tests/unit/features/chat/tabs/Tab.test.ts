@@ -977,6 +977,39 @@ describe('Tab - Service Initialization', () => {
       expect(tab.draftModel).toBe('gpt-5.4');
       expect(tab.providerId).toBe('codex');
     });
+
+    it('cleans up the active runtime when resetting to a new blank session', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+      const plugin = createMockPlugin();
+      plugin.settings.savedProviderModel = { claude: 'claude-sonnet-4-5', codex: 'gpt-5.4' };
+      const tab = createTab(createMockOptions({ plugin }));
+      initializeTabUI(tab, plugin);
+      initializeTabControllers(tab, plugin, {} as any, createMockMcpManager());
+
+      const staleService = createMockClaudianService({ providerId: 'codex' });
+      tab.lifecycleState = 'bound_active';
+      tab.conversationId = 'conv-1';
+      tab.providerId = 'codex';
+      tab.service = staleService as any;
+      tab.serviceInitialized = true;
+
+      const convCtrlModule = jest.requireMock('@/features/chat/controllers/ConversationController') as {
+        ConversationController: jest.Mock;
+      };
+      const callback = convCtrlModule.ConversationController.mock.calls.at(-1)?.[1]?.onNewConversation;
+
+      callback();
+
+      expect(staleService.cleanup).toHaveBeenCalledTimes(1);
+      expect(tab.service).toBeNull();
+      expect(tab.serviceInitialized).toBe(false);
+      expect(tab.lifecycleState).toBe('blank');
+      expect(tab.providerId).toBe('codex');
+      expect(tab.draftModel).toBe('gpt-5.4');
+    });
   });
 });
 
@@ -3412,6 +3445,52 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     await toolbarCallbacks.onModelChange('gpt-5.4');
 
     expect(setHiddenCommandsSpy).toHaveBeenCalledWith(new Set(['analyze']));
+  });
+
+  it('rebinds provider helper services and clears stale runtime on blank tab provider change', async () => {
+    const createInstructionRefineServiceSpy = jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
+      .mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    const createTitleGenerationServiceSpy = jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
+      .mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: jest.fn().mockReturnValue([]),
+      ownsModel: jest.fn((model: string) => model.startsWith('gpt-') || /^o\d/.test(model)),
+      isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+      getReasoningOptions: jest.fn().mockReturnValue([]),
+      getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
+      getContextWindowSize: jest.fn().mockReturnValue(200000),
+      isDefaultModel: jest.fn().mockReturnValue(false),
+      applyModelDefaults: jest.fn(),
+      normalizeModelVariant: jest.fn((model: string) => model),
+      getCustomModelIds: jest.fn().mockReturnValue(new Set()),
+    } as any);
+
+    const plugin = createMockPlugin();
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin);
+
+    const staleService = createMockClaudianService({ providerId: 'codex' });
+    tab.service = staleService as any;
+    tab.serviceInitialized = false;
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    const initialInstructionCalls = createInstructionRefineServiceSpy.mock.calls.length;
+    const initialTitleCalls = createTitleGenerationServiceSpy.mock.calls.length;
+
+    await toolbarCallbacks.onModelChange('gpt-5.4');
+    await toolbarCallbacks.onModelChange('opus');
+
+    expect(staleService.cleanup).toHaveBeenCalledTimes(1);
+    expect(tab.service).toBeNull();
+    expect(tab.serviceInitialized).toBe(false);
+    expect(tab.providerId).toBe('claude');
+    expect(createInstructionRefineServiceSpy.mock.calls.length).toBeGreaterThan(initialInstructionCalls);
+    expect(createTitleGenerationServiceSpy.mock.calls.length).toBeGreaterThan(initialTitleCalls);
   });
 });
 

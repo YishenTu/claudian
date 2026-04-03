@@ -756,13 +756,27 @@ describe('CodexNotificationRouter', () => {
       expect(chunks).toHaveLength(0);
     });
 
-    it('ignores userMessage item/started', () => {
+    it('maps userMessage item/started to a user_message_start chunk', () => {
       router.handleNotification('item/started', {
         item: { type: 'userMessage', id: 'u1', content: [{ type: 'text', text: 'hi' }] },
         threadId: 't1',
         turnId: 'turn1',
       });
-      expect(chunks).toHaveLength(0);
+      expect(chunks).toEqual([
+        { type: 'user_message_start', itemId: 'u1', content: 'hi' },
+      ]);
+    });
+
+    it('maps agentMessage item/started to an assistant_message_start chunk', () => {
+      router.handleNotification('item/started', {
+        item: { type: 'agentMessage', id: 'a1', text: '', phase: 'streaming', memoryCitation: null },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'assistant_message_start', itemId: 'a1' },
+      ]);
     });
   });
 

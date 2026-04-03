@@ -11,5 +11,6 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsImageAttachments: true,
   supportsInstructionMode: false,
   supportsMcpTools: false,
+  supportsTurnSteer: true,
   reasoningControl: 'effort',
 });

@@ -1136,9 +1136,6 @@ export class StreamController {
       }
       state.flavorTimerInterval = setInterval(updateTimer, 1000);
 
-      // Queue indicator line (initially hidden)
-      state.queueIndicatorEl = state.thinkingEl.createDiv({ cls: 'claudian-queue-indicator' });
-      this.deps.updateQueueIndicator();
     }, StreamController.THINKING_INDICATOR_DELAY);
   }
 
@@ -1159,7 +1156,6 @@ export class StreamController {
       state.thinkingEl.remove();
       state.thinkingEl = null;
     }
-    state.queueIndicatorEl = null;
   }
 
   // ============================================

@@ -71,12 +71,14 @@ function createMockAgentService() {
       supportsRewind: true,
       supportsFork: true,
       supportsProviderCommands: true,
+      supportsTurnSteer: false,
       reasoningControl: 'effort',
     }),
     prepareTurn: jest.fn().mockImplementation((request: any) =>
       encodeClaudeTurn(request, mockMcpForEncoder),
     ),
     query: jest.fn(),
+    steer: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(),
     resetSession: jest.fn(),
     setResumeCheckpoint: jest.fn(),
@@ -138,6 +140,8 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
         querySelector: jest.fn().mockReturnValue(createMockEl()),
       }),
       refreshActionButtons: jest.fn(),
+      removeMessage: jest.fn(),
+      updateLiveUserMessage: jest.fn(),
     } as any,
     streamController: {
       showThinkingIndicator: jest.fn(),
@@ -233,7 +237,6 @@ describe('InputController - Message Queue', () => {
         editorContext: null,
         browserContext: null,
         canvasContext: null,
-        hidden: undefined,
       });
       expect(inputEl.value).toBe('');
     });
@@ -254,7 +257,6 @@ describe('InputController - Message Queue', () => {
         editorContext: null,
         browserContext: null,
         canvasContext: null,
-        hidden: undefined,
       });
       expect(imageContextManager.clearImages).toHaveBeenCalled();
     });
@@ -333,8 +335,8 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      expect(queueIndicatorEl.setText).toHaveBeenCalledWith('⌙ Queued: test message');
-      expect(queueIndicatorEl.style.display).toBe('block');
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent).toBe('⌙ Queued: test message');
+      expect(queueIndicatorEl.style.display).toBe('flex');
     });
 
     it('should hide queue indicator when no message is queued', () => {
@@ -353,8 +355,8 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      const call = queueIndicatorEl.setText.mock.calls[0][0] as string;
-      expect(call).toContain('...');
+      const text = queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent as string;
+      expect(text).toContain('...');
     });
 
     it('should include [images] when queue message has images', () => {
@@ -364,9 +366,9 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      const call = queueIndicatorEl.setText.mock.calls[0][0] as string;
-      expect(call).toContain('queued content');
-      expect(call).toContain('[images]');
+      const text = queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent as string;
+      expect(text).toContain('queued content');
+      expect(text).toContain('[images]');
     });
 
     it('should show [images] when queue message has only images', () => {
@@ -376,7 +378,428 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      expect(queueIndicatorEl.setText).toHaveBeenCalledWith('⌙ Queued: [images]');
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent).toBe('⌙ Queued: [images]');
+    });
+
+    it('should show Codex steer action when queued message can be steered', () => {
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = { content: 'queued content', images: undefined, editorContext: null, canvasContext: null };
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.textContent).toBe('Steer Now');
+    });
+
+    it('should steer the queued Codex message when the action is clicked', async () => {
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: 'queued follow-up' },
+        persistedContent: 'queued follow-up',
+        prompt: 'queued follow-up',
+        isCompact: false,
+        mcpMentions: new Set(),
+      });
+      mockAgentService.steer = jest.fn().mockResolvedValue(true);
+
+      deps.state.isStreaming = true;
+      deps.state.messages = [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'original',
+          displayContent: 'original',
+          timestamp: Date.now(),
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+        },
+      ];
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mockAgentService.prepareTurn).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'queued follow-up',
+      }));
+      expect(mockAgentService.steer).toHaveBeenCalled();
+      expect(deps.state.queuedMessage).toBeNull();
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent)
+        .toBe('⌙ Steering: queued follow-up');
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-action')).toBeNull();
+      expect(queueIndicatorEl.style.display).toBe('flex');
+      expect(deps.state.messages).toHaveLength(2);
+      expect(deps.state.messages[0]).toMatchObject({
+        id: 'user-1',
+        role: 'user',
+        content: 'original',
+        displayContent: 'original',
+      });
+      expect((deps.renderer as any).addMessage).not.toHaveBeenCalled();
+      expect((deps.renderer as any).updateLiveUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('should restore the queued message when steering fails', async () => {
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: 'queued follow-up' },
+        persistedContent: 'queued follow-up',
+        prompt: 'queued follow-up',
+        isCompact: false,
+        mcpMentions: new Set(),
+      });
+      mockAgentService.steer = jest.fn().mockRejectedValue(new Error('boom'));
+
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.state.queuedMessage).toEqual({
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      });
+      expect(mockNotice).toHaveBeenCalledWith(
+        'Failed to steer the queued Codex message. It is still available.',
+      );
+    });
+
+    it('should not mark the current note as sent when steering is rejected', async () => {
+      const fileContextManager = createMockFileContextManager();
+      (fileContextManager.getCurrentNotePath as jest.Mock).mockReturnValue('notes/session.md');
+      (fileContextManager.shouldSendCurrentNote as jest.Mock).mockReturnValue(true);
+      deps = createSendableDeps({
+        getFileContextManager: () => fileContextManager as any,
+      });
+
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: 'queued follow-up', currentNotePath: 'notes/session.md' },
+        persistedContent: 'queued follow-up',
+        prompt: 'queued follow-up',
+        isCompact: false,
+        mcpMentions: new Set(),
+      });
+      mockAgentService.steer = jest.fn().mockResolvedValue(false);
+
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller = new InputController(deps);
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(fileContextManager.markCurrentNoteSent).not.toHaveBeenCalled();
+      expect(deps.state.queuedMessage).toEqual({
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      });
+    });
+
+    it('should route subsequent live chunks to a new assistant bubble after steering', async () => {
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request: {
+          ...request,
+          currentNotePath: 'notes/steer.md',
+        },
+        persistedContent: 'persisted steer prompt',
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions: new Set(),
+      }));
+      mockAgentService.steer = jest.fn().mockResolvedValue(true);
+
+      let releaseSecondChunk: () => void = () => {
+        throw new Error('Second chunk gate was not initialized');
+      };
+      const secondChunkGate = new Promise<void>((resolve) => {
+        releaseSecondChunk = () => resolve();
+      });
+      const firstChunkHandled = new Promise<void>((resolve) => {
+        let handledCount = 0;
+        (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => {
+          handledCount += 1;
+          if (handledCount === 1) {
+            resolve();
+          }
+        });
+      });
+
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        return (async function* () {
+          yield { type: 'user_message_start', content: 'first prompt', itemId: 'user-1' };
+          yield { type: 'assistant_message_start', itemId: 'assistant-1' };
+          yield { type: 'text', content: 'partial' };
+          await secondChunkGate;
+          yield { type: 'user_message_start', content: 'steer prompt', itemId: 'user-2' };
+          yield { type: 'thinking', content: 'thinking after steer' };
+          yield { type: 'assistant_message_start', itemId: 'assistant-2' };
+          yield { type: 'text', content: 'after steer' };
+          yield { type: 'done' };
+        })();
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'first prompt';
+      controller = new InputController(deps);
+
+      const sendPromise = controller.sendMessage();
+      await firstChunkHandled;
+
+      deps.state.queuedMessage = {
+        content: 'steer prompt',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.state.messages).toHaveLength(2);
+
+      const firstAssistant = deps.state.messages[1];
+
+      releaseSecondChunk();
+      await sendPromise;
+
+      expect(deps.state.messages).toHaveLength(4);
+      const steerUser = deps.state.messages[2];
+      const secondAssistant = deps.state.messages[3];
+      expect(steerUser).toMatchObject({
+        role: 'user',
+        content: 'persisted steer prompt',
+        displayContent: 'steer prompt',
+        currentNote: 'notes/steer.md',
+      });
+      expect(secondAssistant).toMatchObject({
+        role: 'assistant',
+      });
+
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        1,
+        { type: 'text', content: 'partial' },
+        firstAssistant,
+      );
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        2,
+        { type: 'thinking', content: 'thinking after steer' },
+        secondAssistant,
+      );
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        3,
+        { type: 'text', content: 'after steer' },
+        secondAssistant,
+      );
+      expect(deps.streamController.finalizeCurrentThinkingBlock).toHaveBeenCalledWith(firstAssistant);
+      expect(deps.streamController.finalizeCurrentTextBlock).toHaveBeenCalledWith(firstAssistant);
+      expect(queueIndicatorEl.style.display).toBe('none');
+    });
+
+    it('should discard the empty assistant placeholder when steer lands before assistant output', async () => {
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request: {
+          ...request,
+          currentNotePath: 'notes/steer.md',
+        },
+        persistedContent: request.text === 'steer prompt'
+          ? 'persisted steer prompt'
+          : request.text,
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions: new Set(),
+      }));
+      mockAgentService.steer = jest.fn().mockResolvedValue(true);
+
+      let releaseSecondChunk: () => void = () => {
+        throw new Error('Second chunk gate was not initialized');
+      };
+      const secondChunkGate = new Promise<void>((resolve) => {
+        releaseSecondChunk = () => resolve();
+      });
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        return (async function* () {
+          yield { type: 'user_message_start', content: 'first prompt', itemId: 'user-1' };
+          await secondChunkGate;
+          yield { type: 'user_message_start', content: 'steer prompt', itemId: 'user-2' };
+          yield { type: 'assistant_message_start', itemId: 'assistant-2' };
+          yield { type: 'text', content: 'after steer' };
+          yield { type: 'done' };
+        })();
+      });
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content += chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'first prompt';
+      controller = new InputController(deps);
+
+      const sendPromise = controller.sendMessage();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.state.messages).toHaveLength(2);
+      const discardedAssistant = deps.state.messages[1];
+
+      deps.state.queuedMessage = {
+        content: 'steer prompt',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      releaseSecondChunk();
+      await sendPromise;
+
+      expect((deps.renderer as any).removeMessage).toHaveBeenCalledWith(discardedAssistant.id);
+      expect(deps.state.messages).toHaveLength(3);
+      expect(deps.state.messages.map((message) => message.role)).toEqual(['user', 'user', 'assistant']);
+      expect(deps.state.messages[1]).toMatchObject({
+        content: 'persisted steer prompt',
+        displayContent: 'steer prompt',
+        currentNote: 'notes/steer.md',
+      });
+      expect(deps.state.messages[2]).toMatchObject({
+        role: 'assistant',
+        content: 'after steer',
+      });
+      expect(deps.streamController.handleStreamChunk).toHaveBeenCalledTimes(2);
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        1,
+        { type: 'text', content: 'after steer' },
+        deps.state.messages[2],
+      );
     });
   });
 
@@ -401,6 +824,25 @@ describe('InputController - Message Queue', () => {
 
       expect(deps.state.queuedMessage).toBeNull();
       expect(deps.state.cancelRequested).toBe(true);
+      expect((deps as any).mockAgentService.cancel).toHaveBeenCalled();
+    });
+
+    it('should restore a pending steer message to input on cancel', () => {
+      deps.state.isStreaming = true;
+      (controller as any).pendingSteerMessage = {
+        content: 'steered follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      (controller as any).steerInFlight = true;
+
+      controller.cancelStreaming();
+
+      expect(inputEl.value).toBe('steered follow-up');
+      expect(deps.state.queuedMessage).toBeNull();
+      expect((deps.state.queueIndicatorEl as any).style.display).toBe('none');
       expect((deps as any).mockAgentService.cancel).toHaveBeenCalled();
     });
 
@@ -727,6 +1169,39 @@ describe('InputController - Message Queue', () => {
 
       expect(deps.plugin.createConversation).toHaveBeenCalledWith({
         providerId: 'codex',
+        sessionId: undefined,
+      });
+    });
+
+    it('should prefer the blank-tab provider over a stale runtime when lazily creating a conversation', async () => {
+      const sendableDeps = createSendableDeps({
+        getTabProviderId: () => 'claude',
+      }, null);
+      sendableDeps.mockAgentService.providerId = 'codex';
+      deps = sendableDeps;
+      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({ id: 'conv-claude', providerId: 'claude' });
+
+      (sendableDeps.mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response text' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
+        providerId: 'claude',
         sessionId: undefined,
       });
     });

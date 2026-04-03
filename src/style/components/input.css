@@ -172,16 +172,43 @@
   background: var(--background-modifier-hover);
 }
 
-/* Message Queue Indicator (shown below flavor text in thinking indicator) */
-.claudian-queue-indicator {
+/* Composer queue status row (queued follow-up preview + steer action) */
+.claudian-input-queue-row {
   display: none;
   font-size: 12px;
   color: var(--text-muted);
   font-style: normal;
-  margin-top: 2px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px 8px 2px;
+}
+
+.claudian-queue-indicator-text {
+  min-width: 0;
+  flex: 1 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.claudian-queue-indicator-action {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--interactive-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.claudian-queue-indicator-action:hover {
+  text-decoration: underline;
+}
+
+.claudian-queue-indicator-action[disabled] {
+  color: var(--text-faint);
+  cursor: default;
+  text-decoration: none;
 }
 
 /* Light blue border when instruction mode is active */

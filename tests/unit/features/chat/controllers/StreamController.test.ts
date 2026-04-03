@@ -345,10 +345,6 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls![0].status).toBe('running');
       expect(msg.contentBlocks).toHaveLength(1);
       expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'tool-1' });
-
-      // Thinking indicator is debounced - advance timer to trigger it
-      jest.advanceTimersByTime(500);
-      expect(deps.updateQueueIndicator).toHaveBeenCalled();
     });
 
     it('should update tool_result status', async () => {

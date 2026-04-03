@@ -422,6 +422,20 @@ export interface TurnStartResult {
 }
 
 // ---------------------------------------------------------------------------
+// turn/steer
+// ---------------------------------------------------------------------------
+
+export interface TurnSteerParams {
+  threadId: string;
+  input: UserInput[];
+  expectedTurnId: string;
+}
+
+export interface TurnSteerResult {
+  turnId: string;
+}
+
+// ---------------------------------------------------------------------------
 // turn/interrupt
 // ---------------------------------------------------------------------------
 

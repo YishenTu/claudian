@@ -12,6 +12,8 @@ import type {
   FileChangeApprovalResponse,
   PermissionsApprovalRequest,
   PermissionsApprovalResponse,
+  TurnSteerParams,
+  TurnSteerResult,
   UserInputRequest,
   UserInputResponse,
 } from '@/providers/codex/runtime/codexAppServerTypes';
@@ -279,6 +281,26 @@ describe('UserInputResponse', () => {
     };
     assertType<UserInputResponse>(response);
     expect(Object.keys(response.answers)).toEqual(['q1', 'q2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// turn/steer
+// ---------------------------------------------------------------------------
+
+describe('TurnSteer', () => {
+  it('accepts expectedTurnId and returns the active turn id', () => {
+    const params: TurnSteerParams = {
+      threadId: 'thr_123',
+      expectedTurnId: 'turn_456',
+      input: [{ type: 'text', text: 'Focus on failing tests first.' }],
+    };
+    const result: TurnSteerResult = { turnId: 'turn_456' };
+
+    assertType<TurnSteerParams>(params);
+    assertType<TurnSteerResult>(result);
+    expect(params.expectedTurnId).toBe('turn_456');
+    expect(result.turnId).toBe('turn_456');
   });
 });
 

@@ -16,9 +16,10 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../types';
+import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 
-export type ProviderId = string;
+export type { ProviderId } from '../types/provider';
 
 export interface ProviderCapabilities {
   providerId: ProviderId;
@@ -31,6 +32,7 @@ export interface ProviderCapabilities {
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;
   supportsMcpTools: boolean;
+  supportsTurnSteer?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
   planPathPrefix?: string;
 }

@@ -12,6 +12,7 @@ export {
   type UsageInfo,
   VIEW_TYPE_CLAUDIAN,
 } from './chat';
+export { type ProviderId } from './provider';
 
 // Settings and command types
 export {

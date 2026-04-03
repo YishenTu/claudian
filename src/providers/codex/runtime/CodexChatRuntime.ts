@@ -56,6 +56,7 @@ import type {
   ThreadStartResult,
   TurnStartedNotification,
   TurnStartResult,
+  TurnSteerResult,
   UserInput,
 } from './codexAppServerTypes';
 import { CodexNotificationRouter } from './CodexNotificationRouter';
@@ -116,6 +117,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private subagentHookProvider: (() => SubagentRuntimeState) | null = null;
   private autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
   private resumeCheckpoint: string | undefined;
+  private activeInputBundles = new Set<CodexInputBundle>();
   /* eslint-enable @typescript-eslint/no-unused-vars */
 
   // Fork state
@@ -224,11 +226,11 @@ export class CodexChatRuntime implements ChatRuntime {
     await this.ensureReady();
 
     this.canceled = false;
+    this.cleanupActiveInputBundles();
     this.chunkBuffer = [];
     this.chunkResolve = null;
     this.currentQueryThreadId = null;
     this.pendingTurnNotifications = [];
-    let inputBundle: CodexInputBundle | null = null;
     let tailEngine: CodexFileTailEngine | null = null;
     let tailDrainInterval: ReturnType<typeof setInterval> | null = null;
     let toolSourceMode: 'transcript' | 'fallback' = 'fallback';
@@ -481,7 +483,8 @@ export class CodexChatRuntime implements ChatRuntime {
 
         // Build input
         const skillInputs = await this.resolveSkillInputs(turn.request.text);
-        inputBundle = this.buildInput(turn.prompt, turn.request.images, skillInputs);
+        const turnInputBundle = this.buildInput(turn.prompt, turn.request.images, skillInputs);
+        this.registerActiveInputBundle(turnInputBundle);
 
         // Start turn
         const providerSettings = this.getProviderSettings();
@@ -511,7 +514,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
         const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
           threadId,
-          input: inputBundle.input,
+          input: turnInputBundle.input,
           approvalPolicy: permissionMode.approvalPolicy,
           model: resolvedModel,
           effort,
@@ -588,7 +591,7 @@ export class CodexChatRuntime implements ChatRuntime {
         await stopTailToolPolling().catch(() => {});
       }
 
-      inputBundle?.cleanup();
+      this.cleanupActiveInputBundles();
       this.currentTurnId = null;
       this.currentQueryThreadId = null;
       this.pendingTurnNotifications = [];
@@ -603,6 +606,42 @@ export class CodexChatRuntime implements ChatRuntime {
           }
         }
       }
+    }
+  }
+
+  async steer(turn: PreparedChatTurn): Promise<boolean> {
+    if (turn.isCompact || this.canceled) {
+      return false;
+    }
+
+    const transport = this.transport;
+    const threadId = this.currentQueryThreadId;
+    const turnId = this.currentTurnId;
+    if (!transport || !threadId || !turnId) {
+      return false;
+    }
+
+    const skillInputs = await this.resolveSkillInputs(turn.request.text);
+    const inputBundle = this.buildInput(turn.prompt, turn.request.images, skillInputs);
+    this.registerActiveInputBundle(inputBundle);
+
+    try {
+      const result = await transport.request<TurnSteerResult>('turn/steer', {
+        threadId,
+        input: inputBundle.input,
+        expectedTurnId: turnId,
+      });
+
+      if (result.turnId !== turnId) {
+        return false;
+      }
+
+      return this.currentQueryThreadId === threadId
+        && this.currentTurnId === turnId
+        && !this.canceled;
+    } catch (error) {
+      this.disposeInputBundle(inputBundle);
+      throw error;
     }
   }
 
@@ -745,6 +784,7 @@ export class CodexChatRuntime implements ChatRuntime {
   // -----------------------------------------------------------------------
 
   private teardownState(): void {
+    this.cleanupActiveInputBundles();
     this.session.reset();
     this.loadedThreadId = null;
     this.currentThreadPath = null;
@@ -766,6 +806,26 @@ export class CodexChatRuntime implements ChatRuntime {
   private dismissAllPendingPrompts(): void {
     this.dismissApprovalUI();
     this.serverRequestRouter.abortPendingAskUser();
+  }
+
+  private registerActiveInputBundle(bundle: CodexInputBundle): void {
+    this.activeInputBundles.add(bundle);
+  }
+
+  private disposeInputBundle(bundle: CodexInputBundle): void {
+    if (this.activeInputBundles.delete(bundle)) {
+      bundle.cleanup();
+      return;
+    }
+
+    bundle.cleanup();
+  }
+
+  private cleanupActiveInputBundles(): void {
+    for (const bundle of this.activeInputBundles) {
+      bundle.cleanup();
+    }
+    this.activeInputBundles.clear();
   }
 
   private setReady(ready: boolean): void {

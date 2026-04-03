@@ -262,6 +262,14 @@ function syncTabProviderServices(
   );
 }
 
+function cleanupTabRuntime(tab: TabData): void {
+  if (tab.service && typeof tab.service.cleanup === 'function') {
+    tab.service.cleanup();
+  }
+  tab.service = null;
+  tab.serviceInitialized = false;
+}
+
 /**
  * Called when provider availability changes. If a blank tab targets a provider
  * that is now disabled, it falls back to the first enabled provider's default
@@ -330,6 +338,7 @@ export function createTab(options: TabCreateOptions): TabData {
   const subagentManager = new SubagentManager(() => {});
 
   const dom = buildTabDOM(contentEl);
+  state.queueIndicatorEl = dom.queueIndicatorEl;
 
   const isBound = !!conversation?.id;
   const draftModel = isBound ? null : resolveBlankTabModel(plugin, options.defaultProviderId);
@@ -425,6 +434,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
   const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
+  const queueIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-input-queue-row' });
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
   const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
@@ -443,6 +453,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     welcomeEl,
     statusPanelContainerEl,
     inputContainerEl,
+    queueIndicatorEl,
     inputWrapper,
     inputEl,
     navRowEl,
@@ -502,7 +513,7 @@ export async function initializeTabService(
 
   let service: ChatRuntime | null = null;
   let unsubscribeReadyState: (() => void) | null = null;
-  const previousService = tab.serviceInitialized ? tab.service : null;
+  const previousService = tab.service;
 
   try {
     if (typeof previousService?.cleanup === 'function') {
@@ -720,9 +731,16 @@ function initializeInputToolbar(
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
       if (tab.lifecycleState === 'blank') {
+        const previousProvider = tab.providerId;
         tab.draftModel = model;
         const newProvider = getProviderForModel(model, plugin.settings as unknown as Record<string, unknown>);
+        if (tab.service) {
+          cleanupTabRuntime(tab);
+        }
         tab.providerId = newProvider;
+        if (newProvider !== previousProvider) {
+          syncTabProviderServices(tab, plugin);
+        }
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         onProviderChanged?.(newProvider);
 
@@ -1202,13 +1220,13 @@ export function initializeTabControllers(
     },
     {
       onNewConversation: () => {
-        // Reset to blank state — mark service as not initialized so
-        // ensureServiceInitialized re-runs the init path on next send
+        // Reset to blank state and drop the bound runtime so the next send
+        // reinitializes against the currently selected blank-tab provider.
         const previousProviderId = tab.providerId;
+        cleanupTabRuntime(tab);
         tab.lifecycleState = 'blank';
         tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
         tab.conversationId = null;
-        tab.serviceInitialized = false;
         tab.providerId = getTabProviderId(tab, plugin);
         if (tab.providerId !== previousProviderId) {
           syncTabProviderServices(tab, plugin);

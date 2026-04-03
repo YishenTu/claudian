@@ -34,6 +34,7 @@ export interface ChatRuntime {
     conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk>;
+  steer?(turn: PreparedChatTurn): Promise<boolean>;
   cancel(): void;
   resetSession(): void;
   getSessionId(): string | null;

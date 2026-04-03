@@ -1,5 +1,5 @@
-import type { ProviderId } from '../providers/types';
 import type { SDKToolUseResult } from './diff';
+import type { ProviderId } from './provider';
 import type { SubagentMode, ToolCallInfo } from './tools';
 
 /** Fork origin reference: identifies the source session and checkpoint. */
@@ -135,6 +135,8 @@ export interface SessionMetadata {
  * runtime methods instead of encoding it as stream-control chunks.
  */
 export type StreamChunk =
+  | { type: 'user_message_start'; content: string; itemId?: string }
+  | { type: 'assistant_message_start'; itemId?: string }
   | { type: 'text'; content: string }
   | { type: 'thinking'; content: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }

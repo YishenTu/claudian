@@ -1211,6 +1211,40 @@ describe('CodexChatRuntime', () => {
     });
   });
 
+  describe('steer', () => {
+    it('sends turn/steer for the active turn', async () => {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-steer'),
+        'turn/start': () => turnStartResponse('turn-steer'),
+        'turn/steer': () => ({ turnId: 'turn-steer' }),
+      }));
+
+      const queryPromise = collectChunks(runtime.query(createTurn('start here')));
+      await new Promise(r => setTimeout(r, 0));
+
+      await expect(runtime.steer?.(createTurn('follow up'))).resolves.toBe(true);
+
+      emitNotification('turn/completed', {
+        threadId: 'thread-steer',
+        turn: { id: 'turn-steer', items: [], status: 'completed', error: null },
+      });
+      await queryPromise;
+
+      expect(findCall('turn/steer')).toEqual([
+        'turn/steer',
+        {
+          threadId: 'thread-steer',
+          expectedTurnId: 'turn-steer',
+          input: [{ type: 'text', text: 'follow up', text_elements: [] }],
+        },
+      ]);
+    });
+
+    it('returns false when there is no active turn to steer', async () => {
+      await expect(runtime.steer?.(createTurn('follow up'))).resolves.toBe(false);
+    });
+  });
+
   describe('query - plan mode (collaborationMode)', () => {
     it('includes collaborationMode in turn/start when permissionMode is plan', async () => {
       const plugin = createMockPlugin({ permissionMode: 'plan' });
