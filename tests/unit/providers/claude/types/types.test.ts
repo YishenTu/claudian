@@ -63,6 +63,7 @@ describe('types.ts', () => {
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
         thinkingBudget: 'off',
+        serviceTier: 'default',
         permissionMode: 'yolo',
         claudeSafeMode: 'acceptEdits',
         codexSafeMode: 'workspace-write',
@@ -97,6 +98,7 @@ describe('types.ts', () => {
         codexEnabled: false,
         savedProviderModel: {},
         savedProviderEffort: {},
+        savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
       };
 
@@ -111,6 +113,7 @@ describe('types.ts', () => {
         enableAutoTitleGeneration: true,
         titleGenerationModel: '',
         thinkingBudget: 'medium',
+        serviceTier: 'default',
         permissionMode: 'normal',
         claudeSafeMode: 'acceptEdits',
         codexSafeMode: 'workspace-write',
@@ -145,6 +148,7 @@ describe('types.ts', () => {
         codexEnabled: false,
         savedProviderModel: {},
         savedProviderEffort: {},
+        savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
       };
 
@@ -160,6 +164,7 @@ describe('types.ts', () => {
         lastClaudeModel: 'opus',
         lastCustomModel: 'custom/model',
         thinkingBudget: 'high',
+        serviceTier: 'default',
         permissionMode: 'yolo',
         claudeSafeMode: 'acceptEdits',
         codexSafeMode: 'workspace-write',
@@ -194,6 +199,7 @@ describe('types.ts', () => {
         codexEnabled: false,
         savedProviderModel: {},
         savedProviderEffort: {},
+        savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
       };
 

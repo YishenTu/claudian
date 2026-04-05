@@ -22,6 +22,7 @@ import type {
   McpServerSelector,
   ModelSelector,
   PermissionToggle,
+  ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '../ui/InputToolbar';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
@@ -128,6 +129,7 @@ export interface TabUIComponents {
   externalContextSelector: ExternalContextSelector | null;
   mcpServerSelector: McpServerSelector | null;
   permissionToggle: PermissionToggle | null;
+  serviceTierToggle: ServiceTierToggle | null;
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   bangBashModeManager: BangBashModeManager | null;

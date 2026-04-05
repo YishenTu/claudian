@@ -97,9 +97,11 @@ describe('ProviderSettingsCoordinator', () => {
         },
         model: 'haiku',
         effortLevel: 'high',
+        serviceTier: 'default',
         thinkingBudget: 'off',
         savedProviderModel: { codex: 'gpt-5.4', claude: 'haiku' },
         savedProviderEffort: { codex: 'medium', claude: 'high' },
+        savedProviderServiceTier: { codex: 'fast', claude: 'default' },
         savedProviderThinkingBudget: { codex: '1024', claude: 'off' },
       };
 
@@ -107,6 +109,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(settings.model).toBe('gpt-5.4');
       expect(settings.effortLevel).toBe('medium');
+      expect(settings.serviceTier).toBe('fast');
       expect(settings.thinkingBudget).toBe('1024');
     });
 
@@ -114,9 +117,11 @@ describe('ProviderSettingsCoordinator', () => {
       const settings: Record<string, unknown> = {
         model: 'old-model',
         effortLevel: 'low',
+        serviceTier: 'default',
         thinkingBudget: '500',
         savedProviderModel: { claude: 'sonnet' },
         savedProviderEffort: { claude: 'high' },
+        savedProviderServiceTier: { claude: 'default' },
         savedProviderThinkingBudget: { claude: 'off' },
       };
 
@@ -124,6 +129,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(settings.model).toBe('sonnet');
       expect(settings.effortLevel).toBe('high');
+      expect(settings.serviceTier).toBe('default');
       expect(settings.thinkingBudget).toBe('off');
     });
 
@@ -132,9 +138,11 @@ describe('ProviderSettingsCoordinator', () => {
         settingsProvider: 'claude',
         model: 'haiku',
         effortLevel: 'high',
+        serviceTier: 'default',
         thinkingBudget: 'off',
         savedProviderModel: {},
         savedProviderEffort: {},
+        savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
       };
 
@@ -150,6 +158,7 @@ describe('ProviderSettingsCoordinator', () => {
         settingsProvider: 'claude',
         model: 'haiku',
         effortLevel: 'high',
+        serviceTier: 'default',
         thinkingBudget: 'off',
       };
 
@@ -169,9 +178,11 @@ describe('ProviderSettingsCoordinator', () => {
         },
         model: 'gpt-5.4',
         effortLevel: 'low',
+        serviceTier: 'fast',
         thinkingBudget: 'off',
         savedProviderModel: { claude: 'haiku' },
         savedProviderEffort: { claude: 'high' },
+        savedProviderServiceTier: { claude: 'default' },
         savedProviderThinkingBudget: { claude: 'off' },
       };
 
@@ -184,6 +195,10 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.savedProviderEffort).toEqual({
         claude: 'high',
         codex: 'low',
+      });
+      expect(settings.savedProviderServiceTier).toEqual({
+        claude: 'default',
+        codex: 'fast',
       });
     });
   });
@@ -200,9 +215,11 @@ describe('ProviderSettingsCoordinator', () => {
         },
         model: 'haiku',
         effortLevel: 'high',
+        serviceTier: 'default',
         thinkingBudget: 'off',
         savedProviderModel: {},
         savedProviderEffort: {},
+        savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
       };
 
@@ -210,6 +227,32 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(settings.model).toBe('gpt-5.4-mini');
       expect(settings.effortLevel).toBe('medium');
+      expect(settings.serviceTier).toBe('default');
+    });
+
+    it('preserves saved service tier when the projected model hides the toggle', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'codex',
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            environmentVariables: '',
+          },
+        },
+        model: 'gpt-5.4-mini',
+        effortLevel: 'medium',
+        serviceTier: 'default',
+        thinkingBudget: 'off',
+        savedProviderModel: { codex: 'gpt-5.4-mini' },
+        savedProviderEffort: { codex: 'medium' },
+        savedProviderServiceTier: { codex: 'fast' },
+        savedProviderThinkingBudget: { codex: 'off' },
+      };
+
+      ProviderSettingsCoordinator.projectProviderState(settings, 'codex');
+
+      expect(settings.model).toBe('gpt-5.4-mini');
+      expect(settings.serviceTier).toBe('fast');
     });
   });
 
@@ -231,9 +274,11 @@ describe('ProviderSettingsCoordinator', () => {
         },
         model: 'haiku',
         effortLevel: 'high',
+        serviceTier: 'default',
         thinkingBudget: 'off',
         savedProviderModel: { claude: 'haiku', codex: 'gpt-5.4' },
         savedProviderEffort: { claude: 'high', codex: 'medium' },
+        savedProviderServiceTier: { claude: 'default', codex: 'fast' },
         savedProviderThinkingBudget: { claude: 'off', codex: 'off' },
       };
 
@@ -246,6 +291,10 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.savedProviderModel).toEqual({
         claude: 'haiku',
         codex: 'gpt-5.4',
+      });
+      expect(settings.savedProviderServiceTier).toEqual({
+        claude: 'default',
+        codex: 'fast',
       });
     });
   });

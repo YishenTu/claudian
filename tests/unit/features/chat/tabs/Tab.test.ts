@@ -167,6 +167,10 @@ const createMockPermissionToggle = () => ({
   updateDisplay: jest.fn(),
 });
 
+const createMockServiceTierToggle = () => ({
+  updateDisplay: jest.fn(),
+});
+
 // Shared mock instances (reset in beforeEach)
 let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
 let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
@@ -180,6 +184,7 @@ let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
 let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
 let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
 let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
+let mockServiceTierToggle: ReturnType<typeof createMockServiceTierToggle>;
 let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setAsyncSubagentClickCallback: jest.Mock };
 let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockBrowserSelectionController: ReturnType<typeof createMockBrowserSelectionController>;
@@ -258,6 +263,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
     mockExternalContextSelector = createMockExternalContextSelector();
     mockMcpServerSelector = createMockMcpServerSelector();
     mockPermissionToggle = createMockPermissionToggle();
+    mockServiceTierToggle = createMockServiceTierToggle();
     return {
       modelSelector: mockModelSelector,
       thinkingBudgetSelector: mockThinkingBudgetSelector,
@@ -265,6 +271,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
       externalContextSelector: mockExternalContextSelector,
       mcpServerSelector: mockMcpServerSelector,
       permissionToggle: mockPermissionToggle,
+      serviceTierToggle: mockServiceTierToggle,
     };
   }),
 }));
@@ -383,6 +390,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       model: 'claude-sonnet-4-5',
       thinkingBudget: 'low',
       effortLevel: 'high',
+      serviceTier: 'default',
       permissionMode: 'yolo',
       keyboardNavigation: {
         scrollUpKey: 'k',
@@ -397,6 +405,9 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       },
       savedProviderEffort: {
         claude: 'high',
+      },
+      savedProviderServiceTier: {
+        claude: 'default',
       },
       savedProviderThinkingBudget: {
         claude: 'low',
@@ -3276,6 +3287,81 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(tab.service).toBeNull();
     expect(tab.serviceInitialized).toBe(false);
     expect(tab.lifecycleState).toBe('blank');
+  });
+
+  it('refreshes the service-tier toggle when the model changes on a blank tab', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: jest.fn().mockReturnValue([]),
+      ownsModel: jest.fn((model: string) => model.startsWith('gpt-') || /^o\d/.test(model)),
+      isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+      getReasoningOptions: jest.fn().mockReturnValue([]),
+      getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
+      getContextWindowSize: jest.fn().mockReturnValue(200000),
+      isDefaultModel: jest.fn().mockReturnValue(false),
+      applyModelDefaults: jest.fn(),
+      normalizeModelVariant: jest.fn((model: string) => model),
+      getCustomModelIds: jest.fn().mockReturnValue(new Set()),
+    } as any);
+
+    const plugin = createMockPlugin();
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin);
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    mockServiceTierToggle.updateDisplay.mockClear();
+
+    await toolbarCallbacks.onModelChange('gpt-5.4');
+
+    expect(mockServiceTierToggle.updateDisplay).toHaveBeenCalled();
+  });
+
+  it('preserves the saved Codex fast preference when switching away and back', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+    const plugin = createMockPlugin();
+    plugin.settings.settingsProvider = 'codex';
+    plugin.settings.model = 'gpt-5.4';
+    plugin.settings.effortLevel = 'medium';
+    plugin.settings.serviceTier = 'fast';
+    plugin.settings.savedProviderModel = {
+      claude: 'claude-sonnet-4-5',
+      codex: 'gpt-5.4',
+    };
+    plugin.settings.savedProviderEffort = {
+      claude: 'high',
+      codex: 'medium',
+    };
+    plugin.settings.savedProviderServiceTier = {
+      claude: 'default',
+      codex: 'fast',
+    };
+    plugin.settings.savedProviderThinkingBudget = {
+      claude: 'low',
+      codex: 'off',
+    };
+
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin);
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    await toolbarCallbacks.onModelChange('gpt-5.4-mini');
+    expect(plugin.settings.savedProviderServiceTier.codex).toBe('fast');
+
+    await toolbarCallbacks.onModelChange('gpt-5.4');
+    expect(plugin.settings.savedProviderServiceTier.codex).toBe('fast');
   });
 
   it('swaps dropdown provider catalog on blank tab model change', async () => {

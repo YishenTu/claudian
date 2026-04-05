@@ -79,6 +79,13 @@ function resolveCodexSandboxConfig(
   return { approvalPolicy: 'on-request', sandbox: codexSafeMode };
 }
 
+function resolveCodexServiceTier(serviceTier: unknown, model: string | undefined): string | null {
+  if (model !== 'gpt-5.4') {
+    return null;
+  }
+  return serviceTier === 'fast' ? 'fast' : null;
+}
+
 const EFFORT_MAP: Record<string, string> = {
   low: 'low',
   medium: 'medium',
@@ -386,6 +393,7 @@ export class CodexChatRuntime implements ChatRuntime {
           model: model ?? 'gpt-5.4',
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
+          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
           baseInstructions: promptText,
           persistExtendedHistory: true,
         });
@@ -424,6 +432,7 @@ export class CodexChatRuntime implements ChatRuntime {
           model: model ?? 'gpt-5.4',
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
+          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
           baseInstructions: promptText,
           persistExtendedHistory: true,
         });
@@ -441,6 +450,7 @@ export class CodexChatRuntime implements ChatRuntime {
           cwd: getVaultPath(this.plugin.app) ?? undefined,
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
+          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
           baseInstructions: promptText,
           experimentalRawEvents: false,
           persistExtendedHistory: true,
@@ -507,6 +517,7 @@ export class CodexChatRuntime implements ChatRuntime {
           : undefined;
 
         const summary = getCodexProviderSettings(providerSettings).reasoningSummary;
+        const serviceTier = resolveCodexServiceTier(providerSettings.serviceTier, resolvedModel);
 
         // Configure router plan state before turn/start so buffered notifications
         // that arrive before currentTurnId is set already see the correct state.
@@ -517,6 +528,7 @@ export class CodexChatRuntime implements ChatRuntime {
           input: turnInputBundle.input,
           approvalPolicy: permissionMode.approvalPolicy,
           model: resolvedModel,
+          serviceTier,
           effort,
           summary,
           sandboxPolicy,

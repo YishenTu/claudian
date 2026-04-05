@@ -4,6 +4,7 @@ import type {
   ProviderIconSvg,
   ProviderPermissionModeToggleConfig,
   ProviderReasoningOption,
+  ProviderServiceTierToggleConfig,
   ProviderUIOption,
 } from '../../../core/providers/types';
 
@@ -33,6 +34,14 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   activeLabel: 'YOLO',
   planValue: 'plan',
   planLabel: 'Plan',
+};
+
+const CODEX_SERVICE_TIER_TOGGLE: ProviderServiceTierToggleConfig = {
+  inactiveValue: 'default',
+  inactiveLabel: 'Standard',
+  activeValue: 'fast',
+  activeLabel: 'Fast',
+  description: 'Enable GPT-5.4 fast mode for this conversation. Faster responses use more credits.',
 };
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -102,6 +111,10 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
 
   getPermissionModeToggle(): ProviderPermissionModeToggleConfig {
     return CODEX_PERMISSION_MODE_TOGGLE;
+  },
+
+  getServiceTierToggle(settings): ProviderServiceTierToggleConfig | null {
+    return settings.model === 'gpt-5.4' ? CODEX_SERVICE_TIER_TOGGLE : null;
   },
 
   getProviderIcon() {

@@ -20,11 +20,13 @@ function createMockCallbacks() {
     onModelChange: jest.fn(),
     onThinkingBudgetChange: jest.fn(),
     onEffortLevelChange: jest.fn().mockResolvedValue(undefined),
+    onServiceTierChange: jest.fn().mockResolvedValue(undefined),
     onPermissionModeChange: jest.fn(),
     getSettings: jest.fn().mockReturnValue({
       model: 'haiku',
       thinkingBudget: 'off',
       effortLevel: 'high',
+      serviceTier: 'default',
       permissionMode: 'yolo',
     }),
     getEnvironmentVariables: jest.fn().mockReturnValue(''),

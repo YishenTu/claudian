@@ -1009,6 +1009,27 @@ describe('CodexChatRuntime', () => {
       rt.cleanup();
     });
 
+    it('sends serviceTier on thread/resume when fast mode is enabled', async () => {
+      const plugin = createMockPlugin({ model: 'gpt-5.4', serviceTier: 'fast' });
+      const rt = new CodexChatRuntime(plugin);
+
+      rt.syncConversationState({
+        sessionId: 'thread-resume-fast',
+        providerState: { threadId: 'thread-resume-fast' },
+      });
+
+      setupDefaultRequestMock('thread-resume-fast');
+      captureHandlers();
+
+      await collectChunks(rt.query(createTurn()));
+
+      const resumeCall = findCall('thread/resume');
+      expect(resumeCall).toBeDefined();
+      expect(resumeCall[1].serviceTier).toBe('fast');
+
+      rt.cleanup();
+    });
+
     it('reasserts approvalPolicy and sandboxPolicy on turn/start for already-loaded threads', async () => {
       const plugin = createMockPlugin({ permissionMode: 'normal' });
       const rt = new CodexChatRuntime(plugin);
@@ -1043,6 +1064,32 @@ describe('CodexChatRuntime', () => {
       expect(threadStartCall[1].approvalPolicy).toBe('never');
 
       yoloRuntime.cleanup();
+    });
+
+    it('sends serviceTier fast on thread/start and turn/start when fast mode is enabled', async () => {
+      const plugin = createMockPlugin({ serviceTier: 'fast' });
+      const rt = new CodexChatRuntime(plugin);
+
+      await collectChunks(rt.query(createTurn()));
+
+      const threadStartCall = findCall('thread/start');
+      const turnStartCall = findCall('turn/start');
+      expect(threadStartCall[1].serviceTier).toBe('fast');
+      expect(turnStartCall[1].serviceTier).toBe('fast');
+
+      rt.cleanup();
+    });
+
+    it('sends serviceTier null on turn/start when fast mode is disabled', async () => {
+      const plugin = createMockPlugin({ serviceTier: 'default' });
+      const rt = new CodexChatRuntime(plugin);
+
+      await collectChunks(rt.query(createTurn()));
+
+      const turnStartCall = findCall('turn/start');
+      expect(turnStartCall[1].serviceTier).toBeNull();
+
+      rt.cleanup();
     });
 
     it('uses workspace-write with on-request for normal mode', async () => {

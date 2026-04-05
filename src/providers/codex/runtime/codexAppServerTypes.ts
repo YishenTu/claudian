@@ -301,6 +301,7 @@ export interface ThreadStartParams {
   cwd: string;
   approvalPolicy: string;
   sandbox: string;
+  serviceTier?: string | null;
   baseInstructions?: string;
   experimentalRawEvents?: boolean;
   persistExtendedHistory?: boolean;
@@ -348,6 +349,7 @@ export interface ThreadResumeParams {
   model?: string;
   approvalPolicy?: string;
   sandbox?: string;
+  serviceTier?: string | null;
   baseInstructions?: string;
   persistExtendedHistory?: boolean;
 }
@@ -409,6 +411,7 @@ export interface TurnStartParams {
   approvalPolicy?: string;
   approvalsReviewer?: string;
   model?: string;
+  serviceTier?: string | null;
   effort?: string;
   summary?: 'auto' | 'concise' | 'detailed' | 'none';
   sandboxPolicy?: SandboxPolicy | null;

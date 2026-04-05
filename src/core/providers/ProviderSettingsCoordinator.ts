@@ -10,6 +10,7 @@ export interface SettingsReconciliationResult {
 const PROJECTION_KEYS = new Set([
   'model',
   'effortLevel',
+  'serviceTier',
   'thinkingBudget',
 ]);
 
@@ -21,7 +22,7 @@ function getSettingsProviderId(settings: Record<string, unknown>): ProviderId {
 
 function ensureProjectionMap(
   settings: Record<string, unknown>,
-  key: 'savedProviderModel' | 'savedProviderEffort' | 'savedProviderThinkingBudget',
+  key: 'savedProviderModel' | 'savedProviderEffort' | 'savedProviderServiceTier' | 'savedProviderThinkingBudget',
 ): ProviderProjectionMap {
   const current = settings[key];
   if (current && typeof current === 'object') {
@@ -38,6 +39,7 @@ function cloneProviderSettings(settings: Record<string, unknown>): Record<string
     ...settings,
     savedProviderModel: { ...(settings.savedProviderModel as ProviderProjectionMap | undefined) },
     savedProviderEffort: { ...(settings.savedProviderEffort as ProviderProjectionMap | undefined) },
+    savedProviderServiceTier: { ...(settings.savedProviderServiceTier as ProviderProjectionMap | undefined) },
     savedProviderThinkingBudget: { ...(settings.savedProviderThinkingBudget as ProviderProjectionMap | undefined) },
   };
 }
@@ -96,6 +98,7 @@ export class ProviderSettingsCoordinator {
   ): void {
     const savedModel = ensureProjectionMap(settings, 'savedProviderModel');
     const savedEffort = ensureProjectionMap(settings, 'savedProviderEffort');
+    const savedServiceTier = ensureProjectionMap(settings, 'savedProviderServiceTier');
     const savedBudget = ensureProjectionMap(settings, 'savedProviderThinkingBudget');
 
     if (typeof settings.model === 'string') {
@@ -103,6 +106,12 @@ export class ProviderSettingsCoordinator {
     }
     if (typeof settings.effortLevel === 'string') {
       savedEffort[providerId] = settings.effortLevel;
+    }
+    const serviceTierToggle = ProviderRegistry
+      .getChatUIConfig(providerId)
+      .getServiceTierToggle?.(settings) ?? null;
+    if (serviceTierToggle && typeof settings.serviceTier === 'string') {
+      savedServiceTier[providerId] = settings.serviceTier;
     }
     if (typeof settings.thinkingBudget === 'string') {
       savedBudget[providerId] = settings.thinkingBudget;
@@ -116,10 +125,12 @@ export class ProviderSettingsCoordinator {
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
     const savedModel = settings.savedProviderModel as ProviderProjectionMap | undefined;
     const savedEffort = settings.savedProviderEffort as ProviderProjectionMap | undefined;
+    const savedServiceTier = settings.savedProviderServiceTier as ProviderProjectionMap | undefined;
     const savedBudget = settings.savedProviderThinkingBudget as ProviderProjectionMap | undefined;
 
     const currentModel = typeof settings.model === 'string' ? settings.model : '';
     const currentEffort = typeof settings.effortLevel === 'string' ? settings.effortLevel : undefined;
+    const currentServiceTier = typeof settings.serviceTier === 'string' ? settings.serviceTier : undefined;
     const currentBudget = typeof settings.thinkingBudget === 'string' ? settings.thinkingBudget : undefined;
     const modelOptions = uiConfig.getModelOptions(settings);
     const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
@@ -147,12 +158,35 @@ export class ProviderSettingsCoordinator {
       uiConfig.applyModelDefaults(model, settings);
     }
 
+    const serviceTierToggle = uiConfig.getServiceTierToggle?.({
+      ...settings,
+      ...(model ? { model } : {}),
+    }) ?? null;
+
     if (savedEffort?.[providerId] !== undefined) {
       settings.effortLevel = savedEffort[providerId];
     } else if (canReuseCurrentProjection && currentEffort !== undefined) {
       settings.effortLevel = currentEffort;
     } else if (model && uiConfig.isAdaptiveReasoningModel(model)) {
       settings.effortLevel = uiConfig.getDefaultReasoningValue(model);
+    }
+
+    if (serviceTierToggle) {
+      if (savedServiceTier?.[providerId] !== undefined) {
+        settings.serviceTier = savedServiceTier[providerId];
+      } else if (canReuseCurrentProjection && currentServiceTier !== undefined) {
+        settings.serviceTier = currentServiceTier;
+      } else {
+        settings.serviceTier = serviceTierToggle.inactiveValue;
+      }
+    } else {
+      if (savedServiceTier?.[providerId] !== undefined) {
+        settings.serviceTier = savedServiceTier[providerId];
+      } else if (canReuseCurrentProjection && currentServiceTier !== undefined) {
+        settings.serviceTier = currentServiceTier;
+      } else {
+        settings.serviceTier = 'default';
+      }
     }
 
     if (savedBudget?.[providerId] !== undefined) {

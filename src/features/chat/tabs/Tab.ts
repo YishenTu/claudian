@@ -54,6 +54,7 @@ type TabProviderSettings = Record<string, unknown> & {
   model: string;
   thinkingBudget: string;
   effortLevel: string;
+  serviceTier: string;
   permissionMode: string;
   customContextLimits?: Record<string, number>;
 };
@@ -218,6 +219,7 @@ function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
   tab.ui.modelSelector?.renderOptions();
   tab.ui.thinkingBudgetSelector?.updateDisplay();
   tab.ui.permissionToggle?.updateDisplay();
+  tab.ui.serviceTierToggle?.updateDisplay();
   tab.dom.inputWrapper.toggleClass(
     'claudian-input-plan-mode',
     plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,
@@ -378,6 +380,7 @@ export function createTab(options: TabCreateOptions): TabData {
       externalContextSelector: null,
       mcpServerSelector: null,
       permissionToggle: null,
+      serviceTierToggle: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
       bangBashModeManager: null,
@@ -751,6 +754,7 @@ function initializeInputToolbar(
           uiConfig.applyModelDefaults(model, settings);
         });
         tab.ui.thinkingBudgetSelector?.updateDisplay();
+        tab.ui.serviceTierToggle?.updateDisplay();
         tab.ui.modelSelector?.updateDisplay();
         // Re-render options (provider may have changed reasoning controls)
         tab.ui.modelSelector?.renderOptions();
@@ -773,6 +777,7 @@ function initializeInputToolbar(
         uiConfig.applyModelDefaults(model, settings);
       });
       tab.ui.thinkingBudgetSelector?.updateDisplay();
+      tab.ui.serviceTierToggle?.updateDisplay();
       tab.ui.modelSelector?.updateDisplay();
       tab.ui.modelSelector?.renderOptions();
 
@@ -796,6 +801,12 @@ function initializeInputToolbar(
         settings.effortLevel = effort;
       });
     },
+    onServiceTierChange: async (serviceTier: string) => {
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.serviceTier = serviceTier;
+      });
+      tab.ui.serviceTierToggle?.updateDisplay();
+    },
     onPermissionModeChange: async (mode: string) => {
       (plugin.settings as unknown as Record<string, unknown>).permissionMode = mode;
       await plugin.saveSettings();
@@ -812,6 +823,7 @@ function initializeInputToolbar(
   tab.ui.externalContextSelector = toolbarComponents.externalContextSelector;
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
+  tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 

@@ -11,6 +11,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   model: 'haiku',
   thinkingBudget: 'off',
   effortLevel: 'high',
+  serviceTier: 'default',
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',
 
@@ -39,6 +40,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   settingsProvider: 'claude',
   savedProviderModel: {},
   savedProviderEffort: {},
+  savedProviderServiceTier: {},
   savedProviderThinkingBudget: {},
 
   lastCustomModel: '',

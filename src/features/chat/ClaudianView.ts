@@ -108,6 +108,7 @@ export class ClaudianView extends ItemView {
       tab.ui.modelSelector?.renderOptions();
       tab.ui.thinkingBudgetSelector?.updateDisplay();
       tab.ui.permissionToggle?.updateDisplay();
+      tab.ui.serviceTierToggle?.updateDisplay();
       tab.dom.inputWrapper.toggleClass(
         'claudian-input-plan-mode',
         this.plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,

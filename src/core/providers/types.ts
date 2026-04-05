@@ -196,6 +196,15 @@ export interface ProviderPermissionModeToggleConfig {
   planLabel?: string;
 }
 
+/** Compact service-tier toggle descriptor for providers that expose a fast/standard toolbar control. */
+export interface ProviderServiceTierToggleConfig {
+  inactiveValue: string;
+  inactiveLabel: string;
+  activeValue: string;
+  activeLabel: string;
+  description?: string;
+}
+
 /** Static UI configuration owned by the provider (model list, reasoning, context window). */
 export interface ProviderChatUIConfig {
   /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
@@ -230,6 +239,9 @@ export interface ProviderChatUIConfig {
 
   /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
   getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
+
+  /** Optional service-tier toggle descriptor. Return null when the provider exposes no fast/standard UI. */
+  getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
 
   /** Whether the provider enables the shared bang-bash input mode. */
   isBangBashEnabled?(settings: Record<string, unknown>): boolean;

@@ -78,7 +78,7 @@ export type ProviderConfigMap = Partial<Record<string, Record<string, unknown>>>
 /**
  * Application settings stored in .claude/claudian-settings.json.
  *
- * Provider-specific fields (model, thinkingBudget, effortLevel, etc.) use
+ * Provider-specific fields (model, thinkingBudget, effortLevel, serviceTier, etc.) use
  * `string` here.  The active provider casts internally when it needs
  * narrower types.
  */
@@ -93,6 +93,7 @@ export interface ClaudianSettings {
   model: string;
   thinkingBudget: string;
   effortLevel: string;
+  serviceTier: string;
   enableAutoTitleGeneration: boolean;
   titleGenerationModel: string;
 
@@ -120,6 +121,7 @@ export interface ClaudianSettings {
   settingsProvider: string;  // ProviderId — which provider's model/effort/budget is projected to top-level fields
   savedProviderModel: Partial<Record<string, string>>;
   savedProviderEffort: Partial<Record<string, string>>;
+  savedProviderServiceTier: Partial<Record<string, string>>;
   savedProviderThinkingBudget: Partial<Record<string, string>>;
 
   // State (provider-specific, round-tripped opaquely)
