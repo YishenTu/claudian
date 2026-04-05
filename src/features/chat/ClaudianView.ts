@@ -3,6 +3,7 @@ import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 
 import { getContextWindowSize, VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
+import { SkillRunsPage } from '../runs/SkillRunsPage';
 import { LOGO_SVG } from './constants';
 import { TabBar, TabManager, updatePlanModeUI } from './tabs';
 import type { TabData, TabId } from './tabs/types';
@@ -15,6 +16,8 @@ export class ClaudianView extends ItemView {
   private tabBar: TabBar | null = null;
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
+  private runsPageEl: HTMLElement | null = null;
+  private runsPage: SkillRunsPage | null = null;
   private navRowContent: HTMLElement | null = null;
 
   // DOM Elements
@@ -28,6 +31,8 @@ export class ClaudianView extends ItemView {
 
   // Header elements
   private historyDropdown: HTMLElement | null = null;
+  private runsToggleBtn: HTMLElement | null = null;
+  private currentPage: 'chat' | 'runs' = 'chat';
 
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
@@ -134,6 +139,17 @@ export class ClaudianView extends ItemView {
 
     // Tab content container (TabManager will populate this)
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
+    this.runsPageEl = this.viewContainerEl.createDiv({ cls: 'claudian-runs-page-container' });
+    this.runsPage = new SkillRunsPage(this.runsPageEl, this.plugin, {
+      openConversation: async (conversationId) => {
+        this.switchToPage('chat');
+        await this.tabManager?.openConversation(conversationId, true);
+      },
+      switchToChat: () => {
+        this.switchToPage('chat');
+      },
+    });
+    await this.runsPage.initialize();
 
     // Initialize TabManager
     this.tabManager = new TabManager(
@@ -174,6 +190,7 @@ export class ClaudianView extends ItemView {
 
     // Apply initial layout based on tabBarPosition setting
     this.updateLayoutForPosition();
+    this.switchToPage(this.currentPage);
   }
 
   async onClose() {
@@ -199,6 +216,9 @@ export class ClaudianView extends ItemView {
     // Cleanup tab bar
     this.tabBar?.destroy();
     this.tabBar = null;
+
+    this.runsPage?.destroy();
+    this.runsPage = null;
   }
 
   // ============================================
@@ -282,6 +302,14 @@ export class ClaudianView extends ItemView {
     historyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.toggleHistoryDropdown();
+    });
+
+    this.runsToggleBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn' });
+    setIcon(this.runsToggleBtn, 'list');
+    this.runsToggleBtn.setAttribute('aria-label', 'Skill runs');
+    this.runsToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.switchToPage(this.currentPage === 'runs' ? 'chat' : 'runs');
     });
 
     fragment.appendChild(this.headerActionsContent);
@@ -468,6 +496,22 @@ export class ClaudianView extends ItemView {
   private findTabWithConversation(conversationId: string): TabData | null {
     const tabs = this.tabManager?.getAllTabs() ?? [];
     return tabs.find(tab => tab.conversationId === conversationId) ?? null;
+  }
+
+  private switchToPage(page: 'chat' | 'runs'): void {
+    this.currentPage = page;
+    const showRuns = page === 'runs';
+
+    if (this.tabContentEl) {
+      this.tabContentEl.style.display = showRuns ? 'none' : '';
+    }
+    if (this.runsPageEl) {
+      this.runsPageEl.style.display = showRuns ? 'flex' : 'none';
+    }
+
+    this.runsPage?.setVisible(showRuns);
+    this.historyDropdown?.removeClass('visible');
+    this.runsToggleBtn?.toggleClass('is-active', showRuns);
   }
 
   // ============================================

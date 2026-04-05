@@ -37,6 +37,7 @@ import {
 } from './core/types';
 import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
+import { SkillRunManager } from './features/runs/SkillRunManager';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n';
 import { ClaudeCliResolver } from './utils/claudeCli';
@@ -193,6 +194,7 @@ export default class ClaudianPlugin extends Plugin {
   agentManager: AgentManager;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
+  skillRunManager: SkillRunManager;
   private conversations: Conversation[] = [];
   private runtimeEnvironmentVariables = '';
 
@@ -213,6 +215,9 @@ export default class ClaudianPlugin extends Plugin {
     // Initialize agent manager (loads plugin agents from plugin install paths)
     this.agentManager = new AgentManager(vaultPath, this.pluginManager);
     await this.agentManager.loadAgents();
+
+    this.skillRunManager = new SkillRunManager(this);
+    await this.skillRunManager.initialize();
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
@@ -338,6 +343,8 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async onunload() {
+    await this.skillRunManager?.cleanup();
+
     // Ensures state is saved even if Obsidian quits without calling onClose()
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
@@ -1065,6 +1072,8 @@ export default class ClaudianPlugin extends Plugin {
       // Legacy session: delete JSONL file
       await this.storage.sessions.deleteConversation(id);
     }
+
+    await this.skillRunManager?.removeByConversationId(id);
 
     // Notify all views/tabs that have this conversation open
     for (const view of this.getAllViews()) {

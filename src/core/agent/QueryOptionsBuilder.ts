@@ -33,6 +33,8 @@ import {
  * Passed to builder methods to avoid direct dependencies on ClaudianService.
  */
 export interface QueryOptionsContext {
+  /** Effective working directory for SDK tool execution. */
+  cwdPath: string;
   /** Absolute path to the vault root. */
   vaultPath: string;
   /** Path to the Claude CLI executable. */
@@ -147,6 +149,7 @@ export class QueryOptionsBuilder {
       allowedExportPaths: ctx.settings.allowedExportPaths,
       allowExternalAccess: ctx.settings.allowExternalAccess,
       vaultPath: ctx.vaultPath,
+      workingDirectory: ctx.cwdPath,
       userName: ctx.settings.userName,
     };
 
@@ -188,11 +191,12 @@ export class QueryOptionsBuilder {
       allowedExportPaths: ctx.settings.allowedExportPaths,
       allowExternalAccess: ctx.settings.allowExternalAccess,
       vaultPath: ctx.vaultPath,
+      workingDirectory: ctx.cwdPath,
       userName: ctx.settings.userName,
     });
 
     const options: Options = {
-      cwd: ctx.vaultPath,
+      cwd: ctx.cwdPath,
       systemPrompt,
       model: ctx.settings.model,
       abortController: ctx.abortController,
@@ -252,11 +256,12 @@ export class QueryOptionsBuilder {
       allowedExportPaths: ctx.settings.allowedExportPaths,
       allowExternalAccess: ctx.settings.allowExternalAccess,
       vaultPath: ctx.vaultPath,
+      workingDirectory: ctx.cwdPath,
       userName: ctx.settings.userName,
     });
 
     const options: Options = {
-      cwd: ctx.vaultPath,
+      cwd: ctx.cwdPath,
       systemPrompt,
       model: selectedModel,
       abortController: ctx.abortController,

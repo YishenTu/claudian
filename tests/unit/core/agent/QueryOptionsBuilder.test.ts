@@ -89,6 +89,7 @@ function createMockPersistentQueryConfig(
 // Create a base context for tests
 function createMockContext(overrides: Partial<QueryOptionsContext> = {}): QueryOptionsContext {
   return {
+    cwdPath: '/test/vault',
     vaultPath: '/test/vault',
     cliPath: '/mock/claude',
     settings: createMockSettings(),

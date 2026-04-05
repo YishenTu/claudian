@@ -416,6 +416,13 @@ describe('BashPathValidator', () => {
       const result = checkBashPathAccess('.', 'read', context);
       expect(result).toBeNull();
     });
+
+    it('allows special Unix device paths like /dev/null', () => {
+      const context = createMockContext('none');
+      const result = checkBashPathAccess('/dev/null', 'write', context);
+      expect(result).toBeNull();
+      expect(context.getPathAccessType).not.toHaveBeenCalled();
+    });
   });
 
   describe('findBashPathViolationInSegment', () => {
@@ -434,6 +441,12 @@ describe('BashPathValidator', () => {
     it('allows write to export path via redirect', () => {
       const context = createMockPathContext({ '~/Desktop/out.txt': 'export' });
       const result = findBashPathViolationInSegment(['echo', 'test', '>', '~/Desktop/out.txt'], context);
+      expect(result).toBeNull();
+    });
+
+    it('allows redirecting output to /dev/null', () => {
+      const context = createMockPathContext({});
+      const result = findBashPathViolationInSegment(['echo', 'test', '>', '/dev/null'], context);
       expect(result).toBeNull();
     });
 

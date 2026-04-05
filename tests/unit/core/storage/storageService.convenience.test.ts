@@ -223,6 +223,69 @@ describe('StorageService convenience methods', () => {
     });
   });
 
+  describe('skill run state', () => {
+    it('loads validated skill usage counts', async () => {
+      const { plugin } = createMockPlugin({
+        dataJson: {
+          skillRunUsageCounts: {
+            summarize: 4,
+            invalidZero: 0,
+            invalidNegative: -1,
+            invalidFloat: 2.7,
+            invalidText: 'oops',
+          },
+        },
+      });
+      const storage = new StorageService(plugin);
+
+      await expect(storage.getSkillRunUsageCounts()).resolves.toEqual({
+        summarize: 4,
+        invalidFloat: 2,
+      });
+    });
+
+    it('persists runs and usage counts together', async () => {
+      const { plugin } = createMockPlugin({
+        dataJson: {
+          existing: true,
+        },
+      });
+      const storage = new StorageService(plugin);
+
+      await storage.setSkillRunState([
+        {
+          id: 'run-1',
+          conversationId: 'conv-1',
+          skillName: 'summarize',
+          args: 'notes/a.md',
+          status: 'queued',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ], {
+        summarize: 3,
+      });
+
+      expect(plugin.saveData).toHaveBeenCalledWith({
+        existing: true,
+        skillRuns: [
+          {
+            id: 'run-1',
+            conversationId: 'conv-1',
+            skillName: 'summarize',
+            args: 'notes/a.md',
+            status: 'queued',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        skillRunUsageCounts: {
+          summarize: 3,
+        },
+      });
+    });
+  });
+
   describe('loadAllSlashCommands', () => {
     it('returns commands from both commands and skills directories', async () => {
       const commandContent = [

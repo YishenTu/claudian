@@ -23,6 +23,7 @@ import type {
   ClaudeModel,
   Conversation,
   LegacyPermission,
+  SkillRun,
   SlashCommand,
 } from '../types';
 import {
@@ -65,6 +66,8 @@ export interface CombinedSettings {
   /** Claudian-specific settings */
   claudian: StoredClaudianSettings;
 }
+
+export type SkillRunUsageCounts = Record<string, number>;
 
 /** Legacy data format (pre-split migration). */
 interface LegacySettingsJson {
@@ -520,6 +523,106 @@ export class StorageService {
     } catch {
       new Notice('Failed to save tab layout');
     }
+  }
+
+  async getSkillRuns(): Promise<SkillRun[]> {
+    try {
+      const data = await this.plugin.loadData();
+      if (!Array.isArray(data?.skillRuns)) {
+        return [];
+      }
+      return this.validateSkillRuns(data.skillRuns);
+    } catch {
+      return [];
+    }
+  }
+
+  async getSkillRunUsageCounts(): Promise<SkillRunUsageCounts> {
+    try {
+      const data = await this.plugin.loadData();
+      return this.validateSkillRunUsageCounts(data?.skillRunUsageCounts);
+    } catch {
+      return {};
+    }
+  }
+
+  async setSkillRunState(
+    runs: SkillRun[],
+    usageCounts: SkillRunUsageCounts
+  ): Promise<void> {
+    try {
+      const data = (await this.plugin.loadData()) || {};
+      data.skillRuns = runs;
+      data.skillRunUsageCounts = usageCounts;
+      await this.plugin.saveData(data);
+    } catch {
+      new Notice('Failed to save skill runs');
+    }
+  }
+
+  private validateSkillRuns(data: unknown[]): SkillRun[] {
+    const validStatuses = new Set([
+      'queued',
+      'running',
+      'completed',
+      'failed',
+      'needs_attention',
+      'cancelled',
+    ]);
+    const validated: SkillRun[] = [];
+
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue;
+      const run = item as Record<string, unknown>;
+      if (
+        typeof run.id !== 'string' ||
+        typeof run.conversationId !== 'string' ||
+        typeof run.skillName !== 'string' ||
+        typeof run.args !== 'string' ||
+        typeof run.createdAt !== 'number' ||
+        typeof run.updatedAt !== 'number' ||
+        typeof run.status !== 'string' ||
+        !validStatuses.has(run.status)
+      ) {
+        continue;
+      }
+
+      validated.push({
+        id: run.id,
+        conversationId: run.conversationId,
+        skillName: run.skillName,
+        args: run.args,
+        workingDirectory: typeof run.workingDirectory === 'string' ? run.workingDirectory : undefined,
+        status: run.status as SkillRun['status'],
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt,
+        startedAt: typeof run.startedAt === 'number' ? run.startedAt : undefined,
+        completedAt: typeof run.completedAt === 'number' ? run.completedAt : undefined,
+        sessionId: typeof run.sessionId === 'string' ? run.sessionId : undefined,
+        summary: typeof run.summary === 'string' ? run.summary : undefined,
+        lastLogLine: typeof run.lastLogLine === 'string' ? run.lastLogLine : undefined,
+        log: typeof run.log === 'string' ? run.log : undefined,
+        error: typeof run.error === 'string' ? run.error : undefined,
+        attentionReason: typeof run.attentionReason === 'string' ? run.attentionReason : undefined,
+      });
+    }
+
+    return validated.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  private validateSkillRunUsageCounts(data: unknown): SkillRunUsageCounts {
+    if (!data || typeof data !== 'object') {
+      return {};
+    }
+
+    const counts: SkillRunUsageCounts = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof key !== 'string' || !key.trim()) continue;
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+      counts[key] = Math.floor(value);
+    }
+
+    return counts;
   }
 }
 
