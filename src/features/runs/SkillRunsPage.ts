@@ -10,6 +10,7 @@ import { SkillRunLogModal } from './SkillRunLogModal';
 
 interface SkillRunsPageCallbacks {
   openConversation: (conversationId: string) => Promise<void>;
+  switchToChat: () => void;
 }
 
 interface WorkingDirectorySuggestion {
@@ -190,12 +191,22 @@ export class SkillRunsPage {
     const titleWrap = this.headerEl.createDiv({ cls: 'claudian-runs-title-wrap' });
     titleWrap.createEl('h4', { text: 'Skill Runs', cls: 'claudian-runs-title' });
 
-    this.refreshBtnEl = this.headerEl.createEl('button', {
+    const actionsEl = this.headerEl.createDiv({ cls: 'claudian-runs-header-actions' });
+
+    this.refreshBtnEl = actionsEl.createEl('button', {
       cls: 'claudian-runs-refresh',
       text: 'Refresh skills',
     });
     this.refreshBtnEl.addEventListener('click', () => {
       void this.reloadSkills();
+    });
+
+    const backBtn = actionsEl.createEl('button', {
+      cls: 'mod-cta claudian-runs-back-btn',
+      text: '← Chat',
+    });
+    backBtn.addEventListener('click', () => {
+      this.callbacks.switchToChat();
     });
   }
 
@@ -385,17 +396,16 @@ export class SkillRunsPage {
   private updateStartButtons(): void {
     const hasSkill = !!this.selectedSkillName;
     const lines = splitArgsLines(this.argsInputEl.value);
-    const hasAnyInput = this.argsInputEl.value.trim().length > 0;
 
-    this.startBtnEl.disabled = this.isStarting || !hasSkill || !hasAnyInput;
+    this.startBtnEl.disabled = this.isStarting || !hasSkill;
     this.startManyBtnEl.disabled = this.isStarting || !hasSkill || lines.length < 2;
   }
 
   private async handleStartSingle(): Promise<void> {
-    const args = this.argsInputEl.value.trim();
-    if (!this.selectedSkillName || !args) {
+    if (!this.selectedSkillName) {
       return;
     }
+    const args = this.argsInputEl.value.trim();
 
     this.isStarting = true;
     this.updateStartButtons();

@@ -34,14 +34,23 @@
   margin: 0;
 }
 
+.claudian-runs-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .claudian-runs-count {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   white-space: nowrap;
 }
 
-.claudian-runs-refresh {
+.claudian-runs-refresh,
+.claudian-runs-back-btn {
   white-space: nowrap;
+  font-size: var(--font-ui-small);
 }
 
 .claudian-runs-form {

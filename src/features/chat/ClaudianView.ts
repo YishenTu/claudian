@@ -145,6 +145,9 @@ export class ClaudianView extends ItemView {
         this.switchToPage('chat');
         await this.tabManager?.openConversation(conversationId, true);
       },
+      switchToChat: () => {
+        this.switchToPage('chat');
+      },
     });
     await this.runsPage.initialize();
 
