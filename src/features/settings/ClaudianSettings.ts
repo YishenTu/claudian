@@ -167,12 +167,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
         }
         dropdown
           .setValue(this.plugin.settings.locale)
-          .onChange(async (value: Locale) => {
-            if (!setLocale(value)) {
+          .onChange(async (value) => {
+            const locale = value as Locale;
+            if (!setLocale(locale)) {
               dropdown.setValue(this.plugin.settings.locale);
               return;
             }
-            this.plugin.settings.locale = value;
+            this.plugin.settings.locale = locale;
             await this.plugin.saveSettings();
             this.display();
           });
@@ -369,8 +370,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .addOption('input', t('settings.tabBarPosition.input'))
           .addOption('header', t('settings.tabBarPosition.header'))
           .setValue(this.plugin.settings.tabBarPosition ?? 'input')
-          .onChange(async (value: 'input' | 'header') => {
-            this.plugin.settings.tabBarPosition = value;
+          .onChange(async (value) => {
+            this.plugin.settings.tabBarPosition = value as 'input' | 'header';
             await this.plugin.saveSettings();
 
             for (const view of this.plugin.getAllViews()) {

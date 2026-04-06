@@ -1,13 +1,19 @@
 export function extractAssistantText(
-  message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }
+  message: { type: string; message?: { content?: unknown } }
 ): string {
-  if (message.type !== 'assistant' || !message.message?.content) {
+  const content = message.message?.content;
+  if (message.type !== 'assistant' || !Array.isArray(content)) {
     return '';
   }
 
-  return message.message.content
+  return content
     .filter((block): block is { type: 'text'; text: string } =>
-      block.type === 'text' && !!block.text
+      !!block &&
+      typeof block === 'object' &&
+      'type' in block &&
+      'text' in block &&
+      block.type === 'text' &&
+      typeof block.text === 'string'
     )
     .map((block) => block.text)
     .join('');

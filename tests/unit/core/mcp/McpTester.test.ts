@@ -178,7 +178,7 @@ describe('testMcpServer', () => {
     it('should return generic error for non-Error transport failures', async () => {
       const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
       StreamableHTTPClientTransport.mockImplementationOnce(() => {
-        throw 'string error'; // eslint-disable-line no-throw-literal
+        throw 'string error';
       });
 
       const server: ManagedMcpServer = {

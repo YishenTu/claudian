@@ -26,7 +26,7 @@ export function patchSetMaxListenersForElectron(): void {
 
   const original = events.setMaxListeners;
 
-  const patched = function patchedSetMaxListeners(...args: unknown[]) {
+  const patched = function patchedSetMaxListeners(this: unknown, ...args: unknown[]) {
     try {
       return original.apply(this, args);
     } catch (error) {

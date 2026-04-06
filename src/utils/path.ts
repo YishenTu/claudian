@@ -191,8 +191,7 @@ function resolveRealPath(p: string): string {
     let current = absolute;
     const suffix: string[] = [];
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
+    for (;;) {
       try {
         if (fs.existsSync(current)) {
           const resolvedExisting = realpathFn(current);
@@ -260,15 +259,15 @@ export function normalizePathForFilesystem(value: string): string {
     return '';
   }
   const expanded = normalizePathBeforeResolution(value);
-  let normalized = expanded;
-
-  try {
-    normalized = process.platform === 'win32'
-      ? path.win32.normalize(expanded)
-      : path.normalize(expanded);
-  } catch {
-    normalized = expanded;
-  }
+  const normalized = (() => {
+    try {
+      return process.platform === 'win32'
+        ? path.win32.normalize(expanded)
+        : path.normalize(expanded);
+    } catch {
+      return expanded;
+    }
+  })();
 
   return normalizeWindowsPathPrefix(normalized);
 }
@@ -279,20 +278,23 @@ export function normalizePathForComparison(value: string): string {
   }
 
   const expanded = normalizePathBeforeResolution(value);
-  let normalized = expanded;
+  const normalized = (() => {
+    try {
+      return process.platform === 'win32'
+        ? path.win32.normalize(expanded)
+        : path.normalize(expanded);
+    } catch {
+      return expanded;
+    }
+  })();
 
-  try {
-    normalized = process.platform === 'win32'
-      ? path.win32.normalize(expanded)
-      : path.normalize(expanded);
-  } catch {
-    normalized = expanded;
-  }
+  const normalizedWithPrefix = normalizeWindowsPathPrefix(normalized)
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '');
 
-  normalized = normalizeWindowsPathPrefix(normalized);
-  normalized = normalized.replace(/\\/g, '/').replace(/\/+$/, '');
-
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  return process.platform === 'win32'
+    ? normalizedWithPrefix.toLowerCase()
+    : normalizedWithPrefix;
 }
 
 export function isPathWithinDirectory(

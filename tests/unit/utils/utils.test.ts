@@ -1,6 +1,10 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import type * as fsType from 'fs';
+import type * as osType from 'os';
+import type * as pathType from 'path';
+
+const fs = jest.requireActual<typeof fsType>('fs');
+const os = jest.requireActual<typeof osType>('os');
+const path = jest.requireActual<typeof pathType>('path');
 
 import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment } from '@/providers/claude/env/claudeModelEnv';
@@ -562,7 +566,7 @@ describe('utils.ts', () => {
         jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
         jest.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
           isFile: () => pathSet.has(String(p)),
-        }) as fs.Stats);
+        }) as fsType.Stats);
       }
 
       it('should return first matching Claude CLI path', () => {
@@ -607,7 +611,7 @@ describe('utils.ts', () => {
         jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === dirPath);
         jest.spyOn(fs, 'statSync').mockImplementation(() => ({
           isFile: () => false,
-        }) as fs.Stats);
+        }) as fsType.Stats);
 
         expect(findClaudeCLIPath()).toBeNull();
       });
@@ -626,7 +630,7 @@ describe('utils.ts', () => {
         jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
         jest.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
           isFile: () => pathSet.has(String(p)),
-        }) as fs.Stats);
+        }) as fsType.Stats);
       }
 
       it('should prefer .exe when both .exe and cli.js exist', () => {
@@ -698,7 +702,7 @@ describe('utils.ts', () => {
         jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === dirPath);
         jest.spyOn(fs, 'statSync').mockImplementation(() => ({
           isFile: () => false,
-        }) as fs.Stats);
+        }) as fsType.Stats);
 
         expect(findClaudeCLIPath()).toBeNull();
       });

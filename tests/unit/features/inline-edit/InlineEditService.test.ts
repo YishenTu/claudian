@@ -43,7 +43,6 @@ function createMockPlugin(settings = {}) {
 
 // Hook functions accept typed HookInput / return typed HookJSONOutput, but the
 // implementation only reads tool_name/tool_input. Cast I/O to any in tests.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const callHook = async (hook: any, input: any, ...rest: any[]): Promise<any> =>
   hook(input, ...rest);
 

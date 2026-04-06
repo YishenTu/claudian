@@ -1,6 +1,10 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import type * as fsType from 'fs';
+import type * as osType from 'os';
+import type * as pathType from 'path';
+
+const fs = jest.requireActual<typeof fsType>('fs');
+const os = jest.requireActual<typeof osType>('os');
+const path = jest.requireActual<typeof pathType>('path');
 
 import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import {
@@ -305,7 +309,7 @@ describe('isPathWithinDirectory', () => {
   });
 
   it('blocks symlink escapes from the allowed directory', () => {
-    const realpathMock = jest.fn((input: fs.PathLike) => {
+    const realpathMock = jest.fn((input: fsType.PathLike) => {
       const value = String(input);
       if (value === '/home/test/.claude') return '/home/test/.claude';
       if (value === '/home/test/.claude/skills/link') return '/home/test/.ssh';
@@ -374,7 +378,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === claudePath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === claudePath }) as fs.Stats
+      p => ({ isFile: () => String(p) === claudePath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath(isWindows ? 'C:\\custom\\bin' : '/custom/bin');
@@ -393,7 +397,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === commonPath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === commonPath }) as fs.Stats
+      p => ({ isFile: () => String(p) === commonPath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -410,7 +414,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === cliJsPath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === cliJsPath }) as fs.Stats
+      p => ({ isFile: () => String(p) === cliJsPath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -426,7 +430,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === envClaudePath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === envClaudePath }) as fs.Stats
+      p => ({ isFile: () => String(p) === envClaudePath }) as fsType.Stats
     );
 
     try {
@@ -482,7 +486,7 @@ describe('findClaudeCLIPath', () => {
       return [];
     }) as typeof fs.readdirSync);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fs.Stats
+      () => ({ isFile: () => true }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -520,7 +524,7 @@ describe('findClaudeCLIPath', () => {
       return [];
     }) as typeof fs.readdirSync);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fs.Stats
+      () => ({ isFile: () => true }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();

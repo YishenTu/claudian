@@ -4,8 +4,9 @@ Adaptor for OpenAI Codex via `codex app-server` over stdio JSON-RPC 2.0.
 
 ## Protocol Overview
 
-The app-server speaks JSON-RPC 2.0 over stdio (newline-delimited JSON) with three message flows:
-- **Client → Server** (request/response): `initialize`, `thread/*`, `turn/*`, `skills/list`
+The app-server speaks JSON-RPC 2.0 over stdio (newline-delimited JSON) with a required startup handshake and three ongoing message flows:
+- **Startup handshake**: client sends `initialize`, then notifies `initialized`
+- **Client → Server** (request/response): `thread/*`, `turn/*`, `skills/list`
 - **Server → Client** (notifications): streaming deltas, item events, `turn/completed`, usage
 - **Server → Client → Server** (server requests): approval gates, user input requests — the server asks a question, the client responds
 
@@ -32,7 +33,7 @@ Tools are displayed from two possible sources:
 
 ### Environment Hash Invalidation
 
-`CodexSettingsReconciler` watches `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`. Any hash change invalidates all existing Codex sessions (clears `sessionId` and `providerState`), preventing the UI from trying to resume sessions against a different API endpoint.
+`codexSettingsReconciler` watches `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`. Any hash change invalidates all existing Codex sessions (clears `sessionId` and `providerState`), preventing the UI from trying to resume sessions against a different API endpoint.
 
 ## Non-Obvious Behaviors
 

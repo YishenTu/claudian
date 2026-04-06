@@ -1742,7 +1742,8 @@ describe('ClaudianService', () => {
         };
       });
 
-      const spy = jest.spyOn(sdk, 'query').mockImplementation(({ prompt }: { prompt: any }) => {
+      const spy = jest.spyOn(sdk, 'query').mockImplementation((params: any) => {
+        const { prompt } = params;
         callCount += 1;
         const callIndex = callCount;
 

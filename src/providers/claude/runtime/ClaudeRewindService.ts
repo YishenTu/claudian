@@ -198,12 +198,14 @@ export async function executeClaudeRewind(
       deps.closePersistentQuery('rewind failed');
       throw new Error(
         `Rewind failed and files could not be fully restored: ${rollbackError instanceof Error ? rollbackError.message : 'Unknown error'}`,
+        { cause: rollbackError },
       );
     }
 
     deps.closePersistentQuery('rewind failed');
     throw new Error(
       `Rewind failed but files were restored: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error },
     );
   } finally {
     await backup?.cleanup();

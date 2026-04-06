@@ -115,7 +115,6 @@ export class CodexChatRuntime implements ChatRuntime {
   private chunkBuffer: StreamChunk[] = [];
   private chunkResolve: (() => void) | null = null;
 
-  /* eslint-disable @typescript-eslint/no-unused-vars */
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
   private askUserCallback: AskUserQuestionCallback | null = null;
@@ -125,7 +124,6 @@ export class CodexChatRuntime implements ChatRuntime {
   private autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
   private resumeCheckpoint: string | undefined;
   private activeInputBundles = new Set<CodexInputBundle>();
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   // Fork state
   private pendingFork: ForkSource | null = null;
@@ -242,7 +240,7 @@ export class CodexChatRuntime implements ChatRuntime {
     let tailDrainInterval: ReturnType<typeof setInterval> | null = null;
     let toolSourceMode: 'transcript' | 'fallback' = 'fallback';
     let tailDonePromise: Promise<void> | null = null;
-    let transcriptSessionFilePath: string | null = null;
+    let transcriptSessionFilePath: string | null | undefined;
 
     const model = this.resolveModel(queryOptions);
     const promptSettings = this.getSystemPromptSettings();

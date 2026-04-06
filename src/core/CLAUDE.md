@@ -13,11 +13,11 @@ Core modules stay provider-neutral. Features depend on `core/`; providers implem
 
 | Module | Purpose | Key Files |
 |--------|---------|-----------|
-| `bootstrap/` | Shared defaults and session metadata storage | `DEFAULT_CLAUDIAN_SETTINGS`, `SessionStorage`, `storage.ts` |
+| `bootstrap/` | Provider-neutral session metadata storage and shared app-storage contracts | `SessionStorage`, `storage.ts` |
 | `commands/` | Built-in cross-provider commands | `builtInCommands` |
-| `mcp/` | Provider-neutral MCP coordination | `McpServerManager`, `McpTester`, `McpStorageAdapter` |
+| `mcp/` | Provider-neutral MCP coordination and config parsing | `McpConfigParser`, `McpServerManager`, `McpTester`, `McpStorageAdapter` |
 | `prompt/` | Shared prompt templates | `mainAgent`, `inlineEdit`, `titleGeneration`, `instructionRefine` |
-| `providers/` | Registry, capability, and workspace-service contracts | `ProviderRegistry`, `ProviderWorkspaceRegistry`, `ProviderSettingsCoordinator`, `modelRouting`, `types` |
+| `providers/` | Registry, capability, environment, and workspace-service contracts | `ProviderRegistry`, `ProviderWorkspaceRegistry`, `ProviderSettingsCoordinator`, `providerEnvironment`, `providerConfig`, `modelRouting`, `types` |
 | `providers/commands/` | Shared command catalog contracts | `ProviderCommandCatalog`, `ProviderCommandEntry`, `hiddenCommands` |
 | `runtime/` | Provider-neutral runtime contracts | `ChatRuntime`, `ChatTurnRequest`, `PreparedChatTurn`, `SessionUpdateResult`, approval/query types |
 | `security/` | Permission and approval helpers | `ApprovalManager` |
@@ -66,7 +66,8 @@ const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
 ### Storage
 
 - `core/storage/` provides generic vault/home adapters only
-- Provider-owned workspace and transcript logic lives under `src/providers/claude/storage/` and `src/providers/codex/storage/`
+- Provider-owned workspace storage lives under `src/providers/claude/storage/` and `src/providers/codex/storage/`
+- Provider-owned transcript hydration and deletion live under provider `history/` services
 
 ## Gotchas
 

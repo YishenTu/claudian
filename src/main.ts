@@ -4,8 +4,8 @@ patchSetMaxListenersForElectron();
 
 import './providers';
 
-import type { Editor, MarkdownView } from 'obsidian';
-import { Notice, Plugin } from 'obsidian';
+import type { Editor } from 'obsidian';
+import { MarkdownView, Notice, Plugin } from 'obsidian';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
@@ -38,8 +38,8 @@ import { buildCursorContext } from './utils/editor';
 import { getVaultPath } from './utils/path';
 
 export default class ClaudianPlugin extends Plugin {
-  settings: ClaudianSettings;
-  storage: SharedAppStorage;
+  settings!: ClaudianSettings;
+  storage!: SharedAppStorage;
   private conversations: Conversation[] = [];
 
   async onload() {
@@ -66,7 +66,15 @@ export default class ClaudianPlugin extends Plugin {
     this.addCommand({
       id: 'inline-edit',
       name: 'Inline edit',
-      editorCallback: async (editor: Editor, view: MarkdownView) => {
+      editorCallback: async (editor: Editor, ctx) => {
+        const view = ctx instanceof MarkdownView
+          ? ctx
+          : this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) {
+          new Notice('Inline edit unavailable: could not access the active markdown view.');
+          return;
+        }
+
         const selectedText = editor.getSelection();
         const notePath = view.file?.path || 'unknown';
 

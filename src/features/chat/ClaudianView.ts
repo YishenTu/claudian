@@ -56,7 +56,6 @@ export class ClaudianView extends ItemView {
       value: async () => {
         // Ensure containerEl exists before any patched load code tries to use it
         if (!this.containerEl) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (this as any).containerEl = createDiv({ cls: 'view-content' });
         }
         // Wrap in try-catch to prevent Hover Editor errors from breaking our view

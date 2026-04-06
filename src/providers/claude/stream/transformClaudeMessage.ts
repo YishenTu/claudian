@@ -9,6 +9,13 @@ import { getContextWindowSize } from '../types/models';
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
 type ToolResultFields = { id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
 
+function getToolInput(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
+  }
+  return input as Record<string, unknown>;
+}
+
 function emitToolUse(parentToolUseId: string | null, fields: ToolUseFields): StreamChunk {
   if (parentToolUseId === null) {
     return { type: 'tool_use', ...fields };
@@ -158,7 +165,7 @@ export function* transformSDKMessage(
             yield emitToolUse(parentToolUseId, {
               id: block.id || `tool-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
               name: block.name || 'unknown',
-              input: block.input || {},
+              input: getToolInput(block.input),
             });
           }
         }
@@ -237,7 +244,7 @@ export function* transformSDKMessage(
         yield emitToolUse(parentToolUseId, {
           id: event.content_block.id || `tool-${Date.now()}`,
           name: event.content_block.name || 'unknown',
-          input: event.content_block.input || {},
+          input: getToolInput(event.content_block.input),
         });
       } else if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {
         if (parentToolUseId === null && event.content_block.thinking) {

@@ -1,6 +1,10 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import type * as fsType from 'fs';
+import type * as osType from 'os';
+import type * as pathType from 'path';
+
+const fs = jest.requireActual<typeof fsType>('fs');
+const os = jest.requireActual<typeof osType>('os');
+const path = jest.requireActual<typeof pathType>('path');
 
 import type { Conversation } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';

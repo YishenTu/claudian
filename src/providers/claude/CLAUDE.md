@@ -1,12 +1,12 @@
 # Claude Provider
 
-SDK adaptor wrapping `@anthropic-ai/claude-code` Agent SDK behind `ChatRuntime`.
+SDK adaptor wrapping `@anthropic-ai/claude-agent-sdk` behind `ChatRuntime`, with Claude Code CLI compatibility layered around it.
 
 ## Design Decisions
 
 ### Persistent Query — Why Not Restart
 
-The persistent query stays alive across turns. Model, thinking budget, permission mode, and MCP servers are updated dynamically via SDK API calls (`setModel`, `setMaxThinkingTokens`, `setPermissionMode`, `setMcpServers`). Only system prompt, plugins, CLI path, effort level, and external context paths require a restart. This eliminates cold-start latency for every turn.
+The persistent query stays alive across turns. Model, thinking budget, permission mode, and MCP servers are updated dynamically via SDK API calls (`setModel`, `setMaxThinkingTokens`, `setPermissionMode`, `setMcpServers`). Restart is still required when the effective system prompt, disabled-tool set, plugin set, settings source set, CLI path, Chrome enablement, effort level, or external context paths change. This eliminates cold-start latency for turns that only change dynamic knobs.
 
 ### Text Deduplication
 
@@ -15,10 +15,10 @@ The SDK delivers assistant text twice: incrementally via `stream_event/content_b
 ### Usage Chunk Two-Phase Buffering
 
 Usage info comes from two SDK messages:
-1. **Assistant message**: accurate input/output token counts, but only from main-agent messages (`parent_tool_use_id === null` filter) — subagent messages are excluded to avoid inflated counts
+1. **Assistant message**: accurate input-side token counts (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`), but only from main-agent messages (`parent_tool_use_id === null` filter) — subagent messages are excluded to avoid inflated counts
 2. **Result message**: authoritative `contextWindow` from `modelUsage` that corrects the estimated percentage
 
-Using result-message token counts would be wrong because they aggregate across subagents. Using assistant-message context window would be wrong because it's estimated. The two-phase merge gets both right.
+Using result-message token counts would be wrong because they aggregate across subagents. Using assistant-message context window would be wrong because it's estimated. The two-phase merge gets the input-side counts plus the final context-window value.
 
 ### Custom Spawn — Electron Workarounds
 
@@ -30,7 +30,7 @@ Using result-message token counts would be wrong because they aggregate across s
 
 ### SDK Amnesia Detection
 
-When the SDK returns a different session ID than the one provided in `resume`, `SessionManager.captureSession()` sets `needsHistoryRebuild = true`. The feature layer detects this and injects full conversation history into the next user message. This handles the case where the SDK silently lost context without explicit error signaling.
+When the SDK returns a different session ID than the one provided in `resume`, `SessionManager.captureSession()` sets `needsHistoryRebuild = true`. `ClaudeChatRuntime` detects this and injects full conversation history into the next user message before dispatching the turn. This handles the case where the SDK silently lost context without explicit error signaling.
 
 **Fork interaction**: on the first `session_init` after a fork, `clearHistoryRebuild()` prevents the amnesia logic from triggering — the SDK legitimately returns a different session ID for forks.
 

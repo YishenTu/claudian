@@ -74,7 +74,7 @@ export function parseClipboardConfig(json: string): ParsedMcpConfig {
     throw new Error('Invalid MCP configuration format');
   } catch (error) {
     if (error instanceof SyntaxError) {
-      throw new Error('Invalid JSON');
+      throw new Error('Invalid JSON', { cause: error });
     }
     throw error;
   }

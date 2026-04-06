@@ -239,7 +239,8 @@ describe('ClaudianService', () => {
       const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
 
       // Mock startPersistentQuery to simulate real side effects (subprocess boundary)
-      startPersistentQuerySpy.mockImplementation(async (vaultPath: string, cliPath: string, _sessionId?: string, externalContextPaths?: string[]) => {
+      startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
+        const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
         (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
@@ -259,7 +260,8 @@ describe('ClaudianService', () => {
       const startPersistentQuerySpy = jest.spyOn(service as any, 'startPersistentQuery');
 
       // Mock startPersistentQuery to simulate real side effects (subprocess boundary)
-      startPersistentQuerySpy.mockImplementation(async (vaultPath: string, cliPath: string, _sessionId?: string, externalContextPaths?: string[]) => {
+      startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
+        const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
         (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
@@ -298,7 +300,8 @@ describe('ClaudianService', () => {
       const closePersistentQuerySpy = jest.spyOn(service, 'closePersistentQuery');
 
       // Mock startPersistentQuery to simulate real side effects (subprocess boundary)
-      startPersistentQuerySpy.mockImplementation(async (vaultPath: string, cliPath: string, _sessionId?: string, externalContextPaths?: string[]) => {
+      startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
+        const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
         (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
@@ -339,7 +342,8 @@ describe('ClaudianService', () => {
       const closePersistentQuerySpy = jest.spyOn(service, 'closePersistentQuery');
 
       // Mock startPersistentQuery to simulate real side effects (subprocess boundary)
-      startPersistentQuerySpy.mockImplementation(async (vaultPath: string, cliPath: string, _sessionId?: string, externalContextPaths?: string[]) => {
+      startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
+        const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
         (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
@@ -1354,7 +1358,8 @@ describe('ClaudianService', () => {
 
       // Start a persistent query via ensureReady
       const startSpy = jest.spyOn(service as any, 'startPersistentQuery');
-      startSpy.mockImplementation(async (vaultPath: string, cliPath: string, _sessionId?: string, externalContextPaths?: string[]) => {
+      startSpy.mockImplementation(async (...args: unknown[]) => {
+        const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         mockPersistentQuery = {
           interrupt: jest.fn().mockResolvedValue(undefined),
           setModel: jest.fn().mockResolvedValue(undefined),
@@ -1565,7 +1570,8 @@ describe('ClaudianService', () => {
 
       // Start a real persistent query via ensureReady mocking
       const startSpy = jest.spyOn(service as any, 'startPersistentQuery');
-      startSpy.mockImplementation(async (vaultPath: string, cliPath: string) => {
+      startSpy.mockImplementation(async (...args: unknown[]) => {
+        const [vaultPath, cliPath] = args as [string, string];
         const messageChannel = new MessageChannel();
         (service as any).messageChannel = messageChannel;
         (service as any).persistentQuery = sdkMock.query({ prompt: messageChannel, options: { cwd: vaultPath, pathToClaudeCodeExecutable: cliPath } as any });
@@ -1892,7 +1898,7 @@ describe('ClaudianService', () => {
       // First call throws session expired, second succeeds
       let callCount = 0;
       const originalQuery = sdkMock.query;
-      jest.spyOn(sdkModule, 'query' as any).mockImplementation((...args: any[]) => {
+      jest.spyOn(sdkModule, 'query' as any).mockImplementation((...args: unknown[]) => {
         callCount++;
         if (callCount === 1) {
           // First call: throw session expired error
@@ -1908,7 +1914,8 @@ describe('ClaudianService', () => {
           return gen;
         }
         // Second call: succeed with retry
-        return originalQuery.call(null, ...args);
+        const [params] = args as Parameters<typeof sdkModule.query>;
+        return originalQuery.call(null, params);
       });
 
       service.setSessionId('old-session');
@@ -2671,7 +2678,7 @@ describe('ClaudianService', () => {
       jest.spyOn(sdkModule, 'query' as any).mockImplementation(() => {
         // eslint-disable-next-line require-yield
         const gen = (async function* () {
-          throw 'string error';  // eslint-disable-line no-throw-literal
+          throw 'string error';
         })() as any;
         gen.interrupt = jest.fn();
         gen.setModel = jest.fn();

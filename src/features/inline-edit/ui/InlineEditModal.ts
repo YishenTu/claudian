@@ -261,8 +261,8 @@ class InlineEditController {
   private containerEl: HTMLElement | null = null;
   private editedText: string | null = null;
   private insertedText: string | null = null;
-  private selFrom: number;
-  private selTo: number;
+  private selFrom = 0;
+  private selTo = 0;
   private selectedText: string;
   private startLine: number = 0; // 1-indexed
   private mode: InlineEditMode;

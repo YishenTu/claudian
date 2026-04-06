@@ -4,7 +4,7 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { StreamChunk } from '../../../core/types';
+import type { ImageAttachment, StreamChunk } from '../../../core/types';
 import type { PermissionMode } from '../../../core/types/settings';
 import type { ClaudeModel, EffortLevel } from '../types/models';
 
@@ -17,7 +17,7 @@ export interface ImageContentBlock {
   type: 'image';
   source: {
     type: 'base64';
-    media_type: string;
+    media_type: ImageAttachment['mediaType'];
     data: string;
   };
 }

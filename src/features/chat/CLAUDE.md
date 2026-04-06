@@ -5,7 +5,7 @@ Main sidebar chat interface. `ClaudianView` assembles tabs, controllers, rendere
 ## Provider Boundary Status
 
 - Chat features depend on `ChatRuntime`, `ProviderCapabilities`, and provider-neutral conversation data. `InputController` builds `ChatTurnRequest`; runtimes own prompt encoding through `prepareTurn()`.
-- Session bookkeeping lives in `Conversation.providerState` and is updated through `ChatRuntime.buildSessionUpdates()`. Feature code must not read provider-specific fields directly.
+- Session bookkeeping lives in `Conversation.providerState` and is usually updated through `ChatRuntime.buildSessionUpdates()`, with fork/bootstrap state also seeded through provider history services. Feature code must not read provider-specific fields directly.
 - Provider-owned services are resolved through registries
   - `ProviderRegistry`: runtime, title generation, instruction refinement, inline edit, task-result interpretation
   - `ProviderWorkspaceRegistry`: command catalogs, agent mention providers, MCP managers, CLI resolution
@@ -46,8 +46,8 @@ ClaudianView (lifecycle + assembly)
 │   └── Tab
 └── UI Components
     ├── InputToolbar
-    ├── FileContext
-    ├── ImageContext
+    ├── FileContextManager
+    ├── ImageContextManager
     ├── StatusPanel
     ├── NavigationSidebar
     ├── InstructionModeManager
@@ -72,9 +72,9 @@ The feature layer consumes provider-neutral `StreamChunk` values. Providers own 
 
 | Controller | Responsibility |
 |------------|----------------|
-| `ConversationController` | Session switching, history reload, resume, fork setup |
+| `ConversationController` | Session switching, history reload, save, and rewind |
 | `StreamController` | Consume stream chunks, update streaming state, auto-scroll, abort handling |
-| `InputController` | Text input, mentions, images, command dispatch, post-plan approval flow |
+| `InputController` | Text input, mentions, images, resume dispatch, command dispatch, and post-plan approval flow |
 | `SelectionController` | Editor selection polling and CM6 decorations |
 | `BrowserSelectionController` | Browser view selection tracking |
 | `CanvasSelectionController` | Canvas selection tracking |
@@ -90,7 +90,7 @@ The feature layer consumes provider-neutral `StreamChunk` values. Providers own 
 | `WriteEditRenderer` | File writes and edits with diff previews |
 | `DiffRenderer` | Inline diff rendering |
 | `InlineExitPlanMode` | Claude tool-driven exit-plan approval |
-| `InlinePlanApproval` | Post-plan approval for Claude and Codex |
+| `InlinePlanApproval` | Shared post-plan approval flow driven by consumed turn metadata (currently Codex) |
 | `InlineAskUserQuestion` | Ask-user cards emitted by provider runtimes |
 | `TodoListRenderer` | Todo items and status icons |
 | `SubagentRenderer` | Background agent lifecycle rendering |
@@ -107,7 +107,7 @@ Tabs stay cold until the first send. The tab wiring exposes `ensureServiceInitia
 const preparedTurn = runtime.prepareTurn(request);
 
 for await (const chunk of runtime.query(preparedTurn, history)) {
-  streamController.handleChunk(chunk);
+  streamController.handleStreamChunk(chunk);
 }
 ```
 

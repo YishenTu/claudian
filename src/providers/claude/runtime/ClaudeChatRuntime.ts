@@ -737,7 +737,9 @@ export class ClaudianService implements ChatRuntime {
             try {
               await this.ensureReady({ force: true, preserveHandlers: true });
               if (!this.messageChannel) {
-                throw new Error('Persistent query restart did not create message channel');
+                throw new Error('Persistent query restart did not create message channel', {
+                  cause: error,
+                });
               }
               await this.applyDynamicUpdates(this.lastSentQueryOptions ?? undefined, { preserveHandlers: true });
               this.messageChannel.enqueue(messageToReplay);

@@ -19,7 +19,7 @@ describe('CodexSkillListingService', () => {
       now: () => currentTime,
     });
     const fetchSkills = jest.fn<Promise<SkillMetadata[]>, [boolean]>();
-    jest.spyOn(service as any, 'fetchSkills').mockImplementation(fetchSkills);
+    jest.spyOn(service as any, 'fetchSkills').mockImplementation(fetchSkills as (...args: unknown[]) => Promise<SkillMetadata[]>);
 
     return {
       service,

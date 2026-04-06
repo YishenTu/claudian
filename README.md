@@ -20,9 +20,9 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 
-**Instruction Mode (`#`)** — Add refined custom instructions to your system prompt from the chat input.
+**Instruction Mode (`#`)** — Claude-only refined custom instructions added from the chat input.
 
-**MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP).
+**MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP). Claude manages vault MCP in-app; Codex uses its own CLI-managed MCP configuration.
 
 **Multi-Tab & Conversations** — Multiple chat tabs, conversation history, fork, resume, and compact.
 
@@ -30,7 +30,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 - **Claude provider**: [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (native install recommended). Claude subscription/API or compatible provider ([Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), etc.).
 - **Codex provider** (optional): [Codex CLI](https://github.com/openai/codex) installed.
-- Obsidian v1.8.9+
+- Obsidian v1.4.5+
 - Desktop only (macOS, Linux, Windows)
 
 ## Installation

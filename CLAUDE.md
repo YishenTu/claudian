@@ -56,9 +56,8 @@ Tests mirror the `src/` layout under `tests/unit/` and `tests/integration/`.
 
 | Path | Contents |
 |------|----------|
-| `.claude/settings.json` | Claude Code-compatible permissions and environment |
-| `.claude/claudian-settings.json` | Claude-specific Claudian settings |
-| `.claude/settings.local.json` | Local Claude overrides |
+| `.claude/settings.json` | Claude Code-compatible project settings, permissions, and plugin overrides |
+| `.claude/claudian-settings.json` | Shared Claudian app settings plus provider-specific configuration |
 | `.claude/mcp.json` | Claudian-managed MCP servers for Claude |
 | `.claude/commands/**/*.md` | Claude slash commands |
 | `.claude/skills/*/SKILL.md` | Claude skills |
