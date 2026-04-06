@@ -17,6 +17,7 @@ const mockTransportOnNotification = jest.fn();
 const mockTransportOnServerRequest = jest.fn();
 const mockTransportDispose = jest.fn();
 const mockTransportStart = jest.fn();
+const mockResolveLaunchSpec = jest.fn();
 
 jest.mock('@/providers/codex/runtime/CodexRpcTransport', () => ({
   CodexRpcTransport: jest.fn().mockImplementation(() => ({
@@ -54,9 +55,17 @@ jest.mock('@/utils/path', () => ({
 }));
 
 jest.mock('@/utils/env', () => ({
-  parseEnvironmentVariables: jest.requireActual('@/utils/env').parseEnvironmentVariables,
+  ...jest.requireActual('@/utils/env'),
   getEnhancedPath: jest.fn().mockReturnValue('/usr/bin:/usr/local/bin'),
 }));
+
+jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => {
+  const actual = jest.requireActual('@/providers/codex/runtime/codexAppServerSupport');
+  return {
+    ...actual,
+    resolveCodexAppServerLaunchSpec: (...args: unknown[]) => mockResolveLaunchSpec(...args),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Import after mocks
@@ -141,6 +150,61 @@ function createTurn(text = 'hello', overrides: Partial<PreparedChatTurn> = {}): 
 
 function createCompactTurn(): PreparedChatTurn {
   return createTurn('/compact', { isCompact: true });
+}
+
+function createWslLaunchSpec(overrides: Record<string, unknown> = {}) {
+  return {
+    target: {
+      method: 'wsl',
+      platformFamily: 'unix',
+      platformOs: 'linux',
+      distroName: 'Ubuntu',
+    },
+    command: 'wsl.exe',
+    args: ['--distribution', 'Ubuntu', '--cd', '/mnt/c/vault', 'codex', 'app-server', '--listen', 'stdio://'],
+    spawnCwd: 'C:\\vault',
+    targetCwd: '/mnt/c/vault',
+    env: {
+      OPENAI_API_KEY: 'test-key',
+    },
+    pathMapper: {
+      target: {
+        method: 'wsl',
+        platformFamily: 'unix',
+        platformOs: 'linux',
+        distroName: 'Ubuntu',
+      },
+      toTargetPath: jest.fn((value: string) => {
+        if (value.startsWith('/tmp/')) {
+          return value.replace('/tmp/', '/mnt/c/tmp/');
+        }
+        if (value.startsWith('/external/')) {
+          return value.replace('/external/', '/mnt/d/external/');
+        }
+        return `/mnt/c/${value.replace(/^\/+/, '').replace(/\\/g, '/')}`;
+      }),
+      toHostPath: jest.fn((value: string) => {
+        if (value.startsWith('/home/user/.codex/sessions/')) {
+          return value.replace('/home/user/.codex/sessions/', '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\').replace(/\//g, '\\');
+        }
+        if (value === '/home/user/.codex/sessions') {
+          return '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions';
+        }
+        if (value === '/home/user/.codex') {
+          return '\\\\wsl$\\Ubuntu\\home\\user\\.codex';
+        }
+        return value;
+      }),
+      mapTargetPathList: jest.fn((values: string[]) => values.map(value => {
+        if (value.startsWith('/external/')) {
+          return value.replace('/external/', '/mnt/d/external/');
+        }
+        return value;
+      })),
+      canRepresentHostPath: jest.fn(() => true),
+    },
+    ...overrides,
+  };
 }
 
 async function collectChunks(gen: AsyncGenerator<StreamChunk>): Promise<StreamChunk[]> {
@@ -259,6 +323,33 @@ describe('CodexChatRuntime', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockProcessIsAlive.mockReturnValue(true);
+    mockResolveLaunchSpec.mockImplementation((plugin: any) => ({
+      target: {
+        method: 'host-native',
+        platformFamily: 'unix',
+        platformOs: 'macos',
+      },
+      command: plugin.getResolvedProviderCliPath('codex') ?? 'codex',
+      args: ['app-server', '--listen', 'stdio://'],
+      spawnCwd: '/test/vault',
+      targetCwd: '/test/vault',
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_BASE_URL: 'https://example.test/v1',
+        PATH: '/usr/bin:/usr/local/bin',
+      },
+      pathMapper: {
+        target: {
+          method: 'host-native',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        },
+        toTargetPath: jest.fn((value: string) => value),
+        toHostPath: jest.fn((value: string) => value),
+        mapTargetPathList: jest.fn((values: string[]) => values),
+        canRepresentHostPath: jest.fn(() => true),
+      },
+    }));
     captureHandlers();
     setupDefaultRequestMock();
     runtime = new CodexChatRuntime(createMockPlugin());
@@ -292,14 +383,15 @@ describe('CodexChatRuntime', () => {
     it('spawns the app-server process', async () => {
       await runtime.ensureReady();
 
-      expect(MockedProcessClass).toHaveBeenCalledWith(
-        '/usr/local/bin/codex',
-        '/test/vault',
-        expect.objectContaining({
+      expect(MockedProcessClass).toHaveBeenCalledWith(expect.objectContaining({
+        command: '/usr/local/bin/codex',
+        spawnCwd: '/test/vault',
+        targetCwd: '/test/vault',
+        env: expect.objectContaining({
           OPENAI_API_KEY: 'test-key',
           OPENAI_BASE_URL: 'https://example.test/v1',
         }),
-      );
+      }));
       expect(mockProcessStart).toHaveBeenCalled();
     });
 
@@ -376,6 +468,94 @@ describe('CodexChatRuntime', () => {
       // Verify text chunk
       expect(chunks).toContainEqual({ type: 'text', content: 'Hello!' });
       expect(chunks).toContainEqual({ type: 'done' });
+    });
+
+    it('uses the launch spec target cwd when starting a WSL-backed thread', async () => {
+      mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec());
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return {
+            userAgent: 'test/0.1',
+            codexHome: '/home/user/.codex',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+          };
+        }
+
+        if (method === 'thread/start') {
+          return threadStartResponse('thread-wsl');
+        }
+
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-wsl',
+              turn: { id: 'turn-wsl', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-wsl');
+        }
+
+        return {};
+      });
+
+      await collectChunks(runtime.query(createTurn('hi')));
+
+      expect(MockedProcessClass).toHaveBeenCalledWith(expect.objectContaining({
+        command: 'wsl.exe',
+        targetCwd: '/mnt/c/vault',
+      }));
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'thread/start',
+        expect.objectContaining({
+          cwd: '/mnt/c/vault',
+        }),
+      );
+    });
+
+    it('stores host-readable WSL transcript paths in provider state', async () => {
+      mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec());
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return {
+            userAgent: 'test/0.1',
+            codexHome: '/home/user/.codex',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+          };
+        }
+
+        if (method === 'thread/start') {
+          return {
+            ...threadStartResponse('thread-wsl-path'),
+            thread: {
+              ...threadStartResponse('thread-wsl-path').thread,
+              path: '/home/user/.codex/sessions/2026/04/06/thread-wsl-path.jsonl',
+            },
+          };
+        }
+
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-wsl-path',
+              turn: { id: 'turn-wsl-path', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-wsl-path');
+        }
+
+        return {};
+      });
+
+      await collectChunks(runtime.query(createTurn('hi')));
+
+      const result = runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false });
+      expect((result.updates.providerState as any)).toMatchObject({
+        threadId: 'thread-wsl-path',
+        sessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\06\\thread-wsl-path.jsonl',
+        transcriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+      });
     });
 
     it('passes baseInstructions (no temp file)', async () => {
@@ -876,6 +1056,49 @@ describe('CodexChatRuntime', () => {
       expect(fs.existsSync(imageInput.path as string)).toBe(false);
       expect(fs.existsSync(path.dirname(imageInput.path as string))).toBe(false);
     });
+
+    it('maps localImage paths through the launch spec path mapper for WSL', async () => {
+      mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec());
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return {
+            userAgent: 'test/0.1',
+            codexHome: '/home/user/.codex',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+          };
+        }
+
+        if (method === 'thread/start') {
+          return threadStartResponse('thread-image-wsl');
+        }
+
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-image-wsl',
+              turn: { id: 'turn-image-wsl', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-image-wsl');
+        }
+
+        return {};
+      });
+
+      const turn = createTurn('describe this');
+      turn.request.images = [
+        { id: 'img1', name: 'test.png', data: Buffer.from('fake-png').toString('base64'), mediaType: 'image/png', size: 100, source: 'file' as const },
+      ];
+
+      await collectChunks(runtime.query(turn));
+
+      const turnStartCall = findCall('turn/start');
+      const imageInput = turnStartCall?.[1]?.input?.find((item: Record<string, unknown>) => item.type === 'localImage');
+
+      expect(imageInput).toBeDefined();
+      expect(imageInput.path).toContain('/mnt/c/');
+    });
   });
 
   describe('serverRequest/resolved lifecycle', () => {
@@ -1163,6 +1386,124 @@ describe('CodexChatRuntime', () => {
         networkAccess: false,
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,
+      });
+    });
+
+    it('maps external context and memory roots into the target filesystem for WSL', async () => {
+      mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec({
+        pathMapper: {
+          target: {
+            method: 'wsl',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+            distroName: 'Ubuntu',
+          },
+          toTargetPath: jest.fn((value: string) => {
+            if (value.startsWith('/tmp/')) {
+              return value.replace('/tmp/', '/mnt/c/tmp/');
+            }
+            if (value.startsWith('/external/')) {
+              return value.replace('/external/', '/mnt/d/external/');
+            }
+            return `/mnt/c/${value.replace(/^\/+/, '')}`;
+          }),
+          toHostPath: jest.fn((value: string) => {
+            if (value === '/home/user/.codex') return '\\\\wsl$\\Ubuntu\\home\\user\\.codex';
+            if (value === '/home/user/.codex/sessions') return '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions';
+            return value;
+          }),
+          mapTargetPathList: jest.fn((values: string[]) => values.map(value => value.replace('/external/', '/mnt/d/external/'))),
+          canRepresentHostPath: jest.fn(() => true),
+        },
+      }));
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return {
+            userAgent: 'test/0.1',
+            codexHome: '/home/user/.codex',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+          };
+        }
+
+        if (method === 'thread/start') {
+          return threadStartResponse('thread-wsl-sandbox');
+        }
+
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-wsl-sandbox',
+              turn: { id: 'turn-wsl-sandbox', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-wsl-sandbox');
+        }
+
+        return {};
+      });
+
+      const turn = createTurn('inspect both locations');
+      turn.request.externalContextPaths = ['/external/a', '/external/b'];
+
+      await collectChunks(runtime.query(turn));
+
+      const turnStartCall = findCall('turn/start');
+      expect(turnStartCall[1].sandboxPolicy).toMatchObject({
+        type: 'workspaceWrite',
+        writableRoots: expect.arrayContaining([
+          '/mnt/c/vault',
+          '/mnt/d/external/a',
+          '/mnt/d/external/b',
+          '/home/user/.codex/memories',
+        ]),
+      });
+    });
+
+    it('fails with a clear error when an external context path cannot be mapped into WSL', async () => {
+      mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec({
+        pathMapper: {
+          target: {
+            method: 'wsl',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+            distroName: 'Ubuntu',
+          },
+          toTargetPath: jest.fn((value: string) => value === '/external/a' ? null : `/mnt/c/${value.replace(/^\/+/, '')}`),
+          toHostPath: jest.fn((value: string) => {
+            if (value === '/home/user/.codex') return '\\\\wsl$\\Ubuntu\\home\\user\\.codex';
+            if (value === '/home/user/.codex/sessions') return '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions';
+            return value;
+          }),
+          mapTargetPathList: jest.fn(),
+          canRepresentHostPath: jest.fn(() => true),
+        },
+      }));
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return {
+            userAgent: 'test/0.1',
+            codexHome: '/home/user/.codex',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+          };
+        }
+
+        if (method === 'thread/start') {
+          return threadStartResponse('thread-wsl-error');
+        }
+
+        return {};
+      });
+
+      const turn = createTurn('inspect location');
+      turn.request.externalContextPaths = ['/external/a'];
+
+      const chunks = await collectChunks(runtime.query(turn));
+
+      expect(chunks).toContainEqual({
+        type: 'error',
+        content: 'Codex cannot access external context path from the selected target: /external/a',
       });
     });
   });
@@ -1607,7 +1948,11 @@ describe('CodexChatRuntime', () => {
       // Simulate an established fork conversation
       runtime.syncConversationState({
         sessionId: null,
-        providerState: { forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' } },
+        providerState: {
+          forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' },
+          forkSourceSessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\source-thread.jsonl',
+          forkSourceTranscriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+        },
       });
 
       mockTransportRequest.mockImplementation(async (method: string) => {
@@ -1651,6 +1996,8 @@ describe('CodexChatRuntime', () => {
           messages: [],
           providerState: {
             forkSource: { sessionId: 'source-thread', resumeAt: 'turn-uuid-2' },
+            forkSourceSessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\source-thread.jsonl',
+            forkSourceTranscriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
           },
         },
         sessionInvalidated: false,
@@ -1661,6 +2008,12 @@ describe('CodexChatRuntime', () => {
         sessionId: 'source-thread',
         resumeAt: 'turn-uuid-2',
       });
+      expect((result.updates.providerState as any).forkSourceSessionFilePath).toBe(
+        '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\source-thread.jsonl',
+      );
+      expect((result.updates.providerState as any).forkSourceTranscriptRootPath).toBe(
+        '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+      );
     });
 
     it('resetSession clears pending fork', () => {

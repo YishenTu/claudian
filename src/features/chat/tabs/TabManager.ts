@@ -468,7 +468,11 @@ export class TabManager implements TabManagerInterface {
 
     const forkProviderState = ProviderRegistry
       .getConversationHistoryService(conversation.providerId)
-      .buildForkProviderState(context.sourceSessionId, context.resumeAt);
+      .buildForkProviderState(
+        context.sourceSessionId,
+        context.resumeAt,
+        context.sourceProviderState,
+      );
 
     await this.plugin.updateConversation(conversation.id, {
       messages: context.messages,

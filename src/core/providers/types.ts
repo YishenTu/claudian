@@ -308,7 +308,11 @@ export interface ProviderConversationHistoryService {
   resolveSessionIdForConversation(conversation: Conversation | null): string | null;
   isPendingForkConversation(conversation: Conversation): boolean;
   /** Builds opaque provider state for a forked conversation. */
-  buildForkProviderState(sourceSessionId: string, resumeAt: string): Record<string, unknown>;
+  buildForkProviderState(
+    sourceSessionId: string,
+    resumeAt: string,
+    sourceProviderState?: Record<string, unknown>,
+  ): Record<string, unknown>;
   /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
   buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
 }

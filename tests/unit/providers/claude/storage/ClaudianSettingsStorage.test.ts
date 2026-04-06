@@ -9,6 +9,11 @@ import {
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
+jest.mock('@/utils/env', () => ({
+  ...jest.requireActual('@/utils/env'),
+  getHostnameKey: () => 'host-a',
+}));
+
 const mockAdapter = {
   exists: jest.fn(),
   read: jest.fn(),
@@ -123,6 +128,54 @@ describe('ClaudianSettingsStorage', () => {
       const result = await storage.load();
 
       expect(getCodexProviderSettings(result).cliPath).toBe('/legacy/codex');
+    });
+
+    it('defaults Codex installation method and WSL distro override when missing', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({}));
+
+      const result = await storage.load();
+
+      expect(getCodexProviderSettings(result).installationMethod).toBe('native-windows');
+      expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
+    });
+
+    it('normalizes invalid Codex installation fields from provider config', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          codex: {
+            installationMethod: 'auto',
+            wslDistroOverride: 42,
+          },
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(getCodexProviderSettings(result).installationMethod).toBe('native-windows');
+      expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
+    });
+
+    it('does not inherit another host WSL selection from host-scoped provider config', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          codex: {
+            installationMethodsByHost: {
+              'host-b': 'wsl',
+            },
+            wslDistroOverridesByHost: {
+              'host-b': 'Ubuntu',
+            },
+          },
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(getCodexProviderSettings(result).installationMethod).toBe('native-windows');
+      expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
     });
 
     it('should remove legacy show1MModel from the stored file', async () => {
@@ -252,6 +305,8 @@ describe('ClaudianSettingsStorage', () => {
       );
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
       expect(writtenContent.model).toBe('claude-opus-4-5');
+      expect(writtenContent.providerConfigs.codex.installationMethodsByHost).toEqual({});
+      expect(writtenContent.providerConfigs.codex.wslDistroOverridesByHost).toEqual({});
     });
 
     it('should strip legacy slashCommands before writing', async () => {

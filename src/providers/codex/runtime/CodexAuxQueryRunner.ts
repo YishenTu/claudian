@@ -1,8 +1,7 @@
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type ClaudianPlugin from '../../../main';
-import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
-import { getVaultPath } from '../../../utils/path';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
+import { resolveCodexAppServerLaunchSpec } from './codexAppServerSupport';
 import type {
   AgentMessageDeltaNotification,
   ErrorNotification,
@@ -11,7 +10,9 @@ import type {
   TurnCompletedNotification,
   TurnStartResult,
 } from './codexAppServerTypes';
+import type { CodexLaunchSpec } from './codexLaunchTypes';
 import { CodexRpcTransport } from './CodexRpcTransport';
+import { createCodexRuntimeContext } from './CodexRuntimeContext';
 
 export interface CodexAuxQueryConfig {
   systemPrompt: string;
@@ -30,6 +31,7 @@ export class CodexAuxQueryRunner {
   private process: CodexAppServerProcess | null = null;
   private transport: CodexRpcTransport | null = null;
   private threadId: string | null = null;
+  private launchSpec: CodexLaunchSpec | null = null;
 
   constructor(private readonly plugin: ClaudianPlugin) {}
 
@@ -42,7 +44,7 @@ export class CodexAuxQueryRunner {
       const model = config.model ?? this.resolveProviderModel();
       const result = await this.transport!.request<ThreadStartResult>('thread/start', {
         model,
-        cwd: getVaultPath(this.plugin.app) ?? process.cwd(),
+        cwd: this.launchSpec?.targetCwd ?? process.cwd(),
         approvalPolicy: 'never',
         sandbox: 'read-only',
         baseInstructions: config.systemPrompt,
@@ -137,6 +139,7 @@ export class CodexAuxQueryRunner {
 
   reset(): void {
     this.threadId = null;
+    this.launchSpec = null;
     if (this.transport) {
       this.transport.dispose();
       this.transport = null;
@@ -156,30 +159,19 @@ export class CodexAuxQueryRunner {
   }
 
   private async startProcess(): Promise<void> {
-    const codexPath = this.plugin.getResolvedProviderCliPath('codex') ?? 'codex';
-    const vaultPath = getVaultPath(this.plugin.app) ?? process.cwd();
-
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables('codex'));
-    const baseEnv = Object.fromEntries(
-      Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-    );
-    const enhancedPath = getEnhancedPath(customEnv.PATH);
-
-    this.process = new CodexAppServerProcess(codexPath, vaultPath, {
-      ...baseEnv,
-      ...customEnv,
-      PATH: enhancedPath,
-    });
+    this.launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+    this.process = new CodexAppServerProcess(this.launchSpec);
     this.process.start();
 
     this.transport = new CodexRpcTransport(this.process);
     this.transport.start();
 
-    await this.transport.request<InitializeResult>('initialize', {
+    const initializeResult = await this.transport.request<InitializeResult>('initialize', {
       clientInfo: { name: 'claudian-aux', version: '1.0.0' },
       capabilities: { experimentalApi: true },
     });
 
+    createCodexRuntimeContext(this.launchSpec, initializeResult);
     this.transport.notify('initialized');
   }
 }

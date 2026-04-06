@@ -1,6 +1,8 @@
 import { type ChildProcess,spawn } from 'child_process';
 import type { Readable, Writable } from 'stream';
 
+import type { CodexLaunchSpec } from './codexLaunchTypes';
+
 const SIGKILL_TIMEOUT_MS = 3_000;
 
 type ExitCallback = (code: number | null, signal: string | null) => void;
@@ -11,16 +13,14 @@ export class CodexAppServerProcess {
   private exitCallbacks: ExitCallback[] = [];
 
   constructor(
-    private readonly codexPath: string,
-    private readonly cwd: string,
-    private readonly env: Record<string, string>,
+    private readonly launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>,
   ) {}
 
   start(): void {
-    this.proc = spawn(this.codexPath, ['app-server', '--listen', 'stdio://'], {
+    this.proc = spawn(this.launchSpec.command, this.launchSpec.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: this.cwd,
-      env: this.env,
+      cwd: this.launchSpec.spawnCwd,
+      env: this.launchSpec.env,
     });
 
     this.alive = true;

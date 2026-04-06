@@ -169,6 +169,32 @@ Prompt`,
       expect(entries[0].content).toBe('Prompt');
     });
 
+    it('recognizes repo skills under a \\\\wsl$ vault path', async () => {
+      const vaultAdapter = createMockAdapter({
+        '.codex/skills/vault-skill/SKILL.md': `---
+description: Vault
+---
+Prompt`,
+      });
+      const storage = new CodexSkillStorage(vaultAdapter, createMockAdapter({}));
+      const listProvider = createMockSkillListProvider([
+        {
+          name: 'vault-skill',
+          description: 'Vault',
+          path: '\\\\wsl$\\Ubuntu\\home\\user\\vault\\.codex\\skills\\vault-skill\\SKILL.md',
+          scope: 'repo',
+          enabled: true,
+        },
+      ]);
+      const catalog = new CodexSkillCatalog(storage, listProvider, '\\\\wsl$\\Ubuntu\\home\\user\\vault');
+
+      const entries = await catalog.listVaultEntries();
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].name).toBe('vault-skill');
+      expect(entries[0].scope).toBe('vault');
+    });
+
   });
 
   describe('saveVaultEntry', () => {

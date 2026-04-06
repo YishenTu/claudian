@@ -53,7 +53,11 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     // Established fork: source prefix + fork-only turns
     if (state.forkSource && state.threadId) {
       const sourceSessionFile = this.resolveSourceSessionFile(state);
-      const forkSessionFile = state.sessionFilePath ?? (state.threadId ? findCodexSessionFile(state.threadId) : null);
+      const forkSessionFile = state.sessionFilePath ?? (
+        state.threadId
+          ? findCodexSessionFile(state.threadId, state.transcriptRootPath)
+          : null
+      );
 
       if (sourceSessionFile && forkSessionFile) {
         const sourceTurns = readSessionTurns(sourceSessionFile);
@@ -86,7 +90,11 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
     // Normal hydration
     const threadId = state.threadId ?? conversation.sessionId ?? null;
-    const sessionFilePath = state.sessionFilePath ?? (threadId ? findCodexSessionFile(threadId) : null);
+    const sessionFilePath = state.sessionFilePath ?? (
+      threadId
+        ? findCodexSessionFile(threadId, state.transcriptRootPath)
+        : null
+    );
 
     if (!sessionFilePath) {
       this.hydratedConversationPaths.delete(conversation.id);
@@ -140,9 +148,17 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   buildForkProviderState(
     sourceSessionId: string,
     resumeAt: string,
+    sourceProviderState?: Record<string, unknown>,
   ): Record<string, unknown> {
+    const sourceState = getCodexState(sourceProviderState);
     const providerState: CodexProviderState = {
       forkSource: { sessionId: sourceSessionId, resumeAt },
+      ...(sourceState.sessionFilePath ? { forkSourceSessionFilePath: sourceState.sessionFilePath } : {}),
+      ...(
+        sourceState.transcriptRootPath
+          ? { forkSourceTranscriptRootPath: sourceState.transcriptRootPath }
+          : {}
+      ),
     };
     return providerState as Record<string, unknown>;
   }
@@ -161,7 +177,8 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
   private resolveSourceSessionFile(state: CodexProviderState): string | null {
     if (!state.forkSource) return null;
-    return findCodexSessionFile(state.forkSource.sessionId);
+    return state.forkSourceSessionFilePath
+      ?? findCodexSessionFile(state.forkSource.sessionId, state.forkSourceTranscriptRootPath);
   }
 
   private truncateTurnsAtCheckpoint(

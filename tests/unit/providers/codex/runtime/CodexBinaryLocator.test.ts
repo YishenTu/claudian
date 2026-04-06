@@ -60,4 +60,31 @@ describe('CodexBinaryLocator', () => {
 
     expect(resolveCodexCliPath('', '', `PATH=${pathDir}`)).toBe(pathBinary);
   });
+
+  it('uses the configured Linux command directly in WSL mode', () => {
+    expect(resolveCodexCliPath(
+      'codex',
+      '',
+      '',
+      { installationMethod: 'wsl', hostPlatform: 'win32' },
+    )).toBe('codex');
+  });
+
+  it('falls back to the default Linux command in WSL mode', () => {
+    expect(resolveCodexCliPath(
+      '',
+      '',
+      '',
+      { installationMethod: 'wsl', hostPlatform: 'win32' },
+    )).toBe('codex');
+  });
+
+  it('ignores a Windows-native CLI path in WSL mode and falls back to the Linux command', () => {
+    expect(resolveCodexCliPath(
+      'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
+      '',
+      '',
+      { installationMethod: 'wsl', hostPlatform: 'win32' },
+    )).toBe('codex');
+  });
 });

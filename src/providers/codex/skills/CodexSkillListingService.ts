@@ -1,9 +1,8 @@
 import type ClaudianPlugin from '../../../main';
 import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
 import {
-  buildCodexAppServerEnvironment,
-  getCodexAppServerWorkingDirectory,
   initializeCodexAppServerTransport,
+  resolveCodexAppServerLaunchSpec,
 } from '../runtime/codexAppServerSupport';
 import type {
   SkillMetadata,
@@ -11,6 +10,7 @@ import type {
   SkillsListResult,
 } from '../runtime/codexAppServerTypes';
 import { CodexRpcTransport } from '../runtime/CodexRpcTransport';
+import { createCodexRuntimeContext } from '../runtime/CodexRuntimeContext';
 
 export interface CodexSkillListProvider {
   listSkills(options?: { forceReload?: boolean }): Promise<SkillMetadata[]>;
@@ -140,24 +140,26 @@ export class CodexSkillListingService implements CodexSkillListProvider {
   }
 
   private async fetchSkills(forceReload: boolean): Promise<SkillMetadata[]> {
-    const cwd = getCodexAppServerWorkingDirectory(this.plugin);
-    const codexPath = this.plugin.getResolvedProviderCliPath('codex') ?? 'codex';
-    const env = buildCodexAppServerEnvironment(this.plugin, 'codex');
-    const process = new CodexAppServerProcess(codexPath, cwd, env);
+    const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+    const process = new CodexAppServerProcess(launchSpec);
     process.start();
 
     const transport = new CodexRpcTransport(process);
     transport.start();
 
     try {
-      await initializeCodexAppServerTransport(transport);
+      const initializeResult = await initializeCodexAppServerTransport(transport);
+      createCodexRuntimeContext(launchSpec, initializeResult);
       const result = await transport.request<SkillsListResult>('skills/list', {
-        cwds: [cwd],
+        cwds: [launchSpec.targetCwd],
         ...(forceReload ? { forceReload: true } : {}),
       });
 
-      const entry = result.data.find(candidate => candidate.cwd === cwd) ?? result.data[0];
-      return entry?.skills ?? [];
+      const entry = result.data.find(candidate => candidate.cwd === launchSpec.targetCwd) ?? result.data[0];
+      return (entry?.skills ?? []).map(skill => ({
+        ...skill,
+        path: launchSpec.pathMapper.toHostPath(skill.path) ?? skill.path,
+      }));
     } finally {
       transport.dispose();
       await process.shutdown();

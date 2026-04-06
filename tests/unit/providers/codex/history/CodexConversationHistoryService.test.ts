@@ -144,6 +144,57 @@ describe('CodexConversationHistoryService', () => {
     });
   });
 
+  it('hydrates by searching transcriptRootPath when sessionFilePath is missing', async () => {
+    const threadId = 'thread-rooted';
+    const sessionsDir = path.join(tempHome, 'custom-codex-root', 'sessions', '2026', '03', '27');
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const transcriptPath = path.join(
+      sessionsDir,
+      `rollout-2026-03-27T00-00-00-${threadId}.jsonl`,
+    );
+
+    fs.writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Recovered from transcript root.' }],
+          },
+        }),
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const conversation: Conversation = {
+      id: 'conv-rooted',
+      providerId: 'codex',
+      title: 'Transcript Root',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sessionId: threadId,
+      providerState: {
+        threadId,
+        transcriptRootPath: path.join(tempHome, 'custom-codex-root', 'sessions'),
+      },
+      messages: [],
+    };
+
+    const service = new CodexConversationHistoryService();
+    await service.hydrateConversationHistory(conversation, null);
+
+    expect(conversation.messages).toHaveLength(1);
+    expect(conversation.messages[0]).toMatchObject({
+      role: 'assistant',
+      content: 'Recovered from transcript root.',
+    });
+    expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(transcriptPath);
+  });
+
   describe('buildForkProviderState', () => {
     it('stores forkSource with sessionId and resumeAt in providerState', () => {
       const service = new CodexConversationHistoryService();
@@ -151,6 +202,24 @@ describe('CodexConversationHistoryService', () => {
 
       expect(result).toEqual({
         forkSource: { sessionId: 'source-thread-id', resumeAt: 'turn-uuid-2' },
+      });
+    });
+
+    it('preserves source transcript hints when provided', () => {
+      const service = new CodexConversationHistoryService();
+      const result = service.buildForkProviderState(
+        'source-thread-id',
+        'turn-uuid-2',
+        {
+          sessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\03\\27\\rollout-thread.jsonl',
+          transcriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+        },
+      );
+
+      expect(result).toEqual({
+        forkSource: { sessionId: 'source-thread-id', resumeAt: 'turn-uuid-2' },
+        forkSourceSessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\03\\27\\rollout-thread.jsonl',
+        forkSourceTranscriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
       });
     });
   });

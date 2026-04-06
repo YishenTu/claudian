@@ -40,9 +40,8 @@ import {
 import { type CodexProviderState, getCodexState } from '../types';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import {
-  buildCodexAppServerEnvironment,
-  getCodexAppServerWorkingDirectory,
   initializeCodexAppServerTransport,
+  resolveCodexAppServerLaunchSpec,
 } from './codexAppServerSupport';
 import type {
   SandboxPolicy,
@@ -59,8 +58,10 @@ import type {
   TurnSteerResult,
   UserInput,
 } from './codexAppServerTypes';
+import type { CodexLaunchSpec } from './codexLaunchTypes';
 import { CodexNotificationRouter } from './CodexNotificationRouter';
 import { CodexRpcTransport } from './CodexRpcTransport';
+import { type CodexRuntimeContext,createCodexRuntimeContext } from './CodexRuntimeContext';
 import { CodexServerRequestRouter } from './CodexServerRequestRouter';
 import { CodexFileTailEngine } from './CodexSessionFileTail';
 import { CodexSessionManager } from './CodexSessionManager';
@@ -100,6 +101,8 @@ export class CodexChatRuntime implements ChatRuntime {
   private session = new CodexSessionManager();
   private process: CodexAppServerProcess | null = null;
   private transport: CodexRpcTransport | null = null;
+  private launchSpec: CodexLaunchSpec | null = null;
+  private runtimeContext: CodexRuntimeContext | null = null;
   private notificationRouter: CodexNotificationRouter | null = null;
   private serverRequestRouter = new CodexServerRequestRouter();
   private ready = false;
@@ -204,8 +207,14 @@ export class CodexChatRuntime implements ChatRuntime {
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     const promptSettings = this.getSystemPromptSettings();
     const promptKey = computeSystemPromptKey(promptSettings);
-    const resolvedCodexPath = this.plugin.getResolvedProviderCliPath('codex');
-    const clientConfigKey = [promptKey, resolvedCodexPath ?? ''].join('::');
+    const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
+    const clientConfigKey = [promptKey, JSON.stringify({
+      command: launchSpec.command,
+      args: launchSpec.args,
+      spawnCwd: launchSpec.spawnCwd,
+      targetCwd: launchSpec.targetCwd,
+      target: launchSpec.target,
+    })].join('::');
     const shouldRebuild = !this.process
       || !this.transport
       || !this.process.isAlive()
@@ -214,7 +223,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
     if (shouldRebuild) {
       await this.shutdownProcess();
-      await this.startAppServer(resolvedCodexPath, clientConfigKey);
+      await this.startAppServer(launchSpec, clientConfigKey);
     }
 
     this.setReady(true);
@@ -374,7 +383,7 @@ export class CodexChatRuntime implements ChatRuntime {
           threadId: fork.sessionId,
         });
         threadId = forkResult.thread.id;
-        threadPath = forkResult.thread.path;
+        threadPath = this.toHostSessionPath(forkResult.thread.path);
 
         // Compute rollback: count turns after the resumeAt checkpoint
         const forkTurns = forkResult.thread.turns ?? [];
@@ -435,7 +444,7 @@ export class CodexChatRuntime implements ChatRuntime {
           persistExtendedHistory: true,
         });
         threadId = resumeResult.thread.id;
-        threadPath = resumeResult.thread.path;
+        threadPath = this.toHostSessionPath(resumeResult.thread.path);
         this.loadedThreadId = threadId;
       } else if (existingThreadId && existingThreadId === this.loadedThreadId) {
         // Thread already loaded — just start a new turn
@@ -445,7 +454,7 @@ export class CodexChatRuntime implements ChatRuntime {
         const permissionMode = this.resolveSandboxConfig();
         const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
           model: model ?? 'gpt-5.4',
-          cwd: getVaultPath(this.plugin.app) ?? undefined,
+          cwd: this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app) ?? undefined,
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
           serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
@@ -454,7 +463,7 @@ export class CodexChatRuntime implements ChatRuntime {
           persistExtendedHistory: true,
         });
         threadId = startResult.thread.id;
-        threadPath = startResult.thread.path;
+        threadPath = this.toHostSessionPath(startResult.thread.path);
         this.loadedThreadId = threadId;
       }
 
@@ -478,7 +487,10 @@ export class CodexChatRuntime implements ChatRuntime {
         // currentTurnId will be set by turn/started notification
       } else {
         // --- Normal turn path ---
-        tailEngine = new CodexFileTailEngine(path.join(os.homedir(), '.codex', 'sessions'), 200_000);
+        tailEngine = new CodexFileTailEngine(
+          this.runtimeContext?.sessionsDirHost ?? path.join(os.homedir(), '.codex', 'sessions'),
+          200_000,
+        );
         tailEngine.resetForNewTurn();
         transcriptSessionFilePath = threadPath ?? this.session.getSessionFilePath() ?? null;
         const transcriptReady = await tailEngine.primeCursor(
@@ -610,7 +622,10 @@ export class CodexChatRuntime implements ChatRuntime {
       if (!this.session.getSessionFilePath()) {
         const threadId = this.session.getThreadId();
         if (threadId) {
-          const sessionFilePath = findCodexSessionFile(threadId);
+          const sessionFilePath = findCodexSessionFile(
+            threadId,
+            this.runtimeContext?.sessionsDirHost ?? undefined,
+          );
           if (sessionFilePath) {
             this.session.setThread(threadId, sessionFilePath);
           }
@@ -764,7 +779,22 @@ export class CodexChatRuntime implements ChatRuntime {
     const providerState: CodexProviderState = {
       ...(threadId ? { threadId } : {}),
       ...(sessionFilePath ? { sessionFilePath } : {}),
+      ...(
+        this.runtimeContext?.sessionsDirHost || existingState?.transcriptRootPath
+          ? { transcriptRootPath: this.runtimeContext?.sessionsDirHost ?? existingState?.transcriptRootPath }
+          : {}
+      ),
       ...(existingState?.forkSource ? { forkSource: existingState.forkSource } : {}),
+      ...(
+        existingState?.forkSourceSessionFilePath
+          ? { forkSourceSessionFilePath: existingState.forkSourceSessionFilePath }
+          : {}
+      ),
+      ...(
+        existingState?.forkSourceTranscriptRootPath
+          ? { forkSourceTranscriptRootPath: existingState.forkSourceTranscriptRootPath }
+          : {}
+      ),
     };
 
     const updates: Partial<Conversation> = {
@@ -796,6 +826,8 @@ export class CodexChatRuntime implements ChatRuntime {
   private teardownState(): void {
     this.cleanupActiveInputBundles();
     this.session.reset();
+    this.launchSpec = null;
+    this.runtimeContext = null;
     this.loadedThreadId = null;
     this.currentThreadPath = null;
     this.currentTurnId = null;
@@ -875,18 +907,16 @@ export class CodexChatRuntime implements ChatRuntime {
     );
   }
 
-  private async startAppServer(resolvedCodexPath: string | null, clientConfigKey: string): Promise<void> {
-    const codexPath = resolvedCodexPath ?? 'codex';
-    const vaultPath = getCodexAppServerWorkingDirectory(this.plugin);
-    const env = buildCodexAppServerEnvironment(this.plugin, this.providerId);
-
-    this.process = new CodexAppServerProcess(codexPath, vaultPath, env);
+  private async startAppServer(launchSpec: CodexLaunchSpec, clientConfigKey: string): Promise<void> {
+    this.launchSpec = launchSpec;
+    this.process = new CodexAppServerProcess(launchSpec);
     this.process.start();
 
     this.transport = new CodexRpcTransport(this.process);
     this.transport.start();
 
-    await initializeCodexAppServerTransport(this.transport);
+    const initializeResult = await initializeCodexAppServerTransport(this.transport);
+    this.runtimeContext = createCodexRuntimeContext(launchSpec, initializeResult);
     this.clientConfigKey = clientConfigKey;
   }
 
@@ -951,6 +981,8 @@ export class CodexChatRuntime implements ChatRuntime {
       await this.process.shutdown();
       this.process = null;
     }
+    this.launchSpec = null;
+    this.runtimeContext = null;
     this.notificationRouter = null;
     this.currentTurnId = null;
     this.currentQueryThreadId = null;
@@ -986,13 +1018,18 @@ export class CodexChatRuntime implements ChatRuntime {
       return undefined;
     }
 
+    const mappedExternalContextPaths = this.mapRequiredHostPathsToTarget(
+      externalContextPaths,
+      'external context path',
+    );
+
     const writableRoots = [
-      getVaultPath(this.plugin.app),
-      ...externalContextPaths,
-      path.join(os.homedir(), '.codex', 'memories'),
-      os.tmpdir(),
-      '/tmp',
-      process.env.TMPDIR,
+      this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app),
+      ...mappedExternalContextPaths,
+      this.runtimeContext?.memoriesDirTarget ?? path.join(os.homedir(), '.codex', 'memories'),
+      this.mapHostPathToTarget(os.tmpdir()),
+      this.launchSpec?.target.platformFamily === 'unix' ? '/tmp' : null,
+      this.mapHostPathToTarget(process.env.TMPDIR),
     ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
 
     return {
@@ -1133,7 +1170,7 @@ export class CodexChatRuntime implements ChatRuntime {
     }
 
     try {
-      const cwd = getCodexAppServerWorkingDirectory(this.plugin);
+      const cwd = this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app) ?? process.cwd();
       const result = await this.transport.request<SkillsListResult>('skills/list', {
         cwds: [cwd],
       });
@@ -1185,7 +1222,11 @@ export class CodexChatRuntime implements ChatRuntime {
           const filename = toAttachmentFilename(img, i);
           const filePath = path.join(tempDir, `${i + 1}-${filename}`);
           fs.writeFileSync(filePath, Buffer.from(img.data, 'base64'));
-          input.push({ type: 'localImage', path: filePath });
+          const targetFilePath = this.mapHostPathToTarget(filePath);
+          if (!targetFilePath) {
+            throw new Error(`Codex cannot access image attachment path from the selected target: ${filePath}`);
+          }
+          input.push({ type: 'localImage', path: targetFilePath });
         }
       }
 
@@ -1202,6 +1243,36 @@ export class CodexChatRuntime implements ChatRuntime {
       cleanup();
       throw error;
     }
+  }
+
+  private toHostSessionPath(targetPath: string | null | undefined): string | null {
+    if (!targetPath) {
+      return null;
+    }
+
+    return this.launchSpec?.pathMapper.toHostPath(targetPath) ?? targetPath;
+  }
+
+  private mapHostPathToTarget(hostPath: string | null | undefined): string | null {
+    if (!hostPath) {
+      return null;
+    }
+
+    return this.launchSpec?.pathMapper.toTargetPath(hostPath) ?? hostPath;
+  }
+
+  private mapRequiredHostPathsToTarget(hostPaths: string[], label: string): string[] {
+    if (!this.launchSpec) {
+      return hostPaths;
+    }
+
+    return hostPaths.map((hostPath) => {
+      const targetPath = this.launchSpec!.pathMapper.toTargetPath(hostPath);
+      if (!targetPath) {
+        throw new Error(`Codex cannot access ${label} from the selected target: ${hostPath}`);
+      }
+      return targetPath;
+    });
   }
 }
 

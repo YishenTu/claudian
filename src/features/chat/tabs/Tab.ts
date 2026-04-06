@@ -921,6 +921,7 @@ export interface ForkContext {
   messages: ChatMessage[];
   providerId?: ProviderId;
   sourceSessionId: string;
+  sourceProviderState?: Record<string, unknown>;
   resumeAt: string;
   sourceTitle?: string;
   /** 1-based index used for fork title suffix (counts only non-interrupt user messages). */
@@ -944,6 +945,7 @@ function countUserMessagesForForkTitle(messages: ChatMessage[]): number {
 interface ForkSource {
   providerId?: ProviderId;
   sourceSessionId: string;
+  sourceProviderState?: Record<string, unknown>;
   sourceTitle?: string;
   currentNote?: string;
 }
@@ -974,6 +976,7 @@ function resolveForkSource(tab: TabData, plugin: ClaudianPlugin): ForkSource | n
   return {
     providerId: getTabProviderId(tab, plugin, conversation),
     sourceSessionId,
+    sourceProviderState: conversation?.providerState,
     sourceTitle: conversation?.title,
     currentNote: conversation?.currentNote,
   };
@@ -1022,6 +1025,7 @@ async function handleForkRequest(
     messages: deepCloneMessages(msgs.slice(0, userIdx)),
     providerId: source.providerId,
     sourceSessionId: source.sourceSessionId,
+    sourceProviderState: source.sourceProviderState,
     resumeAt: rewindCtx.prevAssistantUuid,
     sourceTitle: source.sourceTitle,
     forkAtUserMessage: countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1)),
@@ -1072,6 +1076,7 @@ async function handleForkAll(
     messages: deepCloneMessages(msgs),
     providerId: source.providerId,
     sourceSessionId: source.sourceSessionId,
+    sourceProviderState: source.sourceProviderState,
     resumeAt: lastAssistantUuid,
     sourceTitle: source.sourceTitle,
     forkAtUserMessage: countUserMessagesForForkTitle(msgs) + 1,

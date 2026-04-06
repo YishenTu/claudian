@@ -8,8 +8,36 @@ jest.mock('child_process', () => ({
 import { spawn } from 'child_process';
 
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
+import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
 const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+
+function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunchSpec {
+  return {
+    target: {
+      method: 'host-native',
+      platformFamily: 'unix',
+      platformOs: 'linux',
+    },
+    command: '/usr/bin/codex',
+    args: ['app-server', '--listen', 'stdio://'],
+    spawnCwd: '/workspace',
+    targetCwd: '/workspace',
+    env: {},
+    pathMapper: {
+      target: {
+        method: 'host-native',
+        platformFamily: 'unix',
+        platformOs: 'linux',
+      },
+      toTargetPath: jest.fn(),
+      toHostPath: jest.fn(),
+      mapTargetPathList: jest.fn(),
+      canRepresentHostPath: jest.fn(),
+    },
+    ...overrides,
+  };
+}
 
 function createMockProcess(): ChildProcess {
   const proc = new EventEmitter() as unknown as ChildProcess;
@@ -33,7 +61,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('spawn', () => {
     it('spawns codex app-server with correct arguments', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       expect(mockSpawn).toHaveBeenCalledWith(
@@ -48,7 +76,7 @@ describe('CodexAppServerProcess', () => {
 
     it('passes environment variables to the spawned process', () => {
       const env = { OPENAI_API_KEY: 'sk-test', PATH: '/usr/bin' };
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', env);
+      const server = new CodexAppServerProcess(createLaunchSpec({ env }));
       server.start();
 
       expect(mockSpawn).toHaveBeenCalledWith(
@@ -63,7 +91,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('stdio accessors', () => {
     it('exposes stdin, stdout, and stderr from the spawned process', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       expect(server.stdin).toBe(mockProc.stdin);
@@ -72,7 +100,7 @@ describe('CodexAppServerProcess', () => {
     });
 
     it('throws when accessing stdio before start', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
 
       expect(() => server.stdin).toThrow();
       expect(() => server.stdout).toThrow();
@@ -82,20 +110,20 @@ describe('CodexAppServerProcess', () => {
 
   describe('isAlive', () => {
     it('returns true when process is running', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       expect(server.isAlive()).toBe(true);
     });
 
     it('returns false before start', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
 
       expect(server.isAlive()).toBe(false);
     });
 
     it('returns false after process exits', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       mockProc.emit('exit', 0, null);
@@ -106,7 +134,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('onExit', () => {
     it('calls registered exit callback when process exits', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       const exitCallback = jest.fn();
       server.onExit(exitCallback);
       server.start();
@@ -117,7 +145,7 @@ describe('CodexAppServerProcess', () => {
     });
 
     it('calls exit callback registered after start', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       const exitCallback = jest.fn();
@@ -131,7 +159,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('shutdown', () => {
     it('sends SIGTERM to the process', async () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       const shutdownPromise = server.shutdown();
@@ -143,7 +171,7 @@ describe('CodexAppServerProcess', () => {
 
     it('sends SIGKILL if process does not exit within timeout', async () => {
       jest.useFakeTimers();
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       const shutdownPromise = server.shutdown();
@@ -162,7 +190,7 @@ describe('CodexAppServerProcess', () => {
     });
 
     it('resolves immediately if process is not running', async () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       await server.shutdown();
       expect(server.isAlive()).toBe(false);
     });
@@ -170,7 +198,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('error handling', () => {
     it('marks process as not alive on spawn error', () => {
-      const server = new CodexAppServerProcess('/usr/bin/codex', '/workspace', {});
+      const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       mockProc.emit('error', new Error('spawn failed'));

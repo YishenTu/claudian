@@ -96,22 +96,29 @@ export function resolveCodexSkillLocationFromPath(
   skillPath: string,
   vaultPath: string,
 ): CodexSkillLocation | null {
-  const normalizedSkillPath = path.normalize(skillPath);
-  const normalizedVaultPath = path.normalize(vaultPath);
+  const usesWindowsPathSemantics = (
+    /^[A-Za-z]:[\\/]/.test(skillPath)
+    || /^[A-Za-z]:[\\/]/.test(vaultPath)
+    || skillPath.startsWith('\\\\')
+    || vaultPath.startsWith('\\\\')
+  );
+  const pathApi = usesWindowsPathSemantics ? path.win32 : path.posix;
+  const normalizedSkillPath = pathApi.normalize(skillPath);
+  const normalizedVaultPath = pathApi.normalize(vaultPath);
 
   for (const [rootId, rootPath] of Object.entries(ROOT_PATH_BY_ID) as Array<[CodexSkillRootId, string]>) {
-    const rootDir = path.normalize(path.join(normalizedVaultPath, rootPath));
-    const relative = path.relative(rootDir, normalizedSkillPath);
+    const rootDir = pathApi.normalize(pathApi.join(normalizedVaultPath, rootPath));
+    const relative = pathApi.relative(rootDir, normalizedSkillPath);
 
     if (
       !relative
-      || relative.startsWith(`..${path.sep}`)
+      || relative.startsWith(`..${pathApi.sep}`)
       || relative === '..'
     ) {
       continue;
     }
 
-    const parts = relative.split(path.sep);
+    const parts = relative.split(pathApi.sep);
     if (parts.length !== 2 || parts[1] !== 'SKILL.md' || !parts[0]) {
       continue;
     }

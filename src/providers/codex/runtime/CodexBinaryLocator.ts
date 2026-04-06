@@ -3,6 +3,7 @@ import * as path from 'path';
 
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { expandHomePath, parsePathEntries } from '../../../utils/path';
+import type { CodexInstallationMethod } from '../settings';
 
 function isExistingFile(filePath: string): boolean {
   try {
@@ -24,6 +25,17 @@ function resolveConfiguredPath(configuredPath: string | undefined): string | nul
   } catch {
     return null;
   }
+}
+
+export function isWindowsStyleCliReference(value: string | null | undefined): boolean {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return /^[A-Za-z]:[\\/]/.test(trimmed)
+    || trimmed.startsWith('\\\\')
+    || /\.(?:exe|cmd|bat|ps1)$/i.test(trimmed);
 }
 
 export function findCodexBinaryPath(
@@ -54,7 +66,16 @@ export function resolveCodexCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
   envText: string,
+  options: { installationMethod?: CodexInstallationMethod; hostPlatform?: NodeJS.Platform } = {},
 ): string | null {
+  const hostPlatform = options.hostPlatform ?? process.platform;
+  if (hostPlatform === 'win32' && options.installationMethod === 'wsl') {
+    const configuredCommand = [hostnamePath, legacyPath]
+      .map(value => (value ?? '').trim())
+      .find(value => value.length > 0 && !isWindowsStyleCliReference(value));
+    return configuredCommand || 'codex';
+  }
+
   const configuredHostnamePath = resolveConfiguredPath(hostnamePath);
   if (configuredHostnamePath) {
     return configuredHostnamePath;
@@ -66,5 +87,5 @@ export function resolveCodexCliPath(
   }
 
   const customEnv = parseEnvironmentVariables(envText || '');
-  return findCodexBinaryPath(customEnv.PATH);
+  return findCodexBinaryPath(customEnv.PATH, hostPlatform);
 }

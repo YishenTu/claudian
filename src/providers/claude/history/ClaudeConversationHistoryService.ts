@@ -326,7 +326,11 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     return state.providerSessionId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
-  buildForkProviderState(sourceSessionId: string, resumeAt: string): Record<string, unknown> {
+  buildForkProviderState(
+    sourceSessionId: string,
+    resumeAt: string,
+    _sourceProviderState?: Record<string, unknown>,
+  ): Record<string, unknown> {
     const state: ClaudeProviderState = {
       forkSource: { sessionId: sourceSessionId, resumeAt } satisfies ForkSource,
     };
