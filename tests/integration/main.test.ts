@@ -179,10 +179,10 @@ describe('ClaudianPlugin', () => {
     it('should merge saved data with defaults', async () => {
       // Mock claudian-settings.json exists with custom values (Claudian-specific settings)
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json';
+        return path === '.claudian/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           return JSON.stringify({
             userName: 'TestUser',
           });
@@ -198,10 +198,10 @@ describe('ClaudianPlugin', () => {
 
     it('should strip legacy blocklist fields when loading old settings', async () => {
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json';
+        return path === '.claudian/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           return JSON.stringify({
             enableBlocklist: false,
             blockedCommands: { unix: ['rm -rf', '  '] },
@@ -215,11 +215,11 @@ describe('ClaudianPlugin', () => {
       expect('enableBlocklist' in plugin.settings).toBe(false);
       expect('blockedCommands' in plugin.settings).toBe(false);
       expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
-        '.claude/claudian-settings.json',
+        '.claudian/claudian-settings.json',
         expect.any(String),
       );
       const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
-        ([path]) => path === '.claude/claudian-settings.json',
+        ([path]) => path === '.claudian/claudian-settings.json',
       );
       expect(writeCall).toBeDefined();
       const content = JSON.parse(writeCall[1]);
@@ -250,10 +250,10 @@ describe('ClaudianPlugin', () => {
     it('should reconcile model from environment and persist when changed', async () => {
       // Mock claudian-settings.json with environment variables
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json';
+        return path === '.claudian/claudian-settings.json';
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           return JSON.stringify({
             environmentVariables: 'ANTHROPIC_MODEL=custom-model',
             lastEnvHash: '',
@@ -276,15 +276,15 @@ describe('ClaudianPlugin', () => {
 
       await plugin.saveSettings();
 
-      // Claudian-specific settings should be written to .claude/claudian-settings.json
+      // Claudian-specific settings should be written to .claudian/claudian-settings.json
       expect(mockApp.vault.adapter.write).toHaveBeenCalledWith(
-        '.claude/claudian-settings.json',
+        '.claudian/claudian-settings.json',
         expect.any(String)
       );
 
       // The written content should include state fields
       const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
-        ([path]) => path === '.claude/claudian-settings.json'
+        ([path]) => path === '.claudian/claudian-settings.json'
       );
       expect(writeCall).toBeDefined();
       const content = JSON.parse(writeCall[1]);
@@ -577,26 +577,26 @@ describe('ClaudianPlugin', () => {
       // Mock files exist
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
         // Session files
-        if (path === '.claude/sessions' || path === '.claude/sessions/conv-saved-1.meta.json') {
+        if (path === '.claudian/sessions' || path === '.claudian/sessions/conv-saved-1.meta.json') {
           return true;
         }
         // claudian-settings.json exists
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           return true;
         }
         return false;
       });
       mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
-        if (path === '.claude/sessions') {
-          return { files: ['.claude/sessions/conv-saved-1.meta.json'], folders: [] };
+        if (path === '.claudian/sessions') {
+          return { files: ['.claudian/sessions/conv-saved-1.meta.json'], folders: [] };
         }
         return { files: [], folders: [] };
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/sessions/conv-saved-1.meta.json') {
+        if (path === '.claudian/sessions/conv-saved-1.meta.json') {
           return sessionMeta;
         }
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           return JSON.stringify({});
         }
         return '';
@@ -623,25 +623,25 @@ describe('ClaudianPlugin', () => {
       });
 
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json' ||
-          path === '.claude/sessions' ||
-          path === '.claude/sessions/conv-saved-1.meta.json';
+        return path === '.claudian/claudian-settings.json' ||
+          path === '.claudian/sessions' ||
+          path === '.claudian/sessions/conv-saved-1.meta.json';
       });
       mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
-        if (path === '.claude/sessions') {
-          return { files: ['.claude/sessions/conv-saved-1.meta.json'], folders: [] };
+        if (path === '.claudian/sessions') {
+          return { files: ['.claudian/sessions/conv-saved-1.meta.json'], folders: [] };
         }
         return { files: [], folders: [] };
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           // All these fields are now in claudian-settings.json
           return JSON.stringify({
             lastEnvHash: 'old-hash',
             environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
           });
         }
-        if (path === '.claude/sessions/conv-saved-1.meta.json') {
+        if (path === '.claudian/sessions/conv-saved-1.meta.json') {
           return sessionMeta;
         }
         return '';
@@ -656,7 +656,7 @@ describe('ClaudianPlugin', () => {
       expect(loaded?.sessionId).toBeNull();
 
       const sessionWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
-        ([path]) => path === '.claude/sessions/conv-saved-1.meta.json'
+        ([path]) => path === '.claudian/sessions/conv-saved-1.meta.json'
       );
       expect(sessionWrite).toBeDefined();
       const meta = JSON.parse(sessionWrite?.[1] as string);
@@ -697,21 +697,21 @@ describe('ClaudianPlugin', () => {
       });
 
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
-        return path === '.claude/claudian-settings.json' ||
-          path === '.claude/sessions' ||
-          path === '.claude/sessions/conv-multi-session.meta.json';
+        return path === '.claudian/claudian-settings.json' ||
+          path === '.claudian/sessions' ||
+          path === '.claudian/sessions/conv-multi-session.meta.json';
       });
       mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
-        if (path === '.claude/sessions') {
-          return { files: ['.claude/sessions/conv-multi-session.meta.json'], folders: [] };
+        if (path === '.claudian/sessions') {
+          return { files: ['.claudian/sessions/conv-multi-session.meta.json'], folders: [] };
         }
         return { files: [], folders: [] };
       });
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claude/sessions/conv-multi-session.meta.json') {
+        if (path === '.claudian/sessions/conv-multi-session.meta.json') {
           return sessionMeta;
         }
-        if (path === '.claude/claudian-settings.json') {
+        if (path === '.claudian/claudian-settings.json') {
           return JSON.stringify({});
         }
         return '';

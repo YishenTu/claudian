@@ -1,4 +1,8 @@
 import {
+  CLAUDIAN_SETTINGS_PATH,
+  LEGACY_CLAUDIAN_SETTINGS_PATH,
+} from '../../core/bootstrap/StoragePaths';
+import {
   normalizeHiddenCommandList,
   normalizeHiddenProviderCommands,
 } from '../../core/providers/commands/hiddenCommands';
@@ -25,7 +29,10 @@ import {
 } from '../../providers/codex/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
-export const CLAUDIAN_SETTINGS_PATH = '.claude/claudian-settings.json';
+export {
+  CLAUDIAN_SETTINGS_PATH,
+  LEGACY_CLAUDIAN_SETTINGS_PATH,
+};
 
 export type StoredClaudianSettings = ClaudianSettings;
 
@@ -176,11 +183,12 @@ export class ClaudianSettingsStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
   async load(): Promise<StoredClaudianSettings> {
-    if (!(await this.adapter.exists(CLAUDIAN_SETTINGS_PATH))) {
+    const settingsPath = await this.getLoadPath();
+    if (!settingsPath) {
       return this.getDefaults();
     }
 
-    const content = await this.adapter.read(CLAUDIAN_SETTINGS_PATH);
+    const content = await this.adapter.read(settingsPath);
     const stored = JSON.parse(content) as Record<string, unknown>;
     const hiddenProviderCommands = mergeLegacyClaudeHiddenCommands(
       normalizeHiddenProviderCommands(stored.hiddenProviderCommands),
@@ -220,6 +228,8 @@ export class ClaudianSettingsStorage {
     );
 
     if (
+      settingsPath !== CLAUDIAN_SETTINGS_PATH
+      || (
       hasLegacyTopLevelProviderFields(stored)
       || 'show1MModel' in stored
       || 'slashCommands' in stored
@@ -230,6 +240,7 @@ export class ClaudianSettingsStorage {
       || 'enableBlocklist' in stored
       || 'blockedCommands' in stored
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
+      )
     ) {
       await this.save(merged);
     }
@@ -244,10 +255,15 @@ export class ClaudianSettingsStorage {
       2,
     );
     await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
+    await this.deleteLegacyFileIfPresent();
   }
 
   async exists(): Promise<boolean> {
-    return this.adapter.exists(CLAUDIAN_SETTINGS_PATH);
+    if (await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
+      return true;
+    }
+
+    return this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH);
   }
 
   async update(updates: Partial<StoredClaudianSettings>): Promise<void> {
@@ -280,5 +296,23 @@ export class ClaudianSettingsStorage {
 
   private getDefaults(): StoredClaudianSettings {
     return DEFAULT_CLAUDIAN_SETTINGS;
+  }
+
+  private async getLoadPath(): Promise<string | null> {
+    if (await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
+      return CLAUDIAN_SETTINGS_PATH;
+    }
+
+    if (await this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH)) {
+      return LEGACY_CLAUDIAN_SETTINGS_PATH;
+    }
+
+    return null;
+  }
+
+  private async deleteLegacyFileIfPresent(): Promise<void> {
+    if (await this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH)) {
+      await this.adapter.delete(LEGACY_CLAUDIAN_SETTINGS_PATH);
+    }
   }
 }

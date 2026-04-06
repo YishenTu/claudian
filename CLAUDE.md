@@ -57,12 +57,12 @@ Tests mirror the `src/` layout under `tests/unit/` and `tests/integration/`.
 | Path | Contents |
 |------|----------|
 | `.claude/settings.json` | Claude Code-compatible project settings, permissions, and plugin overrides |
-| `.claude/claudian-settings.json` | Shared Claudian app settings plus provider-specific configuration |
+| `.claudian/claudian-settings.json` | Shared Claudian app settings plus provider-specific configuration |
 | `.claude/mcp.json` | Claudian-managed MCP servers for Claude |
 | `.claude/commands/**/*.md` | Claude slash commands |
 | `.claude/skills/*/SKILL.md` | Claude skills |
 | `.claude/agents/*.md` | Claude vault agents |
-| `.claude/sessions/*.meta.json` | Provider-neutral session metadata |
+| `.claudian/sessions/*.meta.json` | Provider-neutral session metadata |
 | `.codex/skills/*/SKILL.md` | Codex vault skills |
 | `.agents/skills/*/SKILL.md` | Alternate Codex vault skill root |
 | `.codex/agents/*.toml` | Codex vault subagent definitions |

@@ -3,10 +3,9 @@ import { Notice } from 'obsidian';
 
 import { SESSIONS_PATH, SessionStorage } from '../../core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from '../../core/bootstrap/storage';
+import { CLAUDIAN_STORAGE_PATH } from '../../core/bootstrap/StoragePaths';
 import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
-
-const CLAUDE_PATH = '.claude';
 
 export class SharedStorageService implements SharedAppStorage {
   readonly claudianSettings: ClaudianSettingsStorage;
@@ -60,7 +59,7 @@ export class SharedStorageService implements SharedAppStorage {
   }
 
   private async ensureDirectories(): Promise<void> {
-    await this.adapter.ensureFolder(CLAUDE_PATH);
+    await this.adapter.ensureFolder(CLAUDIAN_STORAGE_PATH);
     await this.adapter.ensureFolder(SESSIONS_PATH);
   }
 

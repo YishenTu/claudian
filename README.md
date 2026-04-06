@@ -92,7 +92,7 @@ npm run build
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Default: Anthropic (Claude) or OpenAI (Codex); configurable via environment variables.
-- **Local storage**: Settings and session metadata in `vault/.claude/`; transcripts in `~/.claude/projects/` (Claude) and `~/.codex/sessions/` (Codex).
+- **Local storage**: Claudian settings and session metadata in `vault/.claudian/`; Claude provider files in `vault/.claude/`; transcripts in `~/.claude/projects/` (Claude) and `~/.codex/sessions/` (Codex).
 - **No telemetry**: No tracking beyond your configured API provider.
 
 ## Troubleshooting
