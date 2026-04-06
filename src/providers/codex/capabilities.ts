@@ -9,7 +9,7 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsFork: true,
   supportsProviderCommands: false,
   supportsImageAttachments: true,
-  supportsInstructionMode: false,
+  supportsInstructionMode: true,
   supportsMcpTools: false,
   supportsTurnSteer: true,
   reasoningControl: 'effort',

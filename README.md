@@ -20,7 +20,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 
-**Instruction Mode (`#`)** — Claude-only refined custom instructions added from the chat input.
+**Instruction Mode (`#`)** — Refined custom instructions added from the chat input.
 
 **MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP). Claude manages vault MCP in-app; Codex uses its own CLI-managed MCP configuration.
 

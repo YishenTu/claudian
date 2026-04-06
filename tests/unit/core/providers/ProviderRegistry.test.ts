@@ -66,6 +66,7 @@ describe('ProviderRegistry', () => {
     expect(caps.providerId).toBe('codex');
     expect(caps.supportsPlanMode).toBe(true);
     expect(caps.supportsFork).toBe(true);
+    expect(caps.supportsInstructionMode).toBe(true);
     expect(caps.supportsRewind).toBe(false);
     expect(caps.reasoningControl).toBe('effort');
   });

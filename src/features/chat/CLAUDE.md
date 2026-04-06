@@ -11,7 +11,7 @@ Main sidebar chat interface. `ClaudianView` assembles tabs, controllers, rendere
   - `ProviderWorkspaceRegistry`: command catalogs, agent mention providers, MCP managers, CLI resolution
 - Current feature split
   - Claude exposes rewind, instruction mode, runtime command discovery, and in-app MCP controls
-  - Codex exposes fork, history reload, plan mode, images, inline edit, `$` skills, and subagents, but not rewind or instruction mode
+  - Codex exposes fork, history reload, plan mode, instruction mode, images, inline edit, `$` skills, and subagents, but not rewind
 
 ## Architecture
 

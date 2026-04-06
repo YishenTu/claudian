@@ -369,6 +369,7 @@ describe('CodexChatRuntime', () => {
     expect(caps.supportsRewind).toBe(false);
     expect(caps.supportsFork).toBe(true);
     expect(caps.supportsPlanMode).toBe(true);
+    expect(caps.supportsInstructionMode).toBe(true);
   });
 
   it('should return empty commands', async () => {
