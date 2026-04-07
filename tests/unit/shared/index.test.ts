@@ -24,16 +24,12 @@ jest.mock('@/shared/modals/InstructionConfirmModal', () => ({
   InstructionModal: function InstructionModal() {},
 }));
 
-import {
-  CHECK_ICON_SVG,
-  hideSelectionHighlight,
-  InstructionModal,
-  MCP_ICON_SVG,
-  MentionDropdownController,
-  SelectableDropdown,
-  showSelectionHighlight,
-  SlashCommandDropdown,
-} from '@/shared';
+import { SelectableDropdown } from '@/shared/components/SelectableDropdown';
+import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
+import { SlashCommandDropdown } from '@/shared/components/SlashCommandDropdown';
+import { CHECK_ICON_SVG, MCP_ICON_SVG } from '@/shared/icons';
+import { MentionDropdownController } from '@/shared/mention/MentionDropdownController';
+import { InstructionModal } from '@/shared/modals/InstructionConfirmModal';
 
 describe('shared index', () => {
   it('re-exports runtime symbols', () => {

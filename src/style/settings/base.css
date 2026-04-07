@@ -1,3 +1,50 @@
+/* ── Settings tab navigation ── */
+
+.claudian-settings-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 16px;
+}
+
+.claudian-settings-tab {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  margin-bottom: -1px;
+}
+
+.claudian-settings-tab:hover {
+  color: var(--text-normal);
+}
+
+.claudian-settings-tab--active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.claudian-settings-tab-content {
+  display: none;
+}
+
+.claudian-settings-tab-content--active {
+  display: block;
+}
+
+/* Codex placeholder */
+.claudian-settings-codex-placeholder {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
 /* Settings page - remove separator lines from setting items */
 .claudian-settings .setting-item {
   border-top: none;

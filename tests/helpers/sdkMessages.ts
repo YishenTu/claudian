@@ -52,27 +52,27 @@ export type CompactBoundaryMessageInput = {
 
 export type AssistantMessageInput = {
   type: 'assistant';
-} & Partial<Omit<SDKAssistantMessage, 'type'>>;
+} & Record<string, unknown>;
 
 export type UserMessageInput = {
   type: 'user';
   _blocked?: boolean;
   _blockReason?: string;
-} & Partial<Omit<SDKUserMessage, 'type'>>;
+} & Record<string, unknown>;
 
 export type StreamEventMessageInput = {
   type: 'stream_event';
-} & Partial<Omit<SDKPartialAssistantMessage, 'type'>>;
+} & Record<string, unknown>;
 
 export type ResultSuccessMessageInput = {
   type: 'result';
   subtype?: 'success';
-} & Partial<Omit<SDKResultSuccess, 'type' | 'subtype'>>;
+} & Record<string, unknown>;
 
 export type ResultErrorMessageInput = {
   type: 'result';
   subtype: SDKResultError['subtype'];
-} & Partial<Omit<SDKResultError, 'type' | 'subtype'>>;
+} & Record<string, unknown>;
 
 export type ToolProgressMessageInput = {
   type: 'tool_progress';
@@ -142,29 +142,29 @@ export function buildCompactBoundaryMessage(
   };
 }
 
-export function buildAssistantMessage(overrides: Partial<Omit<SDKAssistantMessage, 'type'>> = {}): SDKAssistantMessage {
+export function buildAssistantMessage(overrides: AssistantMessageInput): SDKAssistantMessage {
   return {
     type: 'assistant',
     message: ({ content: [] } as unknown) as SDKAssistantMessage['message'],
     parent_tool_use_id: null,
     uuid: TEST_UUID,
     session_id: TEST_SESSION_ID,
-    ...overrides,
+    ...(overrides as Partial<Omit<SDKAssistantMessage, 'type'>>),
   };
 }
 
-export function buildUserMessage(overrides: Partial<Omit<SDKUserMessage, 'type'>> = {}): SDKUserMessage {
+export function buildUserMessage(overrides: UserMessageInput): SDKUserMessage {
   return {
     type: 'user',
     message: ({ content: [] } as unknown) as SDKUserMessage['message'],
     parent_tool_use_id: null,
     session_id: TEST_SESSION_ID,
-    ...overrides,
+    ...(overrides as Partial<Omit<SDKUserMessage, 'type'>>),
   };
 }
 
 export function buildStreamEventMessage(
-  overrides: Partial<Omit<SDKPartialAssistantMessage, 'type'>> = {}
+  overrides: StreamEventMessageInput
 ): SDKPartialAssistantMessage {
   return {
     type: 'stream_event',
@@ -175,12 +175,12 @@ export function buildStreamEventMessage(
     parent_tool_use_id: null,
     uuid: TEST_UUID,
     session_id: TEST_SESSION_ID,
-    ...overrides,
+    ...(overrides as Partial<Omit<SDKPartialAssistantMessage, 'type'>>),
   };
 }
 
 export function buildResultSuccessMessage(
-  overrides: Partial<Omit<SDKResultSuccess, 'type' | 'subtype'>> = {}
+  overrides: Omit<ResultSuccessMessageInput, 'type' | 'subtype'> = {}
 ): SDKResultSuccess {
   return {
     type: 'result',
@@ -197,12 +197,12 @@ export function buildResultSuccessMessage(
     permission_denials: [],
     uuid: TEST_UUID,
     session_id: TEST_SESSION_ID,
-    ...overrides,
+    ...(overrides as Partial<Omit<SDKResultSuccess, 'type' | 'subtype'>>),
   };
 }
 
 export function buildResultErrorMessage(
-  overrides: Partial<Omit<SDKResultError, 'type' | 'subtype'>> & Pick<SDKResultError, 'subtype'>
+  overrides: Omit<ResultErrorMessageInput, 'type'> & Pick<ResultErrorMessageInput, 'subtype'>
 ): SDKResultError {
   const { subtype, ...rest } = overrides;
 
@@ -221,7 +221,7 @@ export function buildResultErrorMessage(
     errors: ['SDK reported an execution error'],
     uuid: TEST_UUID,
     session_id: TEST_SESSION_ID,
-    ...rest,
+    ...(rest as Partial<Omit<SDKResultError, 'type' | 'subtype'>>),
   };
 }
 

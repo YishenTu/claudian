@@ -1,7 +1,10 @@
+import '@/providers';
+
 import {
   BUILT_IN_COMMANDS,
   detectBuiltInCommand,
   getBuiltInCommandsForDropdown,
+  isBuiltInCommandSupported,
 } from '../../../../src/core/commands/builtInCommands';
 
 describe('builtInCommands', () => {
@@ -150,6 +153,86 @@ describe('builtInCommands', () => {
       expect(forkCmd).toBeDefined();
       expect(forkCmd?.action).toBe('fork');
       expect(forkCmd?.hasArgs).toBeUndefined();
+    });
+
+    it('clear has no provider restriction', () => {
+      const clearCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'clear');
+      expect(clearCmd?.requiredCapability).toBeUndefined();
+    });
+
+    it('add-dir has no provider restriction', () => {
+      const cmd = BUILT_IN_COMMANDS.find((c) => c.name === 'add-dir');
+      expect(cmd?.requiredCapability).toBeUndefined();
+    });
+
+    it('resume requires native history support', () => {
+      const cmd = BUILT_IN_COMMANDS.find((c) => c.name === 'resume');
+      expect(cmd?.requiredCapability).toBe('supportsNativeHistory');
+    });
+
+    it('fork requires fork support', () => {
+      const cmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fork');
+      expect(cmd?.requiredCapability).toBe('supportsFork');
+    });
+  });
+
+  describe('getBuiltInCommandsForDropdown - provider filtering', () => {
+    it('returns all commands when no providerId is given', () => {
+      const commands = getBuiltInCommandsForDropdown();
+      expect(commands.length).toBe(BUILT_IN_COMMANDS.length);
+    });
+
+    it('returns all commands for claude provider', () => {
+      const commands = getBuiltInCommandsForDropdown('claude');
+      expect(commands.length).toBe(BUILT_IN_COMMANDS.length);
+      expect(commands.map(c => c.name)).toContain('clear');
+      expect(commands.map(c => c.name)).toContain('add-dir');
+      expect(commands.map(c => c.name)).toContain('resume');
+      expect(commands.map(c => c.name)).toContain('fork');
+    });
+
+    it('returns all capability-supported commands for codex provider', () => {
+      const commands = getBuiltInCommandsForDropdown('codex');
+      const names = commands.map(c => c.name);
+      expect(names).toContain('clear');
+      expect(names).toContain('add-dir');
+      expect(names).toContain('resume');
+      expect(names).toContain('fork');
+    });
+
+    it('returns only commands supported by codex capabilities', () => {
+      const commands = getBuiltInCommandsForDropdown('codex');
+      expect(commands.length).toBe(4);
+      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork']);
+    });
+  });
+
+  describe('isBuiltInCommandSupported', () => {
+    it('returns true for universal commands on any provider', () => {
+      const clearCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'clear')!;
+      expect(isBuiltInCommandSupported(clearCmd, 'claude')).toBe(true);
+      expect(isBuiltInCommandSupported(clearCmd, 'codex')).toBe(true);
+    });
+
+    it('returns false for provider-restricted commands on other providers', () => {
+      const resumeCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'resume')!;
+      expect(isBuiltInCommandSupported(resumeCmd, 'claude')).toBe(true);
+      expect(isBuiltInCommandSupported(
+        resumeCmd,
+        { supportsNativeHistory: false, supportsFork: true },
+      )).toBe(false);
+    });
+
+    it('uses provider capabilities for provider-specific commands', () => {
+      const forkCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fork')!;
+      expect(isBuiltInCommandSupported(
+        forkCmd,
+        { supportsNativeHistory: true, supportsFork: true },
+      )).toBe(true);
+      expect(isBuiltInCommandSupported(
+        forkCmd,
+        { supportsNativeHistory: true, supportsFork: false },
+      )).toBe(false);
     });
   });
 

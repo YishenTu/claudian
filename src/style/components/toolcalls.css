@@ -250,7 +250,17 @@
   margin-bottom: 2px;
 }
 
+.claudian-tool-patch-section + .claudian-tool-patch-section {
+  margin-top: 10px;
+}
+
+.claudian-tool-patch-header {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
 .claudian-tool-result-item:last-child {
   margin-bottom: 0;
 }
-

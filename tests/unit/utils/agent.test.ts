@@ -1,5 +1,5 @@
-import { buildAgentFromFrontmatter, parseAgentFile } from '@/core/agents/AgentStorage';
 import type { AgentDefinition } from '@/core/types';
+import { buildAgentFromFrontmatter, parseAgentFile } from '@/providers/claude/agents/AgentStorage';
 import { serializeAgent, validateAgentName } from '@/utils/agent';
 
 describe('validateAgentName', () => {

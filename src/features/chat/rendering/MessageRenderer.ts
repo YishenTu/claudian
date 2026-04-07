@@ -1,14 +1,20 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
-import { isSubagentToolName, isWriteEditTool, TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
+import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities } from '../../../core/providers/types';
+import {
+  isSubagentToolName,
+  isWriteEditTool,
+  TOOL_AGENT_OUTPUT,
+} from '../../../core/tools/toolNames';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
-import { t } from '../../../i18n';
+import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { findRewindContext } from '../rewind';
+import { resolveSubagentLifecycleAdapter } from './subagentLifecycleResolution';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -25,6 +31,7 @@ export class MessageRenderer {
   private component: Component;
   private messagesEl: HTMLElement;
   private rewindCallback?: (messageId: string) => Promise<void>;
+  private getCapabilities: () => ProviderCapabilities;
   private forkCallback?: (messageId: string) => Promise<void>;
   private liveMessageEls = new Map<string, HTMLElement>();
 
@@ -38,6 +45,7 @@ export class MessageRenderer {
     messagesEl: HTMLElement,
     rewindCallback?: (messageId: string) => Promise<void>,
     forkCallback?: (messageId: string) => Promise<void>,
+    getCapabilities?: () => ProviderCapabilities,
   ) {
     this.app = plugin.app;
     this.plugin = plugin;
@@ -45,6 +53,20 @@ export class MessageRenderer {
     this.messagesEl = messagesEl;
     this.rewindCallback = rewindCallback;
     this.forkCallback = forkCallback;
+    this.getCapabilities = getCapabilities ?? (() => ({
+      providerId: DEFAULT_CHAT_PROVIDER_ID,
+      supportsPersistentRuntime: false,
+      supportsNativeHistory: false,
+      supportsPlanMode: false,
+      supportsRewind: false,
+      supportsFork: false,
+      supportsProviderCommands: false,
+      supportsImageAttachments: false,
+      supportsInstructionMode: false,
+      supportsMcpTools: false,
+      supportsTurnSteer: false,
+      reasoningControl: 'none' as const,
+    }));
 
     // Register delegated click handler for file links
     registerFileLinkHandler(this.app, this.messagesEl, this.component);
@@ -53,6 +75,10 @@ export class MessageRenderer {
   /** Sets the messages container element. */
   setMessagesEl(el: HTMLElement): void {
     this.messagesEl = el;
+  }
+
+  private getSubagentLifecycleAdapter(toolName?: string) {
+    return resolveSubagentLifecycleAdapter(this.getCapabilities().providerId, toolName);
   }
 
   // ============================================
@@ -105,6 +131,51 @@ export class MessageRenderer {
     return msgEl;
   }
 
+  updateLiveUserMessage(msg: ChatMessage): void {
+    if (msg.role !== 'user') {
+      return;
+    }
+
+    const msgEl = this.liveMessageEls.get(msg.id)
+      ?? this.messagesEl.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null;
+    if (!msgEl) {
+      return;
+    }
+
+    const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement | null;
+    if (!contentEl) {
+      return;
+    }
+
+    contentEl.empty();
+
+    const textToShow = msg.displayContent ?? msg.content;
+    if (textToShow) {
+      const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+      void this.renderContent(textEl, textToShow);
+    }
+
+    const toolbar = msgEl.querySelector('.claudian-user-msg-actions') as HTMLElement | null;
+    if (toolbar) {
+      toolbar.querySelectorAll('.claudian-user-msg-copy-btn').forEach((el) => el.remove());
+    }
+
+    if (textToShow) {
+      this.addUserCopyButton(msgEl, textToShow);
+    }
+  }
+
+  removeMessage(messageId: string): void {
+    const msgEl = this.liveMessageEls.get(messageId)
+      ?? this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
+    if (!msgEl) {
+      return;
+    }
+
+    msgEl.remove();
+    this.liveMessageEls.delete(messageId);
+  }
+
   // ============================================
   // Stored Message Rendering (Batch/Replay)
   // ============================================
@@ -135,8 +206,10 @@ export class MessageRenderer {
   }
 
   renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
-    // Render interrupt messages with special styling (not as user bubbles)
-    if (msg.isInterrupt) {
+    // Bare interrupt marker: user-role interrupts (Claude bracket markers) always render
+    // as a standalone indicator. Assistant-role interrupts (Codex partial responses)
+    // only use the bare marker when there's no content to preserve.
+    if (msg.isInterrupt && (msg.role === 'user' || !this.hasVisibleContent(msg))) {
       this.renderInterruptMessage();
       return;
     }
@@ -177,7 +250,7 @@ export class MessageRenderer {
         void this.renderContent(textEl, textToShow);
         this.addUserCopyButton(msgEl, textToShow);
       }
-      if (msg.sdkUserUuid && this.isRewindEligible(allMessages, index)) {
+      if (msg.userMessageId && this.isRewindEligible(allMessages, index)) {
         if (this.rewindCallback) {
           this.addRewindButton(msgEl, msg.id);
         }
@@ -187,7 +260,17 @@ export class MessageRenderer {
       }
     } else if (msg.role === 'assistant') {
       this.renderAssistantContent(msg, contentEl);
+      if (msg.isInterrupt) {
+        this.appendInterruptIndicator(contentEl);
+      }
     }
+  }
+
+  private hasVisibleContent(msg: ChatMessage): boolean {
+    if (msg.content && msg.content.trim().length > 0) return true;
+    if (msg.toolCalls && msg.toolCalls.length > 0) return true;
+    if (msg.contentBlocks && msg.contentBlocks.length > 0) return true;
+    return false;
   }
 
   private isRewindEligible(allMessages?: ChatMessage[], index?: number): boolean {
@@ -196,13 +279,13 @@ export class MessageRenderer {
     return !!ctx.prevAssistantUuid && ctx.hasResponse;
   }
 
-  /**
-   * Renders an interrupt indicator (stored interrupts from SDK history).
-   * Uses the same styling as streaming interrupts.
-   */
   private renderInterruptMessage(): void {
     const msgEl = this.messagesEl.createDiv({ cls: 'claudian-message claudian-message-assistant' });
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
+    this.appendInterruptIndicator(contentEl);
+  }
+
+  private appendInterruptIndicator(contentEl: HTMLElement): void {
     const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
     textEl.innerHTML = '<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>';
   }
@@ -232,10 +315,10 @@ export class MessageRenderer {
         } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
-            this.renderToolCall(contentEl, toolCall);
+            this.renderToolCall(contentEl, toolCall, msg);
             renderedToolIds.add(toolCall.id);
           }
-        } else if (block.type === 'compact_boundary') {
+        } else if (block.type === 'context_compacted') {
           const boundaryEl = contentEl.createDiv({ cls: 'claudian-compact-boundary' });
           boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
         } else if (block.type === 'subagent') {
@@ -253,7 +336,7 @@ export class MessageRenderer {
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const toolCall of msg.toolCalls) {
           if (renderedToolIds.has(toolCall.id)) continue;
-          this.renderToolCall(contentEl, toolCall);
+          this.renderToolCall(contentEl, toolCall, msg);
           renderedToolIds.add(toolCall.id);
         }
       }
@@ -266,13 +349,13 @@ export class MessageRenderer {
       }
       if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
-          this.renderToolCall(contentEl, toolCall);
+          this.renderToolCall(contentEl, toolCall, msg);
         }
       }
     }
 
     // Render response duration footer (skip when message contains a compaction boundary)
-    const hasCompactBoundary = msg.contentBlocks?.some(b => b.type === 'compact_boundary');
+    const hasCompactBoundary = msg.contentBlocks?.some(b => b.type === 'context_compacted');
     if (msg.durationSeconds && msg.durationSeconds > 0 && !hasCompactBoundary) {
       const flavorWord = msg.durationFlavorWord || 'Baked';
       const footerEl = contentEl.createDiv({ cls: 'claudian-response-footer' });
@@ -284,18 +367,22 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders a tool call with special handling for Write/Edit and Agent (subagent).
-   * TaskOutput is hidden as it's an internal tool for async subagent communication.
+   * Renders a tool call with special handling for Write/Edit, Agent (subagent),
+   * and Codex collab agent lifecycle tools.
    */
-  private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
-    // Skip TaskOutput - it's invisible (internal async subagent communication)
-    if (toolCall.name === TOOL_AGENT_OUTPUT) {
-      return;
-    }
+  private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo, msg?: ChatMessage): void {
+    const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
+
+    // Skip invisible internal tools
+    if (toolCall.name === TOOL_AGENT_OUTPUT) return;
+    if (subagentLifecycleAdapter?.isHiddenTool(toolCall.name)) return;
+
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
     } else if (isSubagentToolName(toolCall.name)) {
       this.renderTaskSubagent(contentEl, toolCall);
+    } else if (subagentLifecycleAdapter?.isSpawnTool(toolCall.name) && msg) {
+      this.renderProviderLifecycleSubagent(contentEl, toolCall, msg);
     } else {
       renderStoredToolCall(contentEl, toolCall);
     }
@@ -311,6 +398,28 @@ export class MessageRenderer {
       renderStoredAsyncSubagent(contentEl, subagentInfo);
       return;
     }
+    renderStoredSubagent(contentEl, subagentInfo);
+  }
+
+  /**
+   * Consolidates provider lifecycle tools (spawn + wait/close)
+   * into a single subagent block with prompt and result.
+   */
+  private renderProviderLifecycleSubagent(
+    contentEl: HTMLElement,
+    spawnToolCall: ToolCallInfo,
+    msg: ChatMessage,
+  ): void {
+    const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(spawnToolCall.name);
+    if (!subagentLifecycleAdapter) {
+      renderStoredToolCall(contentEl, spawnToolCall);
+      return;
+    }
+
+    const subagentInfo = subagentLifecycleAdapter.buildSubagentInfo(
+      spawnToolCall,
+      msg.toolCalls ?? [],
+    );
     renderStoredSubagent(contentEl, subagentInfo);
   }
 
@@ -577,7 +686,7 @@ export class MessageRenderer {
   }
 
   refreshActionButtons(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
-    if (!msg.sdkUserUuid) return;
+    if (!msg.userMessageId) return;
     if (!this.isRewindEligible(allMessages, index)) return;
     const msgEl = this.liveMessageEls.get(msg.id);
     if (!msgEl) return;
@@ -633,6 +742,7 @@ export class MessageRenderer {
   }
 
   private addRewindButton(msgEl: HTMLElement, messageId: string): void {
+    if (!this.getCapabilities().supportsRewind) return;
     const toolbar = this.getOrCreateActionsToolbar(msgEl);
     const btn = toolbar.createSpan({ cls: 'claudian-message-rewind-btn' });
     if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
@@ -649,6 +759,7 @@ export class MessageRenderer {
   }
 
   private addForkButton(msgEl: HTMLElement, messageId: string): void {
+    if (!this.getCapabilities().supportsFork) return;
     const toolbar = this.getOrCreateActionsToolbar(msgEl);
     const btn = toolbar.createSpan({ cls: 'claudian-message-fork-btn' });
     if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);

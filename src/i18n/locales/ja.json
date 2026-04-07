@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Claudian 設定",
-    "customization": "カスタマイズ",
+    "tabs": {
+      "general": "一般",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "表示",
+    "conversations": "会話",
+    "content": "コンテンツ",
+    "input": "入力",
+    "setup": "セットアップ",
+    "models": "モデル",
+    "experimental": "実験的機能",
     "userName": {
       "name": "Claudian はどのように呼びますか？",
       "desc": "パーソナライズされた挨拶に使用する名前（空欄で一般の挨拶）"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "コマンドとスキル",
-      "desc": "/名前 でトリガーされるカスタムコマンドとスキルを定義します。"
+      "desc": ".claude/commands/ と .claude/skills/ に保存された Vault レベルのコマンドとスキルを管理します。/名前 でトリガーされます。"
     },
     "hiddenSlashCommands": {
       "name": "非表示コマンド",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "MCP サーバー",
-      "desc": "モデルコンテキストプロトコルサーバーを設定し、外部ツールやデータソースで Claude の機能を拡張します。コンテキスト保存モードのサーバーは @mention でアクティブにする必要があります。"
+      "desc": ".claude/mcp.json に保存された Vault レベルの MCP サーバー設定を管理します。コンテキスト保存モードのサーバーは @mention でアクティブにする必要があります。"
     },
     "plugins": {
       "name": "Claude Code プラグイン",
-      "desc": "~/.claude/plugins から検出された Claude Code プラグインを有効化または無効化します。有効化されたプラグインは保管庫ごとに保存されます。"
+      "desc": "~/.claude/plugins から検出された Claude Code プラグインを管理します。有効化されたプラグインは Vault ごとに .claude/settings.json に保存されます。"
     },
     "subagents": {
       "name": "サブエージェント",
-      "desc": "Claude が委任できるカスタムサブエージェントを設定します。",
+      "desc": ".claude/agents/ に保存された Vault レベルのサブエージェントを管理します。各 Markdown ファイルがカスタムエージェントを1つ定義します。",
       "noAgents": "サブエージェントが設定されていません。+ をクリックして作成してください。",
       "deleteConfirm": "サブエージェント「{name}」を削除しますか？",
       "saveFailed": "サブエージェントの保存に失敗しました: {message}",
@@ -192,24 +203,13 @@
       "name": "ユーザーClaude設定を読み込む",
       "desc": "~/.claude/settings.json を読み込みます。有効にすると、ユーザーの Claude Code 許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
-    "enableBlocklist": {
-      "name": "コマンドブラックリストを有効化",
-      "desc": "潜在的に危険なbashコマンドをブロック"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "外部アクセスを許可",
-      "desc": "Vault ディレクトリ外のファイルやコマンドへのアクセスを許可します。すべてのアクティブなセッションに即座に反映されます。Vault 制限を無効にすると、機密ファイルがプロンプトインジェクションに対して脆弱になる可能性があります。"
-    },
-    "blockedCommands": {
-      "name": "ブロックされたコマンド ({platform})",
-      "desc": "{platform} でブロックするパターン（1行に1つ）。正規表現をサポート。",
-      "unixName": "ブロックされたコマンド (Unix/Git Bash)",
-      "unixDesc": "Git Bashが呼び出せるため、UnixパターンもWindows上でブロックされます。"
-    },
-    "exportPaths": {
-      "name": "許可されたエクスポートパス",
-      "desc": "外部アクセスが無効な場合にのみ有効な、Vault 外部への書き込み専用エクスポート先です（1行に1つ）。~ でホームディレクトリを指定できます。",
-      "disabledDesc": "外部アクセスが有効な間は無視されます。書き込み専用のエクスポートパスを適用するには、外部アクセスを無効にしてください。"
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "環境",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "カスタムモデルのコンテキストウィンドウサイズを設定します。デフォルト（200kトークン）を使用する場合は空欄のままにしてください。",
       "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。"
     },
-    "advanced": "詳細設定",
     "enableOpus1M": {
       "name": "Opus 1Mコンテキストウィンドウ",
       "desc": "モデルセレクターにOpus 1Mを表示します。Max、Team、Enterpriseプランに含まれます。APIおよびProユーザーは追加使用量が必要です。"

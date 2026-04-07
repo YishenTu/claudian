@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Claudian Settings",
-    "customization": "Customization",
+    "tabs": {
+      "general": "General",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "Display",
+    "conversations": "Conversations",
+    "content": "Content",
+    "input": "Input",
+    "setup": "Setup",
+    "models": "Models",
+    "experimental": "Experimental",
     "userName": {
       "name": "What should Claudian call you?",
       "desc": "Your name for personalized greetings (leave empty for generic greetings)"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "Commands and Skills",
-      "desc": "Define custom commands and skills triggered by /name."
+      "desc": "Manage vault-level commands and skills stored in .claude/commands/ and .claude/skills/. Triggered by /name."
     },
     "hiddenSlashCommands": {
       "name": "Hidden Commands",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "MCP Servers",
-      "desc": "Configure Model Context Protocol servers to extend Claude's capabilities with external tools and data sources. Servers with context-saving mode require @mention to activate."
+      "desc": "Manage vault-level MCP server configurations stored in .claude/mcp.json. Servers with context-saving mode require @mention to activate."
     },
     "plugins": {
       "name": "Claude Code Plugins",
-      "desc": "Enable or disable Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault."
+      "desc": "Manage Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault in .claude/settings.json."
     },
     "subagents": {
       "name": "Subagents",
-      "desc": "Configure custom subagents that Claude can delegate to.",
+      "desc": "Manage vault-level subagents stored in .claude/agents/. Each Markdown file defines one custom agent.",
       "noAgents": "No subagents configured. Click + to create one.",
       "deleteConfirm": "Delete subagent \"{name}\"?",
       "saveFailed": "Failed to save subagent: {message}",
@@ -192,24 +203,13 @@
       "name": "Load user Claude settings",
       "desc": "Load ~/.claude/settings.json. When enabled, user's Claude Code permission rules may bypass Safe mode."
     },
-    "enableBlocklist": {
-      "name": "Enable command blocklist",
-      "desc": "Block potentially dangerous bash commands"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "Allow external access",
-      "desc": "Allow file and command access outside the vault directory. Takes effect immediately for all active sessions. Disabling vault restriction may expose sensitive files to prompt injection."
-    },
-    "blockedCommands": {
-      "name": "Blocked commands ({platform})",
-      "desc": "Patterns to block on {platform} (one per line). Supports regex.",
-      "unixName": "Blocked commands (Unix/Git Bash)",
-      "unixDesc": "Unix patterns also blocked on Windows because Git Bash can invoke them."
-    },
-    "exportPaths": {
-      "name": "Allowed export paths",
-      "desc": "Write-only destinations outside the vault when external access is off (one per line). Supports ~ for home directory.",
-      "disabledDesc": "Ignored while external access is enabled. Turn off external access to enforce write-only export paths."
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "Environment",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",
       "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
     },
-    "advanced": "Advanced",
     "enableOpus1M": {
       "name": "Opus 1M context window",
       "desc": "Show Opus 1M in the model selector. Included with Max, Team, and Enterprise plans. API and Pro users need extra usage."

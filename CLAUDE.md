@@ -2,72 +2,79 @@
 
 ## Project Overview
 
-Claudian - An Obsidian plugin that embeds Claude Code as a sidebar chat interface. The vault directory becomes Claude's working directory, giving it full agentic capabilities: file read/write, bash commands, and multi-step workflows.
+Claudian is an Obsidian plugin that embeds provider-backed chat runtimes in a sidebar and inline-edit flow. Claude is the default provider. Codex is optional and joins the same conversation model through `Conversation.providerId` plus provider-owned `providerState`.
+
+## Architecture Status
+
+- Product status: Claudian is a multi-provider product. Claude is the full-feature provider. Codex is opt-in and currently supports send, stream, cancel, resume, history reload, fork, plan mode, image attachments, inline edit, `#` instruction mode, `$` skills, and subagents. Unsupported or gated Codex surfaces are rewind, runtime-discovered provider commands, in-app MCP management, and Claude plugin integration.
+- App shell: `src/app/` owns shared settings defaults and plugin-level storage helpers. `src/core/` owns provider-neutral runtime, registry, tool, and type contracts.
+- Provider boundary: `src/core/runtime/` and `src/core/providers/` define the chat-facing seam. `ProviderRegistry` creates runtimes and provider-owned auxiliary services. `ProviderWorkspaceRegistry` owns workspace services such as command catalogs, agent mention providers, CLI resolution, MCP managers, and provider settings tabs.
+- Claude adaptor: `src/providers/claude/` owns the Claude runtime, prompt encoding, stream transforms, history hydration, CLI resolution, plugin and agent discovery, MCP storage, and Claude-specific settings UI. `ClaudeCommandCatalog` merges vault commands, vault skills, and runtime-supported commands behind the shared command catalog contract.
+- Codex adaptor: `src/providers/codex/` owns the `codex app-server` runtime, JSON-RPC transport, prompt encoding, JSONL history reload, session tailing, settings reconciliation, normalization, skill cataloging, subagent storage, and Codex settings UI. `CodexSkillCatalog` provides `$` skill discovery from `.codex/skills/` and `.agents/skills/` without relying on runtime command discovery.
+- Conversations: `Conversation` carries `providerId` and opaque `providerState`. Claude state is typed behind `ClaudeProviderState`. Codex state is typed behind `CodexProviderState` and currently stores `threadId`, `sessionFilePath`, and optional fork metadata.
 
 ## Commands
 
 ```bash
-npm run dev        # Development (watch mode)
-npm run build      # Production build
-npm run typecheck  # Type check
-npm run lint       # Lint code
-npm run lint:fix   # Lint and auto-fix
-npm run test       # Run tests
-npm run test:watch # Run tests in watch mode
+npm run dev
+npm run build
+npm run typecheck
+npm run lint
+npm run lint:fix
+npm run test
+npm run test:watch
+npm run test:coverage
 ```
 
 ## Architecture
 
 | Layer | Purpose | Details |
 |-------|---------|---------|
-| **core** | Infrastructure (no feature deps) | See [`src/core/CLAUDE.md`](src/core/CLAUDE.md) |
+| **app** | Shared defaults and plugin-level storage helpers | `defaultSettings`, `ClaudianSettingsStorage`, `SharedStorageService` |
+| **core** | Provider-neutral contracts and infrastructure | See [`src/core/CLAUDE.md`](src/core/CLAUDE.md) |
+| **providers/claude** | Claude SDK adaptor | See [`src/providers/claude/CLAUDE.md`](src/providers/claude/CLAUDE.md) |
+| **providers/codex** | Codex app-server adaptor | See [`src/providers/codex/CLAUDE.md`](src/providers/codex/CLAUDE.md) |
 | **features/chat** | Main sidebar interface | See [`src/features/chat/CLAUDE.md`](src/features/chat/CLAUDE.md) |
-| **features/inline-edit** | Inline edit modal | `InlineEditService`, read-only tools |
-| **features/settings** | Settings tab | UI components for all settings |
-| **shared** | Reusable UI | Dropdowns, instruction modal, fork target modal, @-mention, icons |
+| **features/inline-edit** | Inline edit modal and provider-backed edit services | `InlineEditModal` plus provider-owned inline edit services |
+| **features/settings** | Shared settings shell with provider tabs | General tab plus provider-owned Claude and Codex tab renderers |
+| **shared** | Reusable UI building blocks | Dropdowns, modals, mention UI, icons |
 | **i18n** | Internationalization | 10 locales |
-| **utils** | Utility functions | date, path, env, editor, session, markdown, diff, context, sdkSession, frontmatter, slashCommand, mcp, claudeCli, externalContext, externalContextScanner, fileLink, imageEmbed, inlineEdit |
+| **utils** | Cross-cutting utilities | env, path, markdown, diff, context, file-link, image, browser, canvas, session, subagent helpers |
 | **style** | Modular CSS | See [`src/style/CLAUDE.md`](src/style/CLAUDE.md) |
 
 ## Tests
 
 ```bash
-npm run test -- --selectProjects unit        # Run unit tests
-npm run test -- --selectProjects integration # Run integration tests
-npm run test:coverage -- --selectProjects unit # Unit coverage
+npm run test -- --selectProjects unit
+npm run test -- --selectProjects integration
+npm run test:coverage -- --selectProjects unit
 ```
 
-Tests mirror `src/` structure in `tests/unit/` and `tests/integration/`.
+Tests mirror the `src/` layout under `tests/unit/` and `tests/integration/`.
 
 ## Storage
 
-| File | Contents |
+| Path | Contents |
 |------|----------|
-| `.claude/settings.json` | CC-compatible: permissions, env, enabledPlugins |
-| `.claude/claudian-settings.json` | Claudian-specific settings (model, UI, etc.) |
-| `.claude/settings.local.json` | Local overrides (gitignored) |
-| `.claude/mcp.json` | MCP server configs |
-| `.claude/commands/*.md` | Slash commands (YAML frontmatter) |
-| `.claude/agents/*.md` | Custom agents (YAML frontmatter) |
-| `.claude/skills/*/SKILL.md` | Skill definitions |
-| `.claude/sessions/*.meta.json` | Session metadata |
-| `~/.claude/projects/{vault}/*.jsonl` | SDK-native session messages |
+| `.claude/settings.json` | Claude Code-compatible project settings, permissions, and plugin overrides |
+| `.claudian/claudian-settings.json` | Shared Claudian app settings plus provider-specific configuration |
+| `.claude/mcp.json` | Claudian-managed MCP servers for Claude |
+| `.claude/commands/**/*.md` | Claude slash commands |
+| `.claude/skills/*/SKILL.md` | Claude skills |
+| `.claude/agents/*.md` | Claude vault agents |
+| `.claudian/sessions/*.meta.json` | Provider-neutral session metadata |
+| `.codex/skills/*/SKILL.md` | Codex vault skills |
+| `.agents/skills/*/SKILL.md` | Alternate Codex vault skill root |
+| `.codex/agents/*.toml` | Codex vault subagent definitions |
+| `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
+| `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
 
 ## Development Notes
 
-- **SDK-first**: Proactively use native Claude SDK features over custom implementations. If the SDK provides a capability, use it — do not reinvent it. This ensures compatibility with Claude Code.
-- **SDK exploration**: When developing SDK-related features, write a throwaway test script (e.g., in `dev/`) that calls the real SDK to observe actual response shapes, event sequences, and edge cases. Real output lands in `~/.claude/` or `{vault}/.claude/` — inspect those files to understand patterns and formats. Run this before writing implementation or tests — real output beats guessing at types and formats. This is the default first step for any SDK integration work.
-- **Comments**: Only comment WHY, not WHAT. No JSDoc that restates the function name (`/** Get servers. */` on `getServers()`), no narrating inline comments (`// Create the channel` before `new Channel()`), no module-level docs on barrel `index.ts` files. Keep JSDoc only when it adds non-obvious context (edge cases, constraints, surprising behavior).
-- **TDD workflow**: For new functions/modules and bug fixes, follow red-green-refactor:
-  1. Write a failing test first in the mirrored path under `tests/unit/` (or `tests/integration/`)
-  2. Run it with `npm run test -- --selectProjects unit --testPathPattern <pattern>` to confirm it fails
-  3. Write the minimal implementation to make it pass
-  4. Refactor, keeping tests green
-  - For bug fixes, write a test that reproduces the bug before fixing it
-  - Test behavior and public API, not internal implementation details
-  - Skip TDD for trivial changes (renaming, moving files, config tweaks) — but still verify existing tests pass
-- Run `npm run typecheck && npm run lint && npm run test && npm run build` after editing
-- No `console.*` in production code 
-  - use Obsidian's notification system if user should be notified
-  - use `console.log` for debugging, but remove it before committing
-- Generated docs/test scripts go in `dev/`.
+- **Provider-native first**: Prefer the official Claude SDK and Codex app-server behavior over reimplementing provider features locally. When the provider already owns a capability, adapt to it instead of shadowing it.
+- **Runtime exploration**: For provider integrations, inspect real runtime output first. Claude data lands under `~/.claude/` and Codex data under `~/.codex/`. Real transcripts beat guessed event shapes. Put throwaway local scripts in `.context/`; only promote durable tooling into `dev/`.
+- **Comments**: Comment why, not what. Avoid narration and redundant JSDoc.
+- **TDD workflow**: For new behavior or bug fixes, write the failing test first in the mirrored `tests/` path, make it pass, then refactor.
+- Run `npm run typecheck && npm run lint && npm run test && npm run build` after editing.
+- No `console.*` in production code.
+- Put non-committed notes, handoff files, and throwaway scripts in `.context/`.

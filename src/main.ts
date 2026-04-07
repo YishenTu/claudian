@@ -1,216 +1,52 @@
-/**
- * Claudian - Obsidian plugin entry point
- *
- * Registers the sidebar chat view, settings tab, and commands.
- * Manages conversation persistence and environment variable configuration.
- */
+// Must run before any SDK imports to patch Electron/Node.js realm incompatibility
+import { patchSetMaxListenersForElectron } from './utils/electronCompat';
+patchSetMaxListenersForElectron();
 
-import type { Editor, MarkdownView } from 'obsidian';
-import { Notice, Plugin } from 'obsidian';
+import './providers';
 
-import { AgentManager } from './core/agents';
-import { McpServerManager } from './core/mcp';
-import { PluginManager } from './core/plugins';
-import { StorageService } from './core/storage';
-import { isSubagentToolName, TOOL_TASK } from './core/tools/toolNames';
+import type { Editor } from 'obsidian';
+import { MarkdownView, Notice, Plugin } from 'obsidian';
+
+import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
+import { SharedStorageService } from './app/storage/SharedStorageService';
+import type { SharedAppStorage } from './core/bootstrap/storage';
+import {
+  getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
+  getRuntimeEnvironmentText,
+  setEnvironmentVariablesForScope,
+} from './core/providers/providerEnvironment';
+import { ProviderRegistry } from './core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
+import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
+import type { ProviderId } from './core/providers/types';
+import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
-  AsyncSubagentStatus,
-  ChatMessage,
   ClaudianSettings,
   Conversation,
   ConversationMeta,
-  SlashCommand,
-  SubagentInfo,
-  ToolCallInfo,
 } from './core/types';
 import {
-  DEFAULT_CLAUDE_MODELS,
-  DEFAULT_SETTINGS,
-  getCliPlatformKey,
-  getHostnameKey,
-  normalizeVisibleModelVariant,
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
+import type { EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { SkillRunManager } from './features/runs/SkillRunManager';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
-import { setLocale } from './i18n';
-import { ClaudeCliResolver } from './utils/claudeCli';
+import { setLocale } from './i18n/i18n';
+import type { Locale } from './i18n/types';
 import { buildCursorContext } from './utils/editor';
-import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
 import { getVaultPath } from './utils/path';
-import {
-  deleteSDKSession,
-  loadSDKSessionMessages,
-  loadSubagentToolCalls,
-  sdkSessionExists,
-  type SDKSessionLoadResult,
-} from './utils/sdkSession';
 
-// ============================================
-// Subagent data merge helpers (pure functions)
-// ============================================
-
-function chooseRicherResult(sdkResult?: string, cachedResult?: string): string | undefined {
-  const sdkText = typeof sdkResult === 'string' ? sdkResult.trim() : '';
-  const cachedText = typeof cachedResult === 'string' ? cachedResult.trim() : '';
-
-  if (sdkText.length === 0 && cachedText.length === 0) return undefined;
-  if (sdkText.length === 0) return cachedResult;
-  if (cachedText.length === 0) return sdkResult;
-
-  return sdkText.length >= cachedText.length ? sdkResult : cachedResult;
-}
-
-function chooseRicherToolCalls(
-  sdkToolCalls: ToolCallInfo[] = [],
-  cachedToolCalls: ToolCallInfo[] = []
-): ToolCallInfo[] {
-  if (sdkToolCalls.length >= cachedToolCalls.length) return sdkToolCalls;
-  return cachedToolCalls;
-}
-
-function normalizeAsyncStatus(
-  subagent: SubagentInfo | undefined,
-  modeOverride?: SubagentInfo['mode']
-): AsyncSubagentStatus | undefined {
-  if (!subagent) return undefined;
-
-  const mode = modeOverride ?? subagent.mode;
-  if (mode === 'sync') return undefined;
-  if (mode === 'async') return subagent.asyncStatus ?? subagent.status;
-  return subagent.asyncStatus;
-}
-
-function isTerminalAsyncStatus(status: AsyncSubagentStatus | undefined): boolean {
-  return status === 'completed' || status === 'error' || status === 'orphaned';
-}
-
-function mergeSubagentInfo(
-  taskToolCall: ToolCallInfo,
-  cachedSubagent: SubagentInfo
-): SubagentInfo {
-  const sdkSubagent = taskToolCall.subagent;
-  const cachedAsyncStatus = normalizeAsyncStatus(cachedSubagent);
-  if (!sdkSubagent) {
-    return {
-      ...cachedSubagent,
-      asyncStatus: cachedAsyncStatus,
-      result: chooseRicherResult(taskToolCall.result, cachedSubagent.result),
-    };
-  }
-
-  const sdkAsyncStatus = normalizeAsyncStatus(sdkSubagent);
-  const sdkIsTerminal = isTerminalAsyncStatus(sdkAsyncStatus);
-  const cachedIsTerminal = isTerminalAsyncStatus(cachedAsyncStatus);
-  const sdkResult = taskToolCall.result ?? sdkSubagent.result;
-
-  // Prefer cached data only when it reached a terminal state but SDK hasn't yet
-  const preferred = (!sdkIsTerminal && cachedIsTerminal) ? cachedSubagent : sdkSubagent;
-
-  const mergedMode = sdkSubagent.mode
-    ?? cachedSubagent.mode
-    ?? (taskToolCall.input?.run_in_background === true ? 'async' : undefined);
-  const fallbackResult = chooseRicherResult(sdkResult, cachedSubagent.result);
-  const mergedResult = preferred === cachedSubagent
-    ? (cachedSubagent.result ?? fallbackResult)
-    : fallbackResult;
-  const mergedAsyncStatus = normalizeAsyncStatus(preferred, mergedMode);
-
-  return {
-    ...cachedSubagent,
-    ...sdkSubagent,
-    description: sdkSubagent.description || cachedSubagent.description,
-    prompt: sdkSubagent.prompt || cachedSubagent.prompt,
-    mode: mergedMode,
-    status: preferred.status,
-    asyncStatus: mergedAsyncStatus,
-    result: mergedResult,
-    toolCalls: chooseRicherToolCalls(sdkSubagent.toolCalls, cachedSubagent.toolCalls),
-    agentId: sdkSubagent.agentId || cachedSubagent.agentId,
-    outputToolId: sdkSubagent.outputToolId || cachedSubagent.outputToolId,
-    startedAt: sdkSubagent.startedAt ?? cachedSubagent.startedAt,
-    completedAt: sdkSubagent.completedAt ?? cachedSubagent.completedAt,
-    isExpanded: sdkSubagent.isExpanded ?? cachedSubagent.isExpanded,
-  };
-}
-
-function ensureTaskToolCall(
-  msg: ChatMessage,
-  subagentId: string,
-  subagent: SubagentInfo
-): ToolCallInfo {
-  msg.toolCalls = msg.toolCalls || [];
-  let taskToolCall = msg.toolCalls.find(
-    tc => tc.id === subagentId && isSubagentToolName(tc.name)
-  );
-
-  if (!taskToolCall) {
-    taskToolCall = {
-      id: subagentId,
-      name: TOOL_TASK,
-      input: {
-        description: subagent.description,
-        prompt: subagent.prompt || '',
-        ...(subagent.mode === 'async' ? { run_in_background: true } : {}),
-      },
-      status: subagent.status,
-      result: subagent.result,
-      isExpanded: false,
-      subagent,
-    };
-    msg.toolCalls.push(taskToolCall);
-    return taskToolCall;
-  }
-
-  if (!taskToolCall.input.description) taskToolCall.input.description = subagent.description;
-  if (!taskToolCall.input.prompt) taskToolCall.input.prompt = subagent.prompt || '';
-  if (subagent.mode === 'async') taskToolCall.input.run_in_background = true;
-  const mergedSubagent = mergeSubagentInfo(taskToolCall, subagent);
-  taskToolCall.status = mergedSubagent.status;
-  if (mergedSubagent.mode === 'async') {
-    taskToolCall.input.run_in_background = true;
-  }
-  if (mergedSubagent.result !== undefined) {
-    taskToolCall.result = mergedSubagent.result;
-  }
-  taskToolCall.subagent = mergedSubagent;
-  return taskToolCall;
-}
-
-/**
- * Main plugin class for Claudian.
- * Handles plugin lifecycle, settings persistence, and conversation management.
- */
 export default class ClaudianPlugin extends Plugin {
-  settings: ClaudianSettings;
-  mcpManager: McpServerManager;
-  pluginManager: PluginManager;
-  agentManager: AgentManager;
-  storage: StorageService;
-  cliResolver: ClaudeCliResolver;
-  skillRunManager: SkillRunManager;
+  settings!: ClaudianSettings;
+  storage!: SharedAppStorage;
+  skillRunManager!: SkillRunManager;
   private conversations: Conversation[] = [];
-  private runtimeEnvironmentVariables = '';
 
   async onload() {
     await this.loadSettings();
-
-    this.cliResolver = new ClaudeCliResolver();
-
-    // Initialize MCP manager (shared for agent + UI)
-    this.mcpManager = new McpServerManager(this.storage.mcp);
-    await this.mcpManager.loadServers();
-
-    // Initialize plugin manager (reads from installed_plugins.json + settings.json)
-    const vaultPath = (this.app.vault.adapter as any).basePath;
-    this.pluginManager = new PluginManager(vaultPath, this.storage.ccSettings);
-    await this.pluginManager.loadPlugins();
-
-    // Initialize agent manager (loads plugin agents from plugin install paths)
-    this.agentManager = new AgentManager(vaultPath, this.pluginManager);
-    await this.agentManager.loadAgents();
+    await ProviderWorkspaceRegistry.initializeAll(this);
 
     this.skillRunManager = new SkillRunManager(this);
     await this.skillRunManager.initialize();
@@ -235,7 +71,15 @@ export default class ClaudianPlugin extends Plugin {
     this.addCommand({
       id: 'inline-edit',
       name: 'Inline edit',
-      editorCallback: async (editor: Editor, view: MarkdownView) => {
+      editorCallback: async (editor: Editor, ctx) => {
+        const view = ctx instanceof MarkdownView
+          ? ctx
+          : this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) {
+          new Notice('Inline edit unavailable: could not access the active markdown view.');
+          return;
+        }
+
         const selectedText = editor.getSelection();
         const notePath = view.file?.path || 'unknown';
 
@@ -327,7 +171,6 @@ export default class ClaudianPlugin extends Plugin {
         if (!checking) {
           const activeTabId = tabManager.getActiveTabId();
           if (activeTabId) {
-            // When closing the last tab, TabManager will create a new empty one
             tabManager.closeTab(activeTabId);
           }
         }
@@ -373,19 +216,14 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /** Loads settings and conversations from persistent storage. */
   async loadSettings() {
-    // Initialize storage service (handles migration if needed)
-    this.storage = new StorageService(this);
+    this.storage = new SharedStorageService(this);
     const { claudian } = await this.storage.initialize();
 
-    const slashCommands = await this.storage.loadAllSlashCommands();
-
     this.settings = {
-      ...DEFAULT_SETTINGS,
+      ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
-      slashCommands,
-    };
+    } as ClaudianSettings;
 
     // Plan mode is ephemeral — normalize back to normal on load so the app
     // doesn't start stuck in plan mode after a restart (prePlanPermissionMode is lost)
@@ -393,125 +231,54 @@ export default class ClaudianPlugin extends Plugin {
       this.settings.permissionMode = 'normal';
     }
 
+    const didNormalizeProviderSelection = ProviderSettingsCoordinator.normalizeProviderSelection(
+      this.settings as unknown as Record<string, unknown>,
+    );
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
-    // Initialize and migrate legacy CLI paths to hostname-based paths
-    this.settings.claudeCliPathsByHost ??= {};
-    const hostname = getHostnameKey();
-    let didMigrateCliPath = false;
+    const allMetadata = await this.storage.sessions.listMetadata();
+    this.conversations = allMetadata.map(meta => {
+      const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
 
-    if (!this.settings.claudeCliPathsByHost[hostname]) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const platformPaths = (this.settings as any).claudeCliPaths as Record<string, string> | undefined;
-      const migratedPath = platformPaths?.[getCliPlatformKey()]?.trim() || this.settings.claudeCliPath?.trim();
-
-      if (migratedPath) {
-        this.settings.claudeCliPathsByHost[hostname] = migratedPath;
-        this.settings.claudeCliPath = '';
-        didMigrateCliPath = true;
-      }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (this.settings as any).claudeCliPaths;
-
-    // Load all conversations from session files (legacy JSONL + native metadata)
-    const { conversations: legacyConversations, failedCount } = await this.storage.sessions.loadAllConversations();
-    const legacyIds = new Set(legacyConversations.map(c => c.id));
-
-    // Overlay native metadata onto legacy conversations if present
-    for (const conversation of legacyConversations) {
-      const meta = await this.storage.sessions.loadMetadata(conversation.id);
-      if (!meta) continue;
-
-      conversation.isNative = true;
-      conversation.title = meta.title ?? conversation.title;
-      conversation.titleGenerationStatus = meta.titleGenerationStatus ?? conversation.titleGenerationStatus;
-      conversation.createdAt = meta.createdAt ?? conversation.createdAt;
-      conversation.updatedAt = meta.updatedAt ?? conversation.updatedAt;
-      conversation.lastResponseAt = meta.lastResponseAt ?? conversation.lastResponseAt;
-      if (meta.sessionId !== undefined) {
-        conversation.sessionId = meta.sessionId;
-      }
-      conversation.currentNote = meta.currentNote ?? conversation.currentNote;
-      conversation.externalContextPaths = meta.externalContextPaths ?? conversation.externalContextPaths;
-      conversation.enabledMcpServers = meta.enabledMcpServers ?? conversation.enabledMcpServers;
-      conversation.usage = meta.usage ?? conversation.usage;
-      if (meta.sdkSessionId !== undefined) {
-        conversation.sdkSessionId = meta.sdkSessionId;
-      } else if (conversation.sdkSessionId === undefined && conversation.sessionId) {
-        conversation.sdkSessionId = conversation.sessionId;
-      }
-      conversation.previousSdkSessionIds = meta.previousSdkSessionIds ?? conversation.previousSdkSessionIds;
-      conversation.legacyCutoffAt = meta.legacyCutoffAt ?? conversation.legacyCutoffAt;
-      conversation.subagentData = meta.subagentData ?? conversation.subagentData;
-      conversation.resumeSessionAt = meta.resumeSessionAt ?? conversation.resumeSessionAt;
-      conversation.forkSource = meta.forkSource ?? conversation.forkSource;
-    }
-
-    // Also load native session metadata (no legacy JSONL)
-    const nativeMetadata = await this.storage.sessions.listNativeMetadata();
-    const nativeConversations: Conversation[] = nativeMetadata
-      .filter(meta => !legacyIds.has(meta.id))
-      .map(meta => {
-        const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
-        const sdkSessionId = meta.sdkSessionId !== undefined
-          ? meta.sdkSessionId
-          : (resumeSessionId ?? undefined);
-
-        return {
-          id: meta.id,
-          title: meta.title,
-          createdAt: meta.createdAt,
-          updatedAt: meta.updatedAt,
-          lastResponseAt: meta.lastResponseAt,
-          sessionId: resumeSessionId,
-          sdkSessionId,
-          previousSdkSessionIds: meta.previousSdkSessionIds,
-          messages: [], // Messages are in SDK storage, loaded on demand
-          currentNote: meta.currentNote,
-          externalContextPaths: meta.externalContextPaths,
-          enabledMcpServers: meta.enabledMcpServers,
-          usage: meta.usage,
-          titleGenerationStatus: meta.titleGenerationStatus,
-          legacyCutoffAt: meta.legacyCutoffAt,
-          isNative: true,
-          subagentData: meta.subagentData, // Preserve for applying to loaded messages
-          resumeSessionAt: meta.resumeSessionAt,
-          forkSource: meta.forkSource,
-        };
-      });
-
-    this.conversations = [...legacyConversations, ...nativeConversations].sort(
+      return {
+        id: meta.id,
+        providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
+        title: meta.title,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
+        lastResponseAt: meta.lastResponseAt,
+        sessionId: resumeSessionId,
+        providerState: meta.providerState,
+        messages: [],
+        currentNote: meta.currentNote,
+        externalContextPaths: meta.externalContextPaths,
+        enabledMcpServers: meta.enabledMcpServers,
+        usage: meta.usage,
+        titleGenerationStatus: meta.titleGenerationStatus,
+        resumeAtMessageId: meta.resumeAtMessageId,
+      };
+    }).sort(
       (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
     );
-
-    if (failedCount > 0) {
-      new Notice(`Failed to load ${failedCount} conversation${failedCount > 1 ? 's' : ''}`);
-    }
-    setLocale(this.settings.locale);
+    setLocale(this.settings.locale as Locale);
 
     const backfilledConversations = this.backfillConversationResponseTimestamps();
 
-    this.runtimeEnvironmentVariables = this.settings.environmentVariables || '';
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(this.runtimeEnvironmentVariables);
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment();
 
-    if (changed || didMigrateCliPath || didNormalizeModelVariants) {
+    ProviderSettingsCoordinator.projectActiveProviderState(
+      this.settings as unknown as Record<string, unknown>,
+    );
+
+    if (changed || didNormalizeModelVariants || didNormalizeProviderSelection) {
       await this.saveSettings();
     }
 
-    // Persist backfilled and invalidated conversations to their session files
     const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
     for (const conv of conversationsToSave) {
-      if (conv.isNative) {
-        // Native session: save metadata only
-        await this.storage.sessions.saveMetadata(
-          this.storage.sessions.toSessionMetadata(conv)
-        );
-      } else {
-        // Legacy session: save full JSONL
-        await this.storage.sessions.saveConversation(conv);
-      }
+      await this.storage.sessions.saveMetadata(
+        this.storage.sessions.toSessionMetadata(conv)
+      );
     }
   }
 
@@ -534,72 +301,59 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   normalizeModelVariantSettings(): boolean {
-    const { enableOpus1M, enableSonnet1M } = this.settings;
-    let changed = false;
-
-    const normalize = (model: string): string =>
-      normalizeVisibleModelVariant(model, enableOpus1M, enableSonnet1M);
-
-    const normalizedModel = normalize(this.settings.model);
-    if (this.settings.model !== normalizedModel) {
-      this.settings.model = normalizedModel;
-      changed = true;
-    }
-
-    const normalizedTitleModel = normalize(this.settings.titleGenerationModel);
-    if (this.settings.titleGenerationModel !== normalizedTitleModel) {
-      this.settings.titleGenerationModel = normalizedTitleModel;
-      changed = true;
-    }
-
-    if (this.settings.lastClaudeModel) {
-      const normalizedLastClaudeModel = normalize(this.settings.lastClaudeModel);
-      if (this.settings.lastClaudeModel !== normalizedLastClaudeModel) {
-        this.settings.lastClaudeModel = normalizedLastClaudeModel;
-        changed = true;
-      }
-    }
-
-    return changed;
+    return ProviderSettingsCoordinator.normalizeAllModelVariants(
+      this.settings as unknown as Record<string, unknown>,
+    );
   }
 
-  /** Persists settings to storage. */
   async saveSettings() {
-    // Save settings (excluding slashCommands which are stored separately)
-    const {
-      slashCommands: _,
-      ...settingsToSave
-    } = this.settings;
+    ProviderSettingsCoordinator.normalizeProviderSelection(
+      this.settings as unknown as Record<string, unknown>,
+    );
+    ProviderSettingsCoordinator.persistProjectedProviderState(
+      this.settings as unknown as Record<string, unknown>,
+    );
 
-    await this.storage.saveClaudianSettings(settingsToSave);
+    await this.storage.saveClaudianSettings(this.settings);
   }
 
   /** Updates and persists environment variables, restarting processes to apply changes. */
-  async applyEnvironmentVariables(envText: string): Promise<void> {
-    const envChanged = envText !== this.runtimeEnvironmentVariables;
+  async applyEnvironmentVariables(scope: EnvironmentScope, envText: string): Promise<void> {
+    await this.applyEnvironmentVariablesBatch([{ scope, envText }]);
+  }
 
-    this.settings.environmentVariables = envText;
+  async applyEnvironmentVariablesBatch(
+    updates: Array<{ scope: EnvironmentScope; envText: string }>,
+  ): Promise<void> {
+    const settingsBag = this.settings as unknown as Record<string, unknown>;
+    const nextEnvironmentByScope = new Map<EnvironmentScope, string>();
+    for (const update of updates) {
+      nextEnvironmentByScope.set(update.scope, update.envText);
+    }
 
-    if (!envChanged) {
+    const changedScopes: EnvironmentScope[] = [];
+    for (const [scope, envText] of nextEnvironmentByScope) {
+      const currentValue = getScopedEnvironmentVariables(settingsBag, scope);
+      if (currentValue !== envText) {
+        changedScopes.push(scope);
+      }
+      setEnvironmentVariablesForScope(settingsBag, scope, envText);
+    }
+
+    if (changedScopes.length === 0) {
       await this.saveSettings();
       return;
     }
 
-    // Update runtime env vars so new processes use them
-    this.runtimeEnvironmentVariables = envText;
-
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(envText);
+    const affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
+    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(affectedProviderIds);
     await this.saveSettings();
 
     if (invalidatedConversations.length > 0) {
       for (const conv of invalidatedConversations) {
-        if (conv.isNative) {
-          await this.storage.sessions.saveMetadata(
-            this.storage.sessions.toSessionMetadata(conv)
-          );
-        } else {
-          await this.storage.sessions.saveConversation(conv);
-        }
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conv)
+        );
       }
     }
 
@@ -607,7 +361,11 @@ export default class ClaudianPlugin extends Plugin {
     const tabManager = view?.getTabManager();
 
     if (tabManager) {
-      for (const tab of tabManager.getAllTabs()) {
+      const affectedTabs = tabManager.getAllTabs().filter((tab) => (
+        affectedProviderIds.includes(tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID)
+      ));
+
+      for (const tab of affectedTabs) {
         if (tab.state.isStreaming) {
           tab.controllers.inputController?.cancelStreaming();
         }
@@ -615,7 +373,7 @@ export default class ClaudianPlugin extends Plugin {
 
       let failedTabs = 0;
       if (changed) {
-        for (const tab of tabManager.getAllTabs()) {
+        for (const tab of affectedTabs) {
           if (!tab.service || !tab.serviceInitialized) {
             continue;
           }
@@ -628,21 +386,25 @@ export default class ClaudianPlugin extends Plugin {
           }
         }
       } else {
-        // Restart initialized tabs to pick up env changes
-        try {
-          await tabManager.broadcastToAllTabs(
-            async (service) => { await service.ensureReady({ force: true }); }
-          );
-        } catch {
-          failedTabs++;
+        for (const tab of affectedTabs) {
+          if (!tab.service || !tab.serviceInitialized) {
+            continue;
+          }
+          try {
+            await tab.service.ensureReady({ force: true });
+          } catch {
+            failedTabs++;
+          }
         }
       }
       if (failedTabs > 0) {
-        new Notice(`Environment changes applied, but ${failedTabs} tab(s) failed to restart.`);
+        new Notice(`Environment changes applied, but ${failedTabs} affected tab(s) failed to restart.`);
       }
     }
 
-    view?.refreshModelSelector();
+    for (const openView of this.getAllViews()) {
+      openView.refreshModelSelector();
+    }
 
     const noticeText = changed
       ? 'Environment variables applied. Sessions will be rebuilt on next message.'
@@ -651,92 +413,63 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */
-  getActiveEnvironmentVariables(): string {
-    return this.runtimeEnvironmentVariables;
-  }
-
-  getResolvedClaudeCliPath(): string | null {
-    return this.cliResolver.resolve(
-      this.settings.claudeCliPathsByHost,  // Per-device paths (preferred)
-      this.settings.claudeCliPath,          // Legacy path (fallback)
-      this.getActiveEnvironmentVariables()
+  getActiveEnvironmentVariables(
+    providerId: ProviderId = ProviderRegistry.resolveSettingsProviderId(
+      this.settings as unknown as Record<string, unknown>,
+    ),
+  ): string {
+    return getRuntimeEnvironmentText(
+      this.settings as unknown as Record<string, unknown>,
+      providerId,
     );
   }
 
-  private getDefaultModelValues(): string[] {
-    return DEFAULT_CLAUDE_MODELS.map((m) => m.value);
+  getEnvironmentVariablesForScope(scope: EnvironmentScope): string {
+    return getScopedEnvironmentVariables(
+      this.settings as unknown as Record<string, unknown>,
+      scope,
+    );
   }
 
-  private getPreferredCustomModel(envVars: Record<string, string>, customModels: { value: string }[]): string {
-    const envPreferred = getCurrentModelFromEnvironment(envVars);
-    if (envPreferred && customModels.some((m) => m.value === envPreferred)) {
-      return envPreferred;
+  getResolvedProviderCliPath(providerId: ProviderId): string | null {
+    const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
+    if (!cliResolver) {
+      return null;
     }
-    return customModels[0].value;
+
+    return cliResolver.resolveFromSettings(this.settings as unknown as Record<string, unknown>);
   }
 
-  /** Computes a hash of model and provider base URL environment variables for change detection. */
-  private computeEnvHash(envText: string): string {
-    const envVars = parseEnvironmentVariables(envText || '');
-    const modelKeys = [
-      'ANTHROPIC_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    ];
-    const providerKeys = [
-      'ANTHROPIC_BASE_URL',
-    ];
-    const allKeys = [...modelKeys, ...providerKeys];
-    const relevantPairs = allKeys
-      .filter(key => envVars[key])
-      .map(key => `${key}=${envVars[key]}`)
-      .sort()
-      .join('|');
-    return relevantPairs;
-  }
-
-  /**
-   * Reconciles model with environment.
-   * Returns { changed, invalidatedConversations } where changed indicates if
-   * settings were modified (requiring save), and invalidatedConversations lists
-   * conversations that had their sessionId cleared (also requiring save).
-   */
-  private reconcileModelWithEnvironment(envText: string): {
+  private reconcileModelWithEnvironment(providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds()): {
     changed: boolean;
     invalidatedConversations: Conversation[];
   } {
-    const currentHash = this.computeEnvHash(envText);
-    const savedHash = this.settings.lastEnvHash || '';
+    return ProviderSettingsCoordinator.reconcileProviders(
+      this.settings as unknown as Record<string, unknown>,
+      this.conversations,
+      providerIds,
+    );
+  }
 
-    if (currentHash === savedHash) {
-      return { changed: false, invalidatedConversations: [] };
-    }
+  private getAffectedEnvironmentProviders(scopes: EnvironmentScope[]): ProviderId[] {
+    const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
+    const affectedProviderIds = new Set<ProviderId>();
 
-    // Hash changed - model or provider may have changed.
-    // Session invalidation is now handled per-tab by TabManager.
-    // Clear resume sessionId from all conversations since they belong to the old provider.
-    // Sessions are provider-specific (contain signed thinking blocks, etc.).
-    // NOTE: sdkSessionId is retained for loading SDK-stored history.
-    const invalidatedConversations: Conversation[] = [];
-    for (const conv of this.conversations) {
-      if (conv.sessionId) {
-        conv.sessionId = null;
-        invalidatedConversations.push(conv);
+    for (const scope of scopes) {
+      if (scope === 'shared') {
+        for (const providerId of registeredProviderIds) {
+          affectedProviderIds.add(providerId);
+        }
+        continue;
+      }
+
+      const providerId = scope.slice('provider:'.length) as ProviderId;
+      if (registeredProviderIds.has(providerId)) {
+        affectedProviderIds.add(providerId);
       }
     }
 
-    const envVars = parseEnvironmentVariables(envText || '');
-    const customModels = getModelsFromEnvironment(envVars);
-
-    if (customModels.length > 0) {
-      this.settings.model = this.getPreferredCustomModel(envVars, customModels);
-    } else {
-      this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
-    }
-
-    this.settings.lastEnvHash = currentHash;
-    return { changed: true, invalidatedConversations };
+    return Array.from(affectedProviderIds);
   }
 
   private generateConversationId(): string {
@@ -756,271 +489,35 @@ export default class ClaudianPlugin extends Plugin {
   private getConversationPreview(conv: Conversation): string {
     const firstUserMsg = conv.messages.find(m => m.role === 'user');
     if (!firstUserMsg) {
-      // For native sessions without loaded messages, indicate it's a persisted session
-      // rather than "New conversation" which implies no content exists
-      return conv.isNative ? 'SDK session' : 'New conversation';
+      return 'New conversation';
     }
     return firstUserMsg.content.substring(0, 50) + (firstUserMsg.content.length > 50 ? '...' : '');
   }
 
-  /** Fork has no owned session yet; still referencing the source session for resume. */
-  private isPendingFork(conversation: Conversation): boolean {
-    return !!conversation.forkSource &&
-      !conversation.sdkSessionId &&
-      !conversation.sessionId;
-  }
-
   private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
-    if (!conversation.isNative || conversation.sdkMessagesLoaded) return;
-
-    const vaultPath = getVaultPath(this.app);
-    if (!vaultPath) return;
-
-    const isPendingFork = this.isPendingFork(conversation);
-
-    const allSessionIds: string[] = isPendingFork
-      ? [conversation.forkSource!.sessionId]
-      : [
-          ...(conversation.previousSdkSessionIds || []),
-          conversation.sdkSessionId ?? conversation.sessionId,
-        ].filter((id): id is string => !!id);
-
-    if (allSessionIds.length === 0) return;
-
-    const allSdkMessages: ChatMessage[] = [];
-    let missingSessionCount = 0;
-    let errorCount = 0;
-    let successCount = 0;
-
-    const currentSessionId = isPendingFork
-      ? conversation.forkSource!.sessionId
-      : (conversation.sdkSessionId ?? conversation.sessionId);
-
-    for (const sessionId of allSessionIds) {
-      if (!sdkSessionExists(vaultPath, sessionId)) {
-        missingSessionCount++;
-        continue;
-      }
-
-      const isCurrentSession = sessionId === currentSessionId;
-      const truncateAt = isCurrentSession
-        ? (isPendingFork ? conversation.forkSource!.resumeAt : conversation.resumeSessionAt)
-        : undefined;
-      const result: SDKSessionLoadResult = await loadSDKSessionMessages(
-        vaultPath, sessionId, truncateAt
-      );
-
-      if (result.error) {
-        errorCount++;
-        continue;
-      }
-
-      successCount++;
-      allSdkMessages.push(...result.messages);
-    }
-
-    // Note: We intentionally don't notify users about missing session files.
-    // Session files may be missing due to path encoding differences (special characters
-    // in vault path) or external deletion. Showing a notification every restart is
-    // too intrusive and not actionable for users.
-
-    // Only mark as loaded if at least one session was successfully loaded,
-    // or if all sessions were missing (no point retrying non-existent files).
-    // If sessions exist but ALL failed to load, allow retry on next view.
-    const allSessionsMissing = missingSessionCount === allSessionIds.length;
-    const hasLoadErrors = errorCount > 0 && successCount === 0 && !allSessionsMissing;
-    if (hasLoadErrors) {
-      // Don't mark as loaded - allow retry on next view
-      return;
-    }
-
-    // Filter out rebuilt context messages (history blobs sent on session reset)
-    const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
-
-    // Apply legacy cutoff filter if needed
-    const afterCutoff = conversation.legacyCutoffAt != null
-      ? filteredSdkMessages.filter(msg => msg.timestamp > conversation.legacyCutoffAt!)
-      : filteredSdkMessages;
-
-    const merged = this.dedupeMessages([
-      ...conversation.messages,
-      ...afterCutoff,
-    ]).sort((a, b) => a.timestamp - b.timestamp);
-
-    // Apply cached subagentData to loaded messages (for Agent tool count and status)
-    if (conversation.subagentData) {
-      await this.enrichAsyncSubagentToolCalls(
-        conversation.subagentData,
-        vaultPath,
-        allSessionIds
-      );
-      this.applySubagentData(merged, conversation.subagentData);
-    }
-
-    conversation.messages = merged;
-    conversation.sdkMessagesLoaded = true;
+    await ProviderRegistry
+      .getConversationHistoryService(conversation.providerId)
+      .hydrateConversationHistory(conversation, getVaultPath(this.app));
   }
 
-  private async enrichAsyncSubagentToolCalls(
-    subagentData: Record<string, SubagentInfo>,
-    vaultPath: string,
-    sessionIds: string[]
-  ): Promise<void> {
-    const uniqueSessionIds = [...new Set(sessionIds)];
-    if (uniqueSessionIds.length === 0) return;
-
-    const loaderCache = new Map<string, ReturnType<typeof loadSubagentToolCalls>>();
-
-    for (const subagent of Object.values(subagentData)) {
-      if (subagent.mode !== 'async') continue;
-      if (!subagent.agentId) continue;
-      if ((subagent.toolCalls?.length ?? 0) > 0) continue;
-
-      for (const sessionId of uniqueSessionIds) {
-        const cacheKey = `${sessionId}:${subagent.agentId}`;
-
-        let loader = loaderCache.get(cacheKey);
-        if (!loader) {
-          loader = loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId);
-          loaderCache.set(cacheKey, loader);
-        }
-
-        const recoveredToolCalls = await loader;
-        if (recoveredToolCalls.length === 0) continue;
-
-        subagent.toolCalls = recoveredToolCalls.map(toolCall => ({
-          ...toolCall,
-          input: { ...toolCall.input },
-        }));
-        break;
-      }
-    }
-  }
-
-  /**
-   * Applies cached subagentData to messages.
-   * Restores subagent info so Agent tools can show tool count and status.
-   * Also updates contentBlocks to properly identify Agent tools as subagents.
-   */
-  private applySubagentData(messages: ChatMessage[], subagentData: Record<string, SubagentInfo>): void {
-    const attachedSubagentIds = new Set<string>();
-
-    for (const msg of messages) {
-      if (msg.role !== 'assistant') continue;
-
-      // Apply subagent data to the message
-      for (const [subagentId, subagent] of Object.entries(subagentData)) {
-        const hasSubagentBlock = msg.contentBlocks?.some(
-          b => (b.type === 'subagent' && b.subagentId === subagentId) ||
-               (b.type === 'tool_use' && b.toolId === subagentId)
-        );
-        const hasTaskToolCall = msg.toolCalls?.some(tc => tc.id === subagentId) ?? false;
-
-        if (!hasSubagentBlock && !hasTaskToolCall) continue;
-        ensureTaskToolCall(msg, subagentId, subagent);
-
-        // Update contentBlock from tool_use to subagent, or update existing subagent block with mode
-        if (!msg.contentBlocks) {
-          msg.contentBlocks = [];
-        }
-
-        let hasNormalizedSubagentBlock = false;
-        for (let i = 0; i < msg.contentBlocks.length; i++) {
-          const block = msg.contentBlocks[i];
-          if (block.type === 'tool_use' && block.toolId === subagentId) {
-            msg.contentBlocks[i] = {
-              type: 'subagent',
-              subagentId,
-              mode: subagent.mode,
-            };
-            hasNormalizedSubagentBlock = true;
-          } else if (block.type === 'subagent' && block.subagentId === subagentId && !block.mode) {
-            block.mode = subagent.mode;
-            hasNormalizedSubagentBlock = true;
-          } else if (block.type === 'subagent' && block.subagentId === subagentId) {
-            hasNormalizedSubagentBlock = true;
-          }
-        }
-
-        if (!hasNormalizedSubagentBlock && hasTaskToolCall) {
-          msg.contentBlocks.push({
-            type: 'subagent',
-            subagentId,
-            mode: subagent.mode,
-          });
-        }
-
-        attachedSubagentIds.add(subagentId);
-      }
-    }
-
-    for (const [subagentId, subagent] of Object.entries(subagentData)) {
-      if (attachedSubagentIds.has(subagentId)) continue;
-
-      let anchor = [...messages].reverse().find((msg): msg is ChatMessage => msg.role === 'assistant');
-      if (!anchor) {
-        anchor = {
-          id: `subagent-recovery-${subagentId}`,
-          role: 'assistant',
-          content: '',
-          timestamp: subagent.completedAt ?? subagent.startedAt ?? Date.now(),
-          contentBlocks: [],
-        };
-        messages.push(anchor);
-      }
-
-      ensureTaskToolCall(anchor, subagentId, subagent);
-
-      anchor.contentBlocks = anchor.contentBlocks || [];
-      const hasSubagentBlock = anchor.contentBlocks.some(
-        block => block.type === 'subagent' && block.subagentId === subagentId
-      );
-      if (!hasSubagentBlock) {
-        anchor.contentBlocks.push({
-          type: 'subagent',
-          subagentId,
-          mode: subagent.mode,
-        });
-      }
-    }
-  }
-
-  private dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
-    const seen = new Set<string>();
-    const result: ChatMessage[] = [];
-
-    for (const message of messages) {
-      // Use message.id as primary key - more reliable than content-based deduplication
-      // especially for tool-only messages or messages with identical content
-      if (seen.has(message.id)) continue;
-      seen.add(message.id);
-      result.push(message);
-    }
-
-    return result;
-  }
-
-  /**
-   * Creates a new conversation and sets it as active.
-   *
-   * New conversations always use SDK-native storage.
-   * The session ID may be captured after the first SDK response.
-   */
-  async createConversation(sessionId?: string): Promise<Conversation> {
+  async createConversation(options?: {
+    providerId?: ProviderId;
+    sessionId?: string;
+  }): Promise<Conversation> {
+    const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+    const sessionId = options?.sessionId;
     const conversationId = sessionId ?? this.generateConversationId();
     const conversation: Conversation = {
       id: conversationId,
+      providerId,
       title: this.generateDefaultTitle(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       sessionId: sessionId ?? null,
-      sdkSessionId: sessionId ?? undefined,
       messages: [],
-      isNative: true,
     };
 
     this.conversations.unshift(conversation);
-    // Save new conversation (metadata only - SDK handles messages)
     await this.storage.sessions.saveMetadata(
       this.storage.sessions.toSessionMetadata(conversation)
     );
@@ -1028,11 +525,6 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  /**
-   * Switches to an existing conversation by ID.
-   *
-   * For native sessions, loads messages from SDK storage if not already loaded.
-   */
   async switchConversation(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
@@ -1042,12 +534,6 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  /**
-   * Deletes a conversation and resets any tabs using it.
-   *
-   * For native sessions, deletes the metadata file and SDK session file.
-   * For legacy sessions, deletes the JSONL file.
-   */
   async deleteConversation(id: string): Promise<void> {
     const index = this.conversations.findIndex(c => c.id === id);
     if (index === -1) return;
@@ -1055,23 +541,13 @@ export default class ClaudianPlugin extends Plugin {
     const conversation = this.conversations[index];
     this.conversations.splice(index, 1);
 
-    const vaultPath = getVaultPath(this.app);
-    const sdkSessionId = conversation.sdkSessionId ?? conversation.sessionId;
-    if (vaultPath && sdkSessionId) {
-      await deleteSDKSession(vaultPath, sdkSessionId);
-    }
+    await ProviderRegistry
+      .getConversationHistoryService(conversation.providerId)
+      .deleteConversationSession(conversation, getVaultPath(this.app));
 
-    if (conversation.isNative) {
-      // Native session: delete metadata file
-      await this.storage.sessions.deleteMetadata(id);
-    } else {
-      // Legacy session: delete JSONL file
-      await this.storage.sessions.deleteConversation(id);
-    }
+    await this.storage.sessions.deleteMetadata(id);
 
     await this.skillRunManager?.removeByConversationId(id);
-
-    // Notify all views/tabs that have this conversation open
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;
@@ -1085,7 +561,6 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /** Renames a conversation. */
   async renameConversation(id: string, title: string): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return;
@@ -1093,45 +568,26 @@ export default class ClaudianPlugin extends Plugin {
     conversation.title = title.trim() || this.generateDefaultTitle();
     conversation.updatedAt = Date.now();
 
-    if (conversation.isNative) {
-      // Native session: save metadata only
-      await this.storage.sessions.saveMetadata(
-        this.storage.sessions.toSessionMetadata(conversation)
-      );
-    } else {
-      // Legacy session: save full JSONL
-      await this.storage.sessions.saveConversation(conversation);
-    }
+    await this.storage.sessions.saveMetadata(
+      this.storage.sessions.toSessionMetadata(conversation)
+    );
   }
 
-  /**
-   * Updates conversation properties.
-   *
-   * For native sessions, saves metadata only (SDK handles messages including images).
-   * For legacy sessions, saves full JSONL.
-   *
-   * Image data is cleared from memory after save (SDK/JSONL has persisted it),
-   * except for pending fork conversations whose images aren't yet in SDK storage.
-   */
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return;
 
-    Object.assign(conversation, updates, { updatedAt: Date.now() });
+    // providerId is immutable — strip it from updates to prevent accidental mutation
+    const { providerId: _, ...safeUpdates } = updates;
+    Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
 
-    if (conversation.isNative) {
-      // Native session: save metadata only (SDK handles messages including images)
-      await this.storage.sessions.saveMetadata(
-        this.storage.sessions.toSessionMetadata(conversation)
-      );
-    } else {
-      // Legacy session: save full JSONL
-      await this.storage.sessions.saveConversation(conversation);
-    }
+    await this.storage.sessions.saveMetadata(
+      this.storage.sessions.toSessionMetadata(conversation)
+    );
 
-    // Clear image data from memory after save (data is persisted by SDK or JSONL).
+    // Clear image data from memory after save (data is persisted by SDK).
     // Skip for pending forks: their deep-cloned images aren't in SDK storage yet.
-    if (!this.isPendingFork(conversation)) {
+    if (!ProviderRegistry.getConversationHistoryService(conversation.providerId).isPendingForkConversation(conversation)) {
       for (const msg of conversation.messages) {
         if (msg.images) {
           for (const img of msg.images) {
@@ -1142,11 +598,6 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  /**
-   * Gets a conversation by ID from the in-memory cache.
-   *
-   * For native sessions, loads messages from SDK storage if not already loaded.
-   */
   async getConversationById(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id) || null;
 
@@ -1157,23 +608,18 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  /**
-   * Gets a conversation by ID without loading SDK messages.
-   * Use this for UI code that only needs metadata (title, etc.).
-   */
   getConversationSync(id: string): Conversation | null {
     return this.conversations.find(c => c.id === id) || null;
   }
 
-  /** Finds an existing empty conversation (no messages). */
   findEmptyConversation(): Conversation | null {
     return this.conversations.find(c => c.messages.length === 0) || null;
   }
 
-  /** Returns conversation metadata list for the history dropdown. */
   getConversationList(): ConversationMeta[] {
     return this.conversations.map(c => ({
       id: c.id,
+      providerId: c.providerId,
       title: c.title,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
@@ -1181,11 +627,9 @@ export default class ClaudianPlugin extends Plugin {
       messageCount: c.messages.length,
       preview: this.getConversationPreview(c),
       titleGenerationStatus: c.titleGenerationStatus,
-      isNative: c.isNative,
     }));
   }
 
-  /** Returns the active Claudian view from workspace, if open. */
   getView(): ClaudianView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     if (leaves.length > 0) {
@@ -1194,16 +638,11 @@ export default class ClaudianPlugin extends Plugin {
     return null;
   }
 
-  /** Returns all open Claudian views in the workspace. */
   getAllViews(): ClaudianView[] {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     return leaves.map(leaf => leaf.view as ClaudianView);
   }
 
-  /**
-   * Checks if a conversation is open in any Claudian view.
-   * Returns the view and tab if found, null otherwise.
-   */
   findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
@@ -1219,21 +658,4 @@ export default class ClaudianPlugin extends Plugin {
     return null;
   }
 
-  /**
-   * Gets SDK supported commands from any ready service.
-   * The command list is the same for all services, so we just need one ready.
-   * Used by inline edit and other contexts that don't have direct TabManager access.
-   */
-  async getSdkCommands(): Promise<SlashCommand[]> {
-    for (const view of this.getAllViews()) {
-      const tabManager = view.getTabManager();
-      if (tabManager) {
-        const commands = await tabManager.getSdkCommands();
-        if (commands.length > 0) {
-          return commands;
-        }
-      }
-    }
-    return [];
-  }
 }

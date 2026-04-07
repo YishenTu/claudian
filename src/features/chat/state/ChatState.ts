@@ -4,7 +4,6 @@ import type {
   ChatStateCallbacks,
   ChatStateData,
   PendingToolCall,
-  PermissionMode,
   QueuedMessage,
   ThinkingBlockState,
   TodoItem,
@@ -341,11 +340,11 @@ export class ChatState {
     this.state.planFilePath = value;
   }
 
-  get prePlanPermissionMode(): PermissionMode | null {
+  get prePlanPermissionMode(): string | null {
     return this.state.prePlanPermissionMode;
   }
 
-  set prePlanPermissionMode(value: PermissionMode | null) {
+  set prePlanPermissionMode(value: string | null) {
     this.state.prePlanPermissionMode = value;
   }
 

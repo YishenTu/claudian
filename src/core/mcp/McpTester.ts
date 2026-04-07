@@ -7,7 +7,7 @@ import * as https from 'https';
 
 import { getEnhancedPath } from '../../utils/env';
 import { parseCommand } from '../../utils/mcp';
-import type { ClaudianMcpServer } from '../types';
+import type { ManagedMcpServer } from '../types';
 import { getMcpServerType } from '../types';
 
 export interface McpTool {
@@ -208,7 +208,7 @@ async function getRequestBody(body: BodyInit | null | undefined): Promise<Buffer
 
 const nodeFetch = createNodeFetch();
 
-export async function testMcpServer(server: ClaudianMcpServer): Promise<McpTestResult> {
+export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestResult> {
   const type = getMcpServerType(server.config);
 
   let transport;

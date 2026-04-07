@@ -1,4 +1,4 @@
-import type { TodoItem } from '@/core/tools';
+import type { TodoItem } from '@/core/tools/todo';
 import { StatusPanel } from '@/features/chat/ui/StatusPanel';
 
 // Mock obsidian

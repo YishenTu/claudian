@@ -1,6 +1,7 @@
 import { setIcon } from 'obsidian';
 
-import { getToolIcon, TOOL_TASK } from '../../../core/tools';
+import { getToolIcon } from '../../../core/tools/toolIcons';
+import { TOOL_TASK } from '../../../core/tools/toolNames';
 import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { setupCollapsible } from './collapsible';
 import {
@@ -98,13 +99,13 @@ function updateSyncHeaderAria(state: SubagentState): void {
 function renderSubagentToolContent(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
   contentEl.empty();
 
-  if (!toolCall.result) {
+  if (!toolCall.result && toolCall.status === 'running') {
     const emptyEl = contentEl.createDiv({ cls: 'claudian-subagent-tool-empty' });
-    emptyEl.setText(toolCall.status === 'running' ? 'Running...' : 'No output recorded');
+    emptyEl.setText('Running...');
     return;
   }
 
-  renderExpandedContent(contentEl, toolCall.name, toolCall.result);
+  renderExpandedContent(contentEl, toolCall.name, toolCall.result, toolCall.input);
 }
 
 function setSubagentToolStatus(view: SubagentToolView, status: ToolCallInfo['status']): void {

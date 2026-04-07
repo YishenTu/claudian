@@ -2,7 +2,14 @@ import esbuild from 'esbuild';
 import path from 'path';
 import process from 'process';
 import builtins from 'builtin-modules';
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  promises as fsPromises,
+  readFileSync,
+  rmSync,
+} from 'fs';
 
 // Load .env.local if it exists
 if (existsSync('.env.local')) {
@@ -17,6 +24,22 @@ if (existsSync('.env.local')) {
 
 const prod = process.argv[2] === 'production';
 
+const patchCodexSdkImportMeta = {
+  name: 'patch-codex-sdk-import-meta',
+  setup(build) {
+    build.onLoad(
+      { filter: /[\\/]node_modules[\\/]@openai[\\/]codex-sdk[\\/]dist[\\/]index\.js$/ },
+      async (args) => {
+        const contents = await fsPromises.readFile(args.path, 'utf8');
+        return {
+          contents: contents.replace('createRequire(import.meta.url)', 'createRequire(__filename)'),
+          loader: 'js',
+        };
+      },
+    );
+  },
+};
+
 // Obsidian plugin folder path (set via OBSIDIAN_VAULT env var or .env.local)
 const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT;
 const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT && existsSync(OBSIDIAN_VAULT)
@@ -28,7 +51,10 @@ const copyToObsidian = {
   name: 'copy-to-obsidian',
   setup(build) {
     build.onEnd((result) => {
-      if (result.errors.length > 0 || !OBSIDIAN_PLUGIN_PATH) return;
+      if (result.errors.length > 0) return;
+      rmSync(path.join(process.cwd(), '.codex-vendor'), { recursive: true, force: true });
+
+      if (!OBSIDIAN_PLUGIN_PATH) return;
 
       if (!existsSync(OBSIDIAN_PLUGIN_PATH)) {
         mkdirSync(OBSIDIAN_PLUGIN_PATH, { recursive: true });
@@ -41,6 +67,9 @@ const copyToObsidian = {
           console.log(`Copied ${file} to Obsidian plugin folder`);
         }
       }
+
+      const pluginVendorRoot = path.join(OBSIDIAN_PLUGIN_PATH, '.codex-vendor');
+      rmSync(pluginVendorRoot, { recursive: true, force: true });
     });
   }
 };
@@ -48,7 +77,7 @@ const copyToObsidian = {
 const context = await esbuild.context({
   entryPoints: ['src/main.ts'],
   bundle: true,
-  plugins: [copyToObsidian],
+  plugins: [patchCodexSdkImportMeta, copyToObsidian],
   external: [
     'obsidian',
     'electron',

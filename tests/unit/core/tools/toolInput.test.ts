@@ -28,7 +28,7 @@ describe('extractResolvedAnswers', () => {
       foo: 'bar',
       baz: '1',
       ok: 'true',
-      choices: 'A, B',
+      choices: ['A', 'B'],
     });
   });
 
@@ -60,6 +60,24 @@ describe('extractResolvedAnswersFromResultText', () => {
     expect(extractResolvedAnswersFromResultText('{"Color?":"Blue","Fast?":true}')).toEqual({
       'Color?': 'Blue',
       'Fast?': 'true',
+    });
+  });
+
+  it('extracts nested Codex answer objects from JSON result text', () => {
+    expect(extractResolvedAnswersFromResultText('{"answers":{"q1":{"answers":["yes"]}}}')).toEqual({
+      q1: 'yes',
+    });
+  });
+
+  it('preserves multi-answer arrays from JSON result text', () => {
+    expect(extractResolvedAnswersFromResultText('{"answers":{"q1":{"answers":["yes","later"]}}}')).toEqual({
+      q1: ['yes', 'later'],
+    });
+  });
+
+  it('extracts nested answer values from wrapped JSON text', () => {
+    expect(extractResolvedAnswersFromResultText('Result: {"answers":{"q1":{"value":"Blue"}}}')).toEqual({
+      q1: 'Blue',
     });
   });
 

@@ -1,19 +1,13 @@
-/**
- * McpServerManager - Core MCP server configuration management.
- *
- * Infrastructure layer for loading, filtering, and querying MCP server configurations.
- */
-
 import { extractMcpMentions, transformMcpMentions } from '../../utils/mcp';
-import type { ClaudianMcpServer, McpServerConfig } from '../types';
+import type { ManagedMcpServer, McpServerConfig } from '../types';
 
 /** Storage interface for loading MCP servers. */
 export interface McpStorageAdapter {
-  load(): Promise<ClaudianMcpServer[]>;
+  load(): Promise<ManagedMcpServer[]>;
 }
 
 export class McpServerManager {
-  private servers: ClaudianMcpServer[] = [];
+  private servers: ManagedMcpServer[] = [];
   private storage: McpStorageAdapter;
 
   constructor(storage: McpStorageAdapter) {
@@ -24,7 +18,7 @@ export class McpServerManager {
     this.servers = await this.storage.load();
   }
 
-  getServers(): ClaudianMcpServer[] {
+  getServers(): ManagedMcpServer[] {
     return this.servers;
   }
 
@@ -81,7 +75,7 @@ export class McpServerManager {
     return this.collectDisallowedTools().sort();
   }
 
-  private collectDisallowedTools(filter?: (server: ClaudianMcpServer) => boolean): string[] {
+  private collectDisallowedTools(filter?: (server: ManagedMcpServer) => boolean): string[] {
     const disallowed = new Set<string>();
 
     for (const server of this.servers) {
@@ -103,7 +97,7 @@ export class McpServerManager {
     return this.servers.length > 0;
   }
 
-  getContextSavingServers(): ClaudianMcpServer[] {
+  getContextSavingServers(): ManagedMcpServer[] {
     return this.servers.filter((s) => s.enabled && s.contextSaving);
   }
 

@@ -362,7 +362,7 @@ describe('SelectableDropdown', () => {
 
   describe('fixed className', () => {
     it('applies fixedClassName when fixed option is true', () => {
-      const fixedDropdown = new SelectableDropdown(containerEl, {
+      const fixedDropdown = new SelectableDropdown<string>(containerEl, {
         listClassName: 'dropdown-list',
         itemClassName: 'dropdown-item',
         emptyClassName: 'dropdown-empty',
@@ -383,7 +383,7 @@ describe('SelectableDropdown', () => {
     });
 
     it('does not apply fixedClassName when fixed is false', () => {
-      const nonFixedDropdown = new SelectableDropdown(containerEl, {
+      const nonFixedDropdown = new SelectableDropdown<string>(containerEl, {
         listClassName: 'dropdown-list',
         itemClassName: 'dropdown-item',
         emptyClassName: 'dropdown-empty',

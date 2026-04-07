@@ -1,5 +1,5 @@
 import type { ChatMessage, ImageAttachment } from '@/core/types';
-import { ChatState } from '@/features/chat/state';
+import { ChatState } from '@/features/chat/state/ChatState';
 
 describe('ChatState persistence', () => {
   it('preserves image data when persisting messages', () => {

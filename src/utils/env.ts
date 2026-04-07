@@ -1,10 +1,3 @@
-/**
- * Claudian - Environment Utilities
- *
- * Environment variable parsing, model configuration, PATH enhancement for GUI apps,
- * and system identification utilities.
- */
-
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -19,11 +12,8 @@ function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || '';
 }
 
-/**
- * Linux is excluded because Obsidian registers the CLI through stable symlinks
- * like /usr/local/bin or ~/.local/bin, while process.execPath may point to a
- * transient AppImage mount that changes on every launch.
- */
+// Linux excluded: Obsidian registers the CLI through stable symlinks (/usr/local/bin,
+// ~/.local/bin), while process.execPath may point to a transient AppImage mount.
 function getAppProvidedCliPaths(): string[] {
   if (process.platform === 'darwin') {
     const appBundleMatch = process.execPath.match(/^(.+?\.app)\//);
@@ -127,6 +117,7 @@ function getExtraBinaryPaths(): string[] {
     // User bin (if exists)
     if (home) {
       paths.push(path.join(home, '.local', 'bin'));
+      paths.push(path.join(home, '.bun', 'bin'));
     }
 
     paths.push(...getAppProvidedCliPaths());
@@ -164,6 +155,7 @@ function getExtraBinaryPaths(): string[] {
 
     if (home) {
       paths.push(path.join(home, '.local', 'bin'));
+      paths.push(path.join(home, '.bun', 'bin'));
       paths.push(path.join(home, '.docker', 'bin'));
       paths.push(path.join(home, '.volta', 'bin'));
       paths.push(path.join(home, '.asdf', 'shims'));
@@ -273,19 +265,8 @@ export function getMissingNodeError(cliPath: string, enhancedPath?: string): str
   return 'Claude Code CLI requires Node.js, but Node was not found on PATH. Install Node.js or use the native Claude Code binary, then restart Obsidian.';
 }
 
-/**
- * Returns an enhanced PATH that includes common binary locations.
- * GUI apps like Obsidian have minimal PATH, so we need to add standard locations
- * where binaries like node, python, etc. are typically installed.
- *
- * @param additionalPaths - Optional additional PATH entries to include (from user config).
- *                          These take priority and are prepended.
- * @param cliPath - Optional CLI path. If provided and its directory contains node,
- *                  that directory is added to PATH. This handles nvm, fnm, volta, etc.
- *                  where npm globals are installed alongside node.
- */
 export function getEnhancedPath(additionalPaths?: string, cliPath?: string): string {
-  const extraPaths = getExtraBinaryPaths().filter(p => p); // Filter out empty
+  const extraPaths = getExtraBinaryPaths().filter(p => p);
   const currentPath = process.env.PATH || '';
 
   const segments: string[] = [];
@@ -294,9 +275,6 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
     segments.push(...parsePathEntries(additionalPaths));
   }
 
-  // If CLI path is provided, check if its directory contains node executable.
-  // This handles nvm, fnm, volta, asdf, etc. where npm globals are installed
-  // in the same bin directory as node. Works on both Windows and Unix.
   let cliDirHasNode = false;
   if (cliPath) {
     try {
@@ -338,32 +316,16 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
   return unique.join(PATH_SEPARATOR);
 }
 
-const CUSTOM_MODEL_ENV_KEYS = [
-  'ANTHROPIC_MODEL',
-  'ANTHROPIC_DEFAULT_OPUS_MODEL',
-  'ANTHROPIC_DEFAULT_SONNET_MODEL',
-  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-] as const;
-
-function getModelTypeFromEnvKey(envKey: string): string {
-  if (envKey === 'ANTHROPIC_MODEL') return 'model';
-  const match = envKey.match(/ANTHROPIC_DEFAULT_(\w+)_MODEL/);
-  return match ? match[1].toLowerCase() : envKey;
-}
-
-/** Parses KEY=VALUE environment variables from text. Supports comments (#) and empty lines. */
 export function parseEnvironmentVariables(input: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of input.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    // Strip 'export ' prefix if present (common in shell snippets)
     const normalized = trimmed.startsWith('export ') ? trimmed.slice(7) : trimmed;
     const eqIndex = normalized.indexOf('=');
     if (eqIndex > 0) {
       const key = normalized.substring(0, eqIndex).trim();
       let value = normalized.substring(eqIndex + 1).trim();
-      // Strip surrounding quotes (single or double)
       if ((value.startsWith('"') && value.endsWith('"')) ||
           (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
@@ -376,67 +338,6 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
   return result;
 }
 
-export function getModelsFromEnvironment(envVars: Record<string, string>): { value: string; label: string; description: string }[] {
-  const modelMap = new Map<string, { types: string[]; label: string }>();
-
-  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
-    const type = getModelTypeFromEnvKey(envKey);
-    const modelValue = envVars[envKey];
-    if (modelValue) {
-      const label = modelValue.includes('/')
-        ? modelValue.split('/').pop() || modelValue
-        : modelValue.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-
-      if (!modelMap.has(modelValue)) {
-        modelMap.set(modelValue, { types: [type], label });
-      } else {
-        modelMap.get(modelValue)!.types.push(type);
-      }
-    }
-  }
-
-  const models: { value: string; label: string; description: string }[] = [];
-  const typePriority = { 'model': 4, 'haiku': 3, 'sonnet': 2, 'opus': 1 };
-
-  const sortedEntries = Array.from(modelMap.entries()).sort(([, aInfo], [, bInfo]) => {
-    const aPriority = Math.max(...aInfo.types.map(t => typePriority[t as keyof typeof typePriority] || 0));
-    const bPriority = Math.max(...bInfo.types.map(t => typePriority[t as keyof typeof typePriority] || 0));
-    return bPriority - aPriority;
-  });
-
-  for (const [modelValue, info] of sortedEntries) {
-    const sortedTypes = info.types.sort((a, b) =>
-      (typePriority[b as keyof typeof typePriority] || 0) -
-      (typePriority[a as keyof typeof typePriority] || 0)
-    );
-
-    models.push({
-      value: modelValue,
-      label: info.label,
-      description: `Custom model (${sortedTypes.join(', ')})`
-    });
-  }
-
-  return models;
-}
-
-export function getCurrentModelFromEnvironment(envVars: Record<string, string>): string | null {
-  if (envVars.ANTHROPIC_MODEL) {
-    return envVars.ANTHROPIC_MODEL;
-  }
-  if (envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
-    return envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL;
-  }
-  if (envVars.ANTHROPIC_DEFAULT_SONNET_MODEL) {
-    return envVars.ANTHROPIC_DEFAULT_SONNET_MODEL;
-  }
-  if (envVars.ANTHROPIC_DEFAULT_OPUS_MODEL) {
-    return envVars.ANTHROPIC_DEFAULT_OPUS_MODEL;
-  }
-  return null;
-}
-
-/** Hostname changes will require reconfiguration. */
 export function getHostnameKey(): string {
   return os.hostname();
 }
@@ -444,18 +345,6 @@ export function getHostnameKey(): string {
 export const MIN_CONTEXT_LIMIT = 1_000;
 export const MAX_CONTEXT_LIMIT = 10_000_000;
 
-export function getCustomModelIds(envVars: Record<string, string>): Set<string> {
-  const modelIds = new Set<string>();
-  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
-    const modelId = envVars[envKey];
-    if (modelId) {
-      modelIds.add(modelId);
-    }
-  }
-  return modelIds;
-}
-
-/** Supports "256k", "1m", "1.5m", or exact token count. Case-insensitive. */
 export function parseContextLimit(input: string): number | null {
   const trimmed = input.trim().toLowerCase().replace(/,/g, '');
   if (!trimmed) return null;

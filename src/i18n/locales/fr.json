@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Paramètres Claudian",
-    "customization": "Personnalisation",
+    "tabs": {
+      "general": "Général",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "Affichage",
+    "conversations": "Conversations",
+    "content": "Contenu",
+    "input": "Saisie",
+    "setup": "Configuration",
+    "models": "Modèles",
+    "experimental": "Expérimental",
     "userName": {
       "name": "Comment Claudian doit-il vous appeler ?",
       "desc": "Votre nom pour les salutations personnalisées (laisser vide pour les salutations génériques)"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "Commandes et compétences",
-      "desc": "Définissez des commandes et compétences personnalisées déclenchées par /nom."
+      "desc": "Gérez les commandes et compétences au niveau du vault stockées dans .claude/commands/ et .claude/skills/. Déclenchées par /nom."
     },
     "hiddenSlashCommands": {
       "name": "Commandes masquées",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "Serveurs MCP",
-      "desc": "Configurez les serveurs Model Context Protocol pour étendre les capacités de Claude avec des outils et sources de données externes. Les serveurs avec mode de sauvegarde de contexte nécessitent une @mention pour s'activer."
+      "desc": "Gérez les configurations de serveurs MCP au niveau du vault stockées dans .claude/mcp.json. Les serveurs avec mode de sauvegarde de contexte nécessitent une @mention pour s'activer."
     },
     "plugins": {
       "name": "Plugins Claude Code",
-      "desc": "Activez ou désactivez les plugins Claude Code découverts dans ~/.claude/plugins. Les plugins activés sont stockés par coffre."
+      "desc": "Gérez les plugins Claude Code découverts dans ~/.claude/plugins. Les plugins activés sont stockés par vault dans .claude/settings.json."
     },
     "subagents": {
       "name": "Sous-agents",
-      "desc": "Configurez des sous-agents personnalisés auxquels Claude peut déléguer.",
+      "desc": "Gérez les sous-agents au niveau du vault stockés dans .claude/agents/. Chaque fichier Markdown définit un agent personnalisé.",
       "noAgents": "Aucun sous-agent configuré. Cliquez sur + pour en créer un.",
       "deleteConfirm": "Supprimer le sous-agent \"{name}\" ?",
       "saveFailed": "Échec de l’enregistrement du sous-agent : {message}",
@@ -167,7 +178,7 @@
       "modal": {
         "titleEdit": "Modifier le sous-agent",
         "titleAdd": "Ajouter un sous-agent",
-        "name": "Name",
+        "name": "Nom",
         "nameDesc": "Lettres minuscules, chiffres et tirets uniquement",
         "namePlaceholder": "code-reviewer",
         "description": "Description",
@@ -192,24 +203,13 @@
       "name": "Charger les paramètres utilisateur Claude",
       "desc": "Charge ~/.claude/settings.json. Lorsqu'activé, les règles de permission de l'utilisateur peuvent contourner le mode sécurisé."
     },
-    "enableBlocklist": {
-      "name": "Activer la liste noire de commandes",
-      "desc": "Bloque les commandes bash potentiellement dangereuses"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "Autoriser l'accès externe",
-      "desc": "Autorise l'accès aux fichiers et commandes en dehors du répertoire du coffre. Prend effet immédiatement pour toutes les sessions actives. La désactivation de la restriction du coffre peut exposer des fichiers sensibles à l'injection de prompt."
-    },
-    "blockedCommands": {
-      "name": "Commandes bloquées ({platform})",
-      "desc": "Modèles à bloquer sur {platform} (un par ligne). Supporte les expressions régulières.",
-      "unixName": "Commandes bloquées (Unix/Git Bash)",
-      "unixDesc": "Les modèles Unix sont également bloqués sur Windows car Git Bash peut les appeler."
-    },
-    "exportPaths": {
-      "name": "Chemins d'exportation autorisés",
-      "desc": "Destinations en écriture seule hors du coffre lorsque l'accès externe est désactivé (une par ligne). Supporte ~ pour le répertoire personnel.",
-      "disabledDesc": "Ignoré tant que l'accès externe est activé. Désactivez l'accès externe pour appliquer des chemins d'export en écriture seule."
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "Environnement",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "Définissez les tailles de fenêtre de contexte pour vos modèles personnalisés. Laissez vide pour utiliser la valeur par défaut (200k tokens).",
       "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000)."
     },
-    "advanced": "Avancé",
     "enableOpus1M": {
       "name": "Fenêtre de contexte Opus 1M",
       "desc": "Afficher Opus 1M dans le sélecteur de modèle. Inclus avec les plans Max, Team et Enterprise. Les utilisateurs API et Pro nécessitent une utilisation supplémentaire."

@@ -1,7 +1,5 @@
 /** Permission utilities for tool action approval. */
 
-import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
-
 import {
   TOOL_BASH,
   TOOL_EDIT,
@@ -141,57 +139,4 @@ function matchesBashPrefix(action: string, prefix: string): boolean {
   }
 
   return action.startsWith(`${prefix} `);
-}
-
-/**
- * Convert a user allow decision + SDK suggestions into PermissionUpdate[].
- *
- * Only handles allow decisions — deny results use the SDK's bare deny path
- * (PermissionResult deny variant has no updatedPermissions field).
- *
- * Overrides destination on addRules/replaceRules suggestions to match the user's choice.
- * Other suggestion entries keep their original destinations (they may carry
- * specific semantics about where the update should be applied).
- * "always" destinations go to projectSettings; "allow" stays session.
- * Falls back to constructing an addRules entry from the action pattern
- * when no addRules/replaceRules suggestion is present.
- */
-export function buildPermissionUpdates(
-  toolName: string,
-  input: Record<string, unknown>,
-  decision: 'allow' | 'allow-always',
-  suggestions?: PermissionUpdate[]
-): PermissionUpdate[] {
-  const destination: PermissionUpdateDestination = decision === 'allow-always' ? 'projectSettings' : 'session';
-
-  const processed: PermissionUpdate[] = [];
-  let hasRuleUpdate = false;
-
-  if (suggestions) {
-    for (const s of suggestions) {
-      if (s.type === 'addRules' || s.type === 'replaceRules') {
-        hasRuleUpdate = true;
-        processed.push({ ...s, behavior: 'allow', destination });
-      } else {
-        processed.push(s);
-      }
-    }
-  }
-
-  if (!hasRuleUpdate) {
-    const pattern = getActionPattern(toolName, input);
-    const ruleValue: { toolName: string; ruleContent?: string } = { toolName };
-    if (pattern && !pattern.startsWith('{')) {
-      ruleValue.ruleContent = pattern;
-    }
-
-    processed.unshift({
-      type: 'addRules',
-      behavior: 'allow',
-      rules: [ruleValue],
-      destination,
-    });
-  }
-
-  return processed;
 }

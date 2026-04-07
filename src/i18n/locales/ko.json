@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Claudian 설정",
-    "customization": "사용자 정의",
+    "tabs": {
+      "general": "일반",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "표시",
+    "conversations": "대화",
+    "content": "콘텐츠",
+    "input": "입력",
+    "setup": "설정",
+    "models": "모델",
+    "experimental": "실험적 기능",
     "userName": {
       "name": "Claudian이 당신을 어떻게 불러야 합니까?",
       "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "명령어와 스킬",
-      "desc": "/이름으로 트리거되는 커스텀 명령어와 스킬을 정의합니다."
+      "desc": ".claude/commands/ 및 .claude/skills/에 저장된 Vault 수준의 명령어와 스킬을 관리합니다. /이름으로 트리거됩니다."
     },
     "hiddenSlashCommands": {
       "name": "숨겨진 명령어",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "MCP 서버",
-      "desc": "모델 컨텍스트 프로토콜 서버를 설정하여 외부 도구와 데이터 소스로 Claude의 기능을 확장합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
+      "desc": ".claude/mcp.json에 저장된 Vault 수준의 MCP 서버 구성을 관리합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
     },
     "plugins": {
       "name": "Claude Code 플러그인",
-      "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 활성화 또는 비활성화합니다. 활성화된 플러그인은 볼트별로 저장됩니다."
+      "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 관리합니다. 활성화된 플러그인은 .claude/settings.json에 Vault별로 저장됩니다."
     },
     "subagents": {
       "name": "서브에이전트",
-      "desc": "Claude가 위임할 수 있는 사용자 정의 서브에이전트를 설정합니다.",
+      "desc": ".claude/agents/에 저장된 Vault 수준의 서브에이전트를 관리합니다. 각 Markdown 파일이 하나의 커스텀 에이전트를 정의합니다.",
       "noAgents": "구성된 서브에이전트가 없습니다. +를 클릭해 새로 만드세요.",
       "deleteConfirm": "서브에이전트 \"{name}\"을 삭제하시겠습니까?",
       "saveFailed": "서브에이전트를 저장하지 못했습니다: {message}",
@@ -192,24 +203,13 @@
       "name": "사용자 Claude 설정 로드",
       "desc": "~/.claude/settings.json을 로드합니다. 활성화하면 사용자의 Claude Code 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
-    "enableBlocklist": {
-      "name": "명령어 블랙리스트 활성화",
-      "desc": "잠재적으로 위험한 bash 명령어 차단"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "외부 접근 허용",
-      "desc": "볼트 디렉토리 외부의 파일 및 명령어 접근을 허용합니다. 모든 활성 세션에 즉시 적용됩니다. 볼트 제한을 비활성화하면 민감한 파일이 프롬프트 인젝션에 노출될 수 있습니다."
-    },
-    "blockedCommands": {
-      "name": "차단된 명령어 ({platform})",
-      "desc": "{platform}에서 차단할 패턴 (한 줄에 하나). 정규식 지원.",
-      "unixName": "차단된 명령어 (Unix/Git Bash)",
-      "unixDesc": "Git Bash가 호출할 수 있으므로 Unix 패턴도 Windows에서 차단됩니다."
-    },
-    "exportPaths": {
-      "name": "허용된 내보내기 경로",
-      "desc": "외부 접근이 꺼져 있을 때 적용되는 볼트 외부의 쓰기 전용 내보내기 경로입니다(한 줄에 하나). 홈 디렉토리는 ~를 지원합니다.",
-      "disabledDesc": "외부 접근이 켜져 있는 동안에는 무시됩니다. 쓰기 전용 내보내기 경로를 적용하려면 외부 접근을 끄세요."
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "환경",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "사용자 정의 모델의 컨텍스트 창 크기를 설정합니다. 기본값(200k 토큰)을 사용하려면 비워두세요.",
       "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
     },
-    "advanced": "고급",
     "enableOpus1M": {
       "name": "Opus 1M 컨텍스트 윈도우",
       "desc": "모델 선택기에서 Opus 1M을 표시합니다. Max, Team, Enterprise 플랜에 포함됩니다. API 및 Pro 사용자는 추가 사용량이 필요합니다."

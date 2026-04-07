@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Claudian 设置",
-    "customization": "个性化设置",
+    "tabs": {
+      "general": "通用",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "显示",
+    "conversations": "对话",
+    "content": "内容",
+    "input": "输入",
+    "setup": "设置",
+    "models": "模型",
+    "experimental": "实验性功能",
     "userName": {
       "name": "Claudian 应该如何称呼你？",
       "desc": "用于个性化问候的用户名（留空使用通用问候）"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "命令与技能",
-      "desc": "定义由 /名称 触发的自定义命令与技能。"
+      "desc": "管理存储在 .claude/commands/ 和 .claude/skills/ 中的 Vault 级命令与技能。由 /名称 触发。"
     },
     "hiddenSlashCommands": {
       "name": "隐藏命令",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "MCP 服务器",
-      "desc": "配置模型上下文协议服务器，通过外部工具和数据源扩展 Claude 的能力。启用上下文保存模式的服务器需要 @ 提及才能激活。"
+      "desc": "管理存储在 .claude/mcp.json 中的 Vault 级 MCP 服务器配置。启用上下文保存模式的服务器需要 @ 提及才能激活。"
     },
     "plugins": {
       "name": "Claude Code 插件",
-      "desc": "启用或禁用从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储。"
+      "desc": "管理从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储在 .claude/settings.json 中。"
     },
     "subagents": {
       "name": "子代理",
-      "desc": "配置 Claude 可委派给其处理的自定义子代理。",
+      "desc": "管理存储在 .claude/agents/ 中的 Vault 级子代理。每个 Markdown 文件定义一个自定义代理。",
       "noAgents": "尚未配置子代理。点击 + 创建一个。",
       "deleteConfirm": "删除子代理“{name}”？",
       "saveFailed": "保存子代理失败：{message}",
@@ -192,24 +203,13 @@
       "name": "加载用户 Claude 设置",
       "desc": "加载 ~/.claude/settings.json。启用后，用户的 Claude Code 权限规则可能绕过安全模式。"
     },
-    "enableBlocklist": {
-      "name": "启用命令黑名单",
-      "desc": "阻止潜在危险的 bash 命令"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "允许外部访问",
-      "desc": "允许访问仓库目录之外的文件和命令。对所有活动会话立即生效。关闭仓库限制可能使敏感文件暴露于提示注入攻击。"
-    },
-    "blockedCommands": {
-      "name": "阻止的命令 ({platform})",
-      "desc": "在 {platform} 上阻止的模式（每行一个）。支持正则表达式。",
-      "unixName": "阻止的命令 (Unix/Git Bash)",
-      "unixDesc": "Unix 模式在 Windows 上也会被阻止，因为 Git Bash 可以调用它们。"
-    },
-    "exportPaths": {
-      "name": "允许的导出路径",
-      "desc": "当外部访问关闭时，允许作为仅写导出目标的仓库外路径（每行一个）。支持 ~ 表示主目录。",
-      "disabledDesc": "启用外部访问时将忽略此设置。关闭外部访问后才会重新强制执行仅写导出路径。"
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "环境",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "为您的自定义模型设置上下文窗口大小。留空使用默认值（200k 令牌）。",
       "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。"
     },
-    "advanced": "高级",
     "enableOpus1M": {
       "name": "Opus 1M 上下文窗口",
       "desc": "在模型选择器中显示 Opus 1M。Max、Team 和 Enterprise 计划已包含。API 和 Pro 用户需要额外用量。"

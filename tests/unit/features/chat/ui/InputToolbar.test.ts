@@ -7,6 +7,7 @@ import {
   McpServerSelector,
   ModelSelector,
   PermissionToggle,
+  ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '@/features/chat/ui/InputToolbar';
 
@@ -27,21 +28,138 @@ function makeUsage(overrides: Partial<UsageInfo> = {}): UsageInfo {
   };
 }
 
+const DEFAULT_MODELS = [
+  { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
+  { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },
+  { value: 'sonnet[1m]', label: 'Sonnet 1M', description: 'Balanced performance (1M context window)' },
+  { value: 'opus', label: 'Opus', description: 'Most capable' },
+  { value: 'opus[1m]', label: 'Opus 1M', description: 'Most capable (1M context window)' },
+];
+
+const EFFORT_OPTIONS = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Med' },
+  { value: 'high', label: 'High' },
+  { value: 'max', label: 'Max' },
+];
+
+const BUDGET_OPTIONS = [
+  { value: 'off', label: 'Off', tokens: 0 },
+  { value: 'low', label: 'Low', tokens: 4000 },
+  { value: 'medium', label: 'Med', tokens: 8000 },
+  { value: 'high', label: 'High', tokens: 16000 },
+  { value: 'xhigh', label: 'Ultra', tokens: 32000 },
+];
+
+const DEFAULT_MODEL_VALUES = new Set(DEFAULT_MODELS.map(m => m.value));
+
+function filterVisibleModels(
+  models: typeof DEFAULT_MODELS,
+  enableOpus1M: boolean,
+  enableSonnet1M: boolean,
+) {
+  return models.filter((model) => {
+    if (model.value === 'opus' || model.value === 'opus[1m]') {
+      return enableOpus1M ? model.value === 'opus[1m]' : model.value === 'opus';
+    }
+    if (model.value === 'sonnet' || model.value === 'sonnet[1m]') {
+      return enableSonnet1M ? model.value === 'sonnet[1m]' : model.value === 'sonnet';
+    }
+    return true;
+  });
+}
+
+function createMockUIConfig() {
+  return {
+    getModelOptions: jest.fn().mockImplementation((settings: {
+      enableOpus1M?: boolean;
+      enableSonnet1M?: boolean;
+      environmentVariables?: string;
+    }) => {
+      // Mimic real behavior: env-based custom models bypass 1M filtering
+      if (settings.environmentVariables) {
+        const match = settings.environmentVariables.match(/ANTHROPIC_MODEL=(\S+)/);
+        if (match) {
+          const value = match[1];
+          const label = value.includes('/')
+            ? value.split('/').pop() || value
+            : value.replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+          return [{ value, label }];
+        }
+      }
+      return filterVisibleModels(
+        DEFAULT_MODELS,
+        settings.enableOpus1M ?? false,
+        settings.enableSonnet1M ?? false,
+      );
+    }),
+    isAdaptiveReasoningModel: jest.fn().mockImplementation((model: string) => {
+      if (DEFAULT_MODEL_VALUES.has(model)) return true;
+      return /claude-(haiku|sonnet|opus)-/.test(model);
+    }),
+    getReasoningOptions: jest.fn().mockImplementation((model: string) => {
+      if (DEFAULT_MODEL_VALUES.has(model) || /claude-(haiku|sonnet|opus)-/.test(model)) {
+        return EFFORT_OPTIONS;
+      }
+      return BUDGET_OPTIONS;
+    }),
+    getDefaultReasoningValue: jest.fn().mockReturnValue('high'),
+    getContextWindowSize: jest.fn().mockReturnValue(200000),
+    isDefaultModel: jest.fn().mockImplementation((model: string) =>
+      DEFAULT_MODELS.some(m => m.value === model)
+    ),
+    applyModelDefaults: jest.fn(),
+    normalizeModelVariant: jest.fn((model: string) => model),
+    getPermissionModeToggle: jest.fn().mockReturnValue({
+      inactiveValue: 'normal',
+      inactiveLabel: 'Safe',
+      activeValue: 'yolo',
+      activeLabel: 'YOLO',
+      planValue: 'plan',
+      planLabel: 'PLAN',
+    }),
+    getServiceTierToggle: jest.fn().mockImplementation((settings: Record<string, unknown>) =>
+      settings.model === 'gpt-5.4'
+        ? {
+          inactiveValue: 'default',
+          inactiveLabel: 'Standard',
+          activeValue: 'fast',
+          activeLabel: 'Fast',
+          description: '1.5x speed, 2x credits',
+        }
+        : null
+    ),
+  };
+}
+
 function createMockCallbacks(overrides: Record<string, any> = {}) {
   return {
     onModelChange: jest.fn().mockResolvedValue(undefined),
     onThinkingBudgetChange: jest.fn().mockResolvedValue(undefined),
     onEffortLevelChange: jest.fn().mockResolvedValue(undefined),
+    onServiceTierChange: jest.fn().mockResolvedValue(undefined),
     onPermissionModeChange: jest.fn().mockResolvedValue(undefined),
     getSettings: jest.fn().mockReturnValue({
       model: 'sonnet',
       thinkingBudget: 'low',
       effortLevel: 'high',
+      serviceTier: 'default',
       permissionMode: 'normal',
       enableOpus1M: false,
       enableSonnet1M: false,
     }),
     getEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getUIConfig: jest.fn().mockReturnValue(createMockUIConfig()),
+    getCapabilities: jest.fn().mockReturnValue({
+      providerId: 'claude',
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: true,
+      supportsRewind: true,
+      supportsFork: true,
+      supportsProviderCommands: true,
+      reasoningControl: 'effort',
+    }),
     ...overrides,
   };
 }
@@ -76,6 +194,7 @@ describe('ModelSelector', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'nonexistent',
       thinkingBudget: 'low',
+      serviceTier: 'default',
       permissionMode: 'normal',
       enableOpus1M: false,
       enableSonnet1M: false,
@@ -114,12 +233,9 @@ describe('ModelSelector', () => {
     expect(callbacks.onModelChange).toHaveBeenCalledWith('opus');
   });
 
-  it('should update display when setReady is called', () => {
-    selector.setReady(true);
+  it('should always show brand color on model button', () => {
     const btn = parentEl.querySelector('.claudian-model-btn');
-    expect(btn?.hasClass('ready')).toBe(true);
-
-    selector.setReady(false);
+    expect(btn).toBeTruthy();
     expect(btn?.hasClass('ready')).toBe(false);
   });
 
@@ -160,10 +276,48 @@ describe('ModelSelector', () => {
     expect(label?.textContent).toBe('Opus');
   });
 
+  it('should render group separators when models have group field', () => {
+    const groupedModels = [
+      { value: 'opus', label: 'Opus', group: 'Claude' },
+      { value: 'sonnet', label: 'Sonnet', group: 'Claude' },
+      { value: 'gpt-5.4', label: 'GPT-5.4', group: 'Codex' },
+    ];
+    const uiConfig = createMockUIConfig();
+    uiConfig.getModelOptions.mockReturnValue(groupedModels);
+    callbacks.getUIConfig.mockReturnValue(uiConfig);
+    callbacks.getSettings.mockReturnValue({
+      model: 'sonnet',
+      thinkingBudget: 'low',
+      effortLevel: 'high',
+      serviceTier: 'default',
+      permissionMode: 'normal',
+    });
+
+    selector.renderOptions();
+
+    const dropdown = parentEl.querySelector('.claudian-model-dropdown');
+    const children = dropdown?.children || [];
+    // Reversed: [Codex group, gpt-5.4, Claude group, Sonnet, Opus]
+    const groups = children.filter((c: any) => c.hasClass('claudian-model-group'));
+    expect(groups.length).toBe(2);
+    expect(groups[0]?.textContent).toBe('Codex');
+    expect(groups[1]?.textContent).toBe('Claude');
+  });
+
+  it('should not render group separators when models have no group field', () => {
+    selector.renderOptions();
+
+    const dropdown = parentEl.querySelector('.claudian-model-dropdown');
+    const children = dropdown?.children || [];
+    const groups = children.filter((c: any) => c.hasClass('claudian-model-group'));
+    expect(groups.length).toBe(0);
+  });
+
   it('should show 1M variants instead of standard variants when enabled', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'opus[1m]',
       thinkingBudget: 'medium',
+      serviceTier: 'default',
       permissionMode: 'normal',
       enableOpus1M: true,
       enableSonnet1M: true,
@@ -226,6 +380,7 @@ describe('ThinkingBudgetSelector', () => {
           model: 'custom-model',
           thinkingBudget: 'low',
           effortLevel: 'high',
+          serviceTier: 'default',
           permissionMode: 'normal',
           enableOpus1M: false,
           enableSonnet1M: false,
@@ -253,6 +408,7 @@ describe('ThinkingBudgetSelector', () => {
       callbacks.getSettings.mockReturnValue({
         model: 'custom-model',
         thinkingBudget: 'off',
+        serviceTier: 'default',
         permissionMode: 'normal',
         enableOpus1M: false,
         enableSonnet1M: false,
@@ -329,6 +485,7 @@ describe('PermissionToggle', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
       thinkingBudget: 'low',
+      serviceTier: 'default',
       permissionMode: 'yolo',
       enableOpus1M: false,
       enableSonnet1M: false,
@@ -344,6 +501,7 @@ describe('PermissionToggle', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
       thinkingBudget: 'low',
+      serviceTier: 'default',
       permissionMode: 'plan',
       enableOpus1M: false,
       enableSonnet1M: false,
@@ -363,6 +521,7 @@ describe('PermissionToggle', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
       thinkingBudget: 'low',
+      serviceTier: 'default',
       permissionMode: 'yolo',
     });
     const parentEl2 = createMockEl();
@@ -395,6 +554,113 @@ describe('PermissionToggle', () => {
     const toggle = parentEl2.querySelector('.claudian-toggle-switch');
     await toggle?.dispatchEvent('click');
     expect(callbacks.onPermissionModeChange).toHaveBeenCalledWith('normal');
+  });
+
+  it('should hide the control when provider exposes no permission toggle UI', () => {
+    callbacks.getUIConfig.mockReturnValue({
+      ...createMockUIConfig(),
+      getPermissionModeToggle: jest.fn().mockReturnValue(null),
+    });
+    const parentEl2 = createMockEl();
+    new PermissionToggle(parentEl2, callbacks);
+
+    const container = parentEl2.querySelector('.claudian-permission-toggle');
+    expect(container?.style.display).toBe('none');
+  });
+});
+
+describe('ServiceTierToggle', () => {
+  let parentEl: any;
+  let callbacks: ReturnType<typeof createMockCallbacks>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parentEl = createMockEl();
+    const uiConfig = createMockUIConfig();
+    uiConfig.getServiceTierToggle.mockReturnValue({
+      inactiveValue: 'default',
+      inactiveLabel: 'Standard',
+      activeValue: 'fast',
+      activeLabel: 'Fast',
+      description: '1.5x speed, 2x credits',
+    });
+    callbacks = createMockCallbacks({
+      getUIConfig: jest.fn().mockReturnValue(uiConfig),
+      getSettings: jest.fn().mockReturnValue({
+        model: 'gpt-5.4',
+        thinkingBudget: 'off',
+        effortLevel: 'medium',
+        serviceTier: 'default',
+        permissionMode: 'normal',
+      }),
+    });
+    new ServiceTierToggle(parentEl, callbacks);
+  });
+
+  it('shows the control when the provider exposes service tier options', () => {
+    const container = parentEl.querySelector('.claudian-service-tier-toggle');
+    expect(container).not.toBeNull();
+    expect(container?.style.display).toBe('');
+  });
+
+  it('renders the icon button in the inactive state when fast mode is off', () => {
+    const button = parentEl.querySelector('.claudian-service-tier-button');
+    const icon = parentEl.querySelector('.claudian-service-tier-icon');
+    const container = parentEl.querySelector('.claudian-service-tier-toggle');
+    expect(button?.hasClass('active')).toBe(false);
+    expect(icon).not.toBeNull();
+    expect(container?.getAttribute('title')).toBe('Toggle on/off fast mode');
+  });
+
+  it('renders the icon button in the active state when fast mode is on', () => {
+    callbacks.getSettings.mockReturnValue({
+      model: 'gpt-5.4',
+      thinkingBudget: 'off',
+      effortLevel: 'medium',
+      serviceTier: 'fast',
+      permissionMode: 'normal',
+    });
+    const parentEl2 = createMockEl();
+    new ServiceTierToggle(parentEl2, callbacks);
+
+    const button = parentEl2.querySelector('.claudian-service-tier-button');
+    const container = parentEl2.querySelector('.claudian-service-tier-toggle');
+    expect(button?.hasClass('active')).toBe(true);
+    expect(container?.getAttribute('title')).toBe('Toggle on/off fast mode');
+  });
+
+  it('toggles from Standard to Fast on click', async () => {
+    const button = parentEl.querySelector('.claudian-service-tier-button');
+    await button?.dispatchEvent('click');
+    expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('fast');
+  });
+
+  it('toggles from Fast to Standard on click', async () => {
+    callbacks.getSettings.mockReturnValue({
+      model: 'gpt-5.4',
+      thinkingBudget: 'off',
+      effortLevel: 'medium',
+      serviceTier: 'fast',
+      permissionMode: 'normal',
+    });
+    const parentEl2 = createMockEl();
+    new ServiceTierToggle(parentEl2, callbacks);
+
+    const button = parentEl2.querySelector('.claudian-service-tier-button');
+    await button?.dispatchEvent('click');
+    expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('default');
+  });
+
+  it('hides the control when the provider exposes no service tier UI', () => {
+    callbacks.getUIConfig.mockReturnValue({
+      ...createMockUIConfig(),
+      getServiceTierToggle: jest.fn().mockReturnValue(null),
+    });
+    const parentEl2 = createMockEl();
+    new ServiceTierToggle(parentEl2, callbacks);
+
+    const container = parentEl2.querySelector('.claudian-service-tier-toggle');
+    expect(container?.style.display).toBe('none');
   });
 });
 
@@ -741,5 +1007,6 @@ describe('createInputToolbar', () => {
     expect(toolbar.contextUsageMeter).toBeInstanceOf(ContextUsageMeter);
     expect(toolbar.mcpServerSelector).toBeInstanceOf(McpServerSelector);
     expect(toolbar.permissionToggle).toBeInstanceOf(PermissionToggle);
+    expect(toolbar.serviceTierToggle).toBeInstanceOf(ServiceTierToggle);
   });
 });

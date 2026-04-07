@@ -52,6 +52,7 @@ export interface Options {
     Stop?: HookCallbackMatcher[];
   };
   agents?: Record<string, AgentDefinition>;
+  persistSession?: boolean;
 }
 
 // Type exports that match the real SDK

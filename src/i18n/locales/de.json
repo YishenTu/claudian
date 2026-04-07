@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Claudian Einstellungen",
-    "customization": "Anpassung",
+    "tabs": {
+      "general": "Allgemein",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "Anzeige",
+    "conversations": "Unterhaltungen",
+    "content": "Inhalte",
+    "input": "Eingabe",
+    "setup": "Einrichtung",
+    "models": "Modelle",
+    "experimental": "Experimentell",
     "userName": {
       "name": "Wie soll Claudian dich nennen?",
       "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "Befehle und Fähigkeiten",
-      "desc": "Definiere benutzerdefinierte Befehle und Fähigkeiten, die durch /Name ausgelöst werden."
+      "desc": "Verwalte Vault-Befehle und -Fähigkeiten in .claude/commands/ und .claude/skills/. Ausgelöst durch /Name."
     },
     "hiddenSlashCommands": {
       "name": "Ausgeblendete Befehle",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "MCP-Server",
-      "desc": "Konfiguriere Model Context Protocol Server, um Claude mit externen Tools und Datenquellen zu erweitern. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
+      "desc": "Verwalte Vault-MCP-Serverkonfigurationen in .claude/mcp.json. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
     },
     "plugins": {
       "name": "Claude Code-Plugins",
-      "desc": "Aktiviere oder deaktiviere Claude Code Plugins aus ~/.claude/plugins. Aktivierte Plugins werden pro Vault gespeichert."
+      "desc": "Verwalte Claude Code Plugins aus ~/.claude/plugins. Aktivierte Plugins werden pro Vault in .claude/settings.json gespeichert."
     },
     "subagents": {
       "name": "Sub-Agenten",
-      "desc": "Konfiguriere benutzerdefinierte Sub-Agenten, an die Claude delegieren kann.",
+      "desc": "Verwalte Vault-Sub-Agenten in .claude/agents/. Jede Markdown-Datei definiert einen benutzerdefinierten Agenten.",
       "noAgents": "Keine Sub-Agenten konfiguriert. Klicke auf +, um einen zu erstellen.",
       "deleteConfirm": "Sub-Agent \"{name}\" löschen?",
       "saveFailed": "Sub-Agent konnte nicht gespeichert werden: {message}",
@@ -192,24 +203,13 @@
       "name": "Benutzer-Claude-Einstellungen laden",
       "desc": "Lädt ~/.claude/settings.json. Wenn aktiviert, können Benutzer-Claude-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
-    "enableBlocklist": {
-      "name": "Befehlsblockliste aktivieren",
-      "desc": "Blockiert potenziell gefährliche Bash-Befehle"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "Externen Zugriff erlauben",
-      "desc": "Erlaubt Datei- und Befehlszugriff außerhalb des Vault-Verzeichnisses. Wird sofort für alle aktiven Sitzungen wirksam. Das Deaktivieren der Vault-Beschränkung kann sensible Dateien für Prompt-Injection anfällig machen."
-    },
-    "blockedCommands": {
-      "name": "Blockierte Befehle ({platform})",
-      "desc": "Muster zum Blockieren auf {platform} (einer pro Zeile). Unterstützt Regex.",
-      "unixName": "Blockierte Befehle (Unix/Git Bash)",
-      "unixDesc": "Unix-Muster werden auch auf Windows blockiert, da Git Bash sie aufrufen kann."
-    },
-    "exportPaths": {
-      "name": "Zugelassene Exportpfade",
-      "desc": "Nur-Schreib-Ziele außerhalb des Vaults, wenn externer Zugriff deaktiviert ist (einer pro Zeile). Unterstützt ~ für das Home-Verzeichnis.",
-      "disabledDesc": "Wird ignoriert, solange externer Zugriff aktiviert ist. Deaktiviere externen Zugriff, um Nur-Schreib-Exportpfade zu erzwingen."
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "Umgebung",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "Legen Sie die Kontextfenstergrößen für Ihre benutzerdefinierten Modelle fest. Leer lassen für den Standardwert (200k Token).",
       "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
     },
-    "advanced": "Erweitert",
     "enableOpus1M": {
       "name": "Opus 1M Kontextfenster",
       "desc": "Opus 1M in der Modellauswahl anzeigen. In Max-, Team- und Enterprise-Plänen enthalten. API- und Pro-Nutzer benötigen zusätzliche Nutzung."

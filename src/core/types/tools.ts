@@ -1,7 +1,3 @@
-/**
- * Tool-related type definitions.
- */
-
 import type { DiffLine, DiffStats } from './diff';
 
 /** Diff data for Write/Edit tool operations (pre-computed from SDK structuredPatch). */
@@ -15,18 +11,22 @@ export interface ToolDiffData {
 export interface AskUserQuestionOption {
   label: string;
   description: string;
+  value?: string;
 }
 
 /** Parsed question for AskUserQuestion tool. */
 export interface AskUserQuestionItem {
   question: string;
+  id?: string;
   header: string;
   options: AskUserQuestionOption[];
   multiSelect: boolean;
+  isOther?: boolean;
+  isSecret?: boolean;
 }
 
-/** User-provided answers keyed by question text. */
-export type AskUserAnswers = Record<string, string>;
+/** User-provided answers keyed by question text or stable question id. */
+export type AskUserAnswers = Record<string, string | string[]>;
 
 /** Tool call tracking with status and result. */
 export interface ToolCallInfo {

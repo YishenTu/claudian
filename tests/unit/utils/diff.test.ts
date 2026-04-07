@@ -1,5 +1,5 @@
 import type { ToolCallInfo } from '../../../src/core/types/tools';
-import { diffFromToolInput,extractDiffData } from '../../../src/utils/diff';
+import { diffFromToolInput, extractDiffData, parseApplyPatchDiffs } from '../../../src/utils/diff';
 
 /** Helper to create a ToolCallInfo for testing. */
 function makeToolCall(name: string, input: Record<string, unknown>): ToolCallInfo {
@@ -166,5 +166,55 @@ describe('diffFromToolInput', () => {
     const result = diffFromToolInput(toolCall, 'some/path');
 
     expect(result).toBeUndefined();
+  });
+});
+
+describe('parseApplyPatchDiffs', () => {
+  it('parses update hunks into diff lines', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: src/main.ts',
+      '@@',
+      "-import { Plugin } from 'obsidian';",
+      "+import { Plugin, Notice } from 'obsidian';",
+      '*** End Patch',
+    ].join('\n');
+
+    const result = parseApplyPatchDiffs(patch);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      filePath: 'src/main.ts',
+      operation: 'update',
+      stats: { added: 1, removed: 1 },
+    });
+    expect(result[0].diffLines.map(line => line.text)).toEqual([
+      "import { Plugin } from 'obsidian';",
+      "import { Plugin, Notice } from 'obsidian';",
+    ]);
+  });
+
+  it('parses add and delete file operations', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Add File: src/new.ts',
+      '+export const value = 1;',
+      '*** Delete File: src/old.ts',
+      '*** End Patch',
+    ].join('\n');
+
+    const result = parseApplyPatchDiffs(patch);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      filePath: 'src/new.ts',
+      operation: 'add',
+      stats: { added: 1, removed: 0 },
+    });
+    expect(result[1]).toMatchObject({
+      filePath: 'src/old.ts',
+      operation: 'delete',
+      diffLines: [],
+    });
   });
 });

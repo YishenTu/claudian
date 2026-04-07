@@ -21,14 +21,21 @@ export function extractResolvedAnswers(toolUseResult: unknown): AskUserAnswers |
   return normalizeAnswersObject(r.answers);
 }
 
-function normalizeAnswerValue(value: unknown): string | undefined {
+function normalizeAnswerValue(value: unknown): string | string[] | undefined {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) {
     const normalized = value
       .map((item) => (typeof item === 'string' ? item : String(item)))
       .filter(Boolean)
-      .join(', ');
-    return normalized || undefined;
+      .filter((item) => item.length > 0);
+    if (normalized.length === 0) return undefined;
+    return normalized.length === 1 ? normalized[0] : normalized;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    if ('answers' in record) return normalizeAnswerValue(record.answers);
+    if ('answer' in record) return normalizeAnswerValue(record.answer);
+    if ('value' in record) return normalizeAnswerValue(record.value);
   }
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return undefined;
@@ -55,6 +62,10 @@ function parseAnswersFromJsonObject(resultText: string): AskUserAnswers | undefi
 
   try {
     const parsed = JSON.parse(resultText.slice(start, end + 1)) as unknown;
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      return normalizeAnswersObject(record.answers) ?? normalizeAnswersObject(parsed);
+    }
     return normalizeAnswersObject(parsed);
   } catch {
     return undefined;

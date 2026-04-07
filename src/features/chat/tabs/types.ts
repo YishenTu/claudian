@@ -1,41 +1,39 @@
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
-import type { ClaudianService } from '../../../core/agent';
+import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
+import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
-import type {
-  BrowserSelectionController,
-  CanvasSelectionController,
-  ConversationController,
-  InputController,
-  NavigationController,
-  SelectionController,
-  StreamController,
-} from '../controllers';
-import type { MessageRenderer } from '../rendering';
-import type { InstructionRefineService } from '../services/InstructionRefineService';
+import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
+import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
+import type { ConversationController } from '../controllers/ConversationController';
+import type { InputController } from '../controllers/InputController';
+import type { NavigationController } from '../controllers/NavigationController';
+import type { SelectionController } from '../controllers/SelectionController';
+import type { StreamController } from '../controllers/StreamController';
+import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
-import type { TitleGenerationService } from '../services/TitleGenerationService';
-import type { ChatState } from '../state';
+import type { ChatState } from '../state/ChatState';
+import type { BangBashModeManager } from '../ui/BangBashModeManager';
+import type { FileContextManager } from '../ui/FileContext';
+import type { ImageContextManager } from '../ui/ImageContext';
 import type {
-  BangBashModeManager,
   ContextUsageMeter,
   ExternalContextSelector,
-  FileContextManager,
-  ImageContextManager,
-  InstructionModeManager,
   McpServerSelector,
   ModelSelector,
   PermissionToggle,
-  StatusPanel,
+  ServiceTierToggle,
   ThinkingBudgetSelector,
-} from '../ui';
-import type { NavigationSidebar } from '../ui';
+} from '../ui/InputToolbar';
+import type { InstructionModeManager } from '../ui/InstructionModeManager';
+import type { NavigationSidebar } from '../ui/NavigationSidebar';
+import type { StatusPanel } from '../ui/StatusPanel';
 
 /**
  * Default number of tabs allowed.
  *
  * Set to 3 to balance usability with resource usage:
- * - Each tab has its own ClaudianService and persistent query
+ * - Each tab has its own chat runtime and persistent query
  * - More tabs = more memory and potential SDK processes
  * - 3 tabs allows multi-tasking without excessive overhead
  */
@@ -131,6 +129,7 @@ export interface TabUIComponents {
   externalContextSelector: ExternalContextSelector | null;
   mcpServerSelector: McpServerSelector | null;
   permissionToggle: PermissionToggle | null;
+  serviceTierToggle: ServiceTierToggle | null;
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   bangBashModeManager: BangBashModeManager | null;
@@ -151,6 +150,7 @@ export interface TabDOMElements {
   statusPanelContainerEl: HTMLElement;
 
   inputContainerEl: HTMLElement;
+  queueIndicatorEl: HTMLElement;
   inputWrapper: HTMLElement;
   inputEl: HTMLTextAreaElement;
 
@@ -169,18 +169,39 @@ export interface TabDOMElements {
 }
 
 /**
+ * Tab lifecycle states:
+ * - `blank`: No conversation binding, no runtime. Draft model selection only.
+ * - `bound_cold`: Bound to a conversation, but runtime not started yet.
+ * - `bound_active`: Bound to a conversation with a running runtime.
+ * - `closing`: Tab is being torn down.
+ */
+export type TabLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
+
+/**
  * Represents a single tab in the multi-tab system.
- * Each tab is an independent chat session with its own agent service.
+ * Each tab is an independent chat session with its own runtime instance.
  */
 export interface TabData {
   /** Unique tab identifier. */
   id: TabId;
 
+  /** Explicit lifecycle state. */
+  lifecycleState: TabLifecycleState;
+
+  /**
+   * Draft model selected in a blank tab (before first send).
+   * Used to derive provider on first send. Null after binding.
+   */
+  draftModel: string | null;
+
+  /** Active provider for this tab's current conversation/runtime. */
+  providerId: ProviderId;
+
   /** Conversation ID bound to this tab (null for new/empty tabs). */
   conversationId: string | null;
 
-  /** Per-tab ClaudianService instance for independent streaming. */
-  service: ClaudianService | null;
+  /** Per-tab chat runtime instance for independent streaming. */
+  service: ChatRuntime | null;
 
   /** Whether the service has been initialized (lazy start). */
   serviceInitialized: boolean;
@@ -203,6 +224,8 @@ export interface TabData {
   /** Per-tab renderer. */
   renderer: MessageRenderer | null;
 }
+
+export type TabProviderContext = Pick<TabData, 'conversationId' | 'service' | 'providerId' | 'lifecycleState' | 'draftModel'>;
 
 /**
  * Persisted tab state for restoration on plugin reload.
@@ -244,6 +267,9 @@ export interface TabManagerCallbacks {
 
   /** Called when a tab's conversation changes (loaded different conversation in same tab). */
   onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;
+
+  /** Called when the active provider changes within a tab (blank tab model selection). */
+  onTabProviderChanged?: (tabId: TabId, providerId: ProviderId) => void;
 }
 
 /**

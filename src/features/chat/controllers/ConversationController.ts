@@ -1,17 +1,20 @@
 import { Notice, setIcon } from 'obsidian';
 
-import type { ClaudianService } from '../../../core/agent';
+import type { TitleGenerationService } from '../../../core/providers/types';
+import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { Conversation } from '../../../core/types';
-import { t } from '../../../i18n';
+import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { confirm } from '../../../shared/modals/ConfirmModal';
-import { cleanupThinkingBlock } from '../rendering';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
-import type { TitleGenerationService } from '../services/TitleGenerationService';
 import type { ChatState } from '../state/ChatState';
-import type { ExternalContextSelector, FileContextManager, ImageContextManager, McpServerSelector, StatusPanel } from '../ui';
+import type { FileContextManager } from '../ui/FileContext';
+import type { ImageContextManager } from '../ui/ImageContext';
+import type { ExternalContextSelector, McpServerSelector } from '../ui/InputToolbar';
+import type { StatusPanel } from '../ui/StatusPanel';
 
 export interface ConversationCallbacks {
   onNewConversation?: () => void;
@@ -36,11 +39,13 @@ export interface ConversationControllerDeps {
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
-  getAgentService?: () => ClaudianService | null;
+  getAgentService?: () => ChatRuntime | null;
+  ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
+  dismissPendingInlinePrompts?: () => void;
 }
 
 type SaveOptions = {
-  resumeSessionAt?: string;
+  resumeAtMessageId?: string;
 };
 
 export class ConversationController {
@@ -52,7 +57,7 @@ export class ConversationController {
     this.callbacks = callbacks;
   }
 
-  private getAgentService(): ClaudianService | null {
+  private getAgentService(): ChatRuntime | null {
     return this.deps.getAgentService?.() ?? null;
   }
 
@@ -77,6 +82,8 @@ export class ConversationController {
     state.isCreatingConversation = true;
 
     try {
+      this.deps.dismissPendingInlinePrompts?.();
+
       if (force && state.isStreaming) {
         state.cancelRequested = true;
         state.bumpStreamGeneration();
@@ -113,7 +120,7 @@ export class ConversationController {
 
       // Reset agent service session (no session ID for entry point)
       // Pass persistent paths to prevent stale external contexts
-      this.getAgentService()?.setSessionId(
+      this.getAgentService()?.syncConversationState(
         null,
         plugin.settings.persistentExternalContextPaths || []
       );
@@ -173,7 +180,7 @@ export class ConversationController {
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
 
       // Pass persistent paths to prevent stale external contexts
-      this.getAgentService()?.setSessionId(
+      this.getAgentService()?.syncConversationState(
         null,
         plugin.settings.persistentExternalContextPaths || []
       );
@@ -200,52 +207,8 @@ export class ConversationController {
       return;
     }
 
-    // Load existing conversation
-    state.currentConversationId = conversation.id;
-    state.messages = [...conversation.messages];
-    state.usage = conversation.usage ?? null;
-    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
-
-    // Clear status panels (auto-hide: panels reappear when agent creates new todos)
-    state.currentTodos = null;
-
-    const hasMessages = state.messages.length > 0;
-
-    // Determine external context paths for this session
-    // Empty session: use persistent paths; session with messages: use saved paths
-    const externalContextPaths = hasMessages
-      ? conversation.externalContextPaths || []
-      : plugin.settings.persistentExternalContextPaths || [];
-
-    this.getAgentService()?.setSessionId(conversation.sessionId ?? null, externalContextPaths);
-    const fileCtx = this.deps.getFileContextManager();
-    fileCtx?.resetForLoadedConversation(hasMessages);
-
-    if (conversation.currentNote) {
-      fileCtx?.setCurrentNote(conversation.currentNote);
-    } else if (!hasMessages) {
-      fileCtx?.autoAttachActiveFile();
-    }
-
-    // Restore external context paths based on session state
-    this.restoreExternalContextPaths(
-      conversation.externalContextPaths,
-      !hasMessages
-    );
-
-    // Restore enabled MCP servers (or clear for new conversation)
-    const mcpServerSelector = this.deps.getMcpServerSelector();
-    if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
-      mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
-    } else {
-      mcpServerSelector?.clearEnabled();
-    }
-
-    const welcomeEl = renderer.renderMessages(
-      state.messages,
-      () => this.getGreeting()
-    );
-    this.deps.setWelcomeEl(welcomeEl);
+    await this.deps.ensureServiceForConversation?.(conversation);
+    this.restoreConversation(conversation, { autoAttachFile: true });
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationLoaded?.();
@@ -253,7 +216,7 @@ export class ConversationController {
 
   /** Switches to a different conversation. */
   async switchTo(id: string): Promise<void> {
-    const { plugin, state, renderer, subagentManager } = this.deps;
+    const { plugin, state, subagentManager } = this.deps;
 
     if (id === state.currentConversationId) return;
     if (state.isStreaming) return;
@@ -263,6 +226,7 @@ export class ConversationController {
     state.isSwitchingConversation = true;
 
     try {
+      this.deps.dismissPendingInlinePrompts?.();
       await this.save();
 
       subagentManager.orphanAllActive();
@@ -273,58 +237,12 @@ export class ConversationController {
         return;
       }
 
-      state.currentConversationId = conversation.id;
-      state.messages = [...conversation.messages];
-      state.usage = conversation.usage ?? null;
-      state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
-
-      // Clear status panels (auto-hide: panels reappear when agent creates new todos)
-      state.currentTodos = null;
-
-      const hasMessages = state.messages.length > 0;
-
-      // Determine external context paths for this session
-      // Empty session: use persistent paths; session with messages: use saved paths
-      const externalContextPaths = hasMessages
-        ? conversation.externalContextPaths || []
-        : plugin.settings.persistentExternalContextPaths || [];
-
-      // Update agent service session ID with correct external contexts
-      const agentService = this.getAgentService();
-      if (agentService) {
-        const resolvedSessionId = agentService.applyForkState(conversation);
-        agentService.setSessionId(resolvedSessionId, externalContextPaths);
-      }
+      await this.deps.ensureServiceForConversation?.(conversation);
 
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
 
-      const fileCtx = this.deps.getFileContextManager();
-      fileCtx?.resetForLoadedConversation(hasMessages);
-
-      if (conversation.currentNote) {
-        fileCtx?.setCurrentNote(conversation.currentNote);
-      }
-
-      // Restore external context paths based on session state
-      this.restoreExternalContextPaths(
-        conversation.externalContextPaths,
-        !hasMessages
-      );
-
-      // Restore enabled MCP servers (or clear if none)
-      const mcpServerSelector = this.deps.getMcpServerSelector();
-      if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
-        mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
-      } else {
-        mcpServerSelector?.clearEnabled();
-      }
-
-      const welcomeEl = renderer.renderMessages(
-        state.messages,
-        () => this.getGreeting()
-      );
-      this.deps.setWelcomeEl(welcomeEl);
+      this.restoreConversation(conversation);
 
       this.deps.getHistoryDropdown()?.removeClass('visible');
       this.updateWelcomeVisibility();
@@ -338,6 +256,12 @@ export class ConversationController {
   async rewind(userMessageId: string): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
+    const agentServiceForCheck = this.getAgentService();
+    if (agentServiceForCheck && !agentServiceForCheck.getCapabilities().supportsRewind) {
+      new Notice(t('chat.rewind.failed', { error: 'Rewind is not supported by this provider.' }));
+      return;
+    }
+
     if (state.isStreaming) {
       new Notice(t('chat.rewind.unavailableStreaming'));
       return;
@@ -350,7 +274,7 @@ export class ConversationController {
       return;
     }
     const userMsg = msgs[userIdx];
-    if (!userMsg.sdkUserUuid) {
+    if (!userMsg.userMessageId) {
       new Notice(t('chat.rewind.unavailableNoUuid'));
       return;
     }
@@ -382,7 +306,7 @@ export class ConversationController {
 
     let result;
     try {
-      result = await agentService.rewind(userMsg.sdkUserUuid, prevAssistantUuid);
+      result = await agentService.rewind(userMsg.userMessageId, prevAssistantUuid);
     } catch (e) {
       new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
       return;
@@ -405,7 +329,7 @@ export class ConversationController {
     const filesChanged = result.filesChanged?.length ?? 0;
     let saveError: string | null = null;
     try {
-      await this.save(false, { resumeSessionAt: prevAssistantUuid });
+      await this.save(false, { resumeAtMessageId: prevAssistantUuid });
     } catch (e) {
       saveError = e instanceof Error ? e.message : 'Failed to save';
     }
@@ -436,13 +360,16 @@ export class ConversationController {
     }
 
     const agentService = this.getAgentService();
-    const sessionId = agentService?.getSessionId() ?? null;
     const sessionInvalidated = agentService?.consumeSessionInvalidation?.() ?? false;
 
     // Entry point with messages - create conversation lazily
     // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
-      const conversation = await plugin.createConversation(sessionId ?? undefined);
+      const initialSessionId = agentService?.getSessionId() ?? undefined;
+      const conversation = await plugin.createConversation({
+        providerId: agentService?.providerId,
+        sessionId: initialSessionId,
+      });
       state.currentConversationId = conversation.id;
     }
 
@@ -453,49 +380,15 @@ export class ConversationController {
     const mcpServerSelector = this.deps.getMcpServerSelector();
     const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
-    // Check if this is a native session and promote legacy sessions after first SDK session capture
-    const conversation = await plugin.getConversationById(state.currentConversationId!);
-    const wasNative = conversation?.isNative ?? false;
-    const shouldPromote = !wasNative && !!sessionId;
-    const isNative = wasNative || shouldPromote;
-    const legacyMessages = conversation?.messages ?? [];
-    const legacyCutoffAt = shouldPromote
-      ? legacyMessages[legacyMessages.length - 1]?.timestamp
-      : conversation?.legacyCutoffAt;
+    const conversation = plugin.getConversationSync(state.currentConversationId!);
 
-    // Detect session change (resume failed, SDK created new session)
-    // Move old sdkSessionId to previousSdkSessionIds for history merging on reload
-    // Use Set to deduplicate in case of race conditions or repeated session changes
-    const oldSdkSessionId = conversation?.sdkSessionId;
-    const sessionChanged = isNative && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
-    const previousSdkSessionIds = sessionChanged
-      ? [...new Set([...(conversation?.previousSdkSessionIds || []), oldSdkSessionId])]
-      : conversation?.previousSdkSessionIds;
-
-    // Don't persist the fork source session ID as the conversation's own session.
-    // The agent service holds it for resume purposes only; the conversation gets
-    // its own ID after SDK captureSession() returns a new session.
-    const isForkSourceOnly = !!conversation?.forkSource &&
-      !conversation?.sdkSessionId &&
-      sessionId === conversation.forkSource.sessionId;
-
-    let resolvedSessionId: string | null;
-    if (sessionInvalidated) {
-      resolvedSessionId = null;
-    } else if (isForkSourceOnly) {
-      resolvedSessionId = conversation?.sessionId ?? null;
-    } else {
-      resolvedSessionId = sessionId ?? conversation?.sessionId ?? null;
-    }
+    const { updates: sessionUpdates } = agentService
+      ? agentService.buildSessionUpdates({ conversation, sessionInvalidated })
+      : { updates: {} };
 
     const updates: Partial<Conversation> = {
-      messages: isNative ? state.messages : state.getPersistedMessages(),
-      sessionId: resolvedSessionId,
-      sdkSessionId: isNative && sessionId && !isForkSourceOnly ? sessionId : conversation?.sdkSessionId,
-      previousSdkSessionIds,
-      isNative: isNative || undefined,
-      legacyCutoffAt,
-      sdkMessagesLoaded: isNative ? true : undefined,
+      ...sessionUpdates,
+      messages: state.messages,
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,
@@ -507,19 +400,63 @@ export class ConversationController {
     }
 
     if (options) {
-      updates.resumeSessionAt = options.resumeSessionAt;
+      updates.resumeAtMessageId = options.resumeAtMessageId;
     }
 
-    // Clear fork metadata after first save with a new session ID (one-time use)
-    if (conversation?.forkSource && sessionId && sessionId !== conversation.forkSource.sessionId) {
-      updates.forkSource = undefined;
-      // Don't add forkSource.sessionId to previousSdkSessionIds
-      // (the source session belongs to the original conversation)
-    }
-
-    // At this point, currentConversationId is guaranteed to be set
-    // (either existed before or was created lazily above)
     await plugin.updateConversation(state.currentConversationId!, updates);
+  }
+
+  /**
+   * Shared logic for restoring a conversation into the current tab.
+   * Used by both loadActive() and switchTo() to avoid duplication.
+   */
+  private restoreConversation(
+    conversation: Conversation,
+    options?: { autoAttachFile?: boolean }
+  ): void {
+    const { plugin, state, renderer } = this.deps;
+
+    state.currentConversationId = conversation.id;
+    state.messages = [...conversation.messages];
+    state.usage = conversation.usage ?? null;
+    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
+
+    // Clear status panels (auto-hide: panels reappear when agent creates new todos)
+    state.currentTodos = null;
+
+    const hasMessages = state.messages.length > 0;
+
+    // Determine external context paths for this session
+    // Empty session: use persistent paths; session with messages: use saved paths
+    const externalContextPaths = hasMessages
+      ? conversation.externalContextPaths || []
+      : plugin.settings.persistentExternalContextPaths || [];
+
+    this.getAgentService()?.syncConversationState(conversation, externalContextPaths);
+
+    const fileCtx = this.deps.getFileContextManager();
+    fileCtx?.resetForLoadedConversation(hasMessages);
+
+    if (conversation.currentNote) {
+      fileCtx?.setCurrentNote(conversation.currentNote);
+    } else if (!hasMessages && options?.autoAttachFile) {
+      fileCtx?.autoAttachActiveFile();
+    }
+
+    this.restoreExternalContextPaths(conversation.externalContextPaths, !hasMessages);
+
+    const mcpServerSelector = this.deps.getMcpServerSelector();
+    if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
+      mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
+    } else {
+      mcpServerSelector?.clearEnabled();
+    }
+
+    const welcomeEl = renderer.renderMessages(
+      state.messages,
+      () => this.getGreeting()
+    );
+    this.deps.setWelcomeEl(welcomeEl);
   }
 
   /**
@@ -828,12 +765,13 @@ export class ConversationController {
   async regenerateTitle(conversationId: string): Promise<void> {
     const { plugin } = this.deps;
     if (!plugin.settings.enableAutoTitleGeneration) return;
-    const titleService = this.deps.getTitleGenerationService();
-    if (!titleService) return;
 
-    // Get the full conversation from cache
+    // Title generation is delegated to the active provider service
     const fullConv = await plugin.getConversationById(conversationId);
     if (!fullConv || fullConv.messages.length < 1) return;
+
+    const titleService = this.deps.getTitleGenerationService();
+    if (!titleService) return;
 
     // Find first user message by role (not by index)
     const firstUserMsg = fullConv.messages.find(m => m.role === 'user');

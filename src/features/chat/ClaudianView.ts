@@ -1,12 +1,18 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 
-import { getContextWindowSize, VIEW_TYPE_CLAUDIAN } from '../../core/types';
+import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
+import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
+import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
+import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { SkillRunsPage } from '../runs/SkillRunsPage';
-import { LOGO_SVG } from './constants';
-import { TabBar, TabManager, updatePlanModeUI } from './tabs';
+import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
+import { TabBar } from './tabs/TabBar';
+import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
+import { recalculateUsageForModel } from './utils/usageInfo';
 
 export class ClaudianView extends ItemView {
   private plugin: ClaudianPlugin;
@@ -55,7 +61,6 @@ export class ClaudianView extends ItemView {
       value: async () => {
         // Ensure containerEl exists before any patched load code tries to use it
         if (!this.containerEl) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (this as any).containerEl = createDiv({ cls: 'view-content' });
         }
         // Wrap in try-catch to prevent Hover Editor errors from breaking our view
@@ -84,27 +89,43 @@ export class ClaudianView extends ItemView {
 
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
   refreshModelSelector(): void {
-    const model = this.plugin.settings.model;
-    const contextWindow = getContextWindowSize(model, this.plugin.settings.customContextLimits);
-
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      onProviderAvailabilityChanged(tab, this.plugin);
+      const providerId = getTabProviderId(tab, this.plugin);
+      const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+        this.plugin.settings as unknown as Record<string, unknown>,
+        providerId,
+      );
+      const model = providerSettings.model as string;
+      const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+      const capabilities = ProviderRegistry.getCapabilities(providerId);
+      const contextWindow = uiConfig.getContextWindowSize(
+        model,
+        providerSettings.customContextLimits as Record<string, number> | undefined,
+      );
+
       if (tab.state.usage) {
-        const percentage = Math.min(100, Math.max(0, Math.round((tab.state.usage.contextTokens / contextWindow) * 100)));
-        tab.state.usage = { ...tab.state.usage, model, contextWindow, percentage };
+        tab.state.usage = recalculateUsageForModel(tab.state.usage, model, contextWindow);
       }
 
       tab.ui.modelSelector?.updateDisplay();
       tab.ui.modelSelector?.renderOptions();
+      tab.ui.thinkingBudgetSelector?.updateDisplay();
+      tab.ui.permissionToggle?.updateDisplay();
+      tab.ui.serviceTierToggle?.updateDisplay();
+      tab.dom.inputWrapper.toggleClass(
+        'claudian-input-plan-mode',
+        this.plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,
+      );
     }
   }
 
-  /** Updates hidden slash commands on all tabs (used after settings change). */
-  updateHiddenSlashCommands(): void {
-    const hiddenCommands = new Set(
-      (this.plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase())
-    );
+  /** Updates provider-scoped hidden commands on all tabs after settings changes. */
+  updateHiddenProviderCommands(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.slashCommandDropdown?.setHiddenCommands(hiddenCommands);
+      tab.ui.slashCommandDropdown?.setHiddenCommands(
+        getHiddenProviderCommandSet(this.plugin.settings, getTabProviderId(tab, this.plugin)),
+      );
     }
   }
 
@@ -130,14 +151,10 @@ export class ClaudianView extends ItemView {
     this.viewContainerEl.empty();
     this.viewContainerEl.addClass('claudian-container');
 
-    // Build header (logo only, tab bar and actions moved to nav row)
     const header = this.viewContainerEl.createDiv({ cls: 'claudian-header' });
     this.buildHeader(header);
 
-    // Build nav row content (tab badges + header actions)
     this.navRowContent = this.buildNavRowContent();
-
-    // Tab content container (TabManager will populate this)
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
     this.runsPageEl = this.viewContainerEl.createDiv({ cls: 'claudian-runs-page-container' });
     this.runsPage = new SkillRunsPage(this.runsPageEl, this.plugin, {
@@ -151,10 +168,8 @@ export class ClaudianView extends ItemView {
     });
     await this.runsPage.initialize();
 
-    // Initialize TabManager
     this.tabManager = new TabManager(
       this.plugin,
-      this.plugin.mcpManager,
       this.tabContentEl,
       this,
       {
@@ -162,12 +177,14 @@ export class ClaudianView extends ItemView {
           this.updateTabBar();
           this.updateNavRowLocation();
           this.persistTabState();
+          this.syncProviderBrandColor();
         },
         onTabSwitched: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
           this.updateNavRowLocation();
           this.persistTabState();
+          this.syncProviderBrandColor();
         },
         onTabClosed: () => {
           this.updateTabBar();
@@ -178,42 +195,37 @@ export class ClaudianView extends ItemView {
         onTabAttentionChanged: () => this.updateTabBar(),
         onTabConversationChanged: () => {
           this.persistTabState();
+          this.syncProviderBrandColor();
+        },
+        onTabProviderChanged: () => {
+          this.syncProviderBrandColor();
         },
       }
     );
 
-    // Wire up view-level event handlers
     this.wireEventHandlers();
-
-    // Restore tabs from persisted state or create default tab
     await this.restoreOrCreateTabs();
-
-    // Apply initial layout based on tabBarPosition setting
+    this.syncProviderBrandColor();
     this.updateLayoutForPosition();
     this.switchToPage(this.currentPage);
   }
 
   async onClose() {
-    // Cancel any pending tab bar update
     if (this.pendingTabBarUpdate !== null) {
       cancelAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
     }
 
-    // Cleanup event refs
     for (const ref of this.eventRefs) {
       this.plugin.app.vault.offref(ref);
     }
     this.eventRefs = [];
 
-    // Persist tab state before cleanup (immediate, not debounced)
     await this.persistTabStateImmediate();
 
-    // Destroy tab manager and all tabs
     await this.tabManager?.destroy();
     this.tabManager = null;
 
-    // Cleanup tab bar
     this.tabBar?.destroy();
     this.tabBar = null;
 
@@ -231,18 +243,9 @@ export class ClaudianView extends ItemView {
     // Title slot container (logo + title or tabs)
     this.titleSlotEl = header.createDiv({ cls: 'claudian-title-slot' });
 
-    // Logo (hidden when 2+ tabs)
+    // Logo (hidden when 2+ tabs) — populated by syncHeaderLogo()
     this.logoEl = this.titleSlotEl.createSpan({ cls: 'claudian-logo' });
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', LOGO_SVG.viewBox);
-    svg.setAttribute('width', LOGO_SVG.width);
-    svg.setAttribute('height', LOGO_SVG.height);
-    svg.setAttribute('fill', 'none');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', LOGO_SVG.path);
-    path.setAttribute('fill', LOGO_SVG.fill);
-    svg.appendChild(path);
-    this.logoEl.appendChild(svg);
+    this.syncHeaderLogo(DEFAULT_CHAT_PROVIDER_ID);
 
     // Title text (hidden in header mode when 2+ tabs)
     this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
@@ -440,6 +443,37 @@ export class ClaudianView extends ItemView {
     }
   }
 
+  /** Sets `data-provider` on the root container so CSS brand color follows the active provider. */
+  private syncProviderBrandColor(): void {
+    if (!this.viewContainerEl) return;
+    const activeTab = this.tabManager?.getActiveTab();
+    const providerId = activeTab ? getTabProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
+    this.viewContainerEl.dataset.provider = providerId;
+    this.syncHeaderLogo(providerId);
+  }
+
+  /** Rebuilds the header logo SVG to match the given provider. */
+  private syncHeaderLogo(providerId: ProviderId): void {
+    if (!this.logoEl) return;
+    const icon = ProviderRegistry.getChatUIConfig(providerId).getProviderIcon?.();
+    if (!icon) return;
+    const existing = this.logoEl.querySelector('svg');
+    if (existing?.getAttribute('data-provider') === providerId) return;
+    this.logoEl.empty();
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', icon.viewBox);
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('data-provider', providerId);
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', icon.path);
+    path.setAttribute('fill', 'currentColor');
+    svg.appendChild(path);
+    this.logoEl.appendChild(svg);
+  }
+
   // ============================================
   // History Dropdown
   // ============================================
@@ -530,6 +564,8 @@ export class ClaudianView extends ItemView {
         e.preventDefault();
         const activeTab = this.tabManager?.getActiveTab();
         if (!activeTab) return;
+        const providerId = getTabProviderId(activeTab, this.plugin);
+        if (!ProviderRegistry.getCapabilities(providerId).supportsPlanMode) return;
         const current = this.plugin.settings.permissionMode;
         if (current === 'plan') {
           const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
@@ -600,26 +636,11 @@ export class ClaudianView extends ItemView {
     const persistedState = await this.plugin.storage.getTabManagerState();
     if (persistedState && persistedState.openTabs.length > 0) {
       await this.tabManager.restoreState(persistedState);
-      await this.plugin.storage.clearLegacyActiveConversationId();
-      return;
-    }
-
-    // No persisted state - migrate legacy activeConversationId if present
-    const legacyActiveId = await this.plugin.storage.getLegacyActiveConversationId();
-    if (legacyActiveId) {
-      const conversation = await this.plugin.getConversationById(legacyActiveId);
-      if (conversation) {
-        await this.tabManager.createTab(conversation.id);
-      } else {
-        await this.tabManager.createTab();
-      }
-      await this.plugin.storage.clearLegacyActiveConversationId();
       return;
     }
 
     // Fallback: create a new empty tab
     await this.tabManager.createTab();
-    await this.plugin.storage.clearLegacyActiveConversationId();
   }
 
   private persistTabState(): void {

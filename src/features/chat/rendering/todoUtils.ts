@@ -1,6 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import type { TodoItem } from '../../../core/tools';
+import type { TodoItem } from '../../../core/tools/todo';
 
 export function getTodoStatusIcon(status: TodoItem['status']): string {
   return status === 'completed' ? 'check' : 'dot';

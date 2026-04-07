@@ -92,6 +92,25 @@ describe('InlineAskUserQuestion', () => {
       expect(resolve).toHaveBeenCalledWith(null);
     });
 
+    it('keeps questions that only allow free-form input', () => {
+      const input = {
+        questions: [
+          {
+            id: 'secret_q',
+            question: 'Enter token',
+            header: 'Token',
+            options: null,
+            isOther: true,
+            isSecret: true,
+          },
+        ],
+      };
+      const { container, resolve } = renderWidget(input);
+
+      expect(resolve).not.toHaveBeenCalled();
+      expect(container.querySelector('claudian-ask-custom-item')).not.toBeNull();
+    });
+
     it('filters out entries missing required fields', () => {
       const input = {
         questions: [
@@ -211,6 +230,20 @@ describe('InlineAskUserQuestion', () => {
         .map((el: any) => el.textContent);
       expect(labels).toContain('42');
     });
+
+    it('uses option value for resolution when provided', () => {
+      const input = makeInput([
+        {
+          question: 'Q',
+          options: [{ label: 'Approve and remember', value: 'allow_with_policy' }],
+        },
+      ]);
+      const { container } = renderWidget(input);
+      const labels = container
+        .querySelectorAll('claudian-ask-item-label')
+        .map((el: any) => el.textContent);
+      expect(labels).toContain('Approve and remember');
+    });
   });
 
   describe('selectOption', () => {
@@ -320,6 +353,121 @@ describe('InlineAskUserQuestion', () => {
         'Color?': 'Red',
         'Size?': 'M',
       });
+      jest.useRealTimers();
+    });
+
+    it('submits multi-select answers as arrays instead of joining them into one string', () => {
+      const input = makeInput([
+        { question: 'Pick many', options: ['X', 'Y', 'Z'], multiSelect: true },
+      ]);
+      const { container, resolve } = renderWidget(input);
+
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+      items[1]?.click();
+
+      const root = findRoot(container);
+      fireKeyDown(root, 'Tab');
+      fireKeyDown(root, 'Enter');
+
+      expect(resolve).toHaveBeenCalledWith({
+        'Pick many': ['X', 'Y'],
+      });
+    });
+  });
+
+  describe('question metadata', () => {
+    it('shows custom input only when the question allows "other"', () => {
+      const disallowOtherInput = {
+        questions: [{ question: 'Pick one', options: ['A', 'B'], isOther: false }],
+      };
+      const { container: noOther } = renderWidget(disallowOtherInput);
+      expect(noOther.querySelectorAll('claudian-ask-custom-item')).toHaveLength(0);
+
+      const allowOtherInput = {
+        questions: [{ question: 'Pick one', options: ['A', 'B'], isOther: true }],
+      };
+      const { container: withOther } = renderWidget(allowOtherInput);
+      expect(withOther.querySelectorAll('claudian-ask-custom-item')).toHaveLength(1);
+    });
+
+    it('renders secret free-form questions with password input', () => {
+      const input = {
+        questions: [
+          {
+            question: 'Enter API token',
+            options: null,
+            isOther: true,
+            isSecret: true,
+          },
+        ],
+      };
+      const { container } = renderWidget(input);
+
+      const customInput = container.querySelector('claudian-ask-custom-text');
+      expect(customInput?.getAttribute('type')).toBe('password');
+    });
+  });
+
+  describe('question id keying', () => {
+    it('keys submit results by question id when id is provided', () => {
+      jest.useFakeTimers();
+      const input = {
+        questions: [
+          { id: 'color_q', question: 'Favorite color?', options: ['Red', 'Blue'], header: 'Color' },
+          { id: 'size_q', question: 'Preferred size?', options: ['S', 'M'], header: 'Size' },
+        ],
+      };
+      const { container, resolve } = renderWidget(input);
+
+      // Select "Red" for Q1
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+      jest.advanceTimersByTime(200);
+
+      // Select "M" for Q2
+      const q2Items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      q2Items[1]?.click();
+      jest.advanceTimersByTime(200);
+
+      // Submit
+      const submitItems = container.querySelectorAll('claudian-ask-item');
+      const submitRow = submitItems.find(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      submitRow?.click();
+
+      expect(resolve).toHaveBeenCalledWith({
+        color_q: 'Red',
+        size_q: 'M',
+      });
+      jest.useRealTimers();
+    });
+
+    it('falls back to question text when id is not provided', () => {
+      jest.useFakeTimers();
+      const input = makeInput([{ question: 'Pick one', options: ['A', 'B'] }]);
+      const { container, resolve } = renderWidget(input);
+
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+      jest.advanceTimersByTime(200);
+
+      const submitItems = container.querySelectorAll('claudian-ask-item');
+      const submitRow = submitItems.find(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      submitRow?.click();
+
+      expect(resolve).toHaveBeenCalledWith({ 'Pick one': 'A' });
       jest.useRealTimers();
     });
   });
@@ -659,6 +807,22 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       items[1]?.click();
 
       expect(resolve).toHaveBeenCalledWith({ Pick: 'B' });
+    });
+
+    it('keys immediate-select result by id when provided', () => {
+      const input = {
+        questions: [
+          { id: 'approval_q', question: 'Allow execution?', options: ['Yes', 'No'], header: 'Approve' },
+        ],
+      };
+      const { container, resolve } = renderImmediateWidget(input);
+
+      const items = findItems(container).filter(
+        (i: any) => !i.hasClass('claudian-ask-custom-item'),
+      );
+      items[0]?.click();
+
+      expect(resolve).toHaveBeenCalledWith({ approval_q: 'Yes' });
     });
   });
 

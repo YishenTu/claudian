@@ -1,0 +1,12 @@
+{"timestamp":"2026-03-27T00:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Refactor the module using subagents."}]}}
+{"timestamp":"2026-03-27T00:00:01.000Z","type":"response_item","payload":{"type":"function_call","name":"spawn_agent","arguments":"{\"message\":\"Update the imports in utils.ts\",\"agent_type\":\"code-writer\"}","call_id":"call_spawn_1"}}
+{"timestamp":"2026-03-27T00:00:02.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_spawn_1","output":"{\"agent_id\":\"agent_001\"}"}}
+{"timestamp":"2026-03-27T00:00:03.000Z","type":"response_item","payload":{"type":"function_call","name":"send_input","arguments":"{\"agent_id\":\"agent_001\",\"message\":\"Also update the exports.\"}","call_id":"call_send_1"}}
+{"timestamp":"2026-03-27T00:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_send_1","output":"{\"submission_id\":\"sub_001\"}"}}
+{"timestamp":"2026-03-27T00:00:05.000Z","type":"response_item","payload":{"type":"function_call","name":"wait","arguments":"{\"ids\":[\"agent_001\"],\"timeout_ms\":30000}","call_id":"call_wait_1"}}
+{"timestamp":"2026-03-27T00:00:06.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_wait_1","output":"{\"status\":{\"agent_001\":{\"state\":\"completed\"}},\"timed_out\":false}"}}
+{"timestamp":"2026-03-27T00:00:07.000Z","type":"response_item","payload":{"type":"function_call","name":"resume_agent","arguments":"{\"agent_id\":\"agent_001\"}","call_id":"call_resume_1"}}
+{"timestamp":"2026-03-27T00:00:08.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_resume_1","output":"{\"status\":\"resumed\"}"}}
+{"timestamp":"2026-03-27T00:00:09.000Z","type":"response_item","payload":{"type":"function_call","name":"close_agent","arguments":"{\"agent_id\":\"agent_001\"}","call_id":"call_close_1"}}
+{"timestamp":"2026-03-27T00:00:10.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_close_1","output":"{\"status\":\"closed\"}"}}
+{"timestamp":"2026-03-27T00:00:11.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Refactoring complete."}]}}

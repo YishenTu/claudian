@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { escapeHtml, normalizeInsertionText } from '@/utils/inlineEdit';
 import { normalizePathForVault } from '@/utils/path';
 

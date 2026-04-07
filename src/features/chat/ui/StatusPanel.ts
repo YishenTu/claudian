@@ -1,8 +1,9 @@
 import { Notice, setIcon } from 'obsidian';
 
-import type { TodoItem } from '../../../core/tools';
-import { getToolIcon, TOOL_TODO_WRITE } from '../../../core/tools';
-import { t } from '../../../i18n';
+import type { TodoItem } from '../../../core/tools/todo';
+import { getToolIcon } from '../../../core/tools/toolIcons';
+import { TOOL_TODO_WRITE } from '../../../core/tools/toolNames';
+import { t } from '../../../i18n/i18n';
 import { renderTodoItems } from '../rendering/todoUtils';
 
 export interface PanelBashOutput {

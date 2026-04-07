@@ -1,6 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import { getToolIcon } from '../../../core/tools';
+import { getToolIcon } from '../../../core/tools/toolIcons';
 import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
 import type { DiffLine, DiffStats } from '../../../core/types/diff';
 import { setupCollapsible } from './collapsible';

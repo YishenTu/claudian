@@ -1,10 +1,10 @@
 import type { EditorView } from '@codemirror/view';
 
-import type { TodoItem } from '../../../core/tools';
+import type { ChatRuntimeQueryOptions } from '../../../core/runtime/types';
+import type { TodoItem } from '../../../core/tools/todo';
 import type {
   ChatMessage,
   ImageAttachment,
-  PermissionMode,
   SubagentInfo,
   ToolCallInfo,
   UsageInfo,
@@ -12,10 +12,8 @@ import type {
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import type { EditorSelectionContext } from '../../../utils/editor';
-import type {
-  ThinkingBlockState,
-  WriteEditState,
-} from '../rendering';
+import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
+import type { WriteEditState } from '../rendering/WriteEditRenderer';
 
 /** Queued message waiting to be sent after current streaming completes. */
 export interface QueuedMessage {
@@ -41,6 +39,7 @@ export interface StoredSelection {
   from?: number;
   to?: number;
   editorView?: EditorView;
+  domRanges?: Range[];
 }
 
 /** Centralized chat state data. */
@@ -100,11 +99,11 @@ export interface ChatStateData {
   // Pending plan content for approve-new-session (auto-sends in new session after stream ends)
   pendingNewSessionPlan: string | null;
 
-  // Plan file path captured from Write tool calls to ~/.claude/plans/ during plan mode
+  // Plan file path captured from Write tool calls to provider plan directory during plan mode
   planFilePath: string | null;
 
   // Saved permission mode before entering plan mode (for Shift+Tab toggle restore)
-  prePlanPermissionMode: PermissionMode | null;
+  prePlanPermissionMode: string | null;
 }
 
 /** Callbacks for ChatState changes. */
@@ -119,21 +118,13 @@ export interface ChatStateCallbacks {
 }
 
 /** Options for query execution. */
-export interface QueryOptions {
-  allowedTools?: string[];
-  model?: string;
-  mcpMentions?: Set<string>;
-  enabledMcpServers?: Set<string>;
-  forceColdStart?: boolean;
-  externalContextPaths?: string[];
-}
+export type QueryOptions = ChatRuntimeQueryOptions;
 
 // Re-export types that are used across the chat feature
 export type {
   ChatMessage,
   EditorSelectionContext,
   ImageAttachment,
-  PermissionMode,
   SubagentInfo,
   ThinkingBlockState,
   TodoItem,

@@ -1,3 +1,5 @@
+import '@/providers';
+
 // eslint-disable-next-line jest/no-mocks-import
 import {
   getLastOptions,
@@ -6,7 +8,7 @@ import {
 } from '@test/__mocks__/claude-agent-sdk';
 
 // Import after mocks are set up
-import { InstructionRefineService } from '@/features/chat/services/InstructionRefineService';
+import { InstructionRefineService } from '@/providers/claude/aux/ClaudeInstructionRefineService';
 
 function createMockPlugin(settings = {}) {
   return {
@@ -24,7 +26,7 @@ function createMockPlugin(settings = {}) {
       },
     },
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getResolvedClaudeCliPath: jest.fn().mockReturnValue('/fake/claude'),
+    getResolvedProviderCliPath: jest.fn().mockReturnValue('/fake/claude'),
   } as any;
 }
 
@@ -358,10 +360,10 @@ describe('InstructionRefineService', () => {
     });
 
     it('should return error when Claude CLI is not found', async () => {
-      mockPlugin.getResolvedClaudeCliPath.mockReturnValue(null);
+      mockPlugin.getResolvedProviderCliPath.mockReturnValue(null);
       const result = await service.refineInstruction('test', '');
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Claude CLI not found. Please install Claude Code CLI.');
+      expect(result.error).toBe('Claude CLI not found');
     });
   });
 });

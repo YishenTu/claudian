@@ -1,54 +1,311 @@
 import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import { ClaudianService } from '../../../core/agent';
-import type { McpServerManager } from '../../../core/mcp';
-import type { ChatMessage, ClaudeModel, Conversation, EffortLevel, PermissionMode, SlashCommand, StreamChunk, ThinkingBudget } from '../../../core/types';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_EFFORT_LEVEL, DEFAULT_THINKING_BUDGET, getContextWindowSize, isAdaptiveThinkingModel } from '../../../core/types';
-import { t } from '../../../i18n';
+import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
+import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import { getProviderForModel } from '../../../core/providers/modelRouting';
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
+import type {
+  ProviderCapabilities,
+  ProviderChatUIConfig,
+  ProviderId,
+  ProviderUIOption,
+} from '../../../core/providers/types';
+import {
+  DEFAULT_CHAT_PROVIDER_ID,
+} from '../../../core/providers/types';
+import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
+import type { AutoTurnResult } from '../../../core/runtime/types';
+import type { ChatMessage, Conversation } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
-import {
-  BrowserSelectionController,
-  CanvasSelectionController,
-  ConversationController,
-  InputController,
-  NavigationController,
-  SelectionController,
-  StreamController,
-} from '../controllers';
-import { cleanupThinkingBlock, MessageRenderer } from '../rendering';
+import { BrowserSelectionController } from '../controllers/BrowserSelectionController';
+import { CanvasSelectionController } from '../controllers/CanvasSelectionController';
+import { ConversationController } from '../controllers/ConversationController';
+import { InputController } from '../controllers/InputController';
+import { NavigationController } from '../controllers/NavigationController';
+import { SelectionController } from '../controllers/SelectionController';
+import { StreamController } from '../controllers/StreamController';
+import { MessageRenderer } from '../rendering/MessageRenderer';
+import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { findRewindContext } from '../rewind';
 import { BangBashService } from '../services/BangBashService';
-import { InstructionRefineService } from '../services/InstructionRefineService';
 import { SubagentManager } from '../services/SubagentManager';
-import { TitleGenerationService } from '../services/TitleGenerationService';
-import { ChatState } from '../state';
-import {
-  BangBashModeManager as BangBashModeManagerClass,
-  createInputToolbar,
-  FileContextManager,
-  ImageContextManager,
-  InstructionModeManager as InstructionModeManagerClass,
-  NavigationSidebar,
-  StatusPanel,
-} from '../ui';
-import type { TabData, TabDOMElements, TabId } from './types';
+import { ChatState } from '../state/ChatState';
+import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
+import { FileContextManager } from '../ui/FileContext';
+import { ImageContextManager } from '../ui/ImageContext';
+import { createInputToolbar } from '../ui/InputToolbar';
+import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
+import { NavigationSidebar } from '../ui/NavigationSidebar';
+import { StatusPanel } from '../ui/StatusPanel';
+import { recalculateUsageForModel } from '../utils/usageInfo';
+import { getTabProviderId } from './providerResolution';
+import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
 import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
+
+type TabProviderSettings = Record<string, unknown> & {
+  model: string;
+  thinkingBudget: string;
+  effortLevel: string;
+  serviceTier: string;
+  permissionMode: string;
+  customContextLimits?: Record<string, number>;
+};
+
+/**
+ * Returns model options for a blank tab.
+ * Uses provider registration metadata to determine which providers are
+ * available and how they should appear in the mixed picker.
+ */
+export function getBlankTabModelOptions(
+  settings: Record<string, unknown>,
+): ProviderUIOption[] {
+  return ProviderRegistry.getEnabledProviderIds(settings).flatMap((providerId) => {
+    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+    const providerIcon = uiConfig.getProviderIcon?.() ?? undefined;
+    const group = ProviderRegistry.getProviderDisplayName(providerId);
+
+    return uiConfig.getModelOptions(settings)
+      .map(model => ({ ...model, group, providerIcon }));
+  });
+}
+
+/**
+ * Resolves the draft model for a new blank tab by projecting provider-specific
+ * saved settings. Without this, `plugin.settings.model` reflects only the
+ * settings-provider's model, which may belong to a different provider.
+ */
+function resolveBlankTabModel(
+  plugin: ClaudianPlugin,
+  providerId?: ProviderId,
+): string {
+  const settings = plugin.settings as unknown as Record<string, unknown>;
+  if (providerId) {
+    const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, providerId);
+    return snapshot.model as string;
+  }
+  return settings.model as string;
+}
 
 export interface TabCreateOptions {
   plugin: ClaudianPlugin;
-  mcpManager: McpServerManager;
 
   containerEl: HTMLElement;
   conversation?: Conversation;
   tabId?: TabId;
+  /** Provider to inherit for blank tabs (e.g. from the active tab). */
+  defaultProviderId?: ProviderId;
   onStreamingChanged?: (isStreaming: boolean) => void;
   onTitleChanged?: (title: string) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
+}
+
+export { getTabProviderId } from './providerResolution';
+
+function getTabCapabilities(
+  tab: TabProviderContext,
+  plugin: ClaudianPlugin,
+  conversation?: Conversation | null,
+): ProviderCapabilities {
+  const providerId = getTabProviderId(tab, plugin, conversation);
+  if (tab.service?.providerId === providerId) {
+    return tab.service.getCapabilities();
+  }
+
+  return ProviderRegistry.getCapabilities(providerId);
+}
+
+function getTabChatUIConfig(
+  tab: TabProviderContext,
+  plugin: ClaudianPlugin,
+  conversation?: Conversation | null,
+): ProviderChatUIConfig {
+  return ProviderRegistry.getChatUIConfig(getTabProviderId(tab, plugin, conversation));
+}
+
+function getTabSettingsSnapshot(
+  tab: TabProviderContext,
+  plugin: ClaudianPlugin,
+): TabProviderSettings {
+  return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    plugin.settings as unknown as Record<string, unknown>,
+    getTabProviderId(tab, plugin),
+  ) as TabProviderSettings;
+}
+
+function getTabHiddenCommands(
+  tab: TabProviderContext,
+  plugin: ClaudianPlugin,
+  conversation?: Conversation | null,
+): Set<string> {
+  return getHiddenProviderCommandSet(
+    plugin.settings,
+    getTabProviderId(tab, plugin, conversation),
+  );
+}
+
+type ProviderCatalogInfo = {
+  config: ProviderCommandDropdownConfig;
+  getEntries: () => Promise<ProviderCommandEntry[]>;
+} | null;
+
+function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
+  const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
+  if (!catalog) {
+    return null;
+  }
+
+  return {
+    config: catalog.getDropdownConfig(),
+    getEntries: () => catalog.listDropdownEntries({ includeBuiltIns: false }),
+  };
+}
+
+function getProviderMcpManager(providerId: ProviderId) {
+  return ProviderWorkspaceRegistry.getMcpServerManager(providerId);
+}
+
+function syncSlashCommandDropdownForProvider(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+  conversation?: Conversation | null,
+): void {
+  const dropdown = tab.ui.slashCommandDropdown;
+  if (!dropdown) {
+    return;
+  }
+
+  const catalogInfo = getProviderCatalogConfig?.()
+    ?? getRegistryProviderCatalogInfo(getTabProviderId(tab, plugin, conversation));
+
+  if (catalogInfo) {
+    dropdown.setProviderCatalog?.(catalogInfo.config, catalogInfo.getEntries);
+  } else {
+    dropdown.resetSdkSkillsCache();
+  }
+
+  dropdown.setHiddenCommands(getTabHiddenCommands(tab, plugin, conversation));
+}
+
+async function updateTabProviderSettings(
+  tab: TabProviderContext,
+  plugin: ClaudianPlugin,
+  update: (settings: TabProviderSettings) => void,
+): Promise<TabProviderSettings> {
+  const providerId = getTabProviderId(tab, plugin);
+  const snapshot = getTabSettingsSnapshot(tab, plugin);
+  update(snapshot);
+  ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+    plugin.settings as unknown as Record<string, unknown>,
+    providerId,
+    snapshot,
+  );
+  await plugin.saveSettings();
+  return snapshot;
+}
+
+function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
+  const capabilities = getTabCapabilities(tab, plugin);
+  tab.ui.modelSelector?.updateDisplay();
+  tab.ui.modelSelector?.renderOptions();
+  tab.ui.thinkingBudgetSelector?.updateDisplay();
+  tab.ui.permissionToggle?.updateDisplay();
+  tab.ui.serviceTierToggle?.updateDisplay();
+  tab.dom.inputWrapper.toggleClass(
+    'claudian-input-plan-mode',
+    plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,
+  );
+}
+
+/**
+ * Hides or disables UI elements that the active provider does not support.
+ * Called after toolbar initialization and on provider switches.
+ */
+function applyProviderUIGating(tab: TabData, plugin: ClaudianPlugin): void {
+  const capabilities = getTabCapabilities(tab, plugin);
+  const mcpManager = capabilities.supportsMcpTools
+    ? getProviderMcpManager(capabilities.providerId)
+    : null;
+
+  if (!capabilities.supportsMcpTools) {
+    tab.ui.mcpServerSelector?.clearEnabled();
+  }
+  tab.ui.mcpServerSelector?.setVisible(capabilities.supportsMcpTools);
+  tab.ui.fileContextManager?.setMcpManager(mcpManager);
+
+  tab.ui.fileContextManager?.setAgentService(
+    ProviderWorkspaceRegistry.getAgentMentionProvider(capabilities.providerId),
+  );
+
+  tab.ui.imageContextManager?.setEnabled(capabilities.supportsImageAttachments);
+  tab.ui.contextUsageMeter?.update(tab.state.usage);
+}
+
+function syncTabProviderServices(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+): void {
+  tab.services.instructionRefineService?.cancel();
+  tab.services.instructionRefineService?.resetConversation();
+  tab.services.titleGenerationService?.cancel();
+  tab.services.instructionRefineService = ProviderRegistry.createInstructionRefineService(plugin, tab.providerId);
+  tab.services.titleGenerationService = ProviderRegistry.createTitleGenerationService(plugin, tab.providerId);
+  tab.services.subagentManager.setTaskResultInterpreter?.(
+    ProviderRegistry.getTaskResultInterpreter(tab.providerId)
+  );
+}
+
+function cleanupTabRuntime(tab: TabData): void {
+  if (tab.service && typeof tab.service.cleanup === 'function') {
+    tab.service.cleanup();
+  }
+  tab.service = null;
+  tab.serviceInitialized = false;
+}
+
+/**
+ * Called when provider availability changes. If a blank tab targets a provider
+ * that is now disabled, it falls back to the first enabled provider's default
+ * blank-tab model. Refreshes model selector options for all blank tabs.
+ */
+export function onProviderAvailabilityChanged(tab: TabData, plugin: ClaudianPlugin): void {
+  if (tab.lifecycleState !== 'blank') return;
+
+  const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
+  const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
+
+  if (tab.draftModel) {
+    const draftProvider = getProviderForModel(tab.draftModel, settingsSnapshot);
+    if (!enabledProviderIds.includes(draftProvider)) {
+      const fallbackProviderId = enabledProviderIds[0] ?? DEFAULT_CHAT_PROVIDER_ID;
+      const fallbackModels = ProviderRegistry.getChatUIConfig(fallbackProviderId)
+        .getModelOptions(settingsSnapshot);
+      tab.draftModel = fallbackModels[0]?.value ?? tab.draftModel;
+      tab.providerId = fallbackProviderId;
+    }
+  }
+
+  // Clean up stale service if provider changed
+  if (tab.service && tab.draftModel && tab.service.providerId !== getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>)) {
+    tab.service.cleanup();
+    tab.service = null;
+    tab.serviceInitialized = false;
+  }
+
+  syncTabProviderServices(tab, plugin);
+  tab.ui.slashCommandDropdown?.setHiddenCommands(getTabHiddenCommands(tab, plugin));
+  tab.ui.slashCommandDropdown?.resetSdkSkillsCache();
+  refreshTabProviderUI(tab, plugin);
+  applyProviderUIGating(tab, plugin);
 }
 
 /**
@@ -56,6 +313,7 @@ export interface TabCreateOptions {
  */
 export function createTab(options: TabCreateOptions): TabData {
   const {
+    plugin,
     containerEl,
     conversation,
     tabId,
@@ -66,21 +324,13 @@ export function createTab(options: TabCreateOptions): TabData {
 
   const id = tabId ?? generateTabId();
 
-  // Create per-tab content container (hidden by default)
   const contentEl = containerEl.createDiv({ cls: 'claudian-tab-content' });
   contentEl.style.display = 'none';
 
-  // Create ChatState with callbacks
   const state = new ChatState({
-    onStreamingStateChanged: (isStreaming) => {
-      onStreamingChanged?.(isStreaming);
-    },
-    onAttentionChanged: (needsAttention) => {
-      onAttentionChanged?.(needsAttention);
-    },
-    onConversationChanged: (conversationId) => {
-      onConversationIdChanged?.(conversationId);
-    },
+    onStreamingStateChanged: onStreamingChanged,
+    onAttentionChanged: onAttentionChanged,
+    onConversationChanged: onConversationIdChanged,
   });
 
   // Create subagent manager with no-op callback.
@@ -89,12 +339,21 @@ export function createTab(options: TabCreateOptions): TabData {
   // because StreamController doesn't exist until controllers are initialized.
   const subagentManager = new SubagentManager(() => {});
 
-  // Create DOM structure
   const dom = buildTabDOM(contentEl);
+  state.queueIndicatorEl = dom.queueIndicatorEl;
 
-  // Create initial TabData (service and controllers are lazy-initialized)
+  const isBound = !!conversation?.id;
+  const draftModel = isBound ? null : resolveBlankTabModel(plugin, options.defaultProviderId);
+  const initialProviderId = conversation?.providerId
+    ?? (draftModel
+      ? getProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)
+      : DEFAULT_CHAT_PROVIDER_ID);
+
   const tab: TabData = {
     id,
+    lifecycleState: isBound ? 'bound_cold' : 'blank',
+    draftModel,
+    providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
     service: null,
     serviceInitialized: false,
@@ -121,6 +380,7 @@ export function createTab(options: TabCreateOptions): TabData {
       externalContextSelector: null,
       mcpServerSelector: null,
       permissionToggle: null,
+      serviceTierToggle: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
       bangBashModeManager: null,
@@ -172,30 +432,15 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
  * Builds the DOM structure for a tab.
  */
 function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
-  // Messages wrapper (for scroll-to-bottom button positioning)
   const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
-
-  // Messages area (inside wrapper)
   const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
-
-  // Welcome message placeholder
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
-
-  // Status panel container (fixed between messages and input)
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
-
-  // Input container
   const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
-
-  // Nav row (for tab badges and header icons, populated by ClaudianView)
+  const queueIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-input-queue-row' });
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
-
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
-
-  // Context row inside input wrapper (file chips + selection indicator)
   const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
-
-  // Input textarea
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
     attr: {
@@ -211,6 +456,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     welcomeEl,
     statusPanelContainerEl,
     inputContainerEl,
+    queueIndicatorEl,
     inputWrapper,
     inputEl,
     navRowEl,
@@ -223,72 +469,99 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 }
 
 /**
- * Initializes the tab's ClaudianService (lazy initialization).
- * Call this when the tab becomes active or when the first message is sent.
+ * Initializes the tab's chat runtime for the send path.
  *
- * Session ID resolution:
- * - If tab has conversationId (existing chat) → lookup conversation's sessionId → ensureReady with it
- * - If tab has no conversationId (new chat) → ensureReady without sessionId
+ * This is the ONLY place a runtime is created. Called from:
+ * - ensureServiceInitialized() in InputController.sendMessage()
  *
- * This ensures the single source of truth (tab.conversationId) determines session behavior.
- *
- * Ensures consistent state: if initialization fails, tab.service is null
- * and tab.serviceInitialized remains false for retry.
+ * Session sync is passive (state update only). The runtime is started
+ * on demand by query() inside the send path.
  */
 export async function initializeTabService(
   tab: TabData,
   plugin: ClaudianPlugin,
-  mcpManager: McpServerManager
+  conversationOverride?: Conversation | null,
+): Promise<void>;
+export async function initializeTabService(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  _legacyArg: unknown,
+  conversationOverride?: Conversation | null,
+): Promise<void>;
+export async function initializeTabService(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  argOrOverride?: unknown,
+  maybeOverride?: Conversation | null,
 ): Promise<void> {
-  if (tab.serviceInitialized) {
+  if (tab.lifecycleState === 'closing') {
     return;
   }
 
-  let service: ClaudianService | null = null;
+  // Support legacy 4-arg call sites (3rd arg was previously an MCP manager)
+  const conversationOverride = isConversationLike(argOrOverride)
+    ? argOrOverride
+    : (argOrOverride === null ? null : maybeOverride);
+
+  const conversation = conversationOverride ?? (
+    tab.conversationId
+      ? await plugin.getConversationById(tab.conversationId)
+      : null
+  );
+  const providerId = getTabProviderId(tab, plugin, conversation);
+
+  if (tab.serviceInitialized && tab.service?.providerId === providerId) {
+    return;
+  }
+
+  let service: ChatRuntime | null = null;
   let unsubscribeReadyState: (() => void) | null = null;
+  const previousService = tab.service;
 
   try {
-    // Create per-tab ClaudianService
-    service = new ClaudianService(plugin, mcpManager);
-    unsubscribeReadyState = service.onReadyStateChange((ready) => {
-      tab.ui.modelSelector?.setReady(ready);
-    });
+    if (typeof previousService?.cleanup === 'function') {
+      previousService.cleanup();
+    }
+    tab.service = null;
+    tab.serviceInitialized = false;
+
+    const runtime = ProviderRegistry.createChatRuntime({ plugin, providerId });
+    service = runtime;
+    unsubscribeReadyState = runtime.onReadyStateChange(() => {});
     tab.dom.eventCleanups.push(() => unsubscribeReadyState?.());
 
-    // Resolve session ID and external contexts from conversation if this is an existing chat
-    // Single source of truth: tab.conversationId determines if we have a session to resume
-    let sessionId: string | undefined;
-    let externalContextPaths = plugin.settings.persistentExternalContextPaths || [];
-    if (tab.conversationId) {
-      const conversation = await plugin.getConversationById(tab.conversationId);
+    // Passive sync: set session state without starting the runtime process.
+    // The runtime starts on demand when query() is called.
+    if (conversation) {
+      const hasMessages = conversation.messages.length > 0;
+      const externalContextPaths = hasMessages
+        ? conversation.externalContextPaths || []
+        : (plugin.settings.persistentExternalContextPaths || []);
 
-      if (conversation) {
-        sessionId = service.applyForkState(conversation) ?? undefined;
-
-        const hasMessages = conversation.messages.length > 0;
-        externalContextPaths = hasMessages
-          ? conversation.externalContextPaths || []
-          : (plugin.settings.persistentExternalContextPaths || []);
-      }
+      runtime.syncConversationState(conversation, externalContextPaths);
     }
 
-    // Ensure SDK process is ready
-    // - Existing chat: with sessionId for resume
-    // - New chat: without sessionId
-    service.ensureReady({
-      sessionId,
-      externalContextPaths,
-    }).catch(() => {
-      // Best-effort, ignore failures
-    });
+    // Re-check after async operations — tab may have been closed during init
+    if ((tab as TabData).lifecycleState === 'closing') {
+      unsubscribeReadyState?.();
+      service?.cleanup();
+      return;
+    }
 
-    // Only set tab state after successful initialization
+
+    tab.providerId = providerId;
     tab.service = service;
     tab.serviceInitialized = true;
+
+    // Update lifecycle state
+    if (tab.lifecycleState === 'blank') {
+      tab.draftModel = null;
+    }
+    tab.lifecycleState = 'bound_active';
   } catch (error) {
     // Clean up partial state on failure
     unsubscribeReadyState?.();
-    service?.closePersistentQuery('initialization failed');
+    service?.cleanup();
     tab.service = null;
     tab.serviceInitialized = false;
 
@@ -297,9 +570,13 @@ export async function initializeTabService(
   }
 }
 
-/**
- * Initializes file and image context managers for a tab.
- */
+function isConversationLike(value: unknown): value is Conversation {
+  return !!value
+    && typeof value === 'object'
+    && typeof (value as Conversation).id === 'string'
+    && Array.isArray((value as Conversation).messages);
+}
+
 function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
   const { dom } = tab;
   const app = plugin.app;
@@ -322,8 +599,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
     },
     dom.inputContainerEl
   );
-  tab.ui.fileContextManager.setMcpManager(plugin.mcpManager);
-  tab.ui.fileContextManager.setAgentService(plugin.agentManager);
+  tab.ui.fileContextManager.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
   // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(
@@ -342,15 +618,10 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
   );
 }
 
-/**
- * Initializes slash command dropdown for a tab.
- * @param getSdkCommands Callback to get SDK commands from any ready service (shared across tabs).
- * @param getHiddenCommands Callback to get current hidden commands from settings.
- */
 function initializeSlashCommands(
   tab: TabData,
-  getSdkCommands?: () => Promise<SlashCommand[]>,
-  getHiddenCommands?: () => Set<string>
+  getHiddenCommands?: () => Set<string>,
+  catalogInfo?: { config: ProviderCommandDropdownConfig; getEntries: () => Promise<ProviderCommandEntry[]> } | null,
 ): void {
   const { dom } = tab;
 
@@ -360,10 +631,11 @@ function initializeSlashCommands(
     {
       onSelect: () => {},
       onHide: () => {},
-      getSdkCommands,
     },
     {
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
+      providerConfig: catalogInfo?.config,
+      getProviderEntries: catalogInfo?.getEntries,
     }
   );
 }
@@ -374,8 +646,7 @@ function initializeSlashCommands(
 function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): void {
   const { dom } = tab;
 
-  tab.services.instructionRefineService = new InstructionRefineService(plugin);
-  tab.services.titleGenerationService = new TitleGenerationService(plugin);
+  syncTabProviderServices(tab, plugin);
   tab.ui.instructionModeManager = new InstructionModeManagerClass(
     dom.inputEl,
     {
@@ -387,7 +658,7 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
   );
 
   // Bang bash mode (! command execution)
-  if (plugin.settings.enableBangBash) {
+  if (isBangBashEnabled(plugin.settings as unknown as Record<string, unknown>)) {
     const vaultPath = getVaultPath(plugin.app);
     if (vaultPath) {
       const enhancedPath = getEnhancedPath();
@@ -418,65 +689,131 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
   tab.ui.statusPanel.mount(dom.statusPanelContainerEl);
 }
 
+function isBangBashEnabled(settings: Record<string, unknown>): boolean {
+  return ProviderRegistry.getEnabledProviderIds(settings).some((providerId) => (
+    ProviderRegistry.getChatUIConfig(providerId).isBangBashEnabled?.(settings) ?? false
+  ));
+}
+
 /**
  * Creates and wires the input toolbar for a tab.
  */
-function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
+function initializeInputToolbar(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+  onProviderChanged?: (providerId: ProviderId) => void,
+): void {
   const { dom } = tab;
 
   const inputToolbar = dom.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
+
+  // Blank-tab UI config wrapper that returns mixed model options
+  const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
+    const draftProvider = tab.draftModel
+      ? getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>)
+      : DEFAULT_CHAT_PROVIDER_ID;
+    const baseConfig = ProviderRegistry.getChatUIConfig(draftProvider);
+    return {
+      ...baseConfig,
+      getModelOptions: (settings: Record<string, unknown>) =>
+        getBlankTabModelOptions(settings),
+    };
+  };
+
   const toolbarComponents = createInputToolbar(inputToolbar, {
-    getSettings: () => ({
-      model: plugin.settings.model,
-      thinkingBudget: plugin.settings.thinkingBudget,
-      effortLevel: plugin.settings.effortLevel,
-      permissionMode: plugin.settings.permissionMode,
-      enableOpus1M: plugin.settings.enableOpus1M,
-      enableSonnet1M: plugin.settings.enableSonnet1M,
-    }),
-    getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
-    onModelChange: async (model: ClaudeModel) => {
-      plugin.settings.model = model;
-      const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m) => m.value === model);
-      if (isDefaultModel) {
-        plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
-        if (isAdaptiveThinkingModel(model)) {
-          plugin.settings.effortLevel = DEFAULT_EFFORT_LEVEL[model] ?? 'high';
-        }
-        plugin.settings.lastClaudeModel = model;
-      } else {
-        plugin.settings.lastCustomModel = model;
+    getUIConfig: () => {
+      if (tab.lifecycleState === 'blank') {
+        return blankTabUIConfigProxy();
       }
-      await plugin.saveSettings();
+      return getTabChatUIConfig(tab, plugin);
+    },
+    getCapabilities: () => getTabCapabilities(tab, plugin),
+    getSettings: () => getTabSettingsSnapshot(tab, plugin),
+    getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
+    onModelChange: async (model: string) => {
+      // For blank tabs, update draft model and derive provider
+      if (tab.lifecycleState === 'blank') {
+        const previousProvider = tab.providerId;
+        tab.draftModel = model;
+        const newProvider = getProviderForModel(model, plugin.settings as unknown as Record<string, unknown>);
+        if (tab.service) {
+          cleanupTabRuntime(tab);
+        }
+        tab.providerId = newProvider;
+        if (newProvider !== previousProvider) {
+          syncTabProviderServices(tab, plugin);
+        }
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+        onProviderChanged?.(newProvider);
+
+        // Update settings for the new provider
+        const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
+        await updateTabProviderSettings(tab, plugin, (settings) => {
+          settings.model = model;
+          uiConfig.applyModelDefaults(model, settings);
+        });
+        tab.ui.thinkingBudgetSelector?.updateDisplay();
+        tab.ui.serviceTierToggle?.updateDisplay();
+        tab.ui.modelSelector?.updateDisplay();
+        // Re-render options (provider may have changed reasoning controls)
+        tab.ui.modelSelector?.renderOptions();
+        applyProviderUIGating(tab, plugin);
+        return;
+      }
+
+      // For bound tabs, reject cross-provider model changes
+      const boundProvider = tab.providerId;
+      const modelProvider = getProviderForModel(model, plugin.settings as unknown as Record<string, unknown>);
+      if (modelProvider !== boundProvider) {
+        new Notice('Cannot switch provider on a bound session. Start a new tab instead.');
+        tab.ui.modelSelector?.updateDisplay();
+        return;
+      }
+
+      const uiConfig: ProviderChatUIConfig = getTabChatUIConfig(tab, plugin);
+      const providerSettings = await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.model = model;
+        uiConfig.applyModelDefaults(model, settings);
+      });
       tab.ui.thinkingBudgetSelector?.updateDisplay();
+      tab.ui.serviceTierToggle?.updateDisplay();
       tab.ui.modelSelector?.updateDisplay();
       tab.ui.modelSelector?.renderOptions();
 
       // Recalculate context usage percentage for the new model's context window
       const currentUsage = tab.state.usage;
       if (currentUsage) {
-        const newContextWindow = getContextWindowSize(model, plugin.settings.customContextLimits);
-        const newPercentage = Math.min(100, Math.max(0, Math.round((currentUsage.contextTokens / newContextWindow) * 100)));
-        tab.state.usage = {
-          ...currentUsage,
+        const newContextWindow = uiConfig.getContextWindowSize(
           model,
-          contextWindow: newContextWindow,
-          percentage: newPercentage,
-        };
+          providerSettings.customContextLimits as Record<string, number> | undefined,
+        );
+        tab.state.usage = recalculateUsageForModel(currentUsage, model, newContextWindow);
       }
     },
-    onThinkingBudgetChange: async (budget: ThinkingBudget) => {
-      plugin.settings.thinkingBudget = budget;
-      await plugin.saveSettings();
+    onThinkingBudgetChange: async (budget: string) => {
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.thinkingBudget = budget;
+      });
     },
-    onEffortLevelChange: async (effort: EffortLevel) => {
-      plugin.settings.effortLevel = effort;
-      await plugin.saveSettings();
+    onEffortLevelChange: async (effort: string) => {
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.effortLevel = effort;
+      });
     },
-    onPermissionModeChange: async (mode) => {
-      plugin.settings.permissionMode = mode;
+    onServiceTierChange: async (serviceTier: string) => {
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        settings.serviceTier = serviceTier;
+      });
+      tab.ui.serviceTierToggle?.updateDisplay();
+    },
+    onPermissionModeChange: async (mode: string) => {
+      (plugin.settings as unknown as Record<string, unknown>).permissionMode = mode;
       await plugin.saveSettings();
-      dom.inputWrapper.toggleClass('claudian-input-plan-mode', mode === 'plan');
+      dom.inputWrapper.toggleClass(
+        'claudian-input-plan-mode',
+        mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
+      );
     },
   });
 
@@ -486,8 +823,9 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
   tab.ui.externalContextSelector = toolbarComponents.externalContextSelector;
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
+  tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
 
-  tab.ui.mcpServerSelector.setMcpManager(plugin.mcpManager);
+  tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
   // Sync @-mentions to UI selector
   tab.ui.fileContextManager?.setOnMcpMentionChange((servers) => {
@@ -510,11 +848,15 @@ function initializeInputToolbar(tab: TabData, plugin: ClaudianPlugin): void {
     await plugin.saveSettings();
   });
 
-  dom.inputWrapper.toggleClass('claudian-input-plan-mode', plugin.settings.permissionMode === 'plan');
+  refreshTabProviderUI(tab, plugin);
+
+  // Gate provider-specific UI elements
+  applyProviderUIGating(tab, plugin);
 }
 
 export interface InitializeTabUIOptions {
-  getSdkCommands?: () => Promise<SlashCommand[]>;
+  getProviderCatalogConfig?: () => ProviderCatalogInfo;
+  onProviderChanged?: (providerId: ProviderId) => void;
 }
 
 /**
@@ -535,22 +877,19 @@ export function initializeTabUI(
   dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator' });
   dom.selectionIndicatorEl.style.display = 'none';
 
-  // Browser selection indicator
   dom.browserIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-browser-selection-indicator' });
   dom.browserIndicatorEl.style.display = 'none';
 
-  // Canvas selection indicator
   dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator' });
   dom.canvasIndicatorEl.style.display = 'none';
 
-  // Initialize slash commands with shared SDK commands callback and hidden commands
+  const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
     tab,
-    options.getSdkCommands,
-    () => new Set((plugin.settings.hiddenSlashCommands || []).map(c => c.toLowerCase()))
+    () => getTabHiddenCommands(tab, plugin),
+    catalogInfo,
   );
 
-  // Initialize navigation sidebar
   if (dom.messagesEl.parentElement) {
     tab.ui.navigationSidebar = new NavigationSidebar(
       dom.messagesEl.parentElement,
@@ -558,16 +897,14 @@ export function initializeTabUI(
     );
   }
 
-  // Initialize instruction mode and todo panel
   initializeInstructionAndTodo(tab, plugin);
+  initializeInputToolbar(tab, plugin, options.getProviderCatalogConfig, options.onProviderChanged);
 
-  // Initialize input toolbar
-  initializeInputToolbar(tab, plugin);
-
-  // Update ChatState callbacks for UI updates
   state.callbacks = {
     ...state.callbacks,
-    onUsageChanged: (usage) => tab.ui.contextUsageMeter?.update(usage),
+    onUsageChanged: (usage) => {
+      tab.ui.contextUsageMeter?.update(usage);
+    },
     onTodosChanged: (todos) => tab.ui.statusPanel?.updateTodos(todos),
     onAutoScrollChanged: () => tab.ui.navigationSidebar?.updateVisibility(),
   };
@@ -582,7 +919,9 @@ export function initializeTabUI(
 
 export interface ForkContext {
   messages: ChatMessage[];
+  providerId?: ProviderId;
   sourceSessionId: string;
+  sourceProviderState?: Record<string, unknown>;
   resumeAt: string;
   sourceTitle?: string;
   /** 1-based index used for fork title suffix (counts only non-interrupt user messages). */
@@ -604,7 +943,9 @@ function countUserMessagesForForkTitle(messages: ChatMessage[]): number {
 }
 
 interface ForkSource {
+  providerId?: ProviderId;
   sourceSessionId: string;
+  sourceProviderState?: Record<string, unknown>;
   sourceTitle?: string;
   currentNote?: string;
 }
@@ -615,26 +956,29 @@ interface ForkSource {
  * Shows a notice and returns null when no session can be resolved.
  */
 function resolveForkSource(tab: TabData, plugin: ClaudianPlugin): ForkSource | null {
-  let sourceSessionId = tab.service?.getSessionId() ?? null;
+  const conversation = tab.conversationId
+    ? plugin.getConversationSync(tab.conversationId)
+    : null;
 
-  if (!sourceSessionId && tab.conversationId) {
-    const conversation = plugin.getConversationSync(tab.conversationId);
-    sourceSessionId = conversation?.sdkSessionId ?? conversation?.sessionId ?? conversation?.forkSource?.sessionId ?? null;
-  }
+  // Delegate session ID resolution to the runtime when available;
+  // fall back to persisted conversation metadata when no runtime is active.
+  const sourceSessionId = tab.service
+    ? tab.service.resolveSessionIdForFork(conversation ?? null)
+    : ProviderRegistry
+      .getConversationHistoryService(conversation?.providerId ?? tab.providerId)
+      .resolveSessionIdForConversation(conversation);
 
   if (!sourceSessionId) {
     new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
     return null;
   }
 
-  const sourceConversation = tab.conversationId
-    ? plugin.getConversationSync(tab.conversationId)
-    : undefined;
-
   return {
+    providerId: getTabProviderId(tab, plugin, conversation),
     sourceSessionId,
-    sourceTitle: sourceConversation?.title,
-    currentNote: sourceConversation?.currentNote,
+    sourceProviderState: conversation?.providerState,
+    sourceTitle: conversation?.title,
+    currentNote: conversation?.currentNote,
   };
 }
 
@@ -645,6 +989,11 @@ async function handleForkRequest(
   forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
 ): Promise<void> {
   const { state } = tab;
+
+  if (!getTabCapabilities(tab, plugin).supportsFork) {
+    new Notice('Fork is not supported by this provider.');
+    return;
+  }
 
   if (state.isStreaming) {
     new Notice(t('chat.fork.unavailableStreaming'));
@@ -658,7 +1007,7 @@ async function handleForkRequest(
     return;
   }
 
-  if (!msgs[userIdx].sdkUserUuid) {
+  if (!msgs[userIdx].userMessageId) {
     new Notice(t('chat.fork.unavailableNoUuid'));
     return;
   }
@@ -674,7 +1023,9 @@ async function handleForkRequest(
 
   await forkRequestCallback({
     messages: deepCloneMessages(msgs.slice(0, userIdx)),
+    providerId: source.providerId,
     sourceSessionId: source.sourceSessionId,
+    sourceProviderState: source.sourceProviderState,
     resumeAt: rewindCtx.prevAssistantUuid,
     sourceTitle: source.sourceTitle,
     forkAtUserMessage: countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1)),
@@ -689,6 +1040,11 @@ async function handleForkAll(
 ): Promise<void> {
   const { state } = tab;
 
+  if (!getTabCapabilities(tab, plugin).supportsFork) {
+    new Notice('Fork is not supported by this provider.');
+    return;
+  }
+
   if (state.isStreaming) {
     new Notice(t('chat.fork.unavailableStreaming'));
     return;
@@ -702,8 +1058,8 @@ async function handleForkAll(
 
   let lastAssistantUuid: string | undefined;
   for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'assistant' && msgs[i].sdkAssistantUuid) {
-      lastAssistantUuid = msgs[i].sdkAssistantUuid;
+    if (msgs[i].role === 'assistant' && msgs[i].assistantMessageId) {
+      lastAssistantUuid = msgs[i].assistantMessageId;
       break;
     }
   }
@@ -718,7 +1074,9 @@ async function handleForkAll(
 
   await forkRequestCallback({
     messages: deepCloneMessages(msgs),
+    providerId: source.providerId,
     sourceSessionId: source.sourceSessionId,
+    sourceProviderState: source.sourceProviderState,
     resumeAt: lastAssistantUuid,
     sourceTitle: source.sourceTitle,
     forkAtUserMessage: countUserMessagesForForkTitle(msgs) + 1,
@@ -730,10 +1088,38 @@ export function initializeTabControllers(
   tab: TabData,
   plugin: ClaudianPlugin,
   component: Component,
-  mcpManager: McpServerManager,
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
   openConversation?: (conversationId: string) => Promise<void>,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+): void;
+/** @deprecated Legacy 7-arg overload — 4th arg was previously an MCP manager. */
+export function initializeTabControllers(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  component: Component,
+  _legacyArg: unknown,
+  forkRequestCallback?: (forkContext: ForkContext) => Promise<void>,
+  openConversation?: (conversationId: string) => Promise<void>,
+  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+): void;
+export function initializeTabControllers(
+  tab: TabData,
+  plugin: ClaudianPlugin,
+  component: Component,
+  arg4?: unknown,
+  arg5?: unknown,
+  arg6?: unknown,
+  arg7?: unknown,
 ): void {
+  // Support legacy 7-arg call sites (4th arg was previously an MCP manager)
+  const isLegacy = arg4 !== undefined && typeof arg4 !== 'function';
+  const forkRequestCallback = (isLegacy ? arg5 : arg4) as
+    ((forkContext: ForkContext) => Promise<void>) | undefined;
+  const openConversation = (isLegacy ? arg6 : arg5) as
+    ((conversationId: string) => Promise<void>) | undefined;
+  const getProviderCatalogConfig = (isLegacy ? arg7 : arg6) as
+    (() => ProviderCatalogInfo) | undefined;
+
   const { dom, state, services, ui } = tab;
 
   // Create renderer
@@ -745,6 +1131,7 @@ export function initializeTabControllers(
     forkRequestCallback
       ? (id) => handleForkRequest(tab, plugin, id, forkRequestCallback)
       : undefined,
+    () => getTabCapabilities(tab, plugin),
   );
 
   // Selection controller
@@ -753,10 +1140,10 @@ export function initializeTabControllers(
     dom.selectionIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl)
+    () => autoResizeTextarea(dom.inputEl),
+    dom.contentEl,
   );
 
-  // Browser selection controller
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
     dom.browserIndicatorEl!,
@@ -765,7 +1152,6 @@ export function initializeTabControllers(
     () => autoResizeTextarea(dom.inputEl)
   );
 
-  // Canvas selection controller
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
     plugin.app,
     dom.canvasIndicatorEl!,
@@ -774,7 +1160,6 @@ export function initializeTabControllers(
     () => autoResizeTextarea(dom.inputEl)
   );
 
-  // Stream controller
   tab.controllers.streamController = new StreamController({
     plugin,
     state,
@@ -791,7 +1176,6 @@ export function initializeTabControllers(
   // this callback handles message persistence.
   services.subagentManager.setCallback(
     (subagent) => {
-      // Update messages (DOM already updated by manager)
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
 
       // During active stream, regular end-of-turn save captures latest state.
@@ -803,7 +1187,6 @@ export function initializeTabControllers(
     }
   );
 
-  // Conversation controller
   tab.controllers.conversationController = new ConversationController(
     {
       plugin,
@@ -823,11 +1206,56 @@ export function initializeTabControllers(
       getTitleGenerationService: () => services.titleGenerationService,
       getStatusPanel: () => ui.statusPanel,
       getAgentService: () => tab.service, // Use tab's service instead of plugin's
-    },
-    {}
-  );
+      dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
+      ensureServiceForConversation: async (conversation) => {
+        const nextProviderId = getTabProviderId(tab, plugin, conversation);
+        const providerChanged = tab.providerId !== nextProviderId;
+        tab.providerId = nextProviderId;
 
-  // Input controller - needs the tab's service
+        if (providerChanged) {
+          syncTabProviderServices(tab, plugin);
+        }
+
+        // Bind session state only — runtime starts on send
+        tab.conversationId = conversation?.id ?? null;
+        tab.draftModel = null;
+        tab.lifecycleState = conversation ? 'bound_cold' : 'blank';
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig, conversation);
+
+        // If the runtime already exists for the right provider, sync it passively
+        if (tab.service && tab.service.providerId === nextProviderId && conversation) {
+          const hasMessages = conversation.messages.length > 0;
+          const externalContextPaths = hasMessages
+            ? conversation.externalContextPaths || []
+            : (plugin.settings.persistentExternalContextPaths || []);
+          tab.service.syncConversationState(conversation, externalContextPaths);
+        }
+
+        refreshTabProviderUI(tab, plugin);
+        applyProviderUIGating(tab, plugin);
+      },
+    },
+    {
+      onNewConversation: () => {
+        // Reset to blank state and drop the bound runtime so the next send
+        // reinitializes against the currently selected blank-tab provider.
+        const previousProviderId = tab.providerId;
+        cleanupTabRuntime(tab);
+        tab.lifecycleState = 'blank';
+        tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
+        tab.conversationId = null;
+        tab.providerId = getTabProviderId(tab, plugin);
+        if (tab.providerId !== previousProviderId) {
+          syncTabProviderServices(tab, plugin);
+        }
+        refreshTabProviderUI(tab, plugin);
+        applyProviderUIGating(tab, plugin);
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+      },
+      onConversationLoaded: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
+      onConversationSwitched: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
+    }
+  );
 
   tab.controllers.inputController = new InputController({
     plugin,
@@ -854,20 +1282,30 @@ export function initializeTabControllers(
     resetInputHeight: () => {
       // Per-tab input height is managed by CSS, no dynamic adjustment needed
     },
-    // Override to use tab's service instead of plugin.agentService
     getAgentService: () => tab.service,
     getSubagentManager: () => services.subagentManager,
-    // Lazy initialization: ensure service is ready before first query
-    // initializeTabService() handles session ID resolution from tab.conversationId
+    getTabProviderId: () => getTabProviderId(tab, plugin),
     ensureServiceInitialized: async () => {
-      if (tab.serviceInitialized) {
+      if (tab.serviceInitialized && tab.lifecycleState === 'bound_active') {
         return true;
       }
+
       try {
-        await initializeTabService(tab, plugin, mcpManager);
+        // For blank tabs on first send: derive provider from draft model
+        if (tab.lifecycleState === 'blank' && tab.draftModel) {
+          const derivedProvider = getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>);
+          tab.providerId = derivedProvider;
+        }
+
+        await initializeTabService(tab, plugin);
         setupServiceCallbacks(tab, plugin);
+
+        // Transition: lock model selector to bound provider
+        refreshTabProviderUI(tab, plugin);
+        applyProviderUIGating(tab, plugin);
         return true;
-      } catch {
+      } catch (error) {
+        new Notice(error instanceof Error ? error.message : 'Failed to initialize chat service');
         return false;
       }
     },
@@ -875,9 +1313,15 @@ export function initializeTabControllers(
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
       : undefined,
+    restorePrePlanPermissionModeIfNeeded: () => {
+      if (plugin.settings.permissionMode === 'plan') {
+        const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+        tab.state.prePlanPermissionMode = null;
+        updatePlanModeUI(tab, plugin, restoreMode);
+      }
+    },
   });
 
-  // Navigation controller
   tab.controllers.navigationController = new NavigationController({
     getMessagesEl: () => dom.messagesEl,
     getInputEl: () => dom.inputEl,
@@ -915,7 +1359,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     }
   };
 
-  // Input keydown handler
   const keydownHandler = (e: KeyboardEvent) => {
     if (ui.bangBashModeManager?.isActive()) {
       ui.bangBashModeManager.handleKeydown(e);
@@ -923,18 +1366,16 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    // Check for # trigger first (empty input + # keystroke)
-    if (ui.instructionModeManager?.handleTriggerKey(e)) {
+    if (getTabCapabilities(tab, plugin).supportsInstructionMode && ui.instructionModeManager?.handleTriggerKey(e)) {
       return;
     }
 
-    // Check for ! trigger (empty input + ! keystroke)
     if (ui.bangBashModeManager?.handleTriggerKey(e)) {
       syncBangBashSuppression();
       return;
     }
 
-    if (ui.instructionModeManager?.handleKeydown(e)) {
+    if (getTabCapabilities(tab, plugin).supportsInstructionMode && ui.instructionModeManager?.handleKeydown(e)) {
       return;
     }
 
@@ -957,7 +1398,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    // Enter: Send message
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       void controllers.inputController?.sendMessage();
@@ -966,7 +1406,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   dom.inputEl.addEventListener('keydown', keydownHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
-  // Input change handler (includes auto-resize)
   const inputHandler = () => {
     if (!ui.bangBashModeManager?.isActive()) {
       ui.fileContextManager?.handleInputChange();
@@ -974,18 +1413,18 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     ui.instructionModeManager?.handleInputChange();
     ui.bangBashModeManager?.handleInputChange();
     syncBangBashSuppression();
-    // Auto-resize textarea based on content
     autoResizeTextarea(dom.inputEl);
   };
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));
 
-  // Input focus handler
-  const focusHandler = () => {
+  // Sidebar focus handler — show selection highlight when focus enters the tab from outside
+  const focusHandler = (e: FocusEvent) => {
+    if (e.relatedTarget && dom.contentEl.contains(e.relatedTarget as Node)) return;
     controllers.selectionController?.showHighlight();
   };
-  dom.inputEl.addEventListener('focus', focusHandler);
-  dom.eventCleanups.push(() => dom.inputEl.removeEventListener('focus', focusHandler));
+  dom.contentEl.addEventListener('focusin', focusHandler);
+  dom.eventCleanups.push(() => dom.contentEl.removeEventListener('focusin', focusHandler));
 
   // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   const SCROLL_THRESHOLD = 20; // pixels from bottom to consider "at bottom"
@@ -1062,22 +1501,22 @@ export function deactivateTab(tab: TabData): void {
  * Made async to ensure proper cleanup ordering.
  */
 export async function destroyTab(tab: TabData): Promise<void> {
-  // Stop polling
+  tab.lifecycleState = 'closing';
+
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
   tab.controllers.browserSelectionController?.stop();
   tab.controllers.browserSelectionController?.clear();
   tab.controllers.canvasSelectionController?.stop();
   tab.controllers.canvasSelectionController?.clear();
-
-  // Cleanup navigation controller
   tab.controllers.navigationController?.dispose();
 
-  // Cleanup thinking state
   cleanupThinkingBlock(tab.state.currentThinkingState);
   tab.state.currentThinkingState = null;
 
-  // Cleanup UI components
+  // Dismiss pending inline prompts before DOM teardown
+  tab.controllers.inputController?.dismissPendingApproval();
+
   tab.controllers.inputController?.destroyResumeDropdown();
   tab.ui.fileContextManager?.destroy();
   tab.ui.slashCommandDropdown?.destroy();
@@ -1087,6 +1526,7 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.bangBashModeManager?.destroy();
   tab.ui.bangBashModeManager = null;
   tab.services.instructionRefineService?.cancel();
+  tab.services.instructionRefineService?.resetConversation();
   tab.services.instructionRefineService = null;
   tab.services.titleGenerationService?.cancel();
   tab.services.titleGenerationService = null;
@@ -1095,24 +1535,17 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.navigationSidebar?.destroy();
   tab.ui.navigationSidebar = null;
 
-  // Cleanup subagents
   tab.services.subagentManager.orphanAllActive();
   tab.services.subagentManager.clear();
 
-  // Remove event listeners to prevent memory leaks
   for (const cleanup of tab.dom.eventCleanups) {
     cleanup();
   }
   tab.dom.eventCleanups.length = 0;
 
-  // Close the tab's service
-  // Note: closePersistentQuery is synchronous but we make destroyTab async
-  // for future-proofing and proper cleanup ordering
-  tab.service?.setAutoTurnCallback?.(null);
-  tab.service?.closePersistentQuery('tab closed');
+  // Clean up runtime before removing DOM
+  tab.service?.cleanup();
   tab.service = null;
-
-  // Remove DOM element
   tab.dom.contentEl.remove();
 }
 
@@ -1139,7 +1572,7 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         ?? 'cancel'
     );
     tab.service.setApprovalDismisser(
-      () => tab.controllers.inputController?.dismissPendingApproval()
+      () => tab.controllers.inputController?.dismissPendingApprovalPrompt()
     );
     tab.service.setAskUserQuestionCallback(
       async (input, signal) =>
@@ -1170,11 +1603,11 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         hasRunning: tab.services.subagentManager.hasRunningSubagents(),
       })
     );
-    tab.service.setAutoTurnCallback((chunks: StreamChunk[]) => {
-      renderAutoTriggeredTurn(tab, chunks);
+    tab.service.setAutoTurnCallback((result: AutoTurnResult) => {
+      renderAutoTriggeredTurn(tab, result);
     });
     tab.service.setPermissionModeSyncCallback((sdkMode) => {
-      let mode: PermissionMode;
+      let mode: string;
       if (sdkMode === 'bypassPermissions') mode = 'yolo';
       else if (sdkMode === 'plan') mode = 'plan';
       else mode = 'normal';
@@ -1198,22 +1631,20 @@ function generateMessageId(): string {
  * Renders an auto-triggered turn (e.g., agent response to task-notification)
  * that arrives after the main handler has completed.
  */
-function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
+function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): void {
   if (!tab.dom.contentEl.isConnected) {
     return;
   }
 
+  const { chunks, metadata } = result;
   const hasToolActivity = chunks.some(
     chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result'
   );
   let textContent = '';
-  let sdkAssistantUuid: string | undefined;
 
   for (const chunk of chunks) {
     if (chunk.type === 'text') {
       textContent += chunk.content;
-    } else if (chunk.type === 'sdk_assistant_uuid') {
-      sdkAssistantUuid = chunk.uuid;
     }
   }
 
@@ -1222,12 +1653,12 @@ function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
   const content = textContent.trim() || '(background task completed)';
 
   const assistantMsg: ChatMessage = {
-    id: sdkAssistantUuid ?? generateMessageId(),
+    id: metadata.assistantMessageId ?? generateMessageId(),
     role: 'assistant',
     content,
     timestamp: Date.now(),
     contentBlocks: [{ type: 'text', content }],
-    ...(sdkAssistantUuid && { sdkAssistantUuid }),
+    ...(metadata.assistantMessageId && { assistantMessageId: metadata.assistantMessageId }),
   };
 
   tab.state.addMessage(assistantMsg);
@@ -1235,9 +1666,12 @@ function renderAutoTriggeredTurn(tab: TabData, chunks: StreamChunk[]): void {
   tab.renderer?.scrollToBottom();
 }
 
-export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: PermissionMode): void {
-  plugin.settings.permissionMode = mode;
+export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: string): void {
+  (plugin.settings as unknown as Record<string, unknown>).permissionMode = mode;
   void plugin.saveSettings();
   tab.ui.permissionToggle?.updateDisplay();
-  tab.dom.inputWrapper.toggleClass('claudian-input-plan-mode', mode === 'plan');
+  tab.dom.inputWrapper.toggleClass(
+    'claudian-input-plan-mode',
+    mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
+  );
 }

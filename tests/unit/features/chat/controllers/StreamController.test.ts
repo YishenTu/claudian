@@ -1,56 +1,63 @@
+import '@/providers';
+
 import { createMockEl } from '@test/helpers/mockElement';
 
-import { TOOL_AGENT_OUTPUT, TOOL_TASK, TOOL_TODO_WRITE } from '@/core/tools/toolNames';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import {
+  TOOL_AGENT_OUTPUT,
+  TOOL_SPAWN_AGENT,
+  TOOL_TASK,
+  TOOL_TODO_WRITE,
+  TOOL_WAIT_AGENT,
+} from '@/core/tools/toolNames';
 import type { ChatMessage } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
-jest.mock('@/core/tools', () => {
-  return {
-    extractResolvedAnswers: jest.fn().mockReturnValue(undefined),
-    extractResolvedAnswersFromResultText: jest.fn().mockReturnValue(undefined),
-    parseTodoInput: jest.fn(),
-  };
-});
+jest.mock('@/core/tools/todo', () => ({
+  parseTodoInput: jest.fn(),
+}));
 
-jest.mock('@/features/chat/rendering', () => {
-  return {
-    addSubagentToolCall: jest.fn(),
-    appendThinkingContent: jest.fn(),
-    createAsyncSubagentBlock: jest.fn().mockReturnValue({}),
-    createSubagentBlock: jest.fn().mockReturnValue({
-      info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
-    }),
-    createThinkingBlock: jest.fn().mockReturnValue({
-      container: {},
-      contentEl: {},
-      content: '',
-      startTime: Date.now(),
-    }),
-    createWriteEditBlock: jest.fn().mockReturnValue({}),
-    finalizeAsyncSubagent: jest.fn(),
-    finalizeSubagentBlock: jest.fn(),
-    finalizeThinkingBlock: jest.fn().mockReturnValue(0),
-    finalizeWriteEditBlock: jest.fn(),
-    getToolName: jest.fn().mockReturnValue('Read'),
-    getToolSummary: jest.fn().mockReturnValue('file.md'),
-    isBlockedToolResult: jest.fn().mockReturnValue(false),
-    markAsyncSubagentOrphaned: jest.fn(),
-    renderToolCall: jest.fn(),
-    updateAsyncSubagentRunning: jest.fn(),
-    updateSubagentToolResult: jest.fn(),
-    updateToolCallResult: jest.fn(),
-    updateWriteEditWithDiff: jest.fn(),
-  };
-});
+jest.mock('@/core/tools/toolInput', () => ({
+  extractResolvedAnswers: jest.fn().mockReturnValue(undefined),
+  extractResolvedAnswersFromResultText: jest.fn().mockReturnValue(undefined),
+}));
+
+jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
+  createSubagentBlock: jest.fn().mockReturnValue({
+    info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
+    labelEl: { setText: jest.fn() },
+  }),
+  finalizeSubagentBlock: jest.fn(),
+}));
+
+jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
+  appendThinkingContent: jest.fn(),
+  createThinkingBlock: jest.fn().mockReturnValue({
+    container: {},
+    contentEl: {},
+    content: '',
+    startTime: Date.now(),
+  }),
+  finalizeThinkingBlock: jest.fn().mockReturnValue(0),
+}));
+
+jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
+  getToolName: jest.fn().mockReturnValue('Read'),
+  getToolSummary: jest.fn().mockReturnValue('file.md'),
+  isBlockedToolResult: jest.fn().mockReturnValue(false),
+  renderToolCall: jest.fn(),
+  updateToolCallResult: jest.fn(),
+}));
+
+jest.mock('@/features/chat/rendering/WriteEditRenderer', () => ({
+  createWriteEditBlock: jest.fn().mockReturnValue({}),
+  finalizeWriteEditBlock: jest.fn(),
+  updateWriteEditWithDiff: jest.fn(),
+}));
 
 jest.mock('@/utils/path', () => ({
   getVaultPath: jest.fn().mockReturnValue('/test/vault'),
-}));
-
-jest.mock('@/utils/sdkSession', () => ({
-  loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
-  loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
 }));
 
 function createMockDeps(): StreamControllerDeps {
@@ -58,6 +65,13 @@ function createMockDeps(): StreamControllerDeps {
   const messagesEl = createMockEl();
   const agentService = {
     getSessionId: jest.fn().mockReturnValue('session-1'),
+    loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
+    loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
+    getCapabilities: jest.fn().mockReturnValue({
+      providerId: 'claude',
+      supportsPlanMode: true,
+      planPathPrefix: '/.claude/plans/',
+    }),
   };
   const fileContextManager = {
     markFileBeingEdited: jest.fn(),
@@ -234,7 +248,7 @@ describe('StreamController - Text Content', () => {
     });
   });
 
-  describe('Error and blocked handling', () => {
+  describe('Error and notice handling', () => {
     it('should append error message on error chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentTextEl = createMockEl();
@@ -247,12 +261,12 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.currentTextContent).toContain('Error');
     });
 
-    it('should append blocked message on blocked chunk', async () => {
+    it('should append warning notice on notice chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentTextEl = createMockEl();
 
       await controller.handleStreamChunk(
-        { type: 'blocked', content: 'Tool was blocked' },
+        { type: 'notice', content: 'Tool was blocked', level: 'warning' },
         msg
       );
 
@@ -260,28 +274,13 @@ describe('StreamController - Text Content', () => {
     });
   });
 
-  describe('sdk_assistant_uuid handling', () => {
-    it('should set sdkAssistantUuid on message', async () => {
+  describe('context_compacted handling', () => {
+    it('should record a context_compacted block on the message', async () => {
       const msg = createTestMessage();
 
-      await controller.handleStreamChunk(
-        { type: 'sdk_assistant_uuid', uuid: 'asst-uuid-123' } as any,
-        msg
-      );
+      await controller.handleStreamChunk({ type: 'context_compacted' }, msg);
 
-      expect(msg.sdkAssistantUuid).toBe('asst-uuid-123');
-    });
-
-    it('should overwrite previous sdkAssistantUuid', async () => {
-      const msg = createTestMessage();
-      msg.sdkAssistantUuid = 'old-uuid';
-
-      await controller.handleStreamChunk(
-        { type: 'sdk_assistant_uuid', uuid: 'new-uuid' } as any,
-        msg
-      );
-
-      expect(msg.sdkAssistantUuid).toBe('new-uuid');
+      expect(msg.contentBlocks).toContainEqual({ type: 'context_compacted' });
     });
   });
 
@@ -305,6 +304,20 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
 
       expect(deps.state.usage).toEqual(usage);
+    });
+
+    it('stamps the active provider model onto usage when the provider omits it', async () => {
+      const msg = createTestMessage();
+      const usage = createMockUsage({ model: undefined });
+      const providerSettingsSpy = jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot');
+      providerSettingsSpy.mockReturnValue({ model: 'gpt-5.4' } as any);
+      (deps.getAgentService!() as any).providerId = 'codex';
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toEqual({ ...usage, model: 'gpt-5.4' });
+
+      providerSettingsSpy.mockRestore();
     });
 
     it('should ignore usage from other sessions', async () => {
@@ -332,10 +345,6 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls![0].status).toBe('running');
       expect(msg.contentBlocks).toHaveLength(1);
       expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'tool-1' });
-
-      // Thinking indicator is debounced - advance timer to trigger it
-      jest.advanceTimersByTime(500);
-      expect(deps.updateQueueIndicator).toHaveBeenCalled();
     });
 
     it('should update tool_result status', async () => {
@@ -393,8 +402,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should render TodoWrite inline and update panel', async () => {
-      const { parseTodoInput } = jest.requireMock('@/core/tools');
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { parseTodoInput } = jest.requireMock('@/core/tools/todo');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const mockTodos = [{ content: 'Task 1', status: 'pending', activeForm: 'Working on task 1' }];
       parseTodoInput.mockReturnValue(mockTodos);
 
@@ -428,7 +437,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should flush pending tools before rendering text content', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -451,7 +460,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should flush pending tools before rendering thinking content', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -469,7 +478,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should render pending tool when tool_result arrives before flush', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -492,8 +501,56 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls![0].result).toBe('file contents here');
     });
 
+    it('should render a pending tool on tool_output and append incremental output', async () => {
+      const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'npm test' } },
+        msg
+      );
+
+      expect(deps.state.pendingTools.size).toBe(1);
+
+      await controller.handleStreamChunk(
+        { type: 'tool_output', id: 'bash-1', content: 'line 1\n' },
+        msg
+      );
+
+      expect(deps.state.pendingTools.size).toBe(0);
+      expect(renderToolCall).toHaveBeenCalled();
+      expect(updateToolCallResult).toHaveBeenCalledWith(
+        'bash-1',
+        expect.objectContaining({
+          id: 'bash-1',
+          status: 'running',
+          result: 'line 1\n',
+        }),
+        expect.any(Map)
+      );
+
+      await controller.handleStreamChunk(
+        { type: 'tool_output', id: 'bash-1', content: 'line 2\n' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].status).toBe('running');
+      expect(msg.toolCalls![0].result).toBe('line 1\nline 2\n');
+      expect(updateToolCallResult).toHaveBeenLastCalledWith(
+        'bash-1',
+        expect.objectContaining({
+          id: 'bash-1',
+          status: 'running',
+          result: 'line 1\nline 2\n',
+        }),
+        expect.any(Map)
+      );
+    });
+
     it('should buffer Write tool and use createWriteEditBlock on flush', async () => {
-      const { createWriteEditBlock, renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const { createWriteEditBlock } = jest.requireMock('@/features/chat/rendering/WriteEditRenderer');
       createWriteEditBlock.mockReturnValue({ wrapperEl: createMockEl() });
 
       const msg = createTestMessage();
@@ -520,7 +577,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should buffer Edit tool and use createWriteEditBlock on flush', async () => {
-      const { createWriteEditBlock } = jest.requireMock('@/features/chat/rendering');
+      const { createWriteEditBlock } = jest.requireMock('@/features/chat/rendering/WriteEditRenderer');
       createWriteEditBlock.mockReturnValue({ wrapperEl: createMockEl() });
 
       const msg = createTestMessage();
@@ -542,7 +599,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should flush pending tools before rendering blocked message', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -552,14 +609,14 @@ describe('StreamController - Text Content', () => {
       );
       expect(deps.state.pendingTools.size).toBe(1);
 
-      await controller.handleStreamChunk({ type: 'blocked', content: 'Command blocked' }, msg);
+      await controller.handleStreamChunk({ type: 'notice', content: 'Command blocked', level: 'warning' }, msg);
 
       expect(deps.state.pendingTools.size).toBe(0);
       expect(renderToolCall).toHaveBeenCalled();
     });
 
     it('should flush pending tools before rendering error message', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -576,7 +633,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should flush pending tools before Task tool renders', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -609,7 +666,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should re-parse TodoWrite on input updates when streaming completes', async () => {
-      const { parseTodoInput } = jest.requireMock('@/core/tools');
+      const { parseTodoInput } = jest.requireMock('@/core/tools/todo');
 
       const mockTodos = [
         { content: 'Task 1', status: 'pending', activeForm: 'Working on task 1' },
@@ -735,7 +792,7 @@ describe('StreamController - Text Content', () => {
 
   describe('Tool handling - continued', () => {
     it('should handle multiple pending tools and flush in order', async () => {
-      const { renderToolCall } = jest.requireMock('@/features/chat/rendering');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -799,6 +856,21 @@ describe('StreamController - Text Content', () => {
       const usage = createMockUsage();
 
       await controller.handleStreamChunk({ type: 'usage', usage } as any, msg);
+
+      expect(deps.state.usage).toEqual(usage);
+    });
+
+    it('uses authoritative usage chunks directly', async () => {
+      const msg = createTestMessage();
+      const usage = createMockUsage({
+        model: 'gpt-5.4',
+        contextWindow: 258400,
+        contextWindowIsAuthoritative: true,
+        contextTokens: 129200,
+        percentage: 50,
+      });
+
+      await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
 
       expect(deps.state.usage).toEqual(usage);
     });
@@ -879,23 +951,6 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Subagent chunk handling', () => {
-    it('should ignore subagent chunk with text type (no-op)', async () => {
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce({
-        info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
-      });
-
-      await controller.handleStreamChunk(
-        { type: 'text', content: 'Subagent text', parentToolUseId: 'task-1' } as any,
-        msg
-      );
-
-      // No text appended to main message
-      expect(msg.content).toBe('');
-    });
-
     it('should handle subagent tool_result chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
@@ -906,7 +961,7 @@ describe('StreamController - Text Content', () => {
       });
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'read-1', content: 'file content', parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_result', id: 'read-1', subagentId: 'task-1', content: 'file content' },
         msg
       );
 
@@ -926,7 +981,7 @@ describe('StreamController - Text Content', () => {
       });
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, subagentId: 'task-1' },
         msg
       );
 
@@ -943,7 +998,7 @@ describe('StreamController - Text Content', () => {
       (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValueOnce(undefined);
 
       await controller.handleStreamChunk(
-        { type: 'text', content: 'orphan', parentToolUseId: 'unknown-task' } as any,
+        { type: 'subagent_tool_use', id: 'orphan-read', name: 'Read', input: { file_path: 'test.md' }, subagentId: 'unknown-task' },
         msg
       );
 
@@ -1124,7 +1179,7 @@ describe('StreamController - Text Content', () => {
 
       // Child chunk arrives with parentToolUseId - should trigger render
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, subagentId: 'task-1' },
         msg
       );
 
@@ -1155,7 +1210,7 @@ describe('StreamController - Text Content', () => {
 
       // Child chunk arrives - renderPendingTask returns null but shouldn't crash
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, parentToolUseId: 'task-1' } as any,
+        { type: 'subagent_tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, subagentId: 'task-1' },
         msg
       );
 
@@ -1280,7 +1335,7 @@ describe('StreamController - Text Content', () => {
 
   describe('Text ↔ Thinking transitions', () => {
     it('text arrives while thinking state is active → finalizeCurrentThinkingBlock is called', async () => {
-      const { finalizeThinkingBlock } = jest.requireMock('@/features/chat/rendering');
+      const { finalizeThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1320,7 +1375,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('tool_use arrives while thinking state → finalizeCurrentThinkingBlock is called', async () => {
-      const { finalizeThinkingBlock } = jest.requireMock('@/features/chat/rendering');
+      const { finalizeThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1366,7 +1421,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('Agent output tool result handled via handleAgentOutputToolResult returning true', async () => {
-      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering');
+      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1388,7 +1443,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('hydrates async subagent tool calls from sidecar during streaming completion', async () => {
-      const { loadSubagentToolCalls, loadSubagentFinalResult } = jest.requireMock('@/utils/sdkSession');
+      const runtime = deps.getAgentService!() as any;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1407,7 +1462,7 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
-      loadSubagentToolCalls.mockResolvedValueOnce([
+      runtime.loadSubagentToolCalls.mockResolvedValueOnce([
         {
           id: 'read-1',
           name: 'Read',
@@ -1423,22 +1478,14 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      expect(loadSubagentToolCalls).toHaveBeenCalledWith(
-        '/test/vault',
-        'session-1',
-        'agent-1'
-      );
-      expect(loadSubagentFinalResult).toHaveBeenCalledWith(
-        '/test/vault',
-        'session-1',
-        'agent-1'
-      );
+      expect(runtime.loadSubagentToolCalls).toHaveBeenCalledWith('agent-1');
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledWith('agent-1');
       expect(completedSubagent.toolCalls).toHaveLength(1);
       expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
     });
 
     it('hydrates async subagent final result from sidecar even when tool calls already exist', async () => {
-      const { loadSubagentFinalResult, loadSubagentToolCalls } = jest.requireMock('@/utils/sdkSession');
+      const runtime = deps.getAgentService!() as any;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1466,25 +1513,21 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
-      loadSubagentFinalResult.mockResolvedValueOnce('Recovered final result from sidecar');
+      runtime.loadSubagentFinalResult.mockResolvedValueOnce('Recovered final result from sidecar');
 
       await controller.handleStreamChunk(
         { type: 'tool_result', id: 'agent-out-2', content: 'agent result' },
         msg
       );
 
-      expect(loadSubagentToolCalls).not.toHaveBeenCalled();
-      expect(loadSubagentFinalResult).toHaveBeenCalledWith(
-        '/test/vault',
-        'session-1',
-        'agent-2'
-      );
+      expect(runtime.loadSubagentToolCalls).not.toHaveBeenCalled();
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledWith('agent-2');
       expect(completedSubagent.result).toBe('Recovered final result from sidecar');
       expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
     });
 
     it('does not retry async subagent final result hydration when sidecar matches current result', async () => {
-      const { loadSubagentFinalResult, loadSubagentToolCalls } = jest.requireMock('@/utils/sdkSession');
+      const runtime = deps.getAgentService!() as any;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1512,26 +1555,26 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
-      loadSubagentFinalResult.mockResolvedValueOnce('Already final');
+      runtime.loadSubagentFinalResult.mockResolvedValueOnce('Already final');
 
       await controller.handleStreamChunk(
         { type: 'tool_result', id: 'agent-out-2b', content: 'agent result' },
         msg
       );
 
-      expect(loadSubagentToolCalls).not.toHaveBeenCalled();
-      expect(loadSubagentFinalResult).toHaveBeenCalledTimes(1);
+      expect(runtime.loadSubagentToolCalls).not.toHaveBeenCalled();
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledTimes(1);
       expect(deps.subagentManager.refreshAsyncSubagent).not.toHaveBeenCalled();
 
       jest.advanceTimersByTime(3000);
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(loadSubagentFinalResult).toHaveBeenCalledTimes(1);
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledTimes(1);
     });
 
     it('retries async subagent final result hydration when first sidecar read is stale', async () => {
-      const { loadSubagentFinalResult, loadSubagentToolCalls } = jest.requireMock('@/utils/sdkSession');
+      const runtime = deps.getAgentService!() as any;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1559,7 +1602,7 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
-      loadSubagentFinalResult
+      runtime.loadSubagentFinalResult
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce('Recovered final result after delayed flush');
 
@@ -1568,15 +1611,15 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      expect(loadSubagentToolCalls).not.toHaveBeenCalled();
-      expect(loadSubagentFinalResult).toHaveBeenCalledTimes(1);
+      expect(runtime.loadSubagentToolCalls).not.toHaveBeenCalled();
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledTimes(1);
       expect(deps.subagentManager.refreshAsyncSubagent).not.toHaveBeenCalled();
 
       jest.advanceTimersByTime(200);
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(loadSubagentFinalResult).toHaveBeenCalledTimes(2);
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledTimes(2);
       expect(completedSubagent.result).toBe('Recovered final result after delayed flush');
       expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
     });
@@ -1584,7 +1627,7 @@ describe('StreamController - Text Content', () => {
 
   describe('Tool header update on input re-dispatch', () => {
     it('second tool_use with same id updates existing tool input and header', async () => {
-      const { getToolName, getToolSummary } = jest.requireMock('@/features/chat/rendering');
+      const { getToolName, getToolSummary } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1667,9 +1710,84 @@ describe('StreamController - Text Content', () => {
     });
   });
 
+  describe('Codex subagent lifecycle', () => {
+    it('renders prompt immediately and final result after wait_agent resolves', async () => {
+      const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+      deps.getAgentService = () => ({
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          supportsPlanMode: true,
+          planPathPrefix: '/.codex/plans/',
+        }),
+      }) as any;
+
+      const subagentState = {
+        info: { id: 'spawn-1', description: 'Codex subagent', prompt: '', status: 'running', toolCalls: [] },
+        labelEl: { setText: jest.fn() },
+      };
+      createSubagentBlock.mockReturnValueOnce(subagentState);
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_use',
+          id: 'spawn-1',
+          name: TOOL_SPAWN_AGENT,
+          input: { message: 'Inspect utils.ts and return the final patch summary.', model: 'gpt-5.4-mini' },
+        },
+        msg,
+      );
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_result',
+          id: 'spawn-1',
+          content: '{"agent_id":"agent-1","nickname":"Zeno"}',
+        },
+        msg,
+      );
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_use',
+          id: 'wait-1',
+          name: TOOL_WAIT_AGENT,
+          input: { targets: ['agent-1'], timeout_ms: 30000 },
+        },
+        msg,
+      );
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_result',
+          id: 'wait-1',
+          content: '{"status":{"agent-1":{"completed":"Patched utils.ts and verified imports."}},"timed_out":false}',
+        },
+        msg,
+      );
+
+      expect(createSubagentBlock).toHaveBeenCalledWith(
+        expect.anything(),
+        'spawn-1',
+        expect.objectContaining({
+          description: 'Codex subagent (gpt-5.4-mini)',
+          prompt: 'Inspect utils.ts and return the final patch summary.',
+        }),
+      );
+      expect(subagentState.info.description).toBe('Zeno (gpt-5.4-mini)');
+      expect(finalizeSubagentBlock).toHaveBeenCalledWith(
+        subagentState,
+        'Patched utils.ts and verified imports.',
+        false,
+      );
+    });
+  });
+
   describe('Async task tool result', () => {
     it('tool_result for a pending async task returns true from handleAsyncTaskToolResult', async () => {
-      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering');
+      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1896,7 +2014,7 @@ describe('StreamController - Plan Mode', () => {
 
   describe('blocked detection bypass', () => {
     it('should hydrate AskUserQuestion resolvedAnswers from result text fallback', async () => {
-      const coreTools = jest.requireMock('@/core/tools');
+      const coreTools = jest.requireMock('@/core/tools/toolInput');
       (coreTools.extractResolvedAnswers as jest.Mock).mockReturnValueOnce(undefined);
       (coreTools.extractResolvedAnswersFromResultText as jest.Mock).mockReturnValueOnce({
         'Color?': 'Blue',
@@ -1919,7 +2037,7 @@ describe('StreamController - Plan Mode', () => {
     });
 
     it('should not mark AskUserQuestion as blocked even when result looks blocked', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
 
       const msg = createTestMessage();
@@ -1939,7 +2057,7 @@ describe('StreamController - Plan Mode', () => {
     });
 
     it('should not mark ExitPlanMode as blocked even when result looks blocked', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
 
       const msg = createTestMessage();
@@ -1959,7 +2077,7 @@ describe('StreamController - Plan Mode', () => {
     });
 
     it('should mark regular tool as blocked when result is blocked', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering');
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
 
       const msg = createTestMessage();
@@ -1971,7 +2089,7 @@ describe('StreamController - Plan Mode', () => {
       }];
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'bash-1', content: 'Command blocked by security policy' },
+        { type: 'tool_result', id: 'bash-1', content: 'Access denied by user approval' },
         msg
       );
 

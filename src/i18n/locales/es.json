@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Configuración de Claudian",
-    "customization": "Personalización",
+    "tabs": {
+      "general": "General",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "Pantalla",
+    "conversations": "Conversaciones",
+    "content": "Contenido",
+    "input": "Entrada",
+    "setup": "Configuración",
+    "models": "Modelos",
+    "experimental": "Experimental",
     "userName": {
       "name": "¿Cómo debería Claudian llamarte?",
       "desc": "Tu nombre para saludos personalizados (dejar vacío para saludos genéricos)"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "Comandos y habilidades",
-      "desc": "Define comandos y habilidades personalizados activados por /nombre."
+      "desc": "Administra comandos y habilidades a nivel de vault almacenados en .claude/commands/ y .claude/skills/. Activados por /nombre."
     },
     "hiddenSlashCommands": {
       "name": "Comandos ocultos",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "Servidores MCP",
-      "desc": "Configura servidores Model Context Protocol para extender las capacidades de Claude con herramientas y fuentes de datos externas. Los servidores con modo de guardado de contexto requieren @mention para activarse."
+      "desc": "Administra configuraciones de servidores MCP a nivel de vault almacenadas en .claude/mcp.json. Los servidores con modo de guardado de contexto requieren @mention para activarse."
     },
     "plugins": {
       "name": "Plugins de Claude Code",
-      "desc": "Habilita o deshabilita plugins de Claude Code descubiertos desde ~/.claude/plugins. Los plugins habilitados se almacenan por bóveda."
+      "desc": "Administra plugins de Claude Code descubiertos desde ~/.claude/plugins. Los plugins habilitados se almacenan por vault en .claude/settings.json."
     },
     "subagents": {
       "name": "Subagentes",
-      "desc": "Configura subagentes personalizados a los que Claude puede delegar.",
+      "desc": "Administra subagentes a nivel de vault almacenados en .claude/agents/. Cada archivo Markdown define un agente personalizado.",
       "noAgents": "No hay subagentes configurados. Haz clic en + para crear uno.",
       "deleteConfirm": "¿Eliminar el subagente \"{name}\"?",
       "saveFailed": "No se pudo guardar el subagente: {message}",
@@ -192,24 +203,13 @@
       "name": "Cargar configuración de usuario Claude",
       "desc": "Carga ~/.claude/settings.json. Cuando está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
     },
-    "enableBlocklist": {
-      "name": "Habilitar lista negra de comandos",
-      "desc": "Bloquea comandos bash potencialmente peligrosos"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "Permitir acceso externo",
-      "desc": "Permite el acceso a archivos y comandos fuera del directorio del vault. Se aplica inmediatamente a todas las sesiones activas. Desactivar la restricción del vault puede exponer archivos sensibles a inyección de prompts."
-    },
-    "blockedCommands": {
-      "name": "Comandos bloqueados ({platform})",
-      "desc": "Patrones a bloquear en {platform} (uno por línea). Soporta expresiones regulares.",
-      "unixName": "Comandos bloqueados (Unix/Git Bash)",
-      "unixDesc": "Los patrones Unix también se bloquean en Windows porque Git Bash puede invocarlos."
-    },
-    "exportPaths": {
-      "name": "Rutas de exportación permitidas",
-      "desc": "Destinos de solo escritura fuera del vault cuando el acceso externo está desactivado (uno por línea). Admite ~ para el directorio personal.",
-      "disabledDesc": "Se ignora mientras el acceso externo esté activado. Desactiva el acceso externo para aplicar rutas de exportación de solo escritura."
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "Entorno",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
     },
-    "advanced": "Avanzado",
     "enableOpus1M": {
       "name": "Ventana de contexto Opus 1M",
       "desc": "Mostrar Opus 1M en el selector de modelos. Incluido en planes Max, Team y Enterprise. Usuarios de API y Pro necesitan uso adicional."

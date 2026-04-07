@@ -1,12 +1,17 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import type * as fsType from 'fs';
+import type * as osType from 'os';
+import type * as pathType from 'path';
 
+const fs = jest.requireActual<typeof fsType>('fs');
+const os = jest.requireActual<typeof osType>('os');
+const path = jest.requireActual<typeof pathType>('path');
+
+import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import {
   expandHomePath,
-  findClaudeCLIPath,
   getPathAccessType,
   isPathInAllowedExportPaths,
+  isPathWithinDirectory,
   isPathWithinVault,
   normalizePathForComparison,
   normalizePathForFilesystem,
@@ -294,6 +299,32 @@ describe('isPathWithinVault', () => {
   });
 });
 
+describe('isPathWithinDirectory', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('expands home paths before checking containment', () => {
+    jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+
+    expect(isPathWithinDirectory('~/.claude/settings.json', '/home/test/.claude', '/vault')).toBe(true);
+  });
+
+  it('blocks symlink escapes from the allowed directory', () => {
+    const realpathMock = jest.fn((input: fsType.PathLike) => {
+      const value = String(input);
+      if (value === '/home/test/.claude') return '/home/test/.claude';
+      if (value === '/home/test/.claude/skills/link') return '/home/test/.ssh';
+      return path.resolve(value);
+    });
+
+    (fs.realpathSync as any) = realpathMock;
+    (fs.realpathSync as any).native = realpathMock;
+
+    expect(isPathWithinDirectory('/home/test/.claude/skills/link', '/home/test/.claude', '/vault')).toBe(false);
+  });
+});
+
 describe('normalizePathForVault', () => {
   const vaultPath = path.resolve('/tmp/test-vault');
 
@@ -454,7 +485,6 @@ describe('getPathAccessType', () => {
     expect(getPathAccessType(candidate, [], [], vaultPath, cwdPath)).toBe('vault');
   });
 });
-
 describe('findClaudeCLIPath', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -475,7 +505,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === claudePath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === claudePath }) as fs.Stats
+      p => ({ isFile: () => String(p) === claudePath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath(isWindows ? 'C:\\custom\\bin' : '/custom/bin');
@@ -494,7 +524,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === commonPath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === commonPath }) as fs.Stats
+      p => ({ isFile: () => String(p) === commonPath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -511,7 +541,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === cliJsPath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === cliJsPath }) as fs.Stats
+      p => ({ isFile: () => String(p) === cliJsPath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -527,7 +557,7 @@ describe('findClaudeCLIPath', () => {
       p => String(p) === envClaudePath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === envClaudePath }) as fs.Stats
+      p => ({ isFile: () => String(p) === envClaudePath }) as fsType.Stats
     );
 
     try {
@@ -583,7 +613,7 @@ describe('findClaudeCLIPath', () => {
       return [];
     }) as typeof fs.readdirSync);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fs.Stats
+      () => ({ isFile: () => true }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -621,7 +651,7 @@ describe('findClaudeCLIPath', () => {
       return [];
     }) as typeof fs.readdirSync);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fs.Stats
+      () => ({ isFile: () => true }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
@@ -707,13 +737,5 @@ describe('expandHomePath - Windows environment variable formats', () => {
       if (original === undefined) delete process.env.MY_CI_VAR;
       else process.env.MY_CI_VAR = original;
     }
-  });
-});
-
-describe('getPathAccessType - edge cases', () => {
-  const vaultPath = path.resolve('/tmp/test-vault');
-
-  it('returns none when no root matches the candidate', () => {
-    expect(getPathAccessType('/outside/path', ['  '], ['  '], vaultPath)).toBe('none');
   });
 });

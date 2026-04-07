@@ -1,11 +1,13 @@
 import { Notice } from 'obsidian';
 
-import type { ClaudianService } from '../../../core/agent';
-import type { McpServerManager } from '../../../core/mcp';
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
+import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommand } from '../../../core/types';
-import { t } from '../../../i18n';
+import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
+import { getTabProviderId } from './providerResolution';
 import {
   activateTab,
   createTab,
@@ -14,9 +16,7 @@ import {
   type ForkContext,
   getTabTitle,
   initializeTabControllers,
-  initializeTabService,
   initializeTabUI,
-  setupServiceCallbacks,
   wireTabInputEvents,
 } from './Tab';
 import {
@@ -33,12 +33,17 @@ import {
   type TabManagerViewHost,
 } from './types';
 
+function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
+  return !!value
+    && typeof value === 'object'
+    && 'getTabManager' in (value as Record<string, unknown>);
+}
+
 /**
  * TabManager coordinates multiple chat tabs.
  */
 export class TabManager implements TabManagerInterface {
   private plugin: ClaudianPlugin;
-  private mcpManager: McpServerManager;
   private containerEl: HTMLElement;
   private view: TabManagerViewHost;
 
@@ -60,16 +65,36 @@ export class TabManager implements TabManagerInterface {
 
   constructor(
     plugin: ClaudianPlugin,
-    mcpManager: McpServerManager,
     containerEl: HTMLElement,
     view: TabManagerViewHost,
-    callbacks: TabManagerCallbacks = {}
+    callbacks?: TabManagerCallbacks,
+  );
+  constructor(
+    plugin: ClaudianPlugin,
+    legacyArg: unknown,
+    containerEl: HTMLElement,
+    view: TabManagerViewHost,
+    callbacks?: TabManagerCallbacks,
+  );
+  constructor(
+    plugin: ClaudianPlugin,
+    arg2: HTMLElement | unknown,
+    arg3: HTMLElement | TabManagerViewHost,
+    arg4?: TabManagerViewHost | TabManagerCallbacks,
+    arg5: TabManagerCallbacks = {},
   ) {
     this.plugin = plugin;
-    this.mcpManager = mcpManager;
-    this.containerEl = containerEl;
-    this.view = view;
-    this.callbacks = callbacks;
+
+    if (isTabManagerViewHost(arg3)) {
+      this.containerEl = arg2 as HTMLElement;
+      this.view = arg3;
+      this.callbacks = (arg4 as TabManagerCallbacks | undefined) ?? {};
+      return;
+    }
+
+    this.containerEl = arg3 as HTMLElement;
+    this.view = arg4 as TabManagerViewHost;
+    this.callbacks = arg5;
   }
 
   // ============================================
@@ -92,12 +117,18 @@ export class TabManager implements TabManagerInterface {
       ? await this.plugin.getConversationById(conversationId)
       : undefined;
 
+    // Inherit the active tab's provider so the new blank tab picks up its model
+    const activeTab = this.getActiveTab();
+    const defaultProviderId = conversation
+      ? undefined
+      : (activeTab ? getTabProviderId(activeTab, this.plugin) : undefined);
+
     const tab = createTab({
       plugin: this.plugin,
-      mcpManager: this.mcpManager,
       containerEl: this.containerEl,
       conversation: conversation ?? undefined,
       tabId,
+      defaultProviderId,
       onStreamingChanged: (isStreaming) => {
         this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
       },
@@ -114,19 +145,21 @@ export class TabManager implements TabManagerInterface {
       },
     });
 
-    // Initialize UI components with shared SDK commands callback
+    // Initialize UI components with provider catalog
     initializeTabUI(tab, this.plugin, {
-      getSdkCommands: () => this.getSdkCommands(),
+      getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
+      onProviderChanged: (providerId) => {
+        this.callbacks.onTabProviderChanged?.(tab.id, providerId);
+      },
     });
 
-    // Initialize controllers (pass mcpManager for lazy service initialization)
     initializeTabControllers(
       tab,
       this.plugin,
       this.view,
-      this.mcpManager,
       (forkContext) => this.handleForkRequest(forkContext),
       (conversationId) => this.openConversation(conversationId),
+      () => this.getProviderCatalogConfig(tab),
     );
 
     // Wire input event handlers
@@ -172,24 +205,19 @@ export class TabManager implements TabManagerInterface {
       this.activeTabId = tabId;
       activateTab(tab);
 
-      // Service initialization is now truly lazy - happens on first query via
-      // ensureServiceInitialized() in InputController.sendMessage()
-
       // Load conversation if not already loaded
       if (tab.conversationId && tab.state.messages.length === 0) {
         await tab.controllers.conversationController?.switchTo(tab.conversationId);
       } else if (tab.conversationId && tab.state.messages.length > 0 && tab.service) {
-        // Tab already has messages loaded - sync service session to conversation
-        // This handles the case where user switches between tabs with different sessions
-        const conversation = await this.plugin.getConversationById(tab.conversationId);
+        // Tab already has messages loaded and runtime exists — passive sync only
+        const conversation = this.plugin.getConversationSync(tab.conversationId);
         if (conversation) {
           const hasMessages = conversation.messages.length > 0;
           const externalContextPaths = hasMessages
             ? conversation.externalContextPaths || []
             : (this.plugin.settings.persistentExternalContextPaths || []);
 
-          const resolvedSessionId = tab.service.applyForkState(conversation);
-          tab.service.setSessionId(resolvedSessionId, externalContextPaths);
+          tab.service.syncConversationState(conversation, externalContextPaths);
         }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
@@ -220,8 +248,7 @@ export class TabManager implements TabManagerInterface {
     }
 
     // If this is the last tab and it's already empty (no conversation),
-    // don't close it - it's already a fresh session with a warm service.
-    // Closing and recreating would waste the pre-warmed connection.
+    // don't close it - it's already a blank draft container.
     if (this.tabs.size === 1 && !tab.conversationId && tab.state.messages.length === 0) {
       return false;
     }
@@ -250,18 +277,11 @@ export class TabManager implements TabManagerInterface {
 
         if (fallbackTabId && this.tabs.has(fallbackTabId)) {
           await this.switchToTab(fallbackTabId);
-
-          // If this is now the only tab and it's not warm, pre-warm immediately
-          // User expects the active tab to be ready for chat
-          if (this.tabs.size === 1) {
-            await this.initializeActiveTabService();
-          }
+          // No pre-warm: replacement tabs stay cold until send
         }
       } else {
-        // Create a new empty tab and pre-warm immediately
-        // This is the only tab, so it should be ready for chat
+        // Create a replacement blank tab (stays cold)
         await this.createTab();
-        await this.initializeActiveTabService();
       }
     }
 
@@ -438,18 +458,25 @@ export class TabManager implements TabManagerInterface {
   }
 
   private async createForkConversation(context: ForkContext): Promise<string> {
-    const conversation = await this.plugin.createConversation();
+    const conversation = await this.plugin.createConversation({
+      providerId: context.providerId,
+    });
 
     const title = context.sourceTitle
       ? this.buildForkTitle(context.sourceTitle, context.forkAtUserMessage)
       : undefined;
 
+    const forkProviderState = ProviderRegistry
+      .getConversationHistoryService(conversation.providerId)
+      .buildForkProviderState(
+        context.sourceSessionId,
+        context.resumeAt,
+        context.sourceProviderState,
+      );
+
     await this.plugin.updateConversation(conversation.id, {
       messages: context.messages,
-      forkSource: { sessionId: context.sourceSessionId, resumeAt: context.resumeAt },
-      // Prevent immediate SDK message load from merging duplicates with the copied messages.
-      // This is in-memory only (not persisted in metadata).
-      sdkMessagesLoaded: true,
+      providerState: forkProviderState,
       ...(title && { title }),
       ...(context.currentNote && { currentNote: context.currentNote }),
     });
@@ -523,28 +550,7 @@ export class TabManager implements TabManagerInterface {
       await this.createTab();
     }
 
-    // Pre-initialize the active tab's service so it's ready immediately
-    // Other tabs stay lazy until first query
-    await this.initializeActiveTabService();
-  }
-
-  /**
-   * Initializes the active tab's service if not already done.
-   * Called after restore to ensure the visible tab is ready immediately.
-   */
-  private async initializeActiveTabService(): Promise<void> {
-    const activeTab = this.getActiveTab();
-    if (!activeTab || activeTab.serviceInitialized) {
-      return;
-    }
-
-    try {
-      // initializeTabService() handles session ID resolution from tab.conversationId
-      await initializeTabService(activeTab, this.plugin, this.mcpManager);
-      setupServiceCallbacks(activeTab, this.plugin);
-    } catch {
-      // Non-fatal - service will be initialized on first query
-    }
+    // No pre-warm: all tabs stay cold until first send
   }
 
   // ============================================
@@ -552,18 +558,64 @@ export class TabManager implements TabManagerInterface {
   // ============================================
 
   /**
-   * Gets SDK supported commands from any ready service.
-   * The command list is the same for all tabs, so we just need one ready service.
+   * Gets provider-scoped SDK supported commands for a tab.
+   * Reuses a ready runtime from the same provider when available to avoid
+   * leaking commands across providers in mixed-provider workspaces.
    * @returns Array of SDK commands, or empty array if no service is ready.
    */
-  async getSdkCommands(): Promise<SlashCommand[]> {
-    // Find any tab with a ready service
-    for (const tab of this.tabs.values()) {
-      if (tab.service?.isReady()) {
-        return tab.service.getSupportedCommands();
+  async getSdkCommands(tabId?: TabId): Promise<SlashCommand[]> {
+    const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
+    if (!targetTab) {
+      return [];
+    }
+
+    const providerId = getTabProviderId(targetTab, this.plugin);
+    const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
+    if (!staticCapabilities.supportsProviderCommands) {
+      return [];
+    }
+
+    let sdkCommands: SlashCommand[] = [];
+
+    const targetService = targetTab.service;
+    if (targetService?.providerId === providerId && targetService.isReady()) {
+      sdkCommands = await targetService.getSupportedCommands();
+    } else {
+      for (const tab of this.tabs.values()) {
+        if (tab.id === targetTab.id) {
+          continue;
+        }
+        if (tab.service?.providerId === providerId && tab.service.isReady()) {
+          sdkCommands = await tab.service.getSupportedCommands();
+          break;
+        }
       }
     }
-    return [];
+
+    const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
+    if (catalog) {
+      catalog.setRuntimeCommands(sdkCommands);
+    }
+
+    return sdkCommands;
+  }
+
+  // ============================================
+  // Provider Command Catalog
+  // ============================================
+
+  private getProviderCatalogConfig(tab: TabData) {
+    const providerId = getTabProviderId(tab, this.plugin);
+    const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
+    if (!catalog) return null;
+
+    return {
+      config: catalog.getDropdownConfig(),
+      getEntries: async () => {
+        await this.getSdkCommands(tab.id);
+        return catalog.listDropdownEntries({ includeBuiltIns: false });
+      },
+    };
   }
 
   // ============================================
@@ -571,11 +623,11 @@ export class TabManager implements TabManagerInterface {
   // ============================================
 
   /**
-   * Broadcasts a function call to all tabs' ClaudianService instances.
+   * Broadcasts a function call to all initialized tab runtimes.
    * Used by settings managers to apply configuration changes to all tabs.
-   * @param fn Function to call on each service.
+   * @param fn Function to call on each runtime.
    */
-  async broadcastToAllTabs(fn: (service: ClaudianService) => Promise<void>): Promise<void> {
+  async broadcastToAllTabs(fn: (service: ChatRuntime) => Promise<void>): Promise<void> {
     const promises: Promise<void>[] = [];
 
     for (const tab of this.tabs.values()) {
@@ -597,15 +649,15 @@ export class TabManager implements TabManagerInterface {
 
   /** Destroys all tabs and cleans up resources. */
   async destroy(): Promise<void> {
-    // Save all conversations
-    for (const tab of this.tabs.values()) {
-      await tab.controllers.conversationController?.save();
-    }
+    // Save all conversations in parallel (independent per-tab)
+    await Promise.all(
+      Array.from(this.tabs.values()).map(
+        tab => tab.controllers.conversationController?.save() ?? Promise.resolve()
+      )
+    );
 
-    // Destroy all tabs (async for proper cleanup)
-    for (const tab of this.tabs.values()) {
-      await destroyTab(tab);
-    }
+    // Destroy all tabs in parallel (independent per-tab, must run after saves complete)
+    await Promise.all(Array.from(this.tabs.values()).map(tab => destroyTab(tab)));
 
     this.tabs.clear();
     this.activeTabId = null;

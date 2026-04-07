@@ -10,7 +10,7 @@ export class NavigationSidebar {
   private prevBtn: HTMLElement;
   private nextBtn: HTMLElement;
   private bottomBtn: HTMLElement;
-  private scrollHandler: () => void;
+  private scrollHandler: () => void = () => {};
 
   constructor(
     private parentEl: HTMLElement,

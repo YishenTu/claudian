@@ -9,6 +9,11 @@
   margin: -3px 0;
 }
 
+/* Preview mode selection highlight via CSS Custom Highlight API */
+::highlight(claudian-selection) {
+  background: var(--text-selection);
+}
+
 /* CM6 widget container - ensure transparent background */
 .cm-widgetBuffer,
 .cm-line:has(.claudian-inline-input-container) {

@@ -1,17 +1,7 @@
-/**
- * Claudian - Path Utilities
- *
- * Path resolution, validation, and access control for vault operations.
- */
-
 import * as fs from 'fs';
 import type { App } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
-
-// ============================================
-// Vault Path
-// ============================================
 
 export function getVaultPath(app: App): string | null {
   const adapter = app.vault.adapter;
@@ -20,10 +10,6 @@ export function getVaultPath(app: App): string | null {
   }
   return null;
 }
-
-// ============================================
-// Home Path Expansion
-// ============================================
 
 function getEnvValue(key: string): string | undefined {
   const hasKey = (name: string) => Object.prototype.hasOwnProperty.call(process.env, name);
@@ -86,10 +72,6 @@ function expandEnvironmentVariables(value: string): string {
   return expanded;
 }
 
-/**
- * Expands home directory notation to absolute path.
- * Handles both ~/path and ~\path formats.
- */
 export function expandHomePath(p: string): string {
   const expanded = expandEnvironmentVariables(p);
   if (expanded === '~') {
@@ -103,10 +85,6 @@ export function expandHomePath(p: string): string {
   }
   return expanded;
 }
-
-// ============================================
-// Claude CLI Detection
-// ============================================
 
 function stripSurroundingQuotes(value: string): string {
   if (
@@ -136,163 +114,7 @@ export function parsePathEntries(pathValue?: string): string[] {
     .map(segment => translateMsysPath(expandHomePath(segment)));
 }
 
-function dedupePaths(entries: string[]): string[] {
-  const seen = new Set<string>();
-  return entries.filter(entry => {
-    const key = process.platform === 'win32' ? entry.toLowerCase() : entry;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
 
-function findFirstExistingPath(entries: string[], candidates: string[]): string | null {
-  for (const dir of entries) {
-    if (!dir) continue;
-    for (const candidate of candidates) {
-      const fullPath = path.join(dir, candidate);
-      if (isExistingFile(fullPath)) {
-        return fullPath;
-      }
-    }
-  }
-  return null;
-}
-
-function isExistingFile(filePath: string): boolean {
-  try {
-    if (fs.existsSync(filePath)) {
-      const stat = fs.statSync(filePath);
-      return stat.isFile();
-    }
-  } catch {
-    // Inaccessible path
-  }
-  return false;
-}
-
-function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | null {
-  const directCandidate = path.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-  if (isExistingFile(directCandidate)) {
-    return directCandidate;
-  }
-
-  const baseName = path.basename(entry).toLowerCase();
-  if (baseName === 'bin') {
-    const prefix = path.dirname(entry);
-    const candidate = isWindows
-      ? path.join(prefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      : path.join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-    if (isExistingFile(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function resolveCliJsFromPathEntries(entries: string[], isWindows: boolean): string | null {
-  for (const entry of entries) {
-    const candidate = resolveCliJsNearPathEntry(entry, isWindows);
-    if (candidate) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function resolveClaudeFromPathEntries(
-  entries: string[],
-  isWindows: boolean
-): string | null {
-  if (entries.length === 0) {
-    return null;
-  }
-
-  if (!isWindows) {
-    const unixCandidate = findFirstExistingPath(entries, ['claude']);
-    return unixCandidate;
-  }
-
-  const exeCandidate = findFirstExistingPath(entries, ['claude.exe', 'claude']);
-  if (exeCandidate) {
-    return exeCandidate;
-  }
-
-  const cliJsCandidate = resolveCliJsFromPathEntries(entries, isWindows);
-  if (cliJsCandidate) {
-    return cliJsCandidate;
-  }
-
-  return null;
-}
-
-function getNpmGlobalPrefix(): string | null {
-  if (process.env.npm_config_prefix) {
-    return process.env.npm_config_prefix;
-  }
-
-  if (process.platform === 'win32') {
-    const appDataNpm = process.env.APPDATA
-      ? path.join(process.env.APPDATA, 'npm')
-      : null;
-    if (appDataNpm && fs.existsSync(appDataNpm)) {
-      return appDataNpm;
-    }
-  }
-
-  return null;
-}
-
-function getNpmCliJsPaths(): string[] {
-  const homeDir = os.homedir();
-  const isWindows = process.platform === 'win32';
-  const cliJsPaths: string[] = [];
-
-  if (isWindows) {
-    cliJsPaths.push(
-      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    );
-
-    const npmPrefix = getNpmGlobalPrefix();
-    if (npmPrefix) {
-      cliJsPaths.push(
-        path.join(npmPrefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
-    }
-
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-
-    cliJsPaths.push(
-      path.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      path.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    );
-
-    cliJsPaths.push(
-      path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    );
-  } else {
-    cliJsPaths.push(
-      path.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-      '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'
-    );
-
-    if (process.env.npm_config_prefix) {
-      cliJsPaths.push(
-        path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
-    }
-  }
-
-  return cliJsPaths;
-}
-
-/**
- * Resolves an nvm alias to a version string by following the alias chain.
- * e.g., "default" → "lts/*" → "lts/jod" → "v22.18.0" → "22"
- */
 const NVM_LATEST_INSTALLED_ALIASES = new Set(['node', 'stable']);
 
 function isNvmBuiltInLatestAlias(alias: string): boolean {
@@ -314,7 +136,6 @@ function findMatchingNvmVersion(entries: string[], resolvedAlias: string): strin
 function resolveNvmAlias(nvmDir: string, alias: string, depth = 0): string | null {
   if (depth > 5) return null;
 
-  // If it looks like a version already (e.g., "v22.18.0" or "22"), return it
   if (/^\d/.test(alias) || alias.startsWith('v')) return alias;
   if (isNvmBuiltInLatestAlias(alias)) return alias;
 
@@ -328,11 +149,8 @@ function resolveNvmAlias(nvmDir: string, alias: string, depth = 0): string | nul
   }
 }
 
-/**
- * Resolves the bin directory for nvm's default Node version from the filesystem.
- * GUI apps don't have NVM_BIN set, so we read ~/.nvm/alias/default and match
- * against installed versions in ~/.nvm/versions/node/.
- */
+// GUI apps don't have NVM_BIN set, so we resolve nvm's default alias
+// from the filesystem and match against installed versions.
 export function resolveNvmDefaultBin(home: string): string | null {
   const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
 
@@ -355,110 +173,14 @@ export function resolveNvmDefaultBin(home: string): string | null {
       if (fs.existsSync(binDir)) return binDir;
     }
   } catch {
-    // Expected when nvm is not installed
+    // nvm not installed
   }
 
   return null;
 }
 
-export function findClaudeCLIPath(pathValue?: string): string | null {
-  const homeDir = os.homedir();
-  const isWindows = process.platform === 'win32';
-
-  const customEntries = dedupePaths(parsePathEntries(pathValue));
-
-  if (customEntries.length > 0) {
-    const customResolution = resolveClaudeFromPathEntries(customEntries, isWindows);
-    if (customResolution) {
-      return customResolution;
-    }
-  }
-
-  // On Windows, prefer native .exe, then cli.js. Avoid .cmd fallback
-  // because it requires shell: true and breaks SDK stdio streaming.
-  if (isWindows) {
-    const exePaths: string[] = [
-      path.join(homeDir, '.claude', 'local', 'claude.exe'),
-      path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
-      path.join(homeDir, '.local', 'bin', 'claude.exe'),
-    ];
-
-    for (const p of exePaths) {
-      if (isExistingFile(p)) {
-        return p;
-      }
-    }
-
-    const cliJsPaths = getNpmCliJsPaths();
-    for (const p of cliJsPaths) {
-      if (isExistingFile(p)) {
-        return p;
-      }
-    }
-
-  }
-
-  const commonPaths: string[] = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    path.join(homeDir, '.volta', 'bin', 'claude'),
-    path.join(homeDir, '.asdf', 'shims', 'claude'),
-    path.join(homeDir, '.asdf', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-    path.join(homeDir, '.npm-global', 'bin', 'claude'),
-  ];
-
-  const npmPrefix = getNpmGlobalPrefix();
-  if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
-  }
-
-  // NVM: resolve default version bin when NVM_BIN env var is not available (GUI apps)
-  const nvmBin = resolveNvmDefaultBin(homeDir);
-  if (nvmBin) {
-    commonPaths.push(path.join(nvmBin, 'claude'));
-  }
-
-  for (const p of commonPaths) {
-    if (isExistingFile(p)) {
-      return p;
-    }
-  }
-
-  if (!isWindows) {
-    const cliJsPaths = getNpmCliJsPaths();
-    for (const p of cliJsPaths) {
-      if (isExistingFile(p)) {
-        return p;
-      }
-    }
-  }
-
-  const envEntries = dedupePaths(parsePathEntries(getEnvValue('PATH')));
-  if (envEntries.length > 0) {
-    const envResolution = resolveClaudeFromPathEntries(envEntries, isWindows);
-    if (envResolution) {
-      return envResolution;
-    }
-  }
-
-  return null;
-}
-
-// ============================================
-// Path Resolution
-// ============================================
-
-/**
- * Best-effort realpath that stays symlink-aware even when the target does not exist.
- *
- * If the full path doesn't exist, resolve the nearest existing ancestor via realpath
- * and then re-append the remaining path segments.
- */
+// Best-effort realpath: if the full path doesn't exist, resolve the nearest
+// existing ancestor and re-append the remaining segments.
 function resolveRealPath(p: string): string {
   const realpathFn = (fs.realpathSync.native ?? fs.realpathSync) as (path: fs.PathLike) => string;
 
@@ -469,8 +191,7 @@ function resolveRealPath(p: string): string {
     let current = absolute;
     const suffix: string[] = [];
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
+    for (;;) {
       try {
         if (fs.existsSync(current)) {
           const resolvedExisting = realpathFn(current);
@@ -479,7 +200,7 @@ function resolveRealPath(p: string): string {
             : resolvedExisting;
         }
       } catch {
-        // Ignore and keep walking up the directory tree.
+        // Keep walking up
       }
 
       const parent = path.dirname(current);
@@ -493,39 +214,25 @@ function resolveRealPath(p: string): string {
   }
 }
 
-/**
- * Translates MSYS/Git Bash paths to Windows paths.
- * E.g., /c/Users/... → C:\Users\...
- *
- * This must be called BEFORE path.resolve() or path.isAbsolute() checks,
- * as those functions don't recognize MSYS-style drive paths.
- */
+// Translates MSYS/Git Bash paths (/c/Users/...) to Windows paths (C:\Users\...).
+// Must be called before path.resolve() or path.isAbsolute().
 export function translateMsysPath(value: string): string {
   if (process.platform !== 'win32') {
     return value;
   }
 
-  // Match /c/... or /C/... (single letter drive)
   const msysMatch = value.match(/^\/([a-zA-Z])(\/.*)?$/);
   if (msysMatch) {
     const driveLetter = msysMatch[1].toUpperCase();
     const restOfPath = msysMatch[2] ?? '';
-    // Convert forward slashes to backslashes for the rest of the path
     return `${driveLetter}:${restOfPath.replace(/\//g, '\\')}`;
   }
 
   return value;
 }
 
-/**
- * Normalizes a path for cross-platform use before resolution.
- * Handles MSYS path translation and home directory expansion.
- * Call this before path.resolve() or path.isAbsolute() checks.
- */
 function normalizePathBeforeResolution(p: string): string {
-  // First expand environment variables and home path
   const expanded = expandHomePath(p);
-  // Then translate MSYS paths on Windows (must happen before path.resolve)
   return translateMsysPath(expanded);
 }
 
@@ -534,7 +241,6 @@ function normalizeWindowsPathPrefix(value: string): string {
     return value;
   }
 
-  // First translate MSYS/Git Bash paths
   const normalized = translateMsysPath(value);
 
   if (normalized.startsWith('\\\\?\\UNC\\')) {
@@ -548,70 +254,74 @@ function normalizeWindowsPathPrefix(value: string): string {
   return normalized;
 }
 
-/**
- * Normalizes a path for filesystem operations (expand env/home, translate MSYS, strip Windows prefixes).
- * This is the main entry point for path normalization before file operations.
- */
 export function normalizePathForFilesystem(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
   const expanded = normalizePathBeforeResolution(value);
-  let normalized = expanded;
-
-  try {
-    normalized = process.platform === 'win32'
-      ? path.win32.normalize(expanded)
-      : path.normalize(expanded);
-  } catch {
-    normalized = expanded;
-  }
+  const normalized = (() => {
+    try {
+      return process.platform === 'win32'
+        ? path.win32.normalize(expanded)
+        : path.normalize(expanded);
+    } catch {
+      return expanded;
+    }
+  })();
 
   return normalizeWindowsPathPrefix(normalized);
 }
 
-/**
- * Normalizes a path for comparison (case-insensitive on Windows, slashes normalized, trailing slash removed).
- * This is the main entry point for path comparisons and should be used consistently across modules.
- */
 export function normalizePathForComparison(value: string): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
 
   const expanded = normalizePathBeforeResolution(value);
-  let normalized = expanded;
+  const normalized = (() => {
+    try {
+      return process.platform === 'win32'
+        ? path.win32.normalize(expanded)
+        : path.normalize(expanded);
+    } catch {
+      return expanded;
+    }
+  })();
 
-  try {
-    normalized = process.platform === 'win32'
-      ? path.win32.normalize(expanded)
-      : path.normalize(expanded);
-  } catch {
-    normalized = expanded;
-  }
+  const normalizedWithPrefix = normalizeWindowsPathPrefix(normalized)
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '');
 
-  normalized = normalizeWindowsPathPrefix(normalized);
-  normalized = normalized.replace(/\\/g, '/').replace(/\/+$/, '');
-
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  return process.platform === 'win32'
+    ? normalizedWithPrefix.toLowerCase()
+    : normalizedWithPrefix;
 }
 
-// ============================================
-// Path Access Control
-// ============================================
+export function isPathWithinDirectory(
+  candidatePath: string,
+  directoryPath: string,
+  relativeBasePath?: string,
+): boolean {
+  if (!candidatePath || !directoryPath) {
+    return false;
+  }
 
-export function isPathWithinVault(candidatePath: string, vaultPath: string): boolean {
-  const vaultReal = normalizePathForComparison(resolveRealPath(vaultPath));
+  const directoryReal = normalizePathForComparison(resolveRealPath(directoryPath));
+  const normalizedCandidate = normalizePathForFilesystem(candidatePath);
+  if (!normalizedCandidate) {
+    return false;
+  }
 
-  const normalizedPath = normalizePathBeforeResolution(candidatePath);
-
-  const absCandidate = path.isAbsolute(normalizedPath)
-    ? normalizedPath
-    : path.resolve(vaultPath, normalizedPath);
+  const absCandidate = path.isAbsolute(normalizedCandidate)
+    ? normalizedCandidate
+    : path.resolve(relativeBasePath ?? directoryPath, normalizedCandidate);
 
   const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
+  return resolvedCandidate === directoryReal || resolvedCandidate.startsWith(directoryReal + '/');
+}
 
-  return resolvedCandidate === vaultReal || resolvedCandidate.startsWith(vaultReal + '/');
+export function isPathWithinVault(candidatePath: string, vaultPath: string): boolean {
+  return isPathWithinDirectory(candidatePath, vaultPath, vaultPath);
 }
 
 export function normalizePathForVault(

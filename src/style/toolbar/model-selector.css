@@ -10,13 +10,8 @@
   padding: 4px 8px;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--text-muted);
-  font-size: 12px;
-  transition: color 0.2s ease;
-}
-
-.claudian-model-btn.ready {
   color: var(--claudian-brand);
+  font-size: 12px;
 }
 
 .claudian-model-label {
@@ -58,7 +53,31 @@
   visibility: visible;
 }
 
+.claudian-model-group {
+  padding: 3px 8px;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+.claudian-model-group:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 6px;
+}
+
+.claudian-model-provider-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .claudian-model-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 8px;
   cursor: pointer;
   font-size: 12px;

@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { encodeClaudeTurn } from '@/providers/claude/prompt/ClaudeTurnEncoder';
 import { ResumeSessionDropdown } from '@/shared/components/ResumeSessionDropdown';
 
 jest.mock('@/shared/components/ResumeSessionDropdown', () => ({
@@ -54,17 +55,40 @@ async function* createMockStream(chunks: any[]) {
   }
 }
 
+const mockMcpForEncoder = {
+  extractMentions: jest.fn().mockReturnValue(new Set<string>()),
+  transformMentions: jest.fn().mockImplementation((text: string) => text),
+};
+
 function createMockAgentService() {
   return {
+    providerId: 'claude',
+    getCapabilities: jest.fn().mockReturnValue({
+      providerId: 'claude',
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: true,
+      supportsRewind: true,
+      supportsFork: true,
+      supportsProviderCommands: true,
+      supportsTurnSteer: false,
+      reasoningControl: 'effort',
+    }),
+    prepareTurn: jest.fn().mockImplementation((request: any) =>
+      encodeClaudeTurn(request, mockMcpForEncoder),
+    ),
     query: jest.fn(),
+    steer: jest.fn().mockResolvedValue(true),
     cancel: jest.fn(),
     resetSession: jest.fn(),
+    setResumeCheckpoint: jest.fn(),
     setApprovedPlanContent: jest.fn(),
     setCurrentPlanFilePath: jest.fn(),
     getApprovedPlanContent: jest.fn().mockReturnValue(null),
     clearApprovedPlanContent: jest.fn(),
     ensureReady: jest.fn().mockResolvedValue(true),
     getSessionId: jest.fn().mockReturnValue(null),
+    consumeTurnMetadata: jest.fn().mockReturnValue({}),
   };
 }
 
@@ -97,9 +121,6 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     plugin: {
       saveSettings: jest.fn(),
       settings: {
-        slashCommands: [],
-        blockedCommands: { unix: [], windows: [] },
-        enableBlocklist: true,
         permissionMode: 'yolo',
         enableAutoTitleGeneration: true,
       },
@@ -119,6 +140,8 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
         querySelector: jest.fn().mockReturnValue(createMockEl()),
       }),
       refreshActionButtons: jest.fn(),
+      removeMessage: jest.fn(),
+      updateLiveUserMessage: jest.fn(),
     } as any,
     streamController: {
       showThinkingIndicator: jest.fn(),
@@ -214,7 +237,6 @@ describe('InputController - Message Queue', () => {
         editorContext: null,
         browserContext: null,
         canvasContext: null,
-        hidden: undefined,
       });
       expect(inputEl.value).toBe('');
     });
@@ -235,7 +257,6 @@ describe('InputController - Message Queue', () => {
         editorContext: null,
         browserContext: null,
         canvasContext: null,
-        hidden: undefined,
       });
       expect(imageContextManager.clearImages).toHaveBeenCalled();
     });
@@ -314,8 +335,8 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      expect(queueIndicatorEl.setText).toHaveBeenCalledWith('⌙ Queued: test message');
-      expect(queueIndicatorEl.style.display).toBe('block');
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent).toBe('⌙ Queued: test message');
+      expect(queueIndicatorEl.style.display).toBe('flex');
     });
 
     it('should hide queue indicator when no message is queued', () => {
@@ -334,8 +355,8 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      const call = queueIndicatorEl.setText.mock.calls[0][0] as string;
-      expect(call).toContain('...');
+      const text = queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent as string;
+      expect(text).toContain('...');
     });
 
     it('should include [images] when queue message has images', () => {
@@ -345,9 +366,9 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      const call = queueIndicatorEl.setText.mock.calls[0][0] as string;
-      expect(call).toContain('queued content');
-      expect(call).toContain('[images]');
+      const text = queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent as string;
+      expect(text).toContain('queued content');
+      expect(text).toContain('[images]');
     });
 
     it('should show [images] when queue message has only images', () => {
@@ -357,7 +378,428 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
-      expect(queueIndicatorEl.setText).toHaveBeenCalledWith('⌙ Queued: [images]');
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent).toBe('⌙ Queued: [images]');
+    });
+
+    it('should show Codex steer action when queued message can be steered', () => {
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = { content: 'queued content', images: undefined, editorContext: null, canvasContext: null };
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.textContent).toBe('Steer Now');
+    });
+
+    it('should steer the queued Codex message when the action is clicked', async () => {
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: 'queued follow-up' },
+        persistedContent: 'queued follow-up',
+        prompt: 'queued follow-up',
+        isCompact: false,
+        mcpMentions: new Set(),
+      });
+      mockAgentService.steer = jest.fn().mockResolvedValue(true);
+
+      deps.state.isStreaming = true;
+      deps.state.messages = [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'original',
+          displayContent: 'original',
+          timestamp: Date.now(),
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+        },
+      ];
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mockAgentService.prepareTurn).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'queued follow-up',
+      }));
+      expect(mockAgentService.steer).toHaveBeenCalled();
+      expect(deps.state.queuedMessage).toBeNull();
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-text')?.textContent)
+        .toBe('⌙ Steering: queued follow-up');
+      expect(queueIndicatorEl.querySelector('.claudian-queue-indicator-action')).toBeNull();
+      expect(queueIndicatorEl.style.display).toBe('flex');
+      expect(deps.state.messages).toHaveLength(2);
+      expect(deps.state.messages[0]).toMatchObject({
+        id: 'user-1',
+        role: 'user',
+        content: 'original',
+        displayContent: 'original',
+      });
+      expect((deps.renderer as any).addMessage).not.toHaveBeenCalled();
+      expect((deps.renderer as any).updateLiveUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('should restore the queued message when steering fails', async () => {
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: 'queued follow-up' },
+        persistedContent: 'queued follow-up',
+        prompt: 'queued follow-up',
+        isCompact: false,
+        mcpMentions: new Set(),
+      });
+      mockAgentService.steer = jest.fn().mockRejectedValue(new Error('boom'));
+
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.state.queuedMessage).toEqual({
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      });
+      expect(mockNotice).toHaveBeenCalledWith(
+        'Failed to steer the queued Codex message. It is still available.',
+      );
+    });
+
+    it('should not mark the current note as sent when steering is rejected', async () => {
+      const fileContextManager = createMockFileContextManager();
+      (fileContextManager.getCurrentNotePath as jest.Mock).mockReturnValue('notes/session.md');
+      (fileContextManager.shouldSendCurrentNote as jest.Mock).mockReturnValue(true);
+      deps = createSendableDeps({
+        getFileContextManager: () => fileContextManager as any,
+      });
+
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: 'queued follow-up', currentNotePath: 'notes/session.md' },
+        persistedContent: 'queued follow-up',
+        prompt: 'queued follow-up',
+        isCompact: false,
+        mcpMentions: new Set(),
+      });
+      mockAgentService.steer = jest.fn().mockResolvedValue(false);
+
+      deps.state.isStreaming = true;
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller = new InputController(deps);
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(fileContextManager.markCurrentNoteSent).not.toHaveBeenCalled();
+      expect(deps.state.queuedMessage).toEqual({
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      });
+    });
+
+    it('should route subsequent live chunks to a new assistant bubble after steering', async () => {
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request: {
+          ...request,
+          currentNotePath: 'notes/steer.md',
+        },
+        persistedContent: 'persisted steer prompt',
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions: new Set(),
+      }));
+      mockAgentService.steer = jest.fn().mockResolvedValue(true);
+
+      let releaseSecondChunk: () => void = () => {
+        throw new Error('Second chunk gate was not initialized');
+      };
+      const secondChunkGate = new Promise<void>((resolve) => {
+        releaseSecondChunk = () => resolve();
+      });
+      const firstChunkHandled = new Promise<void>((resolve) => {
+        let handledCount = 0;
+        (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async () => {
+          handledCount += 1;
+          if (handledCount === 1) {
+            resolve();
+          }
+        });
+      });
+
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        return (async function* () {
+          yield { type: 'user_message_start', content: 'first prompt', itemId: 'user-1' };
+          yield { type: 'assistant_message_start', itemId: 'assistant-1' };
+          yield { type: 'text', content: 'partial' };
+          await secondChunkGate;
+          yield { type: 'user_message_start', content: 'steer prompt', itemId: 'user-2' };
+          yield { type: 'thinking', content: 'thinking after steer' };
+          yield { type: 'assistant_message_start', itemId: 'assistant-2' };
+          yield { type: 'text', content: 'after steer' };
+          yield { type: 'done' };
+        })();
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'first prompt';
+      controller = new InputController(deps);
+
+      const sendPromise = controller.sendMessage();
+      await firstChunkHandled;
+
+      deps.state.queuedMessage = {
+        content: 'steer prompt',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.state.messages).toHaveLength(2);
+
+      const firstAssistant = deps.state.messages[1];
+
+      releaseSecondChunk();
+      await sendPromise;
+
+      expect(deps.state.messages).toHaveLength(4);
+      const steerUser = deps.state.messages[2];
+      const secondAssistant = deps.state.messages[3];
+      expect(steerUser).toMatchObject({
+        role: 'user',
+        content: 'persisted steer prompt',
+        displayContent: 'steer prompt',
+        currentNote: 'notes/steer.md',
+      });
+      expect(secondAssistant).toMatchObject({
+        role: 'assistant',
+      });
+
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        1,
+        { type: 'text', content: 'partial' },
+        firstAssistant,
+      );
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        2,
+        { type: 'thinking', content: 'thinking after steer' },
+        secondAssistant,
+      );
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        3,
+        { type: 'text', content: 'after steer' },
+        secondAssistant,
+      );
+      expect(deps.streamController.finalizeCurrentThinkingBlock).toHaveBeenCalledWith(firstAssistant);
+      expect(deps.streamController.finalizeCurrentTextBlock).toHaveBeenCalledWith(firstAssistant);
+      expect(queueIndicatorEl.style.display).toBe('none');
+    });
+
+    it('should discard the empty assistant placeholder when steer lands before assistant output', async () => {
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: true,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: false,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request: {
+          ...request,
+          currentNotePath: 'notes/steer.md',
+        },
+        persistedContent: request.text === 'steer prompt'
+          ? 'persisted steer prompt'
+          : request.text,
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions: new Set(),
+      }));
+      mockAgentService.steer = jest.fn().mockResolvedValue(true);
+
+      let releaseSecondChunk: () => void = () => {
+        throw new Error('Second chunk gate was not initialized');
+      };
+      const secondChunkGate = new Promise<void>((resolve) => {
+        releaseSecondChunk = () => resolve();
+      });
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        return (async function* () {
+          yield { type: 'user_message_start', content: 'first prompt', itemId: 'user-1' };
+          await secondChunkGate;
+          yield { type: 'user_message_start', content: 'steer prompt', itemId: 'user-2' };
+          yield { type: 'assistant_message_start', itemId: 'assistant-2' };
+          yield { type: 'text', content: 'after steer' };
+          yield { type: 'done' };
+        })();
+      });
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content += chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'first prompt';
+      controller = new InputController(deps);
+
+      const sendPromise = controller.sendMessage();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.state.messages).toHaveLength(2);
+      const discardedAssistant = deps.state.messages[1];
+
+      deps.state.queuedMessage = {
+        content: 'steer prompt',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      queueIndicatorEl.querySelector('.claudian-queue-indicator-action')?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      releaseSecondChunk();
+      await sendPromise;
+
+      expect((deps.renderer as any).removeMessage).toHaveBeenCalledWith(discardedAssistant.id);
+      expect(deps.state.messages).toHaveLength(3);
+      expect(deps.state.messages.map((message) => message.role)).toEqual(['user', 'user', 'assistant']);
+      expect(deps.state.messages[1]).toMatchObject({
+        content: 'persisted steer prompt',
+        displayContent: 'steer prompt',
+        currentNote: 'notes/steer.md',
+      });
+      expect(deps.state.messages[2]).toMatchObject({
+        role: 'assistant',
+        content: 'after steer',
+      });
+      expect(deps.streamController.handleStreamChunk).toHaveBeenCalledTimes(2);
+      expect(deps.streamController.handleStreamChunk).toHaveBeenNthCalledWith(
+        1,
+        { type: 'text', content: 'after steer' },
+        deps.state.messages[2],
+      );
     });
   });
 
@@ -382,6 +824,25 @@ describe('InputController - Message Queue', () => {
 
       expect(deps.state.queuedMessage).toBeNull();
       expect(deps.state.cancelRequested).toBe(true);
+      expect((deps as any).mockAgentService.cancel).toHaveBeenCalled();
+    });
+
+    it('should restore a pending steer message to input on cancel', () => {
+      deps.state.isStreaming = true;
+      (controller as any).pendingSteerMessage = {
+        content: 'steered follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      (controller as any).steerInFlight = true;
+
+      controller.cancelStreaming();
+
+      expect(inputEl.value).toBe('steered follow-up');
+      expect(deps.state.queuedMessage).toBeNull();
+      expect((deps.state.queueIndicatorEl as any).style.display).toBe('none');
       expect((deps as any).mockAgentService.cancel).toHaveBeenCalled();
     });
 
@@ -419,10 +880,31 @@ describe('InputController - Message Queue', () => {
       expect(deps.state.messages[0].images).toBeUndefined();
       expect(imageContextManager.clearImages).toHaveBeenCalled();
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'Test Title');
-      // No sdk_user_sent in stream → save without clearing resumeSessionAt
+      // No user_message_sent in stream → save without clearing resumeAtMessageId
       expect(deps.conversationController.save).toHaveBeenCalledWith(true, undefined);
       expect((deps as any).mockAgentService.query).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
+    });
+
+    it('should persist replay-safe user content instead of transport-only prompt', async () => {
+      deps = createSendableDeps();
+      (deps as any).mockAgentService.prepareTurn = jest.fn().mockReturnValue({
+        request: { text: '@server-a hello' },
+        persistedContent: '@server-a hello',
+        prompt: '@server-a MCP hello',
+        isCompact: false,
+        mcpMentions: new Set(['server-a']),
+      });
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = '@server-a hello';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.state.messages[0].content).toBe('@server-a hello');
+      expect(deps.state.messages[0].content).not.toBe('@server-a MCP hello');
     });
 
     it('should prepend current note only once per session', async () => {
@@ -437,8 +919,8 @@ describe('InputController - Message Queue', () => {
       };
 
       deps.getFileContextManager = () => fileContextManager as any;
-      (deps as any).mockAgentService.query = jest.fn().mockImplementation((prompt: string) => {
-        prompts.push(prompt);
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation((turn: any) => {
+        prompts.push(turn.prompt);
         return createMockStream([{ type: 'done' }]);
       });
 
@@ -452,11 +934,41 @@ describe('InputController - Message Queue', () => {
       expect(prompts[1]).not.toContain('<current_note>');
     });
 
+    it('should not persist currentNote metadata for /compact turns', async () => {
+      const fileContextManager = {
+        startSession: jest.fn(),
+        getCurrentNotePath: jest.fn().mockReturnValue('notes/session.md'),
+        shouldSendCurrentNote: jest.fn().mockReturnValue(true),
+        markCurrentNoteSent: jest.fn(),
+        transformContextMentions: jest.fn().mockImplementation((text: string) => text),
+      };
+
+      deps = createSendableDeps({
+        getFileContextManager: () => fileContextManager as any,
+      });
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = '/compact';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.state.messages[0].content).toBe('/compact');
+      expect(deps.state.messages[0].currentNote).toBeUndefined();
+    });
+
     it('should include MCP options in query when mentions are present', async () => {
       const mcpMentions = new Set(['server-a']);
       const enabledServers = new Set(['server-b']);
 
-      deps.plugin.mcpManager.extractMentions = jest.fn().mockReturnValue(mcpMentions);
+      (deps as any).mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request,
+        persistedContent: request.text,
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions,
+      }));
       deps.getMcpServerSelector = () => ({
         getEnabledServers: () => enabledServers,
       }) as any;
@@ -466,10 +978,10 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
+      const prepareTurnCall = ((deps as any).mockAgentService.prepareTurn as jest.Mock).mock.calls[0];
+      expect(prepareTurnCall[0].enabledMcpServers).toBe(enabledServers);
       const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
-      const queryOptions = queryCall[3];
-      expect(queryOptions.mcpMentions).toBe(mcpMentions);
-      expect(queryOptions.enabledMcpServers).toBe(enabledServers);
+      expect(queryCall[0].mcpMentions).toBe(mcpMentions);
     });
 
     it('should append browser selection context when available', async () => {
@@ -486,9 +998,9 @@ describe('InputController - Message Queue', () => {
       });
       const localController = new InputController(localDeps);
 
-      mockAgentService.query.mockImplementation((prompt: string) => {
-        expect(prompt).toContain('<browser_selection source="surfing-view" title="Surfing">');
-        expect(prompt).toContain('selected from browser');
+      mockAgentService.query.mockImplementation((turn: any) => {
+        expect(turn.prompt).toContain('<browser_selection source="surfing-view" title="Surfing">');
+        expect(turn.prompt).toContain('selected from browser');
         return createMockStream([{ type: 'done' }]);
       });
 
@@ -628,6 +1140,70 @@ describe('InputController - Message Queue', () => {
       const callArgs = mockTitleService.generateTitle.mock.calls[0];
       expect(callArgs[0]).toBe('conv-1');
       expect(callArgs[1]).toContain('Hello world');
+    });
+
+    it('should lazily create the conversation with the active runtime provider', async () => {
+      const sendableDeps = createSendableDeps({}, null);
+      sendableDeps.mockAgentService.providerId = 'codex';
+      deps = sendableDeps;
+      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({ id: 'conv-codex', providerId: 'codex' });
+
+      (sendableDeps.mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response text' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
+        providerId: 'codex',
+        sessionId: undefined,
+      });
+    });
+
+    it('should prefer the blank-tab provider over a stale runtime when lazily creating a conversation', async () => {
+      const sendableDeps = createSendableDeps({
+        getTabProviderId: () => 'claude',
+      }, null);
+      sendableDeps.mockAgentService.providerId = 'codex';
+      deps = sendableDeps;
+      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({ id: 'conv-claude', providerId: 'claude' });
+
+      (sendableDeps.mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([
+          { type: 'text', content: 'Response text' },
+          { type: 'done' },
+        ])
+      );
+
+      (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk, msg) => {
+        if (chunk.type === 'text') {
+          msg.content = chunk.content;
+        }
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Hello world';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
+        providerId: 'claude',
+        sessionId: undefined,
+      });
     });
 
     it('should not overwrite user-renamed title in callback', async () => {
@@ -854,6 +1430,35 @@ describe('InputController - Message Queue', () => {
       mockNotice.mockClear();
     });
 
+    it('should work on codex tabs', async () => {
+      const mockExternalContextSelector = {
+        getExternalContexts: jest.fn().mockReturnValue([]),
+        addExternalContext: jest.fn().mockReturnValue({ success: true, normalizedPath: '/some/path' }),
+      };
+      deps.getExternalContextSelector = () => mockExternalContextSelector;
+      deps.getAgentService = () => ({
+        ...(deps as any).mockAgentService,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          supportsPersistentRuntime: true,
+          supportsNativeHistory: true,
+          supportsPlanMode: false,
+          supportsRewind: false,
+          supportsFork: false,
+          supportsProviderCommands: false,
+          reasoningControl: 'effort',
+        }),
+      } as any);
+      inputEl.value = '/add-dir /some/path';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockExternalContextSelector.addExternalContext).toHaveBeenCalledWith('/some/path');
+      expect(mockNotice).toHaveBeenCalledWith('Added external context: /some/path');
+    });
+
     it('should show error notice when external context selector is not available', async () => {
       deps.getExternalContextSelector = () => null;
       inputEl.value = '/add-dir /some/path';
@@ -984,6 +1589,30 @@ describe('InputController - Message Queue', () => {
         destroy: jest.fn(),
       };
       (ResumeSessionDropdown as jest.Mock).mockImplementation(() => mockDropdownInstance);
+    });
+
+    it('should reject /resume when the provider lacks native history support', async () => {
+      deps.getAgentService = () => ({
+        ...(deps as any).mockAgentService,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          supportsPersistentRuntime: true,
+          supportsNativeHistory: false,
+          supportsPlanMode: false,
+          supportsRewind: false,
+          supportsFork: false,
+          supportsProviderCommands: false,
+          reasoningControl: 'effort',
+        }),
+      } as any);
+      inputEl.value = '/resume';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('/resume is not supported by this provider.');
+      expect(ResumeSessionDropdown).not.toHaveBeenCalled();
     });
 
     it('should show notice when no conversations exist', async () => {
@@ -1392,9 +2021,8 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
-      const queryOptions = queryCall[3];
-      expect(queryOptions.externalContextPaths).toEqual(externalPaths);
+      const prepareTurnCall = ((deps as any).mockAgentService.prepareTurn as jest.Mock).mock.calls[0];
+      expect(prepareTurnCall[0].externalContextPaths).toEqual(externalPaths);
     });
   });
 
@@ -1420,7 +2048,7 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
-      const promptSent = queryCall[0];
+      const promptSent = queryCall[0].prompt;
       expect(promptSent).toContain('selected text content');
       expect(promptSent).toContain('test/note.md');
     });
@@ -1447,7 +2075,7 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
-      const promptSent = queryCall[0];
+      const promptSent = queryCall[0].prompt;
       expect(promptSent).toContain('<editor_selection path="test/note.md">\n  selected text\nsecond line  \n</editor_selection>');
       expect(promptSent).not.toContain('lines=');
     });
@@ -1462,7 +2090,7 @@ describe('InputController - Message Queue', () => {
       // Directly call the private method since there's no public API to trigger unknown commands
       controller = new InputController(deps);
 
-      await (controller as any).executeBuiltInCommand('nonexistent-command', '');
+      await (controller as any).executeBuiltInCommand({ action: 'nonexistent-command', name: 'nonexistent-command' }, '');
 
       expect(mockNotice).toHaveBeenCalledWith('Unknown command: nonexistent-command');
     });
@@ -1641,6 +2269,92 @@ describe('InputController - Message Queue', () => {
 
       controller.dismissPendingApproval();
       await approvalPromise;
+    });
+
+    it('should render provider-supplied approval options and network-specific context', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: 'curl https://api.openai.com' },
+        'Allow https access to api.openai.com',
+        {
+          networkApprovalContext: { host: 'api.openai.com', protocol: 'https' },
+          decisionOptions: [
+            { label: 'Allow once', decision: 'allow' },
+            {
+              label: 'Allow similar commands',
+              description: 'Approve and store an exec policy amendment.',
+              decision: {
+                type: 'allow-with-exec-policy-amendment',
+                execPolicyAmendment: ['curl', 'https://api.openai.com/*'],
+              },
+            },
+            { label: 'Deny', decision: 'deny' },
+          ],
+        } as any,
+      );
+
+      const descEl = parentEl.querySelector('claudian-ask-approval-desc');
+      expect(descEl?.textContent).toContain('api.openai.com');
+
+      const items = parentEl.querySelectorAll('claudian-ask-item');
+      const labels = items
+        .map((item: any) => item.querySelector('claudian-ask-item-label')?.textContent)
+        .filter(Boolean);
+      expect(labels).toEqual(expect.arrayContaining([
+        'Allow once',
+        'Allow similar commands',
+        'Deny',
+      ]));
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
+    });
+
+    it('should return provider-specific amendment decisions from supplied approval options', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: 'npm test' },
+        'Run test command',
+        {
+          decisionOptions: [
+            {
+              label: 'Allow similar commands',
+              decision: {
+                type: 'allow-with-exec-policy-amendment',
+                execPolicyAmendment: ['npm', 'test'],
+              },
+            },
+            { label: 'Deny', decision: 'deny' },
+          ],
+        } as any,
+      );
+
+      const items = parentEl.querySelectorAll('claudian-ask-item');
+      const target = items.find((item: any) => {
+        const label = item.querySelector('claudian-ask-item-label');
+        return label?.textContent === 'Allow similar commands';
+      });
+      expect(target).toBeDefined();
+      target!.click();
+
+      await expect(approvalPromise).resolves.toEqual({
+        type: 'allow-with-exec-policy-amendment',
+        execPolicyAmendment: ['npm', 'test'],
+      });
     });
 
     it('should restore input visibility after overlapping inline prompts are dismissed', async () => {
@@ -1937,27 +2651,27 @@ describe('InputController - Message Queue', () => {
     });
   });
 
-  describe('resumeSessionAt lifecycle', () => {
+  describe('resumeAtMessageId lifecycle', () => {
     beforeEach(() => {
       mockNotice.mockClear();
     });
 
-    it('should call setPendingResumeAt when resumeSessionAt points to last assistant (still-needed)', async () => {
+    it('should call setResumeCheckpoint when resumeAtMessageId points to last assistant (still-needed)', async () => {
       deps = createSendableDeps();
       const { mockAgentService } = deps as any;
-      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.setResumeCheckpoint = jest.fn();
       mockAgentService.query = jest.fn().mockReturnValue(createMockStream([{ type: 'done' }]));
 
-      // Pre-populate messages: user → assistant (with sdkAssistantUuid matching resumeSessionAt)
+      // Pre-populate messages: user → assistant (with assistantMessageId matching resumeAtMessageId)
       deps.state.messages = [
-        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
-        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, assistantMessageId: 'a1' },
       ];
 
-      // Set conversation with resumeSessionAt
+      // Set conversation with resumeAtMessageId
       (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
         id: 'conv-1',
-        resumeSessionAt: 'a1',
+        resumeAtMessageId: 'a1',
       });
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
@@ -1966,29 +2680,29 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(mockAgentService.setPendingResumeAt).toHaveBeenCalledWith('a1');
+      expect(mockAgentService.setResumeCheckpoint).toHaveBeenCalledWith('a1');
       // Should NOT clear metadata eagerly (clearing is done by save(true))
-      expect(deps.plugin.updateConversation).not.toHaveBeenCalledWith('conv-1', { resumeSessionAt: undefined });
+      expect(deps.plugin.updateConversation).not.toHaveBeenCalledWith('conv-1', { resumeAtMessageId: undefined });
     });
 
-    it('should NOT call setPendingResumeAt when follow-up already exists (stale)', async () => {
+    it('should NOT call setResumeCheckpoint when follow-up already exists (stale)', async () => {
       deps = createSendableDeps();
       const { mockAgentService } = deps as any;
-      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.setResumeCheckpoint = jest.fn();
       mockAgentService.query = jest.fn().mockReturnValue(createMockStream([{ type: 'done' }]));
 
       // Messages: user → assistant(a1) → user(follow-up) → assistant
-      // resumeSessionAt=a1 is stale because there's a follow-up after a1
+      // resumeAtMessageId=a1 is stale because there's a follow-up after a1
       deps.state.messages = [
-        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
-        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
-        { id: 'msg-u2', role: 'user', content: 'follow up', timestamp: 3, sdkUserUuid: 'u2' },
-        { id: 'msg-a2', role: 'assistant', content: 'response', timestamp: 4, sdkAssistantUuid: 'a2' },
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, assistantMessageId: 'a1' },
+        { id: 'msg-u2', role: 'user', content: 'follow up', timestamp: 3, userMessageId: 'u2' },
+        { id: 'msg-a2', role: 'assistant', content: 'response', timestamp: 4, assistantMessageId: 'a2' },
       ];
 
       (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
         id: 'conv-1',
-        resumeSessionAt: 'a1',
+        resumeAtMessageId: 'a1',
       });
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
@@ -1997,32 +2711,31 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(mockAgentService.setPendingResumeAt).not.toHaveBeenCalled();
+      expect(mockAgentService.setResumeCheckpoint).not.toHaveBeenCalled();
       // Should clear stale metadata
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { resumeSessionAt: undefined });
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conv-1', { resumeAtMessageId: undefined });
     });
 
-    it('should clear resumeSessionAt on save when sdk_user_sent is received', async () => {
+    it('should clear resumeAtMessageId on save when turn metadata reports the message was sent', async () => {
       deps = createSendableDeps();
       const { mockAgentService } = deps as any;
-      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.setResumeCheckpoint = jest.fn();
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ wasSent: true });
       mockAgentService.query = jest.fn().mockReturnValue(
         createMockStream([
-          { type: 'sdk_user_uuid', uuid: 'u-new' },
-          { type: 'sdk_user_sent', uuid: 'u-new' },
           { type: 'text', content: 'hi' },
           { type: 'done' },
         ])
       );
 
       deps.state.messages = [
-        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
-        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, assistantMessageId: 'a1' },
       ];
 
       (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
         id: 'conv-1',
-        resumeSessionAt: 'a1',
+        resumeAtMessageId: 'a1',
       });
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
@@ -2031,27 +2744,27 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // save(true) should include { resumeSessionAt: undefined } because sdk_user_sent was received
-      expect(deps.conversationController.save).toHaveBeenCalledWith(true, { resumeSessionAt: undefined });
+      // save(true) should include { resumeAtMessageId: undefined } because the turn metadata reports a sent message
+      expect(deps.conversationController.save).toHaveBeenCalledWith(true, { resumeAtMessageId: undefined });
     });
 
-    it('should NOT clear resumeSessionAt on save when query fails before enqueue', async () => {
+    it('should NOT clear resumeAtMessageId on save when query fails before enqueue', async () => {
       deps = createSendableDeps();
       const { mockAgentService } = deps as any;
-      mockAgentService.setPendingResumeAt = jest.fn();
-      // Stream throws before yielding sdk_user_sent
+      mockAgentService.setResumeCheckpoint = jest.fn();
+      // Stream throws before yielding user_message_sent
       mockAgentService.query = jest.fn().mockImplementation(() => {
         throw new Error('Connection failed');
       });
 
       deps.state.messages = [
-        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
-        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, assistantMessageId: 'a1' },
       ];
 
       (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
         id: 'conv-1',
-        resumeSessionAt: 'a1',
+        resumeAtMessageId: 'a1',
       });
 
       inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
@@ -2060,26 +2773,26 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      // save(true) should NOT clear resumeSessionAt because sdk_user_sent was never received
+      // save(true) should NOT clear resumeAtMessageId because user_message_sent was never received
       expect(deps.conversationController.save).toHaveBeenCalledWith(true, undefined);
     });
 
     it('should not block send when stale metadata clear fails', async () => {
       deps = createSendableDeps();
       const { mockAgentService } = deps as any;
-      mockAgentService.setPendingResumeAt = jest.fn();
+      mockAgentService.setResumeCheckpoint = jest.fn();
       mockAgentService.query = jest.fn().mockReturnValue(createMockStream([{ type: 'done' }]));
 
       deps.state.messages = [
-        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, sdkUserUuid: 'u1' },
-        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, sdkAssistantUuid: 'a1' },
-        { id: 'msg-u2', role: 'user', content: 'next', timestamp: 3, sdkUserUuid: 'u2' },
-        { id: 'msg-a2', role: 'assistant', content: 'resp', timestamp: 4, sdkAssistantUuid: 'a2' },
+        { id: 'msg-u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'u1' },
+        { id: 'msg-a1', role: 'assistant', content: 'hi', timestamp: 2, assistantMessageId: 'a1' },
+        { id: 'msg-u2', role: 'user', content: 'next', timestamp: 3, userMessageId: 'u2' },
+        { id: 'msg-a2', role: 'assistant', content: 'resp', timestamp: 4, assistantMessageId: 'a2' },
       ];
 
       (deps.plugin.getConversationSync as any) = jest.fn().mockReturnValue({
         id: 'conv-1',
-        resumeSessionAt: 'a1',
+        resumeAtMessageId: 'a1',
       });
       // Make updateConversation throw
       (deps.plugin.updateConversation as jest.Mock).mockRejectedValueOnce(new Error('disk error'));
@@ -2091,6 +2804,245 @@ describe('InputController - Message Queue', () => {
       // Should not throw
       await expect(controller.sendMessage()).resolves.not.toThrow();
       expect(mockAgentService.query).toHaveBeenCalled();
+    });
+  });
+
+  describe('Codex plan_completed flow', () => {
+    it('opens the Codex approval UI after a successful plan turn', async () => {
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: jest.fn(),
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Here is my plan...' },
+          { type: 'done' },
+        ]),
+      );
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan the migration';
+      const controller = new InputController(deps);
+      const showPlanApproval = jest.spyOn(controller as any, 'showPlanApproval').mockResolvedValue({
+        decision: null,
+        invalidated: false,
+      });
+
+      await controller.sendMessage();
+
+      expect(showPlanApproval).toHaveBeenCalled();
+    });
+
+    it('implement restores mode and auto-sends follow-up', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn()
+        .mockReturnValueOnce({ planCompleted: true, wasSent: true })
+        .mockReturnValueOnce({ wasSent: true });
+
+      let callCount = 0;
+      mockAgentService.query = jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return createMockStream([
+            { type: 'text', content: 'Plan content' },
+            { type: 'done' },
+          ]);
+        }
+        return createMockStream([{ type: 'done' }]);
+      });
+
+      const controller = new InputController(deps);
+
+      // Mock the showPlanApproval to return 'implement'
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
+        decision: { type: 'implement' },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this feature';
+      await controller.sendMessage();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(restoreFn).toHaveBeenCalled();
+      // Auto-send should have been triggered
+      expect(mockAgentService.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('revise keeps plan mode active and populates input', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
+        decision: {
+          type: 'revise',
+          text: 'Add more tests',
+        },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).not.toHaveBeenCalled();
+      expect(inputEl.value).toBe('Add more tests');
+    });
+
+    it('revise does not let queued input overwrite the revision text', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        canvasContext: null,
+      };
+
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
+        decision: { type: 'revise', text: 'Add more tests' },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).not.toHaveBeenCalled();
+      expect(inputEl.value).toBe('Add more tests');
+      expect(deps.state.queuedMessage).toEqual({
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        canvasContext: null,
+      });
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancel restores mode and does not auto-send', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
+        decision: { type: 'cancel' },
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).toHaveBeenCalled();
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('external dismissal while the approval UI is open bails out without save or restore', async () => {
+      const restoreFn = jest.fn();
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      inputContainerEl.parentElement = parentEl;
+
+      const deps = createSendableDeps({
+        getInputContainerEl: () => inputContainerEl as any,
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+
+      const sendPromise = controller.sendMessage();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect((controller as any).pendingPlanApproval).not.toBeNull();
+
+      controller.dismissPendingApproval();
+      await sendPromise;
+
+      expect(restoreFn).not.toHaveBeenCalled();
+      expect(deps.conversationController.save).not.toHaveBeenCalled();
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('null decision (dismiss) restores mode and does not auto-send', async () => {
+      const restoreFn = jest.fn();
+      const deps = createSendableDeps({
+        restorePrePlanPermissionModeIfNeeded: restoreFn,
+      });
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'codex';
+      mockAgentService.consumeTurnMetadata = jest.fn().mockReturnValue({ planCompleted: true, wasSent: true });
+      mockAgentService.query = jest.fn().mockImplementation(() =>
+        createMockStream([
+          { type: 'text', content: 'Plan content' },
+          { type: 'done' },
+        ]),
+      );
+
+      const controller = new InputController(deps);
+      (controller as any).showPlanApproval = jest.fn().mockResolvedValue({
+        decision: null,
+        invalidated: false,
+      });
+
+      const inputEl = deps.getInputEl();
+      inputEl.value = 'Plan this';
+      await controller.sendMessage();
+
+      expect(restoreFn).toHaveBeenCalled();
+      expect(mockAgentService.query).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -1,8 +1,10 @@
 import {
-  BASH_TOOLS,
   // Tool arrays
+  AGENT_LIFECYCLE_TOOLS,
+  BASH_TOOLS,
   EDIT_TOOLS,
   FILE_TOOLS,
+  isAgentLifecycleTool,
   isBashTool,
   // Type guards
   isEditTool,
@@ -20,6 +22,7 @@ import {
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
+  TOOL_CLOSE_AGENT,
   TOOL_EDIT,
   TOOL_ENTER_PLAN_MODE,
   TOOL_EXIT_PLAN_MODE,
@@ -32,11 +35,16 @@ import {
   TOOL_NOTEBOOK_EDIT,
   TOOL_READ,
   TOOL_READ_MCP_RESOURCE,
+  TOOL_RESUME_AGENT,
+  TOOL_SEND_INPUT,
   TOOL_SKILL,
+  TOOL_SPAWN_AGENT,
   TOOL_SUBAGENT_LEGACY,
   TOOL_TASK,
   TOOL_TODO_WRITE,
   TOOL_TOOL_SEARCH,
+  TOOL_WAIT,
+  TOOL_WAIT_AGENT,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
@@ -73,6 +81,32 @@ describe('Tool Constants', () => {
 describe('SUBAGENT_TOOL_NAMES', () => {
   it('should include both canonical and legacy subagent tool names', () => {
     expect(SUBAGENT_TOOL_NAMES).toEqual(['Agent', 'Task']);
+  });
+});
+
+describe('AGENT_LIFECYCLE_TOOLS', () => {
+  it('should expose provider-neutral lifecycle names', () => {
+    expect(AGENT_LIFECYCLE_TOOLS).toEqual([
+      TOOL_SPAWN_AGENT,
+      TOOL_SEND_INPUT,
+      TOOL_WAIT,
+      TOOL_WAIT_AGENT,
+      TOOL_RESUME_AGENT,
+      TOOL_CLOSE_AGENT,
+    ]);
+  });
+});
+
+describe('isAgentLifecycleTool', () => {
+  it('should return true for runtime lifecycle tools only', () => {
+    expect(isAgentLifecycleTool(TOOL_SPAWN_AGENT)).toBe(true);
+    expect(isAgentLifecycleTool(TOOL_SEND_INPUT)).toBe(true);
+    expect(isAgentLifecycleTool(TOOL_WAIT)).toBe(true);
+    expect(isAgentLifecycleTool(TOOL_WAIT_AGENT)).toBe(true);
+    expect(isAgentLifecycleTool(TOOL_RESUME_AGENT)).toBe(true);
+    expect(isAgentLifecycleTool(TOOL_CLOSE_AGENT)).toBe(true);
+    expect(isAgentLifecycleTool(TOOL_BASH)).toBe(false);
+    expect(isAgentLifecycleTool(TOOL_TASK)).toBe(false);
   });
 });
 

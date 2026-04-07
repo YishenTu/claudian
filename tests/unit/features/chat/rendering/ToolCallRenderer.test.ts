@@ -113,6 +113,49 @@ describe('ToolCallRenderer', () => {
       expect(answerEls).toHaveLength(1);
       expect(answerEls[0].textContent).toBe('Blue');
     });
+
+    it('renders AskUserQuestion answers by stable question id', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'AskUserQuestion',
+        status: 'completed',
+        input: { questions: [{ id: 'q1', question: 'Color?' }] },
+        result: '{"answers":{"q1":{"answers":["Blue"]}}}',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const answerEls = toolEl.querySelectorAll('.claudian-ask-review-a-text');
+
+      expect(answerEls).toHaveLength(1);
+      expect(answerEls[0].textContent).toBe('Blue');
+    });
+
+    it('renders AskUserQuestion options during fallback state', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'AskUserQuestion',
+        status: 'running',
+        input: {
+          questions: [{
+            question: 'Title timing?',
+            options: [
+              { label: 'Non-blocking', description: 'Generate title later.' },
+              { label: 'Blocking', description: 'Wait for title first.' },
+            ],
+            multiSelect: true,
+          }],
+        },
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const labelEls = toolEl.querySelectorAll('.claudian-ask-item-label');
+      const descEls = toolEl.querySelectorAll('.claudian-ask-item-desc');
+      const checkEls = toolEl.querySelectorAll('.claudian-ask-check');
+
+      expect(Array.from(labelEls, el => el.textContent)).toEqual(['Non-blocking', 'Blocking']);
+      expect(Array.from(descEls, el => el.textContent)).toEqual(['Generate title later.', 'Wait for title first.']);
+      expect(checkEls).toHaveLength(2);
+    });
   });
 
   describe('updateToolCallResult', () => {
@@ -147,8 +190,8 @@ describe('ToolCallRenderer', () => {
 
       updateToolCallResult('ask-1', toolCall, toolCallElements);
 
-      const resultText = toolEl.querySelector('.claudian-tool-result-text');
-      expect(resultText?.textContent).toBe('Answer submitted successfully.');
+      const promptEl = toolEl.querySelector('.claudian-ask-review-prompt');
+      expect(promptEl?.textContent).toBe('Answer submitted successfully.');
     });
   });
 
@@ -213,6 +256,13 @@ describe('ToolCallRenderer', () => {
 
       const longQuery = 'q'.repeat(50);
       expect(getToolLabel('WebSearch', { query: longQuery })).toBe(`WebSearch: ${'q'.repeat(40)}...`);
+    });
+
+    it('should label WebSearch open_page actions with the URL', () => {
+      expect(getToolLabel('WebSearch', {
+        actionType: 'open_page',
+        url: 'https://example.com/docs',
+      })).toBe('WebSearch: Open https://example.com/docs');
     });
 
     it('should label WebFetch and truncate long URLs', () => {
@@ -318,6 +368,14 @@ describe('ToolCallRenderer', () => {
       expect(getToolSummary('WebSearch', { query: 'test query' })).toBe('test query');
     });
 
+    it('should summarize WebSearch find_in_page actions', () => {
+      expect(getToolSummary('WebSearch', {
+        actionType: 'find_in_page',
+        url: 'https://example.com/docs',
+        pattern: 'tools',
+      })).toBe('Find "tools" in https://example.com/docs');
+    });
+
     it('should return url for WebFetch', () => {
       expect(getToolSummary('WebFetch', { url: 'https://x.com' })).toBe('https://x.com');
     });
@@ -358,9 +416,193 @@ describe('ToolCallRenderer', () => {
     });
   });
 
+  describe('getToolSummary - Codex native tools', () => {
+    it('returns file count for apply_patch with changes array', () => {
+      expect(getToolSummary('apply_patch', {
+        changes: [{ path: 'src/a.ts', kind: 'update' }, { path: 'src/b.ts', kind: 'add' }],
+      })).toBe('2 files');
+    });
+
+    it('returns single filename for apply_patch with one change', () => {
+      expect(getToolSummary('apply_patch', {
+        changes: [{ path: 'src/main.ts', kind: 'update' }],
+      })).toBe('main.ts');
+    });
+
+    it('extracts files from patch text markers', () => {
+      expect(getToolSummary('apply_patch', {
+        patch: '*** Update File: src/main.ts\n--- src/main.ts\n+++ src/main.ts\n@@ ...',
+      })).toBe('main.ts');
+    });
+
+    it('returns "patch" for apply_patch with unrecognized patch text', () => {
+      expect(getToolSummary('apply_patch', { patch: 'diff output here' })).toBe('patch');
+    });
+
+    it('returns empty for apply_patch with no input', () => {
+      expect(getToolSummary('apply_patch', {})).toBe('');
+    });
+
+    it('returns session id for write_stdin', () => {
+      expect(getToolSummary('write_stdin', { session_id: 'sess_1', chars: 'y\n' })).toBe('#sess_1 y\\n');
+    });
+
+    it('returns chars preview for write_stdin without session', () => {
+      expect(getToolSummary('write_stdin', { chars: 'y\n' })).toBe('y\\n');
+    });
+
+    it('returns empty for write_stdin with no input', () => {
+      expect(getToolSummary('write_stdin', {})).toBe('');
+    });
+
+    it('returns message preview for spawn_agent', () => {
+      expect(getToolSummary('spawn_agent', { message: 'Update imports' })).toBe('Update imports');
+    });
+
+    it('truncates long spawn_agent messages', () => {
+      const longMsg = 'a'.repeat(60);
+      expect(getToolSummary('spawn_agent', { message: longMsg })).toBe('a'.repeat(50) + '...');
+    });
+
+    it('returns agent count and timeout for wait', () => {
+      expect(getToolSummary('wait', { ids: ['a1'], timeout_ms: 30000 })).toBe('1 agent, 30s');
+    });
+
+    it('returns message preview for send_input', () => {
+      expect(getToolSummary('send_input', { message: 'Also update exports.' })).toBe('Also update exports.');
+    });
+
+    it('returns empty for resume_agent and close_agent', () => {
+      expect(getToolSummary('resume_agent', {})).toBe('');
+      expect(getToolSummary('close_agent', {})).toBe('');
+    });
+  });
+
+  describe('getToolLabel - Codex native tools', () => {
+    it('labels apply_patch with summary', () => {
+      expect(getToolLabel('apply_patch', {
+        changes: [{ path: 'src/foo.ts', kind: 'update' }],
+      })).toBe('apply_patch: foo.ts');
+    });
+
+    it('labels apply_patch without changes', () => {
+      expect(getToolLabel('apply_patch', {})).toBe('apply_patch');
+    });
+
+    it('labels write_stdin with summary', () => {
+      expect(getToolLabel('write_stdin', { session_id: 's1' })).toBe('write_stdin: #s1');
+    });
+
+    it('labels write_stdin without input', () => {
+      expect(getToolLabel('write_stdin', {})).toBe('write_stdin');
+    });
+
+    it('labels spawn_agent with message', () => {
+      expect(getToolLabel('spawn_agent', { message: 'Fix bug' })).toBe('spawn_agent: Fix bug');
+    });
+
+    it('labels wait with count', () => {
+      expect(getToolLabel('wait', { ids: ['a1', 'a2'], timeout_ms: 5000 })).toBe('wait: 2 agents, 5s');
+    });
+
+    it('returns raw name for lifecycle tools with no summary', () => {
+      expect(getToolLabel('close_agent', {})).toBe('close_agent');
+    });
+  });
+
+  describe('WebSearch expanded rendering', () => {
+    it('renders Codex search actions instead of the placeholder result text', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'WebSearch',
+        status: 'completed',
+        input: {
+          actionType: 'search',
+          query: 'obsidian plugin API',
+          queries: ['obsidian plugin API', 'obsidian docs'],
+        },
+        result: 'Search complete',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const lines = Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(line => line.textContent);
+
+      expect(lines).toContain('Query: obsidian plugin API');
+      expect(lines).toContain('Alt query: obsidian docs');
+      expect(lines).not.toContain('Search complete');
+    });
+
+    it('renders Codex open_page actions from tool input even without a rich result body', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'WebSearch',
+        status: 'completed',
+        input: {
+          actionType: 'open_page',
+          url: 'https://example.com/docs',
+        },
+        result: 'Search complete',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const links = toolEl.querySelectorAll('.claudian-tool-link');
+      const lines = Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(line => line.textContent);
+
+      expect(lines).toContain('Open page');
+      expect(links).toHaveLength(1);
+      expect(links[0].getAttribute('href')).toBe('https://example.com/docs');
+      expect(links[0].querySelector('.claudian-tool-link-title')?.textContent).toBe('https://example.com/docs');
+    });
+  });
+
+  describe('apply_patch expanded rendering', () => {
+    it('renders parsed patch diffs from tool input', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'apply_patch',
+        status: 'completed',
+        input: {
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: src/main.ts',
+            '@@',
+            "-import { Plugin } from 'obsidian';",
+            "+import { Plugin, Notice } from 'obsidian';",
+            '*** End Patch',
+          ].join('\n'),
+        },
+        result: 'Applied patch',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const headers = Array.from(toolEl.querySelectorAll('.claudian-tool-patch-header')).map(el => el.textContent);
+      const diffTexts = Array.from(toolEl.querySelectorAll('.claudian-diff-text')).map(el => el.textContent);
+
+      expect(headers).toContain('update: src/main.ts (+1 -1)');
+      expect(diffTexts).toContain("import { Plugin } from 'obsidian';");
+      expect(diffTexts).toContain("import { Plugin, Notice } from 'obsidian';");
+    });
+
+    it('falls back to file changes when patch text is unavailable', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'apply_patch',
+        status: 'completed',
+        input: {
+          changes: [{ path: 'src/main.ts', kind: 'update' }],
+        },
+        result: 'Applied patch',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const lines = Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(el => el.textContent);
+
+      expect(lines).toContain('update: src/main.ts');
+    });
+  });
+
   describe('isBlockedToolResult', () => {
     it.each([
-      'Blocked by blocklist: /etc/passwd',
       'Path is outside the vault',
       'Access Denied for this file',
       'User denied the action',

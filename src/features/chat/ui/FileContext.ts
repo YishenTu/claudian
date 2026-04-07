@@ -1,8 +1,8 @@
 import type { App, EventRef } from 'obsidian';
 import { Notice, TFile } from 'obsidian';
 
-import type { AgentManager } from '../../../core/agents';
-import type { McpServerManager } from '../../../core/mcp';
+import type { McpServerManager } from '../../../core/mcp/McpServerManager';
+import type { AgentMentionProvider } from '../../../shared/mention/MentionDropdownController';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
@@ -328,9 +328,8 @@ export class FileContextManager {
     this.mentionDropdown.setMcpManager(manager);
   }
 
-  setAgentService(agentManager: AgentManager | null): void {
-    // AgentManager structurally satisfies AgentMentionProvider
-    this.mentionDropdown.setAgentService(agentManager);
+  setAgentService(agentService: AgentMentionProvider | null): void {
+    this.mentionDropdown.setAgentService(agentService);
   }
 
   setOnMcpMentionChange(callback: (servers: Set<string>) => void): void {

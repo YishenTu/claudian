@@ -1,8 +1,4 @@
-/**
- * Claudian - MCP (Model Context Protocol) type definitions
- *
- * Types for configuring and managing MCP servers that extend Claude's capabilities.
- */
+/** MCP (Model Context Protocol) type definitions used by the shared manager/UI. */
 
 /** Stdio server configuration (local command-line programs). */
 export interface McpStdioServerConfig {
@@ -35,8 +31,8 @@ export type McpServerConfig =
 /** Server type identifier. */
 export type McpServerType = 'stdio' | 'sse' | 'http';
 
-/** Extended server configuration with Claudian-specific options. */
-export interface ClaudianMcpServer {
+/** Managed MCP server configuration with UI/runtime metadata. */
+export interface ManagedMcpServer {
   /** Unique server name (key in mcpServers record). */
   name: string;
   config: McpServerConfig;
@@ -48,15 +44,15 @@ export interface ClaudianMcpServer {
   description?: string;
 }
 
-/** MCP configuration file format (Claude Code compatible). */
+/** MCP configuration file format used by the current CLI integrations. */
 export interface McpConfigFile {
   mcpServers: Record<string, McpServerConfig>;
 }
 
-/** Extended config file with Claudian metadata. */
-export interface ClaudianMcpConfigFile extends McpConfigFile {
+/** Extended config file with app-owned server metadata. */
+export interface ManagedMcpConfigFile extends McpConfigFile {
   _claudian?: {
-    /** Per-server Claudian-specific settings. */
+    /** Per-server UI/runtime settings. */
     servers: Record<
       string,
       {
@@ -95,7 +91,7 @@ export function isValidMcpServerConfig(obj: unknown): obj is McpServerConfig {
   return false;
 }
 
-export const DEFAULT_MCP_SERVER: Omit<ClaudianMcpServer, 'name' | 'config'> = {
+export const DEFAULT_MCP_SERVER: Omit<ManagedMcpServer, 'name' | 'config'> = {
   enabled: true,
   contextSaving: true,
 };

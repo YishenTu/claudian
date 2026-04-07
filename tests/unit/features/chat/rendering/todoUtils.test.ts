@@ -1,7 +1,7 @@
 import { createMockEl } from '@test/helpers/mockElement';
 import { setIcon } from 'obsidian';
 
-import type { TodoItem } from '@/core/tools';
+import type { TodoItem } from '@/core/tools/todo';
 import {
   getTodoDisplayText,
   getTodoStatusIcon,

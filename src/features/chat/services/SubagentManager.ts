@@ -2,17 +2,14 @@ import { existsSync, readFileSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { isAbsolute, sep } from 'path';
 
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
+import type { ProviderTaskResultInterpreter } from '../../../core/providers/types';
 import { TOOL_TASK } from '../../../core/tools/toolNames';
 import type {
   SubagentInfo,
   SubagentMode,
   ToolCallInfo,
 } from '../../../core/types';
-import {
-  extractAgentIdFromToolUseResult,
-  extractXmlTag,
-  resolveToolUseResultStatus,
-} from '../../../utils/sdkSession';
 import { extractFinalResultFromSubagentJsonl } from '../../../utils/subagentJsonl';
 import {
   addSubagentToolCall,
@@ -25,7 +22,7 @@ import {
   type SubagentState,
   updateAsyncSubagentRunning,
   updateSubagentToolResult,
-} from '../rendering';
+} from '../rendering/SubagentRenderer';
 import type { PendingToolCall } from '../state/types';
 
 export type SubagentStateChangeCallback = (subagent: SubagentInfo) => void;
@@ -55,13 +52,22 @@ export class SubagentManager {
   private asyncDomStates: Map<string, AsyncSubagentState> = new Map();
 
   private onStateChange: SubagentStateChangeCallback;
+  private taskResultInterpreter: ProviderTaskResultInterpreter;
 
-  constructor(onStateChange: SubagentStateChangeCallback) {
+  constructor(
+    onStateChange: SubagentStateChangeCallback,
+    taskResultInterpreter: ProviderTaskResultInterpreter = ProviderRegistry.getTaskResultInterpreter(),
+  ) {
     this.onStateChange = onStateChange;
+    this.taskResultInterpreter = taskResultInterpreter;
   }
 
   public setCallback(callback: SubagentStateChangeCallback): void {
     this.onStateChange = callback;
+  }
+
+  public setTaskResultInterpreter(interpreter: ProviderTaskResultInterpreter): void {
+    this.taskResultInterpreter = interpreter;
   }
 
   // ============================================
@@ -305,7 +311,7 @@ export class SubagentManager {
       return;
     }
 
-    const agentId = this.extractAgentIdFromTaskToolUseResult(toolUseResult) ?? this.parseAgentId(result);
+    const agentId = this.taskResultInterpreter.extractAgentId(toolUseResult) ?? this.parseAgentId(result);
 
     if (!agentId) {
       const truncatedResult = result.length > 100 ? result.substring(0, 100) + '...' : result;
@@ -375,11 +381,10 @@ export class SubagentManager {
     // The chunk's is_error flag can be unreliable for async subagent results
     // (SDK may set is_error on the content block even when the agent succeeded).
     // Prefer the structured toolUseResult to determine actual error status.
-    const resolvedStatus = resolveToolUseResultStatus(
+    const finalStatus = this.taskResultInterpreter.resolveTerminalStatus(
       toolUseResult,
-      isError ? 'error' : 'completed'
+      isError ? 'error' : 'completed',
     );
-    const finalStatus = resolvedStatus === 'error' ? 'error' : 'completed';
 
     subagent.asyncStatus = finalStatus;
     subagent.status = finalStatus;
@@ -596,7 +601,7 @@ export class SubagentManager {
     if (isError) {
       return 'sync';
     }
-    if (this.hasAsyncMarkerInToolUseResult(taskToolUseResult)) {
+    if (this.taskResultInterpreter.hasAsyncLaunchMarker(taskToolUseResult)) {
       return 'async';
     }
     // Use strict async markers only; avoid broad ID heuristics.
@@ -650,58 +655,6 @@ export class SubagentManager {
     }
 
     return null;
-  }
-
-  private hasAsyncMarkerInToolUseResult(taskToolUseResult?: unknown): boolean {
-    if (!taskToolUseResult || typeof taskToolUseResult !== 'object') {
-      return false;
-    }
-
-    const record = taskToolUseResult as Record<string, unknown>;
-    if (record.isAsync === true) {
-      return true;
-    }
-
-    const directAgentId = record.agentId ?? record.agent_id;
-    if (typeof directAgentId === 'string' && directAgentId.length > 0) {
-      return true;
-    }
-
-    const data = record.data;
-    if (data && typeof data === 'object') {
-      const nestedRecord = data as Record<string, unknown>;
-      const nestedAgentId = nestedRecord.agent_id ?? nestedRecord.agentId;
-      if (typeof nestedAgentId === 'string' && nestedAgentId.length > 0) {
-        return true;
-      }
-    }
-
-    if (typeof record.status === 'string' && record.status.toLowerCase() === 'async_launched') {
-      return true;
-    }
-
-    if (typeof record.outputFile === 'string' && record.outputFile.length > 0) {
-      return true;
-    }
-
-    if (Array.isArray(record.content)) {
-      for (const block of record.content) {
-        if (block && typeof block === 'object') {
-          const text = (block as Record<string, unknown>).text;
-          if (typeof text === 'string' && this.extractAgentIdFromString(text)) {
-            return true;
-          }
-        } else if (typeof block === 'string' && this.extractAgentIdFromString(block)) {
-          return true;
-        }
-      }
-    }
-
-    if (typeof record.content === 'string' && this.extractAgentIdFromString(record.content)) {
-      return true;
-    }
-
-    return false;
   }
 
   // ============================================
@@ -796,7 +749,11 @@ export class SubagentManager {
   }
 
   private extractAgentResult(result: string, agentId: string, toolUseResult?: unknown): string {
-    const structuredResult = this.extractResultFromToolUseResult(toolUseResult);
+    const structuredResult = this.taskResultInterpreter.extractStructuredResult(toolUseResult);
+    const normalizedStructuredResult = this.extractResultFromCandidateString(structuredResult);
+    if (normalizedStructuredResult) {
+      return normalizedStructuredResult;
+    }
     if (structuredResult) {
       return structuredResult;
     }
@@ -860,36 +817,6 @@ export class SubagentManager {
     }
 
     return payload;
-  }
-
-  private extractResultFromToolUseResult(toolUseResult: unknown): string | null {
-    if (!toolUseResult || typeof toolUseResult !== 'object') {
-      return null;
-    }
-
-    const record = toolUseResult as Record<string, unknown>;
-
-    if (record.retrieval_status === 'error') {
-      const errorMsg = typeof record.error === 'string' ? record.error : 'Task retrieval failed';
-      return `Error: ${errorMsg}`;
-    }
-
-    const result = this.extractResultFromTaskObject(record.task)
-      ?? this.extractResultFromCandidateString(record.result)
-      ?? this.extractResultFromCandidateString(record.output);
-    if (result) return result;
-
-    // SDK subagent format: { status, content: [{type:"text",text:"..."}], agentId, ... }
-    if (Array.isArray(record.content)) {
-      const firstText = (record.content as Array<Record<string, unknown>>)
-        .find((b) => b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string');
-      if (firstText) {
-        const text = (firstText.text as string).trim();
-        if (text.length > 0) return text;
-      }
-    }
-
-    return null;
   }
 
   private extractResultFromTaskObject(task: unknown): string | null {
@@ -962,39 +889,6 @@ export class SubagentManager {
     return null;
   }
 
-  private extractAgentIdFromTaskToolUseResult(toolUseResult: unknown): string | null {
-    // Shared utility handles the common agentId/agent_id and data.agent_id paths
-    const directId = extractAgentIdFromToolUseResult(toolUseResult);
-    if (directId) return directId;
-
-    // Streaming-specific fallback: scan content blocks for agent ID strings
-    if (!toolUseResult || typeof toolUseResult !== 'object') return null;
-    const record = toolUseResult as Record<string, unknown>;
-
-    if (Array.isArray(record.content)) {
-      for (const block of record.content) {
-        if (typeof block === 'string') {
-          const extracted = this.extractAgentIdFromString(block);
-          if (extracted) return extracted;
-          continue;
-        }
-        if (!block || typeof block !== 'object') {
-          continue;
-        }
-        const blockRecord = block as Record<string, unknown>;
-        if (typeof blockRecord.text === 'string') {
-          const extracted = this.extractAgentIdFromString(blockRecord.text);
-          if (extracted) return extracted;
-        }
-      }
-    } else if (typeof record.content === 'string') {
-      const extracted = this.extractAgentIdFromString(record.content);
-      if (extracted) return extracted;
-    }
-
-    return null;
-  }
-
   private inferAgentIdFromResult(result: string): string | null {
     try {
       const parsed = JSON.parse(result);
@@ -1026,16 +920,16 @@ export class SubagentManager {
   }
 
   private extractResultFromTaggedPayload(payload: string): string | null {
-    const directResult = extractXmlTag(payload, 'result');
+    const directResult = this.taskResultInterpreter.extractTagValue(payload, 'result');
     if (directResult) return directResult;
 
-    const outputContent = extractXmlTag(payload, 'output');
+    const outputContent = this.taskResultInterpreter.extractTagValue(payload, 'output');
     if (!outputContent) return null;
 
     const extractedFromJsonl = this.extractResultFromOutputJsonl(outputContent);
     if (extractedFromJsonl) return extractedFromJsonl;
 
-    const nestedResult = extractXmlTag(outputContent, 'result');
+    const nestedResult = this.taskResultInterpreter.extractTagValue(outputContent, 'result');
     if (nestedResult) return nestedResult;
 
     const trimmed = outputContent.trim();

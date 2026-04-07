@@ -1,6 +1,13 @@
+import '@/providers';
+
 import { createMockEl } from '@test/helpers/mockElement';
 
-import { TOOL_AGENT_OUTPUT, TOOL_TASK } from '@/core/tools/toolNames';
+import {
+  TOOL_AGENT_OUTPUT,
+  TOOL_SPAWN_AGENT,
+  TOOL_TASK,
+  TOOL_WAIT_AGENT,
+} from '@/core/tools/toolNames';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/rendering/SubagentRenderer';
@@ -39,14 +46,40 @@ function createMockComponent() {
   };
 }
 
-function createRenderer(messagesEl?: any) {
+function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
+  return () => ({
+    providerId,
+    supportsPersistentRuntime: true,
+    supportsNativeHistory: providerId === 'claude',
+    supportsPlanMode: true,
+    supportsRewind: true,
+    supportsFork: true,
+    supportsProviderCommands: true,
+    supportsImageAttachments: true,
+    supportsInstructionMode: true,
+    supportsMcpTools: true,
+    reasoningControl: 'effort' as const,
+  });
+}
+
+function createRenderer(messagesEl?: any, providerId: 'claude' | 'codex' = 'claude') {
   const el = messagesEl ?? createMockEl();
   const comp = createMockComponent();
   const plugin = {
     app: {},
     settings: { mediaFolder: '' },
   };
-  return { renderer: new MessageRenderer(plugin as any, comp as any, el), messagesEl: el };
+  return {
+    renderer: new MessageRenderer(
+      plugin as any,
+      comp as any,
+      el,
+      undefined,
+      undefined,
+      mockCapabilities(providerId),
+    ),
+    messagesEl: el,
+  };
 }
 
 describe('MessageRenderer', () => {
@@ -115,6 +148,57 @@ describe('MessageRenderer', () => {
     const textEl = contentEl.children[0];
     expect(textEl.innerHTML).toContain('claudian-interrupted');
     expect(textEl.innerHTML).toContain('Interrupted');
+  });
+
+  it('renders interrupted assistant message with content + interrupt indicator', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+
+    const interruptMsg: ChatMessage = {
+      id: 'interrupt-codex-1',
+      role: 'assistant',
+      content: 'Starting to work on the feature...',
+      timestamp: Date.now(),
+      isInterrupt: true,
+      contentBlocks: [{ type: 'text', content: 'Starting to work on the feature...' }],
+    };
+
+    renderer.renderStoredMessage(interruptMsg);
+
+    // Should create an assistant message (not a bare interrupt marker)
+    expect(messagesEl.children.length).toBe(1);
+    const msgEl = messagesEl.children[0];
+    expect(msgEl.hasClass('claudian-message-assistant')).toBe(true);
+
+    // The content div should have both content rendering and an interrupt indicator
+    const contentEl = msgEl.children[0];
+    const lastChild = contentEl.children[contentEl.children.length - 1];
+    expect(lastChild.innerHTML).toContain('claudian-interrupted');
+    expect(lastChild.innerHTML).toContain('Interrupted');
+  });
+
+  it('renders bare interrupt marker for empty interrupted assistant message', () => {
+    const messagesEl = createMockEl();
+    const mockComponent = createMockComponent();
+    const renderer = new MessageRenderer({} as any, mockComponent as any, messagesEl);
+
+    const interruptMsg: ChatMessage = {
+      id: 'interrupt-codex-2',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      isInterrupt: true,
+    };
+
+    renderer.renderStoredMessage(interruptMsg);
+
+    // Should create a bare interrupt marker (same as Claude-style)
+    expect(messagesEl.children.length).toBe(1);
+    const msgEl = messagesEl.children[0];
+    expect(msgEl.hasClass('claudian-message-assistant')).toBe(true);
+    const contentEl = msgEl.children[0];
+    const textEl = contentEl.children[0];
+    expect(textEl.innerHTML).toContain('claudian-interrupted');
   });
 
   it('skips rebuilt context messages', () => {
@@ -221,13 +305,13 @@ describe('MessageRenderer', () => {
   it('adds a rewind button for eligible stored user messages', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const allMessages: ChatMessage[] = [
-      { id: 'a1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
-      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, sdkUserUuid: 'user-u' },
-      { id: 'a2', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+      { id: 'a1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, userMessageId: 'user-u' },
+      { id: 'a2', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
 
     renderer.renderStoredMessage(allMessages[1], allMessages, 1);
@@ -238,7 +322,7 @@ describe('MessageRenderer', () => {
   it('does not add a rewind button when stored render is called without context', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const msg: ChatMessage = {
@@ -246,7 +330,7 @@ describe('MessageRenderer', () => {
       role: 'user',
       content: 'hello',
       timestamp: 1,
-      sdkUserUuid: 'user-u',
+      userMessageId: 'user-u',
     };
 
     renderer.renderStoredMessage(msg);
@@ -257,7 +341,7 @@ describe('MessageRenderer', () => {
   it('adds a rewind button for eligible streamed user messages via refreshActionButtons', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
-    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback);
+    const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
     jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
 
     const userMsg: ChatMessage = {
@@ -265,14 +349,14 @@ describe('MessageRenderer', () => {
       role: 'user',
       content: 'hello',
       timestamp: 2,
-      sdkUserUuid: 'user-u',
+      userMessageId: 'user-u',
     };
     renderer.addMessage(userMsg);
 
     const allMessages: ChatMessage[] = [
-      { id: 'a1', role: 'assistant', content: '', timestamp: 1, sdkAssistantUuid: 'prev-a' },
+      { id: 'a1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
       userMsg,
-      { id: 'a2', role: 'assistant', content: '', timestamp: 3, sdkAssistantUuid: 'resp-a' },
+      { id: 'a2', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
 
     renderer.refreshActionButtons(userMsg, allMessages, 1);
@@ -1070,7 +1154,7 @@ describe('MessageRenderer', () => {
   describe('Task tool rendering - error and running status', () => {
     it('renders Task tool with error status as subagent with status error', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
+      const { renderer } = createRenderer(messagesEl, 'codex');
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1108,7 +1192,7 @@ describe('MessageRenderer', () => {
 
     it('renders Task tool with running status (default case in switch)', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
+      const { renderer } = createRenderer(messagesEl, 'codex');
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1175,6 +1259,55 @@ describe('MessageRenderer', () => {
           id: 'task-no-desc',
           description: 'Subagent task',
           status: 'completed',
+        })
+      );
+    });
+
+    it('renders Codex spawn_agent with the same prompt and result recovered on reload', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'codex');
+
+      (renderStoredSubagent as jest.Mock).mockClear();
+
+      const msg: ChatMessage = {
+        id: 'm-codex-subagent',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'spawn-1',
+            name: TOOL_SPAWN_AGENT,
+            input: {
+              message: 'Inspect utils.ts and return the final patch summary.',
+              model: 'gpt-5.4-mini',
+            },
+            status: 'completed',
+            result: '{"agent_id":"agent-1","nickname":"Zeno"}',
+          } as any,
+          {
+            id: 'wait-1',
+            name: TOOL_WAIT_AGENT,
+            input: { targets: ['agent-1'], timeout_ms: 30000 },
+            status: 'completed',
+            result: '{"status":{"agent-1":{"completed":"Patched utils.ts and verified imports."}},"timed_out":false}',
+          } as any,
+        ],
+        contentBlocks: [
+          { type: 'tool_use', toolId: 'spawn-1' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredSubagent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: 'spawn-1',
+          description: 'Zeno (gpt-5.4-mini)',
+          prompt: 'Inspect utils.ts and return the final patch summary.',
+          status: 'completed',
+          result: 'Patched utils.ts and verified imports.',
         })
       );
     });

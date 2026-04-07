@@ -1,0 +1,3 @@
+{"timestamp":"2026-03-27T00:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Search for Obsidian API docs."}]}}
+{"timestamp":"2026-03-27T00:00:01.000Z","type":"response_item","payload":{"type":"web_search_call","action":{"query":"obsidian plugin API"},"status":"completed","call_id":"call_ws_1"}}
+{"timestamp":"2026-03-27T00:00:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Here are the results."}]}}

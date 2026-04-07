@@ -1,43 +1,42 @@
 import { Notice, setIcon } from 'obsidian';
 import * as path from 'path';
 
-import type { McpServerManager } from '../../../core/mcp';
+import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type {
-  ClaudeModel,
-  ClaudianMcpServer,
-  EffortLevel,
-  PermissionMode,
-  ThinkingBudget,
-  UsageInfo
-} from '../../../core/types';
-import {
-  DEFAULT_CLAUDE_MODELS,
-  EFFORT_LEVELS,
-  filterVisibleModelOptions,
-  isAdaptiveThinkingModel,
-  THINKING_BUDGETS
+  ProviderCapabilities,
+  ProviderChatUIConfig,
+  ProviderIconSvg,
+  ProviderPermissionModeToggleConfig,
+  ProviderReasoningOption,
+  ProviderServiceTierToggleConfig,
+} from '../../../core/providers/types';
+import type {
+  ManagedMcpServer,
+  UsageInfo,
 } from '../../../core/types';
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../../shared/icons';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../../utils/env';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
 
 export interface ToolbarSettings {
-  model: ClaudeModel;
-  thinkingBudget: ThinkingBudget;
-  effortLevel: EffortLevel;
-  permissionMode: PermissionMode;
-  enableOpus1M: boolean;
-  enableSonnet1M: boolean;
+  model: string;
+  thinkingBudget: string;
+  effortLevel: string;
+  serviceTier: string;
+  permissionMode: string;
+  [key: string]: unknown;
 }
 
 export interface ToolbarCallbacks {
-  onModelChange: (model: ClaudeModel) => Promise<void>;
-  onThinkingBudgetChange: (budget: ThinkingBudget) => Promise<void>;
-  onEffortLevelChange: (effort: EffortLevel) => Promise<void>;
-  onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
+  onModelChange: (model: string) => Promise<void>;
+  onThinkingBudgetChange: (budget: string) => Promise<void>;
+  onEffortLevelChange: (effort: string) => Promise<void>;
+  onServiceTierChange: (serviceTier: string) => Promise<void>;
+  onPermissionModeChange: (mode: string) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
+  getUIConfig: () => ProviderChatUIConfig;
+  getCapabilities: () => ProviderCapabilities;
 }
 
 export class ModelSelector {
@@ -45,8 +44,6 @@ export class ModelSelector {
   private buttonEl: HTMLElement | null = null;
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
-  private isReady = false;
-
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
     this.container = parentEl.createDiv({ cls: 'claudian-model-selector' });
@@ -54,26 +51,18 @@ export class ModelSelector {
   }
 
   private getAvailableModels() {
-    const models = [...DEFAULT_CLAUDE_MODELS];
-
-    if (this.callbacks.getEnvironmentVariables) {
-      const envVarsStr = this.callbacks.getEnvironmentVariables();
-      const envVars = parseEnvironmentVariables(envVarsStr);
-      const customModels = getModelsFromEnvironment(envVars);
-      if (customModels.length > 0) {
-        return customModels;
-      }
-    }
-
     const settings = this.callbacks.getSettings();
-    return filterVisibleModelOptions(models, settings.enableOpus1M, settings.enableSonnet1M);
+    const uiConfig = this.callbacks.getUIConfig();
+    return uiConfig.getModelOptions({
+      ...settings,
+      environmentVariables: this.callbacks.getEnvironmentVariables?.(),
+    });
   }
 
   private render() {
     this.container.empty();
 
     this.buttonEl = this.container.createDiv({ cls: 'claudian-model-btn' });
-    this.setReady(this.isReady);
     this.updateDisplay();
 
     this.dropdownEl = this.container.createDiv({ cls: 'claudian-model-dropdown' });
@@ -94,24 +83,31 @@ export class ModelSelector {
     labelEl.setText(displayModel?.label || 'Unknown');
   }
 
-  setReady(ready: boolean) {
-    this.isReady = ready;
-    this.buttonEl?.toggleClass('ready', ready);
-  }
-
   renderOptions() {
     if (!this.dropdownEl) return;
     this.dropdownEl.empty();
 
     const currentModel = this.callbacks.getSettings().model;
     const models = this.getAvailableModels();
+    const reversed = [...models].reverse();
 
-    for (const model of [...models].reverse()) {
+    let lastGroup: string | undefined;
+    for (const model of reversed) {
+      if (model.group && model.group !== lastGroup) {
+        const separator = this.dropdownEl.createDiv({ cls: 'claudian-model-group' });
+        separator.setText(model.group);
+        lastGroup = model.group;
+      }
+
       const option = this.dropdownEl.createDiv({ cls: 'claudian-model-option' });
       if (model.value === currentModel) {
         option.addClass('selected');
       }
 
+      const icon = model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.();
+      if (icon) {
+        option.appendChild(createProviderIconSvg(icon));
+      }
       option.createSpan({ text: model.label });
       if (model.description) {
         option.setAttribute('title', model.description);
@@ -125,6 +121,20 @@ export class ModelSelector {
       });
     }
   }
+}
+
+function createProviderIconSvg(icon: ProviderIconSvg): SVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', icon.viewBox);
+  svg.setAttribute('width', '12');
+  svg.setAttribute('height', '12');
+  svg.classList.add('claudian-model-provider-icon');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', icon.path);
+  path.setAttribute('fill', 'currentColor');
+  svg.appendChild(path);
+  return svg;
 }
 
 export class ThinkingBudgetSelector {
@@ -164,14 +174,17 @@ export class ThinkingBudgetSelector {
     this.effortGearsEl.empty();
 
     const currentEffort = this.callbacks.getSettings().effortLevel;
-    const currentInfo = EFFORT_LEVELS.find(e => e.value === currentEffort);
+    const uiConfig = this.callbacks.getUIConfig();
+    const model = this.callbacks.getSettings().model;
+    const options = uiConfig.getReasoningOptions(model);
+    const currentInfo = options.find(e => e.value === currentEffort);
 
     const currentEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-current' });
     currentEl.setText(currentInfo?.label || 'High');
 
     const optionsEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
-    for (const effort of [...EFFORT_LEVELS].reverse()) {
+    for (const effort of [...options].reverse()) {
       const gearEl = optionsEl.createDiv({ cls: 'claudian-thinking-gear' });
       gearEl.setText(effort.label);
 
@@ -192,17 +205,21 @@ export class ThinkingBudgetSelector {
     this.budgetGearsEl.empty();
 
     const currentBudget = this.callbacks.getSettings().thinkingBudget;
-    const currentBudgetInfo = THINKING_BUDGETS.find(b => b.value === currentBudget);
+    const uiConfig = this.callbacks.getUIConfig();
+    const model = this.callbacks.getSettings().model;
+    const options: ProviderReasoningOption[] = uiConfig.getReasoningOptions(model);
+    const currentBudgetInfo = options.find(b => b.value === currentBudget);
 
     const currentEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-current' });
     currentEl.setText(currentBudgetInfo?.label || 'Off');
 
     const optionsEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
-    for (const budget of [...THINKING_BUDGETS].reverse()) {
+    for (const budget of [...options].reverse()) {
       const gearEl = optionsEl.createDiv({ cls: 'claudian-thinking-gear' });
       gearEl.setText(budget.label);
-      gearEl.setAttribute('title', budget.tokens > 0 ? `${budget.tokens.toLocaleString()} tokens` : 'Disabled');
+      const tokens = budget.tokens ?? 0;
+      gearEl.setAttribute('title', tokens > 0 ? `${tokens.toLocaleString()} tokens` : 'Disabled');
 
       if (budget.value === currentBudget) {
         gearEl.addClass('selected');
@@ -217,8 +234,16 @@ export class ThinkingBudgetSelector {
   }
 
   updateDisplay() {
+    const capabilities = this.callbacks.getCapabilities();
+    if (capabilities.reasoningControl === 'none') {
+      if (this.effortEl) this.effortEl.style.display = 'none';
+      if (this.budgetEl) this.budgetEl.style.display = 'none';
+      return;
+    }
+
     const model = this.callbacks.getSettings().model;
-    const adaptive = isAdaptiveThinkingModel(model);
+    const uiConfig = this.callbacks.getUIConfig();
+    const adaptive = uiConfig.isAdaptiveReasoningModel(model);
 
     if (this.effortEl) {
       this.effortEl.style.display = adaptive ? '' : 'none';
@@ -258,32 +283,116 @@ export class PermissionToggle {
     this.toggleEl.addEventListener('click', () => this.toggle());
   }
 
+  private getToggleConfig(): ProviderPermissionModeToggleConfig | null {
+    const uiConfig = this.callbacks.getUIConfig();
+    return uiConfig.getPermissionModeToggle?.() ?? null;
+  }
+
   updateDisplay() {
     if (!this.toggleEl || !this.labelEl) return;
 
-    const mode = this.callbacks.getSettings().permissionMode;
+    const toggleConfig = this.getToggleConfig();
+    const capabilities = this.callbacks.getCapabilities();
+    if (!toggleConfig) {
+      this.container.style.display = 'none';
+      return;
+    }
 
-    if (mode === 'plan') {
+    this.container.style.display = '';
+    const mode = this.callbacks.getSettings().permissionMode;
+    const planValue = toggleConfig.planValue;
+    const planLabel = toggleConfig.planLabel ?? 'PLAN';
+    const canShowPlan = Boolean(planValue) && capabilities.supportsPlanMode;
+
+    if (canShowPlan && planValue && mode === planValue) {
       this.toggleEl.style.display = 'none';
-      this.labelEl.setText('PLAN');
+      this.labelEl.setText(planLabel);
       this.labelEl.addClass('plan-active');
     } else {
       this.toggleEl.style.display = '';
       this.labelEl.removeClass('plan-active');
-      if (mode === 'yolo') {
+      if (mode === toggleConfig.activeValue) {
         this.toggleEl.addClass('active');
-        this.labelEl.setText('YOLO');
+        this.labelEl.setText(toggleConfig.activeLabel);
       } else {
         this.toggleEl.removeClass('active');
-        this.labelEl.setText('Safe');
+        this.labelEl.setText(toggleConfig.inactiveLabel);
       }
     }
   }
 
   private async toggle() {
+    const toggleConfig = this.getToggleConfig();
+    if (!toggleConfig) return;
+
     const current = this.callbacks.getSettings().permissionMode;
-    const newMode: PermissionMode = current === 'yolo' ? 'normal' : 'yolo';
+    const newMode = current === toggleConfig.activeValue
+      ? toggleConfig.inactiveValue
+      : toggleConfig.activeValue;
     await this.callbacks.onPermissionModeChange(newMode);
+    this.updateDisplay();
+  }
+}
+
+export class ServiceTierToggle {
+  private container: HTMLElement;
+  private buttonEl: HTMLElement | null = null;
+  private iconEl: HTMLElement | null = null;
+  private callbacks: ToolbarCallbacks;
+
+  constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
+    this.callbacks = callbacks;
+    this.container = parentEl.createDiv({ cls: 'claudian-service-tier-toggle' });
+    this.render();
+  }
+
+  private render() {
+    this.container.empty();
+
+    this.buttonEl = this.container.createDiv({ cls: 'claudian-service-tier-button' });
+    this.iconEl = this.buttonEl.createSpan({ cls: 'claudian-service-tier-icon' });
+    setIcon(this.iconEl, 'zap');
+
+    this.updateDisplay();
+
+    this.buttonEl.addEventListener('click', () => this.toggle());
+  }
+
+  private getToggleConfig(): ProviderServiceTierToggleConfig | null {
+    const uiConfig = this.callbacks.getUIConfig();
+    return uiConfig.getServiceTierToggle?.(this.callbacks.getSettings()) ?? null;
+  }
+
+  updateDisplay() {
+    if (!this.buttonEl || !this.iconEl) return;
+
+    const toggleConfig = this.getToggleConfig();
+    if (!toggleConfig) {
+      this.container.style.display = 'none';
+      return;
+    }
+
+    this.container.style.display = '';
+    const current = this.callbacks.getSettings().serviceTier;
+    const isActive = current === toggleConfig.activeValue;
+    if (isActive) {
+      this.buttonEl.addClass('active');
+    } else {
+      this.buttonEl.removeClass('active');
+    }
+
+    this.container.setAttribute('title', 'Toggle on/off fast mode');
+  }
+
+  private async toggle() {
+    const toggleConfig = this.getToggleConfig();
+    if (!toggleConfig) return;
+
+    const current = this.callbacks.getSettings().serviceTier;
+    const next = current === toggleConfig.activeValue
+      ? toggleConfig.inactiveValue
+      : toggleConfig.activeValue;
+    await this.callbacks.onServiceTierChange(next);
     this.updateDisplay();
   }
 }
@@ -645,14 +754,28 @@ export class McpServerSelector {
   private mcpManager: McpServerManager | null = null;
   private enabledServers: Set<string> = new Set();
   private onChangeCallback: ((enabled: Set<string>) => void) | null = null;
+  private visible = true;
 
   constructor(parentEl: HTMLElement) {
     this.container = parentEl.createDiv({ cls: 'claudian-mcp-selector' });
     this.render();
   }
 
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    if (!visible) {
+      this.container.style.display = 'none';
+    } else {
+      this.updateDisplay();
+    }
+  }
+
   setMcpManager(manager: McpServerManager | null): void {
     this.mcpManager = manager;
+    if (!manager && this.enabledServers.size > 0) {
+      this.enabledServers.clear();
+      this.onChangeCallback?.(this.enabledServers);
+    }
     this.pruneEnabledServers();
     this.updateDisplay();
     this.renderDropdown();
@@ -755,7 +878,7 @@ export class McpServerSelector {
     }
   }
 
-  private renderServerItem(listEl: HTMLElement, server: ClaudianMcpServer) {
+  private renderServerItem(listEl: HTMLElement, server: ManagedMcpServer) {
     const itemEl = listEl.createDiv({ cls: 'claudian-mcp-selector-item' });
     itemEl.dataset.serverName = server.name;
 
@@ -821,8 +944,8 @@ export class McpServerSelector {
     const count = this.enabledServers.size;
     const hasServers = (this.mcpManager?.getServers().length || 0) > 0;
 
-    // Show/hide container based on whether there are servers
-    if (!hasServers) {
+    // Show/hide container based on whether there are servers and visibility
+    if (!hasServers || !this.visible) {
       this.container.style.display = 'none';
       return;
     }
@@ -858,6 +981,10 @@ export class ContextUsageMeter {
     this.render();
     // Initially hidden
     this.container.style.display = 'none';
+  }
+
+  setVisible(visible: boolean): void {
+    this.container.style.display = visible ? '' : 'none';
   }
 
   private render() {
@@ -946,13 +1073,23 @@ export function createInputToolbar(
   externalContextSelector: ExternalContextSelector;
   mcpServerSelector: McpServerSelector;
   permissionToggle: PermissionToggle;
+  serviceTierToggle: ServiceTierToggle;
 } {
   const modelSelector = new ModelSelector(parentEl, callbacks);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
+  const serviceTierToggle = new ServiceTierToggle(parentEl, callbacks);
   const contextUsageMeter = new ContextUsageMeter(parentEl);
   const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
 
-  return { modelSelector, thinkingBudgetSelector, contextUsageMeter, externalContextSelector, mcpServerSelector, permissionToggle };
+  return {
+    modelSelector,
+    thinkingBudgetSelector,
+    serviceTierToggle,
+    contextUsageMeter,
+    externalContextSelector,
+    mcpServerSelector,
+    permissionToggle,
+  };
 }

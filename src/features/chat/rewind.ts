@@ -12,8 +12,8 @@ export interface RewindContext {
 export function findRewindContext(messages: ChatMessage[], userIndex: number): RewindContext {
   let prevAssistantUuid: string | undefined;
   for (let i = userIndex - 1; i >= 0; i--) {
-    if (messages[i].role === 'assistant' && messages[i].sdkAssistantUuid) {
-      prevAssistantUuid = messages[i].sdkAssistantUuid;
+    if (messages[i].role === 'assistant' && messages[i].assistantMessageId) {
+      prevAssistantUuid = messages[i].assistantMessageId;
       break;
     }
   }
@@ -21,7 +21,7 @@ export function findRewindContext(messages: ChatMessage[], userIndex: number): R
   let hasResponse = false;
   for (let i = userIndex + 1; i < messages.length; i++) {
     if (messages[i].role === 'user') break;
-    if (messages[i].role === 'assistant' && messages[i].sdkAssistantUuid) {
+    if (messages[i].role === 'assistant' && messages[i].assistantMessageId) {
       hasResponse = true;
       break;
     }

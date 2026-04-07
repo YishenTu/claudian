@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Notice, Setting } from 'obsidian';
 
 import type {
-  ClaudianMcpServer,
+  ManagedMcpServer,
   McpHttpServerConfig,
   McpServerConfig,
   McpServerType,
@@ -10,13 +10,11 @@ import type {
   McpStdioServerConfig,
 } from '../../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
 import { parseCommand } from '../../../utils/mcp';
 
 export class McpServerModal extends Modal {
-  private plugin: ClaudianPlugin;
-  private existingServer: ClaudianMcpServer | null;
-  private onSave: (server: ClaudianMcpServer) => void;
+  private existingServer: ManagedMcpServer | null;
+  private onSave: (server: ManagedMcpServer) => void;
 
   private serverName = '';
   private serverType: McpServerType = 'stdio';
@@ -31,14 +29,12 @@ export class McpServerModal extends Modal {
 
   constructor(
     app: App,
-    plugin: ClaudianPlugin,
-    existingServer: ClaudianMcpServer | null,
-    onSave: (server: ClaudianMcpServer) => void,
+    existingServer: ManagedMcpServer | null,
+    onSave: (server: ManagedMcpServer) => void,
     initialType?: McpServerType,
     prefillConfig?: { name: string; config: McpServerConfig }
   ) {
     super(app);
-    this.plugin = plugin;
     this.existingServer = existingServer;
     this.onSave = onSave;
 
@@ -292,7 +288,7 @@ export class McpServerModal extends Modal {
       }
     }
 
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name,
       config,
       enabled: this.enabled,

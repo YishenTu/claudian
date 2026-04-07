@@ -5,6 +5,7 @@ const baseConfig = {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.jest.json' }],
   },
+  roots: ['<rootDir>/src', '<rootDir>/tests'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',

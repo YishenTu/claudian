@@ -3,11 +3,11 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp';
 
-import { McpServerManager } from '@/core/mcp';
+import { parseClipboardConfig, tryParseClipboardConfig } from '@/core/mcp/McpConfigParser';
+import { McpServerManager } from '@/core/mcp/McpServerManager';
 import { testMcpServer } from '@/core/mcp/McpTester';
-import { MCP_CONFIG_PATH, McpStorage } from '@/core/storage/McpStorage';
 import type {
-  ClaudianMcpServer,
+  ManagedMcpServer,
   McpHttpServerConfig,
   McpServerConfig,
   McpSSEServerConfig,
@@ -18,6 +18,7 @@ import {
   getMcpServerType,
   isValidMcpServerConfig,
 } from '@/core/types/mcp';
+import { MCP_CONFIG_PATH, McpStorage } from '@/providers/claude/storage/McpStorage';
 import {
   extractMcpMentions,
   parseCommand,
@@ -140,7 +141,7 @@ describe('McpStorage', () => {
         },
       });
 
-      const result = McpStorage.parseClipboardConfig(json);
+      const result = parseClipboardConfig(json);
 
       expect(result.needsName).toBe(false);
       expect(result.servers).toHaveLength(2);
@@ -154,7 +155,7 @@ describe('McpStorage', () => {
         'my-server': { command: 'docker', args: ['exec', '-i', 'container'] },
       });
 
-      const result = McpStorage.parseClipboardConfig(json);
+      const result = parseClipboardConfig(json);
 
       expect(result.needsName).toBe(false);
       expect(result.servers).toHaveLength(1);
@@ -167,7 +168,7 @@ describe('McpStorage', () => {
         args: ['-m', 'server'],
       });
 
-      const result = McpStorage.parseClipboardConfig(json);
+      const result = parseClipboardConfig(json);
 
       expect(result.needsName).toBe(true);
       expect(result.servers).toHaveLength(1);
@@ -182,7 +183,7 @@ describe('McpStorage', () => {
         headers: { Authorization: 'Bearer token' },
       });
 
-      const result = McpStorage.parseClipboardConfig(json);
+      const result = parseClipboardConfig(json);
 
       expect(result.needsName).toBe(true);
       expect(result.servers).toHaveLength(1);
@@ -199,30 +200,30 @@ describe('McpStorage', () => {
         server2: { url: 'http://localhost:3000' },
       });
 
-      const result = McpStorage.parseClipboardConfig(json);
+      const result = parseClipboardConfig(json);
 
       expect(result.needsName).toBe(false);
       expect(result.servers).toHaveLength(2);
     });
 
     it('should throw for invalid JSON', () => {
-      expect(() => McpStorage.parseClipboardConfig('not json')).toThrow('Invalid JSON');
+      expect(() => parseClipboardConfig('not json')).toThrow('Invalid JSON');
     });
 
     it('should throw for non-object JSON', () => {
-      expect(() => McpStorage.parseClipboardConfig('"string"')).toThrow('Invalid JSON object');
-      expect(() => McpStorage.parseClipboardConfig('123')).toThrow('Invalid JSON object');
-      expect(() => McpStorage.parseClipboardConfig('null')).toThrow('Invalid JSON object');
+      expect(() => parseClipboardConfig('"string"')).toThrow('Invalid JSON object');
+      expect(() => parseClipboardConfig('123')).toThrow('Invalid JSON object');
+      expect(() => parseClipboardConfig('null')).toThrow('Invalid JSON object');
     });
 
     it('should throw for empty mcpServers', () => {
       const json = JSON.stringify({ mcpServers: {} });
-      expect(() => McpStorage.parseClipboardConfig(json)).toThrow('No valid server configs');
+      expect(() => parseClipboardConfig(json)).toThrow('No valid server configs');
     });
 
     it('should throw for invalid config format', () => {
       const json = JSON.stringify({ invalidKey: 'invalidValue' });
-      expect(() => McpStorage.parseClipboardConfig(json)).toThrow('Invalid MCP configuration');
+      expect(() => parseClipboardConfig(json)).toThrow('Invalid MCP configuration');
     });
 
     it('should skip invalid configs in mcpServers', () => {
@@ -233,7 +234,7 @@ describe('McpStorage', () => {
         },
       });
 
-      const result = McpStorage.parseClipboardConfig(json);
+      const result = parseClipboardConfig(json);
 
       expect(result.servers).toHaveLength(1);
       expect(result.servers[0].name).toBe('valid');
@@ -243,32 +244,32 @@ describe('McpStorage', () => {
   describe('tryParseClipboardConfig', () => {
     it('should return parsed config for valid JSON', () => {
       const json = JSON.stringify({ command: 'npx' });
-      const result = McpStorage.tryParseClipboardConfig(json);
+      const result = tryParseClipboardConfig(json);
 
       expect(result).not.toBeNull();
       expect(result!.needsName).toBe(true);
     });
 
     it('should return null for non-JSON text', () => {
-      expect(McpStorage.tryParseClipboardConfig('hello world')).toBeNull();
-      expect(McpStorage.tryParseClipboardConfig('not { json')).toBeNull();
+      expect(tryParseClipboardConfig('hello world')).toBeNull();
+      expect(tryParseClipboardConfig('not { json')).toBeNull();
     });
 
     it('should return null for text not starting with {', () => {
-      expect(McpStorage.tryParseClipboardConfig('[]')).toBeNull();
-      expect(McpStorage.tryParseClipboardConfig('  []')).toBeNull();
+      expect(tryParseClipboardConfig('[]')).toBeNull();
+      expect(tryParseClipboardConfig('  []')).toBeNull();
     });
 
     it('should handle whitespace before JSON', () => {
       const json = '  { "command": "npx" }';
-      const result = McpStorage.tryParseClipboardConfig(json);
+      const result = tryParseClipboardConfig(json);
 
       expect(result).not.toBeNull();
     });
 
     it('should return null for invalid MCP config', () => {
       const json = JSON.stringify({ random: 'object' });
-      expect(McpStorage.tryParseClipboardConfig(json)).toBeNull();
+      expect(tryParseClipboardConfig(json)).toBeNull();
     });
   });
 
@@ -288,7 +289,7 @@ describe('McpStorage', () => {
       };
       const { storage, files } = createMemoryStorage(initial);
 
-      const servers: ClaudianMcpServer[] = [
+      const servers: ManagedMcpServer[] = [
         {
           name: 'new-server',
           config: {
@@ -336,7 +337,7 @@ describe('McpStorage', () => {
       };
       const { storage, files } = createMemoryStorage(initial);
 
-      const servers: ClaudianMcpServer[] = [
+      const servers: ManagedMcpServer[] = [
         {
           name: 'default-meta',
           config: { command: 'npx' },
@@ -415,7 +416,7 @@ describe('McpStorage', () => {
       };
       const { storage, files } = createMemoryStorage(initial);
 
-      const servers: ClaudianMcpServer[] = [
+      const servers: ManagedMcpServer[] = [
         {
           name: 'legacy',
           config: { command: 'node' },
@@ -596,7 +597,7 @@ describe('McpTester', () => {
   });
 
   it('should test stdio server and return tools', async () => {
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'local',
       config: { command: 'node', args: ['server'] },
       enabled: true,
@@ -617,7 +618,7 @@ describe('McpTester', () => {
   });
 
   it('should fail when stdio command is missing', async () => {
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'missing',
       config: { command: '' },
       enabled: true,
@@ -632,7 +633,7 @@ describe('McpTester', () => {
   });
 
   it('should fail for invalid URL', async () => {
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'bad-url',
       config: { type: 'http', url: 'not-a-valid-url' },
       enabled: true,
@@ -647,7 +648,7 @@ describe('McpTester', () => {
   });
 
   it('should test http server and return tools', async () => {
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'http',
       config: { type: 'http', url: 'http://localhost:3000/mcp', headers: { Authorization: 'token' } },
       enabled: true,
@@ -670,7 +671,7 @@ describe('McpTester', () => {
   });
 
   it('should test sse server and return tools', async () => {
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'sse',
       config: { type: 'sse', url: 'http://localhost:3000/sse', headers: { Authorization: 'token' } },
       enabled: true,
@@ -695,7 +696,7 @@ describe('McpTester', () => {
   it('should return failure when connect fails', async () => {
     mockClientInstance.connect.mockRejectedValue(new Error('Connection refused'));
 
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'fail',
       config: { type: 'http', url: 'http://localhost:3000/mcp' },
       enabled: true,
@@ -711,7 +712,7 @@ describe('McpTester', () => {
   it('should return partial success when listTools fails', async () => {
     mockClientInstance.listTools.mockRejectedValue(new Error('tools/list not supported'));
 
-    const server: ClaudianMcpServer = {
+    const server: ManagedMcpServer = {
       name: 'partial',
       config: { type: 'http', url: 'http://localhost:3000/mcp' },
       enabled: true,
@@ -736,7 +737,7 @@ describe('McpTester', () => {
           }),
       );
 
-      const server: ClaudianMcpServer = {
+      const server: ManagedMcpServer = {
         name: 'timeout',
         config: { type: 'http', url: 'http://localhost:3000/mcp' },
         enabled: true,
@@ -760,7 +761,7 @@ describe('McpTester', () => {
 // ============================================================================
 
 describe('McpServerManager', () => {
-  function createManager(servers: ClaudianMcpServer[]): McpServerManager {
+  function createManager(servers: ManagedMcpServer[]): McpServerManager {
     const manager = new McpServerManager({
       load: jest.fn().mockResolvedValue(servers),
     });
@@ -770,7 +771,7 @@ describe('McpServerManager', () => {
   }
 
   describe('getActiveServers', () => {
-    const servers: ClaudianMcpServer[] = [
+    const servers: ManagedMcpServer[] = [
       {
         name: 'always-on',
         config: { command: 'server1' },
@@ -829,7 +830,7 @@ describe('McpServerManager', () => {
     });
 
     it('should return empty object for all disabled servers', () => {
-      const disabledServers: ClaudianMcpServer[] = [
+      const disabledServers: ManagedMcpServer[] = [
         { name: 's1', config: { command: 'c1' }, enabled: false, contextSaving: false },
         { name: 's2', config: { command: 'c2' }, enabled: false, contextSaving: true },
       ];
@@ -842,7 +843,7 @@ describe('McpServerManager', () => {
   });
 
   describe('getContextSavingServers', () => {
-    const servers: ClaudianMcpServer[] = [
+    const servers: ManagedMcpServer[] = [
       { name: 's1', config: { command: 'c1' }, enabled: true, contextSaving: true },
       { name: 's2', config: { command: 'c2' }, enabled: true, contextSaving: false },
       { name: 's3', config: { command: 'c3' }, enabled: false, contextSaving: true },
@@ -859,7 +860,7 @@ describe('McpServerManager', () => {
   });
 
   describe('extractMentions', () => {
-    const servers: ClaudianMcpServer[] = [
+    const servers: ManagedMcpServer[] = [
       { name: 'context7', config: { command: 'c1' }, enabled: true, contextSaving: true },
       { name: 'always-on', config: { command: 'c2' }, enabled: true, contextSaving: false },
       { name: 'disabled', config: { command: 'c3' }, enabled: false, contextSaving: true },
@@ -883,7 +884,7 @@ describe('McpServerManager', () => {
 
   describe('helper methods', () => {
     it('should report enabled counts and server presence', () => {
-      const servers: ClaudianMcpServer[] = [
+      const servers: ManagedMcpServer[] = [
         { name: 's1', config: { command: 'c1' }, enabled: true, contextSaving: true },
         { name: 's2', config: { command: 'c2' }, enabled: true, contextSaving: false },
         { name: 's3', config: { command: 'c3' }, enabled: false, contextSaving: true },

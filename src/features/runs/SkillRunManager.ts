@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { ClaudianService } from '../../core/agent';
 import {
   TOOL_ASK_USER_QUESTION,
   TOOL_EXIT_PLAN_MODE,
@@ -13,6 +12,8 @@ import type {
   StreamChunk,
 } from '../../core/types';
 import type ClaudianPlugin from '../../main';
+import { getClaudeWorkspaceServices } from '../../providers/claude/app/ClaudeWorkspaceServices';
+import { ClaudianService } from '../../providers/claude/runtime/ClaudeChatRuntime';
 import { getVaultPath, isPathWithinVault, normalizePathForFilesystem } from '../../utils/path';
 
 type SkillRunListener = () => void;
@@ -253,7 +254,12 @@ export class SkillRunManager {
       return;
     }
 
-    const service = new ClaudianService(this.plugin, this.plugin.mcpManager, run.workingDirectory);
+    const workspace = getClaudeWorkspaceServices();
+    const service = new ClaudianService(this.plugin, {
+      mcpManager: workspace.mcpManager,
+      pluginManager: workspace.pluginManager,
+      agentManager: workspace.agentManager,
+    }, run.workingDirectory);
     const active: ActiveRunContext = { service, isStopping: false, pendingTextLog: '' };
     this.activeRuns.set(runId, active);
 
@@ -328,8 +334,6 @@ export class SkillRunManager {
           finalStatus = currentStatus === 'needs_attention' ? 'needs_attention' : 'failed';
           finalError = chunk.content;
           run.error = chunk.content;
-        } else if (chunk.type === 'blocked') {
-          run.lastLogLine = chunk.content;
         }
       }
     } catch (error) {
@@ -403,11 +407,6 @@ export class SkillRunManager {
           run.lastLogLine = truncateText(chunk.content.trim(), 180);
         }
         this.appendLog(run, chunk.content.trim() || `Tool ${chunk.id} completed.`);
-        break;
-      case 'blocked':
-        this.flushPendingTextLog(run, active);
-        run.lastLogLine = truncateText(chunk.content, 180);
-        this.appendLog(run, `Blocked: ${chunk.content}`);
         break;
       case 'error':
         this.flushPendingTextLog(run, active);
@@ -538,8 +537,6 @@ export class SkillRunManager {
 
     await this.plugin.updateConversation(conversationId, {
       sessionId,
-      sdkSessionId: sessionId,
-      isNative: true,
     });
   }
 
@@ -556,8 +553,6 @@ export class SkillRunManager {
 
     if (sessionId) {
       updates.sessionId = sessionId;
-      updates.sdkSessionId = sessionId;
-      updates.isNative = true;
     }
 
     await this.plugin.updateConversation(run.conversationId, updates);

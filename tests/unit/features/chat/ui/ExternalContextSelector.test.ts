@@ -20,14 +20,43 @@ function createMockCallbacks() {
     onModelChange: jest.fn(),
     onThinkingBudgetChange: jest.fn(),
     onEffortLevelChange: jest.fn().mockResolvedValue(undefined),
+    onServiceTierChange: jest.fn().mockResolvedValue(undefined),
     onPermissionModeChange: jest.fn(),
     getSettings: jest.fn().mockReturnValue({
       model: 'haiku',
       thinkingBudget: 'off',
       effortLevel: 'high',
+      serviceTier: 'default',
       permissionMode: 'yolo',
     }),
     getEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getUIConfig: jest.fn().mockReturnValue({
+      getModelOptions: jest.fn().mockReturnValue([
+        { value: 'sonnet', label: 'Sonnet' },
+        { value: 'opus', label: 'Opus' },
+      ]),
+      isAdaptiveReasoningModel: jest.fn().mockReturnValue(true),
+      getReasoningOptions: jest.fn().mockReturnValue([
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Med' },
+        { value: 'high', label: 'High' },
+      ]),
+      getDefaultReasoningValue: jest.fn().mockReturnValue('high'),
+      getContextWindowSize: jest.fn().mockReturnValue(200000),
+      isDefaultModel: jest.fn().mockReturnValue(true),
+      applyModelDefaults: jest.fn(),
+      normalizeModelVariant: jest.fn((model: string) => model),
+    }),
+    getCapabilities: jest.fn().mockReturnValue({
+      providerId: 'claude',
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: true,
+      supportsRewind: true,
+      supportsFork: true,
+      supportsProviderCommands: true,
+      reasoningControl: 'effort',
+    }),
   };
 }
 

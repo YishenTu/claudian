@@ -25,6 +25,7 @@ export class ImageContextManager {
   private inputEl: HTMLTextAreaElement;
   private dropOverlay: HTMLElement | null = null;
   private attachedImages: Map<string, ImageAttachment> = new Map();
+  private enabled = true;
 
   constructor(
     containerEl: HTMLElement,
@@ -46,6 +47,13 @@ export class ImageContextManager {
 
     this.setupDragAndDrop();
     this.setupPasteHandler();
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled && this.attachedImages.size > 0) {
+      this.clearImages();
+    }
   }
 
   getAttachedImages(): ImageAttachment[] {
@@ -188,6 +196,11 @@ export class ImageContextManager {
   }
 
   private async addImageFromFile(file: File, source: 'paste' | 'drop'): Promise<boolean> {
+    if (!this.enabled) {
+      new Notice('Image attachments are not supported by this provider.');
+      return false;
+    }
+
     if (file.size > MAX_IMAGE_SIZE) {
       this.notifyImageError(`Image exceeds ${this.formatSize(MAX_IMAGE_SIZE)} limit.`);
       return false;

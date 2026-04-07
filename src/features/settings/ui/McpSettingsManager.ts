@@ -1,39 +1,37 @@
+import type { App } from 'obsidian';
 import { Notice, setIcon } from 'obsidian';
 
+import { tryParseClipboardConfig } from '../../../core/mcp/McpConfigParser';
 import { testMcpServer } from '../../../core/mcp/McpTester';
-import { McpStorage } from '../../../core/storage';
-import type { ClaudianMcpServer, McpServerConfig, McpServerType } from '../../../core/types';
+import type { AppMcpStorage } from '../../../core/providers/types';
+import type { ManagedMcpServer, McpServerConfig, McpServerType } from '../../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
 import { McpServerModal } from './McpServerModal';
 import { McpTestModal } from './McpTestModal';
 
+export interface McpSettingsManagerDeps {
+  app: App;
+  mcpStorage: AppMcpStorage;
+  broadcastMcpReload: () => Promise<void>;
+}
+
 export class McpSettingsManager {
+  private app: App;
   private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
-  private servers: ClaudianMcpServer[] = [];
+  private mcpStorage: AppMcpStorage;
+  private broadcastMcpReload: () => Promise<void>;
+  private servers: ManagedMcpServer[] = [];
 
-  /**
-   * Broadcasts MCP reload to all open Claudian views.
-   * With multiple views open (split workspace), each view's tabs need to reload MCP config.
-   */
-  private async broadcastMcpReloadToAllViews(): Promise<void> {
-    const views = this.plugin.getAllViews();
-    for (const view of views) {
-      await view.getTabManager()?.broadcastToAllTabs(
-        (service) => service.reloadMcpServers()
-      );
-    }
-  }
-
-  constructor(containerEl: HTMLElement, plugin: ClaudianPlugin) {
+  constructor(containerEl: HTMLElement, deps: McpSettingsManagerDeps) {
+    this.app = deps.app;
     this.containerEl = containerEl;
-    this.plugin = plugin;
+    this.mcpStorage = deps.mcpStorage;
+    this.broadcastMcpReload = deps.broadcastMcpReload;
     this.loadAndRender();
   }
 
   private async loadAndRender() {
-    this.servers = await this.plugin.storage.mcp.load();
+    this.servers = await this.mcpStorage.load();
     this.render();
   }
 
@@ -97,7 +95,7 @@ export class McpSettingsManager {
     }
   }
 
-  private renderServerItem(listEl: HTMLElement, server: ClaudianMcpServer) {
+  private renderServerItem(listEl: HTMLElement, server: ManagedMcpServer) {
     const itemEl = listEl.createDiv({ cls: 'claudian-mcp-item' });
     if (!server.enabled) {
       itemEl.addClass('claudian-mcp-item-disabled');
@@ -163,9 +161,9 @@ export class McpSettingsManager {
     deleteBtn.addEventListener('click', () => this.deleteServer(server));
   }
 
-  private async testServer(server: ClaudianMcpServer) {
+  private async testServer(server: ManagedMcpServer) {
     const modal = new McpTestModal(
-      this.plugin.app,
+      this.app,
       server.name,
       server.disabledTools,
       async (toolName, enabled) => {
@@ -187,21 +185,21 @@ export class McpSettingsManager {
 
   /** Rolls back on save failure; warns on reload failure (since save succeeded). */
   private async updateServerDisabledTools(
-    server: ClaudianMcpServer,
+    server: ManagedMcpServer,
     newDisabledTools: string[] | undefined
   ): Promise<void> {
     const previous = server.disabledTools ? [...server.disabledTools] : undefined;
     server.disabledTools = newDisabledTools;
 
     try {
-      await this.plugin.storage.mcp.save(this.servers);
+      await this.mcpStorage.save(this.servers);
     } catch (error) {
       server.disabledTools = previous;
       throw error;
     }
 
     try {
-      await this.broadcastMcpReloadToAllViews();
+      await this.broadcastMcpReload();
     } catch {
       // Save succeeded but reload failed - don't rollback since disk has correct state
       new Notice('Setting saved but reload failed. Changes will apply on next session.');
@@ -209,7 +207,7 @@ export class McpSettingsManager {
   }
 
   private async updateDisabledTool(
-    server: ClaudianMcpServer,
+    server: ManagedMcpServer,
     toolName: string,
     enabled: boolean
   ) {
@@ -225,14 +223,14 @@ export class McpSettingsManager {
     );
   }
 
-  private async updateAllDisabledTools(server: ClaudianMcpServer, disabledTools: string[]) {
+  private async updateAllDisabledTools(server: ManagedMcpServer, disabledTools: string[]) {
     await this.updateServerDisabledTools(
       server,
       disabledTools.length > 0 ? disabledTools : undefined
     );
   }
 
-  private getServerPreview(server: ClaudianMcpServer, type: McpServerType): string {
+  private getServerPreview(server: ManagedMcpServer, type: McpServerType): string {
     if (type === 'stdio') {
       const config = server.config as { command: string; args?: string[] };
       const args = config.args?.join(' ') || '';
@@ -243,10 +241,9 @@ export class McpSettingsManager {
     }
   }
 
-  private openModal(existing: ClaudianMcpServer | null, initialType?: McpServerType) {
+  private openModal(existing: ManagedMcpServer | null, initialType?: McpServerType) {
     const modal = new McpServerModal(
-      this.plugin.app,
-      this.plugin,
+      this.app,
       existing,
       async (server) => {
         await this.saveServer(server, existing);
@@ -264,7 +261,7 @@ export class McpSettingsManager {
         return;
       }
 
-      const parsed = McpStorage.tryParseClipboardConfig(text);
+      const parsed = tryParseClipboardConfig(text);
       if (!parsed || parsed.servers.length === 0) {
         new Notice('No valid MCP configuration found in clipboard');
         return;
@@ -274,8 +271,7 @@ export class McpSettingsManager {
         const server = parsed.servers[0];
         const type = getMcpServerType(server.config);
         const modal = new McpServerModal(
-          this.plugin.app,
-          this.plugin,
+          this.app,
           null,
           async (savedServer) => {
             await this.saveServer(savedServer, null);
@@ -296,7 +292,7 @@ export class McpSettingsManager {
     }
   }
 
-  private async saveServer(server: ClaudianMcpServer, existing: ClaudianMcpServer | null) {
+  private async saveServer(server: ManagedMcpServer, existing: ManagedMcpServer | null) {
     if (existing) {
       const index = this.servers.findIndex((s) => s.name === existing.name);
       if (index !== -1) {
@@ -318,8 +314,8 @@ export class McpSettingsManager {
       this.servers.push(server);
     }
 
-    await this.plugin.storage.mcp.save(this.servers);
-    await this.broadcastMcpReloadToAllViews();
+    await this.mcpStorage.save(this.servers);
+    await this.broadcastMcpReload();
     this.render();
     new Notice(existing ? `MCP server "${server.name}" updated` : `MCP server "${server.name}" added`);
   }
@@ -355,8 +351,8 @@ export class McpSettingsManager {
       return;
     }
 
-    await this.plugin.storage.mcp.save(this.servers);
-    await this.broadcastMcpReloadToAllViews();
+    await this.mcpStorage.save(this.servers);
+    await this.broadcastMcpReload();
     this.render();
 
     let message = `Imported ${added.length} MCP server${added.length > 1 ? 's' : ''}`;
@@ -366,22 +362,22 @@ export class McpSettingsManager {
     new Notice(message);
   }
 
-  private async toggleServer(server: ClaudianMcpServer) {
+  private async toggleServer(server: ManagedMcpServer) {
     server.enabled = !server.enabled;
-    await this.plugin.storage.mcp.save(this.servers);
-    await this.broadcastMcpReloadToAllViews();
+    await this.mcpStorage.save(this.servers);
+    await this.broadcastMcpReload();
     this.render();
     new Notice(`MCP server "${server.name}" ${server.enabled ? 'enabled' : 'disabled'}`);
   }
 
-  private async deleteServer(server: ClaudianMcpServer) {
+  private async deleteServer(server: ManagedMcpServer) {
     if (!confirm(`Delete MCP server "${server.name}"?`)) {
       return;
     }
 
     this.servers = this.servers.filter((s) => s.name !== server.name);
-    await this.plugin.storage.mcp.save(this.servers);
-    await this.broadcastMcpReloadToAllViews();
+    await this.mcpStorage.save(this.servers);
+    await this.broadcastMcpReload();
     this.render();
     new Notice(`MCP server "${server.name}" deleted`);
   }

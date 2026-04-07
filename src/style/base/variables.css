@@ -6,3 +6,14 @@
   --claudian-error-rgb: 220, 53, 69;
   --claudian-compact: #5bc0de;
 }
+
+/* Provider-specific brand overrides */
+body.theme-dark .claudian-container[data-provider="codex"] {
+  --claudian-brand: #d0d0d0;
+  --claudian-brand-rgb: 208, 208, 208;
+}
+
+body.theme-light .claudian-container[data-provider="codex"] {
+  --claudian-brand: #000000;
+  --claudian-brand-rgb: 0, 0, 0;
+}

@@ -1,13 +1,5 @@
-/**
- * i18n type definitions
- */
-
 export type Locale = 'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'ru' | 'pt';
 
-/**
- * Translation key type - represents all valid translation keys
- * This is a union of all possible dot-notation keys from the translation files
- */
 export type TranslationKey =
   // Common UI elements
   | 'common.save'
@@ -70,9 +62,15 @@ export type TranslationKey =
   | 'chat.fork.commandNoMessages'
   | 'chat.fork.commandNoAssistantUuid'
 
-  // Settings - Customization
+  // Settings - Section Headings
   | 'settings.title'
-  | 'settings.customization'
+  | 'settings.display'
+  | 'settings.conversations'
+  | 'settings.content'
+  | 'settings.input'
+  | 'settings.setup'
+  | 'settings.models'
+  | 'settings.experimental'
   | 'settings.userName.name'
   | 'settings.userName.desc'
   | 'settings.excludedTags.name'
@@ -172,18 +170,10 @@ export type TranslationKey =
   | 'settings.safety'
   | 'settings.loadUserSettings.name'
   | 'settings.loadUserSettings.desc'
-  | 'settings.enableBlocklist.name'
-  | 'settings.enableBlocklist.desc'
-  | 'settings.allowExternalAccess.name'
-  | 'settings.allowExternalAccess.desc'
-  | 'settings.blockedCommands.name'
-  | 'settings.blockedCommands.desc'
-  | 'settings.blockedCommands.unixName'
-  | 'settings.blockedCommands.unixDesc'
-  | 'settings.exportPaths.name'
-  | 'settings.exportPaths.desc'
-  | 'settings.exportPaths.disabledDesc'
-
+  | 'settings.claudeSafeMode.name'
+  | 'settings.claudeSafeMode.desc'
+  | 'settings.codexSafeMode.name'
+  | 'settings.codexSafeMode.desc'
   // Settings - Environment
   | 'settings.environment'
   | 'settings.customVariables.name'
@@ -210,7 +200,6 @@ export type TranslationKey =
   | 'settings.customContextLimits.invalid'
 
   // Settings - Advanced
-  | 'settings.advanced'
   | 'settings.enableOpus1M.name'
   | 'settings.enableOpus1M.desc'
   | 'settings.enableSonnet1M.name'

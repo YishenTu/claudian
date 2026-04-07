@@ -26,6 +26,44 @@ export const TOOL_WRITE = 'Write' as const;
 export const TOOL_ENTER_PLAN_MODE = 'EnterPlanMode' as const;
 export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
 
+// Runtime-managed tools exposed through provider adapters.
+export const TOOL_APPLY_PATCH = 'apply_patch' as const;
+export const TOOL_WRITE_STDIN = 'write_stdin' as const;
+export const TOOL_SPAWN_AGENT = 'spawn_agent' as const;
+export const TOOL_SEND_INPUT = 'send_input' as const;
+export const TOOL_WAIT = 'wait' as const;
+export const TOOL_WAIT_AGENT = 'wait_agent' as const;
+export const TOOL_RESUME_AGENT = 'resume_agent' as const;
+export const TOOL_CLOSE_AGENT = 'close_agent' as const;
+
+export const AGENT_LIFECYCLE_TOOLS = [
+  TOOL_SPAWN_AGENT,
+  TOOL_SEND_INPUT,
+  TOOL_WAIT,
+  TOOL_WAIT_AGENT,
+  TOOL_RESUME_AGENT,
+  TOOL_CLOSE_AGENT,
+] as const;
+
+export function isAgentLifecycleTool(name: string): boolean {
+  return (AGENT_LIFECYCLE_TOOLS as readonly string[]).includes(name);
+}
+
+/** Tools that should be hidden from rendering when a provider subagent block is shown. */
+export const SUBAGENT_HIDDEN_TOOLS = [
+  TOOL_WAIT,
+  TOOL_WAIT_AGENT,
+  TOOL_CLOSE_AGENT,
+] as const;
+
+export function isSubagentSpawnTool(name: string): boolean {
+  return name === TOOL_SPAWN_AGENT;
+}
+
+export function isSubagentHiddenTool(name: string): boolean {
+  return (SUBAGENT_HIDDEN_TOOLS as readonly string[]).includes(name);
+}
+
 // These tools resolve via dedicated callbacks (not content-based), so their
 // tool_result should never be marked "blocked" based on result text.
 export const TOOLS_SKIP_BLOCKED_DETECTION = [

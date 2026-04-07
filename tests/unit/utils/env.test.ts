@@ -1,7 +1,12 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import type * as fsType from 'fs';
+import type * as osType from 'os';
+import type * as pathType from 'path';
 
+const fs = jest.requireActual<typeof fsType>('fs');
+const os = jest.requireActual<typeof osType>('os');
+const path = jest.requireActual<typeof pathType>('path');
+
+import * as claudeModelEnv from '../../../src/providers/claude/env/claudeModelEnv';
 import * as env from '../../../src/utils/env';
 
 const {
@@ -9,15 +14,18 @@ const {
   findNodeDirectory,
   findNodeExecutable,
   formatContextLimit,
-  getCurrentModelFromEnvironment,
-  getCustomModelIds,
   getEnhancedPath,
   getMissingNodeError,
-  getModelsFromEnvironment,
   getHostnameKey,
   parseContextLimit,
   parseEnvironmentVariables,
 } = env;
+
+const {
+  getCurrentModelFromEnvironment,
+  getCustomModelIds,
+  getModelsFromEnvironment,
+} = claudeModelEnv;
 
 const isWindows = process.platform === 'win32';
 const SEP = isWindows ? ';' : ':';
@@ -343,7 +351,7 @@ describe('getEnhancedPath', () => {
           return [];
         }) as typeof fs.readdirSync);
         jest.spyOn(fs, 'statSync').mockImplementation(
-          () => ({ isFile: () => true, isDirectory: () => true }) as fs.Stats
+          () => ({ isFile: () => true, isDirectory: () => true }) as fsType.Stats
         );
       }
 
@@ -431,7 +439,7 @@ describe('getEnhancedPath', () => {
       const nodePath = path.join(fakeDir, isWindows ? 'node.exe' : 'node');
       jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
       jest.spyOn(fs, 'statSync').mockImplementation(
-        p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+        p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
       return nodePath;
     }
@@ -506,7 +514,7 @@ describe('getEnhancedPath', () => {
       const nodePath = path.join(cliDir, isWindows ? 'node.exe' : 'node');
       jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
       jest.spyOn(fs, 'statSync').mockImplementation(
-        p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+        p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
     }
 
@@ -604,7 +612,7 @@ describe('getEnhancedPath', () => {
       const nodePath = path.join(nvmBinDir, 'node');
       jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
       jest.spyOn(fs, 'statSync').mockImplementation(
-        p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+        p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
 
       process.env.PATH = '/usr/bin';
@@ -664,11 +672,11 @@ describe('cliPathRequiresNode', () => {
 
     jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === scriptPath }) as fs.Stats
+      p => ({ isFile: () => String(p) === scriptPath }) as fsType.Stats
     );
     jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
-    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: Buffer) => {
-      buffer.write(shebang);
+    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
+      Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(shebang);
       return shebang.length;
     });
     jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
@@ -680,7 +688,7 @@ describe('cliPathRequiresNode', () => {
     const dirPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
     jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === dirPath);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => false }) as fs.Stats
+      () => ({ isFile: () => false }) as fsType.Stats
     );
 
     expect(cliPathRequiresNode(dirPath)).toBe(false);
@@ -692,11 +700,11 @@ describe('cliPathRequiresNode', () => {
 
     jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === scriptPath }) as fs.Stats
+      p => ({ isFile: () => String(p) === scriptPath }) as fsType.Stats
     );
     jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
-    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: Buffer) => {
-      buffer.write(shebang);
+    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
+      Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(shebang);
       return shebang.length;
     });
     jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
@@ -737,7 +745,7 @@ describe('getMissingNodeError', () => {
 
     jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+      p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
     );
 
     const error = getMissingNodeError('/path/to/cli.js', nodeDir);
@@ -776,7 +784,7 @@ describe('findNodeDirectory', () => {
     const nodePath = path.join(nvmSymlink, 'node.exe');
     jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === nodePath }) as fs.Stats
+      p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
     );
 
     process.env.NVM_SYMLINK = nvmSymlink;
@@ -798,7 +806,7 @@ describe('findNodeDirectory', () => {
       return candidate === preferredNode || candidate === fallbackNode;
     });
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fs.Stats
+      () => ({ isFile: () => true }) as fsType.Stats
     );
 
     process.env.PATH = fallbackDir;
@@ -814,7 +822,7 @@ describe('findNodeDirectory', () => {
 
     jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === preferredNode);
     jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fs.Stats
+      () => ({ isFile: () => true }) as fsType.Stats
     );
 
     const result = findNodeExecutable(preferredDir);

@@ -51,6 +51,7 @@ describe('InlineExitPlanMode', () => {
       resolve,
       undefined,
       renderContent,
+      '/.claude/plans/',
     );
 
     widget.render();
@@ -77,8 +78,11 @@ describe('InlineExitPlanMode', () => {
 
     const widget = new InlineExitPlanMode(
       container,
-      { planFilePath: '/path/does/not/exist.md' },
+      { planFilePath: '/path/.claude/plans/does-not-exist.md' },
       resolve,
+      undefined,
+      undefined,
+      '/.claude/plans/',
     );
 
     widget.render();
@@ -102,6 +106,9 @@ describe('InlineExitPlanMode', () => {
       container,
       { planFilePath: '/etc/passwd' },
       resolve,
+      undefined,
+      undefined,
+      '/.claude/plans/',
     );
 
     widget.render();

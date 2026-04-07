@@ -1,0 +1,10 @@
+{"type":"event","event":{"type":"thread.started","thread_id":"thread_abc123"}}
+{"type":"event","event":{"type":"turn.started"}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_001","type":"reasoning","text":""}}}
+{"type":"event","event":{"type":"item.updated","item":{"id":"item_001","type":"reasoning","text":"Let me think about this..."}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_001","type":"reasoning","text":"Let me think about this request carefully."}}}
+{"type":"event","event":{"type":"item.started","item":{"id":"item_002","type":"agent_message","text":""}}}
+{"type":"event","event":{"type":"item.updated","item":{"id":"item_002","type":"agent_message","text":"Hello! I can"}}}
+{"type":"event","event":{"type":"item.updated","item":{"id":"item_002","type":"agent_message","text":"Hello! I can help you with that."}}}
+{"type":"event","event":{"type":"item.completed","item":{"id":"item_002","type":"agent_message","text":"Hello! I can help you with that."}}}
+{"type":"event","event":{"type":"turn.completed","usage":{"input_tokens":150,"cached_input_tokens":0,"output_tokens":42}}}

@@ -1,4 +1,4 @@
-import type { ClaudeModel, SlashCommand } from '../core/types';
+import type { SlashCommand } from '../core/types';
 import {
   extractBoolean,
   extractString,
@@ -33,6 +33,7 @@ export function validateCommandName(name: string): string | null {
 }
 
 export function isSkill(cmd: SlashCommand): boolean {
+  if (cmd.kind) return cmd.kind === 'skill';
   return cmd.id.startsWith('skill-');
 }
 
@@ -45,7 +46,7 @@ export function parsedToSlashCommand(
     description: parsed.description,
     argumentHint: parsed.argumentHint,
     allowedTools: parsed.allowedTools,
-    model: parsed.model as ClaudeModel | undefined,
+    model: parsed.model,
     content: parsed.promptContent,
     disableModelInvocation: parsed.disableModelInvocation,
     userInvocable: parsed.userInvocable,
@@ -97,13 +98,11 @@ export function yamlString(value: string): string {
   return value;
 }
 
-/** Strips any frontmatter from `cmd.content` and re-serializes the command as Markdown. */
 export function serializeCommand(cmd: SlashCommand): string {
   const parsed = parseSlashCommandContent(cmd.content);
   return serializeSlashCommandMarkdown(cmd, parsed.promptContent);
 }
 
-/** All frontmatter keys are serialized in kebab-case. */
 export function serializeSlashCommandMarkdown(cmd: Partial<SlashCommand>, body: string): string {
   const lines: string[] = ['---'];
 

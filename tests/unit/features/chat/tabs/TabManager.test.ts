@@ -1,5 +1,6 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import {
   DEFAULT_MAX_TABS,
@@ -37,6 +38,50 @@ jest.mock('@/shared/modals/ForkTargetModal', () => ({
   chooseForkTarget: (...args: any[]) => mockChooseForkTarget(...args),
 }));
 
+const mockBuildForkProviderState = jest.fn(
+  (sourceSessionId: string, resumeAt: string) => ({
+    forkSource: { sessionId: sourceSessionId, resumeAt },
+  }),
+);
+const mockGetCapabilities = jest.fn().mockReturnValue({
+  providerId: 'claude',
+  supportsPersistentRuntime: true,
+  supportsNativeHistory: true,
+  supportsPlanMode: true,
+  supportsRewind: true,
+  supportsFork: true,
+  supportsProviderCommands: true,
+  supportsImageAttachments: true,
+  supportsInstructionMode: true,
+  supportsMcpTools: true,
+  reasoningControl: 'effort',
+});
+const mockCommandCatalogs: Record<string, any> = {};
+jest.mock('@/core/providers/ProviderRegistry', () => ({
+  ProviderRegistry: {
+    getConversationHistoryService: () => ({
+      buildForkProviderState: mockBuildForkProviderState,
+    }),
+    getCapabilities: (...args: any[]) => mockGetCapabilities(...args),
+    resolveProviderForModel: (model: string) => (
+      model.startsWith('gpt-') || /^o\d/.test(model) ? 'codex' : 'claude'
+    ),
+  },
+}));
+
+jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
+  ProviderWorkspaceRegistry: {
+    getCommandCatalog: (providerId: string) => mockCommandCatalogs[providerId] ?? null,
+    setServices: (providerId: string, services: any) => {
+      if (services?.commandCatalog) {
+        mockCommandCatalogs[providerId] = services.commandCatalog;
+      } else {
+        delete mockCommandCatalogs[providerId];
+      }
+    },
+  },
+}));
+
 function createMockPlugin(overrides: Record<string, any> = {}): any {
   return {
     app: {
@@ -49,6 +94,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       ...(overrides.settings || {}),
     },
     getConversationById: jest.fn().mockResolvedValue(null),
+    getConversationSync: jest.fn().mockReturnValue(null),
     getConversationList: jest.fn().mockReturnValue([]),
     findConversationAcrossViews: jest.fn().mockReturnValue(null),
     ...overrides,
@@ -90,6 +136,7 @@ function createMockTabData(overrides: Record<string, any> = {}): any {
 
   return {
     id: `tab-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    providerId: 'claude',
     conversationId: null,
     service: null,
     serviceInitialized: false,
@@ -741,6 +788,338 @@ describe('TabManager - Broadcast', () => {
   });
 });
 
+describe('TabManager - SDK Commands', () => {
+  beforeEach(() => {
+    mockGetCapabilities.mockReset();
+    mockGetCapabilities.mockReturnValue({
+      providerId: 'claude',
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: true,
+      supportsRewind: true,
+      supportsFork: true,
+      supportsProviderCommands: true,
+      reasoningControl: 'effort',
+    });
+  });
+
+  it('should return commands from the target tab runtime when it is ready', async () => {
+    const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+    };
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-ready',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+
+    const tab = await manager.createTab();
+
+    await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(supportedCommands);
+    expect(readyService.getSupportedCommands).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reuse commands from another ready tab with the same provider', async () => {
+    const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyClaudeService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+    };
+    const manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        providerId: 'claude',
+        service: n === 1 ? readyClaudeService : null,
+      }),
+    });
+
+    await manager.createTab();
+    const lazyClaudeTab = await manager.createTab();
+
+    await expect(manager.getSdkCommands(lazyClaudeTab!.id)).resolves.toEqual(supportedCommands);
+    expect(readyClaudeService.getSupportedCommands).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not leak commands across providers', async () => {
+    const claudeCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyClaudeService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(claudeCommands),
+    };
+    const manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        providerId: n === 2 ? 'codex' : 'claude',
+        service: n === 1 ? readyClaudeService : null,
+      }),
+    });
+
+    await manager.createTab();
+    const codexTab = await manager.createTab();
+    mockGetCapabilities.mockImplementation((providerId: string) => ({
+      providerId,
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: providerId === 'claude',
+      supportsRewind: providerId === 'claude',
+      supportsFork: providerId === 'claude',
+      supportsProviderCommands: providerId === 'claude',
+      reasoningControl: providerId === 'claude' ? 'effort' : 'none',
+    }));
+
+    await expect(manager.getSdkCommands(codexTab!.id)).resolves.toEqual([]);
+    expect(readyClaudeService.getSupportedCommands).not.toHaveBeenCalled();
+  });
+
+  it('should resolve blank-tab SDK command provider from draftModel instead of stale providerId', async () => {
+    const claudeCommands = [{ id: 'sdk:commit', name: 'commit', content: '' }];
+    const readyClaudeService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(claudeCommands),
+    };
+    const manager = createManager({
+      tabFactory: (n) => createMockTabData({
+        id: `tab-${n}`,
+        lifecycleState: n === 2 ? 'blank' : 'bound_cold',
+        draftModel: n === 2 ? 'gpt-5.4' : null,
+        providerId: 'claude',
+        service: n === 1 ? readyClaudeService : null,
+      }),
+    });
+
+    await manager.createTab();
+    const blankCodexTab = await manager.createTab();
+    mockGetCapabilities.mockImplementation((providerId: string) => ({
+      providerId,
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: providerId === 'claude',
+      supportsRewind: providerId === 'claude',
+      supportsFork: providerId === 'claude',
+      supportsProviderCommands: providerId === 'claude',
+      reasoningControl: providerId === 'claude' ? 'effort' : 'none',
+    }));
+
+    await expect(manager.getSdkCommands(blankCodexTab!.id)).resolves.toEqual([]);
+    expect(readyClaudeService.getSupportedCommands).not.toHaveBeenCalled();
+  });
+});
+
+describe('TabManager - Provider Command Catalog', () => {
+  const mockCatalogEntries = [
+    {
+      id: 'codex-skill-analyze', providerId: 'codex', kind: 'skill',
+      name: 'analyze', description: 'Analyze code', content: '',
+      scope: 'vault', source: 'user', isEditable: true, isDeletable: true,
+      displayPrefix: '$', insertPrefix: '$',
+    },
+  ];
+
+  const mockCatalog = {
+    listDropdownEntries: jest.fn().mockResolvedValue(mockCatalogEntries),
+    listVaultEntries: jest.fn().mockResolvedValue(mockCatalogEntries),
+    saveVaultEntry: jest.fn(),
+    deleteVaultEntry: jest.fn(),
+    setRuntimeCommands: jest.fn(),
+    getDropdownConfig: jest.fn().mockReturnValue({
+      triggerChars: ['/', '$'],
+      builtInPrefix: '/',
+      skillPrefix: '$',
+      commandPrefix: '/',
+    }),
+    refresh: jest.fn(),
+  };
+
+  afterEach(() => {
+    ProviderWorkspaceRegistry.setServices('codex', undefined);
+    ProviderWorkspaceRegistry.setServices('claude', undefined);
+  });
+
+  it('should pass provider catalog config to initializeTabUI for Codex tab', async () => {
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+
+    expect(catalogConfig).not.toBeNull();
+    expect(catalogConfig.config.triggerChars).toEqual(['/', '$']);
+    expect(catalogConfig.config.skillPrefix).toBe('$');
+  });
+
+  it('should provide scan-backed entries for Codex without runtime', async () => {
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    const entries = await catalogConfig.getEntries();
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).toBe('analyze');
+    expect(entries[0].displayPrefix).toBe('$');
+  });
+
+  it('should resolve the blank-tab catalog from draftModel instead of stale providerId', async () => {
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([
+        {
+          id: 'claude-command-test', providerId: 'claude', kind: 'command',
+          name: 'claude-only', description: 'Claude command', content: '',
+          scope: 'vault', source: 'user', isEditable: true, isDeletable: true,
+          displayPrefix: '/', insertPrefix: '/',
+        },
+      ]),
+      listVaultEntries: jest.fn().mockResolvedValue([]),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: claudeCatalog as any });
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-1',
+        lifecycleState: 'blank',
+        draftModel: 'gpt-5.4',
+        providerId: 'claude',
+      }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    const entries = await catalogConfig.getEntries();
+
+    expect(catalogConfig).not.toBeNull();
+    expect(catalogConfig.config.skillPrefix).toBe('$');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].providerId).toBe('codex');
+    expect(mockCatalog.listDropdownEntries).toHaveBeenCalledWith({ includeBuiltIns: false });
+    expect(claudeCatalog.listDropdownEntries).not.toHaveBeenCalled();
+  });
+
+  it('should refresh Claude runtime commands before listing catalog entries', async () => {
+    const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '', source: 'sdk' }];
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+    };
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn().mockResolvedValue([]),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: claudeCatalog as any });
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-1',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    await catalogConfig.getEntries();
+
+    expect(readyService.getSupportedCommands).toHaveBeenCalledTimes(1);
+    expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith(supportedCommands);
+    expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith({ includeBuiltIns: false });
+  });
+
+  it('should clear Claude runtime commands when revalidation returns no commands', async () => {
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue([]),
+    };
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn().mockResolvedValue([]),
+      listVaultEntries: jest.fn().mockResolvedValue([]),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+      refresh: jest.fn(),
+    };
+    ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: claudeCatalog as any });
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-1',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+
+    const tab = await manager.createTab();
+
+    await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual([]);
+    expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith([]);
+  });
+
+  it('should return null catalog config when provider has no catalog', async () => {
+    // No catalog assigned to registry for 'claude'
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'claude' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+
+    expect(catalogConfig).toBeNull();
+  });
+});
+
 describe('TabManager - Cleanup', () => {
   let manager: TabManager;
 
@@ -932,12 +1311,7 @@ describe('TabManager - openConversation Current Tab Path', () => {
 });
 
 describe('TabManager - Service Initialization Errors', () => {
-  it('should handle initializeActiveTabService errors gracefully', async () => {
-    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
-    // Make initializeTabService fail
-    mockInitializeTabService.mockRejectedValueOnce(new Error('Service init failed'));
-
+  it('should restore state without pre-warming any tabs', async () => {
     mockCreateTab.mockReturnValue(
       createMockTabData({ id: 'test-tab', serviceInitialized: false })
     );
@@ -949,16 +1323,15 @@ describe('TabManager - Service Initialization Errors', () => {
       createMockView()
     );
 
-    // Restore state triggers initializeActiveTabService
     const persistedState: PersistedTabManagerState = {
       openTabs: [{ tabId: 'restored-tab', conversationId: null }],
       activeTabId: 'restored-tab',
     };
 
-    // Should not throw even if service init fails
-    await expect(manager.restoreState(persistedState)).resolves.not.toThrow();
+    await manager.restoreState(persistedState);
 
-    consoleSpy.mockRestore();
+    // No pre-warm: all restored tabs stay cold until send
+    expect(mockInitializeTabService).not.toHaveBeenCalled();
   });
 });
 
@@ -1027,7 +1400,7 @@ describe('TabManager - closeTab Edge Cases', () => {
     expect(manager.getTabCount()).toBe(1);
   });
 
-  it('should create new tab and initialize service when closing the last tab with conversation', async () => {
+  it('should create new blank tab (stays cold) when closing the last tab with conversation', async () => {
     const callbacks: TabManagerCallbacks = {
       onTabCreated: jest.fn(),
       onTabClosed: jest.fn(),
@@ -1050,14 +1423,15 @@ describe('TabManager - closeTab Edge Cases', () => {
     expect(result).toBe(true);
     expect(manager.getTabCount()).toBe(1); // New tab was created
     expect(mockCreateTab).toHaveBeenCalled();
-    expect(mockInitializeTabService).toHaveBeenCalled();
+    // No pre-warm: replacement blank tabs stay cold until send
+    expect(mockInitializeTabService).not.toHaveBeenCalled();
     expect(callbacks.onTabClosed).toHaveBeenCalledWith('tab-1');
   });
 });
 
 describe('TabManager - forkToNewTab', () => {
   it('should propagate currentNote from context to forked conversation', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
     const plugin = createMockPlugin({
@@ -1084,7 +1458,7 @@ describe('TabManager - forkToNewTab', () => {
   });
 
   it('should not set currentNote when context has none', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
     const plugin = createMockPlugin({
@@ -1111,7 +1485,7 @@ describe('TabManager - forkToNewTab', () => {
 
 describe('TabManager - forkInCurrentTab', () => {
   it('should create fork conversation and switch active tab to it', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
     const mockSwitchTo = jest.fn().mockResolvedValue(undefined);
 
@@ -1156,7 +1530,7 @@ describe('TabManager - forkInCurrentTab', () => {
     expect(success).toBe(true);
     expect(mockCreateConversation).toHaveBeenCalled();
     expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
-      forkSource: { sessionId: 'session-1', resumeAt: 'assistant-uuid-1' },
+      providerState: { forkSource: { sessionId: 'session-1', resumeAt: 'assistant-uuid-1' } },
       currentNote: 'notes/test.md',
     }));
     expect(mockSwitchTo).toHaveBeenCalledWith('fork-conv-1');
@@ -1164,7 +1538,7 @@ describe('TabManager - forkInCurrentTab', () => {
 
   it('should return false when no active tab exists', async () => {
     const plugin = createMockPlugin({
-      createConversation: jest.fn().mockResolvedValue({ id: 'fork-conv-2' }),
+      createConversation: jest.fn().mockResolvedValue({ id: 'fork-conv-2', providerId: 'claude' }),
       updateConversation: jest.fn().mockResolvedValue(undefined),
     });
 
@@ -1181,7 +1555,7 @@ describe('TabManager - forkInCurrentTab', () => {
   });
 
   it('should not check tab count limit', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-3' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-3', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
     const mockSwitchTo = jest.fn().mockResolvedValue(undefined);
 
@@ -1235,14 +1609,13 @@ describe('TabManager - switchToTab Session Sync', () => {
   it('should sync service session for already-loaded tab with conversation', async () => {
     jest.clearAllMocks();
 
-    const mockSetSessionId = jest.fn();
+    const mockSyncConversationState = jest.fn();
     const mockService = {
-      setSessionId: mockSetSessionId,
-      closePersistentQuery: jest.fn(),
+      syncConversationState: mockSyncConversationState,
+      cleanup: jest.fn(),
       ensureReady: jest.fn().mockResolvedValue(true),
       onReadyStateChange: jest.fn(() => () => {}),
       isReady: jest.fn().mockReturnValue(true),
-      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
     };
 
     let tabCounter = 0;
@@ -1262,7 +1635,7 @@ describe('TabManager - switchToTab Session Sync', () => {
     });
 
     const plugin = createMockPlugin();
-    plugin.getConversationById = jest.fn().mockResolvedValue({
+    plugin.getConversationSync = jest.fn().mockReturnValue({
       id: 'conv-loaded',
       messages: [{ id: 'msg-1', role: 'user', content: 'test' }],
       sessionId: 'session-xyz',
@@ -1280,16 +1653,18 @@ describe('TabManager - switchToTab Session Sync', () => {
     await manager.createTab(); // tab-2, auto-switches and triggers session sync
 
     // Should have synced the service session during auto-switch to tab-2
-    expect(mockSetSessionId).toHaveBeenCalledWith('session-xyz', ['/some/path']);
+    expect(mockSyncConversationState).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conv-loaded', sessionId: 'session-xyz' }),
+      ['/some/path'],
+    );
   });
 
   it('should use persistentExternalContextPaths when conversation has no messages', async () => {
     jest.clearAllMocks();
 
-    const mockSetSessionId = jest.fn();
+    const mockSyncConversationState = jest.fn();
     const mockService = {
-      setSessionId: mockSetSessionId,
-      applyForkState: jest.fn((conv: any) => conv.sessionId ?? conv.forkSource?.sessionId ?? null),
+      syncConversationState: mockSyncConversationState,
     };
 
     let tabCounter = 0;
@@ -1314,7 +1689,7 @@ describe('TabManager - switchToTab Session Sync', () => {
         persistentExternalContextPaths: ['/persistent/path'],
       },
     });
-    plugin.getConversationById = jest.fn().mockResolvedValue({
+    plugin.getConversationSync = jest.fn().mockReturnValue({
       id: 'conv-empty',
       messages: [],
       sessionId: 'session-abc',
@@ -1332,7 +1707,10 @@ describe('TabManager - switchToTab Session Sync', () => {
     await manager.createTab(); // tab-2, auto-switches and triggers session sync
 
     // conversation.messages is empty, so should fall back to persistentExternalContextPaths
-    expect(mockSetSessionId).toHaveBeenCalledWith('session-abc', ['/persistent/path']);
+    expect(mockSyncConversationState).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conv-empty', sessionId: 'session-abc' }),
+      ['/persistent/path'],
+    );
   });
 
   it('should initialize welcome for new tab without conversation', async () => {
@@ -1375,7 +1753,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
   it('should fork to new tab when user selects "new-tab"', async () => {
     mockChooseForkTarget.mockResolvedValue('new-tab');
 
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
     const plugin = createMockPlugin({
@@ -1385,7 +1763,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
 
     let capturedForkCallback: any;
     mockInitializeTabControllers.mockImplementation(
-      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+      (_tab: any, _plugin: any, _view: any, forkCb: any) => {
         capturedForkCallback = forkCb;
       }
     );
@@ -1410,7 +1788,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
   it('should fork in current tab when user selects "current-tab"', async () => {
     mockChooseForkTarget.mockResolvedValue('current-tab');
 
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-2', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
     const mockSwitchTo = jest.fn().mockResolvedValue(undefined);
 
@@ -1436,7 +1814,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
       });
     });
     mockInitializeTabControllers.mockImplementation(
-      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+      (_tab: any, _plugin: any, _view: any, forkCb: any) => {
         capturedForkCallback = forkCb;
       }
     );
@@ -1467,7 +1845,7 @@ describe('TabManager - handleForkRequest (modal dispatch)', () => {
 
     let capturedForkCallback: any;
     mockInitializeTabControllers.mockImplementation(
-      (_tab: any, _plugin: any, _view: any, _mcp: any, forkCb: any) => {
+      (_tab: any, _plugin: any, _view: any, forkCb: any) => {
         capturedForkCallback = forkCb;
       }
     );
@@ -1493,7 +1871,7 @@ describe('TabManager - forkToNewTab at max tabs', () => {
     const plugin = createMockPlugin();
     // MIN_TABS is 3, so maxTabs must be >= 3 to avoid clamping
     plugin.settings.maxTabs = 3;
-    plugin.createConversation = jest.fn().mockResolvedValue({ id: 'fork-conv' });
+    plugin.createConversation = jest.fn().mockResolvedValue({ id: 'fork-conv', providerId: 'claude' });
     plugin.updateConversation = jest.fn().mockResolvedValue(undefined);
 
     let tabCounter = 0;
@@ -1525,32 +1903,8 @@ describe('TabManager - forkToNewTab at max tabs', () => {
 });
 
 describe('TabManager - createForkConversation', () => {
-  it('should set sdkMessagesLoaded to true on fork conversation', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
-    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
-
-    const plugin = createMockPlugin({
-      createConversation: mockCreateConversation,
-      updateConversation: mockUpdateConversation,
-    });
-
-    const manager = createManager({ plugin });
-    await manager.createTab();
-
-    await manager.forkToNewTab({
-      messages: [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: 1 }] as any,
-      sourceSessionId: 'session-1',
-      resumeAt: 'asst-uuid-1',
-      sourceTitle: 'My Chat',
-    });
-
-    expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
-      sdkMessagesLoaded: true,
-    }));
-  });
-
   it('should set forkSource with sessionId and resumeAt', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
     const plugin = createMockPlugin({
@@ -1568,12 +1922,34 @@ describe('TabManager - createForkConversation', () => {
     });
 
     expect(mockUpdateConversation).toHaveBeenCalledWith('fork-conv-1', expect.objectContaining({
-      forkSource: { sessionId: 'session-abc', resumeAt: 'asst-uuid-xyz' },
+      providerState: { forkSource: { sessionId: 'session-abc', resumeAt: 'asst-uuid-xyz' } },
     }));
   });
 
+  it('should create the fork conversation with the source provider', async () => {
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-codex', providerId: 'codex' });
+    const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
+
+    const plugin = createMockPlugin({
+      createConversation: mockCreateConversation,
+      updateConversation: mockUpdateConversation,
+    });
+
+    const manager = createManager({ plugin });
+    await manager.createTab();
+
+    await manager.forkToNewTab({
+      messages: [],
+      providerId: 'codex',
+      sourceSessionId: 'session-codex',
+      resumeAt: 'asst-codex',
+    });
+
+    expect(mockCreateConversation).toHaveBeenCalledWith({ providerId: 'codex' });
+  });
+
   it('should not set title when sourceTitle is undefined', async () => {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv-1', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
     const plugin = createMockPlugin({
@@ -1598,7 +1974,7 @@ describe('TabManager - createForkConversation', () => {
 
 describe('TabManager - buildForkTitle', () => {
   function setupTitleTest(existingTitles: string[] = []) {
-    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv' });
+    const mockCreateConversation = jest.fn().mockResolvedValue({ id: 'fork-conv', providerId: 'claude' });
     const mockUpdateConversation = jest.fn().mockResolvedValue(undefined);
 
     const plugin = createMockPlugin({

@@ -66,7 +66,18 @@
   },
   "settings": {
     "title": "Configurações do Claudian",
-    "customization": "Personalização",
+    "tabs": {
+      "general": "Geral",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "Exibição",
+    "conversations": "Conversas",
+    "content": "Conteúdo",
+    "input": "Entrada",
+    "setup": "Configuração",
+    "models": "Modelos",
+    "experimental": "Experimental",
     "userName": {
       "name": "Como o Claudian deve chamá-lo?",
       "desc": "Seu nome para saudações personalizadas (deixe vazio para saudações genéricas)"
@@ -134,7 +145,7 @@
     },
     "slashCommands": {
       "name": "Comandos e habilidades",
-      "desc": "Defina comandos e habilidades personalizados acionados por /nome."
+      "desc": "Gerencie comandos e habilidades a nível de vault armazenados em .claude/commands/ e .claude/skills/. Acionados por /nome."
     },
     "hiddenSlashCommands": {
       "name": "Comandos ocultos",
@@ -143,15 +154,15 @@
     },
     "mcpServers": {
       "name": "Servidores MCP",
-      "desc": "Configure servidores Model Context Protocol para estender as capacidades do Claude com ferramentas e fontes de dados externas. Servidores com modo de salvamento de contexto exigem @mention para ativar."
+      "desc": "Gerencie configurações de servidores MCP a nível de vault armazenadas em .claude/mcp.json. Servidores com modo de salvamento de contexto exigem @mention para ativar."
     },
     "plugins": {
       "name": "Plugins do Claude Code",
-      "desc": "Ative ou desative plugins do Claude Code descobertos em ~/.claude/plugins. Plugins ativados são armazenados por cofre."
+      "desc": "Gerencie plugins do Claude Code descobertos em ~/.claude/plugins. Plugins ativados são armazenados por vault em .claude/settings.json."
     },
     "subagents": {
       "name": "Subagentes",
-      "desc": "Configure subagentes personalizados para os quais Claude pode delegar.",
+      "desc": "Gerencie subagentes a nível de vault armazenados em .claude/agents/. Cada arquivo Markdown define um agente personalizado.",
       "noAgents": "Nenhum subagente configurado. Clique em + para criar um.",
       "deleteConfirm": "Excluir o subagente \"{name}\"?",
       "saveFailed": "Falha ao salvar o subagente: {message}",
@@ -192,24 +203,13 @@
       "name": "Carregar configurações do usuário Claude",
       "desc": "Carrega ~/.claude/settings.json. Quando habilitado, as regras de permissão do usuário podem ignorar o modo seguro."
     },
-    "enableBlocklist": {
-      "name": "Habilitar lista negra de comandos",
-      "desc": "Bloqueia comandos bash potencialmente perigosos"
+    "claudeSafeMode": {
+      "name": "Safe mode",
+      "desc": "Permission mode used when the Safe toggle is active."
     },
-    "allowExternalAccess": {
-      "name": "Permitir acesso externo",
-      "desc": "Permite acesso a arquivos e comandos fora do diretório do vault. Aplica-se imediatamente a todas as sessões ativas. Desativar a restrição do vault pode expor arquivos sensíveis a injeção de prompt."
-    },
-    "blockedCommands": {
-      "name": "Comandos bloqueados ({platform})",
-      "desc": "Padrões para bloquear em {platform} (um por linha). Suporta expressões regulares.",
-      "unixName": "Comandos bloqueados (Unix/Git Bash)",
-      "unixDesc": "Padrões Unix também bloqueados no Windows porque Git Bash pode invocá-los."
-    },
-    "exportPaths": {
-      "name": "Caminhos de exportação permitidos",
-      "desc": "Destinos somente para escrita fora do vault quando o acesso externo está desativado (um por linha). Suporta ~ para o diretório pessoal.",
-      "disabledDesc": "Ignorado enquanto o acesso externo estiver ativado. Desative o acesso externo para aplicar caminhos de exportação somente para escrita."
+    "codexSafeMode": {
+      "name": "Safe mode",
+      "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "Ambiente",
     "customVariables": {
@@ -240,7 +240,6 @@
       "desc": "Defina tamanhos de janela de contexto para seus modelos personalizados. Deixe vazio para usar o padrão (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
     },
-    "advanced": "Avançado",
     "enableOpus1M": {
       "name": "Janela de contexto Opus 1M",
       "desc": "Mostrar Opus 1M no seletor de modelos. Incluído nos planos Max, Team e Enterprise. Usuários de API e Pro precisam de uso adicional."
