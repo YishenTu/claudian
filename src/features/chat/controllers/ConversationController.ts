@@ -567,7 +567,7 @@ export class ConversationController {
       });
 
       if (!isCurrent) {
-        content.addEventListener('click', async (e: MouseEvent) => {
+        content.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {
             e.preventDefault();
@@ -585,7 +585,7 @@ export class ConversationController {
         });
 
         if (options.onOpenConversationInNewTab) {
-          content.addEventListener('auxclick', async (e: MouseEvent) => {
+          content.addEventListener('auxclick', async (e) => {
             if (e.button !== 1) return;
             e.preventDefault();
             e.stopPropagation();
@@ -597,12 +597,12 @@ export class ConversationController {
         }
       }
 
-      item.addEventListener('contextmenu', (e: MouseEvent) => {
+      item.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
         this.showHistoryContextMenu(item, conv.id, conv.title, isCurrent, options, e);
       });
- 
+
       const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
 
       // Show regenerate button if title generation failed, or loading indicator if pending
@@ -947,16 +947,10 @@ export class ConversationController {
    */
   renderHistoryDropdown(
     container: HTMLElement,
-    options: {
-      onSelectConversation: (id: string) => Promise<void>;
-      onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
-      getConversationOpenState?: (id: string) => HistoryConversationOpenState;
-    }
+    options: Omit<HistoryRenderOptions, 'onRerender'>,
   ): void {
     this.renderHistoryItems(container, {
-      onSelectConversation: options.onSelectConversation,
-      onOpenConversationInNewTab: options.onOpenConversationInNewTab,
-      getConversationOpenState: options.getConversationOpenState,
+      ...options,
       onRerender: () => this.renderHistoryDropdown(container, options),
     });
   }

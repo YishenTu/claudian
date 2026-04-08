@@ -472,10 +472,10 @@ export class ClaudianView extends ItemView {
 
     if (conversationController) {
       conversationController.renderHistoryDropdown(this.historyDropdown, {
-        onSelectConversation: (conversationId) => this.openHistoryConversation(conversationId),
-        onOpenConversationInNewTab: (conversationId, activate) =>
-          this.openHistoryConversationInNewTab(conversationId, activate),
-        getConversationOpenState: (conversationId) => this.getHistoryConversationOpenState(conversationId),
+        onSelectConversation: (id) => this.openHistoryConversation(id),
+        onOpenConversationInNewTab: (id, activate) =>
+          this.openHistoryConversationInNewTab(id, activate),
+        getConversationOpenState: (id) => this.getHistoryConversationOpenState(id),
       });
     }
   }
