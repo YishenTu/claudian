@@ -111,6 +111,7 @@ describe('SelectionController', () => {
 
     editorView = {
       id: 'editor-view',
+      dom: createMockEventTarget(),
       state: { selection: { main: { head: 4 } } },
       dispatch: jest.fn(),
     };
@@ -190,6 +191,21 @@ describe('SelectionController', () => {
 
     expect(controller.hasSelection()).toBe(true);
     expect(indicatorEl.style.display).toBe('block');
+  });
+
+  it('shows fake highlight when focus moves to another sidebar control in edit mode', () => {
+    controller.start();
+    jest.advanceTimersByTime(250);
+
+    const sidebarButton = {};
+    focusScopeEl.addContainedNode(sidebarButton);
+    editorView.state.selection.main = { from: 0, to: 4, head: 4 };
+    (global as any).document.activeElement = sidebarButton;
+
+    controller.showHighlight();
+
+    expect(showSelectionHighlight).toHaveBeenCalledWith(editorView, 0, 4);
+    expect(hideSelectionHighlight).not.toHaveBeenCalled();
   });
 
   it('clears selection when focus leaves markdown and the chat sidebar is not focused', () => {
@@ -328,6 +344,30 @@ describe('SelectionController', () => {
       controller.showHighlight();
 
       expect(showSelectionHighlight).not.toHaveBeenCalled();
+      expect(mockHighlights.set).toHaveBeenCalledWith(
+        'claudian-selection',
+        expect.any(Object),
+      );
+    });
+
+    it('shows CSS highlight when focus moves to another sidebar control in reading mode', () => {
+      const anchorNode = {};
+      const mockSel = createMockDOMSelection('reading selection', anchorNode);
+      const sidebarButton = {};
+      focusScopeEl.addContainedNode(sidebarButton);
+      (global as any).document = {
+        activeElement: null,
+        getSelection: jest.fn().mockReturnValue(mockSel),
+      };
+      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      (global as any).CSS = { highlights: mockHighlights };
+
+      controller.start();
+      jest.advanceTimersByTime(250);
+
+      (global as any).document.activeElement = sidebarButton;
+      controller.showHighlight();
+
       expect(mockHighlights.set).toHaveBeenCalledWith(
         'claudian-selection',
         expect.any(Object),

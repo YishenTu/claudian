@@ -213,6 +213,28 @@ export class SelectionController {
       && (activeElement === this.focusScopeEl || this.focusScopeEl.contains(activeElement));
   }
 
+  private isNativeEditorSelectionVisible(sel: StoredSelection): boolean {
+    if (!sel.editorView || sel.from === undefined || sel.to === undefined) {
+      return false;
+    }
+
+    const activeElement = document.activeElement as Node | null;
+    if (activeElement === null || !sel.editorView.dom.contains(activeElement)) {
+      return false;
+    }
+
+    const cmSel = sel.editorView.state.selection.main;
+    return cmSel.from === sel.from && cmSel.to === sel.to;
+  }
+
+  private isNativePreviewSelectionVisible(ranges: Range[]): boolean {
+    if (this.isFocusWithinChatSidebar()) {
+      return false;
+    }
+
+    return this.selectionMatchesRanges(document.getSelection(), ranges);
+  }
+
   private clearWhenMarkdownContextIsUnavailable(): void {
     if (!this.storedSelection) return;
     if (this.isFocusWithinChatSidebar()) {
@@ -256,10 +278,7 @@ export class SelectionController {
 
     // Edit mode: prefer native CM6 unfocused selection (.cm-selectionBackground)
     if (sel.editorView && sel.from !== undefined && sel.to !== undefined) {
-      const cmSel = sel.editorView.state.selection.main;
-      const nativeVisible = document.activeElement !== this.inputEl
-        && cmSel.from === sel.from && cmSel.to === sel.to;
-      if (nativeVisible) {
+      if (this.isNativeEditorSelectionVisible(sel)) {
         // Native is showing — clear any stale mock
         hideSelectionHighlight(sel.editorView);
         return;
@@ -271,10 +290,7 @@ export class SelectionController {
 
     // Preview mode: prefer native DOM selection (::selection)
     if (sel.domRanges?.length) {
-      const nativeSel = document.getSelection();
-      const nativeVisible = document.activeElement !== this.inputEl
-        && this.selectionMatchesRanges(nativeSel, sel.domRanges);
-      if (nativeVisible) {
+      if (this.isNativePreviewSelectionVisible(sel.domRanges)) {
         // Native is showing — clear any stale mock
         this.cssHighlights?.delete(HIGHLIGHT_KEY);
         return;
