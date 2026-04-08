@@ -1,5 +1,6 @@
 /* Header - logo, title/tabs slot, and actions */
 .claudian-header {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 0 12px 12px 12px;

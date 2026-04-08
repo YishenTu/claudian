@@ -1,5 +1,5 @@
 .claudian-history-container {
-  position: relative;
+  position: static;
 }
 
 /* History dropup menu (opens upward since it's at bottom of view) */
@@ -7,7 +7,6 @@
   display: none;
   position: absolute;
   bottom: 100%;
-  inset-inline-end: 0;
   margin-bottom: 4px;
   background: var(--background-secondary);
   backdrop-filter: blur(20px);
@@ -18,7 +17,8 @@
   z-index: 1000;
   max-height: 400px;
   overflow: hidden;
-  width: 280px;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
 }
 
 .claudian-history-menu.visible {
