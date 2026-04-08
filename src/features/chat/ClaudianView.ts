@@ -7,6 +7,7 @@ import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettin
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
+import type { HistoryConversationOpenState } from './controllers/ConversationController';
 import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
@@ -471,32 +472,46 @@ export class ClaudianView extends ItemView {
 
     if (conversationController) {
       conversationController.renderHistoryDropdown(this.historyDropdown, {
-        onSelectConversation: async (conversationId) => {
-          // Check if conversation is already open in this view's tabs
-          const existingTab = this.findTabWithConversation(conversationId);
-          if (existingTab) {
-            // Switch to existing tab instead of opening in current tab
-            await this.tabManager?.switchToTab(existingTab.id);
-            this.historyDropdown?.removeClass('visible');
-            return;
-          }
-
-          // Check if conversation is open in another view (split workspace scenario)
-          const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
-          if (crossViewResult && crossViewResult.view !== this) {
-            // Focus the other view's leaf and switch to the tab
-            this.plugin.app.workspace.revealLeaf(crossViewResult.view.leaf);
-            await crossViewResult.view.getTabManager()?.switchToTab(crossViewResult.tabId);
-            this.historyDropdown?.removeClass('visible');
-            return;
-          }
-
-          // Open in current tab
-          await this.tabManager?.openConversation(conversationId);
-          this.historyDropdown?.removeClass('visible');
-        },
+        onSelectConversation: (id) => this.openHistoryConversation(id),
+        onOpenConversationInNewTab: (id, activate) =>
+          this.openHistoryConversationInNewTab(id, activate),
+        getConversationOpenState: (id) => this.getHistoryConversationOpenState(id),
       });
     }
+  }
+
+  private async openHistoryConversation(conversationId: string): Promise<void> {
+    await this.tabManager?.openConversation(conversationId);
+    this.historyDropdown?.removeClass('visible');
+  }
+
+  private async openHistoryConversationInNewTab(
+    conversationId: string,
+    activate = true,
+  ): Promise<void> {
+    await this.tabManager?.openConversation(conversationId, {
+      preferNewTab: true,
+      activate,
+    });
+    this.historyDropdown?.removeClass('visible');
+  }
+
+  private getHistoryConversationOpenState(conversationId: string): HistoryConversationOpenState {
+    const activeTab = this.tabManager?.getActiveTab();
+    if (activeTab?.conversationId === conversationId) {
+      return 'current';
+    }
+
+    if (this.findTabWithConversation(conversationId)) {
+      return 'open';
+    }
+
+    const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
+    if (crossViewResult && crossViewResult.view !== this) {
+      return 'open';
+    }
+
+    return 'closed';
   }
 
   private findTabWithConversation(conversationId: string): TabData | null {

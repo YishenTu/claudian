@@ -1,4 +1,4 @@
-import { Notice, setIcon } from 'obsidian';
+import { Menu, Notice, setIcon } from 'obsidian';
 
 import type { TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
@@ -46,6 +46,15 @@ export interface ConversationControllerDeps {
 
 type SaveOptions = {
   resumeAtMessageId?: string;
+};
+
+export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
+
+type HistoryRenderOptions = {
+  onSelectConversation: (id: string) => Promise<void>;
+  onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
+  getConversationOpenState?: (id: string) => HistoryConversationOpenState;
+  onRerender: () => void;
 };
 
 export class ConversationController {
@@ -518,10 +527,7 @@ export class ConversationController {
    */
   private renderHistoryItems(
     container: HTMLElement,
-    options: {
-      onSelectConversation: (id: string) => Promise<void>;
-      onRerender: () => void;
-    }
+    options: HistoryRenderOptions
   ): void {
     const { plugin, state } = this.deps;
 
@@ -563,13 +569,39 @@ export class ConversationController {
       if (!isCurrent) {
         content.addEventListener('click', async (e) => {
           e.stopPropagation();
-          try {
-            await options.onSelectConversation(conv.id);
-          } catch {
-            new Notice('Failed to load conversation');
+          if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {
+            e.preventDefault();
+            await this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conv.id, true),
+              'Failed to load conversation',
+            );
+            return;
           }
+
+          await this.runHistoryAction(
+            () => options.onSelectConversation(conv.id),
+            'Failed to load conversation',
+          );
         });
+
+        if (options.onOpenConversationInNewTab) {
+          content.addEventListener('auxclick', async (e) => {
+            if (e.button !== 1) return;
+            e.preventDefault();
+            e.stopPropagation();
+            await this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conv.id, true),
+              'Failed to load conversation',
+            );
+          });
+        }
       }
+
+      item.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showHistoryContextMenu(item, conv.id, conv.title, isCurrent, options, e);
+      });
 
       const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
 
@@ -605,18 +637,99 @@ export class ConversationController {
       deleteBtn.setAttribute('aria-label', 'Delete');
       deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (state.isStreaming) return;
-        try {
-          await plugin.deleteConversation(conv.id);
-          options.onRerender();
-
-          if (conv.id === state.currentConversationId) {
-            await this.loadActive();
-          }
-        } catch {
-          new Notice('Failed to delete conversation');
-        }
+        await this.runHistoryAction(
+          () => this.deleteHistoryConversation(conv.id, options),
+          'Failed to delete conversation',
+        );
       });
+    }
+  }
+
+  private isHistoryNewTabModifierClick(event: MouseEvent): boolean {
+    return !event.altKey && !event.shiftKey && (event.metaKey || event.ctrlKey);
+  }
+
+  private async runHistoryAction(
+    action: () => Promise<void> | void,
+    errorMessage: string,
+  ): Promise<void> {
+    try {
+      await action();
+    } catch {
+      new Notice(errorMessage);
+    }
+  }
+
+  private showHistoryContextMenu(
+    item: HTMLElement,
+    conversationId: string,
+    title: string,
+    isCurrent: boolean,
+    options: HistoryRenderOptions,
+    event: MouseEvent,
+  ): void {
+    const menu = new Menu();
+    const openState = options.getConversationOpenState?.(conversationId) ?? (isCurrent ? 'current' : 'closed');
+
+    if (!isCurrent) {
+      if (openState === 'closed' && options.onOpenConversationInNewTab) {
+        menu.addItem((menuItem) => menuItem
+          .setTitle('Open in New Tab')
+          .onClick(() => {
+            void this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conversationId, true),
+              'Failed to load conversation',
+            );
+          }));
+        menu.addItem((menuItem) => menuItem
+          .setTitle('Open in Background Tab')
+          .onClick(() => {
+            void this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conversationId, false),
+              'Failed to load conversation',
+            );
+          }));
+      } else if (openState === 'open') {
+        menu.addItem((menuItem) => menuItem
+          .setTitle('Switch to Open Session')
+          .onClick(() => {
+            void this.runHistoryAction(
+              () => options.onSelectConversation(conversationId),
+              'Failed to load conversation',
+            );
+          }));
+      }
+    }
+
+    menu.addItem((menuItem) => menuItem
+      .setTitle('Rename')
+      .onClick(() => {
+        this.showRenameInput(item, conversationId, title);
+      }));
+    menu.addItem((menuItem) => menuItem
+      .setTitle('Delete')
+      .onClick(() => {
+        void this.runHistoryAction(
+          () => this.deleteHistoryConversation(conversationId, options),
+          'Failed to delete conversation',
+        );
+      }));
+
+    menu.showAtMouseEvent(event);
+  }
+
+  private async deleteHistoryConversation(
+    conversationId: string,
+    options: HistoryRenderOptions,
+  ): Promise<void> {
+    const { plugin, state } = this.deps;
+    if (state.isStreaming) return;
+
+    await plugin.deleteConversation(conversationId);
+    options.onRerender();
+
+    if (conversationId === state.currentConversationId) {
+      await this.loadActive();
     }
   }
 
@@ -834,10 +947,10 @@ export class ConversationController {
    */
   renderHistoryDropdown(
     container: HTMLElement,
-    options: { onSelectConversation: (id: string) => Promise<void> }
+    options: Omit<HistoryRenderOptions, 'onRerender'>,
   ): void {
     this.renderHistoryItems(container, {
-      onSelectConversation: options.onSelectConversation,
+      ...options,
       onRerender: () => this.renderHistoryDropdown(container, options),
     });
   }

@@ -39,6 +39,15 @@ function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
     && 'getTabManager' in (value as Record<string, unknown>);
 }
 
+type CreateTabOptions = {
+  activate?: boolean;
+};
+
+type OpenConversationOptions = {
+  preferNewTab?: boolean;
+  activate?: boolean;
+};
+
 /**
  * TabManager coordinates multiple chat tabs.
  */
@@ -105,13 +114,20 @@ export class TabManager implements TabManagerInterface {
    * Creates a new tab.
    * @param conversationId Optional conversation to load into the tab.
    * @param tabId Optional tab ID (for restoration).
+   * @param options Controls whether the new tab becomes active immediately.
    * @returns The created tab, or null if max tabs reached.
    */
-  async createTab(conversationId?: string | null, tabId?: TabId): Promise<TabData | null> {
+  async createTab(
+    conversationId?: string | null,
+    tabId?: TabId,
+    options: CreateTabOptions = {},
+  ): Promise<TabData | null> {
     const maxTabs = this.getMaxTabs();
     if (this.tabs.size >= maxTabs) {
       return null;
     }
+
+    const { activate = true } = options;
 
     const conversation = conversationId
       ? await this.plugin.getConversationById(conversationId)
@@ -168,8 +184,9 @@ export class TabManager implements TabManagerInterface {
     this.tabs.set(tab.id, tab);
     this.callbacks.onTabCreated?.(tab);
 
-    // Auto-switch to the newly created tab
-    await this.switchToTab(tab.id);
+    if (activate || !this.activeTabId) {
+      await this.switchToTab(tab.id);
+    }
 
     return tab;
   }
@@ -353,9 +370,19 @@ export class TabManager implements TabManagerInterface {
   /**
    * Opens a conversation in a new tab or existing tab.
    * @param conversationId The conversation to open.
-   * @param preferNewTab If true, prefer opening in a new tab.
+   * @param options Controls tab creation behavior (backward-compatible with boolean).
    */
-  async openConversation(conversationId: string, preferNewTab = false): Promise<void> {
+  async openConversation(
+    conversationId: string,
+    options: boolean | OpenConversationOptions = false,
+  ): Promise<void> {
+    const preferNewTab = typeof options === 'boolean'
+      ? options
+      : options.preferNewTab ?? false;
+    const activate = typeof options === 'boolean'
+      ? true
+      : options.activate ?? true;
+
     // Check if conversation is already open in this view's tabs
     for (const tab of this.tabs.values()) {
       if (tab.conversationId === conversationId) {
@@ -377,7 +404,7 @@ export class TabManager implements TabManagerInterface {
 
     // Open in current tab or new tab
     if (preferNewTab && this.canCreateTab()) {
-      await this.createTab(conversationId);
+      await this.createTab(conversationId, undefined, { activate });
     } else {
       // Open in current tab
       // Note: Don't set tab.conversationId here - the onConversationIdChanged callback
