@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/mockElement';
-import { Notice } from 'obsidian';
+import { Menu, Notice } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -103,6 +103,7 @@ describe('ConversationController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
     deps = createMockDeps();
     controller = new ConversationController(deps);
   });
@@ -748,6 +749,138 @@ describe('ConversationController', () => {
         controller.renderHistoryDropdown(container, { onSelectConversation });
 
         expect(container.children.length).toBe(2); // header + list
+      });
+
+      it('should open a conversation in a new tab on modifier click when supported', async () => {
+        const container = createMockEl();
+        const onSelectConversation = jest.fn();
+        const onOpenConversationInNewTab = jest.fn().mockResolvedValue(undefined);
+
+        deps.state.currentConversationId = 'conv-1';
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation,
+          onOpenConversationInNewTab,
+          getConversationOpenState: () => 'closed',
+        });
+
+        const list = container.children[1];
+        const otherItem = list.children[1];
+        const content = otherItem.querySelector('.claudian-history-item-content');
+        const clickHandlers = content?._eventListeners?.get('click');
+        expect(clickHandlers).toBeDefined();
+
+        await clickHandlers![0]({
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+        });
+
+        expect(onOpenConversationInNewTab).toHaveBeenCalledWith('conv-2', true);
+        expect(onSelectConversation).not.toHaveBeenCalled();
+      });
+
+      it('should open a conversation in a new tab on middle click when supported', async () => {
+        const container = createMockEl();
+        const onSelectConversation = jest.fn();
+        const onOpenConversationInNewTab = jest.fn().mockResolvedValue(undefined);
+
+        deps.state.currentConversationId = 'conv-1';
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation,
+          onOpenConversationInNewTab,
+          getConversationOpenState: () => 'closed',
+        });
+
+        const list = container.children[1];
+        const otherItem = list.children[1];
+        const content = otherItem.querySelector('.claudian-history-item-content');
+        const auxClickHandlers = content?._eventListeners?.get('auxclick');
+        expect(auxClickHandlers).toBeDefined();
+
+        await auxClickHandlers![0]({
+          button: 1,
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+
+        expect(onOpenConversationInNewTab).toHaveBeenCalledWith('conv-2', true);
+        expect(onSelectConversation).not.toHaveBeenCalled();
+      });
+
+      it('should show new-tab actions in the context menu for closed conversations', () => {
+        const container = createMockEl();
+
+        deps.state.currentConversationId = 'conv-1';
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onOpenConversationInNewTab: jest.fn().mockResolvedValue(undefined),
+          getConversationOpenState: () => 'closed',
+        });
+
+        const list = container.children[1];
+        const otherItem = list.children[1];
+        otherItem.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+
+        const menu = (Menu as typeof Menu & { instances: Array<{ items: Array<{ title: string }> }> }).instances[0];
+        expect(menu.items.map(item => item.title)).toEqual([
+          'Open in New Tab',
+          'Open in Background Tab',
+          'Rename',
+          'Delete',
+        ]);
+      });
+
+      it('should show switch action in the context menu for already-open conversations', () => {
+        const container = createMockEl();
+
+        deps.state.currentConversationId = 'conv-1';
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onOpenConversationInNewTab: jest.fn().mockResolvedValue(undefined),
+          getConversationOpenState: () => 'open',
+        });
+
+        const list = container.children[1];
+        const otherItem = list.children[1];
+        otherItem.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+
+        const menu = (Menu as typeof Menu & { instances: Array<{ items: Array<{ title: string }> }> }).instances[0];
+        expect(menu.items.map(item => item.title)).toEqual([
+          'Switch to Open Session',
+          'Rename',
+          'Delete',
+        ]);
       });
     });
   });

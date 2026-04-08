@@ -166,6 +166,51 @@ export class Modal {
   onClose = jest.fn();
 }
 
+class MockMenuItem {
+  title = '';
+  icon = '';
+  disabled = false;
+  clickHandler: (() => void) | null = null;
+
+  setTitle = jest.fn((title: string) => {
+    this.title = title;
+    return this;
+  });
+
+  setIcon = jest.fn((icon: string) => {
+    this.icon = icon;
+    return this;
+  });
+
+  setDisabled = jest.fn((disabled: boolean) => {
+    this.disabled = disabled;
+    return this;
+  });
+
+  onClick = jest.fn((handler: () => void) => {
+    this.clickHandler = handler;
+    return this;
+  });
+}
+
+export class Menu {
+  static instances: Menu[] = [];
+
+  items: MockMenuItem[] = [];
+  showAtMouseEvent = jest.fn();
+
+  constructor() {
+    Menu.instances.push(this);
+  }
+
+  addItem(callback: (item: MockMenuItem) => MockMenuItem | void): this {
+    const item = new MockMenuItem();
+    callback(item);
+    this.items.push(item);
+    return this;
+  }
+}
+
 export const MarkdownRenderer = {
   renderMarkdown: jest.fn().mockResolvedValue(undefined),
 };

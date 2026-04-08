@@ -618,6 +618,23 @@ describe('TabManager - Conversation Management', () => {
       );
     });
 
+    it('should create a background tab without switching focus', async () => {
+      plugin.getConversationById.mockResolvedValue({ id: 'conv-background' });
+      const initialActiveTabId = manager.getActiveTabId();
+
+      await manager.openConversation('conv-background', {
+        preferNewTab: true,
+        activate: false,
+      });
+
+      expect(mockCreateTab).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversation: { id: 'conv-background' },
+        })
+      );
+      expect(manager.getActiveTabId()).toBe(initialActiveTabId);
+    });
+
     it('should check for cross-view duplicates', async () => {
       plugin.findConversationAcrossViews.mockReturnValue({
         view: { leaf: { id: 'other-leaf' }, getTabManager: () => ({ switchToTab: jest.fn() }) },
