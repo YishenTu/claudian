@@ -9,6 +9,7 @@ const path = jest.requireActual<typeof pathType>('path');
 import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import {
   expandHomePath,
+  getVaultPath,
   isPathWithinDirectory,
   isPathWithinVault,
   normalizePathForComparison,
@@ -19,6 +20,51 @@ import {
 } from '@/utils/path';
 
 const isWindows = process.platform === 'win32';
+
+describe('getVaultPath', () => {
+  it('returns basePath when adapter exposes the property directly', () => {
+    const mockApp = {
+      vault: {
+        adapter: {
+          basePath: '/Users/test/my-vault',
+        },
+      },
+    } as any;
+
+    expect(getVaultPath(mockApp)).toBe('/Users/test/my-vault');
+  });
+
+  it('returns basePath for wrapped adapters that fail `in` checks', () => {
+    const adapter = new Proxy(
+      { basePath: '/Users/test/wrapped-vault' },
+      {
+        has: () => false,
+      },
+    );
+
+    expect('basePath' in adapter).toBe(false);
+    expect(getVaultPath({ vault: { adapter } } as any)).toBe('/Users/test/wrapped-vault');
+  });
+
+  it('returns null when adapter does not expose a string basePath', () => {
+    expect(getVaultPath({ vault: { adapter: {} } } as any)).toBeNull();
+    expect(getVaultPath({ vault: { adapter: { basePath: 123 } } } as any)).toBeNull();
+  });
+
+  it('returns null when adapter is undefined', () => {
+    expect(getVaultPath({ vault: { adapter: undefined } } as any)).toBeNull();
+  });
+
+  it('preserves empty and platform-specific base paths', () => {
+    expect(getVaultPath({ vault: { adapter: { basePath: '' } } } as any)).toBe('');
+    expect(getVaultPath({ vault: { adapter: { basePath: '/Users/test/My Obsidian Vault' } } } as any)).toBe(
+      '/Users/test/My Obsidian Vault',
+    );
+    expect(getVaultPath({ vault: { adapter: { basePath: 'C:\\Users\\test\\vault' } } } as any)).toBe(
+      'C:\\Users\\test\\vault',
+    );
+  });
+});
 
 describe('expandHomePath', () => {
   it('expands ~ to home directory', () => {
