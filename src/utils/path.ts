@@ -4,11 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 export function getVaultPath(app: App): string | null {
-  const adapter = app.vault.adapter;
-  if ('basePath' in adapter) {
-    return (adapter as any).basePath;
-  }
-  return null;
+  const basePath = (app.vault.adapter as { basePath?: unknown } | undefined)?.basePath;
+  return typeof basePath === 'string' ? basePath : null;
 }
 
 function getEnvValue(key: string): string | undefined {

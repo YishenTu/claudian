@@ -14,6 +14,7 @@ import type {
 } from '../../../core/providers/types';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type ClaudianPlugin from '../../../main';
+import { getVaultPath } from '../../../utils/path';
 import { AgentManager } from '../agents/AgentManager';
 import { ClaudeCommandCatalog } from '../commands/ClaudeCommandCatalog';
 import { PluginManager } from '../plugins/PluginManager';
@@ -45,7 +46,7 @@ export async function createClaudeWorkspaceServices(
   const mcpManager = new McpServerManager(mcpStorage);
   await mcpManager.loadServers();
 
-  const vaultPath = (plugin.app.vault.adapter as { basePath?: string }).basePath ?? '';
+  const vaultPath = getVaultPath(plugin.app) ?? '';
   const pluginManager = new PluginManager(vaultPath, claudeStorage.ccSettings);
   await pluginManager.loadPlugins();
 
