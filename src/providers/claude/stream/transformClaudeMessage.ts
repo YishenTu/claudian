@@ -69,7 +69,7 @@ function getBuiltInModelSignature(model: string): { family: 'haiku' | 'sonnet' |
 function getModelUsageSignature(model: string): { family: 'haiku' | 'sonnet' | 'opus'; is1M: boolean } | null {
   const normalized = model.trim().toLowerCase();
   if (normalized.includes('haiku')) {
-    return { family: 'haiku', is1M: false };
+    return { family: 'haiku', is1M: normalized.endsWith('[1m]') };
   }
   if (normalized.includes('sonnet')) {
     return { family: 'sonnet', is1M: normalized.endsWith('[1m]') };
