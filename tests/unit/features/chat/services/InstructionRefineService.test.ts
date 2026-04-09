@@ -8,7 +8,7 @@ import {
 } from '@test/__mocks__/claude-agent-sdk';
 
 // Import after mocks are set up
-import { InstructionRefineService } from '@/providers/claude/aux/ClaudeInstructionRefineService';
+import { InstructionRefineService } from '@/providers/claude/auxiliary/ClaudeInstructionRefineService';
 
 function createMockPlugin(settings = {}) {
   return {

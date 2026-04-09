@@ -1,8 +1,8 @@
 import type { ProviderRegistration } from '../../core/providers/types';
 import { getClaudeWorkspaceServices } from './app/ClaudeWorkspaceServices';
-import { InlineEditService as ClaudeInlineEditService } from './aux/ClaudeInlineEditService';
-import { InstructionRefineService as ClaudeInstructionRefineService } from './aux/ClaudeInstructionRefineService';
-import { TitleGenerationService as ClaudeTitleGenerationService } from './aux/ClaudeTitleGenerationService';
+import { InlineEditService as ClaudeInlineEditService } from './auxiliary/ClaudeInlineEditService';
+import { InstructionRefineService as ClaudeInstructionRefineService } from './auxiliary/ClaudeInstructionRefineService';
+import { TitleGenerationService as ClaudeTitleGenerationService } from './auxiliary/ClaudeTitleGenerationService';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';

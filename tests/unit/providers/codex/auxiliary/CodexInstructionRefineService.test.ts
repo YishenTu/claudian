@@ -1,4 +1,4 @@
-import { CodexInstructionRefineService } from '@/providers/codex/aux/CodexInstructionRefineService';
+import { CodexInstructionRefineService } from '@/providers/codex/auxiliary/CodexInstructionRefineService';
 import { CodexAuxQueryRunner } from '@/providers/codex/runtime/CodexAuxQueryRunner';
 
 jest.mock('@/providers/codex/runtime/CodexAuxQueryRunner');

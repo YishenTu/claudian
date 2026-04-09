@@ -14,11 +14,11 @@ jest.mock('fs');
 // Now import after all mocks are set up
 import { buildInlineEditPrompt, parseInlineEditResponse } from '@/core/prompt/inlineEdit';
 import { getPathFromToolInput } from '@/core/tools/toolInput';
-import type { InlineEditRequest } from '@/providers/claude/aux/ClaudeInlineEditService';
+import type { InlineEditRequest } from '@/providers/claude/auxiliary/ClaudeInlineEditService';
 import {
   createReadOnlyHook,
   InlineEditService,
-} from '@/providers/claude/aux/ClaudeInlineEditService';
+} from '@/providers/claude/auxiliary/ClaudeInlineEditService';
 import { buildCursorContext } from '@/utils/editor';
 
 // Create a mock plugin

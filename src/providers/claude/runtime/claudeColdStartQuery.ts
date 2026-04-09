@@ -5,7 +5,7 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
-import { extractAssistantText } from '../aux/extractAssistantText';
+import { extractAssistantText } from '../auxiliary/extractAssistantText';
 import { getClaudeProviderSettings } from '../settings';
 import { type EffortLevel, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';

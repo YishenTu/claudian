@@ -1,8 +1,8 @@
 import type { ProviderRegistration } from '../../core/providers/types';
-import { CodexInlineEditService } from './aux/CodexInlineEditService';
-import { CodexInstructionRefineService } from './aux/CodexInstructionRefineService';
-import { CodexTaskResultInterpreter } from './aux/CodexTaskResultInterpreter';
-import { CodexTitleGenerationService } from './aux/CodexTitleGenerationService';
+import { CodexInlineEditService } from './auxiliary/CodexInlineEditService';
+import { CodexInstructionRefineService } from './auxiliary/CodexInstructionRefineService';
+import { CodexTaskResultInterpreter } from './auxiliary/CodexTaskResultInterpreter';
+import { CodexTitleGenerationService } from './auxiliary/CodexTitleGenerationService';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';

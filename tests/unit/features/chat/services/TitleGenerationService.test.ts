@@ -7,7 +7,7 @@ import {
   setMockMessages,
 } from '@test/__mocks__/claude-agent-sdk';
 
-import { type TitleGenerationResult, TitleGenerationService } from '@/providers/claude/aux/ClaudeTitleGenerationService';
+import { type TitleGenerationResult, TitleGenerationService } from '@/providers/claude/auxiliary/ClaudeTitleGenerationService';
 function createMockPlugin(settings = {}) {
   return {
     settings: {
