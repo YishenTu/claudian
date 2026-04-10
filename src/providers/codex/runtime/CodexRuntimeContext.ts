@@ -14,15 +14,19 @@ export interface CodexRuntimeContext {
 }
 
 function normalizeTargetPath(launchSpec: CodexLaunchSpec, value: string): string {
+  const rawValue = typeof value === 'string' ? value : String(value ?? '');
   return launchSpec.target.platformFamily === 'windows'
-    ? path.win32.normalize(value)
-    : path.posix.normalize(value.replace(/\\/g, '/'));
+    ? path.win32.normalize(rawValue)
+    : path.posix.normalize(rawValue.replace(/\\/g, '/'));
 }
 
 function joinTargetPath(launchSpec: CodexLaunchSpec, ...parts: string[]): string {
+  const normalizedParts = parts
+    .filter(part => part != null && part !== '')
+    .map(part => (typeof part === 'string' ? part : String(part)));
   return launchSpec.target.platformFamily === 'windows'
-    ? path.win32.join(...parts)
-    : path.posix.join(...parts.map(part => part.replace(/\\/g, '/')));
+    ? path.win32.join(...normalizedParts)
+    : path.posix.join(...normalizedParts.map(part => part.replace(/\\/g, '/')));
 }
 
 function validateInitializeTarget(
@@ -48,7 +52,18 @@ export function createCodexRuntimeContext(
 ): CodexRuntimeContext {
   validateInitializeTarget(launchSpec, initializeResult);
 
-  const codexHomeTarget = normalizeTargetPath(launchSpec, initializeResult.codexHome);
+  const fallbackHomeBase = launchSpec.target.platformFamily === 'windows'
+    ? process.env.USERPROFILE || process.env.HOME || ''
+    : process.env.HOME || '';
+  const fallbackCodexHome = fallbackHomeBase
+    ? joinTargetPath(launchSpec, fallbackHomeBase, '.codex')
+    : '.codex';
+  const codexHomeTarget = normalizeTargetPath(
+    launchSpec,
+    typeof initializeResult.codexHome === 'string' && initializeResult.codexHome.trim()
+      ? initializeResult.codexHome
+      : fallbackCodexHome,
+  );
   const sessionsDirTarget = joinTargetPath(launchSpec, codexHomeTarget, 'sessions');
   const memoriesDirTarget = joinTargetPath(launchSpec, codexHomeTarget, 'memories');
 

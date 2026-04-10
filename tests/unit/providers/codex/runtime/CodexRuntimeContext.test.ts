@@ -51,4 +51,27 @@ describe('createCodexRuntimeContext', () => {
       },
     )).toThrow('Codex target mismatch');
   });
+
+  it('falls back to ~/.codex when initialize does not include codexHome', () => {
+    const previousHome = process.env.HOME;
+    process.env.HOME = '/home/fallback-user';
+
+    try {
+      const context = createCodexRuntimeContext(
+        createLaunchSpec(),
+        {
+          userAgent: 'test/0.1',
+          codexHome: undefined as unknown as string,
+          platformFamily: 'unix',
+          platformOs: 'linux',
+        },
+      );
+
+      expect(context.codexHomeTarget).toBe('/home/fallback-user/.codex');
+      expect(context.sessionsDirTarget).toBe('/home/fallback-user/.codex/sessions');
+      expect(context.memoriesDirTarget).toBe('/home/fallback-user/.codex/memories');
+    } finally {
+      process.env.HOME = previousHome;
+    }
+  });
 });
