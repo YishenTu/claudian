@@ -788,11 +788,11 @@ describe('ClaudianService', () => {
       expect((service as any).isStreamTextEvent({ type: 'stream_event' })).toBe(false);
     });
 
-    it('should return true for content_block_start with text type', () => {
+    it('should return false for content_block_start with text type', () => {
       expect((service as any).isStreamTextEvent({
         type: 'stream_event',
         event: { type: 'content_block_start', content_block: { type: 'text' } },
-      })).toBe(true);
+      })).toBe(false);
     });
 
     it('should return false for content_block_start with non-text type', () => {

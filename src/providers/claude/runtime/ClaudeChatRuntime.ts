@@ -1419,9 +1419,6 @@ export class ClaudianService implements ChatRuntime {
     if (message.type !== 'stream_event') return false;
     const event = message.event;
     if (!event) return false;
-    if (event.type === 'content_block_start') {
-      return event.content_block?.type === 'text';
-    }
     if (event.type === 'content_block_delta') {
       return event.delta?.type === 'text_delta';
     }
