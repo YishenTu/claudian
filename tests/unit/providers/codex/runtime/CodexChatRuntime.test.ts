@@ -471,6 +471,41 @@ describe('CodexChatRuntime', () => {
       expect(chunks).toContainEqual({ type: 'done' });
     });
 
+    it('handles initialize responses that omit codexHome', async () => {
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        switch (method) {
+          case 'initialize':
+            return { userAgent: 'test/0.1', platformFamily: 'unix', platformOs: 'macos' };
+          case 'thread/start':
+            return threadStartResponse('thread-no-home');
+          case 'turn/start':
+            setTimeout(() => {
+              emitNotification('item/agentMessage/delta', {
+                threadId: 'thread-no-home',
+                turnId: 'turn-no-home',
+                itemId: 'msg1',
+                delta: 'Hello!',
+              });
+              emitNotification('turn/completed', {
+                threadId: 'thread-no-home',
+                turn: { id: 'turn-no-home', items: [], status: 'completed', error: null },
+              });
+            }, 0);
+            return turnStartResponse('turn-no-home');
+          case 'turn/interrupt':
+            return {};
+          default:
+            throw new Error(`Unexpected request: ${method}`);
+        }
+      });
+
+      const chunks = await collectChunks(runtime.query(createTurn('hi')));
+
+      expect(chunks).toContainEqual({ type: 'text', content: 'Hello!' });
+      expect(chunks).toContainEqual({ type: 'done' });
+      expect(findCall('thread/start')).toBeDefined();
+    });
+
     it('uses the launch spec target cwd when starting a WSL-backed thread', async () => {
       mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec());
       mockTransportRequest.mockImplementation(async (method: string) => {
