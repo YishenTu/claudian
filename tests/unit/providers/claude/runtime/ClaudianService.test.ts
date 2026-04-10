@@ -824,6 +824,33 @@ describe('ClaudianService', () => {
     });
   });
 
+  describe('isStreamThinkingEvent', () => {
+    it('should return false for non-stream_event messages', () => {
+      expect((service as any).isStreamThinkingEvent({ type: 'assistant' })).toBe(false);
+    });
+
+    it('should return false for content_block_start with thinking type', () => {
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'thinking' } },
+      })).toBe(false);
+    });
+
+    it('should return true for content_block_delta with thinking_delta', () => {
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'hmm' } },
+      })).toBe(true);
+    });
+
+    it('should return false for content_block_delta with text_delta', () => {
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta' } },
+      })).toBe(false);
+    });
+  });
+
   describe('buildSDKUserMessage', () => {
     it('should build text-only message', () => {
       const message = (service as any).buildSDKUserMessage('Hello Claude');
