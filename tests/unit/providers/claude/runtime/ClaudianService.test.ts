@@ -1222,10 +1222,23 @@ describe('ClaudianService', () => {
       expect(usageChunks[0][0].sessionId).toBe('usage-session');
     });
 
-    it('should mark stream text seen on text stream events', async () => {
+    it('should not mark stream text seen on content_block_start alone', async () => {
       const message = {
         type: 'stream_event',
         event: { type: 'content_block_start', content_block: { type: 'text' } },
+      };
+
+      await (service as any).routeMessage(message);
+
+      // content_block_start only announces a text block will exist;
+      // it does not confirm incremental text was delivered.
+      expect(handler.sawStreamText).toBe(false);
+    });
+
+    it('should mark stream text seen on content_block_delta with text_delta', async () => {
+      const message = {
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hello' } },
       };
 
       await (service as any).routeMessage(message);
@@ -1252,14 +1265,15 @@ describe('ClaudianService', () => {
       expect(textChunks).toHaveLength(0);
     });
 
-    it('should reset auto-turn stream-text dedup after an empty buffered turn completes', async () => {
+    it('should reset auto-turn stream-text dedup after a buffered turn completes', async () => {
       (service as any).responseHandlers = [];
       const autoTurnCallback = jest.fn();
       service.setAutoTurnCallback(autoTurnCallback);
 
+      // Turn 1: text_delta triggers dedup, so assistant text is skipped
       await (service as any).routeMessage({
         type: 'stream_event',
-        event: { type: 'content_block_start', content_block: { type: 'text' } },
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'streamed' } },
       });
       await (service as any).routeMessage({
         type: 'assistant',
@@ -1271,6 +1285,7 @@ describe('ClaudianService', () => {
         result: 'first turn complete',
       });
 
+      // Turn 2: no text_delta, so assistant text should pass through (dedup was reset)
       await (service as any).routeMessage({
         type: 'assistant',
         message: { content: [{ type: 'text', text: 'Fresh auto-turn text' }] },
@@ -1281,8 +1296,10 @@ describe('ClaudianService', () => {
         result: 'second turn complete',
       });
 
-      expect(autoTurnCallback).toHaveBeenCalledTimes(1);
-      expect(autoTurnCallback).toHaveBeenCalledWith({
+      // Both turns fire the callback
+      expect(autoTurnCallback).toHaveBeenCalledTimes(2);
+      // Second turn's text is NOT deduped (dedup was reset after turn 1)
+      expect(autoTurnCallback).toHaveBeenLastCalledWith({
         chunks: [
           expect.objectContaining({ type: 'text', content: 'Fresh auto-turn text' }),
         ],
