@@ -226,15 +226,20 @@ export class TabManager implements TabManagerInterface {
       if (tab.conversationId && tab.state.messages.length === 0) {
         await tab.controllers.conversationController?.switchTo(tab.conversationId);
       } else if (tab.conversationId && tab.state.messages.length > 0 && tab.service) {
-        // Tab already has messages loaded and runtime exists — passive sync only
-        const conversation = this.plugin.getConversationSync(tab.conversationId);
-        if (conversation) {
-          const hasMessages = conversation.messages.length > 0;
-          const externalContextPaths = hasMessages
-            ? conversation.externalContextPaths || []
-            : (this.plugin.settings.persistentExternalContextPaths || []);
+        // Tab already has messages loaded and runtime exists — passive sync only.
+        // Skip sync if the tab is actively streaming to avoid killing the CLI process.
+        // syncConversationState → setSessionId → closePersistentQuery("session switch")
+        // would terminate the running persistent query when session IDs diverge.
+        if (!tab.state.isStreaming) {
+          const conversation = this.plugin.getConversationSync(tab.conversationId);
+          if (conversation) {
+            const hasMessages = conversation.messages.length > 0;
+            const externalContextPaths = hasMessages
+              ? conversation.externalContextPaths || []
+              : (this.plugin.settings.persistentExternalContextPaths || []);
 
-          tab.service.syncConversationState(conversation, externalContextPaths);
+            tab.service.syncConversationState(conversation, externalContextPaths);
+          }
         }
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
