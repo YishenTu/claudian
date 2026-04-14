@@ -1446,10 +1446,24 @@ export class ClaudianService implements ChatRuntime {
 
   private isStreamThinkingEvent(message: SDKMessage): boolean {
     if (message.type !== 'stream_event') return false;
+    // transformSDKMessage only emits visible thinking when parent_tool_use_id
+    // is null, so subagent stream_events must not arm the main-turn dedup
+    // flag — otherwise the following main assistant thinking gets skipped.
+    if (message.parent_tool_use_id != null) return false;
     const event = message.event;
     if (!event) return false;
     if (event.type === 'content_block_delta') {
       return event.delta?.type === 'thinking_delta';
+    }
+    // transformSDKMessage also emits thinking from content_block_start when
+    // content_block.thinking is non-empty, so dedup must see that case too.
+    if (
+      event.type === 'content_block_start' &&
+      event.content_block?.type === 'thinking' &&
+      typeof event.content_block.thinking === 'string' &&
+      event.content_block.thinking.length > 0
+    ) {
+      return true;
     }
     return false;
   }

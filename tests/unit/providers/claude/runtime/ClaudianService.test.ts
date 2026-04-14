@@ -829,11 +829,25 @@ describe('ClaudianService', () => {
       expect((service as any).isStreamThinkingEvent({ type: 'assistant' })).toBe(false);
     });
 
-    it('should return false for content_block_start with thinking type', () => {
+    it('should return false for content_block_start with thinking type and no thinking payload', () => {
       expect((service as any).isStreamThinkingEvent({
         type: 'stream_event',
         event: { type: 'content_block_start', content_block: { type: 'thinking' } },
       })).toBe(false);
+    });
+
+    it('should return false for content_block_start with empty thinking', () => {
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'thinking', thinking: '' } },
+      })).toBe(false);
+    });
+
+    it('should return true for content_block_start with non-empty thinking', () => {
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'thinking', thinking: 'hmm' } },
+      })).toBe(true);
     });
 
     it('should return true for content_block_delta with thinking_delta', () => {
@@ -847,6 +861,24 @@ describe('ClaudianService', () => {
       expect((service as any).isStreamThinkingEvent({
         type: 'stream_event',
         event: { type: 'content_block_delta', delta: { type: 'text_delta' } },
+      })).toBe(false);
+    });
+
+    it('should return false for subagent stream events with thinking_delta', () => {
+      // Subagent stream events carry parent_tool_use_id; transformSDKMessage
+      // does not emit visible thinking for them, so dedup must stay off.
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        parent_tool_use_id: 'toolu_01ABC',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'sub' } },
+      })).toBe(false);
+    });
+
+    it('should return false for subagent stream events with content_block_start thinking', () => {
+      expect((service as any).isStreamThinkingEvent({
+        type: 'stream_event',
+        parent_tool_use_id: 'toolu_01ABC',
+        event: { type: 'content_block_start', content_block: { type: 'thinking', thinking: 'sub' } },
       })).toBe(false);
     });
   });
