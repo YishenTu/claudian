@@ -175,11 +175,20 @@ function createWslLaunchSpec(overrides: Record<string, unknown> = {}) {
         distroName: 'Ubuntu',
       },
       toTargetPath: jest.fn((value: string) => {
+        if (!value) {
+          return null;
+        }
+        if (value.startsWith('/home/') || value.startsWith('/mnt/')) {
+          return null;
+        }
         if (value.startsWith('/tmp/')) {
           return value.replace('/tmp/', '/mnt/c/tmp/');
         }
         if (value.startsWith('/external/')) {
           return value.replace('/external/', '/mnt/d/external/');
+        }
+        if (value.startsWith('\\\\wsl$\\Ubuntu\\')) {
+          return `/${value.slice('\\\\wsl$\\Ubuntu\\'.length).replace(/\\/g, '/')}`;
         }
         return `/mnt/c/${value.replace(/^\/+/, '').replace(/\\/g, '/')}`;
       }),
@@ -471,7 +480,7 @@ describe('CodexChatRuntime', () => {
       expect(chunks).toContainEqual({ type: 'done' });
     });
 
-    it('handles initialize responses that omit codexHome', async () => {
+    it('handles host-native initialize responses that omit codexHome', async () => {
       mockTransportRequest.mockImplementation(async (method: string) => {
         switch (method) {
           case 'initialize':
@@ -504,6 +513,59 @@ describe('CodexChatRuntime', () => {
       expect(chunks).toContainEqual({ type: 'text', content: 'Hello!' });
       expect(chunks).toContainEqual({ type: 'done' });
       expect(findCall('thread/start')).toBeDefined();
+    });
+
+    it('derives WSL transcript and memories roots from thread paths when initialize omits codexHome', async () => {
+      mockResolveLaunchSpec.mockReturnValue(createWslLaunchSpec());
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return {
+            userAgent: 'test/0.1',
+            platformFamily: 'unix',
+            platformOs: 'linux',
+          };
+        }
+
+        if (method === 'thread/start') {
+          return {
+            ...threadStartResponse('thread-wsl-no-home'),
+            thread: {
+              ...threadStartResponse('thread-wsl-no-home').thread,
+              path: '/home/user/.codex/sessions/2026/04/14/thread-wsl-no-home.jsonl',
+            },
+          };
+        }
+
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-wsl-no-home',
+              turn: { id: 'turn-wsl-no-home', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-wsl-no-home');
+        }
+
+        return {};
+      });
+
+      await collectChunks(runtime.query(createTurn('hi')));
+
+      const turnStartCall = findCall('turn/start');
+      expect(turnStartCall[1].sandboxPolicy).toMatchObject({
+        type: 'workspaceWrite',
+        writableRoots: expect.arrayContaining([
+          '/mnt/c/vault',
+          '/home/user/.codex/memories',
+        ]),
+      });
+
+      const result = runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false });
+      expect((result.updates.providerState as any)).toMatchObject({
+        threadId: 'thread-wsl-no-home',
+        sessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\thread-wsl-no-home.jsonl',
+        transcriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+      });
     });
 
     it('uses the launch spec target cwd when starting a WSL-backed thread', async () => {
